@@ -1,0 +1,46 @@
+#pragma once
+
+#include <string>
+#include <array>
+#include <memory>
+#include <sstream>
+#include <cstdio>
+#include <iostream>
+
+namespace ProcessHelper {
+    /**
+     * Execute a command and return its output as a string
+     * 
+     * @param command The command to execute
+     * @return The command output as a string, empty string if failed
+     */
+    inline std::string executeCommand(const std::string& command) {
+        // Open a pipe to read the command output
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+        if (!pipe) {
+            std::cerr << "Error executing command: " << command << std::endl;
+            return "";
+        }
+        
+        // Read the output
+        std::array<char, 128> buffer;
+        std::stringstream output;
+        while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+            output << buffer.data();
+        }
+        
+        return output.str();
+    }
+    
+    /**
+     * Execute a command in a specific directory and return its output
+     * 
+     * @param directory The directory to execute the command in
+     * @param command The command to execute
+     * @return The command output as a string, empty string if failed
+     */
+    inline std::string executeCommandInDirectory(const std::string& directory, const std::string& command) {
+        std::string fullCommand = "cd \"" + directory + "\" && " + command;
+        return executeCommand(fullCommand);
+    }
+}

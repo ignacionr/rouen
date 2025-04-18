@@ -1,0 +1,121 @@
+#include <imgui/imgui.h>
+#include <imgui/backends/imgui_impl_sdl2.h>
+#include <imgui/backends/imgui_impl_sdlrenderer2.h>
+#include <SDL2/SDL_image.h> // Add this include
+
+#define STB_RECT_PACK_IMPLEMENTATION
+#include <imgui/imstb_rectpack.h>
+#define STB_TRUETYPE_IMPLEMENTATION
+#include <imgui/imstb_truetype.h>
+#include <SDL2/SDL.h>
+#include <iostream>
+
+#include "cards/deck.hpp"
+
+int main() {
+    // Initialize SDL
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
+        std::cerr << "Error: " << SDL_GetError() << std::endl;
+        return -1;
+    }
+    
+    // Initialize SDL_image - Add this
+    int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
+    if ((IMG_Init(img_flags) & img_flags) != img_flags) {
+        std::cerr << "Error initializing SDL_image: " << IMG_GetError() << std::endl;
+        SDL_Quit();
+        return -1;
+    }
+
+    // Create window with SDL
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    SDL_Window* window = SDL_CreateWindow(
+        "Rouen",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        800, 600,
+        window_flags
+    );
+    if (!window) {
+        std::cerr << "Error creating window: " << SDL_GetError() << std::endl;
+        SDL_Quit();
+        return -1;
+    }
+
+    // Create renderer
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        std::cerr << "Error creating renderer: " << SDL_GetError() << std::endl;
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return -1;
+    }
+
+    // Initialize ImGui
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    (void)io;
+
+    // Enable keyboard and mouse controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable keyboard controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable gamepad controls (optional)
+
+    // Setup ImGui style
+    ImGui::StyleColorsDark();
+
+    // Initialize ImGui SDL2 backend
+    if (!ImGui_ImplSDL2_InitForSDLRenderer(window, renderer)) {
+        std::cerr << "Failed to initialize ImGui SDL2 backend!" << std::endl;
+        return -1;
+    }
+
+    // Initialize ImGui SDL Renderer backend
+    if (!ImGui_ImplSDLRenderer2_Init(renderer)) {
+        std::cerr << "Failed to initialize ImGui SDL Renderer backend!" << std::endl;
+        return -1;
+    }
+
+    // Pass the renderer to your deck
+    deck deck(renderer);
+
+    // Main loop
+    bool done = false;
+    while (!done) {
+        // Poll events
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL2_ProcessEvent(&event);
+            if (event.type == SDL_QUIT)
+                done = true;
+            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && 
+                event.window.windowID == SDL_GetWindowID(window))
+                done = true;
+        }
+
+        // Start a new ImGui frame
+        ImGui_ImplSDLRenderer2_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+
+        deck.render();
+
+        // Render ImGui
+        ImGui::Render();
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+        SDL_RenderPresent(renderer);
+    }
+
+    // Cleanup
+    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    IMG_Quit(); // Add this before SDL_Quit()
+    SDL_Quit();
+
+    return 0;
+}
