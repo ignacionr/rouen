@@ -22,6 +22,7 @@ namespace rouen::cards {
                 ImGui::Separator();
                 
                 // List files in the directory
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 150, 255, 255)); // Parent directory in blue
                 if (ImGui::Selectable("..")) {
                     // Go up one directory
                     auto entry = path_.parent_path();
@@ -34,7 +35,32 @@ namespace rouen::cards {
                         name(path_.string());
                     }
                 }
-                else for (const auto& entry : std::filesystem::directory_iterator(path_)) {
+                ImGui::PopStyleColor();
+                
+                for (const auto& entry : std::filesystem::directory_iterator(path_)) {
+                    // Set color based on file type
+                    if (entry.is_directory()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 96, 255)); // Directories in dark blue
+                    } else if (entry.is_regular_file()) {
+                        // Check file extension for common types
+                        std::string ext = entry.path().extension().string();
+                        if (ext == ".cpp" || ext == ".hpp" || ext == ".h" || ext == ".c" || ext == ".cc") {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 120, 255)); // Code files in green
+                        } else if (ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".yaml" || ext == ".yml") {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 120, 255)); // Text files in yellow
+                        } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".bmp") {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(220, 120, 220, 255)); // Image files in purple
+                        } else if (ext == ".exe" || ext == "" || ext == ".bin" || ext == ".sh") {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255)); // Executable files in red
+                        } else {
+                            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255)); // Other files in light gray
+                        }
+                    } else if (entry.is_symlink()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 220, 220, 255)); // Symlinks in cyan
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255)); // Other types in light gray
+                    }
+                    
                     if (ImGui::Selectable(entry.path().filename().string().c_str())) {
                         if (entry.is_directory()) {
                             // if Ctrl is pressed, open on a different card
@@ -47,6 +73,8 @@ namespace rouen::cards {
                             }
                         }
                     }
+                    
+                    ImGui::PopStyleColor(); // Don't forget to pop the color after each item
                 }
             });
         }
