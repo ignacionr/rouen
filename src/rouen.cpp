@@ -93,6 +93,7 @@ int main() {
     while (!done) {
         // Poll events
         SDL_Event event;
+        SDL_WaitEvent(nullptr);
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT)

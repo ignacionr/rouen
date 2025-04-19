@@ -60,7 +60,7 @@ struct deck {
         }
         
         ImGui::SetNextWindowPos({0.0f, 0.0f}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize({300.0f, 400.0f}, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(c.size, ImGuiCond_Always);
         auto result {c.render()};
         
         // Pop all style colors (2 initial + size of both arrays)
