@@ -12,10 +12,6 @@ struct deck {
     }
 
     bool render(card &c) {
-        // make the background color beige
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
-        // make the foreground color black
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         
         // Arrays of ImGui style elements for each color
         const ImGuiCol_ first_color_elements[] = {
@@ -63,19 +59,22 @@ struct deck {
             ImGui::PushStyleColor(col, c.second_color);
         }
         
-        ImGui::SetNextWindowSizeConstraints(ImVec2(300,400), ImVec2(300, 400));
-
+        ImGui::SetNextWindowPos({0.0f, 0.0f}, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({300.0f, 400.0f}, ImGuiCond_Always);
         auto result {c.render()};
         
         // Pop all style colors (2 initial + size of both arrays)
-        const int total_style_pushes = 2 + std::size(first_color_elements) + std::size(second_color_elements);
+        const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
         ImGui::PopStyleColor(total_style_pushes);
         return result;
     }
     
     void render() {
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
             [this](const std::shared_ptr<card>& c) { return !render(*c); });
+        ImGui::PopStyleColor(2);
         cards_.erase(cards_to_remove, cards_.end());
     }
 
