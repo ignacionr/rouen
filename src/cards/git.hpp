@@ -13,32 +13,15 @@
 #include "../models/git.hpp" // Include the git model
 
 struct git: public card {
-    SDL_Texture* image_texture = nullptr;
-    int image_width = 0;
-    int image_height = 0;
-    bool image_loaded = false;
-    SDL_Renderer* renderer = nullptr;
     std::string repo_status; // Store the git status result
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
     
-    git(SDL_Renderer* renderer) : renderer(renderer) {
+    git() {
         first_color = {1.0f, 0.341f, 0.133f, 1.0f}; // git Orange
         second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
         
-        // Load the image when the card is created
-        image_texture = TextureHelper::loadTextureFromFile(renderer, "img/git.jpeg", image_width, image_height);
-        image_loaded = (image_texture != nullptr);
-
         // Create git model
         git_model = std::make_unique<rouen::models::git>();
-    }
-    
-    ~git() {
-        // Clean up the texture when done
-        if (image_texture) {
-            SDL_DestroyTexture(image_texture);
-            image_texture = nullptr;
-        }
     }
     
     /**
@@ -111,7 +94,7 @@ struct git: public card {
                     
         // Display the git status
         ImGui::Separator();
-        ImGui::BeginChild("GitStatus", ImVec2(0, 270), true);
+        ImGui::BeginChild("GitStatus", ImVec2(0, size.y - 130), true);
         ImGui::TextWrapped("%s", repo_status.c_str());
         ImGui::EndChild();
 
@@ -132,9 +115,7 @@ struct git: public card {
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize;
         bool is_open = true;
         if (ImGui::Begin(std::format("Git Repos##{}", static_cast<const void*>(this)).c_str(), &is_open, window_flags)) {        
-            if (ImGui::IsWindowFocused()) {
-                is_open = run_focused_handlers();
-            }
+            is_open &= run_focused_handlers();
             if (selected_repo.empty()) {
                 render_index();
             } else {
@@ -146,25 +127,6 @@ struct git: public card {
     }
     
     void render_index() {
-                
-        // save the current position
-        ImVec2 current_pos = ImGui::GetCursorPos();
-        // Display the image if loaded
-        if (image_loaded) {
-            // Calculate display size (you can adjust this)
-            float display_width = ImGui::GetWindowWidth() - 4.0f;
-            float display_height = ImGui::GetWindowHeight() - 14.0f;
-            
-            // Display the image
-            ImGui::SetCursorPos({-0.0f,6.0f});
-            ImGui::Image(
-                (void*)(intptr_t)image_texture, 
-                ImVec2(display_width, display_height)
-            );
-        }
-        // Set the cursor position back to the original
-        ImGui::SetCursorPos(current_pos);
-
         // Get repository data from the model
         const auto& repos = git_model->getRepos();
         const auto& repo_paths = git_model->getRepoPaths();
@@ -195,7 +157,11 @@ struct git: public card {
             ImGui::SetCursorPosX(cursorPos.x + 2 * dotRadius + 8.0f);
             
             // Display repository path
-            if (ImGui::Selectable(repo_path.c_str(), false, 0, ImVec2(0, 0))) {
+            const char *repo_path_cstr = repo_path.c_str();
+            if (repo_path.size() > 38) {
+                repo_path_cstr += repo_path.size() - 38;
+            }
+            if (ImGui::Selectable(repo_path_cstr, false, 0, ImVec2(0, 0))) {
                 // If a repository is selected, set it as the selected_repo
                 select(repo_path);
             }

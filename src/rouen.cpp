@@ -89,11 +89,15 @@ int main() {
     deck deck(renderer);
 
     // Main loop
-    bool done = false;
+    bool done {false};
+    bool immediate {true};
     while (!done) {
         // Poll events
         SDL_Event event;
-        SDL_WaitEvent(nullptr);
+        if (immediate) {
+            SDL_WaitEvent(nullptr);
+            immediate = false;
+        }
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
@@ -138,6 +142,7 @@ int main() {
         // Process any deferred operations after the main frame is complete
         if (deferred_ops->has_operations()) {
             deferred_ops->process_queue(renderer);
+            immediate = true;
         }
         
         SDL_RenderPresent(renderer);

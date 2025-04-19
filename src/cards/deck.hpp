@@ -1,17 +1,36 @@
 #pragma once
 
-#include <imgui/imgui.h>
-#include <vector>
+#include <functional>
+#include <string>
 #include <utility>
+#include <vector>
+#include <imgui/imgui.h>
 
 #include "factory.hpp"
+#include "../registrar.hpp"
+#include "../helpers/deferred_operations.hpp"
 
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer) {
-        create_card("git");
+        // Register to present new cards
+        registrar::add<std::function<void(std::string const&)>>(
+            "create_card", 
+            std::make_shared<std::function<void(std::string const&)>>(
+                [this](std::string const& uri) { create_card(uri); }
+            )
+        );
+        create_card("menu");
     }
 
     void create_card(std::string_view uri) {
+        // this needs to be deferred
+        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+        deferred_ops->queue([this, uri = std::string{uri}] {
+            create_card_impl(uri);
+        });
+    }
+
+    void create_card_impl(std::string_view uri) {
         static auto card_factory {rouen::cards::factory()};
         auto card_ptr = card_factory.create_card(uri, renderer);
         if (card_ptr) {
@@ -19,7 +38,7 @@ struct deck {
         }
     }
 
-    bool render(card &c, float &x) {
+    bool render(card &c, float &x, float &max_height) {
         // Arrays of ImGui style elements for each color
         const ImGuiCol_ first_color_elements[] = {
             ImGuiCol_TitleBgActive,
@@ -73,18 +92,51 @@ struct deck {
         const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
         ImGui::PopStyleColor(total_style_pushes);
         x += c.size.x + 2.0f;
+        max_height = std::max(max_height, c.size.y);
         return result;
+    }
+
+    void handle_shortcuts() {
+        if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift) {
+            // Handle Ctrl+Shift+P shortcut
+            create_card("menu");
+        }
     }
     
     void render() {
+        handle_shortcuts();
+        auto const size {ImGui::GetMainViewport()->Size};
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         auto x = 2.0f;
+        auto ensure_visible_x {size.x};
+        for (auto& c : cards_) {
+            ensure_visible_x -= c->size.x + 2.0f;
+            if (c->is_focused) {
+                break;
+            }
+        }
+        if (ensure_visible_x < 0.0f) {
+            x = ensure_visible_x;
+        }
+        auto y = 2.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-            [this, &x](const std::shared_ptr<card>& c) { return !render(*c, x); });
-        ImGui::PopStyleColor(3);
+            [this, &x, &y](auto c) { return !render(*c, x, y); });
         cards_.erase(cards_to_remove, cards_.end());
+
+        // now let's render the editor window
+        ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
+        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize)) {
+            ImGui::Text("Press Ctrl+Shift+P to open the menu");
+            ImGui::Text("Press Ctrl+W to close the focused card");
+            ImGui::Text("Press F11 to toggle fullscreen");
+            ImGui::Text("Press Ctrl+Shift+Q to quit");
+        }
+        ImGui::End();
+
+        ImGui::PopStyleColor(3);
     }
 
 private:
