@@ -7,9 +7,11 @@
 #include "git.hpp"
 
 struct deck {
-    deck(SDL_Renderer* renderer) : git_(renderer) {}
+    deck(SDL_Renderer* renderer){
+        cards_.emplace_back(std::make_shared<git>(renderer));
+    }
 
-    void render(card &c) {
+    bool render(card &c) {
         // make the background color beige
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         // make the foreground color black
@@ -46,7 +48,9 @@ struct deck {
             ImGuiCol_TabUnfocused,
             ImGuiCol_TabUnfocusedActive,
             ImGuiCol_MenuBarBg,
-            ImGuiCol_PopupBg
+            ImGuiCol_PopupBg,
+            ImGuiCol_HeaderHovered,
+            ImGuiCol_HeaderActive
         };
         
         // Push first color elements
@@ -59,17 +63,23 @@ struct deck {
             ImGui::PushStyleColor(col, c.second_color);
         }
         
-        c.render();
+        ImGui::SetNextWindowSizeConstraints(ImVec2(300,400), ImVec2(300, 400));
+
+        auto result {c.render()};
         
         // Pop all style colors (2 initial + size of both arrays)
         const int total_style_pushes = 2 + std::size(first_color_elements) + std::size(second_color_elements);
         ImGui::PopStyleColor(total_style_pushes);
+        return result;
     }
     
     void render() {
-        render(git_);
+        auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
+            [this](const std::shared_ptr<card>& c) { return !render(*c); });
+        cards_.erase(cards_to_remove, cards_.end());
     }
+
 private:
-    git git_;
+    std::vector<std::shared_ptr<card>> cards_;
     ImVec4 background_color {0.96f, 0.96f, 0.86f, 0.40f};
 };

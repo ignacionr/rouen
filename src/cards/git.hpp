@@ -7,107 +7,37 @@
 #include "card.hpp"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <filesystem>
-#include <algorithm>
-#include <iostream>
-#include <memory>
-#include <sstream>
-#include <cstdio>
-#include <map>
 #include <format>
 #include "../helpers/texture_helper.hpp"
-#include "../helpers/process_helper.hpp"
-
-// Enum class for git repository statuses
-enum class GitRepoStatus {
-    Unknown,
-    Clean,
-    Modified,
-    Untracked,
-    Staged,
-    Conflict,
-    Detached
-};
+#include "../animation/slide.hpp"
+#include "../models/git.hpp" // Include the git model
 
 struct git: public card {
-    SDL_Texture* image_texture = nullptr; // Changed from GLuint to SDL_Texture*
+    SDL_Texture* image_texture = nullptr;
     int image_width = 0;
     int image_height = 0;
     bool image_loaded = false;
-    SDL_Renderer* renderer = nullptr; // Add renderer member
+    SDL_Renderer* renderer = nullptr;
     std::string repo_status; // Store the git status result
+    std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
     
     git(SDL_Renderer* renderer) : renderer(renderer) {
         first_color = {1.0f, 0.341f, 0.133f, 1.0f}; // git Orange
-        second_color = {0.251f, 0.878f, 0.816f, 1.0f}; // Turquoise color
+        second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
         
         // Load the image when the card is created
         image_texture = TextureHelper::loadTextureFromFile(renderer, "img/git.jpeg", image_width, image_height);
         image_loaded = (image_texture != nullptr);
 
-        // Scan for git repositories
-        scanForRepositories();
+        // Create git model
+        git_model = std::make_unique<rouen::models::git>();
     }
     
     ~git() {
         // Clean up the texture when done
         if (image_texture) {
-            SDL_DestroyTexture(image_texture); // Changed from glDeleteTextures
+            SDL_DestroyTexture(image_texture);
             image_texture = nullptr;
-        }
-    }
-    
-    /**
-     * Scan the filesystem for Git repositories
-     * Searches under the user's HOME directory for .git folders
-     * and populates the repos map with the parent directories and their statuses
-     */
-    void scanForRepositories() {
-        const char* home = std::getenv("HOME");
-        if (home) {
-            try {
-                std::filesystem::path homeDir(home);
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(
-                     homeDir, 
-                     std::filesystem::directory_options::skip_permission_denied)) {
-                    if (entry.is_directory() && entry.path().filename() == ".git") {
-                        std::string repo_path = entry.path().parent_path().string();
-                        repos[repo_path] = GitRepoStatus::Unknown; // Set initial status
-                        
-                        // Query the git status immediately
-                        std::string status_output = ProcessHelper::executeCommandInDirectory(repo_path, "git status");
-                        if (!status_output.empty()) {
-                            // Determine the status based on git status output
-                            if (status_output.find("nothing to commit, working tree clean") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Clean;
-                            } else if (status_output.find("Changes to be committed") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Staged;
-                            } else if (status_output.find("Untracked files") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Untracked;
-                            } else if (status_output.find("modified:") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Modified;
-                            } else if (status_output.find("Unmerged paths") != std::string::npos || 
-                                      status_output.find("fix conflicts") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Conflict;
-                            } else if (status_output.find("HEAD detached") != std::string::npos) {
-                                repos[repo_path] = GitRepoStatus::Detached;
-                            }
-                        }
-                    }
-                }
-                
-                // Create a sorted list of keys for display
-                repo_paths.clear();
-                for (const auto& [path, status] : repos) {
-                    repo_paths.push_back(path);
-                }
-                std::sort(repo_paths.begin(), repo_paths.end());
-                
-            } catch (const std::exception& e) {
-                std::cerr << "Error scanning for repositories: " << e.what() << std::endl;
-            }
-        } else {
-            std::cerr << "Error: HOME environment variable not set" << std::endl;
         }
     }
     
@@ -118,17 +48,25 @@ struct git: public card {
      * @return true if successful, false if failed
      */
     bool select(const std::string& repo_path) {
-        if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+        if (repo_path.empty() || git_model->getRepos().find(repo_path) == git_model->getRepos().end()) {
             return false;
         }
+
+        this->selected_repo = repo_path;
+        this->updateRepoStatus();
         
-        selected_repo = repo_path;
-        return updateRepoStatus();
+        return true;
     }
     
     /**
-     * Update the repository status by running git status command
-     * and determine the GitRepoStatus enum value
+     * Go back to the repository list with a slide animation
+     */
+    void back_to_list() {
+        selected_repo.clear();
+    }
+    
+    /**
+     * Update the repository status by using the git model
      * 
      * @return true if successful, false if failed
      */
@@ -137,31 +75,9 @@ struct git: public card {
             return false;
         }
         
-        // Use the ProcessHelper to execute git status in the repository directory
-        repo_status = ProcessHelper::executeCommandInDirectory(selected_repo, "git status");
-        
-        if (!repo_status.empty()) {
-            // Determine the status based on git status output
-            if (repo_status.find("nothing to commit, working tree clean") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Clean;
-            } else if (repo_status.find("Changes to be committed") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Staged;
-            } else if (repo_status.find("Untracked files") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Untracked;
-            } else if (repo_status.find("modified:") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Modified;
-            } else if (repo_status.find("Unmerged paths") != std::string::npos || 
-                       repo_status.find("fix conflicts") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Conflict;
-            } else if (repo_status.find("HEAD detached") != std::string::npos) {
-                repos[selected_repo] = GitRepoStatus::Detached;
-            } else {
-                repos[selected_repo] = GitRepoStatus::Unknown;
-            }
-            return true;
-        }
-        
-        return false;
+        // Use the git model to get the status
+        repo_status = git_model->getGitStatus(selected_repo);
+        return !repo_status.empty();
     }
     
     // Helper function to scale and offset SVG coordinates
@@ -169,19 +85,33 @@ struct git: public card {
         return ImVec2(offset.x + (p.x / svgMax) * scaleX, offset.y + (p.y / svgMax) * scaleY);
     }
 
+    // Helper function to get status color using a static map
+    static ImColor getStatusColor(rouen::models::GitRepoStatus status) {
+        static const std::map<rouen::models::GitRepoStatus, ImColor> statusColorMap = {
+            {rouen::models::GitRepoStatus::Clean,     ImColor(0, 255, 0, 255)},     // Green
+            {rouen::models::GitRepoStatus::Modified,  ImColor(255, 165, 0, 255)},   // Orange
+            {rouen::models::GitRepoStatus::Untracked, ImColor(200, 200, 0, 255)},   // Yellow
+            {rouen::models::GitRepoStatus::Staged,    ImColor(0, 200, 255, 255)},   // Blue
+            {rouen::models::GitRepoStatus::Conflict,  ImColor(255, 0, 0, 255)},     // Red
+            {rouen::models::GitRepoStatus::Detached,  ImColor(128, 0, 128, 255)}    // Purple
+        };
+        
+        auto it = statusColorMap.find(status);
+        return it != statusColorMap.end() ? it->second : ImColor(255, 255, 255, 255); // White as default
+    }
+
     void render_selected() {
         // Back button
         if (ImGui::Button("Back to Repository List")) {
-            selected_repo.clear();
-            repo_status.clear();
+            back_to_list();
+            return;
         }
         
         ImGui::Text("Repository: %s", selected_repo.c_str());
                     
         // Display the git status
         ImGui::Separator();
-        ImGui::TextWrapped("Git Status:");
-        ImGui::BeginChild("GitStatus", ImVec2(0, 0), true);
+        ImGui::BeginChild("GitStatus", ImVec2(0, 270), true);
         ImGui::TextWrapped("%s", repo_status.c_str());
         ImGui::EndChild();
 
@@ -193,23 +123,23 @@ struct git: public card {
         // Add "Open in VS Code" button
         ImGui::SameLine();
         if (ImGui::Button("Open in VS Code")) {
-            // Use system and std::format to construct and execute the command
-            std::string command = std::format("code \"{}\"", selected_repo);
-            system(command.c_str());
+            git_model->openInVSCode(selected_repo);
         }
     }
 
-    void render() override {
+    bool render() override {
         // Create a window with non-collapsible flags (ImGuiWindowFlags_NoCollapse)
-        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse;
-        ImGui::Begin("Git Repos", nullptr, window_flags);
-        
-        if (selected_repo.empty()) {
-            render_index();
-        } else {
-            render_selected();
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize;
+        bool is_open = true;
+        if (ImGui::Begin("Git Repos", &is_open, window_flags)) {        
+            if (selected_repo.empty()) {
+                render_index();
+            } else {
+                render_selected();
+            }
         }
         ImGui::End();
+        return is_open;
     }
     
     void render_index() {
@@ -219,11 +149,11 @@ struct git: public card {
         // Display the image if loaded
         if (image_loaded) {
             // Calculate display size (you can adjust this)
-            float display_width = std::min(static_cast<float>(image_width), ImGui::GetWindowWidth() - 20.0f);
-            float aspect_ratio = static_cast<float>(image_height) / image_width;
-            float display_height = display_width * aspect_ratio;
+            float display_width = ImGui::GetWindowWidth() - 4.0f;
+            float display_height = ImGui::GetWindowHeight() - 14.0f;
             
             // Display the image
+            ImGui::SetCursorPos({-0.0f,6.0f});
             ImGui::Image(
                 (void*)(intptr_t)image_texture, 
                 ImVec2(display_width, display_height)
@@ -232,35 +162,16 @@ struct git: public card {
         // Set the cursor position back to the original
         ImGui::SetCursorPos(current_pos);
 
+        // Get repository data from the model
+        const auto& repos = git_model->getRepos();
+        const auto& repo_paths = git_model->getRepoPaths();
+
         // Display the list of repositories with their statuses as colored dots
         for (const auto& repo_path : repo_paths) {
-            GitRepoStatus status = repos[repo_path];
+            rouen::models::GitRepoStatus status = git_model->getRepoStatus(repo_path);
             
-            // Set status color
-            ImColor dotColor;
-            switch (status) {
-                case GitRepoStatus::Clean:
-                    dotColor = ImColor(0, 255, 0, 255); // Green
-                    break;
-                case GitRepoStatus::Modified:
-                    dotColor = ImColor(255, 165, 0, 255); // Orange
-                    break;
-                case GitRepoStatus::Untracked:
-                    dotColor = ImColor(200, 200, 0, 255); // Yellow
-                    break;
-                case GitRepoStatus::Staged:
-                    dotColor = ImColor(0, 200, 255, 255); // Blue
-                    break;
-                case GitRepoStatus::Conflict:
-                    dotColor = ImColor(255, 0, 0, 255); // Red
-                    break;
-                case GitRepoStatus::Detached:
-                    dotColor = ImColor(128, 0, 128, 255); // Purple
-                    break;
-                default:
-                    dotColor = ImColor(255, 255, 255, 255); // White
-                    break;
-            }
+            // Get status color using the constexpr function
+            ImColor dotColor = getStatusColor(status);
             
             // Begin horizontal layout
             ImGui::BeginGroup();
@@ -290,7 +201,5 @@ struct git: public card {
         }
     }
 
-    std::map<std::string, GitRepoStatus> repos; // Changed from vector to map of path -> status
-    std::vector<std::string> repo_paths; // For maintaining sorted order
     std::string selected_repo; 
 };

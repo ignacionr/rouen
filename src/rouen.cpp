@@ -11,6 +11,8 @@
 #include <iostream>
 
 #include "cards/deck.hpp"
+#include "registrar.hpp" // Add include for registrar
+#include "helpers/deferred_operations.hpp" // Add include for deferred operations
 
 int main() {
     // Initialize SDL
@@ -50,6 +52,13 @@ int main() {
         SDL_Quit();
         return -1;
     }
+
+    // Register renderer in the registrar
+    registrar::add<SDL_Renderer*>("main_renderer", std::make_shared<SDL_Renderer*>(renderer));
+    
+    // Create and register the deferred operations service
+    auto deferred_ops = std::make_shared<deferred_operations>();
+    registrar::add<deferred_operations>("deferred_ops", deferred_ops);
 
     // Initialize ImGui
     IMGUI_CHECKVERSION();
@@ -105,6 +114,12 @@ int main() {
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderClear(renderer);
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+        
+        // Process any deferred operations after the main frame is complete
+        if (deferred_ops->has_operations()) {
+            deferred_ops->process_queue(renderer);
+        }
+        
         SDL_RenderPresent(renderer);
     }
 
@@ -112,6 +127,10 @@ int main() {
     ImGui_ImplSDLRenderer2_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
+
+    // Remove renderer from registrar before destroying it
+    registrar::remove<SDL_Renderer*>("main_renderer");
+
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     IMG_Quit(); // Add this before SDL_Quit()
