@@ -131,7 +131,10 @@ struct git: public card {
         // Create a window with non-collapsible flags (ImGuiWindowFlags_NoCollapse)
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize;
         bool is_open = true;
-        if (ImGui::Begin("Git Repos", &is_open, window_flags)) {        
+        if (ImGui::Begin(std::format("Git Repos##{}", static_cast<const void*>(this)).c_str(), &is_open, window_flags)) {        
+            if (ImGui::IsWindowFocused()) {
+                is_open = run_focused_handlers();
+            }
             if (selected_repo.empty()) {
                 render_index();
             } else {

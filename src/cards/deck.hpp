@@ -9,13 +9,13 @@
 struct deck {
     deck(SDL_Renderer* renderer){
         cards_.emplace_back(std::make_shared<git>(renderer));
+        cards_.emplace_back(std::make_shared<git>(renderer));
+        cards_.emplace_back(std::make_shared<git>(renderer));
     }
 
-    bool render(card &c) {
-        
+    bool render(card &c, float &x) {
         // Arrays of ImGui style elements for each color
         const ImGuiCol_ first_color_elements[] = {
-            ImGuiCol_TitleBg,
             ImGuiCol_TitleBgActive,
             ImGuiCol_Border,
             ImGuiCol_BorderShadow,
@@ -59,22 +59,25 @@ struct deck {
             ImGui::PushStyleColor(col, c.second_color);
         }
         
-        ImGui::SetNextWindowPos({0.0f, 0.0f}, ImGuiCond_Always);
+        ImGui::SetNextWindowPos({x, 0.0f}, ImGuiCond_Always);
         ImGui::SetNextWindowSize(c.size, ImGuiCond_Always);
         auto result {c.render()};
         
         // Pop all style colors (2 initial + size of both arrays)
         const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
         ImGui::PopStyleColor(total_style_pushes);
+        x += c.size.x + 2.0f;
         return result;
     }
     
     void render() {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        auto x = 2.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-            [this](const std::shared_ptr<card>& c) { return !render(*c); });
-        ImGui::PopStyleColor(2);
+            [this, &x](const std::shared_ptr<card>& c) { return !render(*c, x); });
+        ImGui::PopStyleColor(3);
         cards_.erase(cards_to_remove, cards_.end());
     }
 

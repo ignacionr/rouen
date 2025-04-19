@@ -2,8 +2,15 @@
 
 struct card {
     virtual ~card() = default;
-
     virtual bool render() = 0;
+
+    bool run_focused_handlers() {
+        // check for ctrl+w
+        if (ImGui::IsKeyPressed(ImGuiKey_W) && ImGui::GetIO().KeyCtrl) {
+            return false;
+        }
+        return true;
+    }
 
     ImVec4 first_color {0.0f, 0.0, 0.0f, 1.0f};
     ImVec4 second_color {0.0f, 0.0f, 0.0f, 0.5f};
