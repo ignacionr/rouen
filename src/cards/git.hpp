@@ -22,6 +22,7 @@ struct git: public card {
         
         // Create git model
         git_model = std::make_unique<rouen::models::git>();
+        name("Git Repos");
     }
     
     /**
@@ -111,19 +112,13 @@ struct git: public card {
     }
 
     bool render() override {
-        // Create a window with non-collapsible flags (ImGuiWindowFlags_NoCollapse)
-        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize;
-        bool is_open = true;
-        if (ImGui::Begin(std::format("Git Repos##{}", static_cast<const void*>(this)).c_str(), &is_open, window_flags)) {        
-            is_open &= run_focused_handlers();
+        return render_window([this]() {
             if (selected_repo.empty()) {
                 render_index();
             } else {
                 render_selected();
             }
-        }
-        ImGui::End();
-        return is_open;
+        });
     }
     
     void render_index() {

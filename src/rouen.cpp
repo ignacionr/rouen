@@ -90,6 +90,13 @@ int main() {
 
     // Main loop
     bool done {false};
+    registrar::add<std::function<bool()>>("exit", std::make_shared<std::function<bool()>>(
+        [&done]() {
+            auto was_exiting {done};
+            done = true;
+            return was_exiting;
+        }
+    ));
     bool immediate {true};
     while (!done) {
         // Poll events
