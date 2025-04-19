@@ -21,7 +21,8 @@ namespace rouen::cards {
             return render_window([]() {
                 static std::vector<std::pair<std::string, std::function<void()>>> menu_items = {
                     {"Git", []() { "create_card"_sfn("git"); }},
-                    {"Settings", []() { /* Call settings card */ }},
+                    {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
+                    {"Home Directory", []() { "create_card"_sfn("dir:/home"); }},
                     {"Exit", []() { auto was_exiting = "exit"_fnb(); }}
                 };
                 for (const auto& [title,action] : menu_items) {

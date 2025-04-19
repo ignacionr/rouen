@@ -8,6 +8,7 @@
 #include <SDL2/SDL.h>
 #include "git.hpp"
 #include "menu.hpp"
+#include "fs-directory.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -42,6 +43,9 @@ namespace rouen::cards {
                 }},
                 {"menu", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<menu>();
+                }},
+                {"dir", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<fs_directory>(uri);
                 }},
             };
             return dictionary;
