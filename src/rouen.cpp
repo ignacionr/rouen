@@ -96,12 +96,31 @@ int main() {
         SDL_WaitEvent(nullptr);
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
+            if (event.type == SDL_QUIT) {
                 done = true;
-            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && 
-                event.window.windowID == SDL_GetWindowID(window))
+            }
+            else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && 
+                event.window.windowID == SDL_GetWindowID(window)) {
                 done = true;
+            }
+            // run shortcut key handlers
+            else if (event.type == SDL_KEYDOWN) {
+                // F11 toggles fullscreen
+                if (event.key.keysym.sym == SDLK_F11) {
+                    Uint32 flags = SDL_GetWindowFlags(window);
+                    if (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
+                        SDL_SetWindowFullscreen(window, 0);
+                    } else {
+                        SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    }
+                }
+                // ctrl+q exits the application
+                else if (event.key.keysym.sym == SDLK_q && (event.key.keysym.mod & KMOD_CTRL)) {
+                    done = true;
+                }
+            }
         }
+
 
         // Start a new ImGui frame
         ImGui_ImplSDLRenderer2_NewFrame();
