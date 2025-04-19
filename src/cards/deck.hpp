@@ -4,13 +4,19 @@
 #include <vector>
 #include <utility>
 
-#include "git.hpp"
+#include "factory.hpp"
 
 struct deck {
-    deck(SDL_Renderer* renderer){
-        cards_.emplace_back(std::make_shared<git>(renderer));
-        cards_.emplace_back(std::make_shared<git>(renderer));
-        cards_.emplace_back(std::make_shared<git>(renderer));
+    deck(SDL_Renderer* renderer): renderer(renderer) {
+        create_card("git");
+    }
+
+    void create_card(std::string_view uri) {
+        static auto card_factory {rouen::cards::factory()};
+        auto card_ptr = card_factory.create_card(uri, renderer);
+        if (card_ptr) {
+            cards_.emplace_back(std::move(card_ptr));
+        }
     }
 
     bool render(card &c, float &x) {
@@ -59,7 +65,7 @@ struct deck {
             ImGui::PushStyleColor(col, c.second_color);
         }
         
-        ImGui::SetNextWindowPos({x, 0.0f}, ImGuiCond_Always);
+        ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
         ImGui::SetNextWindowSize(c.size, ImGuiCond_Always);
         auto result {c.render()};
         
@@ -82,6 +88,7 @@ struct deck {
     }
 
 private:
+    SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
     ImVec4 background_color {0.96f, 0.96f, 0.86f, 0.40f};
 };

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <memory>
+
 struct card {
+    using ptr = std::shared_ptr<card>;
     virtual ~card() = default;
     virtual bool render() = 0;
 
