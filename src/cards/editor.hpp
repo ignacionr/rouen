@@ -20,7 +20,8 @@ public:
     editor() 
         : image_texture_(nullptr)
         , image_width_(0)
-        , image_height_(0) 
+        , image_height_(0)
+        , should_focus_(false)
     {
         registrar::add<std::function<void(std::string const &)>>(
             "edit",
@@ -80,6 +81,9 @@ public:
 
     void select(auto const &uri) {
         source_file_ = uri;
+        
+        // Set flag to focus the window on next render
+        should_focus_ = true;
         
         // Clear previous resources
         if (image_texture_) {
@@ -179,6 +183,12 @@ public:
         // Push a custom style for this window to have square corners
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         
+        // Set focus to this window if requested
+        if (should_focus_) {
+            ImGui::SetNextWindowFocus();
+            should_focus_ = false; // Reset the flag after using it
+        }
+        
         if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar)) {
             ImGui::TextUnformatted(source_file_.c_str());
             
@@ -258,6 +268,7 @@ private:
     bool file_modified_ = false;
     std::string save_message_;
     float save_message_time_ = 0.0f;
+    bool should_focus_ = false;  // Flag to track when the window should grab focus
     
     // Text editor
     TextEditor text_editor_;
