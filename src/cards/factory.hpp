@@ -11,6 +11,7 @@
 #include "menu.hpp"
 #include "pomodoro.hpp"
 #include "fs-directory.hpp"
+#include "sysinfo.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -51,6 +52,9 @@ namespace rouen::cards {
                 }},
                 {"pomodoro", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<pomodoro>();
+                }},
+                {"sysinfo", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<sysinfo_card>();
                 }}
             };
             return dictionary;
