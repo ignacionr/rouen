@@ -9,6 +9,9 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 
+// ImGuiColorTextEdit include
+#include "TextEditor.h"
+
 #include "../registrar.hpp"
 #include "../helpers/texture_helper.hpp"
 
@@ -33,6 +36,18 @@ public:
             // No renderer available
             renderer_ = nullptr;
         }
+        
+        // Initialize the text editor
+        text_editor_.SetShowWhitespaces(false);
+        text_editor_.SetTabSize(4);
+        
+        // Set up a dark theme for the editor
+        auto lang = TextEditor::LanguageDefinition::CPlusPlus();
+        text_editor_.SetLanguageDefinition(lang);
+        
+        // Use a dark palette
+        TextEditor::Palette palette = text_editor_.GetDarkPalette();
+        text_editor_.SetPalette(palette);
     }
     
     virtual ~editor() {
@@ -107,6 +122,26 @@ public:
                     std::istreambuf_iterator<char>(input),
                     std::istreambuf_iterator<char>()
                 );
+                
+                // Set text in the TextEditor widget
+                text_editor_.SetText(buffer_);
+                
+                // Try to detect language from file extension
+                if (endsWithCaseInsensitive(uri, ".cpp") || endsWithCaseInsensitive(uri, ".h") || 
+                    endsWithCaseInsensitive(uri, ".hpp") || endsWithCaseInsensitive(uri, ".cc")) {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
+                } else if (endsWithCaseInsensitive(uri, ".c")) {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+                } else if (endsWithCaseInsensitive(uri, ".glsl") || endsWithCaseInsensitive(uri, ".frag") || 
+                           endsWithCaseInsensitive(uri, ".vert")) {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::GLSL());
+                } else if (endsWithCaseInsensitive(uri, ".sql")) {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::SQL());
+                } else if (endsWithCaseInsensitive(uri, ".lua")) {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::Lua());
+                } else {
+                    text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
+                }
             }
             catch(std::exception const &e) {
                 error_ = e.what();
@@ -120,6 +155,9 @@ public:
         }
         
         try {
+            // Get text from the TextEditor widget
+            buffer_ = text_editor_.GetText();
+            
             std::ofstream output{source_file_};
             if (!output) {
                 throw std::runtime_error("Could not open file for writing: " + source_file_);
@@ -191,27 +229,17 @@ public:
                 // Draw the image
                 ImGui::Image((ImTextureID)(intptr_t)image_texture_, display_size);
             }
-            else if (!buffer_.empty()) {
+            else if (!source_file_.empty()) {
                 // Create a child window for the text editor
                 ImGui::Separator();
                 
-                // Add a text input area with the file contents
-                static ImGuiInputTextFlags flags = ImGuiInputTextFlags_AllowTabInput;
-                ImVec2 size = ImGui::GetContentRegionAvail();
+                // Render the TextEditor widget
+                text_editor_.Render("##editor", ImGui::GetContentRegionAvail(), true);
                 
-                // Input text multiline takes the buffer directly
-                buffer_.reserve(buffer_.size() * 5/4);
-                
-                // Apply a custom style for better text visibility in dark theme
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Pure white text for better readability
-                
-                if (ImGui::InputTextMultiline("##editor", buffer_.data(), buffer_.capacity(), ImGui::GetContentRegionAvail())) {
-                    // Mark as modified when the text changes
-                    buffer_ = buffer_.data();
+                // Update the modified flag
+                if (text_editor_.IsTextChanged()) {
                     file_modified_ = true;
                 }
-                
-                ImGui::PopStyleColor(); // Restore previous text color
             }
             else if (!source_file_.empty()) {
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "No content loaded");
@@ -230,6 +258,9 @@ private:
     bool file_modified_ = false;
     std::string save_message_;
     float save_message_time_ = 0.0f;
+    
+    // Text editor
+    TextEditor text_editor_;
     
     // Image handling
     SDL_Renderer* renderer_ = nullptr;

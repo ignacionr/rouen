@@ -20,12 +20,24 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(glaze)
+FetchContent_Declare(
+  imguicolortextedit
+  GIT_REPOSITORY https://github.com/BalazsJako/ImGuiColorTextEdit.git
+  GIT_TAG master
+  GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(glaze imguicolortextedit)
 
 # Add the executable
 add_executable(rouen 
   src/rouen.cpp
   src/main_wnd.cpp
+  ${imguicolortextedit_SOURCE_DIR}/TextEditor.cpp # Add the TextEditor implementation
 )
-target_include_directories(rouen PRIVATE /usr/include/imgui /usr/include/stb)
+target_include_directories(rouen PRIVATE 
+  /usr/include/imgui 
+  /usr/include/stb
+  ${imguicolortextedit_SOURCE_DIR}
+)
 target_link_libraries(rouen PRIVATE imgui glfw GL SDL2 SDL2_image glaze::glaze)
