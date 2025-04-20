@@ -36,4 +36,5 @@ struct card {
     ImVec2 size {300.0f, 250.0f};
     bool is_focused{false};
     std::string window_title;
+    int requested_fps{1};
 };

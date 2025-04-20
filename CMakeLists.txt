@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Treat warnings as errors
+add_compile_options(-Werror)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -20,6 +23,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glaze)
 
 # Add the executable
-add_executable(rouen src/rouen.cpp)
+add_executable(rouen 
+  src/rouen.cpp
+  src/main_wnd.cpp
+)
 target_include_directories(rouen PRIVATE /usr/include/imgui /usr/include/stb)
 target_link_libraries(rouen PRIVATE imgui glfw GL SDL2 SDL2_image glaze::glaze)

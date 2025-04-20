@@ -38,7 +38,7 @@ struct deck {
         }
     }
 
-    bool render(card &c, float &x, float &max_height) {
+    bool render(card &c, float &x, float &max_height, int &requested_fps) {
         // Arrays of ImGui style elements for each color
         const ImGuiCol_ first_color_elements[] = {
             ImGuiCol_TitleBgActive,
@@ -86,7 +86,14 @@ struct deck {
         
         ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
         ImGui::SetNextWindowSize(c.size, ImGuiCond_Always);
-        auto result {c.render()};
+
+        // does it overlap the screen?
+        auto const screen_size {ImGui::GetMainViewport()->Size};
+        bool result {true};
+        if (x < screen_size.x && x + c.size.x > 0.0f) {
+            result = c.render();
+            requested_fps = std::max(requested_fps, c.requested_fps);
+        }
         
         // Pop all style colors (2 initial + size of both arrays)
         const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
@@ -103,7 +110,12 @@ struct deck {
         }
     }
     
-    void render() {
+    struct render_status {
+        int requested_fps {1};
+    };
+
+    [[nodiscard]] render_status render() {
+        render_status result;
         handle_shortcuts();
         auto const size {ImGui::GetMainViewport()->Size};
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
@@ -122,7 +134,7 @@ struct deck {
         }
         auto y = 2.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-            [this, &x, &y](auto c) { return !render(*c, x, y); });
+            [this, &x, &y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
         cards_.erase(cards_to_remove, cards_.end());
 
         // now let's render the editor window
@@ -137,6 +149,7 @@ struct deck {
         ImGui::End();
 
         ImGui::PopStyleColor(3);
+        return result;
     }
 
 private:

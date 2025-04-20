@@ -16,6 +16,7 @@ namespace rouen::cards {
             name("Pomodoro");
             first_color = {1.0f, 0.341f, 0.133f, 1.0f}; // git Orange
             second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
+            requested_fps = 60;
         }
         bool render() override {
             return render_window([this]() {
@@ -87,13 +88,13 @@ namespace rouen::cards {
             return std::chrono::duration_cast<std::chrono::minutes>(current_time - start_time).count() >= 25;
         }
         double percentaged_done(std::chrono::system_clock::time_point current_time) const {
-            auto const elapsed = std::chrono::duration_cast<std::chrono::seconds>(current_time - start_time).count();
-            auto const total = 25 * 60;
-            return static_cast<double>(elapsed) / total;
+            auto const elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(current_time - start_time).count();
+            auto const total = 25 * 60.0;
+            return elapsed / total;
         }
     private:
         std::chrono::system_clock::time_point start_time {std::chrono::system_clock::now()};
         std::chrono::system_clock::time_point end_time {start_time + std::chrono::minutes(25)};
-        ImVec4 third_color {1.0f, 1.0f, 0.0f, 0.5f}; 
+        ImVec4 third_color {1.0f, 1.0f, 0.0f, 0.5f};
     };
 }
