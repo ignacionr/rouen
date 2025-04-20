@@ -110,8 +110,8 @@ struct sysinfo_card : public card {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
             
-            // Update metrics every 200ms (5 times per second)
-            if (elapsed >= 200) {
+            // Update metrics every 500ms (twice per second)
+            if (elapsed >= 500) {
                 refresh_metrics();
                 last_update = now;
             }
