@@ -24,6 +24,7 @@ namespace rouen::cards {
                     {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
                     {"Home Directory", []() { "create_card"_sfn("dir:/home"); }},
                     {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
+                    {"Grok", []() { "create_card"_sfn("grok"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Exit", []() { auto was_exiting = "exit"_fnb(); }}
                 };

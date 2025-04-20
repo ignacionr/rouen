@@ -11,6 +11,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Treat warnings as errors
 add_compile_options(-Werror)
 
+# Find the curl package
+find_package(CURL REQUIRED)
+
 include(FetchContent)
 
 FetchContent_Declare(
@@ -39,5 +42,6 @@ target_include_directories(rouen PRIVATE
   /usr/include/imgui 
   /usr/include/stb
   ${imguicolortextedit_SOURCE_DIR}
+  ${CURL_INCLUDE_DIRS}
 )
-target_link_libraries(rouen PRIVATE imgui glfw GL SDL2 SDL2_image glaze::glaze)
+target_link_libraries(rouen PRIVATE imgui glfw GL SDL2 SDL2_image glaze::glaze ${CURL_LIBRARIES})

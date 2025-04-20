@@ -12,6 +12,7 @@
 #include "pomodoro.hpp"
 #include "fs-directory.hpp"
 #include "sysinfo.hpp"
+#include "grok.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -55,6 +56,9 @@ namespace rouen::cards {
                 }},
                 {"sysinfo", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<sysinfo_card>();
+                }},
+                {"grok", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<grok>();
                 }}
             };
             return dictionary;
