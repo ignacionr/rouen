@@ -69,15 +69,16 @@ public:
         std::shared_ptr<std::function<void(std::string const &)>> svc_;
     };
 
-    class call_fn_ret_bool {
+    template<typename result_t>
+    class call_fn_ret {
     public:
-        call_fn_ret_bool(std::string const &name) : svc_{registrar::get<std::function<bool()>>(name)} {}
+        call_fn_ret(std::string const &name) : svc_{registrar::get<std::function<result_t()>>(name)} {}
 
-        [[nodiscard]] bool operator()() const {
+        [[nodiscard]] result_t operator()() const {
             return (*svc_)();
         }
     private:
-        std::shared_ptr<std::function<bool()>> svc_;
+        std::shared_ptr<std::function<result_t()>> svc_;
     };
 
 private:
@@ -103,6 +104,10 @@ inline registrar::call_fn_str operator ""_sfn(const char* str, size_t) {
     return registrar::call_fn_str{std::string{str}};
 }
 
-inline registrar::call_fn_ret_bool operator ""_fnb(const char* str, size_t) {
-    return registrar::call_fn_ret_bool{std::string{str}};
+inline registrar::call_fn_ret<bool> operator ""_fnb(const char* str, size_t) {
+    return registrar::call_fn_ret<bool>{std::string{str}};
+}
+
+inline registrar::call_fn_ret<std::string> operator""_fns(const char* str, size_t) {
+    return registrar::call_fn_ret<std::string>{std::string{str}};
 }

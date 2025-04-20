@@ -34,4 +34,5 @@ private:
     bool m_done = false;
     bool m_immediate = false;
     int m_requested_fps = 1;
+    std::string keystrokes_;
 };

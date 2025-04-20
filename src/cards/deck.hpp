@@ -7,11 +7,12 @@
 #include <imgui/imgui.h>
 
 #include "factory.hpp"
+#include "editor.hpp"
 #include "../registrar.hpp"
 #include "../helpers/deferred_operations.hpp"
 
 struct deck {
-    deck(SDL_Renderer* renderer): renderer(renderer) {
+    deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
         // Register to present new cards
         registrar::add<std::function<void(std::string const&)>>(
             "create_card", 
@@ -137,16 +138,8 @@ struct deck {
             [this, &x, &y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
         cards_.erase(cards_to_remove, cards_.end());
 
-        // now let's render the editor window
-        ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
-        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize)) {
-            ImGui::Text("Press Ctrl+Shift+P to open the menu");
-            ImGui::Text("Press Ctrl+W to close the focused card");
-            ImGui::Text("Press F11 to toggle fullscreen");
-            ImGui::Text("Press Ctrl+Shift+Q to quit");
-        }
-        ImGui::End();
+        // Render the editor window
+        editor_.render({0.0f, 2.0f + y}, {size.x, size.y - y});
 
         ImGui::PopStyleColor(3);
         return result;
@@ -156,4 +149,5 @@ private:
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
     ImVec4 background_color {0.96f, 0.96f, 0.86f, 0.40f};
+    editor editor_;
 };

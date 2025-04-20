@@ -15,6 +15,17 @@ main_wnd::main_wnd()
     , m_immediate(false)
     , m_requested_fps(1)
 {
+    // register an extractor for keystrokes
+    registrar::add<std::function<std::string()>>(
+        "keystrokes", 
+        std::make_shared<std::function<std::string()>>(
+            [this]() {
+                auto result = keystrokes_;
+                keystrokes_.clear();
+                return result;
+            }
+        )
+    );
 }
 
 main_wnd::~main_wnd() {
@@ -25,6 +36,9 @@ main_wnd::~main_wnd() {
 
     // Remove renderer from registrar before destroying it
     registrar::remove<SDL_Renderer*>("main_renderer");
+
+    // Remove the keystrokes extractor
+    registrar::remove<std::function<std::string()>>("keystrokes");
 
     if (m_renderer) {
         SDL_DestroyRenderer(m_renderer);
@@ -152,6 +166,9 @@ void main_wnd::run() {
 }
 
 bool main_wnd::process_events() {
+    // clear the keyboard buffer
+    keystrokes_.clear();
+
     // Poll events
     SDL_Event event;
     if (!m_immediate) {
@@ -189,6 +206,12 @@ bool main_wnd::process_events() {
                 (event.key.keysym.mod & KMOD_SHIFT)) {
                 m_done = true;
                 return false;
+            }
+            else {
+                // Store keystrokes
+                if (event.key.keysym.sym < 256) {
+                    keystrokes_ += static_cast<char>(event.key.keysym.sym);
+                }
             }
         }
     }
