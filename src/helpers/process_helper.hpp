@@ -15,8 +15,15 @@ namespace ProcessHelper {
      * @return The command output as a string, empty string if failed
      */
     inline std::string executeCommand(const std::string& command) {
-        // Open a pipe to read the command output
-        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+        // Create a custom deleter to avoid attributes warning
+        auto pipeDeleter = [](FILE* pipe) {
+            if (pipe) {
+                pclose(pipe);
+            }
+        };
+        
+        // Open a pipe to read the command output using the custom deleter
+        std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command.c_str(), "r"), pipeDeleter);
         if (!pipe) {
             std::cerr << "Error executing command: " << command << std::endl;
             return "";

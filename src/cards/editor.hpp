@@ -114,9 +114,51 @@ public:
         }
     }
 
+    bool saveFile() {
+        if (source_file_.empty() || isImageFile(source_file_)) {
+            return false;
+        }
+        
+        try {
+            std::ofstream output{source_file_};
+            if (!output) {
+                throw std::runtime_error("Could not open file for writing: " + source_file_);
+            }
+            
+            output << buffer_;
+            file_modified_ = false;
+            save_message_ = "File saved successfully!";
+            save_message_time_ = 3.0f; // Message will display for 3 seconds
+            return true;
+        }
+        catch(std::exception const &e) {
+            error_ = std::string("Error saving file: ") + e.what();
+            return false;
+        }
+    }
+
     void render() {
         if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize)) {
             ImGui::TextUnformatted(source_file_.c_str());
+            
+            // Add save button if we have a text file loaded
+            if (!source_file_.empty() && !isImageFile(source_file_)) {
+                ImGui::SameLine(ImGui::GetWindowWidth() - 100); // Position the button to the right
+                if (ImGui::Button("Save")) {
+                    saveFile();
+                }
+                
+                // Display the save message if it exists and the timer hasn't expired
+                if (save_message_time_ > 0.0f) {
+                    save_message_time_ -= ImGui::GetIO().DeltaTime; // Decrease timer
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", save_message_.c_str());
+                    
+                    if (save_message_time_ <= 0.0f) {
+                        save_message_.clear();
+                    }
+                }
+            }
             
             if (!error_.empty()) {
                 ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Error: %s", error_.c_str());
@@ -155,8 +197,11 @@ public:
                 ImVec2 size = ImGui::GetContentRegionAvail();
                 
                 // Input text multiline takes the buffer directly
-                if (ImGui::InputTextMultiline("##editor", buffer_.data(), buffer_.size(), ImGui::GetContentRegionAvail())) {
-                    // Handle text changes here if needed
+                buffer_.reserve(buffer_.size() * 5/4);
+                if (ImGui::InputTextMultiline("##editor", buffer_.data(), buffer_.capacity(), ImGui::GetContentRegionAvail())) {
+                    // Mark as modified when the text changes
+                    buffer_ = buffer_.data();
+                    file_modified_ = true;
                 }
             }
             else if (!source_file_.empty()) {
@@ -170,6 +215,9 @@ private:
     std::string source_file_;
     std::string buffer_;
     std::string error_;
+    bool file_modified_ = false;
+    std::string save_message_;
+    float save_message_time_ = 0.0f;
     
     // Image handling
     SDL_Renderer* renderer_ = nullptr;
