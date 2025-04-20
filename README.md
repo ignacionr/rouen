@@ -2,6 +2,8 @@
 
 A modern, card-based productivity dashboard with a clean, dark interface built on ImGui and SDL2.
 
+![Rouen Dashboard](img/screenshot.png)
+
 ## About
 
 Rouen is an opinionated productivity tool that organizes functionality into interactive cards. It provides a customizable workspace with tools for development, time management, and system monitoring.
