@@ -1,16 +1,18 @@
 #pragma once
 
-#include <vector>
+#include <format>
 #include <cmath>
 #include <string>
+#include <vector>
+
 #include <imgui/imgui.h>
-#include "card.hpp"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <format>
+#include "card.hpp"
 #include "../helpers/texture_helper.hpp"
 #include "../animation/slide.hpp"
 #include "../models/git.hpp" // Include the git model
+#include "../registrar.hpp"
 
 struct git: public card {
     std::string repo_status; // Store the git status result
@@ -157,8 +159,14 @@ struct git: public card {
                 repo_path_cstr += repo_path.size() - 38;
             }
             if (ImGui::Selectable(repo_path_cstr, false, 0, ImVec2(0, 0))) {
-                // If a repository is selected, set it as the selected_repo
-                select(repo_path);
+                // if the ctrl key is pressed, open the repository as a file system card
+                if (ImGui::GetIO().KeyCtrl) {
+                    // Open the repository as a file system card
+                    "create_card"_sfn(std::format("dir:{}", repo_path));
+                } else {
+                    // If a repository is selected, set it as the selected_repo
+                    select(repo_path);
+                }
             }
             
             ImGui::EndGroup();
