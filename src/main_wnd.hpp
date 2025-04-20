@@ -24,6 +24,8 @@ public:
     SDL_Renderer* get_renderer() const { return m_renderer; }
     SDL_Window* get_window() const { return m_window; }
 
+    void setup_dark_theme();
+
 private:
     bool process_events();
     void process_deferred_operations();

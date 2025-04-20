@@ -198,11 +198,17 @@ public:
                 
                 // Input text multiline takes the buffer directly
                 buffer_.reserve(buffer_.size() * 5/4);
+                
+                // Apply a custom style for better text visibility in dark theme
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Pure white text for better readability
+                
                 if (ImGui::InputTextMultiline("##editor", buffer_.data(), buffer_.capacity(), ImGui::GetContentRegionAvail())) {
                     // Mark as modified when the text changes
                     buffer_ = buffer_.data();
                     file_modified_ = true;
                 }
+                
+                ImGui::PopStyleColor(); // Restore previous text color
             }
             else if (!source_file_.empty()) {
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "No content loaded");

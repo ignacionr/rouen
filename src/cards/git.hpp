@@ -17,7 +17,7 @@ struct git: public card {
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
     
     git() {
-        first_color = {1.0f, 0.341f, 0.133f, 1.0f}; // git Orange
+        first_color = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color
         second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
         
         // Create git model
