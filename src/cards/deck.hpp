@@ -139,7 +139,9 @@ struct deck {
         cards_.erase(cards_to_remove, cards_.end());
 
         // Render the editor window
-        editor_.render({0.0f, 2.0f + y}, {size.x, size.y - y});
+        ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
+        editor_.render();
 
         ImGui::PopStyleColor(3);
         return result;

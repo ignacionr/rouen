@@ -34,6 +34,9 @@ namespace rouen::cards
                 {
                     filter_.clear();
                 }
+                else if (c == '\t') {
+                    // ignore
+                }
                 else
                 {
                     filter_ += c;
