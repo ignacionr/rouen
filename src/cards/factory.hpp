@@ -13,6 +13,7 @@
 #include "fs-directory.hpp"
 #include "sysinfo.hpp"
 #include "grok.hpp"
+#include "radio.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -59,6 +60,9 @@ namespace rouen::cards {
                 }},
                 {"grok", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<grok>();
+                }},
+                {"radio", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<radio>();
                 }}
             };
             return dictionary;
