@@ -43,6 +43,7 @@ namespace rouen::cards {
                     {"Grok", []() { "create_card"_sfn("grok"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
+                    {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                     {"Exit", []() { auto was_exiting = "exit"_fnb(); }}
                 };
                 

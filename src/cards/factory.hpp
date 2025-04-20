@@ -14,6 +14,7 @@
 #include "sysinfo.hpp"
 #include "grok.hpp"
 #include "radio.hpp"
+#include "envvars.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -63,6 +64,9 @@ namespace rouen::cards {
                 }},
                 {"radio", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<radio>();
+                }},
+                {"envvars", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<envvars_card>();
                 }}
             };
             return dictionary;
