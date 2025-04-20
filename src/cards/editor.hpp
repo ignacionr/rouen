@@ -138,7 +138,10 @@ public:
     }
 
     void render() {
-        if (ImGui::Begin("##Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar)) {
+        // Push a custom style for this window to have square corners
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        
+        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar)) {
             ImGui::TextUnformatted(source_file_.c_str());
             
             // Add save button if we have a text file loaded
@@ -215,6 +218,9 @@ public:
             }
         }
         ImGui::End();
+        
+        // Restore the original style
+        ImGui::PopStyleVar();
     }
 
 private:
