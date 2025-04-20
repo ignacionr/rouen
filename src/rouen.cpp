@@ -125,8 +125,10 @@ int main() {
                         SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                     }
                 }
-                // ctrl+q exits the application
-                else if (event.key.keysym.sym == SDLK_q && (event.key.keysym.mod & KMOD_CTRL)) {
+                // ctrl+shift+q exits the application
+                else if (event.key.keysym.sym == SDLK_q && 
+                    (event.key.keysym.mod & KMOD_CTRL) &&
+                    (event.key.keysym.mod & KMOD_SHIFT)) {
                     done = true;
                 }
             }

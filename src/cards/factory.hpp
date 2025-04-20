@@ -6,8 +6,10 @@
 #include <unordered_map>
 
 #include <SDL2/SDL.h>
+#include "card.hpp"
 #include "git.hpp"
 #include "menu.hpp"
+#include "pomodoro.hpp"
 #include "fs-directory.hpp"
 
 namespace rouen::cards {
@@ -47,6 +49,9 @@ namespace rouen::cards {
                 {"dir", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<fs_directory>(uri);
                 }},
+                {"pomodoro", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<pomodoro>();
+                }}
             };
             return dictionary;
         }

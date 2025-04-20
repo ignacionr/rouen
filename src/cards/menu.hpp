@@ -23,6 +23,7 @@ namespace rouen::cards {
                     {"Git", []() { "create_card"_sfn("git"); }},
                     {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
                     {"Home Directory", []() { "create_card"_sfn("dir:/home"); }},
+                    {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                     {"Exit", []() { auto was_exiting = "exit"_fnb(); }}
                 };
                 for (const auto& [title,action] : menu_items) {
