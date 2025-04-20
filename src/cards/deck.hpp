@@ -13,6 +13,11 @@
 
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
+        // Initialize colors
+        background_color = {0.96f, 0.96f, 0.86f, 0.40f};
+        editor_background_color = {0.76f, 0.76f, 0.66f, 0.40f};
+        text_color = {0.0f, 0.0f, 0.0f, 1.0f}; // Black text
+        
         // Register to present new cards
         registrar::add<std::function<void(std::string const&)>>(
             "create_card", 
@@ -77,12 +82,12 @@ struct deck {
         
         // Push first color elements
         for (const auto& col : first_color_elements) {
-            ImGui::PushStyleColor(col, c.first_color);
+            ImGui::PushStyleColor(col, c.colors[0]);
         }
         
         // Push second color elements
         for (const auto& col : second_color_elements) {
-            ImGui::PushStyleColor(col, c.second_color);
+            ImGui::PushStyleColor(col, c.colors[1]);
         }
         
         ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
@@ -121,7 +126,7 @@ struct deck {
         auto const size {ImGui::GetMainViewport()->Size};
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, text_color);
         auto x = 2.0f;
         auto ensure_visible_x {size.x};
         for (auto& c : cards_) {
@@ -151,7 +156,8 @@ struct deck {
 private:
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
-    ImVec4 background_color {0.96f, 0.96f, 0.86f, 0.40f};
-    ImVec4 editor_background_color {0.76f, 0.76f, 0.66f, 0.40f};
+    ImVec4 background_color;
+    ImVec4 editor_background_color;
+    ImVec4 text_color;
     editor editor_;
 };

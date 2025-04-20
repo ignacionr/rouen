@@ -12,8 +12,8 @@
 namespace rouen::cards {
     struct menu: public card {
         menu() {
-            first_color = {0.37f, 0.53f, 0.71f, 1.0f}; // Change from orange to blue accent color
-            second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
+            colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Change from orange to blue accent color
+            colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
             name("Menu");
         }
         

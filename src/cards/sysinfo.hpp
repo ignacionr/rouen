@@ -16,8 +16,12 @@ namespace rouen::cards {
 struct sysinfo_card : public card {
     sysinfo_card() {
         // Set custom colors for the card
-        first_color = {0.3f, 0.6f, 0.3f, 1.0f};   // Green primary color
-        second_color = {0.2f, 0.7f, 0.4f, 0.7f};  // Light green secondary color
+        colors[0] = {0.3f, 0.6f, 0.3f, 1.0f};   // Green primary color (first_color)
+        colors[1] = {0.2f, 0.7f, 0.4f, 0.7f};  // Light green secondary color (second_color)
+        
+        // Additional color for progress bars (index 2)
+        colors[2] = {0.2f, 0.7f, 0.2f, 1.0f}; // Green progress bar color
+        
         name("System Info");
         size = {350.0f, 250.0f};
         
@@ -26,6 +30,14 @@ struct sysinfo_card : public card {
         
         // Initialize last update time
         last_update = std::chrono::steady_clock::now();
+    }
+    
+    // Add explicit destructor
+    ~sysinfo_card() override {
+        // Ensure proper cleanup
+        memory_info = {0.0, 0.0, 0.0};
+        disk_info = {0.0, 0.0, 0.0};
+        cpu_usage = 0.0;
     }
     
     // Get memory information (total, used, free)
@@ -86,7 +98,7 @@ struct sysinfo_card : public card {
     
     // Draw a progress bar with text overlay
     void draw_progress_bar(const char* label, float fraction, const char* overlay_text) {
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colors[2]);
         ImGui::ProgressBar(fraction, ImVec2(-1, 0), overlay_text);
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);

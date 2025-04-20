@@ -23,6 +23,11 @@ public:
         , image_height_(0)
         , should_focus_(false)
     {
+        // Initialize colors
+        success_color = {0.0f, 1.0f, 0.0f, 1.0f}; // Green success text
+        error_color = {1.0f, 0.0f, 0.0f, 1.0f};   // Red error text
+        warning_color = {1.0f, 1.0f, 0.0f, 1.0f}; // Yellow warning text
+
         registrar::add<std::function<void(std::string const &)>>(
             "edit",
             std::make_shared<std::function<void(std::string const &)>>(
@@ -203,7 +208,7 @@ public:
                 if (save_message_time_ > 0.0f) {
                     save_message_time_ -= ImGui::GetIO().DeltaTime; // Decrease timer
                     ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", save_message_.c_str());
+                    ImGui::TextColored(success_color, "%s", save_message_.c_str());
                     
                     if (save_message_time_ <= 0.0f) {
                         save_message_.clear();
@@ -212,7 +217,7 @@ public:
             }
             
             if (!error_.empty()) {
-                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Error: %s", error_.c_str());
+                ImGui::TextColored(error_color, "Error: %s", error_.c_str());
             }
             else if (image_texture_) {
                 // Display the image
@@ -252,7 +257,7 @@ public:
                 }
             }
             else if (!source_file_.empty()) {
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "No content loaded");
+                ImGui::TextColored(warning_color, "No content loaded");
             }
         }
         ImGui::End();
@@ -278,4 +283,9 @@ private:
     SDL_Texture* image_texture_ = nullptr;
     int image_width_ = 0;
     int image_height_ = 0;
+
+    // Color variables
+    ImVec4 success_color;
+    ImVec4 error_color;
+    ImVec4 warning_color;
 };

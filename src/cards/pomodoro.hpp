@@ -14,8 +14,8 @@ namespace rouen::cards {
     public:
         pomodoro() {
             name("Pomodoro");
-            first_color = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color
-            second_color = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color
+            colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
+            colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
             requested_fps = 60;
         }
         bool render() override {
@@ -45,7 +45,7 @@ namespace rouen::cards {
                         auto const spike = ImVec2 {
                             static_cast<float>(center.x + radius * std::cos(angle)),
                             static_cast<float>(center.y + radius * std::sin(angle))};
-                        dd->AddLine(center, spike, ImGui::ColorConvertFloat4ToU32(first_color), 2);
+                        dd->AddLine(center, spike, ImGui::ColorConvertFloat4ToU32(colors[0]), 2);
                     }
                     // and now fill the percentage that corresponds to the time accrued
                     auto const angle = 2 * M_PI * percentage + M_PI / 2 + animation_angle;
@@ -60,7 +60,7 @@ namespace rouen::cards {
                             static_cast<float>(center.x + radius * std::cos(angle_to)),
                             static_cast<float>(center.y + radius * std::sin(angle_to))};
                         dd->AddTriangleFilled(center, spike_from, spike_to, 
-                            ImGui::ColorConvertFloat4ToU32(first_color));
+                            ImGui::ColorConvertFloat4ToU32(colors[0]));
                     }
                     // and now the rest
                     auto const spike_from = ImVec2 {
@@ -70,14 +70,14 @@ namespace rouen::cards {
                         static_cast<float>(center.x + radius * std::cos(angle + fifth_of_circle)),
                         static_cast<float>(center.y + radius * std::sin(angle + fifth_of_circle))};
                     dd->AddTriangleFilled(center, spike_from, spike_to, 
-                        ImGui::ColorConvertFloat4ToU32(second_color));
+                        ImGui::ColorConvertFloat4ToU32(colors[1]));
                     // and now the rest
                     auto const reference_angle = std::floor((angle - animation_angle - M_PI / 2) / fifth_of_circle) * fifth_of_circle + M_PI / 2 + animation_angle;
                     auto const reference_spike = ImVec2 {
                         static_cast<float>(center.x + radius * std::cos(reference_angle)),
                         static_cast<float>(center.y + radius * std::sin(reference_angle))};
                     dd->AddTriangleFilled(center, spike_from, reference_spike, 
-                        ImGui::ColorConvertFloat4ToU32(first_color));
+                        ImGui::ColorConvertFloat4ToU32(colors[0]));
                 }
             });
         }

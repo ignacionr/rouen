@@ -16,22 +16,22 @@ namespace rouen::cards {
     public:
         grok() {
             name("Chat with Grok");
-            // size = ImVec2(600.0f, 500.0f);
-            // Base colors
-            first_color = ImVec4(0.2f, 0.3f, 0.4f, 1.0f);       // Dark slate blue - window background
-            second_color = ImVec4(0.1f, 0.2f, 0.3f, 0.7f);      // Darker slate blue with alpha - secondary elements
             
-            // Additional colors
-            user_message_color = ImVec4(0.25f, 0.35f, 0.45f, 0.7f);      // User message background
-            assistant_message_color = ImVec4(0.15f, 0.25f, 0.35f, 0.7f); // Assistant message background
-            user_text_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);            // User message text
-            assistant_text_color = ImVec4(0.6f, 0.9f, 1.0f, 1.0f);       // Assistant message text
-            thinking_color = ImVec4(0.7f, 0.8f, 0.9f, 0.8f);             // Thinking indicator
-            input_bg_color = ImVec4(0.15f, 0.2f, 0.25f, 1.0f);           // Input field background
-            button_color = ImVec4(0.3f, 0.4f, 0.5f, 1.0f);               // Button color
-            button_hovered_color = ImVec4(0.4f, 0.5f, 0.6f, 1.0f);       // Button hover
-            button_active_color = ImVec4(0.5f, 0.6f, 0.7f, 1.0f);        // Button active
-            separator_color = ImVec4(0.3f, 0.4f, 0.5f, 0.6f);            // Separator line color
+            // Base colors (already in vector)
+            colors[0] = ImVec4(0.2f, 0.3f, 0.4f, 1.0f);       // Dark slate blue - window background
+            colors[1] = ImVec4(0.1f, 0.2f, 0.3f, 0.7f);       // Darker slate blue with alpha - secondary elements
+            
+            // Additional UI colors (add to the colors vector)
+            get_color(2, ImVec4(0.25f, 0.35f, 0.45f, 0.7f));  // User message background
+            get_color(3, ImVec4(0.15f, 0.25f, 0.35f, 0.7f));  // Assistant message background
+            get_color(4, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));     // User message text
+            get_color(5, ImVec4(0.6f, 0.9f, 1.0f, 1.0f));     // Assistant message text
+            get_color(6, ImVec4(0.7f, 0.8f, 0.9f, 0.8f));     // Thinking indicator
+            get_color(7, ImVec4(0.15f, 0.2f, 0.25f, 1.0f));   // Input field background
+            get_color(8, ImVec4(0.3f, 0.4f, 0.5f, 1.0f));     // Button color
+            get_color(9, ImVec4(0.4f, 0.5f, 0.6f, 1.0f));     // Button hover
+            get_color(10, ImVec4(0.5f, 0.6f, 0.7f, 1.0f));    // Button active
+            get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
             
             requested_fps = 30;
             
@@ -47,13 +47,13 @@ namespace rouen::cards {
         bool render() override {
             return render_window([this]() {
                 // Apply custom colors to various UI elements
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(first_color));
-                ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(separator_color));
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertFloat4ToU32(input_bg_color));
-                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(button_color));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertFloat4ToU32(button_hovered_color));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertFloat4ToU32(button_active_color));
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(user_text_color)); // Default text color
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[0]));
+                ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertFloat4ToU32(colors[7]));
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[8]));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertFloat4ToU32(colors[9]));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertFloat4ToU32(colors[10]));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4])); // Default text color (user_text_color)
                 ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.4f, 0.6f, 0.5f))); // Text selection color
                 
                 // Calculate required space for the footer area
@@ -78,7 +78,7 @@ namespace rouen::cards {
                         
                         // Set background color for message bubbles
                         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(
-                            is_user ? user_message_color : assistant_message_color));
+                            is_user ? colors[2] : colors[3]));
                         
                         // Add padding and rounded corners for message bubbles
                         const float bubble_rounding = 5.0f;
@@ -106,7 +106,7 @@ namespace rouen::cards {
                         
                         // Set text color based on sender
                         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(
-                            is_user ? user_text_color : assistant_text_color));
+                            is_user ? colors[4] : colors[5]));
                         
                         // Display sender name in bold
                         ImGui::TextWrapped("%s", is_user ? "You" : "Grok");
@@ -136,14 +136,14 @@ namespace rouen::cards {
                 // Place the indicator outside the scrolling region
                 if (waiting_for_response) {
                     ImGui::Spacing();
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(thinking_color));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6]));
                     ImGui::TextWrapped("Grok is thinking...");
                     ImGui::PopStyleColor();
                 }
                 
                 // API key input if not set
                 if (grok_api_key.empty()) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(user_text_color));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4]));
                     ImGui::TextWrapped("Please enter your Grok API key:");
                     ImGui::PopStyleColor();
                     ImGui::PushItemWidth(-1);
@@ -230,16 +230,7 @@ namespace rouen::cards {
         http::fetch fetcher;
 
         // Color fields
-        ImVec4 user_message_color;
-        ImVec4 assistant_message_color;
-        ImVec4 user_text_color;
-        ImVec4 assistant_text_color;
-        ImVec4 thinking_color;
-        ImVec4 input_bg_color;
-        ImVec4 button_color;
-        ImVec4 button_hovered_color;
-        ImVec4 button_active_color;
-        ImVec4 separator_color;
+        std::array<ImVec4, 12> colors;
         
         void send_message(const std::string& message) {
             if (message.empty() || waiting_for_response) return;
@@ -276,6 +267,12 @@ namespace rouen::cards {
                 // Clear input text and set focus flag after a response is received
                 input_text.clear();
                 reclaim_focus = true;
+            }
+        }
+
+        void get_color(size_t index, const ImVec4& color) {
+            if (index < colors.size()) {
+                colors[index] = color;
             }
         }
     };
