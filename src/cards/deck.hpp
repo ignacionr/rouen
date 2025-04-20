@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <algorithm> // Added for std::find_if
 #include <imgui/imgui.h>
 
 #include "factory.hpp"
@@ -25,22 +26,28 @@ struct deck {
                 [this](std::string const& uri) { create_card(uri); }
             )
         );
-        create_card("menu");
+        create_card("menu", true);
     }
 
-    void create_card(std::string_view uri) {
+    void create_card(std::string_view uri, bool move_first = false) {
         // this needs to be deferred
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        deferred_ops->queue([this, uri = std::string{uri}] {
-            create_card_impl(uri);
+        deferred_ops->queue([this, uri = std::string{uri}, move_first] {
+            create_card_impl(uri, move_first);
         });
     }
 
-    void create_card_impl(std::string_view uri) {
+    void create_card_impl(std::string_view uri, bool move_first = false) {
         static auto card_factory {rouen::cards::factory()};
         auto card_ptr = card_factory.create_card(uri, renderer);
         if (card_ptr) {
-            cards_.emplace_back(std::move(card_ptr));
+            if (move_first) {
+                // Move the card to the front of the vector
+                cards_.insert(cards_.begin(), std::move(card_ptr));
+            } else {
+                // Add the card to the end of the vector
+                cards_.emplace_back(std::move(card_ptr));
+            }
         }
     }
 
@@ -96,7 +103,11 @@ struct deck {
         // does it overlap the screen?
         auto const screen_size {ImGui::GetMainViewport()->Size};
         bool result {true};
-        if (x < screen_size.x && x + c.size.x > 0.0f) {
+        if ((x < screen_size.x && x + c.size.x > 0.0f) || c.grab_focus) {
+            if (c.grab_focus) {
+                c.grab_focus = false;
+                ImGui::SetNextWindowFocus();
+            }
             result = c.render();
             requested_fps = std::max(requested_fps, c.requested_fps);
         }
@@ -112,7 +123,20 @@ struct deck {
     void handle_shortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift) {
             // Handle Ctrl+Shift+P shortcut
-            create_card("menu");
+            // Check if a menu card already exists
+            auto menu_card = std::find_if(cards_.begin(), cards_.end(), 
+                [](const auto& card) { 
+                    // Check if the window title contains "Menu"
+                    return card->window_title.find("Menu") != std::string::npos; 
+                });
+            
+            if (menu_card != cards_.end()) {
+                // Select existing menu card
+                (*menu_card)->grab_focus = true;
+            } else {
+                // Create a new menu card if none exists
+                create_card("menu", true);
+            }
         }
     }
     

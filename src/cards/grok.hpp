@@ -18,7 +18,7 @@ namespace rouen::cards {
             name("Chat with Grok");
             
             // Base colors (already in vector)
-            colors[0] = ImVec4(0.2f, 0.3f, 0.4f, 1.0f);       // Dark slate blue - window background
+            colors[0] = ImVec4(0.15f, 0.25f, 1.0f, 0.7f);       // window background
             colors[1] = ImVec4(0.1f, 0.2f, 0.3f, 0.7f);       // Darker slate blue with alpha - secondary elements
             
             // Additional UI colors (add to the colors vector)
@@ -32,6 +32,7 @@ namespace rouen::cards {
             get_color(9, ImVec4(0.4f, 0.5f, 0.6f, 1.0f));     // Button hover
             get_color(10, ImVec4(0.5f, 0.6f, 0.7f, 1.0f));    // Button active
             get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
+            get_color(12, ImVec4(0.2f, 0.3f, 0.4f, 1.0f));   // Chat background
             
             requested_fps = 30;
             
@@ -47,7 +48,7 @@ namespace rouen::cards {
         bool render() override {
             return render_window([this]() {
                 // Apply custom colors to various UI elements
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[0]));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[12]));
                 ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertFloat4ToU32(colors[7]));
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[8]));

@@ -68,6 +68,7 @@ struct card {
     size_t colors_used = 2;             // Number of colors actually in use
     ImVec2 size {300.0f, 250.0f};
     bool is_focused{false};
+    bool grab_focus{false};
     std::string window_title;
     int requested_fps{1};
 };
