@@ -32,7 +32,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/rouen.git
+git clone https://github.com/ignacionr/rouen.git
 cd rouen
 
 # Create build directory
