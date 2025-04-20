@@ -141,9 +141,10 @@ struct deck {
         // Render the editor window
         ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
         ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
         editor_.render();
 
-        ImGui::PopStyleColor(3);
+        ImGui::PopStyleColor(4);
         return result;
     }
 
@@ -151,5 +152,6 @@ private:
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
     ImVec4 background_color {0.96f, 0.96f, 0.86f, 0.40f};
+    ImVec4 editor_background_color {0.76f, 0.76f, 0.66f, 0.40f};
     editor editor_;
 };
