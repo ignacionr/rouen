@@ -10,6 +10,7 @@
 
 #include "card.hpp"
 #include "rss.hpp"
+#include "../helpers/media_player.hpp"
 #include "../hosts/rss_host.hpp"
 
 namespace rouen::cards {
@@ -56,91 +57,9 @@ public:
     
     ~rss_item() override {
         // Make sure to stop playback when card is closed
-        stopMedia();
-    }
-    
-    // Stop media playback
-    void stopMedia() {
-        if (player_pid > 0) {
-            // Kill the process using the stored PID
-            std::string command = "kill " + std::to_string(player_pid) + " 2>/dev/null || true";
-            std::system(command.c_str());
-            player_pid = 0;
-            is_playing = false;
+        if (!item.enclosure.empty()) {
+            media.stopMedia();
         }
-    }
-    
-    // Play media enclosure
-    bool playMedia() {
-        if (item.enclosure.empty()) return false;
-        
-        try {
-            // Get the enclosure URL
-            const std::string& url = item.enclosure;
-            
-            // Stop any current playback
-            stopMedia();
-            
-            // Build the command to play the media
-            // Use mpv for audio/video content
-            std::string command = "nohup mpv --no-video --really-quiet \"" + url + "\" > /dev/null 2>&1 & echo $!";
-            
-            // Execute the command and get the PID
-            std::string result = "";
-            FILE* pipe = popen(command.c_str(), "r");
-            if (pipe) {
-                char buffer[128];
-                while (!feof(pipe)) {
-                    if (fgets(buffer, 128, pipe) != nullptr)
-                        result += buffer;
-                }
-                pclose(pipe);
-            }
-            
-            // Trim whitespace
-            result.erase(0, result.find_first_not_of(" \n\r\t"));
-            result.erase(result.find_last_not_of(" \n\r\t") + 1);
-            
-            // Store the process ID for later termination
-            try {
-                player_pid = std::stoi(result);
-                is_playing = true;
-                return true;
-            } catch (...) {
-                player_pid = 0;
-                is_playing = false;
-                return false;
-            }
-        } catch (const std::exception& e) {
-            player_pid = 0;
-            is_playing = false;
-            return false;
-        }
-    }
-    
-    // Check if the media player process is still running
-    bool checkMediaStatus() {
-        if (player_pid <= 0) return false;
-        
-        std::string command = "ps -p " + std::to_string(player_pid) + " > /dev/null 2>&1 && echo 1 || echo 0";
-        FILE* pipe = popen(command.c_str(), "r");
-        std::string result = "";
-        
-        if (pipe) {
-            char buffer[128];
-            while (!feof(pipe)) {
-                if (fgets(buffer, 128, pipe) != nullptr)
-                    result += buffer;
-            }
-            pclose(pipe);
-        }
-        
-        // Trim whitespace
-        result.erase(0, result.find_first_not_of(" \n\r\t"));
-        result.erase(result.find_last_not_of(" \n\r\t") + 1);
-        
-        is_playing = (result == "1");
-        return is_playing;
     }
     
     void loadItem() {
@@ -155,6 +74,11 @@ public:
         
         // Update the card title
         name(std::format("Article: {}", item.title));
+        
+        // Configure media player with enclosure URL if available
+        if (!item.enclosure.empty()) {
+            media.url = item.enclosure;
+        }
         
         item_loaded = true;
     }
@@ -191,24 +115,8 @@ public:
                 ImGui::Separator();
                 ImGui::TextColored(colors[2], "Media:");
                 
-                // Check if media is currently playing
-                if (player_pid > 0) {
-                    checkMediaStatus(); // Update playback status
-                }
-                
-                if (is_playing) {
-                    ImGui::TextColored(colors[4], "Playing...");
-                    if (ImGui::Button("Stop Playback")) {
-                        stopMedia();
-                    }
-                } else {
-                    // Play button
-                    if (ImGui::Button("Play")) {
-                        playMedia();
-                    }
-                    // Display enclosure info
-                    ImGui::TextWrapped("Media URL: %s", item.enclosure.c_str());
-                }
+                // Use the media_player helper for playback controls
+                media_player::player(item.enclosure, colors[4]);
                 
                 ImGui::Separator();
             }
@@ -267,9 +175,8 @@ private:
     std::shared_ptr<hosts::RSSHost> rss_host;
     hosts::RSSHost::FeedItem item; // Use the FeedItem from the controller
     
-    // Media playback state
-    int player_pid = 0;     // Process ID of the media player
-    bool is_playing = false; // Flag to track whether media is currently playing
+    // Use the media_player helper for media playback
+    media_player::item media;
 };
 
 } // namespace rouen::cards

@@ -6,7 +6,7 @@
 #include <map>
 #include <string>
 #include <vector>
-#include "../helpers/process_helper.hpp"
+#include "../helpers/media_player.hpp"
 
 namespace rouen::models {
     // Radio station status enum
@@ -115,25 +115,14 @@ namespace rouen::models {
                 return false;
             }
             
-            // Start playing the station using mpv player in the background
-            try {
-                // Use system() with nohup to properly detach the process
-                std::string command = "nohup mpv --no-video \"" + it->second.url + "\" > /dev/null 2>&1 & echo $!";
-                std::string result = ProcessHelper::executeCommand(command);
-                
-                // Store the process ID (PID) for later termination
-                try {
-                    player_pid = std::stoi(result);
-                } catch (...) {
-                    player_pid = 0;
-                }
-                
+            // Use media_player to play the station
+            media_item.url = it->second.url;
+            if (media_item.playMedia()) {
                 // Update station status
                 it->second.status = RadioStatus::Playing;
                 current_station = name;
                 return true;
-            } catch (const std::exception& e) {
-                std::cerr << "Error playing station: " << e.what() << std::endl;
+            } else {
                 it->second.status = RadioStatus::Error;
                 return false;
             }
@@ -149,14 +138,8 @@ namespace rouen::models {
                 return false;
             }
             
-            // Kill the mpv process using the stored PID if available
-            if (player_pid > 0) {
-                ProcessHelper::executeCommand("kill " + std::to_string(player_pid) + " 2>/dev/null || true");
-                player_pid = 0;
-            } else {
-                // Fallback method
-                ProcessHelper::executeCommand("pkill -f mpv 2>/dev/null || true");
-            }
+            // Use media_player to stop playback
+            media_item.stopMedia();
             
             // Update station status
             auto it = stations.find(current_station);
@@ -177,10 +160,22 @@ namespace rouen::models {
             return current_station;
         }
 
+        /**
+         * Check if a station is currently playing
+         *
+         * @return true if a station is playing, false otherwise
+         */
+        bool isPlaying() {
+            if (current_station.empty()) {
+                return false;
+            }
+            return media_item.checkMediaStatus();
+        }
+
     private:
         std::map<std::string, RadioStation> stations;
         std::vector<std::string> station_names;
         std::string current_station;
-        int player_pid = 0;  // Store the process ID of the running player
+        media_player::item media_item; // Use the media_player helper
     };
 }
