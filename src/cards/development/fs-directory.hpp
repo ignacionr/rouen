@@ -28,6 +28,12 @@ namespace rouen::cards
             get_color(8, {200.0f/255.0f, 200.0f/255.0f, 200.0f/255.0f, 1.0f}); // Other files - light gray (index 8)
             get_color(9, {120.0f/255.0f, 220.0f/255.0f, 220.0f/255.0f, 1.0f}); // Symlinks - cyan (index 9)
             
+            // if the path is empty, reset it to the current directory
+            if (path_.empty())
+            {
+                path_ = std::filesystem::current_path();
+            }
+
             name(path);
         }
 

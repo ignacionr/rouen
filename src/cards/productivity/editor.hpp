@@ -228,9 +228,7 @@ public:
                     }
                     
                     if (ImGui::MenuItem("Open...", "Ctrl+O")) {
-                        // In a real implementation, this would open a file dialog
-                        // For now, we'll just clear the current file
-                        // This could be extended with a file browser integration
+                        "create_card"_sfn("dir");
                     }
                     
                     ImGui::Separator();
