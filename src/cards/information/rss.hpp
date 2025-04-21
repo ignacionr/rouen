@@ -32,7 +32,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        size = {400.0f, 500.0f};
+        size.x = 400.0f;
         
         // Initialize the RSS host controller with a system runner
         rss_host = std::make_unique<hosts::RSSHost>([](std::string_view cmd) -> std::string {
@@ -43,40 +43,40 @@ public:
     
     ~rss() override = default;
     
+    void render_add_feed() {
+        static char url_buffer[512] = "";
+        
+        // Add a new feed section
+        ImGui::TextColored(colors[2], "Add RSS Feed:");
+        ImGui::PushItemWidth(-1);
+        bool url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
+            ImGuiInputTextFlags_EnterReturnsTrue);
+        
+        // Show placeholder text when input is empty
+        if (url_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+            auto pos = ImGui::GetItemRectMin();
+            ImGui::GetWindowDrawList()->AddText(
+                ImVec2(pos.x + 5, pos.y + 2),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                "Enter RSS feed URL..."
+            );
+        }
+        ImGui::PopItemWidth();
+        
+        ImGui::SameLine();
+        bool add_clicked = ImGui::Button("Add");
+        
+        if ((url_entered || add_clicked) && url_buffer[0] != '\0') {
+            // Add the feed
+            if (addFeed(url_buffer)) {
+                // Clear the input field on success
+                url_buffer[0] = '\0';
+            }
+        }
+    }
+
     bool render() override {
-        return render_window([this]() {
-            static char url_buffer[512] = "";
-            
-            // Add a new feed section
-            ImGui::TextColored(colors[2], "Add RSS Feed:");
-            ImGui::PushItemWidth(-1);
-            bool url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
-                ImGuiInputTextFlags_EnterReturnsTrue);
-            
-            // Show placeholder text when input is empty
-            if (url_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                auto pos = ImGui::GetItemRectMin();
-                ImGui::GetWindowDrawList()->AddText(
-                    ImVec2(pos.x + 5, pos.y + 2),
-                    ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    "Enter RSS feed URL..."
-                );
-            }
-            ImGui::PopItemWidth();
-            
-            ImGui::SameLine();
-            bool add_clicked = ImGui::Button("Add");
-            
-            if ((url_entered || add_clicked) && url_buffer[0] != '\0') {
-                // Add the feed
-                if (addFeed(url_buffer)) {
-                    // Clear the input field on success
-                    url_buffer[0] = '\0';
-                }
-            }
-            
-            ImGui::Separator();
-            
+        return render_window([this]() {            
             // Feeds section title
             ImGui::TextColored(colors[2], "Your RSS Feeds:");
             
@@ -133,9 +133,12 @@ public:
                     }
                     feeds_to_delete.clear();
                 }
-                
-                ImGui::EndChild();
             }
+            ImGui::EndChild();
+
+            ImGui::Separator();
+
+            render_add_feed();
         });
     }
     
