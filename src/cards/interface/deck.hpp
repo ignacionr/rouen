@@ -102,15 +102,12 @@ struct deck {
 
         // does it overlap the screen?
         auto const screen_size {ImGui::GetMainViewport()->Size};
-        bool result {true};
-        if ((x < screen_size.x && x + c.width > 0.0f) || c.grab_focus) {
-            if (c.grab_focus) {
-                c.grab_focus = false;
-                ImGui::SetNextWindowFocus();
-            }
-            result = c.render();
-            requested_fps = std::max(requested_fps, c.requested_fps);
+        if (c.grab_focus) {
+            c.grab_focus = false;
+            ImGui::SetNextWindowFocus();
         }
+        bool result = c.render();
+        requested_fps = std::max(requested_fps, c.requested_fps);
         
         // Pop all style colors (2 initial + size of both arrays)
         const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
