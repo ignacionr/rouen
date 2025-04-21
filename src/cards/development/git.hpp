@@ -101,15 +101,29 @@ struct git: public card {
         ImGui::TextWrapped("%s", repo_status.c_str());
         ImGui::EndChild();
 
-        // Repository actions
-        if (ImGui::Button("Refresh Status")) {
+        // Repository actions using SmallButton
+        // Refresh Status button
+        if (ImGui::SmallButton("Refresh")) {
             updateRepoStatus();
         }
         
         // Add "Open in VS Code" button
         ImGui::SameLine();
-        if (ImGui::Button("Open in VS Code")) {
+        if (ImGui::SmallButton("VS Code")) {
             git_model->openInVSCode(selected_repo);
+        }
+        
+        // Add "Push" button
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Push")) {
+            // Store push result
+            std::string push_result = git_model->gitPush(selected_repo);
+            // Refresh status after push
+            updateRepoStatus();
+            // Prepend push result to status display
+            if (!push_result.empty()) {
+                repo_status = push_result + "\n\n" + repo_status;
+            }
         }
     }
 

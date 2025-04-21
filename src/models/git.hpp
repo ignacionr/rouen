@@ -142,6 +142,25 @@ namespace rouen::models {
             return true;
         }
 
+        /**
+         * Execute git push for the given repository
+         * 
+         * @param repo_path Repository path
+         * @return Push output as string
+         */
+        std::string gitPush(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return "";
+            }
+            
+            std::string result = ProcessHelper::executeCommandInDirectory(repo_path, "git push");
+            // Update status after push
+            if (!result.empty()) {
+                updateRepoStatus(repo_path);
+            }
+            return result;
+        }
+
         // Getters
         const std::map<std::string, GitRepoStatus>& getRepos() const { 
             return repos; 
