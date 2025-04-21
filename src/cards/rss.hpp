@@ -1,12 +1,13 @@
 #pragma once
 
+#include <algorithm>
+#include <chrono>
+#include <format>
+#include <format>
+#include <imgui/imgui.h>
 #include <memory>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <format>
-#include <algorithm>
-#include <imgui/imgui.h>
 
 #include "card.hpp"
 #include "../helpers/fetch.hpp"
@@ -475,8 +476,10 @@ public:
             
             // Button to open the original link
             ImGui::SameLine(ImGui::GetWindowWidth() - 120);
-            if (ImGui::Button("Open in Browser")) {
-                // Could use system("open URL") or similar to open in browser
+            if (ImGui::SmallButton("Open in Browser")) {
+                // use xdg-open
+                auto command = std::format("xdg-open \"{}\" &", item_link);
+                std::system(command.c_str());
             }
             
             ImGui::Separator();
