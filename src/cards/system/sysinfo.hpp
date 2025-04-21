@@ -23,7 +23,7 @@ struct sysinfo_card : public card {
         colors[2] = {0.2f, 0.7f, 0.2f, 1.0f}; // Green progress bar color
         
         name("System Info");
-        size = {350.0f, 250.0f};
+        width = 350.0f;
         
         // Request higher refresh rate for updating metrics
         requested_fps = 5;  // Update 5 times per second

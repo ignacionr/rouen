@@ -51,7 +51,7 @@ struct deck {
         }
     }
 
-    bool render(card &c, float &x, float &max_height, int &requested_fps) {
+    bool render(card &c, float &x, float height, int &requested_fps) {
         // Arrays of ImGui style elements for each color
         const ImGuiCol_ first_color_elements[] = {
             ImGuiCol_TitleBgActive,
@@ -98,12 +98,12 @@ struct deck {
         }
         
         ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(c.size, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({c.width, height}, ImGuiCond_Always);
 
         // does it overlap the screen?
         auto const screen_size {ImGui::GetMainViewport()->Size};
         bool result {true};
-        if ((x < screen_size.x && x + c.size.x > 0.0f) || c.grab_focus) {
+        if ((x < screen_size.x && x + c.width > 0.0f) || c.grab_focus) {
             if (c.grab_focus) {
                 c.grab_focus = false;
                 ImGui::SetNextWindowFocus();
@@ -115,8 +115,7 @@ struct deck {
         // Pop all style colors (2 initial + size of both arrays)
         const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
         ImGui::PopStyleColor(total_style_pushes);
-        x += c.size.x + 2.0f;
-        max_height = std::max(max_height, c.size.y);
+        x += c.width + 2.0f;
         return result;
     }
 
@@ -154,7 +153,7 @@ struct deck {
         auto x = 2.0f;
         auto ensure_visible_x {size.x};
         for (auto& c : cards_) {
-            ensure_visible_x -= c->size.x + 2.0f;
+            ensure_visible_x -= c->width + 2.0f;
             if (c->is_focused) {
                 break;
             }
@@ -162,9 +161,9 @@ struct deck {
         if (ensure_visible_x < 0.0f) {
             x = ensure_visible_x;
         }
-        auto y = 2.0f;
+        auto y = 250.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-            [this, &x, &y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
+            [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
         cards_.erase(cards_to_remove, cards_.end());
 
         // Render the editor window

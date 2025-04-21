@@ -26,7 +26,7 @@ struct envvars_card : public card {
         get_color(5, {1.0f, 1.0f, 1.0f, 0.95f}); // Nearly white for value text
         
         name("Environment Variables");
-        size.x = 600.0f; // Set initial width
+        width = 600.0f; // Set initial width
         
         // Request refresh rate for updating variables
         requested_fps = 2;  // Update twice per second

@@ -49,7 +49,7 @@ public:
         }
         
         // Adjust size to be larger for content display
-        size = {600.0f, 400.0f};
+        width = 600.0f;
         
         // Set refresh rate to check media playback status
         requested_fps = 1;

@@ -32,7 +32,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        size.x = 400.0f;
+        width = 400.0f;
         
         // Initialize the RSS host controller with a system runner
         rss_host = std::make_unique<hosts::RSSHost>([](std::string_view cmd) -> std::string {
