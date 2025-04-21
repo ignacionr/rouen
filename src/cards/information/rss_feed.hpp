@@ -68,15 +68,7 @@ public:
         return render_window([this]() {
             // Feed title at top
             ImGui::TextColored(colors[2], "%s", feed_title.c_str());
-            
-            // Original URL
-            ImGui::SameLine(ImGui::GetWindowWidth() - 80);
-            if (ImGui::SmallButton("URL")) {
-                // Open URL in browser
-                auto command = std::format("xdg-open \"{}\" &", feed_url);
-                std::system(command.c_str());
-            }
-            
+                        
             ImGui::Separator();
             
             // Items in a scrollable area

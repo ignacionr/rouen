@@ -76,7 +76,7 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {            
+        return render_window([this]() {
             // Feeds section title
             ImGui::TextColored(colors[2], "Your RSS Feeds:");
             

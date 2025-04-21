@@ -104,6 +104,12 @@ struct media_player {
         return items_;
     }
 
+    static void stopAll() {
+        for (auto &[k,v]: items()) {
+            v.stopMedia();
+        }
+    }
+
     static void player(std::string_view url, auto info_color) noexcept {
         try {
             auto &item {items()[ImGui::GetID(url.data())]};
@@ -121,6 +127,7 @@ struct media_player {
             } else {
                 // Play button
                 if (ImGui::Button("Play")) {
+                    stopAll();
                     item.playMedia();
                 }
                 // Display enclosure info
