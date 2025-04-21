@@ -378,12 +378,13 @@ struct media_player {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
                 
-                if (ImGui::Button("Stop Playback")) {
+                // Stop button with a square symbol
+                if (ImGui::Button(" \u25A0 Stop")) {  // U+25A0 BLACK SQUARE
                     item.stopMedia();
                 }
             } else {
-                // Play button
-                if (ImGui::Button("Play")) {
+                // Play button with triangle symbol
+                if (ImGui::Button(" \u25B6 Play")) {  // U+25B6 BLACK RIGHT-POINTING TRIANGLE
                     stopAll();
                     item.playMedia();
                 }
