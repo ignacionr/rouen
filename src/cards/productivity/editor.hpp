@@ -219,26 +219,103 @@ public:
             should_focus_ = false; // Reset the flag after using it
         }
         
-        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar)) {
-            ImGui::TextUnformatted(source_file_.c_str());
-            
-            // Add save button if we have a text file loaded
-            if (!source_file_.empty() && !isImageFile(source_file_)) {
-                ImGui::SameLine(ImGui::GetWindowWidth() - 100); // Position the button to the right
-                if (ImGui::Button("Save")) {
-                    saveFile();
+        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_MenuBar)) {
+            // Add a menu bar with standard options
+            if (ImGui::BeginMenuBar()) {
+                if (ImGui::BeginMenu("File")) {
+                    if (ImGui::MenuItem("New", "Ctrl+N")) {
+                        clear();
+                    }
+                    
+                    if (ImGui::MenuItem("Open...", "Ctrl+O")) {
+                        // In a real implementation, this would open a file dialog
+                        // For now, we'll just clear the current file
+                        // This could be extended with a file browser integration
+                    }
+                    
+                    ImGui::Separator();
+                    
+                    if (ImGui::MenuItem("Save", "Ctrl+S", nullptr, !source_file_.empty() && !isImageFile(source_file_))) {
+                        saveFile();
+                    }
+                    
+                    if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", nullptr, !source_file_.empty() && !isImageFile(source_file_))) {
+                        // In a real implementation, this would open a save dialog
+                        // For now just save to the current file
+                        saveFile();
+                    }
+                    
+                    ImGui::Separator();
+                    
+                    if (ImGui::MenuItem("Close", "Ctrl+W")) {
+                        clear();
+                    }
+                    
+                    ImGui::EndMenu();
                 }
                 
-                // Display the save message if it exists and the timer hasn't expired
-                if (save_message_time_ > 0.0f) {
-                    save_message_time_ -= ImGui::GetIO().DeltaTime; // Decrease timer
-                    ImGui::SameLine();
-                    ImGui::TextColored(success_color, "%s", save_message_.c_str());
+                if (ImGui::BeginMenu("Edit")) {
+                    bool hasSelection = !source_file_.empty() && !isImageFile(source_file_) && text_editor_.HasSelection();
                     
-                    if (save_message_time_ <= 0.0f) {
-                        save_message_.clear();
+                    if (ImGui::MenuItem("Undo", "Ctrl+Z", nullptr, !source_file_.empty() && !isImageFile(source_file_) && text_editor_.CanUndo())) {
+                        text_editor_.Undo();
+                    }
+                    
+                    if (ImGui::MenuItem("Redo", "Ctrl+Y", nullptr, !source_file_.empty() && !isImageFile(source_file_) && text_editor_.CanRedo())) {
+                        text_editor_.Redo();
+                    }
+                    
+                    ImGui::Separator();
+                    
+                    if (ImGui::MenuItem("Cut", "Ctrl+X", nullptr, hasSelection)) {
+                        text_editor_.Cut();
+                    }
+                    
+                    if (ImGui::MenuItem("Copy", "Ctrl+C", nullptr, hasSelection)) {
+                        text_editor_.Copy();
+                    }
+                    
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", nullptr, !source_file_.empty() && !isImageFile(source_file_))) {
+                        text_editor_.Paste();
+                    }
+                    
+                    if (ImGui::MenuItem("Select All", "Ctrl+A", nullptr, !source_file_.empty() && !isImageFile(source_file_))) {
+                        text_editor_.SetSelection(TextEditor::Coordinates(), TextEditor::Coordinates(text_editor_.GetTotalLines(), 0));
+                    }
+                    
+                    ImGui::EndMenu();
+                }
+                
+                if (ImGui::BeginMenu("View")) {
+                    bool showWhitespaces = text_editor_.IsShowingWhitespaces();
+                    if (ImGui::MenuItem("Show Whitespaces", nullptr, &showWhitespaces)) {
+                        text_editor_.SetShowWhitespaces(showWhitespaces);
+                    }
+                    
+                    ImGui::EndMenu();
+                }
+                
+                // Display file path in the menu bar (right-aligned)
+                float menuWidth = ImGui::GetWindowWidth() - 150.0f;
+                if (!source_file_.empty()) {
+                    ImGui::SameLine(menuWidth);
+                    
+                    // Display a truncated version of the path if it's too long
+                    std::string displayPath = source_file_;
+                    if (displayPath.length() > 40) {
+                        displayPath = "..." + displayPath.substr(displayPath.length() - 37);
+                    }
+                    
+                    ImGui::Text("%s", displayPath.c_str());
+                    
+                    // Show modified indicator
+                    if (file_modified_) {
+                        ImGui::SameLine();
+                        ImGui::TextColored(warning_color, "*");
                     }
                 }
+                
+                ImGui::EndMenuBar();
             }
             
             if (!error_.empty()) {
