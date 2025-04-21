@@ -1,4 +1,4 @@
 imgui.ini
 build
-rss.db
 rss.db*
+email_metadata.db*
