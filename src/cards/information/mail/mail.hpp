@@ -41,8 +41,6 @@ public:
             const char* google_app = std::getenv("GOOGLE_APP");
             if (google_app) {
                 actual_password = google_app;
-            } else {
-                actual_password = "password"; // Fallback (won't work)
             }
         }
         

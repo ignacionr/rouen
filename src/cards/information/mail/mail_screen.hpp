@@ -3,16 +3,18 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
-#include <imgui/imgui.h>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include <imgui/imgui.h>
+
 #include "../../../models/mail/imap_host.hpp"
 #include "../../../models/mail/message.hpp"
 #include "../../../helpers/fetch.hpp"
 #include "../../interface/card.hpp"
+#include "../../../registrar.hpp"
 
 namespace mail {
     class mail_screen {
@@ -114,8 +116,9 @@ namespace mail {
                             })";
                             
                             msg->set_metadata(metadata_json);
-                        } catch (const std::exception&) {
-                            // Handle errors gracefully
+                        } catch (const std::exception& e) {
+                            "notify"_sfn(std::format("Failed to process message UID {}: {}", 
+                                uid, e.what()));
                         }
                     });
                 }
@@ -155,8 +158,8 @@ namespace mail {
                     }
                 );
                 
-            } catch (const std::exception&) {
-                // Handle connection errors
+            } catch (const std::exception& e) {
+                "notify"_sfn(std::format("Failed to refresh messages: {}", e.what()));
             }
         }
         
