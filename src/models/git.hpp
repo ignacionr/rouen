@@ -177,6 +177,29 @@ namespace rouen::models {
             }
             return GitRepoStatus::Unknown;
         }
+        
+        /**
+         * Check if the current branch is ahead of its remote tracking branch
+         * 
+         * @param repo_path Repository path
+         * @return true if branch is ahead, false otherwise
+         */
+        bool isBranchAhead(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return false;
+            }
+            
+            // Get git status with porcelain format for easier parsing
+            std::string status = ProcessHelper::executeCommandInDirectory(repo_path, "git status -sb");
+            if (status.empty()) {
+                return false;
+            }
+            
+            // Look for "[ahead" in the first line, which indicates branch is ahead
+            size_t newline = status.find('\n');
+            std::string firstLine = newline != std::string::npos ? status.substr(0, newline) : status;
+            return firstLine.find("[ahead") != std::string::npos;
+        }
 
     private:
         std::map<std::string, GitRepoStatus> repos;

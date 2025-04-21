@@ -63,6 +63,10 @@ public:
         }
     }
 
+    bool empty() const {
+        return source_file_.empty();
+    }
+
     // Helper to check if a string ends with a specific suffix (case insensitive)
     static bool endsWithCaseInsensitive(const std::string& str, const std::string& suffix) {
         if (str.length() < suffix.length()) {
@@ -82,6 +86,23 @@ public:
         return endsWithCaseInsensitive(filename, ".png") ||
                endsWithCaseInsensitive(filename, ".jpg") ||
                endsWithCaseInsensitive(filename, ".jpeg");
+    }
+
+    void clear() {
+        source_file_.clear();
+        buffer_.clear();
+        error_.clear();
+        file_modified_ = false;
+        
+        if (image_texture_) {
+            SDL_DestroyTexture(image_texture_);
+            image_texture_ = nullptr;
+            image_width_ = 0;
+            image_height_ = 0;
+        }
+        
+        text_editor_.SetText("");
+        text_editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
     }
 
     void select(auto const &uri) {
@@ -185,6 +206,10 @@ public:
     }
 
     void render() {
+        if (ImGui::IsKeyPressed(ImGuiKey_W) && ImGui::GetIO().KeyCtrl) {
+            clear();
+        }
+
         // Push a custom style for this window to have square corners
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         

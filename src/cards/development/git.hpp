@@ -113,16 +113,19 @@ struct git: public card {
             git_model->openInVSCode(selected_repo);
         }
         
-        // Add "Push" button
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Push")) {
-            // Store push result
-            std::string push_result = git_model->gitPush(selected_repo);
-            // Refresh status after push
-            updateRepoStatus();
-            // Prepend push result to status display
-            if (!push_result.empty()) {
-                repo_status = push_result + "\n\n" + repo_status;
+        // Add "Push" button only when the branch is ahead
+        bool is_ahead = git_model->isBranchAhead(selected_repo);
+        if (is_ahead) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Push")) {
+                // Store push result
+                std::string push_result = git_model->gitPush(selected_repo);
+                // Refresh status after push
+                updateRepoStatus();
+                // Prepend push result to status display
+                if (!push_result.empty()) {
+                    repo_status = push_result + "\n\n" + repo_status;
+                }
             }
         }
     }

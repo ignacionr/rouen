@@ -161,7 +161,7 @@ struct deck {
         if (ensure_visible_x < 0.0f) {
             x = ensure_visible_x;
         }
-        auto y = 250.0f;
+        auto y = editor_.empty() ? 450.0f : 250.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
             [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
         cards_.erase(cards_to_remove, cards_.end());
