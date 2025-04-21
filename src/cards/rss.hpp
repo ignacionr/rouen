@@ -323,6 +323,8 @@ public:
         
         get_color(2, ImVec4(0.6f, 1.0f, 0.8f, 1.0f)); // Light green for titles
         get_color(3, ImVec4(0.8f, 0.8f, 0.8f, 1.0f)); // Light gray for descriptions
+        get_color(4, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green for playing status
+        get_color(5, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for stop/error status
         
         // Parse the feed_id,link info
         size_t comma_pos = item_info.find(',');
@@ -346,9 +348,92 @@ public:
         
         // Adjust size to be larger for content display
         size = {600.0f, 400.0f};
+        
+        // Set refresh rate to check media playback status
+        requested_fps = 1;
     }
     
-    ~rss_item() override = default;
+    ~rss_item() override {
+        // Make sure to stop playback when card is closed
+        stopMedia();
+    }
+    
+    // Stop media playback
+    void stopMedia() {
+        if (player_pid > 0) {
+            // Kill the process using the stored PID
+            std::string command = "kill " + std::to_string(player_pid) + " 2>/dev/null || true";
+            std::system(command.c_str());
+            player_pid = 0;
+            is_playing = false;
+        }
+    }
+    
+    // Play media enclosure
+    bool playMedia() {
+        // Stop any existing playback first
+        stopMedia();
+        
+        if (item_enclosure.empty()) {
+            return false;
+        }
+        
+        try {
+            // Use system() with nohup to properly detach the process
+            // mpv can handle various media types including audio and video
+            std::string command = "nohup mpv --no-video \"" + item_enclosure + "\" > /dev/null 2>&1 & echo $!";
+            
+            // Execute command and get process ID
+            FILE* pipe = popen(command.c_str(), "r");
+            if (!pipe) {
+                return false;
+            }
+            
+            char buffer[128];
+            std::string result = "";
+            while (!feof(pipe)) {
+                if (fgets(buffer, 128, pipe) != nullptr)
+                    result += buffer;
+            }
+            pclose(pipe);
+            
+            // Store the process ID for later termination
+            try {
+                player_pid = std::stoi(result);
+                is_playing = true;
+                return true;
+            } catch (...) {
+                player_pid = 0;
+                is_playing = false;
+                return false;
+            }
+        } catch (const std::exception& e) {
+            player_pid = 0;
+            is_playing = false;
+            return false;
+        }
+    }
+    
+    // Check if the media player process is still running
+    bool checkMediaStatus() {
+        if (player_pid <= 0) {
+            is_playing = false;
+            return false;
+        }
+        
+        // Check if process is still running
+        std::string command = "ps -p " + std::to_string(player_pid) + " > /dev/null";
+        int status = std::system(command.c_str());
+        
+        // If process is not running, update status
+        if (status != 0) {
+            player_pid = 0;
+            is_playing = false;
+            return false;
+        }
+        
+        return true;
+    }
     
     void loadItem() {
         if (feed_id < 0 || item_link.empty()) return;
@@ -374,6 +459,11 @@ public:
     }
     
     bool render() override {
+        // Check media playback status
+        if (is_playing) {
+            checkMediaStatus();
+        }
+        
         return render_window([this]() {
             if (!item_loaded) {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Failed to load item");
@@ -422,11 +512,32 @@ public:
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No content available");
                 }
                 
-                // If there's an enclosure (e.g., podcast link), show it
+                // If there's an enclosure (e.g., podcast link), show it with play/stop buttons
                 if (!item_enclosure.empty()) {
                     ImGui::Separator();
+                    
+                    // Display media link with play/stop controls
                     ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.8f, 1.0f), "Media: %s", item_enclosure.c_str());
-                    // Could add a button to play/download the media
+                    
+                    if (is_playing) {
+                        // Show stop button with status
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[5]));
+                        if (ImGui::Button("Stop Media")) {
+                            stopMedia();
+                        }
+                        ImGui::PopStyleColor();
+                        
+                        // Show playing indicator
+                        ImGui::SameLine();
+                        ImGui::TextColored(colors[4], "Playing");
+                    } else {
+                        // Show play button
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[4]));
+                        if (ImGui::Button("Play Media")) {
+                            playMedia();
+                        }
+                        ImGui::PopStyleColor();
+                    }
                 }
                 
                 ImGui::EndChild();
@@ -444,6 +555,10 @@ private:
     std::chrono::system_clock::time_point item_date;
     bool item_loaded = false;
     std::unique_ptr<media::rss::sqliterepo> repo;
+    
+    // Media playback state
+    int player_pid = 0;     // Process ID of the media player
+    bool is_playing = false; // Flag to track whether media is currently playing
 };
 
 } // namespace rouen::cards
