@@ -182,6 +182,8 @@ namespace rouen::cards {
                             if (selected_index >= 0 && selected_index < filtered_items.size()) {
                                 auto [cat_idx, item_idx, _] = filtered_items[selected_index];
                                 menu_categories[cat_idx].items[item_idx].second();
+                                // also clear the filter
+                                search_buffer[0] = '\0';
                             }
                         }
                     }
