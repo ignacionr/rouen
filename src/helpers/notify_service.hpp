@@ -17,7 +17,4 @@ struct notify_service {
             )
         );
     }
-    ~notify_service() {
-        registrar::remove<std::function<void(std::string const&)>>("notify");
-    }
 };

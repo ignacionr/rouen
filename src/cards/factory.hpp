@@ -16,6 +16,8 @@
 #include "radio.hpp"
 #include "envvars.hpp"
 #include "rss.hpp"
+#include "rss_feed.hpp"
+#include "rss_item.hpp"
 
 namespace rouen::cards {
     struct factory {
