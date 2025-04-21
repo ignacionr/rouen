@@ -10,7 +10,6 @@
 #include <SDL2/SDL_image.h>
 #include "../interface/card.hpp"
 #include "../../helpers/texture_helper.hpp"
-#include "../../animation/slide.hpp"
 #include "../../models/git.hpp" // Include the git model
 #include "../../registrar.hpp"
 

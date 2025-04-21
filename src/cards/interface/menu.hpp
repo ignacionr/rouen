@@ -60,7 +60,8 @@ namespace rouen::cards {
                     }},
                     { "Information", {
                         {"Grok AI Chat", []() { "create_card"_sfn("grok"); }},
-                        {"Podcasts and News", []() { "create_card"_sfn("rss"); }}
+                        {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
+                        {"Email", []() { "create_card"_sfn("mail"); }}
                     }},
                     { "Media", {
                         {"Radio", []() { "create_card"_sfn("radio"); }}

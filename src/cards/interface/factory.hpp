@@ -18,6 +18,7 @@
 #include "../information/rss.hpp"
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
+#include "../information/mail/mail.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -79,6 +80,31 @@ namespace rouen::cards {
                 }},
                 {"rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<rss_item>(std::string(uri));
+                }},
+                {"mail", [](std::string_view uri, SDL_Renderer* renderer) {
+                    if (uri.empty()) {
+                        // Use default credentials from environment
+                        return std::make_shared<mail>();
+                    } else {
+                        // Parse the URI format mail:imaps://host:username:password
+                        auto params = std::string(uri);
+                        size_t pos1 = params.find(':');
+                        if (pos1 == std::string::npos) {
+                            throw std::runtime_error("Invalid mail URI format");
+                        }
+                        
+                        std::string host = params.substr(0, pos1);
+                        
+                        size_t pos2 = params.find(':', pos1 + 1);
+                        if (pos2 == std::string::npos) {
+                            throw std::runtime_error("Invalid mail URI format");
+                        }
+                        
+                        std::string username = params.substr(pos1 + 1, pos2 - pos1 - 1);
+                        std::string password = params.substr(pos2 + 1);
+                        
+                        return std::make_shared<mail>(host, username, password);
+                    }
                 }}
             };
             return dictionary;
