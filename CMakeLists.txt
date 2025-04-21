@@ -11,8 +11,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Treat warnings as errors
 add_compile_options(-Werror)
 
-# Find the curl package
+# Find the required packages
 find_package(CURL REQUIRED)
+find_package(SQLite3 REQUIRED)  # Add SQLite3
+find_package(TinyXML2 REQUIRED) # Add TinyXML2
 
 include(FetchContent)
 
@@ -43,5 +45,17 @@ target_include_directories(rouen PRIVATE
   /usr/include/stb
   ${imguicolortextedit_SOURCE_DIR}
   ${CURL_INCLUDE_DIRS}
+  ${SQLite3_INCLUDE_DIRS}   # Add SQLite3 include dirs
+  ${TINYXML2_INCLUDE_DIRS}  # Add TinyXML2 include dirs
 )
-target_link_libraries(rouen PRIVATE imgui glfw GL SDL2 SDL2_image glaze::glaze ${CURL_LIBRARIES})
+target_link_libraries(rouen PRIVATE 
+  imgui 
+  glfw 
+  GL 
+  SDL2 
+  SDL2_image 
+  glaze::glaze 
+  ${CURL_LIBRARIES}
+  ${SQLite3_LIBRARIES}    # Add SQLite3 libraries
+  tinyxml2                # Add TinyXML2 library
+)

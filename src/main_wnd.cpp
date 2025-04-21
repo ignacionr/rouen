@@ -106,6 +106,11 @@ bool main_wnd::initialize() {
                 return was_exiting;
             }
         ));
+        registrar::add<std::function<bool()>>("quitting", std::make_shared<std::function<bool()>>(
+            [this]() {
+                return m_done;
+            }
+        ));
 
         // Initialize ImGui
         IMGUI_CHECKVERSION();

@@ -8,9 +8,10 @@
 // These are still needed for the registrar and deck
 #include "cards/deck.hpp"
 #include "registrar.hpp"
-#include "helpers/deferred_operations.hpp"
+#include "helpers/notify_service.hpp"
 
 int main() {
+    notify_service notify; // Initialize the notify service
     // Create and initialize the main window
     main_wnd window;
     if (!window.initialize()) {

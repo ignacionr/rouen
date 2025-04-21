@@ -42,6 +42,7 @@ namespace rouen::cards {
                     {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                     {"Grok", []() { "create_card"_sfn("grok"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},
+                    {"RSS Reader", []() { "create_card"_sfn("rss"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                     {"Exit", []() { auto was_exiting = "exit"_fnb(); }}

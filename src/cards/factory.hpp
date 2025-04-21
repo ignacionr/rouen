@@ -15,6 +15,7 @@
 #include "grok.hpp"
 #include "radio.hpp"
 #include "envvars.hpp"
+#include "rss.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -67,6 +68,15 @@ namespace rouen::cards {
                 }},
                 {"envvars", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<envvars_card>();
+                }},
+                {"rss", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<rss>();
+                }},
+                {"rss-feed", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<rss_feed>(std::string(uri));
+                }},
+                {"rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<rss_item>(std::string(uri));
                 }}
             };
             return dictionary;
