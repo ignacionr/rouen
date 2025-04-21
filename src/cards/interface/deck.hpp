@@ -8,9 +8,9 @@
 #include <imgui/imgui.h>
 
 #include "factory.hpp"
-#include "editor.hpp"
-#include "../registrar.hpp"
-#include "../helpers/deferred_operations.hpp"
+#include "../productivity/editor.hpp"
+#include "../../registrar.hpp"
+#include "../../helpers/deferred_operations.hpp"
 
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer), editor_() {

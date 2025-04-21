@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "card.hpp"
+#include "../interface/card.hpp"
 #include "rss.hpp"
-#include "../helpers/media_player.hpp"
-#include "../hosts/rss_host.hpp"
+#include "../../helpers/media_player.hpp"
+#include "../../hosts/rss_host.hpp"
 
 namespace rouen::cards {
 

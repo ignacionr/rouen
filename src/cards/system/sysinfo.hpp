@@ -9,7 +9,7 @@
 #include <sys/sysinfo.h>
 #include <sys/statvfs.h>
 #include <imgui/imgui.h>
-#include "card.hpp"
+#include "../interface/card.hpp"
 
 namespace rouen::cards {
 

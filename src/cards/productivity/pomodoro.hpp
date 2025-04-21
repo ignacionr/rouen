@@ -7,7 +7,7 @@
 
 #include <imgui/imgui.h>
 
-#include "card.hpp"
+#include "../interface/card.hpp"
 
 namespace rouen::cards {
     class pomodoro : public card {

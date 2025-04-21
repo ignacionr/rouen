@@ -10,7 +10,7 @@
 #include "card.hpp"
 #include <SDL2/SDL.h>
 #include <imgui/imgui.h>
-#include "../registrar.hpp"
+#include "../../registrar.hpp"
 
 namespace rouen::cards {
     struct menu: public card {

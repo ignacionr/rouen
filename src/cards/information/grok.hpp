@@ -7,9 +7,9 @@
 #include <optional>
 #include <array>
 
-#include "../helpers/cppgpt.hpp"
-#include "../helpers/fetch.hpp"
-#include "card.hpp"
+#include "../../helpers/cppgpt.hpp"
+#include "../../helpers/fetch.hpp"
+#include "../interface/card.hpp"
 
 namespace rouen::cards {
     class grok : public card {

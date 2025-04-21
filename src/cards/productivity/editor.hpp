@@ -12,8 +12,8 @@
 // ImGuiColorTextEdit include
 #include "TextEditor.h"
 
-#include "../registrar.hpp"
-#include "../helpers/texture_helper.hpp"
+#include "../../registrar.hpp"
+#include "../../helpers/texture_helper.hpp"
 
 class editor {
 public:

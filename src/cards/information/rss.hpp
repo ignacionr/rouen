@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "card.hpp"
-#include "../helpers/fetch.hpp"
-#include "../hosts/rss_host.hpp"
-#include "../models/rss/feed.hpp"
-#include "../registrar.hpp"
+#include "../interface/card.hpp"
+#include "../../helpers/fetch.hpp"
+#include "../../hosts/rss_host.hpp"
+#include "../../models/rss/feed.hpp"
+#include "../../registrar.hpp"
 
 namespace rouen::cards {
 

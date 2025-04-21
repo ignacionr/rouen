@@ -1,5 +1,5 @@
 #include "main_wnd.hpp"
-#include "cards/deck.hpp"
+#include "cards/interface/deck.hpp"
 
 // Add STB implementation defines
 #define STB_RECT_PACK_IMPLEMENTATION

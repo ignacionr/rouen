@@ -6,7 +6,7 @@
 #include "main_wnd.hpp"
 
 // These are still needed for the registrar and deck
-#include "cards/deck.hpp"
+#include "cards/interface/deck.hpp"
 #include "registrar.hpp"
 #include "helpers/notify_service.hpp"
 

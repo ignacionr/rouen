@@ -5,8 +5,8 @@
 #include <vector>
 #include <imgui/imgui.h>
 
-#include "card.hpp"
-#include "../models/radio.hpp"
+#include "../interface/card.hpp"
+#include "../../models/radio.hpp"
 
 namespace rouen::cards {
     

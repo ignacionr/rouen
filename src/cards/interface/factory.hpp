@@ -7,17 +7,17 @@
 
 #include <SDL2/SDL.h>
 #include "card.hpp"
-#include "git.hpp"
+#include "../development/git.hpp"
 #include "menu.hpp"
-#include "pomodoro.hpp"
-#include "fs-directory.hpp"
-#include "sysinfo.hpp"
-#include "grok.hpp"
-#include "radio.hpp"
-#include "envvars.hpp"
-#include "rss.hpp"
-#include "rss_feed.hpp"
-#include "rss_item.hpp"
+#include "../productivity/pomodoro.hpp"
+#include "../development/fs-directory.hpp"
+#include "../system/sysinfo.hpp"
+#include "../information/grok.hpp"
+#include "../media/radio.hpp"
+#include "../system/envvars.hpp"
+#include "../information/rss.hpp"
+#include "../information/rss_feed.hpp"
+#include "../information/rss_item.hpp"
 
 namespace rouen::cards {
     struct factory {

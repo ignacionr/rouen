@@ -8,11 +8,11 @@
 #include <imgui/imgui.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include "card.hpp"
-#include "../helpers/texture_helper.hpp"
-#include "../animation/slide.hpp"
-#include "../models/git.hpp" // Include the git model
-#include "../registrar.hpp"
+#include "../interface/card.hpp"
+#include "../../helpers/texture_helper.hpp"
+#include "../../animation/slide.hpp"
+#include "../../models/git.hpp" // Include the git model
+#include "../../registrar.hpp"
 
 struct git: public card {
     std::string repo_status; // Store the git status result

@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "card.hpp"
+#include "../interface/card.hpp"
 #include "rss.hpp"
-#include "../hosts/rss_host.hpp"
+#include "../../hosts/rss_host.hpp"
 
 namespace rouen::cards {
 
