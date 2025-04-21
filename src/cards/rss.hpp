@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
-#include <format>
 #include <imgui/imgui.h>
 #include <memory>
 #include <string>
@@ -11,9 +10,8 @@
 
 #include "card.hpp"
 #include "../helpers/fetch.hpp"
-#include "../models/rss/host.hpp"
+#include "../hosts/rss_host.hpp"
 #include "../models/rss/feed.hpp"
-#include "../models/rss/sqliterepo.hpp"
 #include "../registrar.hpp"
 
 namespace rouen::cards {
@@ -36,8 +34,8 @@ public:
         requested_fps = 1;  // Update once per second
         size = {400.0f, 500.0f};
         
-        // Initialize the RSS host with a system runner
-        rss_host = std::make_unique<media::rss::host>([](std::string_view cmd) -> std::string {
+        // Initialize the RSS host controller with a system runner
+        rss_host = std::make_unique<hosts::RSSHost>([](std::string_view cmd) -> std::string {
             // Simple system runner implementation
             return ""; // Not using system commands in this implementation
         });
@@ -131,7 +129,7 @@ public:
                     
                     // Process deletion requests
                     for (const auto& url : feeds_to_delete) {
-                        rss_host->delete_feed(url);
+                        rss_host->deleteFeed(url);
                     }
                     feeds_to_delete.clear();
                 }
@@ -144,18 +142,29 @@ public:
     // Add a new feed by URL
     bool addFeed(const std::string& url) {
         try {
-            // Create a vector with just this URL
-            std::vector<std::string> urls = {url};
-            rss_host->add_feeds(urls);
-            return true;
+            // Use the RSSHost controller to add the feed
+            return rss_host->addFeed(url);
         } catch (const std::exception& e) {
             // Handle error (could show in UI)
             return false;
         }
     }
     
+    // Get access to the RSS host controller (needed for other RSS card classes)
+    static std::shared_ptr<hosts::RSSHost> getHost() {
+        static std::shared_ptr<hosts::RSSHost> shared_host = nullptr;
+        
+        if (!shared_host) {
+            shared_host = std::make_shared<hosts::RSSHost>([](std::string_view cmd) -> std::string {
+                return ""; // Not using system commands in this implementation
+            });
+        }
+        
+        return shared_host;
+    }
+    
 private:
-    std::unique_ptr<media::rss::host> rss_host;
+    std::unique_ptr<hosts::RSSHost> rss_host;
     std::vector<std::string> feeds_to_delete;
 };
 
@@ -182,53 +191,31 @@ public:
         // Initialize with a temporary name
         name("Feed Items");
         
-        // Initialize repository and load items
-        repo = std::make_unique<media::rss::sqliterepo>("rss.db");
+        // Get the RSS host controller
+        rss_host = rss::getHost();
+        
+        // Load feed information and items
         loadFeed();
     }
     
     ~rss_feed() override = default;
     
     void loadFeed() {
-        if (feed_id < 0) return;
+        if (feed_id < 0 || !rss_host) return;
         
-        items.clear();
+        // Get feed information
+        auto feed_info = rss_host->getFeedInfo(feed_id);
+        if (!feed_info) return;
         
-        // Get feed information first
-        repo->scan_feeds([this](long long id, const char* url, const char* title, const char* image_url) {
-            if (id == feed_id) {
-                feed_title = title;
-                feed_url = url;
-                // Update the card title with the feed title
-                name(std::format("Feed: {}", feed_title));
-            }
-        });
+        // Update feed details
+        feed_title = feed_info->title;
+        feed_url = feed_info->url;
         
-        // Load items for this feed
-        repo->scan_items(feed_id, [this](const char* link, const char* enclosure, const char* title, 
-                                        const char* description, const char* pub_date, const char* image_url) {
-            // Parse the date string
-            std::tm tm = {};
-            std::istringstream ss(pub_date);
-            ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-            auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
-            
-            // Create and store the item
-            FeedItem item;
-            item.title = title ? title : "";
-            item.description = description ? description : "";
-            item.link = link ? link : "";
-            item.enclosure = enclosure ? enclosure : "";
-            item.image_url = image_url ? image_url : "";
-            item.publish_date = publish_date;
-            
-            items.push_back(std::move(item));
-        });
+        // Update the card title with the feed title
+        name(std::format("Feed: {}", feed_title));
         
-        // Sort items by publish date (newest first)
-        std::sort(items.begin(), items.end(), [](const FeedItem& a, const FeedItem& b) {
-            return a.publish_date > b.publish_date;
-        });
+        // Load feed items
+        items = rss_host->getFeedItems(feed_id);
     }
     
     bool render() override {
@@ -239,7 +226,9 @@ public:
             // Original URL
             ImGui::SameLine(ImGui::GetWindowWidth() - 80);
             if (ImGui::SmallButton("URL")) {
-                // Could open URL in browser or copy to clipboard
+                // Open URL in browser
+                auto command = std::format("xdg-open \"{}\" &", feed_url);
+                std::system(command.c_str());
             }
             
             ImGui::Separator();
@@ -298,20 +287,11 @@ public:
     }
     
 private:
-    struct FeedItem {
-        std::string title;
-        std::string description;
-        std::string link;
-        std::string enclosure;
-        std::string image_url;
-        std::chrono::system_clock::time_point publish_date;
-    };
-    
     long long feed_id = -1;
     std::string feed_title;
     std::string feed_url;
-    std::unique_ptr<media::rss::sqliterepo> repo;
-    std::vector<FeedItem> items;
+    std::shared_ptr<hosts::RSSHost> rss_host;
+    std::vector<hosts::RSSHost::FeedItem> items;
 };
 
 // Card to display a single RSS item
@@ -334,11 +314,11 @@ public:
                 feed_id = std::stoll(item_info.substr(0, comma_pos));
                 item_link = item_info.substr(comma_pos + 1);
                 
-                // Initialize repository and load the item
-                repo = std::make_unique<media::rss::sqliterepo>("rss.db");
-                loadItem();
+                // Get the RSS host controller
+                rss_host = rss::getHost();
                 
-                name(std::format("Article: {}", item_title));
+                // Load the item
+                loadItem();
             } catch (...) {
                 // Handle parsing error
                 name("RSS Item");
@@ -375,14 +355,14 @@ public:
         // Stop any existing playback first
         stopMedia();
         
-        if (item_enclosure.empty()) {
+        if (item.enclosure.empty()) {
             return false;
         }
         
         try {
             // Use system() with nohup to properly detach the process
             // mpv can handle various media types including audio and video
-            std::string command = "nohup mpv --no-video \"" + item_enclosure + "\" > /dev/null 2>&1 & echo $!";
+            std::string command = "nohup mpv --no-video \"" + item.enclosure + "\" > /dev/null 2>&1 & echo $!";
             
             // Execute command and get process ID
             FILE* pipe = popen(command.c_str(), "r");
@@ -437,26 +417,19 @@ public:
     }
     
     void loadItem() {
-        if (feed_id < 0 || item_link.empty()) return;
+        if (feed_id < 0 || item_link.empty() || !rss_host) return;
         
-        // Scan items to find this specific one
-        repo->scan_items(feed_id, [this](const char* link, const char* enclosure, const char* title, 
-                                      const char* description, const char* pub_date, const char* image_url) {
-            if (link && item_link == link) {
-                item_title = title ? title : "";
-                item_description = description ? description : "";
-                item_enclosure = enclosure ? enclosure : "";
-                item_image_url = image_url ? image_url : "";
-                
-                // Parse the date string
-                std::tm tm = {};
-                std::istringstream ss(pub_date);
-                ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-                item_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
-                
-                item_loaded = true;
-            }
-        });
+        // Get the item from the controller
+        auto found_item = rss_host->getFeedItem(feed_id, item_link);
+        if (!found_item) return;
+        
+        // Store the item
+        item = *found_item;
+        
+        // Update the card title
+        name(std::format("Article: {}", item.title));
+        
+        item_loaded = true;
     }
     
     bool render() override {
@@ -472,20 +445,20 @@ public:
             }
             
             // Title
-            ImGui::TextColored(colors[2], "%s", item_title.c_str());
+            ImGui::TextColored(colors[2], "%s", item.title.c_str());
             
             // Button to open the original link
             ImGui::SameLine(ImGui::GetWindowWidth() - 120);
             if (ImGui::SmallButton("Open in Browser")) {
                 // use xdg-open
-                auto command = std::format("xdg-open \"{}\" &", item_link);
+                auto command = std::format("xdg-open \"{}\" &", item.link);
                 std::system(command.c_str());
             }
             
             ImGui::Separator();
             
             // Date
-            auto time = std::chrono::system_clock::to_time_t(item_date);
+            auto time = std::chrono::system_clock::to_time_t(item.publish_date);
             std::tm* tm = std::localtime(&time);
             char date_str[64];
             std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
@@ -496,16 +469,16 @@ public:
             // Content in a scrollable area
             if (ImGui::BeginChild("ContentScrollArea", ImVec2(0, 0), true)) {
                 // If there's an image, display it
-                if (!item_image_url.empty()) {
-                    ImGui::Text("Image: %s", item_image_url.c_str());
+                if (!item.image_url.empty()) {
+                    ImGui::Text("Image: %s", item.image_url.c_str());
                     // Could load and display the actual image
                     ImGui::Separator();
                 }
                 
                 // Description/content
-                if (!item_description.empty()) {
+                if (!item.description.empty()) {
                     // Basic HTML stripping
-                    std::string clean_desc = item_description;
+                    std::string clean_desc = item.description;
                     // Remove HTML tags (this is very basic, a real implementation would use a proper HTML parser)
                     clean_desc.erase(std::remove_if(clean_desc.begin(), clean_desc.end(), 
                         [](char c) { return c == '<' || c == '>'; }), clean_desc.end());
@@ -516,11 +489,11 @@ public:
                 }
                 
                 // If there's an enclosure (e.g., podcast link), show it with play/stop buttons
-                if (!item_enclosure.empty()) {
+                if (!item.enclosure.empty()) {
                     ImGui::Separator();
                     
                     // Display media link with play/stop controls
-                    ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.8f, 1.0f), "Media: %s", item_enclosure.c_str());
+                    ImGui::TextColored(ImVec4(0.4f, 0.6f, 0.8f, 1.0f), "Media: %s", item.enclosure.c_str());
                     
                     if (is_playing) {
                         // Show stop button with status
@@ -551,13 +524,9 @@ public:
 private:
     long long feed_id = -1;
     std::string item_link;
-    std::string item_title;
-    std::string item_description;
-    std::string item_enclosure;
-    std::string item_image_url;
-    std::chrono::system_clock::time_point item_date;
     bool item_loaded = false;
-    std::unique_ptr<media::rss::sqliterepo> repo;
+    std::shared_ptr<hosts::RSSHost> rss_host;
+    hosts::RSSHost::FeedItem item; // Use the FeedItem from the controller
     
     // Media playback state
     int player_pid = 0;     // Process ID of the media player
