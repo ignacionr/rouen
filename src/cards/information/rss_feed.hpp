@@ -119,6 +119,13 @@ public:
                             
                             ImGui::TextWrapped("%s", desc.c_str());
                         }
+
+                        // if there's a playable enclosure, offer a media button
+                        if (!item.enclosure.empty()) {
+                            // Use the media_player helper for playback controls
+                            media_player::player(item.enclosure, colors[4]);
+                        }
+            
                         
                         ImGui::EndGroup();
                         ImGui::Separator();

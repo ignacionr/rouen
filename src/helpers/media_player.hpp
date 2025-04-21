@@ -3,13 +3,22 @@
 #include <string>
 #include <unordered_map>
 
+#include <signal.h>
+
+
 #include <imgui/imgui.h>
+#include "../registrar.hpp"
 
 struct media_player {
     struct item {
         std::string url;
-        int player_pid;
+        int player_pid{0};
         bool is_playing{false};
+
+        item() = default;
+        ~item() {
+            stopMedia();
+        }
 
         bool checkMediaStatus() {
             if (player_pid <= 0) return false;
@@ -37,8 +46,9 @@ struct media_player {
         void stopMedia() {
             if (player_pid > 0) {
                 // Kill the process using the stored PID
-                std::string command = "kill " + std::to_string(player_pid) + " 2>/dev/null || true";
-                std::system(command.c_str());
+                if (kill(player_pid, SIGTERM) == -1) {
+                    perror("Failed to terminate process");
+                }
                 player_pid = 0;
                 is_playing = false;
             }
@@ -94,26 +104,31 @@ struct media_player {
         return items_;
     }
 
-    static void player(std::string_view url, auto info_color) {
-        auto &item {items()[ImGui::GetItemID()]};
-        item.url = url;
-        // Check if media is currently playing
-        if (item.player_pid > 0) {
-            item.checkMediaStatus(); // Update playback status
+    static void player(std::string_view url, auto info_color) noexcept {
+        try {
+            auto &item {items()[ImGui::GetID(url.data())]};
+            item.url = url;
+            // Check if media is currently playing
+            if (item.player_pid > 0) {
+                item.checkMediaStatus(); // Update playback status
+            }
+            
+            if (item.is_playing) {
+                ImGui::TextColored(info_color, "Playing...");
+                if (ImGui::Button("Stop Playback")) {
+                    item.stopMedia();
+                }
+            } else {
+                // Play button
+                if (ImGui::Button("Play")) {
+                    item.playMedia();
+                }
+                // Display enclosure info
+                ImGui::TextWrapped("Media URL: %s", item.url.c_str());
+            }
         }
-        
-        if (item.is_playing) {
-            ImGui::TextColored(info_color, "Playing...");
-            if (ImGui::Button("Stop Playback")) {
-                item.stopMedia();
-            }
-        } else {
-            // Play button
-            if (ImGui::Button("Play")) {
-                item.playMedia();
-            }
-            // Display enclosure info
-            ImGui::TextWrapped("Media URL: %s", item.url.c_str());
+        catch (const std::exception& e) {
+            "notify"_sfn(e.what());
         }
     }
 };
