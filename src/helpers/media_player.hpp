@@ -2,20 +2,169 @@
 
 #include <string>
 #include <unordered_map>
-
+#include <chrono>
+#include <filesystem>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <fstream>
 #include <signal.h>
-
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #include <imgui/imgui.h>
 #include "../registrar.hpp"
+
+// Helper class to handle MPV player interaction via socket
+class mpv_socket_helper {
+private:
+    int socket_fd{-1};
+    std::string socket_path;
+
+public:
+    mpv_socket_helper() = default;
+    ~mpv_socket_helper() {
+        close_socket();
+    }
+
+    void close_socket() {
+        if (socket_fd >= 0) {
+            close(socket_fd);
+            socket_fd = -1;
+        }
+        
+        // Remove socket file if it exists
+        if (!socket_path.empty() && std::filesystem::exists(socket_path)) {
+            std::filesystem::remove(socket_path);
+        }
+    }
+    
+    std::string create_socket_path() {
+        // Create a unique socket path in /tmp
+        auto now = std::chrono::system_clock::now().time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+        socket_path = "/tmp/mpv-socket-" + std::to_string(millis);
+        return socket_path;
+    }
+    
+    bool init_socket(const std::string& path) {
+        socket_path = path;
+        
+        // Create socket
+        socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (socket_fd == -1) {
+            perror("Socket creation failed");
+            return false;
+        }
+        
+        // Connect to the socket
+        struct sockaddr_un addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
+        
+        // Wait for the socket to become available (mpv needs a moment to create it)
+        for (int i = 0; i < 50; i++) {  // Wait up to 5 seconds max
+            if (std::filesystem::exists(socket_path)) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Check if socket exists
+        if (!std::filesystem::exists(socket_path)) {
+            perror("Socket file does not exist");
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        
+        // Connect to socket
+        if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+            perror("Connection failed");
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    bool send_command(const std::string& command) {
+        // First check if the socket is valid
+        if (socket_fd < 0) return false;
+        
+        // Send the command
+        ssize_t bytes_sent = send(socket_fd, command.c_str(), command.length(), 0);
+        if (bytes_sent != static_cast<ssize_t>(command.length())) {
+            // Handle send error
+            if (bytes_sent < 0) {
+                perror("Socket send error");
+            }
+            // Close the socket on error
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    bool receive_response(char* buffer, size_t buffer_size, int timeout_ms = 200) {
+        if (socket_fd < 0) return false;
+        
+        fd_set readfds;
+        struct timeval tv;
+        
+        FD_ZERO(&readfds);
+        FD_SET(socket_fd, &readfds);
+        
+        tv.tv_sec = 0;
+        tv.tv_usec = timeout_ms * 1000; // Convert to microseconds
+        
+        if (select(socket_fd + 1, &readfds, NULL, NULL, &tv) > 0) {
+            ssize_t bytes_read = recv(socket_fd, buffer, buffer_size - 1, 0);
+            if (bytes_read > 0) {
+                buffer[bytes_read] = '\0';
+                return true;
+            } else if (bytes_read == 0 || (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+                // Socket closed or error
+                close(socket_fd);
+                socket_fd = -1;
+                return false;
+            }
+        }
+        return false;
+    }
+    
+    bool is_connected() const {
+        return socket_fd >= 0;
+    }
+    
+    int get_socket_fd() const {
+        return socket_fd;
+    }
+    
+    const std::string& get_socket_path() const {
+        return socket_path;
+    }
+};
 
 struct media_player {
     struct item {
         std::string url;
         int player_pid{0};
         bool is_playing{false};
+        mpv_socket_helper mpv_socket;
+        std::atomic<double> position{0.0};
+        std::atomic<double> duration{0.0};
+        std::thread position_thread;
+        std::atomic<bool> thread_running{false};
+        std::mutex data_mutex;  // Add mutex to protect data access
 
         item() = default;
+        
         ~item() {
             stopMedia();
         }
@@ -43,7 +192,19 @@ struct media_player {
             is_playing = (result == "1");
             return is_playing;
         }
+        
         void stopMedia() {
+            // Stop the position tracking thread if it's running
+            if (thread_running) {
+                thread_running = false;
+                if (position_thread.joinable()) {
+                    position_thread.join();
+                }
+            }
+            
+            // Close socket via helper
+            mpv_socket.close_socket();
+            
             if (player_pid > 0) {
                 // Kill the process using the stored PID
                 if (kill(player_pid, SIGTERM) == -1) {
@@ -52,15 +213,208 @@ struct media_player {
                 player_pid = 0;
                 is_playing = false;
             }
+            
+            // Reset playback info
+            position = 0.0;
+            duration = 0.0;
         }
+        
+        // Start a thread to periodically update position information
+        void startPositionTracking() {
+            // Stop any existing thread
+            if (thread_running) {
+                thread_running = false;
+                if (position_thread.joinable()) {
+                    position_thread.join();
+                }
+            }
+            
+            thread_running = true;
+            position_thread = std::thread([this]() {
+                // Keep track of consecutive errors
+                int consecutive_errors = 0;
+                
+                // Store persistent duration value - we only need to get it once reliably
+                double persistent_duration = 0.0;
+                bool duration_initialized = false;
+                
+                while (thread_running) {
+                    bool is_running = false;
+                    
+                    // First check if the player is still running
+                    if (player_pid > 0) {
+                        is_running = checkMediaStatus();
+                        if (!is_running) {
+                            // Player has stopped
+                            mpv_socket.close_socket();
+                            is_playing = false;
+                            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                            continue;
+                        }
+                    } else {
+                        // No valid PID, can't continue
+                        is_playing = false;
+                        mpv_socket.close_socket();
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        continue;
+                    }
+                    
+                    // Only proceed if socket is valid
+                    if (mpv_socket.is_connected()) {
+                        // First, if duration is not initialized yet, get it
+                        if (!duration_initialized || persistent_duration <= 0) {
+                            // Request duration only
+                            if (mpv_socket.send_command("{\"command\":[\"get_property\",\"duration\"],\"request_id\":2}\n")) {
+                                // Wait for response
+                                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                                
+                                // Get the duration response
+                                char buffer[4096];
+                                memset(buffer, 0, sizeof(buffer));
+                                
+                                if (mpv_socket.receive_response(buffer, sizeof(buffer))) {
+                                    std::string response(buffer);
+                                    
+                                    // Only look for duration response
+                                    if (response.find("\"request_id\":2") != std::string::npos) {
+                                        size_t pos = response.find("\"data\":");
+                                        if (pos != std::string::npos) {
+                                            std::string value = response.substr(pos + 7);
+                                            size_t end = value.find_first_of(",}");
+                                            if (end != std::string::npos) {
+                                                try {
+                                                    double dur_value = std::stod(value.substr(0, end));
+                                                    if (dur_value > 0) {
+                                                        persistent_duration = dur_value;
+                                                        duration_initialized = true;
+                                                        
+                                                        // Update shared duration once we have a good value
+                                                        std::lock_guard<std::mutex> lock(data_mutex);
+                                                        duration = persistent_duration;
+                                                    }
+                                                } catch (...) {
+                                                    // Error parsing, ignore
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // If we couldn't get the duration, wait and try again
+                            if (!duration_initialized) {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                continue;
+                            }
+                        }
+                        
+                        // Now separately request playback position
+                        if (mpv_socket.send_command("{\"command\":[\"get_property\",\"playback-time\"],\"request_id\":1}\n")) {
+                            // Wait for response
+                            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                            
+                            // Process position response
+                            char buffer[4096];
+                            memset(buffer, 0, sizeof(buffer));
+                            
+                            double current_position = 0.0;
+                            bool position_updated = false;
+                            
+                            if (mpv_socket.receive_response(buffer, sizeof(buffer))) {
+                                std::string response(buffer);
+                                
+                                // Check for playback end events
+                                if (response.find("\"event\":\"end-file\"") != std::string::npos || 
+                                    response.find("\"event\":\"idle\"") != std::string::npos) {
+                                    // Playback has ended
+                                    is_playing = false;
+                                    mpv_socket.close_socket();
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                    continue;
+                                }
+                                
+                                // Look for position response only
+                                if (response.find("\"request_id\":1") != std::string::npos) {
+                                    size_t pos = response.find("\"data\":");
+                                    if (pos != std::string::npos) {
+                                        std::string value = response.substr(pos + 7);
+                                        size_t end = value.find_first_of(",}");
+                                        if (end != std::string::npos) {
+                                            try {
+                                                current_position = std::stod(value.substr(0, end));
+                                                position_updated = true;
+                                            } catch (...) {
+                                                // Error parsing, ignore
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Failed to receive response
+                                consecutive_errors++;
+                                if (consecutive_errors > 5) {
+                                    mpv_socket.close_socket();
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                    continue;
+                                }
+                            }
+                            
+                            // Update position if we got a valid value
+                            if (position_updated) {
+                                std::lock_guard<std::mutex> lock(data_mutex);
+                                position = current_position;
+                                
+                                // Always reassert the persistent duration to make sure it doesn't get overwritten
+                                if (duration_initialized && persistent_duration > 0) {
+                                    duration = persistent_duration;
+                                }
+                                
+                                // Check if we've reached the end of playback
+                                if (current_position >= persistent_duration - 0.5 && persistent_duration > 0) {
+                                    is_playing = false;
+                                    mpv_socket.close_socket();
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                    continue;
+                                }
+                            } else {
+                                consecutive_errors++;
+                                if (consecutive_errors > 5) {
+                                    mpv_socket.close_socket();
+                                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                                    continue;
+                                }
+                            }
+                        } else {
+                            // Failed to send command
+                            consecutive_errors++;
+                            if (consecutive_errors > 5) {
+                                mpv_socket.close_socket();
+                            }
+                        }
+                    }
+                    
+                    // Reset error counter on success
+                    if (mpv_socket.is_connected()) {
+                        consecutive_errors = 0;
+                    }
+                    
+                    // Sleep between updates
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+            });
+        }
+        
         bool playMedia() {
             try {
                 // Stop any current playback
                 stopMedia();
                 
+                // Create a unique socket path using the helper
+                std::string socket_path = mpv_socket.create_socket_path();
+                
                 // Build the command to play the media
-                // Use mpv for audio/video content
-                std::string command = "nohup mpv --no-video --really-quiet \"" + url + "\" > /dev/null 2>&1 & echo $!";
+                // Use mpv with JSON IPC socket for position reporting
+                std::string command = "nohup mpv --no-video --really-quiet --input-ipc-server=" + socket_path + " \"" + url + "\" > /dev/null 2>&1 & echo $!";
                 
                 // Execute the command and get the PID
                 std::string result = "";
@@ -82,6 +436,12 @@ struct media_player {
                 try {
                     player_pid = std::stoi(result);
                     is_playing = true;
+                    
+                    // Initialize the socket connection and start position tracking
+                    if (mpv_socket.init_socket(socket_path)) {
+                        startPositionTracking();
+                    }
+                    
                     return true;
                 } catch (...) {
                     player_pid = 0;
@@ -93,6 +453,13 @@ struct media_player {
                 is_playing = false;
                 return false;
             }
+        }
+        
+        // Format time in MM:SS format
+        std::string formatTime(double seconds) {
+            int mins = static_cast<int>(seconds) / 60;
+            int secs = static_cast<int>(seconds) % 60;
+            return std::format("{:02d}:{:02d}", mins, secs);
         }
     
     };
@@ -120,7 +487,33 @@ struct media_player {
             }
             
             if (item.is_playing) {
-                ImGui::TextColored(info_color, "Playing...");
+                // Get safe copies of position and duration values with mutex protection
+                double current_pos, current_dur;
+                {
+                    std::lock_guard<std::mutex> lock(item.data_mutex);
+                    current_pos = item.position;
+                    current_dur = item.duration;
+                }
+                
+                // Show playback position if available
+                if (current_dur > 0) {
+                    ImGui::TextColored(info_color, "Playing: %s / %s", 
+                        item.formatTime(current_pos).c_str(),
+                        item.formatTime(current_dur).c_str());
+                    
+                    // Draw a progress bar with safe calculation
+                    float progress = current_pos > 0 && current_dur > 0 ? 
+                        static_cast<float>(current_pos / current_dur) : 0.0f;
+                    
+                    // Clamp progress to 0.0-1.0 range
+                    progress = std::max(0.0f, std::min(1.0f, progress));
+                    ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
+                } else {
+                    ImGui::TextColored(info_color, "Playing: %s", 
+                        item.formatTime(current_pos).c_str());
+                    ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
+                }
+                
                 if (ImGui::Button("Stop Playback")) {
                     item.stopMedia();
                 }
@@ -130,8 +523,6 @@ struct media_player {
                     stopAll();
                     item.playMedia();
                 }
-                // Display enclosure info
-                ImGui::TextWrapped("Media URL: %s", item.url.c_str());
             }
         }
         catch (const std::exception& e) {
