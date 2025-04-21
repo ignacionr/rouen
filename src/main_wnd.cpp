@@ -7,6 +7,8 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <imgui/imstb_truetype.h>
 
+#include "fonts.hpp"
+
 main_wnd::main_wnd() 
     : m_window(nullptr)
     , m_renderer(nullptr)
@@ -122,18 +124,7 @@ bool main_wnd::initialize() {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-        // Load font with Cyrillic support and symbols
-        // Add default font with Cyrillic character range and geometric symbols
-        static const ImWchar ranges[] = {
-            0x0020, 0x00FF, // Basic Latin + Latin Supplement
-            0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
-            0x2DE0, 0x2DFF, // Cyrillic Extended-A
-            0xA640, 0xA69F, // Cyrillic Extended-B
-             0x25A0, 0x25FF, // Geometric Shapes (includes triangles)
-            0x2B00, 0x2BFF, // Miscellaneous Symbols and Arrows
-            0,
-        };
-        io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 15.0f, NULL, ranges);
+        rouen::fonts::setup();
 
         // Setup ImGui style
         setup_dark_theme();

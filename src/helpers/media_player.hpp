@@ -341,9 +341,10 @@ struct media_player {
         }
     }
 
-    static void player(std::string_view url, auto info_color) noexcept {
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media") noexcept {
+        ImGui::PushID(url.data());
         try {
-            auto &item {items()[ImGui::GetID(url.data())]};
+            auto &item {items()[ImGui::GetID("MediaPlayer")]};
             item.url = url;
             // Check if media is currently playing
             if (item.player_pid > 0) {
@@ -351,6 +352,7 @@ struct media_player {
             }
             
             if (item.is_playing) {
+                ImGui::TextUnformatted(title.data());
                 // Get safe copies of position and duration values with mutex protection
                 double current_pos, current_dur;
                 {
@@ -359,12 +361,19 @@ struct media_player {
                     current_dur = item.duration;
                 }
                 
-                // Show playback position if available
-                if (current_dur > 0) {
+                if (current_pos > 0 && current_dur > 0) {
+                    // Format and display playback time
                     ImGui::TextColored(info_color, "Playing: %s / %s", 
                         item.formatTime(current_pos).c_str(),
                         item.formatTime(current_dur).c_str());
-                    
+                }
+                // Stop button with a square symbol
+                if (ImGui::Button(" \u25A0 ")) {  // U+25A0 BLACK SQUARE
+                    item.stopMedia();
+                }
+                // Show playback position if available
+                ImGui::SameLine();
+                if (current_dur > 0) {
                     // Draw a progress bar with safe calculation
                     float progress = current_pos > 0 && current_dur > 0 ? 
                         static_cast<float>(current_pos / current_dur) : 0.0f;
@@ -373,25 +382,23 @@ struct media_player {
                     progress = std::max(0.0f, std::min(1.0f, progress));
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
                 } else {
-                    ImGui::TextColored(info_color, "Playing: %s", 
-                        item.formatTime(current_pos).c_str());
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
-                
-                // Stop button with a square symbol
-                if (ImGui::Button(" \u25A0 Stop")) {  // U+25A0 BLACK SQUARE
-                    item.stopMedia();
-                }
             } else {
+                // Set text alignment to left-aligned before creating the button
+                ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
                 // Play button with triangle symbol
-                if (ImGui::Button(" \u25B6 Play")) {  // U+25B6 BLACK RIGHT-POINTING TRIANGLE
+                if (ImGui::Button(std::format(" \u25B6 {}", title).data(), ImVec2(-1, 0))) {
                     stopAll();
                     item.playMedia();
                 }
+                // Restore default style
+                ImGui::PopStyleVar();
             }
         }
         catch (const std::exception& e) {
             "notify"_sfn(e.what());
         }
+        ImGui::PopID();
     }
 };

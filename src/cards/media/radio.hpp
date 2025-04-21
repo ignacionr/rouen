@@ -7,6 +7,7 @@
 
 #include "../interface/card.hpp"
 #include "../../models/radio.hpp"
+#include "../../helpers/media_player.hpp"
 
 namespace rouen::cards {
     
@@ -101,9 +102,11 @@ namespace rouen::cards {
                         }
                         
                         // Station entry with play button
-                        if (ImGui::Selectable(station_name.c_str(), is_current)) {
-                            radio_model->playStation(station_name);
-                        }
+                        // if (ImGui::Selectable(station_name.c_str(), is_current)) {
+                        //     radio_model->playStation(station_name);
+                        // }
+
+                        media_player::player(radio_model->getStation(station_name)->url, colors[0], station_name);
                         
                         if (is_current) {
                             ImGui::PopStyleColor();

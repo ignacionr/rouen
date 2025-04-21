@@ -38,6 +38,7 @@ FetchContent_MakeAvailable(glaze imguicolortextedit)
 add_executable(rouen 
   src/rouen.cpp
   src/main_wnd.cpp
+  src/fonts.cpp
   ${imguicolortextedit_SOURCE_DIR}/TextEditor.cpp # Add the TextEditor implementation
 )
 target_include_directories(rouen PRIVATE 

@@ -10,10 +10,12 @@
 #include <SDL2/SDL_image.h>
 
 // ImGuiColorTextEdit include
-#include "TextEditor.h"
+#include <TextEditor.h>
 
 #include "../../registrar.hpp"
 #include "../../helpers/texture_helper.hpp"
+
+#include "../../fonts.hpp"
 
 class editor {
 public:
@@ -345,6 +347,7 @@ public:
                 ImGui::Image((ImTextureID)(intptr_t)image_texture_, display_size);
             }
             else if (!source_file_.empty()) {
+                rouen::fonts::with_font fnt{rouen::fonts::FontType::Mono};
                 // Create a child window for the text editor
                 ImGui::Separator();
                 
