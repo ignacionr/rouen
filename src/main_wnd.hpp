@@ -8,9 +8,18 @@
 #include <iostream>
 #include <memory>
 #include <functional>
+#include <string>
 
 #include "helpers/deferred_operations.hpp"
 #include "registrar.hpp"
+
+// Define MainWindow class in the rouen namespace for consistency
+namespace rouen {
+    class MainWindow {
+    public:
+        void render_font_check();
+    };
+}
 
 class main_wnd {
 public:
@@ -37,4 +46,7 @@ private:
     bool m_immediate = false;
     int m_requested_fps = 1;
     std::string keystrokes_;
+
+    // Add instance of the MainWindow class
+    rouen::MainWindow m_main_window;
 };

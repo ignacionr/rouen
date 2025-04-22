@@ -198,6 +198,9 @@ void main_wnd::run() {
                 ImGui_ImplSDL2_NewFrame();
                 ImGui::NewFrame();
 
+                // Display the font character checker tool
+                // m_main_window.render_font_check();
+
                 // Render the deck and get requested fps
                 try {
                     m_requested_fps = main_deck.render().requested_fps;
@@ -368,4 +371,60 @@ void main_wnd::setup_dark_theme() {
     
     // Text editor and input areas - ensure high contrast for text
     colors[ImGuiCol_TextSelectedBg] = ImVec4(0.37f, 0.53f, 0.71f, 0.50f);  // Blue tint for selected text
+}
+
+void rouen::MainWindow::render_font_check() {
+    if (ImGui::Begin("Font Character Check")) {
+        static char test_char[32] = "📅";
+        ImGui::InputText("Character to test", test_char, sizeof(test_char));
+        
+        bool is_available_default = fonts::is_character_available(test_char, fonts::FontType::Default);
+        bool is_available_mono = fonts::is_character_available(test_char, fonts::FontType::Mono);
+        
+        ImGui::Text("Character: %s", test_char);
+        
+        // Get Unicode code point (a simplified approach)
+        unsigned int codepoint = 0;
+        if (test_char[0] != 0) {
+            // Handle UTF-8 encoding
+            if ((test_char[0] & 0x80) == 0) {
+                // 1-byte character
+                codepoint = (unsigned int)test_char[0];
+            } else if ((test_char[0] & 0xE0) == 0xC0 && test_char[1] != 0) {
+                // 2-byte character
+                codepoint = ((test_char[0] & 0x1F) << 6) | (test_char[1] & 0x3F);
+            } else if ((test_char[0] & 0xF0) == 0xE0 && test_char[1] != 0 && test_char[2] != 0) {
+                // 3-byte character
+                codepoint = ((test_char[0] & 0x0F) << 12) | ((test_char[1] & 0x3F) << 6) | (test_char[2] & 0x3F);
+            } else if ((test_char[0] & 0xF8) == 0xF0 && test_char[1] != 0 && test_char[2] != 0 && test_char[3] != 0) {
+                // 4-byte character (emoji range)
+                codepoint = ((test_char[0] & 0x07) << 18) | ((test_char[1] & 0x3F) << 12) |
+                            ((test_char[2] & 0x3F) << 6) | (test_char[3] & 0x3F);
+            }
+        }
+        
+        ImGui::Text("Unicode code point: U+%X", codepoint);
+        ImGui::Text("Available in Default font: %s", is_available_default ? "Yes" : "No");
+        ImGui::Text("Available in Mono font: %s", is_available_mono ? "Yes" : "No");
+        
+        ImGui::Separator();
+        
+        // Display a list of emoji blocks you might want to add
+        ImGui::Text("Common Unicode Blocks for Emojis:");
+        ImGui::Text("- Emoticons (U+1F600-U+1F64F)");
+        ImGui::Text("- Miscellaneous Symbols and Pictographs (U+1F300-U+1F5FF)");
+        ImGui::Text("- Transport and Map Symbols (U+1F680-U+1F6FF)");
+        ImGui::Text("- Supplemental Symbols and Pictographs (U+1F900-U+1F9FF)");
+        
+        if (!is_available_default && !is_available_mono) {
+            ImGui::TextWrapped(
+                "The character is not available in your current fonts. To add support for emojis and other special characters, "
+                "you need to either:\n"
+                "1. Add the relevant Unicode range to the font loading in fonts.cpp\n"
+                "2. Use a font that includes the character (like Noto Emoji or Segoe UI Emoji)\n"
+                "3. Merge an emoji font with your current font"
+            );
+        }
+    }
+    ImGui::End();
 }
