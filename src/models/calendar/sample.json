@@ -1,0 +1,995 @@
+{
+    "items": [
+        {
+            "reminders": {
+                "useDefault": false,
+                "overrides": [
+                    {
+                        "minutes": 10,
+                        "method": "popup"
+                    },
+                    {
+                        "method": "email",
+                        "minutes": 430
+                    }
+                ]
+            },
+            "transparency": "transparent",
+            "eventType": "fromGmail",
+            "end": {
+                "date": "2025-04-26"
+            },
+            "visibility": "private",
+            "created": "2025-04-12T07:30:22.000Z",
+            "id": "omodlkvv9sni93167gufl1mi4c",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "location": "R. Três de Outubro, 1705 - Tramandaí, RS, 95590-000, Brazil",
+            "iCalUID": "omodlkvv9sni93167gufl1mi4c@google.com",
+            "source": {
+                "title": "",
+                "url": "https://mail.google.com/mail?extsrc=cal&plid=ACUX6DMDBVL3ZOhr2UXLBB-Uc95wiLF5vcTFHoU"
+            },
+            "description": "To see detailed information for automatically created events like this one, use the official Google Calendar app. https://g.co/calendar\n\nThis event was created from an email you received in Gmail. https://mail.google.com/mail?extsrc=cal&plid=ACUX6DMDBVL3ZOhr2UXLBB-Uc95wiLF5vcTFHoU\n",
+            "status": "confirmed",
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "updated": "2025-04-20T07:30:11.970Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=b21vZGxrdnY5c25pOTMxNjdndWZsMW1pNGMgaWduYWNpb25yQG0",
+            "summary": "Stay at Lindo apartamento Tramandaí",
+            "sequence": 0,
+            "guestsCanInviteOthers": false,
+            "kind": "calendar#event",
+            "start": {
+                "date": "2025-03-23"
+            },
+            "attendees": [
+                {
+                    "email": "ignacionr@gmail.com",
+                    "responseStatus": "accepted",
+                    "self": true,
+                    "organizer": true
+                }
+            ],
+            "etag": "\"3490268423941342\""
+        },
+        {
+            "recurringEventId": "1o8bgss1v1huvrr60oi9uru06f",
+            "originalStartTime": {
+                "dateTime": "2025-04-26T06:00:00-03:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "eventType": "default",
+            "created": "2024-04-15T12:58:47.000Z",
+            "id": "1o8bgss1v1huvrr60oi9uru06f_20250426T090000Z",
+            "iCalUID": "1o8bgss1v1huvrr60oi9uru06f@google.com",
+            "status": "confirmed",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "updated": "2024-10-26T00:28:10.417Z",
+            "creator": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "summary": "Check MTS line",
+            "kind": "calendar#event",
+            "start": {
+                "timeZone": "Asia/Bangkok",
+                "dateTime": "2025-04-26T06:00:00-03:00"
+            },
+            "etag": "\"3459804980834000\"",
+            "reminders": {
+                "useDefault": true
+            },
+            "end": {
+                "dateTime": "2025-04-26T07:00:00-03:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=MW84YmdzczF2MWh1dnJyNjBvaTl1cnUwNmZfMjAyNTA0MjZUMDkwMDAwWiBpZ25hY2lvbnJAbQ",
+            "sequence": 1
+        },
+        {
+            "id": "30gr63msqmog3tfifdc0tqbupo_20250430",
+            "start": {
+                "date": "2025-04-30"
+            },
+            "etag": "\"3346561817104000\"",
+            "eventType": "default",
+            "kind": "calendar#event",
+            "originalStartTime": {
+                "date": "2025-04-30"
+            },
+            "iCalUID": "30gr63msqmog3tfifdc0tqbupo@google.com",
+            "end": {
+                "date": "2025-05-01"
+            },
+            "organizer": {
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=MzBncjYzbXNxbW9nM3RmaWZkYzB0cWJ1cG9fMjAyNTA0MzAgaWduYWNpb25yQG0",
+            "sequence": 0,
+            "created": "2008-03-17T13:58:57.000Z",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "updated": "2023-01-09T16:15:08.552Z",
+            "summary": "Sebastián Nicolás Colandré's Birthday",
+            "status": "confirmed",
+            "recurringEventId": "30gr63msqmog3tfifdc0tqbupo"
+        },
+        {
+            "recurringEventId": "bhjmns1jl8o614u3q55aj2cec0",
+            "kind": "calendar#event",
+            "id": "bhjmns1jl8o614u3q55aj2cec0_20250501",
+            "iCalUID": "bhjmns1jl8o614u3q55aj2cec0@google.com",
+            "end": {
+                "date": "2025-05-02"
+            },
+            "eventType": "default",
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "originalStartTime": {
+                "date": "2025-05-01"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "updated": "2023-01-09T16:15:26.249Z",
+            "summary": "Cumpleaños de Elba Zacknik",
+            "status": "confirmed",
+            "htmlLink": "https://www.google.com/calendar/event?eid=YmhqbW5zMWpsOG82MTR1M3E1NWFqMmNlYzBfMjAyNTA1MDEgaWduYWNpb25yQG0",
+            "sequence": 0,
+            "created": "2008-03-17T13:58:41.000Z",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "start": {
+                "date": "2025-05-01"
+            },
+            "etag": "\"3346561852498000\""
+        },
+        {
+            "iCalUID": "ea9nban8shd2t5dpkntn0mecnc@google.com",
+            "status": "confirmed",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=ZWE5bmJhbjhzaGQydDVkcGtudG4wbWVjbmNfMjAyNTA1MDEgaWduYWNpb25yQG0",
+            "sequence": 0,
+            "start": {
+                "date": "2025-05-01"
+            },
+            "etag": "\"3346561855570000\"",
+            "reminders": {
+                "useDefault": false
+            },
+            "updated": "2023-01-09T16:15:27.785Z",
+            "eventType": "default",
+            "summary": "Cumpleaños de Elba Zacknik",
+            "kind": "calendar#event",
+            "recurringEventId": "ea9nban8shd2t5dpkntn0mecnc",
+            "originalStartTime": {
+                "date": "2025-05-01"
+            },
+            "id": "ea9nban8shd2t5dpkntn0mecnc_20250501",
+            "end": {
+                "date": "2025-05-02"
+            },
+            "created": "2008-03-17T13:58:45.000Z",
+            "creator": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            }
+        },
+        {
+            "created": "2025-03-14T10:11:48.000Z",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "start": {
+                "dateTime": "2025-05-01T13:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "etag": "\"3483894217495966\"",
+            "reminders": {
+                "useDefault": true
+            },
+            "updated": "2025-03-14T10:11:48.747Z",
+            "summary": "Push Monthly Time Report",
+            "htmlLink": "https://www.google.com/calendar/event?eid=NWdvNm1zMGk5dHQwdWZpZWF1NXBpamxkaGJfMjAyNTA1MDFUMTYwMDAwWiBpZ25hY2lvbnJAbQ",
+            "sequence": 0,
+            "kind": "calendar#event",
+            "end": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-05-01T13:15:00-03:00"
+            },
+            "eventType": "default",
+            "recurringEventId": "5go6ms0i9tt0ufieau5pijldhb",
+            "originalStartTime": {
+                "dateTime": "2025-05-01T13:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "id": "5go6ms0i9tt0ufieau5pijldhb_20250501T160000Z",
+            "iCalUID": "5go6ms0i9tt0ufieau5pijldhb@google.com",
+            "status": "confirmed",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            }
+        },
+        {
+            "reminders": {
+                "useDefault": false
+            },
+            "created": "2008-03-17T13:58:32.000Z",
+            "start": {
+                "date": "2025-05-10"
+            },
+            "id": "39jt446eqju1reph9tk86mkvuo_20250510",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "end": {
+                "date": "2025-05-11"
+            },
+            "eventType": "default",
+            "sequence": 0,
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "iCalUID": "39jt446eqju1reph9tk86mkvuo@google.com",
+            "updated": "2023-01-09T16:14:55.169Z",
+            "originalStartTime": {
+                "date": "2025-05-10"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=MzlqdDQ0NmVxanUxcmVwaDl0azg2bWt2dW9fMjAyNTA1MTAgaWduYWNpb25yQG0",
+            "summary": "Cumpleaños de Ivo Saccardo",
+            "recurringEventId": "39jt446eqju1reph9tk86mkvuo",
+            "status": "confirmed",
+            "etag": "\"3346561790338000\"",
+            "kind": "calendar#event"
+        },
+        {
+            "recurringEventId": "ciu4uabtf0ql5pbo5fiq94a81c",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "end": {
+                "date": "2025-05-11"
+            },
+            "created": "2008-03-17T13:58:30.000Z",
+            "id": "ciu4uabtf0ql5pbo5fiq94a81c_20250510",
+            "iCalUID": "ciu4uabtf0ql5pbo5fiq94a81c@google.com",
+            "updated": "2023-01-09T16:14:42.099Z",
+            "eventType": "default",
+            "sequence": 0,
+            "summary": "Cumpleaños de SebastiÃ¡n Borgarello",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "etag": "\"3346561764198000\"",
+            "status": "confirmed",
+            "kind": "calendar#event",
+            "originalStartTime": {
+                "date": "2025-05-10"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "start": {
+                "date": "2025-05-10"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=Y2l1NHVhYnRmMHFsNXBibzVmaXE5NGE4MWNfMjAyNTA1MTAgaWduYWNpb25yQG0"
+        },
+        {
+            "sequence": 0,
+            "etag": "\"3346561811812000\"",
+            "status": "confirmed",
+            "iCalUID": "eq1ahnctngb7m38usuk1kkmap8@google.com",
+            "kind": "calendar#event",
+            "updated": "2023-01-09T16:15:05.906Z",
+            "created": "2008-03-17T13:58:30.000Z",
+            "start": {
+                "date": "2025-05-10"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=ZXExYWhuY3RuZ2I3bTM4dXN1azFra21hcDhfMjAyNTA1MTAgaWduYWNpb25yQG0",
+            "summary": "Cumpleaños de Sebastián Borgarello",
+            "recurringEventId": "eq1ahnctngb7m38usuk1kkmap8",
+            "end": {
+                "date": "2025-05-11"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "eventType": "default",
+            "id": "eq1ahnctngb7m38usuk1kkmap8_20250510",
+            "creator": {
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "originalStartTime": {
+                "date": "2025-05-10"
+            }
+        },
+        {
+            "id": "lnvhc2gj6cau8aoht5j14hq2r8_20250510",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "status": "confirmed",
+            "etag": "\"3367267475234000\"",
+            "iCalUID": "lnvhc2gj6cau8aoht5j14hq2r8@google.com",
+            "kind": "calendar#event",
+            "originalStartTime": {
+                "date": "2025-05-10"
+            },
+            "updated": "2023-05-09T12:02:17.617Z",
+            "start": {
+                "date": "2025-05-10"
+            },
+            "sequence": 0,
+            "summary": "Cumpleaños de Ivo Saccardo",
+            "end": {
+                "date": "2025-05-11"
+            },
+            "created": "2008-03-17T13:58:31.000Z",
+            "reminders": {
+                "useDefault": false
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=bG52aGMyZ2o2Y2F1OGFvaHQ1ajE0aHEycjhfMjAyNTA1MTAgaWduYWNpb25yQG0",
+            "recurringEventId": "lnvhc2gj6cau8aoht5j14hq2r8",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "eventType": "default"
+        },
+        {
+            "id": "86mrt3rpoe78tpgdql8447jh88_20250511",
+            "kind": "calendar#event",
+            "etag": "\"3346561720344000\"",
+            "status": "confirmed",
+            "updated": "2023-01-09T16:14:20.172Z",
+            "originalStartTime": {
+                "date": "2025-05-11"
+            },
+            "eventType": "default",
+            "sequence": 0,
+            "creator": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            },
+            "iCalUID": "86mrt3rpoe78tpgdql8447jh88@google.com",
+            "recurringEventId": "86mrt3rpoe78tpgdql8447jh88",
+            "start": {
+                "date": "2025-05-11"
+            },
+            "organizer": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=ODZtcnQzcnBvZTc4dHBnZHFsODQ0N2poODhfMjAyNTA1MTEgaWduYWNpb25yQG0",
+            "created": "2008-03-17T13:58:40.000Z",
+            "reminders": {
+                "useDefault": false
+            },
+            "summary": "Cumpleaños de Alexis Fernandez",
+            "end": {
+                "date": "2025-05-12"
+            }
+        },
+        {
+            "status": "confirmed",
+            "etag": "\"3367633603432000\"",
+            "updated": "2023-05-11T14:53:21.716Z",
+            "id": "foe46dgd25a2ll424t2s4paacg_20250512",
+            "iCalUID": "foe46dgd25a2ll424t2s4paacg@google.com",
+            "start": {
+                "date": "2025-05-12"
+            },
+            "originalStartTime": {
+                "date": "2025-05-12"
+            },
+            "eventType": "default",
+            "organizer": {
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "sequence": 0,
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "recurringEventId": "foe46dgd25a2ll424t2s4paacg",
+            "reminders": {
+                "useDefault": false
+            },
+            "summary": "Cumpleaños de Francesco Davide Fiore",
+            "end": {
+                "date": "2025-05-13"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=Zm9lNDZkZ2QyNWEybGw0MjR0MnM0cGFhY2dfMjAyNTA1MTIgaWduYWNpb25yQG0",
+            "created": "2008-03-17T13:58:46.000Z",
+            "kind": "calendar#event"
+        },
+        {
+            "created": "2008-03-17T13:58:47.000Z",
+            "sequence": 0,
+            "iCalUID": "iillqjiv7vmaj9kr4orsp7icjo@google.com",
+            "recurringEventId": "iillqjiv7vmaj9kr4orsp7icjo",
+            "end": {
+                "date": "2025-05-13"
+            },
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=aWlsbHFqaXY3dm1hajlrcjRvcnNwN2ljam9fMjAyNTA1MTIgaWduYWNpb25yQG0",
+            "kind": "calendar#event",
+            "etag": "\"3346561869420000\"",
+            "status": "confirmed",
+            "reminders": {
+                "useDefault": false
+            },
+            "originalStartTime": {
+                "date": "2025-05-12"
+            },
+            "eventType": "default",
+            "summary": "Cumpleaños de Francesco Davide Fiore",
+            "id": "iillqjiv7vmaj9kr4orsp7icjo_20250512",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "start": {
+                "date": "2025-05-12"
+            },
+            "updated": "2023-01-09T16:15:34.710Z"
+        },
+        {
+            "end": {
+                "date": "2025-05-22"
+            },
+            "created": "2008-03-17T13:58:35.000Z",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "sequence": 0,
+            "kind": "calendar#event",
+            "recurringEventId": "aeudtlcm320g7rchshokdeupgo",
+            "etag": "\"3369264494496000\"",
+            "status": "confirmed",
+            "reminders": {
+                "useDefault": false
+            },
+            "summary": "Cumpleaños de Adriana Derosa",
+            "htmlLink": "https://www.google.com/calendar/event?eid=YWV1ZHRsY20zMjBnN3JjaHNob2tkZXVwZ29fMjAyNTA1MjEgaWduYWNpb25yQG0",
+            "start": {
+                "date": "2025-05-21"
+            },
+            "eventType": "default",
+            "originalStartTime": {
+                "date": "2025-05-21"
+            },
+            "updated": "2023-05-21T01:24:07.248Z",
+            "id": "aeudtlcm320g7rchshokdeupgo_20250521",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "iCalUID": "aeudtlcm320g7rchshokdeupgo@google.com"
+        },
+        {
+            "eventType": "default",
+            "id": "rnjmn4pldn9mnosociqmon3osg_20250522",
+            "etag": "\"3369340836032000\"",
+            "updated": "2023-05-21T12:00:18.016Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=cm5qbW40cGxkbjltbm9zb2NpcW1vbjNvc2dfMjAyNTA1MjIgaWduYWNpb25yQG0",
+            "created": "2008-03-17T13:58:34.000Z",
+            "reminders": {
+                "useDefault": false
+            },
+            "iCalUID": "rnjmn4pldn9mnosociqmon3osg@google.com",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "originalStartTime": {
+                "date": "2025-05-22"
+            },
+            "kind": "calendar#event",
+            "start": {
+                "date": "2025-05-22"
+            },
+            "summary": "Cumpleaños de Adriana Derosa",
+            "recurringEventId": "rnjmn4pldn9mnosociqmon3osg",
+            "status": "confirmed",
+            "sequence": 0,
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "end": {
+                "date": "2025-05-23"
+            }
+        },
+        {
+            "etag": "\"3459804980834000\"",
+            "updated": "2024-10-26T00:28:10.417Z",
+            "creator": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "eventType": "default",
+            "iCalUID": "1o8bgss1v1huvrr60oi9uru06f@google.com",
+            "reminders": {
+                "useDefault": true
+            },
+            "id": "1o8bgss1v1huvrr60oi9uru06f_20250531T090000Z",
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "kind": "calendar#event",
+            "start": {
+                "timeZone": "Asia/Bangkok",
+                "dateTime": "2025-05-31T06:00:00-03:00"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=MW84YmdzczF2MWh1dnJyNjBvaTl1cnUwNmZfMjAyNTA1MzFUMDkwMDAwWiBpZ25hY2lvbnJAbQ",
+            "summary": "Check MTS line",
+            "created": "2024-04-15T12:58:47.000Z",
+            "originalStartTime": {
+                "dateTime": "2025-05-31T06:00:00-03:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "status": "confirmed",
+            "end": {
+                "timeZone": "Asia/Bangkok",
+                "dateTime": "2025-05-31T07:00:00-03:00"
+            },
+            "recurringEventId": "1o8bgss1v1huvrr60oi9uru06f",
+            "sequence": 1
+        },
+        {
+            "reminders": {
+                "useDefault": true
+            },
+            "iCalUID": "5go6ms0i9tt0ufieau5pijldhb@google.com",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "status": "confirmed",
+            "creator": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "summary": "Push Monthly Time Report",
+            "end": {
+                "dateTime": "2025-06-01T13:15:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "eventType": "default",
+            "recurringEventId": "5go6ms0i9tt0ufieau5pijldhb",
+            "etag": "\"3483894217495966\"",
+            "sequence": 0,
+            "created": "2025-03-14T10:11:48.000Z",
+            "originalStartTime": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-06-01T13:00:00-03:00"
+            },
+            "id": "5go6ms0i9tt0ufieau5pijldhb_20250601T160000Z",
+            "kind": "calendar#event",
+            "start": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-06-01T13:00:00-03:00"
+            },
+            "updated": "2025-03-14T10:11:48.747Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=NWdvNm1zMGk5dHQwdWZpZWF1NXBpamxkaGJfMjAyNTA2MDFUMTYwMDAwWiBpZ25hY2lvbnJAbQ"
+        },
+        {
+            "htmlLink": "https://www.google.com/calendar/event?eid=Nmk0OWFlYmh2YzN1c3FlcjQyb3BiY25vaHNfMjAyNTA2MDYgaWduYWNpb25yQG0",
+            "summary": "Cumpleaños de Andres Manggini",
+            "end": {
+                "date": "2025-06-07"
+            },
+            "etag": "\"3346561923930000\"",
+            "creator": {
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "eventType": "default",
+            "recurringEventId": "6i49aebhvc3usqer42opbcnohs",
+            "kind": "calendar#event",
+            "start": {
+                "date": "2025-06-06"
+            },
+            "sequence": 0,
+            "updated": "2023-01-09T16:16:01.965Z",
+            "created": "2008-03-17T13:58:29.000Z",
+            "originalStartTime": {
+                "date": "2025-06-06"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "iCalUID": "6i49aebhvc3usqer42opbcnohs@google.com",
+            "id": "6i49aebhvc3usqer42opbcnohs_20250606",
+            "organizer": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            },
+            "status": "confirmed"
+        },
+        {
+            "originalStartTime": {
+                "date": "2025-06-06"
+            },
+            "kind": "calendar#event",
+            "status": "confirmed",
+            "sequence": 0,
+            "summary": "Cumpleaños de Salvador Camilo Attie",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "recurringEventId": "nfbksms3q7silpt6c5j1lth3m8",
+            "eventType": "default",
+            "id": "nfbksms3q7silpt6c5j1lth3m8_20250606",
+            "etag": "\"3371933231350000\"",
+            "htmlLink": "https://www.google.com/calendar/event?eid=bmZia3NtczNxN3NpbHB0NmM1ajFsdGgzbThfMjAyNTA2MDYgaWduYWNpb25yQG0",
+            "end": {
+                "date": "2025-06-07"
+            },
+            "reminders": {
+                "useDefault": false
+            },
+            "iCalUID": "nfbksms3q7silpt6c5j1lth3m8@google.com",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez"
+            },
+            "updated": "2023-06-05T12:03:35.675Z",
+            "start": {
+                "date": "2025-06-06"
+            },
+            "created": "2008-03-17T13:58:57.000Z"
+        },
+        {
+            "status": "confirmed",
+            "summary": "Cumpleaños de Gabriela Genuario",
+            "created": "2008-03-17T13:58:38.000Z",
+            "originalStartTime": {
+                "date": "2025-06-12"
+            },
+            "sequence": 0,
+            "etag": "\"3372988049626000\"",
+            "creator": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            },
+            "end": {
+                "date": "2025-06-13"
+            },
+            "recurringEventId": "1no664eaojfe709fbdj7ue77uo",
+            "eventType": "default",
+            "reminders": {
+                "useDefault": false
+            },
+            "iCalUID": "1no664eaojfe709fbdj7ue77uo@google.com",
+            "id": "1no664eaojfe709fbdj7ue77uo_20250612",
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "self": true
+            },
+            "updated": "2023-06-11T14:33:44.813Z",
+            "start": {
+                "date": "2025-06-12"
+            },
+            "htmlLink": "https://www.google.com/calendar/event?eid=MW5vNjY0ZWFvamZlNzA5ZmJkajd1ZTc3dW9fMjAyNTA2MTIgaWduYWNpb25yQG0",
+            "kind": "calendar#event"
+        },
+        {
+            "id": "_6l338c9m8csjcb9h84pjib9k752k8b9p8l2jcb9n8h2j4c226or3ihhl60",
+            "start": {
+                "dateTime": "2025-06-13T12:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "created": "2025-03-21T23:49:16.000Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=XzZsMzM4YzltOGNzamNiOWg4NHBqaWI5azc1Mms4YjlwOGwyamNiOW44aDJqNGMyMjZvcjNpaGhsNjAgaWduYWNpb25yQG0",
+            "kind": "calendar#event",
+            "reminders": {
+                "useDefault": true
+            },
+            "iCalUID": "5F416C96-1A39-49ED-9EE6-7DE20B669F50",
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "status": "confirmed",
+            "updated": "2025-03-21T23:49:16.610Z",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "eventType": "default",
+            "etag": "\"3485201913220158\"",
+            "sequence": 0,
+            "summary": "Quitar Apple Arcade",
+            "end": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-06-13T13:00:00-03:00"
+            }
+        },
+        {
+            "start": {
+                "dateTime": "2025-06-22T16:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "sequence": 0,
+            "transparency": "transparent",
+            "recurringEventId": "7gqsjn2q9gqkk054679jdk11fi",
+            "kind": "calendar#event",
+            "reminders": {
+                "useDefault": true
+            },
+            "iCalUID": "7gqsjn2q9gqkk054679jdk11fi@google.com",
+            "id": "7gqsjn2q9gqkk054679jdk11fi_20250622T190000Z",
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "status": "confirmed",
+            "updated": "2021-06-20T01:10:11.678Z",
+            "created": "2021-06-20T01:10:11.000Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=N2dxc2puMnE5Z3FrazA1NDY3OWpkazExZmlfMjAyNTA2MjJUMTkwMDAwWiBpZ25hY2lvbnJAbQ",
+            "originalStartTime": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-06-22T16:00:00-03:00"
+            },
+            "etag": "\"3248302823356000\"",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "summary": "barrilete cósmico",
+            "colorId": "10",
+            "end": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-06-22T16:30:00-03:00"
+            },
+            "eventType": "default"
+        },
+        {
+            "organizer": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "recurringEventId": "1o8bgss1v1huvrr60oi9uru06f",
+            "sequence": 1,
+            "kind": "calendar#event",
+            "start": {
+                "dateTime": "2025-06-28T06:00:00-03:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "eventType": "default",
+            "end": {
+                "timeZone": "Asia/Bangkok",
+                "dateTime": "2025-06-28T07:00:00-03:00"
+            },
+            "summary": "Check MTS line",
+            "id": "1o8bgss1v1huvrr60oi9uru06f_20250628T090000Z",
+            "updated": "2024-10-26T00:28:10.417Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=MW84YmdzczF2MWh1dnJyNjBvaTl1cnUwNmZfMjAyNTA2MjhUMDkwMDAwWiBpZ25hY2lvbnJAbQ",
+            "status": "confirmed",
+            "iCalUID": "1o8bgss1v1huvrr60oi9uru06f@google.com",
+            "created": "2024-04-15T12:58:47.000Z",
+            "reminders": {
+                "useDefault": true
+            },
+            "originalStartTime": {
+                "timeZone": "Asia/Bangkok",
+                "dateTime": "2025-06-28T06:00:00-03:00"
+            },
+            "etag": "\"3459804980834000\""
+        },
+        {
+            "start": {
+                "dateTime": "2025-07-01T13:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "end": {
+                "timeZone": "America/Argentina/Buenos_Aires",
+                "dateTime": "2025-07-01T13:15:00-03:00"
+            },
+            "summary": "Push Monthly Time Report",
+            "recurringEventId": "5go6ms0i9tt0ufieau5pijldhb",
+            "sequence": 0,
+            "updated": "2025-03-14T10:11:48.747Z",
+            "status": "confirmed",
+            "creator": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "iCalUID": "5go6ms0i9tt0ufieau5pijldhb@google.com",
+            "eventType": "default",
+            "reminders": {
+                "useDefault": true
+            },
+            "id": "5go6ms0i9tt0ufieau5pijldhb_20250701T160000Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=NWdvNm1zMGk5dHQwdWZpZWF1NXBpamxkaGJfMjAyNTA3MDFUMTYwMDAwWiBpZ25hY2lvbnJAbQ",
+            "etag": "\"3483894217495966\"",
+            "created": "2025-03-14T10:11:48.000Z",
+            "originalStartTime": {
+                "dateTime": "2025-07-01T13:00:00-03:00",
+                "timeZone": "America/Argentina/Buenos_Aires"
+            },
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "kind": "calendar#event"
+        },
+        {
+            "id": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g70oj8dq58d2j2ha18kqj2ghk8csj8c1h85138c1n60p3eghi8d332c1g60o30c1g6l1jagpi611k8cpo6sr44ghk6ks3ad9m8d1k4h9k8p33cchm68sg_20250712",
+            "summary": "Cumpleaños de Lola",
+            "updated": "2023-01-09T16:17:34.677Z",
+            "htmlLink": "https://www.google.com/calendar/event?eid=XzYwcTMwYzFnNjBvMzBlMWk2MG80YWMxZzYwcmo4Z3BsODhyajJjMWg4NHMzNGg5ZzYwczMwYzFnNjBvMzBjMWc3MG9qOGRxNThkMmoyaGExOGtxajJnaGs4Y3NqOGMxaDg1MTM4YzFuNjBwM2VnaGk4ZDMzMmMxZzYwbzMwYzFnNmwxamFncGk2MTFrOGNwbzZzcjQ0Z2hrNmtzM2FkOW04ZDFrNGg5azhwMzNjY2htNjhzZ18yMDI1MDcxMiBpZ25hY2lvbnJAbQ",
+            "iCalUID": "040000008200E00074C5B7101A82E008000000008147ECE1EAE51B4C9401AB407027B2CF100000005C5C20CD3876BB458556CCBE4FF62629",
+            "etag": "\"3046912401573000\"",
+            "reminders": {
+                "useDefault": false,
+                "overrides": [
+                    {
+                        "minutes": 1080,
+                        "method": "popup"
+                    }
+                ]
+            },
+            "kind": "calendar#event",
+            "start": {
+                "date": "2025-07-12"
+            },
+            "creator": {
+                "self": true,
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com"
+            },
+            "eventType": "default",
+            "end": {
+                "date": "2025-07-13"
+            },
+            "recurringEventId": "_60q30c1g60o30e1i60o4ac1g60rj8gpl88rj2c1h84s34h9g60s30c1g60o30c1g70oj8dq58d2j2ha18kqj2ghk8csj8c1h85138c1n60p3eghi8d332c1g60o30c1g6l1jagpi611k8cpo6sr44ghk6ks3ad9m8d1k4h9k8p33cchm68sg",
+            "organizer": {
+                "displayName": "Ignacio Nicolás Rodríguez",
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "transparency": "transparent",
+            "sequence": 0,
+            "status": "confirmed",
+            "created": "2013-07-12T12:15:46.000Z",
+            "originalStartTime": {
+                "date": "2025-07-12"
+            }
+        },
+        {
+            "iCalUID": "6tbj41ecgl4ci3cgoq48u67gt0@google.com",
+            "etag": "\"3378513255723000\"",
+            "created": "2021-07-06T04:13:04.000Z",
+            "originalStartTime": {
+                "date": "2025-07-13"
+            },
+            "reminders": {
+                "overrides": [
+                    {
+                        "method": "popup",
+                        "minutes": 900
+                    },
+                    {
+                        "minutes": 10,
+                        "method": "popup"
+                    }
+                ],
+                "useDefault": false
+            },
+            "id": "6tbj41ecgl4ci3cgoq48u67gt0_20250713",
+            "htmlLink": "https://www.google.com/calendar/event?eid=NnRiajQxZWNnbDRjaTNjZ29xNDh1NjdndDBfMjAyNTA3MTMgaWduYWNpb25yQG0",
+            "kind": "calendar#event",
+            "start": {
+                "date": "2025-07-13"
+            },
+            "end": {
+                "date": "2025-07-14"
+            },
+            "organizer": {
+                "self": true,
+                "email": "ignacionr@gmail.com"
+            },
+            "transparency": "transparent",
+            "status": "confirmed",
+            "creator": {
+                "email": "ignacionr@gmail.com",
+                "self": true
+            },
+            "eventType": "default",
+            "summary": "Olga!",
+            "recurringEventId": "6tbj41ecgl4ci3cgoq48u67gt0",
+            "sequence": 0,
+            "updated": "2023-07-13T13:57:07.908Z"
+        }
+    ],
+    "defaultReminders": [
+        {
+            "method": "popup",
+            "minutes": 10
+        }
+    ],
+    "etag": "\"p33nupa66hfj8o0o\"",
+    "description": "",
+    "kind": "calendar#events",
+    "timeZone": "America/Argentina/Buenos_Aires",
+    "updated": "2025-04-20T07:30:11.970Z",
+    "summary": "ignacionr@gmail.com",
+    "accessRole": "owner"
+}

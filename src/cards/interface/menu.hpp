@@ -59,6 +59,7 @@ namespace rouen::cards {
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                     }},
                     { "Information", {
+                        {"Calendar", []() { "create_card"_sfn("calendar"); }},
                         {"Grok AI Chat", []() { "create_card"_sfn("grok"); }},
                         {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
                         {"Email", []() { "create_card"_sfn("mail"); }}

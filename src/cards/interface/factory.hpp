@@ -19,6 +19,7 @@
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
 #include "../information/mail/mail.hpp"
+#include "../information/calendar/calendar.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -80,6 +81,15 @@ namespace rouen::cards {
                 }},
                 {"rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<rss_item>(std::string(uri));
+                }},
+                {"calendar", [](std::string_view uri, SDL_Renderer* renderer) {
+                    if (uri.empty()) {
+                        // Use default URL from environment variable
+                        return std::make_shared<calendar>();
+                    } else {
+                        // Use provided URL
+                        return std::make_shared<calendar>(std::string(uri));
+                    }
                 }},
                 {"mail", [](std::string_view uri, SDL_Renderer* renderer) {
                     if (uri.empty()) {
