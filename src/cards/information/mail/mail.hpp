@@ -7,11 +7,14 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <thread>
+#include <mutex>
 
 #include "../../interface/card.hpp"
 #include "../../../models/mail/imap_host.hpp"
 #include "../../../models/mail/message.hpp"
 #include "mail_screen.hpp"
+#include "../../../registrar.hpp"
 
 namespace rouen::cards {
 
@@ -52,7 +55,12 @@ public:
         refresh_messages();
     }
     
-    ~mail() override = default;
+    ~mail() override {
+        // Make sure the refresh thread is stopped before destroying the object
+        if (refresh_thread_.joinable()) {
+            refresh_thread_.request_stop();
+        }
+    }
     
     bool render() override {
         // Check if it's time to refresh based on refresh interval
@@ -114,14 +122,24 @@ public:
     }
     
     void refresh_messages() {
-        try {
-            if (mail_screen_) {
-                mail_screen_->refresh();
-            }
-            last_refresh_ = std::chrono::steady_clock::now();
-        } catch (const std::exception& e) {
-            // Handle refresh error
+        // Start a new background thread to refresh messages
+        // If there's an existing thread, stop it first
+        if (refresh_thread_.joinable()) {
+            refresh_thread_.request_stop();
         }
+        
+        last_refresh_ = std::chrono::steady_clock::now();
+        
+        // Start a new thread for refreshing
+        refresh_thread_ = std::jthread([this](std::stop_token stop_token) {
+            try {
+                if (mail_screen_) {
+                    mail_screen_->refresh();
+                }
+            } catch (const std::exception& e) {
+                "notify"_sfn(std::format("Failed to refresh messages: {}", e.what()));
+            }
+        });
     }
     
 private:
@@ -131,6 +149,7 @@ private:
     std::string current_mailbox_ = "INBOX";
     std::chrono::steady_clock::time_point last_refresh_ = std::chrono::steady_clock::now();
     std::chrono::seconds refresh_interval_{300}; // Refresh every 5 minutes
+    std::jthread refresh_thread_; // Thread for refreshing messages in the background
 };
 
 } // namespace rouen::cards
