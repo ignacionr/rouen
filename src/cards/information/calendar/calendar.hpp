@@ -8,6 +8,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <map>
+#include <sstream>
+#include <iomanip>
 
 #include <imgui/imgui.h>
 
@@ -87,6 +90,8 @@ namespace rouen::cards
         std::jthread refresh_thread_;                // Thread for refreshing events in the background
         bool show_event_details_ = false;
         ::calendar::event selected_event_;
+        bool use_day_view_ = false;                  // Toggle between list view and day view
+        std::string current_date_ = "";              // Current date for day view
         
         // Helper methods for DRY code
         void setup_colors()
@@ -134,8 +139,36 @@ namespace rouen::cards
                 return;
             }
             
+            // View mode toggle
+            if (ImGui::Button(use_day_view_ ? "Switch to List View" : "Switch to Day View")) {
+                use_day_view_ = !use_day_view_;
+                
+                // If switching to day view and no date is selected, use today's date
+                if (use_day_view_ && current_date_.empty()) {
+                    auto now = std::chrono::system_clock::now();
+                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::tm now_tm = *std::localtime(&now_time_t);
+                    
+                    char date_buf[11];
+                    std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+                    current_date_ = date_buf;
+                }
+            }
+            
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+                ImGui::TextUnformatted("List view shows all upcoming events.\nDay view shows events for a specific day.");
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
+            
             if (show_event_details_) {
                 render_event_details();
+            } else if (use_day_view_) {
+                render_day_view();
             } else {
                 render_events_list();
             }
@@ -174,6 +207,175 @@ namespace rouen::cards
                 
                 ImGui::EndTable();
             }
+        }
+        
+        void render_day_view()
+        {
+            // Date picker for day view
+            char date_buf[11];
+            std::strncpy(date_buf, current_date_.c_str(), sizeof(date_buf));
+            date_buf[10] = '\0'; // Ensure null termination
+            
+            // Display current date with navigation buttons
+            ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
+            
+            if (ImGui::Button("< Prev Day")) {
+                // Parse current date
+                std::tm date_tm = {};
+                std::istringstream ss(current_date_);
+                ss >> std::get_time(&date_tm, "%Y-%m-%d");
+                
+                // Subtract one day
+                auto time_point = std::chrono::system_clock::from_time_t(std::mktime(&date_tm));
+                time_point -= std::chrono::hours(24);
+                auto new_time_t = std::chrono::system_clock::to_time_t(time_point);
+                std::tm new_tm = *std::localtime(&new_time_t);
+                
+                // Format new date
+                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &new_tm);
+                current_date_ = date_buf;
+            }
+            
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[2]);
+            ImGui::Text("%s", current_date_.c_str());
+            ImGui::PopStyleColor();
+            
+            ImGui::SameLine();
+            if (ImGui::Button("Next Day >")) {
+                // Parse current date
+                std::tm date_tm = {};
+                std::istringstream ss(current_date_);
+                ss >> std::get_time(&date_tm, "%Y-%m-%d");
+                
+                // Add one day
+                auto time_point = std::chrono::system_clock::from_time_t(std::mktime(&date_tm));
+                time_point += std::chrono::hours(24);
+                auto new_time_t = std::chrono::system_clock::to_time_t(time_point);
+                std::tm new_tm = *std::localtime(&new_time_t);
+                
+                // Format new date
+                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &new_tm);
+                current_date_ = date_buf;
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::Button("Today")) {
+                auto now = std::chrono::system_clock::now();
+                auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm = *std::localtime(&now_time_t);
+                
+                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+                current_date_ = date_buf;
+            }
+            
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+            
+            // Group events by time (hourly slots)
+            std::map<int, std::vector<const ::calendar::event*>> hourly_events;
+            bool has_all_day_events = false;
+            
+            // First pass: organize events by hour
+            for (const auto& event : events_) {
+                if (event.start.substr(0, 10) == current_date_) {
+                    if (event.all_day) {
+                        has_all_day_events = true;
+                        continue;
+                    }
+                    
+                    // Extract hour from time (format: "YYYY-MM-DDTHH:MM:SS")
+                    int hour = 0;
+                    if (event.start.length() >= 13) {
+                        hour = std::stoi(event.start.substr(11, 2));
+                    }
+                    
+                    hourly_events[hour].push_back(&event);
+                }
+            }
+            
+            // Render all-day events first if any
+            if (has_all_day_events) {
+                ImGui::PushStyleColor(ImGuiCol_Text, colors[4]); // Use highlight color
+                ImGui::Text("All-day Events:");
+                ImGui::PopStyleColor();
+                
+                for (const auto& event : events_) {
+                    if (event.start.substr(0, 10) == current_date_ && event.all_day) {
+                        render_day_view_event(event);
+                    }
+                }
+                
+                ImGui::Separator();
+            }
+            
+            // Create a child window with scrolling for the time slots
+            if (ImGui::BeginChild("DayViewScrollRegion", ImVec2(0, 400), false, ImGuiWindowFlags_HorizontalScrollbar)) {
+                // Render time slots (from 0 to 23 hours)
+                for (int hour = 0; hour < 24; hour++) {
+                    std::string time_label = std::format("{:02d}:00", hour);
+                    
+                    // Check if we have events for this hour
+                    if (hourly_events.find(hour) != hourly_events.end() && !hourly_events[hour].empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // Title color
+                        ImGui::Text("%s", time_label.c_str());
+                        ImGui::PopStyleColor();
+                        
+                        // Render events for this hour
+                        for (const auto* event_ptr : hourly_events[hour]) {
+                            render_day_view_event(*event_ptr);
+                        }
+                    } else {
+                        // Display empty time slot with lighter color
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 0.7f));
+                        ImGui::Text("%s", time_label.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                    
+                    // Add a subtle separator between hours
+                    ImGui::Separator();
+                }
+            }
+            ImGui::EndChild();
+        }
+
+        void render_day_view_event(const ::calendar::event& event)
+        {
+            // Calculate the event time display
+            std::string time_display;
+            if (event.all_day) {
+                time_display = "All day";
+            } else if (event.start.length() >= 16) {
+                // Extract hour:minute from the start time (format: "YYYY-MM-DDTHH:MM:SS")
+                time_display = event.start.substr(11, 5);
+            }
+            
+            // Event card style
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.2f, 0.3f, 0.3f, 0.3f));
+            ImGui::BeginChild(("event_" + event.id).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0), true);
+            
+            // Event summary with click to view details
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[3]); // Use the active/positive color
+            if (ImGui::Selectable(event.summary.c_str(), false)) {
+                selected_event_ = event;
+                show_event_details_ = true;
+            }
+            ImGui::PopStyleColor();
+            
+            // Event time
+            if (!event.all_day) {
+                ImGui::Text("Time: %s", time_display.c_str());
+            }
+            
+            // Event location if available
+            if (!event.location.empty()) {
+                ImGui::Text("Location: %s", event.location.c_str());
+            }
+            
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            
+            ImGui::Spacing();
         }
         
         void render_event_details()
