@@ -61,7 +61,6 @@ namespace mail {
                     if (!msg->action_links().empty()) {
                         ImGui::TableNextRow();
                         ImGui::TableNextColumn();
-                        ImGui::Text("Actions:");
                         ImGui::TableNextColumn();
                         // Create a button for each action link
                         int count{-1};
@@ -80,21 +79,13 @@ namespace mail {
                         ImGui::TableNextColumn();
                     }
                     
-                    if (ImGui::SmallButton("Delete")) {
-                        try {
-                            host_->delete_message(msg->uid());
-                            messages_.erase(std::remove_if(messages_.begin(), messages_.end(), [deleted_uid = msg->uid()](auto const& msg) {
-                                return msg->uid() == deleted_uid;
-                            }), messages_.end());
-                            ImGui::PopID();
-                            break;
-                        }
-                        catch (...) {
-                            ImGui::PopID();
-                            ImGui::EndTable();
-                            throw;
-                        }
+                    // Display email actions like Delete, Archive, etc.
+                    // when render_action_buttons changes the message list, it returns true
+                    if (render_action_buttons(msg)) {
+                        ImGui::PopID();
+                        break; // we can't trust the old list
                     }
+                    
                     ImGui::PopID();
                 }
                 ImGui::EndTable();
@@ -186,6 +177,55 @@ namespace mail {
         std::vector<std::shared_ptr<message>> messages_;
         std::vector<std::function<void()>> pending_tasks_;
         EmailMetadataAnalyzer metadata_analyzer_;
+        
+        // Define a structure for email actions
+        struct EmailAction {
+            std::string label;
+            std::function<void(std::shared_ptr<imap_host>, long long)> action;
+            bool removes_from_list;
+        };
+        
+        // Static list of all available email actions
+        static const std::vector<EmailAction>& get_email_actions() {
+            static const std::vector<EmailAction> email_actions = {
+                {"Delete", [](std::shared_ptr<imap_host> host, long long uid) {
+                    host->delete_message(uid);
+                }, true},
+                {"Archive", [](std::shared_ptr<imap_host> host, long long uid) {
+                    host->move_message(uid, "Archives");
+                }, true}
+            };
+            return email_actions;
+        }
+        
+        // Render action buttons for a message
+        bool render_action_buttons(const std::shared_ptr<message>& msg) {
+            for (const auto& action_item : get_email_actions()) {
+                
+                if (ImGui::SmallButton(action_item.label.c_str())) {
+                    try {
+                        // Execute the action
+                        action_item.action(host_, msg->uid());
+                        if (action_item.removes_from_list) {   
+                            // Remove the message from the list
+                            messages_.erase(std::remove_if(messages_.begin(), messages_.end(), 
+                                [removed_uid = msg->uid()](auto const& msg) {
+                                    return msg->uid() == removed_uid;
+                                }), messages_.end());
+                            
+                            return true; // Exit early as the message is now deleted
+                        }
+                    }
+                    catch (std::exception const& e) {
+                        "notify"_sfn(std::format("Failed to perform {}: {}", 
+                            action_item.label, e.what()));
+                        throw;
+                    }
+                }
+                ImGui::SameLine();
+            }
+            return false;
+        }
         
         // Delegate email metadata generation to the dedicated analyzer class
         std::string generate_email_metadata(const std::string& email_content) {

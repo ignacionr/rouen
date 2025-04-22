@@ -77,8 +77,8 @@ namespace mail {
                 // Prepare the message with the email content
                 // Truncate if needed to avoid excessive token usage
                 std::string truncated_content = email_content;
-                if (truncated_content.size() > 10000) {
-                    truncated_content = truncated_content.substr(0, 10000) + "... [content truncated]";
+                if (truncated_content.size() > 20000) {
+                    truncated_content = truncated_content.substr(0, 20000) + "... [content truncated]";
                 }
                 
                 // Send the message to the Grok model

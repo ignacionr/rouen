@@ -164,6 +164,72 @@ namespace mail {
             }
         }
         
+        void move_message(long long uid, const std::string& target_mailbox) {
+            // Check if target mailbox exists, create if it doesn't
+            bool mailbox_exists = false;
+            list_mailboxes([&mailbox_exists, &target_mailbox](std::string_view mailbox) {
+                if (mailbox == target_mailbox) {
+                    mailbox_exists = true;
+                }
+            });
+            
+            if (!mailbox_exists) {
+                std::lock_guard lock(mutex_);
+                // Create the target mailbox if it doesn't exist
+                auto url = host_;
+                curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
+                std::string cmd = std::format("CREATE {}", target_mailbox);
+                curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, cmd.c_str());
+                
+                std::string response;
+                curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, WriteToString);
+                curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &response);
+                
+                auto res = curl_easy_perform(curl_);
+                if (res != CURLE_OK) {
+                    throw std::runtime_error(std::format("Create mailbox failed: {}", curl_easy_strerror(res)));
+                }
+            }
+            
+            std::lock_guard lock(mutex_);
+
+            // Construct the IMAP URL for the COPY operation
+            auto url = std::format("{}{}/;UID={}", host_, mailbox_, uid);
+            curl_easy_setopt(curl_, CURLOPT_URL, url.c_str());
+            
+            // Copy the message to the target mailbox
+            std::string cmd = std::format("UID COPY {} {}", uid, target_mailbox);
+            curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, cmd.c_str());
+            
+            // Prepare response handling
+            std::string response;
+            curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, WriteToString);
+            curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &response);
+            
+            // Execute the request
+            auto res = curl_easy_perform(curl_);
+            if (res != CURLE_OK) {
+                throw std::runtime_error(std::format("Move message failed: {}", curl_easy_strerror(res)));
+            }
+            
+            // If copy successful, delete the original message
+            // Mark the email as \Deleted
+            curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, std::format("UID STORE {} +FLAGS (\\Deleted)", uid).c_str());
+            
+            res = curl_easy_perform(curl_);
+            if (res != CURLE_OK) {
+                throw std::runtime_error(std::format("Mark for deletion failed: {}", curl_easy_strerror(res)));
+            }
+            
+            // Now expunge the mailbox to permanently remove deleted messages
+            curl_easy_setopt(curl_, CURLOPT_CUSTOMREQUEST, "EXPUNGE");
+            
+            res = curl_easy_perform(curl_);
+            if (res != CURLE_OK) {
+                throw std::runtime_error(std::format("Expunge failed: {}", curl_easy_strerror(res)));
+            }
+        }
+        
         void select_mailbox(const std::string_view mailbox) {
             std::lock_guard lock(mutex_);
             mailbox_ = mailbox;
