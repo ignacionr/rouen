@@ -56,6 +56,30 @@ namespace mail {
                     for (auto const& tag : msg->tags()) {
                         ImGui::TextUnformatted(tag.data(), tag.data() + tag.size());
                     }
+                    
+                    // Display action links as buttons
+                    if (!msg->action_links().empty()) {
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Actions:");
+                        ImGui::TableNextColumn();
+                        // Create a button for each action link
+                        int count{-1};
+                        for (const auto& [action, link] : msg->action_links()) {
+                            if ((++count %= 3) > 0) {
+                                ImGui::SameLine();
+                            }
+                            if (ImGui::SmallButton(action.c_str())) {
+                                // Open the URL using the system's default browser
+                                // This is platform-specific, but since we're providing a Linux implementation:
+                                std::string cmd = std::format("xdg-open \"{}\"", link);
+                                system(cmd.c_str());
+                            }
+                        }
+                        ImGui::NewLine();
+                        ImGui::TableNextColumn();
+                    }
+                    
                     if (ImGui::SmallButton("Delete")) {
                         try {
                             host_->delete_message(msg->uid());

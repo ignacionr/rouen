@@ -21,6 +21,7 @@ namespace mail {
                 "category TEXT, "
                 "summary TEXT, "
                 "tags TEXT, "  // JSON array of tags stored as text
+                "action_links TEXT, "  // JSON map of actions stored as text
                 "created_at TEXT DEFAULT (datetime('now')), "
                 "updated_at TEXT DEFAULT (datetime('now'))"
             );
@@ -32,6 +33,12 @@ namespace mail {
                 std::string tags_json;
                 auto tags_res = glz::write_json(metadata.tags, tags_json);
                 if (tags_res) {
+                    return false;
+                }
+                
+                std::string action_links_json;
+                auto action_links_res = glz::write_json(metadata.action_links, action_links_json);
+                if (action_links_res) {
                     return false;
                 }
 
@@ -46,26 +53,28 @@ namespace mail {
                 if (exists) {
                     // Update existing record
                     sql = "UPDATE email_metadata SET "
-                          "urgency = ?, category = ?, summary = ?, tags = ?, updated_at = datetime('now') "
+                          "urgency = ?, category = ?, summary = ?, tags = ?, action_links = ?, updated_at = datetime('now') "
                           "WHERE id = ?";
                     db_.exec(sql, {}, 
                         metadata.urgency, 
                         metadata.category, 
                         metadata.summary, 
-                        tags_json, 
+                        tags_json,
+                        action_links_json,
                         metadata.id
                     );
                 } else {
                     // Insert new record
                     sql = "INSERT INTO email_metadata "
-                          "(id, urgency, category, summary, tags) "
-                          "VALUES (?, ?, ?, ?, ?)";
+                          "(id, urgency, category, summary, tags, action_links) "
+                          "VALUES (?, ?, ?, ?, ?, ?)";
                     db_.exec(sql, {}, 
                         metadata.id, 
                         metadata.urgency, 
                         metadata.category, 
                         metadata.summary, 
-                        tags_json
+                        tags_json,
+                        action_links_json
                     );
                 }
                 
@@ -81,7 +90,7 @@ namespace mail {
             try {
                 std::optional<EmailMetadata> result;
                 
-                std::string sql = "SELECT id, urgency, category, summary, tags "
+                std::string sql = "SELECT id, urgency, category, summary, tags, action_links "
                                   "FROM email_metadata WHERE id = ?";
                 db_.exec(sql, [&result](sqlite3_stmt* stmt) {
                     EmailMetadata metadata;
@@ -100,6 +109,16 @@ namespace mail {
                         }
                     }
                     
+                    // Parse the action_links from JSON
+                    const char* action_links_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    if (action_links_json && *action_links_json) {
+                        auto res = glz::read_json(metadata.action_links, action_links_json);
+                        if (res) {
+                            // If parsing failed, set an empty map
+                            metadata.action_links = {};
+                        }
+                    }
+                    
                     result = metadata;
                 }, email_id);
                 
@@ -115,7 +134,7 @@ namespace mail {
             try {
                 std::vector<EmailMetadata> results;
                 
-                std::string sql = "SELECT id, urgency, category, summary, tags "
+                std::string sql = "SELECT id, urgency, category, summary, tags, action_links "
                                   "FROM email_metadata WHERE category = ? "
                                   "ORDER BY urgency DESC, updated_at DESC";
                 db_.exec(sql, [&results](sqlite3_stmt* stmt) {
@@ -132,6 +151,16 @@ namespace mail {
                         if (res) {
                             // If parsing failed, set a default tag
                             metadata.tags = {"parse_error"};
+                        }
+                    }
+                    
+                    // Parse the action_links from JSON
+                    const char* action_links_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    if (action_links_json && *action_links_json) {
+                        auto res = glz::read_json(metadata.action_links, action_links_json);
+                        if (res) {
+                            // If parsing failed, set an empty map
+                            metadata.action_links = {};
                         }
                     }
                     
@@ -152,7 +181,7 @@ namespace mail {
                 
                 // This is a simplified implementation that loads all records and filters in memory
                 // For larger datasets, a more efficient approach would be to use full-text search or a dedicated tags table
-                std::string sql = "SELECT id, urgency, category, summary, tags FROM email_metadata";
+                std::string sql = "SELECT id, urgency, category, summary, tags, action_links FROM email_metadata";
                 db_.exec(sql, [&results, &tag](sqlite3_stmt* stmt) {
                     // Parse the tags JSON
                     const char* tags_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
@@ -175,6 +204,16 @@ namespace mail {
                         metadata.summary = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
                         metadata.tags = tags;
                         
+                        // Parse the action_links from JSON
+                        const char* action_links_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                        if (action_links_json && *action_links_json) {
+                            auto action_res = glz::read_json(metadata.action_links, action_links_json);
+                            if (action_res) {
+                                // If parsing failed, set an empty map
+                                metadata.action_links = {};
+                            }
+                        }
+                        
                         results.push_back(metadata);
                     }
                 });
@@ -192,7 +231,7 @@ namespace mail {
                 std::vector<EmailMetadata> results;
                 
                 std::string sql = std::format(
-                    "SELECT id, urgency, category, summary, tags "
+                    "SELECT id, urgency, category, summary, tags, action_links "
                     "FROM email_metadata "
                     "ORDER BY created_at DESC LIMIT {}",
                     limit
@@ -212,6 +251,16 @@ namespace mail {
                         if (res) {
                             // If parsing failed, set a default tag
                             metadata.tags = {"parse_error"};
+                        }
+                    }
+                    
+                    // Parse the action_links from JSON
+                    const char* action_links_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    if (action_links_json && *action_links_json) {
+                        auto res = glz::read_json(metadata.action_links, action_links_json);
+                        if (res) {
+                            // If parsing failed, set an empty map
+                            metadata.action_links = {};
                         }
                     }
                     

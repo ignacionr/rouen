@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 namespace mail {
     // Define a struct for email metadata that can be serialized/deserialized with Glaze
@@ -11,5 +12,6 @@ namespace mail {
         std::string category = "unprocessed";
         std::string summary = "";
         std::vector<std::string> tags = {"unprocessed"};
+        std::map<std::string, std::string> action_links = {}; // Map of action name to URL
     };
 }

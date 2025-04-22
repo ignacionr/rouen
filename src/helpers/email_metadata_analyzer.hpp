@@ -67,9 +67,11 @@ namespace mail {
                     "You are an email analyzer. Your task is to analyze the email content and extract metadata. "
                     "Determine the urgency level (0-2, where 0 is not urgent, 1 is moderate, 2 is highly urgent), "
                     "categorize the email (work, personal, updates, promotions, etc.), "
-                    "create a concise summary of the content, and suggest relevant tags. "
+                    "create a concise summary of the content, suggest relevant tags, and identify potential actions with links. "
+                    "For actions, identify any URLs or actions the user might want to take based on the email content (e.g., 'Register' -> event registration URL). "
                     "Respond only with a valid JSON object with the following keys: "
-                    "urgency (number), category (string), summary (string), tags (array of strings)."
+                    "urgency (number), category (string), summary (string), tags (array of strings), "
+                    "action_links (object with action names as keys and URLs as values)."
                 );
                 
                 // Prepare the message with the email content

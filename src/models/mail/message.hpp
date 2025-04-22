@@ -8,6 +8,7 @@
 #include <vector>
 #include <regex>
 #include <cctype>
+#include <map>
 #include <nlohmann/json.hpp>
 
 namespace mail {
@@ -191,6 +192,15 @@ namespace mail {
                         tags_.insert(tag.get<std::string>());
                     }
                 }
+                
+                // Parse action links if available
+                if (metadata.contains("action_links") && metadata["action_links"].is_object()) {
+                    for (auto& [action, link] : metadata["action_links"].items()) {
+                        if (link.is_string()) {
+                            action_links_[action] = link.get<std::string>();
+                        }
+                    }
+                }
             } catch (const std::exception& e) {
                 // Handle parsing errors
                 summary_ = "Error parsing metadata: " + std::string(e.what());
@@ -207,6 +217,7 @@ namespace mail {
         std::string const &category() const { return category_; }
         std::string const &summary() const { return summary_; }
         std::set<std::string> const &tags() const { return tags_; }
+        const std::map<std::string, std::string>& action_links() const { return action_links_; }
         long long uid() const { return uid_; }
 
     private:
@@ -219,6 +230,7 @@ namespace mail {
         std::string category_;
         std::string summary_;
         std::set<std::string> tags_;
+        std::map<std::string, std::string> action_links_;
         std::chrono::system_clock::time_point date_;
     };
 }

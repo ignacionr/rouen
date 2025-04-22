@@ -30,7 +30,7 @@ namespace rouen::cards
             
             name("Mail");
             requested_fps = 1; // Update once per second
-            width = 700.0f;    // Wider to accommodate email content
+            width = 770.0f;    // Wider to accommodate email content
 
             // Helper function to get value from env var if input is empty
             auto get_from_env = [](const std::string &value, const char *env_var) -> std::string {
