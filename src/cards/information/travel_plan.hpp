@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <ctime>
 
 #include "../interface/card.hpp"
 #include "../../hosts/travel_host.hpp"
@@ -32,6 +33,12 @@ public:
         get_color(4, ImVec4(0.8f, 0.4f, 0.4f, 1.0f)); // Red for warning/negative
         get_color(5, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Light gray for secondary text
         
+        // Additional colors for date picker
+        get_color(6, ImVec4(0.2f, 0.3f, 0.7f, 1.0f)); // Date picker highlight
+        get_color(7, ImVec4(0.1f, 0.1f, 0.15f, 0.9f)); // Date picker background
+        get_color(8, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Date picker text
+        get_color(9, ImVec4(0.3f, 0.4f, 0.8f, 1.0f)); // Date picker current day
+        
         width = 600.0f;
         requested_fps = 1;  // Update once per second
         
@@ -51,6 +58,14 @@ public:
         } catch (const std::exception& e) {
             name("Travel Plan (Invalid ID)");
         }
+        
+        // Initialize current date info for the date picker
+        auto now = std::chrono::system_clock::now();
+        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+        std::tm now_tm = *std::localtime(&now_time_t);
+        
+        current_month = now_tm.tm_mon;
+        current_year = now_tm.tm_year + 1900;
     }
     
     ~travel_plan() override = default;
@@ -77,6 +92,181 @@ public:
         std::stringstream ss(date_str);
         ss >> std::get_time(&tm, "%Y-%m-%d");
         return std::chrono::system_clock::from_time_t(std::mktime(&tm));
+    }
+    
+    // Convert date info to string in YYYY-MM-DD format
+    std::string date_to_string(int year, int month, int day) {
+        char date_str[11];
+        std::snprintf(date_str, sizeof(date_str), "%04d-%02d-%02d", year, month + 1, day);
+        return std::string(date_str);
+    }
+    
+    // Get number of days in a month
+    int get_days_in_month(int year, int month) {
+        static const int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+        if (month == 1) { // February
+            if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
+                return 29; // Leap year
+            }
+        }
+        return days_in_month[month];
+    }
+    
+    // Get the day of the week for the first day of the month (0 = Sunday, 6 = Saturday)
+    int get_first_day_of_month(int year, int month) {
+        std::tm time_info = {};
+        time_info.tm_year = year - 1900;
+        time_info.tm_mon = month;
+        time_info.tm_mday = 1;
+        std::mktime(&time_info);
+        return time_info.tm_wday;
+    }
+    
+    // Render a date picker popup
+    bool render_date_picker(char* date_buffer, size_t buffer_size, const char* popup_id) {
+        bool value_changed = false;
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, colors[7]);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
+        
+        if (ImGui::BeginPopup(popup_id)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[8]);
+            
+            // Month and year selection with navigation buttons
+            ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[6]);
+            
+            if (ImGui::Button("<<")) {
+                current_year--;
+            }
+            ImGui::SameLine();
+            
+            if (ImGui::Button("<")) {
+                current_month--;
+                if (current_month < 0) {
+                    current_month = 11;
+                    current_year--;
+                }
+            }
+            ImGui::SameLine();
+            
+            // Month/Year display in the center
+            char month_year[32];
+            static const char* month_names[] = {
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            };
+            std::snprintf(month_year, sizeof(month_year), "%s %d", month_names[current_month], current_year);
+            
+            float month_year_width = ImGui::CalcTextSize(month_year).x;
+            float available_width = ImGui::GetContentRegionAvail().x;
+            float month_year_pos = (available_width - month_year_width) * 0.5f;
+            
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + month_year_pos - 45.0f); // Adjust as needed
+            ImGui::Text("%s", month_year);
+            
+            ImGui::SameLine(available_width - 60.0f); // Position for next/next year buttons
+            
+            if (ImGui::Button(">")) {
+                current_month++;
+                if (current_month > 11) {
+                    current_month = 0;
+                    current_year++;
+                }
+            }
+            ImGui::SameLine();
+            
+            if (ImGui::Button(">>")) {
+                current_year++;
+            }
+            
+            ImGui::PopStyleColor(2); // Pop button colors
+            
+            // Day of week headers
+            ImGui::Spacing();
+            const char* day_names[] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+            ImGui::Columns(7, "day_names", false);
+            for (int i = 0; i < 7; i++) {
+                ImGui::Text("%s", day_names[i]);
+                ImGui::NextColumn();
+            }
+            
+            // Calendar grid
+            ImGui::Columns(7, "days", false);
+            
+            // Get the first day of the month and number of days
+            int first_day = get_first_day_of_month(current_year, current_month);
+            int days_in_month = get_days_in_month(current_year, current_month);
+            
+            // Current day info for highlighting
+            auto now = std::chrono::system_clock::now();
+            auto now_time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm now_tm = *std::localtime(&now_time_t);
+            bool is_current_month = (now_tm.tm_mon == current_month && now_tm.tm_year + 1900 == current_year);
+            
+            // Empty cells before the first day
+            for (int i = 0; i < first_day; i++) {
+                ImGui::NextColumn();
+            }
+            
+            // Day cells
+            for (int day = 1; day <= days_in_month; day++) {
+                // Highlight current day
+                bool is_today = (is_current_month && day == now_tm.tm_mday);
+                if (is_today) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors[9]);
+                }
+                
+                char day_str[3];
+                std::snprintf(day_str, sizeof(day_str), "%d", day);
+                
+                // Make day selectable
+                if (ImGui::Selectable(day_str, false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    // Format the selected date to YYYY-MM-DD and store in the buffer
+                    std::snprintf(date_buffer, buffer_size, "%04d-%02d-%02d", current_year, current_month + 1, day);
+                    value_changed = true;
+                    ImGui::CloseCurrentPopup();
+                }
+                
+                if (is_today) {
+                    ImGui::PopStyleColor();
+                }
+                
+                ImGui::NextColumn();
+                
+                // Break to a new row after Saturday
+                if ((first_day + day) % 7 == 0) {
+                    ImGui::Separator();
+                }
+            }
+            
+            ImGui::Columns(1);
+            ImGui::Separator();
+            
+            // Today button
+            ImGui::Spacing();
+            if (ImGui::Button("Today", ImVec2(120, 0))) {
+                // Set to today's date
+                std::snprintf(date_buffer, buffer_size, "%04d-%02d-%02d", 
+                    now_tm.tm_year + 1900, now_tm.tm_mon + 1, now_tm.tm_mday);
+                value_changed = true;
+                ImGui::CloseCurrentPopup();
+            }
+            
+            ImGui::SameLine();
+            
+            // Close button
+            if (ImGui::Button("Close", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            
+            ImGui::PopStyleColor(); // Pop text color
+            ImGui::EndPopup();
+        }
+        
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        
+        return value_changed;
     }
     
     void render_plan_details() {
@@ -239,6 +429,8 @@ public:
         static char accommodation_buffer[128] = "";
         static char budget_buffer[32] = "0.0";
         static bool show_form = false;
+        static bool open_arrival_date_picker = false;
+        static bool open_departure_date_picker = false;
         
         if (show_form) {
             ImGui::TextColored(colors[2], "Add New Destination");
@@ -265,8 +457,9 @@ public:
             ImGui::Text("Arrival:"); 
             ImGui::SameLine(100);
             ImGui::PushItemWidth(300);
+            
+            // Date input with picker button
             ImGui::InputText("##arrival", arrival_date_buffer, sizeof(arrival_date_buffer));
-            ImGui::PopItemWidth();
             
             // Show placeholder text for arrival date format
             if (arrival_date_buffer[0] == '\0' && !ImGui::IsItemActive()) {
@@ -278,11 +471,34 @@ public:
                 );
             }
             
+            // Check if the date field was clicked or if calendar button was clicked
+            if (ImGui::IsItemClicked() || open_arrival_date_picker) {
+                ImGui::OpenPopup("arrival_date_picker_popup");
+                open_arrival_date_picker = false;
+            }
+            
+            // Calendar button
+            ImGui::SameLine();
+            if (ImGui::Button("📅##arrival_date")) {
+                open_arrival_date_picker = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Select date from calendar");
+            }
+            
+            // Render the date picker popup with unique ID
+            if (render_date_picker(arrival_date_buffer, sizeof(arrival_date_buffer), "arrival_date_picker_popup")) {
+                // Date was selected
+            }
+            
+            ImGui::PopItemWidth();
+            
             ImGui::Text("Departure:"); 
             ImGui::SameLine(100);
             ImGui::PushItemWidth(300);
+            
+            // Date input with picker button
             ImGui::InputText("##departure", departure_date_buffer, sizeof(departure_date_buffer));
-            ImGui::PopItemWidth();
             
             // Show placeholder text for departure date format
             if (departure_date_buffer[0] == '\0' && !ImGui::IsItemActive()) {
@@ -293,6 +509,28 @@ public:
                     "YYYY-MM-DD"
                 );
             }
+            
+            // Check if the date field was clicked or if calendar button was clicked
+            if (ImGui::IsItemClicked() || open_departure_date_picker) {
+                ImGui::OpenPopup("departure_date_picker_popup");
+                open_departure_date_picker = false;
+            }
+            
+            // Calendar button
+            ImGui::SameLine();
+            if (ImGui::Button("📅##departure_date")) {
+                open_departure_date_picker = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Select date from calendar");
+            }
+            
+            // Render the date picker popup with unique ID
+            if (render_date_picker(departure_date_buffer, sizeof(departure_date_buffer), "departure_date_picker_popup")) {
+                // Date was selected
+            }
+            
+            ImGui::PopItemWidth();
             
             ImGui::Text("Accommodation:"); 
             ImGui::SameLine(100);
@@ -431,6 +669,10 @@ private:
     std::shared_ptr<hosts::TravelHost> travel_host;
     std::shared_ptr<media::travel::plan> plan_ptr;
     long long plan_id{-1};
+    
+    // Date picker state
+    int current_month;
+    int current_year;
 };
 
 } // namespace rouen::cards
