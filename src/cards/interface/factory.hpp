@@ -20,6 +20,8 @@
 #include "../information/rss_item.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/calendar/calendar.hpp"
+#include "../information/travel.hpp"
+#include "../information/travel_plan.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -115,6 +117,12 @@ namespace rouen::cards {
                         
                         return std::make_shared<mail>(host, username, password);
                     }
+                }},
+                {"travel", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<travel>();
+                }},
+                {"travel-plan", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<travel_plan>(uri);
                 }}
             };
             return dictionary;

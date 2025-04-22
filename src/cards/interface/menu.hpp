@@ -62,6 +62,7 @@ namespace rouen::cards {
                         {"Calendar", []() { "create_card"_sfn("calendar"); }},
                         {"Grok AI Chat", []() { "create_card"_sfn("grok"); }},
                         {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
+                        {"Travel Plans", []() { "create_card"_sfn("travel"); }},
                         {"Email", []() { "create_card"_sfn("mail"); }}
                     }},
                     { "Media", {

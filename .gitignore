@@ -2,3 +2,4 @@ imgui.ini
 build
 rss.db*
 email_metadata.db*
+travel.db*
