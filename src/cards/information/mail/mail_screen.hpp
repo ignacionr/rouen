@@ -4,6 +4,7 @@
 #include <chrono>
 #include <format>
 #include <memory>
+#include <regex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -181,19 +182,51 @@ namespace mail {
         // Define a structure for email actions
         struct EmailAction {
             std::string label;
-            std::function<void(std::shared_ptr<imap_host>, long long)> action;
+            std::function<void(std::shared_ptr<imap_host>, std::shared_ptr<message>)> action;
             bool removes_from_list;
         };
         
         // Static list of all available email actions
         static const std::vector<EmailAction>& get_email_actions() {
             static const std::vector<EmailAction> email_actions = {
-                {"Delete", [](std::shared_ptr<imap_host> host, long long uid) {
-                    host->delete_message(uid);
+                {"Delete", [](std::shared_ptr<imap_host> host, std::shared_ptr<message> msg) {
+                    host->delete_message(msg->uid());
                 }, true},
-                {"Archive", [](std::shared_ptr<imap_host> host, long long uid) {
-                    host->move_message(uid, "Archives");
-                }, true}
+                {"Archive", [](std::shared_ptr<imap_host> host, std::shared_ptr<message> msg) {
+                    host->move_message(msg->uid(), "Archives");
+                }, true},
+                {"Open", [](std::shared_ptr<imap_host> host, std::shared_ptr<message> msg) {
+                    try {
+                        // Get the metadata JSON from the message
+                        auto metadata_json = msg->metadata();
+                        
+                        // If the metadata is empty, we need to get it from the repository
+                        if (metadata_json.empty()) {
+                            auto body = host->get_mail_body(msg->uid());
+                            auto header_and_body = std::format("{}\n\n{}", msg->header(), body);
+                            EmailMetadataAnalyzer analyzer;
+                            metadata_json = analyzer.generate_metadata(header_and_body);
+                            msg->set_metadata(metadata_json);
+                        }
+                        
+                        // Parse the metadata JSON to get the ID
+                        auto metadata = nlohmann::json::parse(metadata_json);
+                        std::string message_id;
+                        
+                        if (metadata.contains("id") && metadata["id"].is_string()) {
+                            message_id = metadata["id"].get<std::string>();
+                            
+                            // Format the URL and open it
+                            std::string url = std::format("https://mail.google.com/mail/u/0/#search/rfc822msgid:{}", message_id);
+                            std::string cmd = std::format("xdg-open \"{}\"", url);
+                            system(cmd.c_str());
+                        } else {
+                            "notify"_sfn("Could not find message ID in metadata");
+                        }
+                    } catch (const std::exception& e) {
+                        "notify"_sfn(std::format("Failed to open email: {}", e.what()));
+                    }
+                }, false}
             };
             return email_actions;
         }
@@ -204,8 +237,8 @@ namespace mail {
                 
                 if (ImGui::SmallButton(action_item.label.c_str())) {
                     try {
-                        // Execute the action
-                        action_item.action(host_, msg->uid());
+                        // Execute the action with the message pointer
+                        action_item.action(host_, msg);
                         if (action_item.removes_from_list) {   
                             // Remove the message from the list
                             messages_.erase(std::remove_if(messages_.begin(), messages_.end(), 
