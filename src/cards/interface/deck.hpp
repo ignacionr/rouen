@@ -6,6 +6,8 @@
 #include <vector>
 #include <algorithm> // Added for std::find_if
 #include <imgui/imgui.h>
+#include <fstream>   // Added for file I/O
+#include <sstream>   // Added for string stream
 
 #include "factory.hpp"
 #include "../productivity/editor.hpp"
@@ -26,7 +28,17 @@ struct deck {
                 [this](std::string const& uri) { create_card(uri); }
             )
         );
-        create_card("menu", true);
+        
+        // Load cards from ImGui configuration or create default menu card
+        load_card_uris();
+    }
+
+    ~deck() {
+        // Save card state when the deck is destroyed
+        save_card_uris();
+        
+        // Unregister the create_card function
+        registrar::remove<std::function<void(std::string const&)>>("create_card");
     }
 
     void create_card(std::string_view uri, bool move_first = false) {
@@ -145,6 +157,122 @@ struct deck {
         }
     }
     
+    // Save current cards to ImGui configuration
+    void save_card_uris() {
+        // Create a string with all card URIs separated by semicolons
+        std::string uris;
+        for (const auto& card : cards_) {
+            if (!uris.empty()) {
+                uris += ";";
+            }
+            uris += card->get_uri();
+        }
+        
+        // Save to a custom section in imgui.ini through a file write
+        // First read the file to preserve other settings
+        std::ifstream ini_file("rouen.ini");
+        std::stringstream buffer;
+        bool found_rouen_section = false;
+        bool in_rouen_section = false;
+
+        if (ini_file) {
+            std::string line;
+            while (std::getline(ini_file, line)) {
+                // Check for rouen section
+                if (line == "[rouen]") {
+                    found_rouen_section = true;
+                    in_rouen_section = true;
+                    buffer << line << std::endl;
+                    buffer << "cards=" << uris << std::endl;
+                    continue;
+                }
+                
+                // Check for new section after rouen
+                if (in_rouen_section && !line.empty() && line[0] == '[') {
+                    in_rouen_section = false;
+                }
+                
+                // Skip card entries in rouen section, keep everything else
+                if (!in_rouen_section || line.substr(0, 6) != "cards=") {
+                    buffer << line << std::endl;
+                }
+            }
+            ini_file.close();
+        }
+        
+        // If rouen section wasn't found, add it
+        if (!found_rouen_section) {
+            buffer << "[rouen]" << std::endl;
+            buffer << "cards=" << uris << std::endl;
+        }
+        
+        // Write back to the file
+        std::ofstream out_file("rouen.ini");
+        if (out_file) {
+            out_file << buffer.str();
+            out_file.close();
+        }
+    }
+    
+    // Load cards from ImGui configuration
+    void load_card_uris() {
+        // Read from imgui.ini file
+        std::ifstream ini_file("rouen.ini");
+        if (!ini_file) {
+            // If file doesn't exist, create the default menu card
+            create_card("menu", true);
+            return;
+        }
+        
+        std::string line;
+        bool in_rouen_section = false;
+        std::string uris;
+        
+        while (std::getline(ini_file, line)) {
+            // Check for rouen section
+            if (line == "[rouen]") {
+                in_rouen_section = true;
+                continue;
+            }
+            
+            // Check for new section
+            if (in_rouen_section && !line.empty() && line[0] == '[') {
+                in_rouen_section = false;
+                continue;
+            }
+            
+            // Look for cards entry in rouen section
+            if (in_rouen_section && line.substr(0, 6) == "cards=") {
+                uris = line.substr(6);
+                break;
+            }
+        }
+        
+        ini_file.close();
+        
+        // If no saved state, create the default menu card
+        if (uris.empty()) {
+            create_card("menu", true);
+            return;
+        }
+        
+        // Parse the string and create cards
+        size_t pos = 0;
+        while (pos < uris.length()) {
+            size_t end = uris.find(';', pos);
+            if (end == std::string::npos) {
+                end = uris.length();
+            }
+            
+            std::string uri = uris.substr(pos, end - pos);
+            if (!uri.empty()) {
+                create_card(uri);
+            }
+            
+            pos = end + 1;
+        }
+    }
+    
     struct render_status {
         int requested_fps {1};
     };
@@ -177,6 +305,13 @@ struct deck {
         ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
         editor_.render();
+
+        // Save card state when a card is added or removed
+        static size_t last_card_count = 0;
+        if (cards_.size() != last_card_count) {
+            save_card_uris();
+            last_card_count = cards_.size();
+        }
 
         ImGui::PopStyleColor(4);
         return result;
