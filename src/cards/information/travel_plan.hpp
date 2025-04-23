@@ -56,7 +56,7 @@ public:
             plan_ptr = travel_host->getPlan(plan_id);
             
             if (plan_ptr) {
-                name(std::format("Trip: {}", plan_ptr->title));
+                name(std::format("{} - Trip", plan_ptr->title));
             } else {
                 name("Travel Plan (Not Found)");
             }

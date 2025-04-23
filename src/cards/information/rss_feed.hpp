@@ -75,7 +75,7 @@ public:
         feed_image_url = feed_info->image_url;
         
         // Update the card title with the feed title
-        name(std::format("Feed: {}", feed_title));
+        name(std::format("{} - Feed", feed_title));
         
         // Load feed items
         items = rss_host->getFeedItems(feed_id);

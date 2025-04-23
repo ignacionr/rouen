@@ -74,7 +74,7 @@ public:
         item = *found_item;
         
         // Update the card title
-        name(std::format("Article: {}", item.title));
+        name(std::format("{} - Article", item.title));
         
         // Configure media player with enclosure URL if available
         if (!item.enclosure.empty()) {
