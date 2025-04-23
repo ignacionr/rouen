@@ -17,9 +17,9 @@
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
         // Initialize colors
-        background_color = {0.96f, 0.96f, 0.86f, 0.40f};
+        background_color = {0.0, 0.0f, 0.0f, 0.70f};
         editor_background_color = {0.76f, 0.76f, 0.66f, 0.40f};
-        text_color = {0.0f, 0.0f, 0.0f, 1.0f}; // Black text
+        text_color = {1.0f, 1.0f, 1.0f, 1.0f};
         
         // Register to present new cards
         registrar::add<std::function<void(std::string const&)>>(
