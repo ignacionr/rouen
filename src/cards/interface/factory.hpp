@@ -23,6 +23,7 @@
 #include "../information/calendar/calendar.hpp"
 #include "../information/travel.hpp"
 #include "../information/travel_plan.hpp"
+#include "../information/weather.hpp"
 
 namespace rouen::cards {
     struct factory {
@@ -131,6 +132,9 @@ namespace rouen::cards {
                 }},
                 {"dbrepair", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<dbrepair_card>();
+                }},
+                {"weather", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<weather>();
                 }}
             };
             return dictionary;
