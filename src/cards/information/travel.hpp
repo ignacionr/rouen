@@ -529,6 +529,10 @@ public:
             ImGui::EndChild();
         });
     }
+
+    std::string get_uri() const override {
+        return "travel";
+    }
     
 private:
     std::shared_ptr<hosts::TravelHost> travel_host;

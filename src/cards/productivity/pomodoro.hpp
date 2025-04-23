@@ -92,6 +92,9 @@ namespace rouen::cards {
             auto const total = 25 * 60.0;
             return elapsed / total;
         }
+        std::string get_uri() const override {
+            return "pomodoro";
+        }
     private:
         std::chrono::system_clock::time_point start_time {std::chrono::system_clock::now()};
         std::chrono::system_clock::time_point end_time {start_time + std::chrono::minutes(25)};

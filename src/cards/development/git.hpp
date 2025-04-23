@@ -25,6 +25,10 @@ struct git: public card {
         git_model = std::make_unique<rouen::models::git>();
         name("Git Repos");
     }
+
+    std::string get_uri() const override {
+        return "git";
+    }
     
     /**
      * Select a repository and get its current git status

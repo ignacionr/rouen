@@ -50,6 +50,11 @@ namespace rouen::cards
             host_ = std::make_shared<::mail::imap_host>(host, actual_username, actual_password);
             mail_screen_ = std::make_unique<::mail::mail_screen>(host_);
 
+            // Store connection information
+            host_url_ = host;
+            username_ = actual_username;
+            password_ = actual_password;
+
             // Initial load of messages
             refresh_messages();
         }
@@ -90,6 +95,11 @@ namespace rouen::cards
             });
         }
 
+        std::string get_uri() const override
+        {
+            return host_url_.empty() ? "mail" : std::format("mail:{}:{}:{}", host_url_, username_, password_);
+        }
+
         void refresh_messages()
         {
             stop_refresh_thread();
@@ -107,6 +117,11 @@ namespace rouen::cards
         }
 
     private:
+        // Member variables to store connection information for get_uri method
+        std::string host_url_;
+        std::string username_;
+        std::string password_;
+
         // Helper methods for DRY code
         void setup_colors()
         {

@@ -80,6 +80,11 @@ public:
             render_add_destination();
         });
     }
+
+    std::string get_uri() const override
+    {
+        return std::format("travel-plan:{}", plan_id);
+    }
     
 private:
     void render_plan_details() {

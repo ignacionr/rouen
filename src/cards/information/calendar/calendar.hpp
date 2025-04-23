@@ -34,7 +34,7 @@ namespace rouen::cards
             width = 600.0f;
             
             // Get URL from parameter or environment
-            std::string calendar_url = url;
+            calendar_url = url;
             if (calendar_url.empty()) {
                 const char* env_url = std::getenv("CALENDAR_DELEGATE_URL");
                 if (env_url) {
@@ -80,6 +80,11 @@ namespace rouen::cards
                 }
             });
         }
+
+        std::string get_uri() const override
+        {
+            return calendar_url.empty() ? "calendar" : std::format("calendar:{}", calendar_url);
+        }
         
     private:
         std::shared_ptr<::calendar::calendar_fetcher> fetcher_;
@@ -92,6 +97,7 @@ namespace rouen::cards
         ::calendar::event selected_event_;
         bool use_day_view_ = false;                  // Toggle between list view and day view
         std::string current_date_ = "";              // Current date for day view
+        std::string calendar_url;                    // Calendar URL
         
         // Helper methods for DRY code
         void setup_colors()
@@ -104,7 +110,7 @@ namespace rouen::cards
             get_color(2, ImVec4(0.3f, 0.8f, 0.8f, 1.0f)); // Light teal for titles
             get_color(3, ImVec4(0.4f, 0.8f, 0.4f, 1.0f)); // Green for active/positive elements
             get_color(4, ImVec4(0.8f, 0.8f, 0.3f, 1.0f)); // Yellow for warnings/highlights
-            get_color(5, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Light gray for secondary text
+            get_color(5, ImVec4(0.7f, 0.7f, 0.7f, 0.7f)); // Light gray for secondary text
         }
         
         void render_status_bar()

@@ -42,6 +42,11 @@ public:
     }
     
     ~rss() override = default;
+
+    std::string get_uri() const override
+    {
+        return "rss";
+    }
     
     void render_add_feed() {
         static char url_buffer[512] = "";

@@ -27,6 +27,10 @@ namespace rouen::cards {
             name("Application Menu");
             width = 320.0f; // Slightly wider for better menu display
         }
+
+        std::string get_uri() const override {
+            return "menu";
+        }
         
         // Helper function to convert string to lowercase for case-insensitive comparison
         static std::string to_lower(const std::string& str) {

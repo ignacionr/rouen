@@ -158,6 +158,10 @@ struct sysinfo_card : public card {
         disk_info = get_disk_info();
         cpu_usage = get_cpu_usage();
     }
+
+    std::string get_uri() const override {
+        return "sysinfo";
+    }
     
 private:
     std::chrono::steady_clock::time_point last_update;

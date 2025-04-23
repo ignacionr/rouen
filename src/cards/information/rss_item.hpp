@@ -196,6 +196,11 @@ public:
             return false;
         }
     }
+
+    std::string get_uri() const override
+    {
+        return std::format("rss-item:{},{}", feed_id, item_link);
+    }
     
 private:
     long long feed_id = -1;

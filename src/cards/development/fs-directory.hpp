@@ -37,6 +37,11 @@ namespace rouen::cards
             name(path);
         }
 
+        std::string get_uri() const override
+        {
+            return std::format("dir:{}", path_.string());
+        }
+
         void receive_keystrokes()
         {
             for (char c : "keystrokes"_fns())

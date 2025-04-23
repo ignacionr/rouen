@@ -36,6 +36,11 @@ namespace rouen::cards {
             }
         }
         
+        std::string get_uri() const override
+        {
+            return "radio";
+        }
+
         bool render() override {
             return render_window([this]() {
                 if (!radio_model) {

@@ -65,6 +65,10 @@ struct envvars_card : public card {
         std::sort(sorted_keys.begin(), sorted_keys.end());
     }
     
+    std::string get_uri() const override {
+        return "envvars";
+    }
+    
     bool render() override {
         return render_window([this]() {
             ImGui::Text("Environment Variables (%zu):", env_vars.size());

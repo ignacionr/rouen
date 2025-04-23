@@ -38,15 +38,24 @@ struct deck {
     }
 
     void create_card_impl(std::string_view uri, bool move_first = false) {
-        static auto card_factory {rouen::cards::factory()};
-        auto card_ptr = card_factory.create_card(uri, renderer);
-        if (card_ptr) {
-            if (move_first) {
-                // Move the card to the front of the vector
-                cards_.insert(cards_.begin(), std::move(card_ptr));
-            } else {
-                // Add the card to the end of the vector
-                cards_.emplace_back(std::move(card_ptr));
+        // do we have a card with this same uri already?
+        auto existing_card = std::find_if(cards_.begin(), cards_.end(),
+            [&uri](const auto& card) { return card->get_uri() == uri; });
+        if (existing_card != cards_.end()) {
+            // If the card already exists, we will make it request the focus
+            (*existing_card)->grab_focus = true;
+        }
+        else {
+            static auto card_factory {rouen::cards::factory()};
+            auto card_ptr = card_factory.create_card(uri, renderer);
+            if (card_ptr) {
+                if (move_first) {
+                    // Move the card to the front of the vector
+                    cards_.insert(cards_.begin(), std::move(card_ptr));
+                } else {
+                    // Add the card to the end of the vector
+                    cards_.emplace_back(std::move(card_ptr));
+                }
             }
         }
     }

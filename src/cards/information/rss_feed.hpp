@@ -239,6 +239,10 @@ public:
             return false;
         }
     }
+
+    std::string get_uri() const override {
+        return std::format("rss-feed:{}", feed_id);
+    }
     
 private:
     long long feed_id = -1;

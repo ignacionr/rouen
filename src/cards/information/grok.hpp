@@ -216,6 +216,10 @@ namespace rouen::cards {
             });
         }
         
+        std::string get_uri() const override {
+            return "grok";
+        }
+
     private:
         std::unique_ptr<ignacionr::cppgpt> gpt;
         std::string grok_api_key;
