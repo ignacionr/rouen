@@ -325,7 +325,20 @@ struct media_player {
             int secs = static_cast<int>(seconds) % 60;
             return std::format("{:02d}:{:02d}", mins, secs);
         }
-    
+        
+        // Seek to a specific position in the media
+        bool seekTo(double position_seconds) {
+            if (!is_playing || !mpv_socket.is_connected()) {
+                return false;
+            }
+            
+            // Format the seek command with the target position
+            std::string seek_cmd = std::format("{{\"command\":[\"set_property\",\"playback-time\",{:.2f}],\"request_id\":3}}\n", 
+                                              position_seconds);
+            
+            // Send the seek command to mpv
+            return mpv_socket.send_command(seek_cmd);
+        }
     };
 
     using item_map = std::unordered_map<ImGuiID, item>;
@@ -380,7 +393,25 @@ struct media_player {
                     
                     // Clamp progress to 0.0-1.0 range
                     progress = std::max(0.0f, std::min(1.0f, progress));
+                    
+                    // Store the cursor position before the progress bar
+                    ImVec2 progress_bar_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 progress_bar_size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight());
+                    
+                    // Draw the progress bar
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
+                    
+                    // Check if the user clicked on the progress bar
+                    if (ImGui::IsItemClicked()) {
+                        // Calculate the normalized position (0.0 to 1.0) based on mouse X position
+                        float mouse_x = ImGui::GetIO().MousePos.x;
+                        float rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
+                        rel_x = std::max(0.0f, std::min(1.0f, rel_x)); // Clamp to valid range
+                        
+                        // Convert to seconds and seek to that position
+                        double target_pos = rel_x * current_dur;
+                        item.seekTo(target_pos);
+                    }
                 } else {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
