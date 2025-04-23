@@ -80,6 +80,12 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "variant": "cpp",
-        "*.ipp": "cpp"
+        "*.ipp": "cpp",
+        "csetjmp": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp",
+        "regex": "cpp",
+        "source_location": "cpp",
+        "typeindex": "cpp"
     }
 }

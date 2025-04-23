@@ -9,7 +9,8 @@
 #include <regex>
 #include <cctype>
 #include <map>
-#include <nlohmann/json.hpp>
+#include <glaze/glaze.hpp>
+#include "email_metadata.hpp"
 
 namespace mail {
     class message {
@@ -172,35 +173,30 @@ namespace mail {
             metadata_ = metadata_json;
             
             try {
-                // Parse JSON metadata
-                auto metadata = nlohmann::json::parse(metadata_);
+                // Parse JSON metadata directly into EmailMetadata struct using glaze
+                mail::EmailMetadata metadata;
+                auto result = glz::read_json(metadata, metadata_json);
                 
-                if (metadata.contains("urgency")) {
-                    urgency_ = metadata["urgency"].get<int>();
+                if (result) {
+                    // Error handling
+                    summary_ = "Error parsing metadata: " + std::string(glz::format_error(result));
+                    return;
                 }
                 
-                if (metadata.contains("category")) {
-                    category_ = metadata["category"].get<std::string>();
+                // Extract the metadata fields
+                urgency_ = metadata.urgency;
+                category_ = metadata.category;
+                summary_ = metadata.summary;
+                
+                // Copy tags
+                tags_.clear();
+                for (const auto& tag : metadata.tags) {
+                    tags_.insert(tag);
                 }
                 
-                if (metadata.contains("summary")) {
-                    summary_ = metadata["summary"].get<std::string>();
-                }
+                // Copy action links
+                action_links_ = metadata.action_links;
                 
-                if (metadata.contains("tags") && metadata["tags"].is_array()) {
-                    for (const auto& tag : metadata["tags"]) {
-                        tags_.insert(tag.get<std::string>());
-                    }
-                }
-                
-                // Parse action links if available
-                if (metadata.contains("action_links") && metadata["action_links"].is_object()) {
-                    for (auto& [action, link] : metadata["action_links"].items()) {
-                        if (link.is_string()) {
-                            action_links_[action] = link.get<std::string>();
-                        }
-                    }
-                }
             } catch (const std::exception& e) {
                 // Handle parsing errors
                 summary_ = "Error parsing metadata: " + std::string(e.what());

@@ -209,15 +209,19 @@ namespace mail {
                             msg->set_metadata(metadata_json);
                         }
                         
-                        // Parse the metadata JSON to get the ID
-                        auto metadata = nlohmann::json::parse(metadata_json);
-                        std::string message_id;
+                        // Parse the metadata JSON directly into EmailMetadata struct
+                        mail::EmailMetadata metadata;
+                        auto result = glz::read_json(metadata, metadata_json);
                         
-                        if (metadata.contains("id") && metadata["id"].is_string()) {
-                            message_id = metadata["id"].get<std::string>();
-                            
+                        if (result) {
+                            "notify"_sfn("Error parsing metadata JSON: " + std::string(glz::format_error(result)));
+                            return;
+                        }
+                        
+                        // Get the ID and open the email in Gmail
+                        if (!metadata.id.empty()) {
                             // Format the URL and open it
-                            std::string url = std::format("https://mail.google.com/mail/u/0/#search/rfc822msgid:{}", message_id);
+                            std::string url = std::format("https://mail.google.com/mail/u/0/#search/rfc822msgid:{}", metadata.id);
                             std::string cmd = std::format("xdg-open \"{}\"", url);
                             system(cmd.c_str());
                         } else {
