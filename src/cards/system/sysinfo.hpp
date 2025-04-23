@@ -145,7 +145,7 @@ struct sysinfo_card : public card {
             
             // CPU usage section
             ImGui::Text("CPU Usage:");
-            std::string cpu_text = std::format("{:.1f}%%", cpu_usage);
+            std::string cpu_text = std::format("{:.1f}%", cpu_usage);
             draw_progress_bar("CPU", cpu_usage / 100.0f, cpu_text.c_str());
             
             // Display number of processes
