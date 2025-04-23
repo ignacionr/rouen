@@ -90,16 +90,6 @@ public:
     }
 
     /**
-     * Destructor ensures the background thread is stopped
-     */
-    ~RSSHost() {
-        // Make sure the fetch thread ends before the repo is destroyed
-        if (fetch_thread_.joinable()) {
-            fetch_thread_.request_stop();
-        }
-    }
-
-    /**
      * Add new feeds from a list of URLs
      */
     void addFeeds(std::vector<std::string> urls) {
