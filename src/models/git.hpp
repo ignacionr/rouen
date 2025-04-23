@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "../helpers/process_helper.hpp"
+#include "../helpers/debug.hpp"
 
 namespace rouen::models {
     // Enum class for git repository statuses
@@ -60,10 +61,10 @@ namespace rouen::models {
                     std::sort(repo_paths.begin(), repo_paths.end());
                     
                 } catch (const std::exception& e) {
-                    std::cerr << "Error scanning for repositories: " << e.what() << std::endl;
+                    GIT_ERROR_FMT("Error scanning for repositories: {}", e.what());
                 }
             } else {
-                std::cerr << "Error: HOME environment variable not set" << std::endl;
+                GIT_ERROR("Error: HOME environment variable not set");
             }
         }
 

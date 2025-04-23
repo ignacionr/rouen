@@ -9,6 +9,7 @@
 #include <SDL2/SDL.h>
 #include "../registrar.hpp"
 #include "../helpers/deferred_operations.hpp"
+#include "../helpers/debug.hpp"
 
 namespace rouen::animation {
     using renderer_t = std::function<void()>;
@@ -25,7 +26,7 @@ namespace rouen::animation {
                         auto renderer_ptr = registrar::get<SDL_Renderer*>("main_renderer");
                         sdl_renderer = *renderer_ptr;
                     } catch (const std::runtime_error& e) {
-                        std::cerr << "Failed to get renderer from registrar: " << e.what() << std::endl;
+                        ANIM_ERROR_FMT("Failed to get renderer from registrar: {}", e.what());
                         return;
                     }
                 }
@@ -110,7 +111,7 @@ namespace rouen::animation {
                     });
                     
                 } catch (const std::runtime_error& e) {
-                    std::cerr << "Failed to get deferred operations service: " << e.what() << std::endl;
+                    ANIM_ERROR_FMT("Failed to get deferred operations service: {}", e.what());
                 }
             }
 

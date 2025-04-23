@@ -290,20 +290,20 @@ bool main_wnd::process_events() {
                     }
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Error processing event: " << e.what() << std::endl;
+                WND_ERROR_FMT("Error processing event: {}", e.what());
                 // Continue to the next event rather than crashing
             } catch (...) {
-                std::cerr << "Unknown error processing event" << std::endl;
+                WND_ERROR("Unknown error processing event");
                 // Continue to the next event rather than crashing
             }
         }
         
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error in process_events: " << e.what() << std::endl;
+        WND_ERROR_FMT("Error in process_events: {}", e.what());
         return true; // Continue execution rather than stopping
     } catch (...) {
-        std::cerr << "Unknown error in process_events" << std::endl;
+        WND_ERROR("Unknown error in process_events");
         return true; // Continue execution rather than stopping
     }
 }

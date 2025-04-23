@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "../helpers/media_player.hpp"
+#include "../helpers/debug.hpp"
 
 namespace rouen::models {
     // Radio station status enum
@@ -44,7 +45,7 @@ namespace rouen::models {
                 // Read presets file
                 std::ifstream presets_file("presets.txt");
                 if (!presets_file.is_open()) {
-                    std::cerr << "Failed to open presets.txt" << std::endl;
+                    RADIO_ERROR("Failed to open presets.txt");
                     return;
                 }
                 
@@ -72,7 +73,7 @@ namespace rouen::models {
                 std::sort(station_names.begin(), station_names.end());
                 
             } catch (const std::exception& e) {
-                std::cerr << "Error loading radio presets: " << e.what() << std::endl;
+                RADIO_ERROR_FMT("Error loading radio presets: {}", e.what());
             }
         }
 

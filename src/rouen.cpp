@@ -9,13 +9,14 @@
 #include "cards/interface/deck.hpp"
 #include "registrar.hpp"
 #include "helpers/notify_service.hpp"
+#include "helpers/debug.hpp"
 
 int main() {
     notify_service notify; // Initialize the notify service
     // Create and initialize the main window
     main_wnd window;
     if (!window.initialize()) {
-        std::cerr << "Failed to initialize window" << std::endl;
+        SYS_ERROR("Failed to initialize window");
         return -1;
     }
     

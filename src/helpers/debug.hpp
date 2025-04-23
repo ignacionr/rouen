@@ -48,6 +48,48 @@
 #define DB_DEBUG(message) LOG_COMPONENT("SQLITE", LOG_LEVEL_DEBUG, message)
 #define DB_TRACE(message) LOG_COMPONENT("SQLITE", LOG_LEVEL_TRACE, message)
 
+// Main window component logging macros
+#define WND_ERROR(message) LOG_COMPONENT("WINDOW", LOG_LEVEL_ERROR, message)
+#define WND_WARN(message) LOG_COMPONENT("WINDOW", LOG_LEVEL_WARN, message)
+#define WND_INFO(message) LOG_COMPONENT("WINDOW", LOG_LEVEL_INFO, message)
+#define WND_DEBUG(message) LOG_COMPONENT("WINDOW", LOG_LEVEL_DEBUG, message)
+#define WND_TRACE(message) LOG_COMPONENT("WINDOW", LOG_LEVEL_TRACE, message)
+
+// Git component logging macros
+#define GIT_ERROR(message) LOG_COMPONENT("GIT", LOG_LEVEL_ERROR, message)
+#define GIT_WARN(message) LOG_COMPONENT("GIT", LOG_LEVEL_WARN, message)
+#define GIT_INFO(message) LOG_COMPONENT("GIT", LOG_LEVEL_INFO, message)
+#define GIT_DEBUG(message) LOG_COMPONENT("GIT", LOG_LEVEL_DEBUG, message)
+#define GIT_TRACE(message) LOG_COMPONENT("GIT", LOG_LEVEL_TRACE, message)
+
+// Animation component logging macros
+#define ANIM_ERROR(message) LOG_COMPONENT("ANIMATION", LOG_LEVEL_ERROR, message)
+#define ANIM_WARN(message) LOG_COMPONENT("ANIMATION", LOG_LEVEL_WARN, message)
+#define ANIM_INFO(message) LOG_COMPONENT("ANIMATION", LOG_LEVEL_INFO, message)
+#define ANIM_DEBUG(message) LOG_COMPONENT("ANIMATION", LOG_LEVEL_DEBUG, message)
+#define ANIM_TRACE(message) LOG_COMPONENT("ANIMATION", LOG_LEVEL_TRACE, message)
+
+// Radio component logging macros
+#define RADIO_ERROR(message) LOG_COMPONENT("RADIO", LOG_LEVEL_ERROR, message)
+#define RADIO_WARN(message) LOG_COMPONENT("RADIO", LOG_LEVEL_WARN, message)
+#define RADIO_INFO(message) LOG_COMPONENT("RADIO", LOG_LEVEL_INFO, message)
+#define RADIO_DEBUG(message) LOG_COMPONENT("RADIO", LOG_LEVEL_DEBUG, message)
+#define RADIO_TRACE(message) LOG_COMPONENT("RADIO", LOG_LEVEL_TRACE, message)
+
+// Notification service logging macros
+#define NOTIFY_ERROR(message) LOG_COMPONENT("NOTIFY", LOG_LEVEL_ERROR, message)
+#define NOTIFY_WARN(message) LOG_COMPONENT("NOTIFY", LOG_LEVEL_WARN, message)
+#define NOTIFY_INFO(message) LOG_COMPONENT("NOTIFY", LOG_LEVEL_INFO, message)
+#define NOTIFY_DEBUG(message) LOG_COMPONENT("NOTIFY", LOG_LEVEL_DEBUG, message)
+#define NOTIFY_TRACE(message) LOG_COMPONENT("NOTIFY", LOG_LEVEL_TRACE, message)
+
+// System/app logging macros
+#define SYS_ERROR(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_ERROR, message)
+#define SYS_WARN(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_WARN, message)
+#define SYS_INFO(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_INFO, message)
+#define SYS_DEBUG(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_DEBUG, message)
+#define SYS_TRACE(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_TRACE, message)
+
 namespace debug {
     // Helper function for format-based logging
     template<typename... Args>
@@ -69,3 +111,45 @@ namespace debug {
 #define DB_INFO_FMT(fmt, ...) DB_INFO(debug::format_log(fmt, __VA_ARGS__))
 #define DB_DEBUG_FMT(fmt, ...) DB_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 #define DB_TRACE_FMT(fmt, ...) DB_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Window component format macros
+#define WND_ERROR_FMT(fmt, ...) WND_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define WND_WARN_FMT(fmt, ...) WND_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define WND_INFO_FMT(fmt, ...) WND_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define WND_DEBUG_FMT(fmt, ...) WND_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define WND_TRACE_FMT(fmt, ...) WND_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Git component format macros
+#define GIT_ERROR_FMT(fmt, ...) GIT_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define GIT_WARN_FMT(fmt, ...) GIT_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define GIT_INFO_FMT(fmt, ...) GIT_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define GIT_DEBUG_FMT(fmt, ...) GIT_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define GIT_TRACE_FMT(fmt, ...) GIT_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Animation component format macros
+#define ANIM_ERROR_FMT(fmt, ...) ANIM_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define ANIM_WARN_FMT(fmt, ...) ANIM_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define ANIM_INFO_FMT(fmt, ...) ANIM_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define ANIM_DEBUG_FMT(fmt, ...) ANIM_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define ANIM_TRACE_FMT(fmt, ...) ANIM_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Radio component format macros
+#define RADIO_ERROR_FMT(fmt, ...) RADIO_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_WARN_FMT(fmt, ...) RADIO_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_INFO_FMT(fmt, ...) RADIO_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_DEBUG_FMT(fmt, ...) RADIO_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_TRACE_FMT(fmt, ...) RADIO_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Notification service format macros
+#define NOTIFY_ERROR_FMT(fmt, ...) NOTIFY_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define NOTIFY_WARN_FMT(fmt, ...) NOTIFY_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define NOTIFY_INFO_FMT(fmt, ...) NOTIFY_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define NOTIFY_DEBUG_FMT(fmt, ...) NOTIFY_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define NOTIFY_TRACE_FMT(fmt, ...) NOTIFY_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// System/app format macros
+#define SYS_ERROR_FMT(fmt, ...) SYS_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define SYS_WARN_FMT(fmt, ...) SYS_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define SYS_INFO_FMT(fmt, ...) SYS_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define SYS_DEBUG_FMT(fmt, ...) SYS_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define SYS_TRACE_FMT(fmt, ...) SYS_TRACE(debug::format_log(fmt, __VA_ARGS__))
