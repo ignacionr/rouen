@@ -38,6 +38,9 @@ struct card {
 
     bool render_window(std::function<void()> render_func) {
         bool is_open = true;
+        if (window_title.empty()) {
+            name("Unnamed Card");
+        }
         if (ImGui::Begin(window_title.c_str(), &is_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
             is_open &= run_focused_handlers();
             render_func();

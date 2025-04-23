@@ -19,8 +19,7 @@
     #define ROUEN_LOG_LEVEL LOG_LEVEL_ERROR
 #else
     // In debug builds, show info logs by default
-    // Changed from DEBUG to INFO to reduce SQLite noise
-    #define ROUEN_LOG_LEVEL LOG_LEVEL_INFO
+    #define ROUEN_LOG_LEVEL LOG_LEVEL_WARN
 #endif
 #endif
 

@@ -12,6 +12,7 @@
 
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/debug.hpp"
 #include "../../hosts/rss_host.hpp"
 #include "../../models/rss/feed.hpp"
 #include "../../registrar.hpp"
@@ -157,21 +158,21 @@ public:
         static std::mutex host_mutex;
         static std::shared_ptr<hosts::RSSHost> shared_host = nullptr;
         
-        std::cerr << "Entering getHost(), acquiring lock..." << std::endl;
+        RSS_DEBUG("Entering getHost(), acquiring lock...");
         std::lock_guard<std::mutex> lock(host_mutex);
-        std::cerr << "Lock acquired in getHost()" << std::endl;
+        RSS_DEBUG("Lock acquired in getHost()");
         
         if (!shared_host) {
-            std::cerr << "Creating new shared RSSHost instance" << std::endl;
+            RSS_INFO("Creating new shared RSSHost instance");
             shared_host = std::make_shared<hosts::RSSHost>([](std::string_view cmd) -> std::string {
                 return ""; // Not using system commands in this implementation
             });
-            std::cerr << "Shared RSSHost instance created" << std::endl;
+            RSS_INFO("Shared RSSHost instance created");
         } else {
-            std::cerr << "Reusing existing shared RSSHost instance" << std::endl;
+            RSS_DEBUG("Reusing existing shared RSSHost instance");
         }
         
-        std::cerr << "Exiting getHost()" << std::endl;
+        RSS_DEBUG("Exiting getHost()");
         return shared_host;
     }
     
