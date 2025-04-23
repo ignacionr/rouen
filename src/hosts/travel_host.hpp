@@ -342,16 +342,21 @@ public:
     // Get access to the Travel host controller (needed for travel plan cards)
     static std::shared_ptr<TravelHost> getHost() {
         try {
-            static std::shared_ptr<TravelHost> shared_host = nullptr;
+            static std::weak_ptr<TravelHost> weak_host;
             static std::mutex init_mutex;
             
             std::lock_guard<std::mutex> lock(init_mutex);
             
+            // Try to get a shared_ptr from the weak_ptr
+            auto shared_host = weak_host.lock();
+            
+            // If the weak_ptr has expired or was never initialized, create a new instance
             if (!shared_host) {
                 DB_INFO("TravelHost: Creating new shared TravelHost instance");
                 shared_host = std::make_shared<TravelHost>([](std::string_view cmd) -> std::string {
                     return ""; // Not using system commands in this implementation
                 });
+                weak_host = shared_host; // Store a weak_ptr, not keeping the object alive
             }
             
             return shared_host;
