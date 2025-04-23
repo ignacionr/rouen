@@ -12,9 +12,11 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <iostream>
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
+#include "../helpers/debug.hpp"
 #include "../models/rss/feed.hpp"
 #include "../models/rss/sqliterepo.hpp"
 
@@ -54,41 +56,37 @@ public:
         : system_runner_(system_runner),
           repo_("rss.db")
     {
-        // Load existing feeds from the repository
+        RSS_INFO("RSSHost constructor starting...");
+        // Load existing feeds but defer loading items until they're needed
         std::vector<std::string> urls;
-        repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url) {
-            auto feed_ptr = std::make_shared<media::rss::feed>(system_runner_);
-            feed_ptr->feed_title = title;
-            feed_ptr->source_link = url;
-            feed_ptr->feed_link = url;
-            feed_ptr->set_image(image_url);
-            feed_ptr->repo_id = feed_id;
-            
-            // Load items for this feed
-            repo_.scan_items(feed_id, [feed_ptr](const char* link, const char* enclosure, const char* title, 
-                                             const char* description, const char* pub_date, const char* image_url) {
-                // Parse the published date time (format: "2024-12-07 06:49:08")
-                std::tm tm = {};
-                std::istringstream ss(pub_date);
-                ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-                if (ss.fail()) {
-                    throw std::runtime_error("Failed to parse date");
-                }
-                auto const published_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+        
+        try {
+            RSS_INFO("RSSHost scanning feeds from repository...");
+            repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url) {
+                RSS_DEBUG_FMT("Found feed: ID={}, URL={}", feed_id, (url ? url : "null"));
                 
-                // Add item to the feed
-                feed_ptr->items.emplace_back(media::rss::feed::item{
-                    title, link, description, enclosure, image_url, published_date});
+                auto feed_ptr = std::make_shared<media::rss::feed>(system_runner_);
+                feed_ptr->feed_title = title ? title : "";
+                feed_ptr->source_link = url ? url : "";
+                feed_ptr->feed_link = url ? url : "";
+                feed_ptr->set_image(image_url ? image_url : "");
+                feed_ptr->repo_id = feed_id;
+                
+                // Don't load items here - they'll be loaded on demand
+                // Just record the feed metadata
+                auto feeds = feeds_.load();
+                feeds->emplace_back(feed_ptr);
+                urls.emplace_back(url ? url : "");
+                RSS_DEBUG_FMT("Added feed ID={} to collection (deferred loading)", feed_id);
             });
-            
-            // Add feed to the collection
-            auto feeds = feeds_.load();
-            feeds->emplace_back(feed_ptr);
-            urls.emplace_back(url);
-        });
+        } catch (const std::exception& e) {
+            RSS_ERROR_FMT("Exception during RSSHost feed scanning: {}", e.what());
+        }
         
         // Refresh feeds (this will happen in a background thread)
+        RSS_INFO("RSSHost starting feed refresh in background thread...");
         refreshFeeds(std::move(urls));
+        RSS_INFO("RSSHost constructor completed");
     }
 
     /**
@@ -258,8 +256,10 @@ private:
 
     // Synchronously add a feed
     std::shared_ptr<media::rss::feed> addFeedSync(std::string_view url, auto quitting) {
-        auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(url, system_runner_));
-        {
+        try {
+            // Download and parse the feed
+            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(url, system_runner_));
+            
             if (quitting()) return nullptr;
 
             static std::mutex mutex;
@@ -268,10 +268,10 @@ private:
             
             // Check if the feed already exists
             auto pos = std::find_if(feeds->begin(), feeds->end(),
-                                   [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link](auto const& f) {
-                                       return f->feed_link == ourlink || f->source_link == oursrc;
-                                   });
-                                   
+                                  [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link](auto const& f) {
+                                      return f->feed_link == ourlink || f->source_link == oursrc;
+                                  });
+                                  
             // Add or merge with existing feed
             if (pos != feeds->end()) {
                 // Update the existing feed
@@ -284,9 +284,9 @@ private:
                 // Merge new items, avoiding duplicates
                 for (auto const& item : feed_ptr->items) {
                     auto item_pos = std::find_if((*pos)->items.begin(), (*pos)->items.end(),
-                                               [ourlink = item.link](auto const& i) {
-                                                   return i.link == ourlink;
-                                               });
+                                              [ourlink = item.link](auto const& i) {
+                                                  return i.link == ourlink;
+                                              });
                     if (item_pos == (*pos)->items.end()) {
                         (*pos)->items.emplace_back(item);
                     }
@@ -296,42 +296,68 @@ private:
                 feeds->emplace_back(feed_ptr);
             }
             
-            // Update the repository
+            // Update the repository with feed info
             feed_ptr->repo_id = repo_.upsert_feed(url, feed_ptr->feed_title, feed_ptr->image_url());
             
-            // Update the items in the repository
+            // Prepare items for batch insert
+            std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items_batch;
+            items_batch.reserve(feed_ptr->items.size());
+            
             for (auto const& item : feed_ptr->items) {
                 // Format the date time
                 auto const pub_date = std::format("{:%F %T}", item.updated, item.updated);
-                repo_.upsert_item(feed_ptr->repo_id, 
-                                 item.title, 
-                                 item.enclosure,
-                                 item.link, 
-                                 item.description, 
-                                 pub_date, 
-                                 item.image_url);
+                
+                // Add to batch collection
+                items_batch.emplace_back(
+                    item.title,
+                    item.enclosure,
+                    item.link,
+                    item.description,
+                    pub_date,
+                    item.image_url
+                );
+            }
+            
+            // Perform batch insert for better performance
+            if (!items_batch.empty()) {
+                repo_.batch_upsert_items(feed_ptr->repo_id, items_batch);
             }
             
             // Sort the feeds from the latest updated to the oldest
             std::sort(feeds->begin(), feeds->end(),
-                     [](auto const& lhs, auto const& rhs) {
-                         return lhs->items.empty() ? false : 
-                                (rhs->items.empty() ? true : 
-                                 lhs->items.front().updated > rhs->items.front().updated);
-                     });
-                     
+                    [](auto const& lhs, auto const& rhs) {
+                        return lhs->items.empty() ? false : 
+                              (rhs->items.empty() ? true : 
+                                lhs->items.front().updated > rhs->items.front().updated);
+                    });
+                    
             feeds_.store(feeds);
+            return feed_ptr;
+        } catch (const std::exception& e) {
+            // Log the error and rethrow for handling in the caller
+            "notify"_sfn(std::format("Error processing feed {}: {}", url, e.what()));
+            throw;
         }
-        return feed_ptr;
     }
 
-    // Fetch and parse a feed from a URL
+    // Fetch and parse a feed from a URL with improved error handling
     static media::rss::feed getFeed(std::string_view url, std::function<std::string(std::string_view)> system_runner) {
-        http::fetch fetch;
-        media::rss::feed parser{system_runner};
-        parser.source_link = url;
-        fetch(std::string{url}, [](auto h){}, writeCallback, &parser);
-        return parser;
+        try {
+            http::fetch fetch(60); // Increase timeout for large feeds
+            media::rss::feed parser{system_runner};
+            parser.source_link = url;
+            
+            // Set up proper headers for better compatibility
+            auto header_client = [](auto h) {
+                h("User-Agent: Rouen RSS Reader/1.0");
+                h("Accept: application/rss+xml, application/xml, text/xml, */*");
+            };
+            
+            fetch(std::string{url}, header_client, writeCallback, &parser);
+            return parser;
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Failed to fetch feed: ") + e.what());
+        }
     }
 
 private:

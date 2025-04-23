@@ -6,6 +6,7 @@
 #include <string>
 
 #include <curl/curl.h>
+#include "debug.hpp"
 
 namespace http {
     struct fetch {
@@ -15,6 +16,7 @@ namespace http {
         typedef size_t (*write_callback_t)(void *, size_t, size_t, void *);
 
         fetch(long timeout = 30): timeout_{timeout} {
+            DB_DEBUG("Initializing CURL");
             curl_global_init(CURL_GLOBAL_ALL);
         }
 
@@ -25,10 +27,11 @@ namespace http {
         {
             CURL *curl = curl_easy_init();
             if (curl) {
+                DB_DEBUG_FMT("Fetching URL: {}", url);
                 curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
                 curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-                curl_easy_setopt(curl, CURLOPT_USERAGENT, "beat-o-graph/1.0");
+                curl_easy_setopt(curl, CURLOPT_USERAGENT, "rouen/1.0");
                 curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_);
                 curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
                 char *pproxy_str = nullptr;
@@ -69,6 +72,7 @@ namespace http {
                     throw std::runtime_error(std::format("Error: HTTP response code {}", response_code));
                 }
                 curl_easy_cleanup(curl);
+                DB_DEBUG_FMT("Successfully fetched URL: {}", url);
                 return response;
             }
             throw std::runtime_error("Error: curl_easy_init failed.");
@@ -80,6 +84,7 @@ namespace http {
             header_client_t header_client) const {
             CURL *curl = curl_easy_init();
             if (curl) {
+                DB_DEBUG_FMT("Posting to URL: {}", url);
                 curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
                 curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
                 curl_easy_setopt(curl, CURLOPT_USERAGENT, "beat-o-graph/1.0");
@@ -121,6 +126,7 @@ namespace http {
                     throw std::runtime_error(std::format("Error: HTTP response code {}", response_code));
                 }
                 curl_easy_cleanup(curl);
+                DB_DEBUG_FMT("Successfully posted to URL: {}", url);
                 return response;
             }
             throw std::runtime_error("Error: curl_easy_init failed.");

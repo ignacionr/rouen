@@ -2,7 +2,11 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
-#include <iostream>
+#include "debug.hpp"
+
+// Add texture-specific logging macros to make the logs easier to filter
+#define TEXTURE_ERROR(message) LOG_COMPONENT("TEXTURE", LOG_LEVEL_ERROR, message)
+#define TEXTURE_ERROR_FMT(fmt, ...) TEXTURE_ERROR(debug::format_log(fmt, __VA_ARGS__))
 
 namespace TextureHelper {
     /**
@@ -23,7 +27,7 @@ namespace TextureHelper {
         // Load the image
         SDL_Surface* surface = IMG_Load(filename);
         if (!surface) {
-            std::cerr << "Failed to load image: " << IMG_GetError() << std::endl;
+            TEXTURE_ERROR_FMT("Failed to load image: {}", IMG_GetError());
             return nullptr;
         }
         
@@ -38,7 +42,7 @@ namespace TextureHelper {
         SDL_FreeSurface(surface);
         
         if (!image_texture) {
-            std::cerr << "Failed to create texture: " << SDL_GetError() << std::endl;
+            TEXTURE_ERROR_FMT("Failed to create texture: {}", SDL_GetError());
             return nullptr;
         }
         

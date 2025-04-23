@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <mutex>
+#include <iostream>
 
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
@@ -34,11 +36,8 @@ public:
         requested_fps = 1;  // Update once per second
         width = 400.0f;
         
-        // Initialize the RSS host controller with a system runner
-        rss_host = std::make_unique<hosts::RSSHost>([](std::string_view cmd) -> std::string {
-            // Simple system runner implementation
-            return ""; // Not using system commands in this implementation
-        });
+        // Use the shared host instance instead of creating a new one
+        rss_host = getHost();
     }
     
     ~rss() override = default;
@@ -155,19 +154,29 @@ public:
     
     // Get access to the RSS host controller (needed for other RSS card classes)
     static std::shared_ptr<hosts::RSSHost> getHost() {
+        static std::mutex host_mutex;
         static std::shared_ptr<hosts::RSSHost> shared_host = nullptr;
         
+        std::cerr << "Entering getHost(), acquiring lock..." << std::endl;
+        std::lock_guard<std::mutex> lock(host_mutex);
+        std::cerr << "Lock acquired in getHost()" << std::endl;
+        
         if (!shared_host) {
+            std::cerr << "Creating new shared RSSHost instance" << std::endl;
             shared_host = std::make_shared<hosts::RSSHost>([](std::string_view cmd) -> std::string {
                 return ""; // Not using system commands in this implementation
             });
+            std::cerr << "Shared RSSHost instance created" << std::endl;
+        } else {
+            std::cerr << "Reusing existing shared RSSHost instance" << std::endl;
         }
         
+        std::cerr << "Exiting getHost()" << std::endl;
         return shared_host;
     }
     
 private:
-    std::unique_ptr<hosts::RSSHost> rss_host;
+    std::shared_ptr<hosts::RSSHost> rss_host;
     std::vector<std::string> feeds_to_delete;
 };
 

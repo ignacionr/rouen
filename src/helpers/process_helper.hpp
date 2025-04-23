@@ -6,6 +6,11 @@
 #include <sstream>
 #include <cstdio>
 #include <iostream>
+#include "debug.hpp"
+
+// Add process-specific logging macros
+#define PROCESS_ERROR(message) LOG_COMPONENT("PROCESS", LOG_LEVEL_ERROR, message)
+#define PROCESS_ERROR_FMT(fmt, ...) PROCESS_ERROR(debug::format_log(fmt, __VA_ARGS__))
 
 namespace ProcessHelper {
     /**
@@ -25,7 +30,7 @@ namespace ProcessHelper {
         // Open a pipe to read the command output using the custom deleter
         std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command.c_str(), "r"), pipeDeleter);
         if (!pipe) {
-            std::cerr << "Error executing command: " << command << std::endl;
+            PROCESS_ERROR_FMT("Error executing command: {}", command);
             return "";
         }
         

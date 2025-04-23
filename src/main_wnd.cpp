@@ -1,5 +1,6 @@
 #include "main_wnd.hpp"
 #include "cards/interface/deck.hpp"
+#include "helpers/debug.hpp"
 
 // Add STB implementation defines
 #define STB_RECT_PACK_IMPLEMENTATION
@@ -58,14 +59,14 @@ bool main_wnd::initialize() {
     try {
         // Initialize SDL
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
-            std::cerr << "Error: " << SDL_GetError() << std::endl;
+            DB_ERROR_FMT("SDL initialization error: {}", SDL_GetError());
             return false;
         }
         
         // Initialize SDL_image
         int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
         if ((IMG_Init(img_flags) & img_flags) != img_flags) {
-            std::cerr << "Error initializing SDL_image: " << IMG_GetError() << std::endl;
+            DB_ERROR_FMT("Error initializing SDL_image: {}", IMG_GetError());
             SDL_Quit();
             return false;
         }
@@ -80,7 +81,7 @@ bool main_wnd::initialize() {
             window_flags
         );
         if (!m_window) {
-            std::cerr << "Error creating window: " << SDL_GetError() << std::endl;
+            DB_ERROR_FMT("Error creating window: {}", SDL_GetError());
             SDL_Quit();
             return false;
         }
@@ -88,7 +89,7 @@ bool main_wnd::initialize() {
         // Create renderer
         m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
         if (!m_renderer) {
-            std::cerr << "Error creating renderer: " << SDL_GetError() << std::endl;
+            DB_ERROR_FMT("Error creating renderer: {}", SDL_GetError());
             SDL_DestroyWindow(m_window);
             SDL_Quit();
             return false;
@@ -131,19 +132,19 @@ bool main_wnd::initialize() {
 
         // Initialize ImGui SDL2 backend
         if (!ImGui_ImplSDL2_InitForSDLRenderer(m_window, m_renderer)) {
-            std::cerr << "Failed to initialize ImGui SDL2 backend!" << std::endl;
+            DB_ERROR("Failed to initialize ImGui SDL2 backend!");
             return false;
         }
 
         // Initialize ImGui SDL Renderer backend
         if (!ImGui_ImplSDLRenderer2_Init(m_renderer)) {
-            std::cerr << "Failed to initialize ImGui SDL Renderer backend!" << std::endl;
+            DB_ERROR("Failed to initialize ImGui SDL Renderer backend!");
             return false;
         }
 
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Exception during initialization: " << e.what() << std::endl;
+        DB_ERROR_FMT("Exception during initialization: {}", e.what());
         
         // Clean up any resources that may have been allocated
         if (m_renderer) {
@@ -161,7 +162,7 @@ bool main_wnd::initialize() {
         
         return false;
     } catch (...) {
-        std::cerr << "Unknown exception during initialization" << std::endl;
+        DB_ERROR("Unknown exception during initialization");
         
         // Clean up any resources that may have been allocated
         if (m_renderer) {
@@ -205,10 +206,10 @@ void main_wnd::run() {
                 try {
                     m_requested_fps = main_deck.render().requested_fps;
                 } catch (const std::exception& e) {
-                    std::cerr << "Error during deck rendering: " << e.what() << std::endl;
+                    DB_ERROR_FMT("Error during deck rendering: {}", e.what());
                     // Continue execution rather than crashing
                 } catch (...) {
-                    std::cerr << "Unknown error during deck rendering" << std::endl;
+                    DB_ERROR("Unknown error during deck rendering");
                     // Continue execution rather than crashing
                 }
 
@@ -223,17 +224,17 @@ void main_wnd::run() {
                 
                 SDL_RenderPresent(m_renderer);
             } catch (const std::exception& e) {
-                std::cerr << "Error in main loop: " << e.what() << std::endl;
+                DB_ERROR_FMT("Error in main loop: {}", e.what());
                 // Continue to next iteration rather than crashing
             } catch (...) {
-                std::cerr << "Unknown error in main loop" << std::endl;
+                DB_ERROR("Unknown error in main loop");
                 // Continue to next iteration rather than crashing
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "Fatal error in run(): " << e.what() << std::endl;
+        DB_ERROR_FMT("Fatal error in run(): {}", e.what());
     } catch (...) {
-        std::cerr << "Unknown fatal error in run()" << std::endl;
+        DB_ERROR("Unknown fatal error in run()");
     }
 }
 

@@ -79,7 +79,11 @@ namespace rouen::cards {
                     return std::make_shared<rss>();
                 }},
                 {"rss-feed", [](std::string_view uri, SDL_Renderer* renderer) {
-                    return std::make_shared<rss_feed>(std::string(uri));
+                    auto feed = std::make_shared<rss_feed>(std::string(uri));
+                    if (renderer) {
+                        feed->set_renderer(renderer);
+                    }
+                    return feed;
                 }},
                 {"rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<rss_item>(std::string(uri));
