@@ -29,7 +29,7 @@ struct card {
     virtual std::string get_uri() const = 0;
 
     bool run_focused_handlers() {
-        if (is_focused = ImGui::IsWindowFocused(), is_focused) {
+        if (is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows), is_focused) {
             // check for ctrl+w
             if (ImGui::IsKeyPressed(ImGuiKey_W) && ImGui::GetIO().KeyCtrl) {
                 return false;

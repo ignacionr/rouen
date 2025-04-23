@@ -20,7 +20,7 @@ namespace rouen::cards
             
             // Additional colors for file types
             get_color(2, {150.0f/255.0f, 150.0f/255.0f, 255.0f/255.0f, 1.0f}); // Parent directory - blue (index 2)
-            get_color(3, {0.0f/255.0f, 0.0f/255.0f, 96.0f/255.0f, 1.0f}); // Directories - dark blue (index 3)
+            get_color(3, {0.3f, 0.3f, 1.0f, 1.0f}); // Directories - light blue (index 3)
             get_color(4, {120.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // Code files - green (index 4)
             get_color(5, {220.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // Text files - yellow (index 5)
             get_color(6, {220.0f/255.0f, 120.0f/255.0f, 220.0f/255.0f, 1.0f}); // Image files - purple (index 6)
