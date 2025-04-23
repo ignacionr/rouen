@@ -194,6 +194,16 @@ namespace media::travel {
             });
         }
 
+        // Test query to validate SQLite connection
+        void execute_test_query() {
+            DB_INFO("SQLiteRepo: Executing test query");
+            std::string sql = "SELECT 1";
+            db_.exec(sql, [](sqlite3_stmt *stmt) {
+                DB_INFO_FMT("SQLiteRepo: Test query result: {}", sqlite3_column_int(stmt, 0));
+            });
+            DB_INFO("SQLiteRepo: Test query completed successfully");
+        }
+
     private:
         hosting::db::sqlite db_;
     };

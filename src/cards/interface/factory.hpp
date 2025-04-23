@@ -12,6 +12,7 @@
 #include "../productivity/pomodoro.hpp"
 #include "../development/fs-directory.hpp"
 #include "../system/sysinfo.hpp"
+#include "../system/dbrepair.hpp"
 #include "../information/grok.hpp"
 #include "../media/radio.hpp"
 #include "../system/envvars.hpp"
@@ -127,6 +128,9 @@ namespace rouen::cards {
                 }},
                 {"travel-plan", [](std::string_view uri, SDL_Renderer* renderer) {
                     return std::make_shared<travel_plan>(uri);
+                }},
+                {"dbrepair", [](std::string_view uri, SDL_Renderer* renderer) {
+                    return std::make_shared<dbrepair_card>();
                 }}
             };
             return dictionary;

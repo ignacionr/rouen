@@ -75,6 +75,7 @@ namespace rouen::cards {
                     { "System", {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
+                        {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
                         {"Exit Application", []() { auto was_exiting = "exit"_fnb(); }}
                     }}
                 };

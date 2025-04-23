@@ -15,6 +15,7 @@
 #include "../interface/card.hpp"
 #include "../../hosts/travel_host.hpp"
 #include "../../registrar.hpp"
+#include "../../helpers/debug.hpp" // Add debug header
 #include "travel_plan.hpp"
 
 namespace rouen::cards {
@@ -23,6 +24,8 @@ namespace rouen::cards {
 class travel : public card {
 public:
     travel() {
+        DB_INFO("Travel card: Constructor starting");
+        
         // Set custom colors for the Travel card
         colors[0] = {0.2f, 0.5f, 0.8f, 1.0f}; // Blue primary color
         colors[1] = {0.3f, 0.6f, 0.9f, 0.7f}; // Lighter blue secondary color
@@ -40,11 +43,22 @@ public:
         get_color(9, ImVec4(0.3f, 0.4f, 0.8f, 1.0f)); // Date picker current day
         
         name("Travel Plans");
-        requested_fps = 1;  // Update once per second
+        requested_fps = 5;  // Higher FPS for smoother loading states
         width = 400.0f;
         
-        // Initialize the Travel host controller with a system runner
-        travel_host = hosts::TravelHost::getHost();
+        DB_INFO("Travel card: Getting TravelHost");
+        
+        // Get travel host in a try-catch block to capture any initialization errors
+        try {
+            // Initialize the Travel host controller with a system runner
+            travel_host = hosts::TravelHost::getHost();
+            is_loading = true;
+            DB_INFO("Travel card: Successfully obtained TravelHost");
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Travel card: Exception getting TravelHost: {}", e.what());
+        } catch (...) {
+            DB_ERROR("Travel card: Unknown exception getting TravelHost");
+        }
         
         // Initialize current date info for the date picker
         auto now = std::chrono::system_clock::now();
@@ -53,9 +67,15 @@ public:
         
         current_month = now_tm.tm_mon;
         current_year = now_tm.tm_year + 1900;
+        
+        last_refresh_time = std::chrono::steady_clock::now();
+        
+        DB_INFO("Travel card: Constructor completed");
     }
     
-    ~travel() override = default;
+    ~travel() override {
+        DB_INFO("Travel card: Destructor called");
+    }
 
     // Helper for formatting dates
     std::string format_date(const std::chrono::system_clock::time_point& tp) {
@@ -408,126 +428,207 @@ public:
             ImGui::Separator();
         }
     }
+    
+    void render_loading_spinner() {
+        // Add a loading spinner animation
+        const float RADIUS = 15.0f;
+        const ImU32 COLOR = ImGui::ColorConvertFloat4ToU32(colors[0]);
+        
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImVec2 center = ImVec2(pos.x + RADIUS, pos.y + RADIUS);
+        
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        
+        // Get current time for animation
+        float time = ImGui::GetTime() * 5.0f;
+        
+        // Draw spinner segments
+        const int NUM_SEGMENTS = 8;
+        for (int i = 0; i < NUM_SEGMENTS; i++) {
+            float t = time + (float)i * 0.25f;
+            float a = (t * (float)M_PI * 2.0f) / (float)NUM_SEGMENTS;
+            float b = ((t + 0.25f) * (float)M_PI * 2.0f) / (float)NUM_SEGMENTS;
+            
+            // Calculate alpha based on time
+            float alpha = 0.1f + 0.9f * (1.0f - (float)i / (float)NUM_SEGMENTS);
+            ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(colors[0].x, colors[0].y, colors[0].z, alpha));
+            
+            draw_list->PathArcTo(center, RADIUS, a, b, 12);
+            draw_list->PathStroke(color, false, 2.0f);
+        }
+        
+        // Add some space for the spinner
+        ImGui::Dummy(ImVec2(RADIUS * 2 + 10, RADIUS * 2 + 10));
+        ImGui::SameLine();
+        ImGui::Text("Loading travel plans...");
+    }
 
     bool render() override {
-        return render_window([this]() {
-            // Add plan form section
-            render_add_plan();
-            
-            // Plans section title
-            ImGui::TextColored(colors[2], "Your Travel Plans:");
-            
-            // Create scrollable area for travel plans
-            if (ImGui::BeginChild("PlansScrollArea", ImVec2(0, 0), true)) {
-                auto plans = travel_host->plans();
-                if (plans.empty()) {
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No travel plans created yet");
-                } else {
-                    // Group plans by their timeframe
-                    std::vector<std::string> timeframes = {"Current", "Upcoming", "Past"};
+        DB_INFO("Travel card: Render starting");
+        
+        // Check if we need to refresh our loading state
+        auto now = std::chrono::steady_clock::now();
+        if (is_loading && std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh_time).count() > 100) {
+            // Check if TravelHost has completed initialization
+            if (!travel_host) {
+                DB_ERROR("Travel card: TravelHost is null when checking loading state");
+            } else {
+                // Accept empty plan vectors as valid initialized state, don't wait for plans to exist
+                is_loading = false;
+                DB_INFO("Travel card: Loading completed (accepting empty plans as valid)");
+            }
+            last_refresh_time = now;
+        }
+        
+        bool result = render_window([this]() {
+            try {
+                // Add plan form section
+                render_add_plan();
+                
+                // Plans section title
+                ImGui::TextColored(colors[2], "Your Travel Plans:");
+                
+                if (!travel_host) {
+                    DB_ERROR("Travel card: TravelHost is null in render");
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
+                                     "Error: Travel host not initialized");
+                    return;
+                }
+                
+                if (is_loading) {
+                    // Show loading spinner while waiting for initialization
+                    render_loading_spinner();
+                    return;
+                }
+                
+                // Create scrollable area for travel plans
+                if (ImGui::BeginChild("PlansScrollArea", ImVec2(0, 0), true)) {
+                    DB_INFO("Travel card: Getting plans from host");
+                    auto plans = travel_host->plans();
+                    DB_INFO_FMT("Travel card: Got {} plans", plans.size());
                     
-                    for (const auto& timeframe : timeframes) {
-                        bool has_plans_in_timeframe = false;
+                    if (plans.empty()) {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No travel plans created yet");
+                    } else {
+                        // Group plans by their timeframe
+                        std::vector<std::string> timeframes = {"Current", "Upcoming", "Past"};
                         
-                        // First check if there are any plans with this timeframe
-                        for (const auto& plan : plans) {
-                            if (plan->timeframe() == timeframe) {
-                                has_plans_in_timeframe = true;
-                                break;
+                        for (const auto& timeframe : timeframes) {
+                            bool has_plans_in_timeframe = false;
+                            
+                            // First check if there are any plans with this timeframe
+                            for (const auto& plan : plans) {
+                                if (plan->timeframe() == timeframe) {
+                                    has_plans_in_timeframe = true;
+                                    break;
+                                }
                             }
-                        }
-                        
-                        if (!has_plans_in_timeframe) {
-                            continue;
-                        }
-                        
-                        // Display timeframe header
-                        ImGui::TextColored(colors[3], "%s", timeframe.c_str());
-                        
-                        // Display all plans in this timeframe
-                        for (const auto& plan : plans) {
-                            if (plan->timeframe() != timeframe) {
+                            
+                            if (!has_plans_in_timeframe) {
                                 continue;
                             }
                             
-                            ImGui::PushID(static_cast<int>(plan->id));
+                            // Display timeframe header
+                            ImGui::TextColored(colors[3], "%s", timeframe.c_str());
                             
-                            ImGui::BeginGroup();
-                            
-                            // Plan title
-                            std::string title = plan->title;
-                            
-                            // Limit title length and add ellipsis if too long
-                            if (title.length() > 40) {
-                                title = title.substr(0, 37) + "...";
+                            // Display all plans in this timeframe
+                            for (const auto& plan : plans) {
+                                if (plan->timeframe() != timeframe) {
+                                    continue;
+                                }
+                                
+                                ImGui::PushID(static_cast<int>(plan->id));
+                                
+                                ImGui::BeginGroup();
+                                
+                                // Plan title
+                                std::string title = plan->title;
+                                
+                                // Limit title length and add ellipsis if too long
+                                if (title.length() > 40) {
+                                    title = title.substr(0, 37) + "...";
+                                }
+                                
+                                if (ImGui::Selectable(title.c_str(), false)) {
+                                    // Open travel plan details in a new card
+                                    DB_INFO_FMT("Travel card: Opening plan {}", plan->id);
+                                    std::string plan_uri = std::format("travel-plan:{}", plan->id);
+                                    "create_card"_sfn(plan_uri);
+                                }
+                                
+                                // Date range
+                                ImGui::SameLine();
+                                ImGui::TextColored(
+                                    ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
+                                    "%s - %s", 
+                                    format_date(plan->start_date).c_str(),
+                                    format_date(plan->end_date).c_str()
+                                );
+                                
+                                // Status
+                                ImVec4 status_color;
+                                switch (plan->current_status) {
+                                    case media::travel::plan::status::planning:
+                                        status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
+                                        break;
+                                    case media::travel::plan::status::booked:
+                                        status_color = ImVec4(0.4f, 0.4f, 0.8f, 1.0f); // Blue
+                                        break;
+                                    case media::travel::plan::status::active:
+                                        status_color = ImVec4(0.4f, 0.8f, 0.4f, 1.0f); // Green
+                                        break;
+                                    case media::travel::plan::status::completed:
+                                        status_color = ImVec4(0.8f, 0.8f, 0.4f, 1.0f); // Yellow
+                                        break;
+                                    case media::travel::plan::status::cancelled:
+                                        status_color = ImVec4(0.8f, 0.4f, 0.4f, 1.0f); // Red
+                                        break;
+                                    default:
+                                        status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
+                                }
+                                
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 100);
+                                ImGui::TextColored(
+                                    status_color,
+                                    "%s", media::travel::plan::status_to_string(plan->current_status).c_str()
+                                );
+                                
+                                // Delete button
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 30);
+                                if (ImGui::SmallButton("×")) {
+                                    plans_to_delete.push_back(plan->id);
+                                }
+                                
+                                ImGui::EndGroup();
+                                
+                                ImGui::PopID();
                             }
                             
-                            if (ImGui::Selectable(title.c_str(), false)) {
-                                // Open travel plan details in a new card
-                                std::string plan_uri = std::format("travel-plan:{}", plan->id);
-                                "create_card"_sfn(plan_uri);
-                            }
-                            
-                            // Date range
-                            ImGui::SameLine();
-                            ImGui::TextColored(
-                                ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
-                                "%s - %s", 
-                                format_date(plan->start_date).c_str(),
-                                format_date(plan->end_date).c_str()
-                            );
-                            
-                            // Status
-                            ImVec4 status_color;
-                            switch (plan->current_status) {
-                                case media::travel::plan::status::planning:
-                                    status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
-                                    break;
-                                case media::travel::plan::status::booked:
-                                    status_color = ImVec4(0.4f, 0.4f, 0.8f, 1.0f); // Blue
-                                    break;
-                                case media::travel::plan::status::active:
-                                    status_color = ImVec4(0.4f, 0.8f, 0.4f, 1.0f); // Green
-                                    break;
-                                case media::travel::plan::status::completed:
-                                    status_color = ImVec4(0.8f, 0.8f, 0.4f, 1.0f); // Yellow
-                                    break;
-                                case media::travel::plan::status::cancelled:
-                                    status_color = ImVec4(0.8f, 0.4f, 0.4f, 1.0f); // Red
-                                    break;
-                                default:
-                                    status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
-                            }
-                            
-                            ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                            ImGui::TextColored(
-                                status_color,
-                                "%s", media::travel::plan::status_to_string(plan->current_status).c_str()
-                            );
-                            
-                            // Delete button
-                            ImGui::SameLine(ImGui::GetWindowWidth() - 30);
-                            if (ImGui::SmallButton("×")) {
-                                plans_to_delete.push_back(plan->id);
-                            }
-                            
-                            ImGui::EndGroup();
-                            
-                            ImGui::PopID();
+                            ImGui::Separator();
                         }
                         
-                        ImGui::Separator();
+                        // Process deletion requests
+                        for (const auto& id : plans_to_delete) {
+                            DB_INFO_FMT("Travel card: Deleting plan {}", id);
+                            travel_host->deletePlan(id);
+                        }
+                        plans_to_delete.clear();
                     }
-                    
-                    // Process deletion requests
-                    for (const auto& id : plans_to_delete) {
-                        travel_host->deletePlan(id);
-                    }
-                    plans_to_delete.clear();
                 }
+                ImGui::EndChild();
+            } catch (const std::exception& e) {
+                DB_ERROR_FMT("Travel card: Exception during render: {}", e.what());
+                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
+                                 "Error during rendering: %s", e.what());
+            } catch (...) {
+                DB_ERROR("Travel card: Unknown exception during render");
+                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 
+                                 "Unknown error during rendering");
             }
-            ImGui::EndChild();
         });
+        
+        DB_INFO("Travel card: Render completed");
+        return result;
     }
 
     std::string get_uri() const override {
@@ -537,6 +638,8 @@ public:
 private:
     std::shared_ptr<hosts::TravelHost> travel_host;
     std::vector<long long> plans_to_delete;
+    bool is_loading = false;
+    std::chrono::steady_clock::time_point last_refresh_time;
     
     // Date picker state
     int current_month;
