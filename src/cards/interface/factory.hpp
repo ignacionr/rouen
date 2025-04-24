@@ -118,12 +118,9 @@ namespace rouen::cards {
                         std::string host = params.substr(0, pos1);
                         
                         size_t pos2 = params.find(':', pos1 + 1);
-                        if (pos2 == std::string::npos) {
-                            throw std::runtime_error("Invalid mail URI format");
-                        }
                         
                         std::string username = params.substr(pos1 + 1, pos2 - pos1 - 1);
-                        std::string password = params.substr(pos2 + 1);
+                        std::string password = (pos2 == std::string::npos) ? std::string{} : params.substr(pos2 + 1);
                         
                         return std::make_shared<mail>(host, username, password);
                     }
