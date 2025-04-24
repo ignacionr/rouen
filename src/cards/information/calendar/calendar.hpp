@@ -95,8 +95,8 @@ namespace rouen::cards
         std::jthread refresh_thread_;                // Thread for refreshing events in the background
         bool show_event_details_ = false;
         ::calendar::event selected_event_;
-        bool use_day_view_ = false;                  // Toggle between list view and day view
-        std::string current_date_ = "";              // Current date for day view
+        bool use_day_view_ {true};                  // Toggle between list view and day view
+        std::string current_date_;              // Current date for day view
         std::string calendar_url;                    // Calendar URL
         
         // Helper methods for DRY code
