@@ -147,8 +147,8 @@ namespace mail {
             }
             
             if (j) {
-                size_t left = j;
-                for (size_t i = left; i < 4; i++) {
+                auto left = j;
+                for (i = left; i < 4; i++) {
                     char_array_4[i] = 0;
                 }
                 
@@ -156,7 +156,7 @@ namespace mail {
                 char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
                 char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
                 
-                for (size_t i = 0; i < left - 1; i++) {
+                for (i = 0; i < left - 1; i++) {
                     result += char_array_3[i];
                 }
             }

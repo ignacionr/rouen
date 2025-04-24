@@ -14,7 +14,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -Wall                # Enable all common warnings
     -Wextra              # Enable extra warnings
     -Wpedantic           # Enforce strict ISO C++
-    # -Wshadow             # Warn when a variable declaration shadows another
+    -Wshadow             # Warn when a variable declaration shadows another
     # -Wconversion         # Warn on implicit type conversions
     # -Wsign-conversion    # Warn on sign conversions
     # -Wnull-dereference   # Warn about null pointer dereference

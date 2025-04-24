@@ -164,7 +164,7 @@ namespace rouen::cards {
                 
                 // Input area
                 ImGui::Separator();
-                bool reclaim_focus = false;
+                reclaim_focus = false;
                 
                 // Only allow input if we have an API key and are not waiting for a response
                 ImGui::BeginDisabled(grok_api_key.empty() || waiting_for_response);
