@@ -16,7 +16,7 @@ namespace rouen::cards {
 
 class weather : public card {
 public:
-    weather() {
+    weather(std::string_view location) {
         // Set custom colors for the Weather card
         colors[0] = {0.4f, 0.6f, 0.8f, 1.0f}; // Blue primary color
         colors[1] = {0.5f, 0.7f, 0.9f, 0.7f}; // Lighter blue secondary color
@@ -34,6 +34,9 @@ public:
         
         // Get the weather host
         weather_host = hosts::WeatherHost::getHost();
+
+        weather_host->setLocation(location);
+        weather_host->refreshWeather();
         
         DB_INFO("Weather card: Constructor completed");
     }
@@ -61,7 +64,7 @@ public:
     }
 
     std::string get_uri() const override {
-        return "weather";
+        return std::format("weather:{}", weather_host->getLocation());
     }
     
 private:

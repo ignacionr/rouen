@@ -89,6 +89,12 @@ public:
         RSS_INFO("RSSHost constructor completed");
     }
 
+    ~RSSHost() {
+        RSS_INFO("RSSHost destructor starting...");
+        fetch_thread_.request_stop();
+        RSS_INFO("RSSHost destructor completed");
+    }
+
     /**
      * Add new feeds from a list of URLs
      */
@@ -227,8 +233,10 @@ private:
 
     // Refresh feeds in a background thread
     void refreshFeeds(std::vector<std::string> urls) {
-        fetch_thread_ = std::jthread([this, urls] {
-            auto quit_job = "quitting"_fnb;
+        fetch_thread_ = std::jthread([this, urls] (std::stop_token stoken) {
+            auto quit_job = [stoken]() -> bool {
+                return "quitting"_fnb() || stoken.stop_requested();
+            };
             for (const auto& url_str : urls) {
                 try {
                     addFeedSync(url_str, quit_job);

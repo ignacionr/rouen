@@ -134,7 +134,7 @@ namespace rouen::cards {
                     return std::make_shared<dbrepair_card>();
                 }},
                 {"weather", [](std::string_view uri, SDL_Renderer* renderer) {
-                    return std::make_shared<weather>();
+                    return std::make_shared<weather>(uri);
                 }}
             };
             return dictionary;

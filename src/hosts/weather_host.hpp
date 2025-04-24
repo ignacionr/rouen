@@ -142,7 +142,7 @@ public:
     /**
      * Set the location for weather data
      */
-    void setLocation(const std::string& location) {
+    void setLocation(std::string_view location) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (location_ != location) {
             location_ = location;
