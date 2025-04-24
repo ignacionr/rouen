@@ -8,11 +8,16 @@
 #include <imgui/imgui.h>
 #include <fstream>   // Added for file I/O
 #include <sstream>   // Added for string stream
+#include <chrono>    // Added for timestamp
+#include <iomanip>   // Added for std::put_time
+#include <iostream>  // Added for console output
+#include <SDL2/SDL_image.h> // Added for saving PNG files
 
 #include "factory.hpp"
 #include "../productivity/editor.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/deferred_operations.hpp"
+#include "../../helpers/capture_helper.hpp"
 
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
@@ -72,16 +77,34 @@ struct deck {
         }
     }
 
-    bool render(card &c, float &x, float height, int &requested_fps) {
-        // Arrays of ImGui style elements for each color
-        const ImGuiCol_ first_color_elements[] = {
+    struct color_setup {
+        color_setup(ImVec4 first_color, ImVec4 second_color) {
+            // Push first color elements
+            for (const auto& col : first_color_elements) {
+                ImGui::PushStyleColor(col, first_color);
+            }
+            
+            // Push second color elements
+            for (const auto& col : second_color_elements) {
+                ImGui::PushStyleColor(col, second_color);
+            }
+    
+        }
+        ~color_setup() {
+            // Pop all style colors (2 initial + size of both arrays)
+            const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
+            for (int i = 0; i < total_style_pushes; ++i) {
+                ImGui::PopStyleColor();
+            }
+        }
+        static constexpr ImGuiCol_ first_color_elements[] = {
             ImGuiCol_TitleBgActive,
             ImGuiCol_Border,
             ImGuiCol_BorderShadow,
             ImGuiCol_ButtonHovered,
         };
         
-        const ImGuiCol_ second_color_elements[] = {
+        static constexpr ImGuiCol_ second_color_elements[] = {
             ImGuiCol_TitleBgCollapsed,
             ImGuiCol_Button,
             ImGuiCol_ButtonActive,
@@ -107,19 +130,13 @@ struct deck {
             ImGuiCol_HeaderHovered,
             ImGuiCol_HeaderActive
         };
-        
-        // Push first color elements
-        for (const auto& col : first_color_elements) {
-            ImGui::PushStyleColor(col, c.colors[0]);
-        }
-        
-        // Push second color elements
-        for (const auto& col : second_color_elements) {
-            ImGui::PushStyleColor(col, c.colors[1]);
-        }
-        
+    };
+
+    bool render(card &c, float &x, float height, int &requested_fps) {
         ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
         ImGui::SetNextWindowSize({c.width, height}, ImGuiCond_Always);
+
+        color_setup colors(c.get_color(0), c.get_color(1));
 
         // does it overlap the screen?
         auto const screen_size {ImGui::GetMainViewport()->Size};
@@ -130,29 +147,110 @@ struct deck {
         bool result = c.render();
         requested_fps = std::max(requested_fps, c.requested_fps);
         
-        // Pop all style colors (2 initial + size of both arrays)
-        const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
-        ImGui::PopStyleColor(total_style_pushes);
         x += c.width + 2.0f;
         return result;
     }
 
     void handle_shortcuts() {
-        if (ImGui::IsKeyPressed(ImGuiKey_P) && ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift) {
-            // Handle Ctrl+Shift+P shortcut
-            // Check if a menu card already exists
-            auto menu_card = std::find_if(cards_.begin(), cards_.end(), 
-                [](const auto& card) { 
-                    // Check if the window title contains "Menu"
-                    return card->window_title.find("Menu") != std::string::npos; 
-                });
-            
-            if (menu_card != cards_.end()) {
-                // Select existing menu card
-                (*menu_card)->grab_focus = true;
-            } else {
-                // Create a new menu card if none exists
-                create_card("menu", true);
+        if (ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift) {
+            if (ImGui::IsKeyPressed(ImGuiKey_P)) {
+                // Handle Ctrl+Shift+P shortcut
+                // Check if a menu card already exists
+                auto menu_card = std::find_if(cards_.begin(), cards_.end(), 
+                    [](const auto& card) { 
+                        // Check if the window title contains "Menu"
+                        return card->window_title.find("Menu") != std::string::npos; 
+                    });
+                
+                if (menu_card != cards_.end()) {
+                    // Select existing menu card
+                    (*menu_card)->grab_focus = true;
+                } else {
+                    // Create a new menu card if none exists
+                    create_card("menu", true);
+                }
+            }
+            else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+                // Find the first card that is focused
+                auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                    [](const auto& card) { return card->is_focused; });
+                if (focused_card != cards_.end()) {
+                    // Get a snapshot of the focused card
+                    // Create a unique filename with timestamp
+                    auto now = std::chrono::system_clock::now();
+                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::stringstream ss;
+                    ss << "card_" << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S") << ".png";
+                    std::string filename = ss.str();
+                    
+                    // Create a render function that draws the card content
+                    auto render_function = [this, &focused_card]() {
+                        auto &c = *(*focused_card);
+                        // Create a temporary rendering environment for the card
+                        // without its window decorations
+                        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
+                        ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+                        ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
+                        ImGui::PushStyleColor(ImGuiCol_Text, text_color);                
+                        color_setup colors(c.get_color(0), c.get_color(1));
+                        
+                        c.render();
+                        ImGui::PopStyleColor(3); // Pop the style colors
+                        ImGui::PopStyleVar(2); // Pop the style variables
+                    };
+                    
+                    // Get card dimensions
+                    int width = static_cast<int>((*focused_card)->width);
+                    int height = static_cast<int>(450.0f); // Use the standard card height
+                    
+                    // Use our capture helper to get a texture with the card contents
+                    SDL_Texture* snapshot_texture = rouen::helpers::capture_imgui(
+                        width, height, render_function, renderer);
+                    
+                    if (snapshot_texture) {
+                        // Read the pixel data from the texture
+                        int texture_width, texture_height;
+                        SDL_QueryTexture(snapshot_texture, nullptr, nullptr, &texture_width, &texture_height);
+                        
+                        // Create a surface to store the pixel data
+                        SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
+                            0, texture_width, texture_height, 32, SDL_PIXELFORMAT_RGBA32);
+                        
+                        if (surface) {
+                            // We can't directly lock a render target texture, so we need to use SDL_RenderReadPixels
+                            // Make sure we're rendering to the texture we want to capture
+                            SDL_SetRenderTarget(renderer, snapshot_texture);
+                            
+                            // Read pixels directly into the surface
+                            SDL_Rect rect = { 0, 0, texture_width, texture_height };
+                            if (SDL_RenderReadPixels(renderer, &rect, 
+                                                    surface->format->format, 
+                                                    surface->pixels, 
+                                                    surface->pitch) == 0) {
+                                // Save the surface as PNG
+                                if (IMG_SavePNG(surface, filename.c_str()) == 0) {
+                                    // Success - show a message or notification if desired
+                                    std::cout << "Card snapshot saved to " << filename << std::endl;
+                                } else {
+                                    std::cerr << "Failed to save snapshot: " << IMG_GetError() << std::endl;
+                                }
+                            } else {
+                                std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << std::endl;
+                            }
+                            
+                            // Restore the default render target
+                            SDL_SetRenderTarget(renderer, nullptr);
+                            
+                            // Clean up the surface
+                            SDL_FreeSurface(surface);
+                        }
+                        
+                        // Clean up the texture
+                        SDL_DestroyTexture(snapshot_texture);
+                    }
+                }
             }
         }
     }
