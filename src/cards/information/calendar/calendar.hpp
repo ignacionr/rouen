@@ -225,7 +225,7 @@ namespace rouen::cards
             // Display current date with navigation buttons
             ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
             
-            if (ImGui::Button("< Prev Day")) {
+            if (ImGui::Button("◀")) {
                 // Parse current date
                 std::tm date_tm = {};
                 std::istringstream ss(current_date_);
@@ -248,7 +248,7 @@ namespace rouen::cards
             ImGui::PopStyleColor();
             
             ImGui::SameLine();
-            if (ImGui::Button("Next Day >")) {
+            if (ImGui::Button("▶")) {
                 // Parse current date
                 std::tm date_tm = {};
                 std::istringstream ss(current_date_);
@@ -265,16 +265,19 @@ namespace rouen::cards
                 current_date_ = date_buf;
             }
             
-            ImGui::SameLine();
-            if (ImGui::Button("Today")) {
-                auto now = std::chrono::system_clock::now();
-                auto now_time_t = std::chrono::system_clock::to_time_t(now);
-                std::tm now_tm = *std::localtime(&now_time_t);
-                
-                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
-                current_date_ = date_buf;
+            bool is_today = (current_date_ == std::format("{:%Y-%m-%d}", std::chrono::system_clock::now()));
+            if (!is_today) {
+                ImGui::SameLine();
+                if (ImGui::Button("Today")) {
+                    auto now = std::chrono::system_clock::now();
+                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                    std::tm now_tm = *std::localtime(&now_time_t);
+                    
+                    std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+                    current_date_ = date_buf;
+                }
             }
-            
+
             ImGui::PopStyleColor();
             ImGui::Separator();
             
@@ -316,12 +319,15 @@ namespace rouen::cards
             }
             
             // Render time slots (from 0 to 23 hours)
+            int current_hour = is_today ? std::chrono::duration_cast<std::chrono::hours>(
+                std::chrono::system_clock::now().time_since_epoch()).count() % 24 : -1;
             for (int hour = 0; hour < 24; hour++) {
                 std::string time_label = std::format("{:02d}:00", hour);
                 
+                auto const label_color {hour == current_hour ? colors[4] : colors[2]};
                 // Check if we have events for this hour
                 if (hourly_events.find(hour) != hourly_events.end() && !hourly_events[hour].empty()) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // Title color
+                    ImGui::PushStyleColor(ImGuiCol_Text, label_color); // Title color
                     ImGui::Text("%s", time_label.c_str());
                     ImGui::PopStyleColor();
                     
@@ -331,7 +337,7 @@ namespace rouen::cards
                     }
                 } else {
                     // Display empty time slot with lighter color
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, label_color);
                     ImGui::Text("%s", time_label.c_str());
                     ImGui::PopStyleColor();
                 }
