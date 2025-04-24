@@ -15,7 +15,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -Wextra              # Enable extra warnings
     -Wpedantic           # Enforce strict ISO C++
     -Wshadow             # Warn when a variable declaration shadows another
-    # -Wconversion         # Warn on implicit type conversions
+    -Wconversion         # Warn on implicit type conversions
     # -Wsign-conversion    # Warn on sign conversions
     # -Wnull-dereference   # Warn about null pointer dereference
     # -Wdouble-promotion   # Warn about implicit doubles from float
@@ -76,7 +76,7 @@ target_include_directories(imcolortextedit PRIVATE
 
 # Disable sign comparison warnings only for the imcolortextedit library
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
+  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare -Wno-conversion)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
 endif()

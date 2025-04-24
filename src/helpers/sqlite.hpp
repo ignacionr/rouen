@@ -201,7 +201,7 @@ namespace hosting::db
             } else if constexpr (std::is_floating_point_v<T>) {
                 sqlite3_bind_double(stmt, index, value);
             } else if constexpr (std::is_same_v<T, std::string>) {
-                sqlite3_bind_text(stmt, index, value.data(), value.size(), SQLITE_TRANSIENT);
+                sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
             } else if constexpr (std::is_same_v<T, std::string_view>) {
                 // Handle null or empty string_view specially
                 if (value.data() == nullptr || value.empty()) {

@@ -107,7 +107,7 @@ private:
         
         // Dates
         ImGui::Spacing();
-        ImGui::TextColored(colors[3], "Dates: %s - %s (%d days)",
+        ImGui::TextColored(colors[3], "Dates: %s - %s (%ld days)",
             helpers::DatePicker::format_date(plan_ptr->start_date).c_str(),
             helpers::DatePicker::format_date(plan_ptr->end_date).c_str(),
             plan_ptr->total_days());

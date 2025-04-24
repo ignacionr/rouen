@@ -64,7 +64,7 @@ namespace media::travel {
         }
         
         // Calculate total days of the trip
-        int total_days() const {
+        auto total_days() const {
             auto diff = end_date - start_date;
             return std::chrono::duration_cast<std::chrono::hours>(diff).count() / 24 + 1;
         }

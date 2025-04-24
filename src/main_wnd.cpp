@@ -393,14 +393,14 @@ void rouen::MainWindow::render_font_check() {
                 codepoint = (unsigned int)test_char[0];
             } else if ((test_char[0] & 0xE0) == 0xC0 && test_char[1] != 0) {
                 // 2-byte character
-                codepoint = ((test_char[0] & 0x1F) << 6) | (test_char[1] & 0x3F);
+                codepoint = (static_cast<uint>(test_char[0] & 0x1F) << 6) | static_cast<uint>(test_char[1] & 0x3F);
             } else if ((test_char[0] & 0xF0) == 0xE0 && test_char[1] != 0 && test_char[2] != 0) {
                 // 3-byte character
-                codepoint = ((test_char[0] & 0x0F) << 12) | ((test_char[1] & 0x3F) << 6) | (test_char[2] & 0x3F);
+                codepoint = (static_cast<uint>(test_char[0] & 0x0F) << 12) | (static_cast<uint>(test_char[1] & 0x3F) << 6) | static_cast<uint>(test_char[2] & 0x3F);
             } else if ((test_char[0] & 0xF8) == 0xF0 && test_char[1] != 0 && test_char[2] != 0 && test_char[3] != 0) {
                 // 4-byte character (emoji range)
-                codepoint = ((test_char[0] & 0x07) << 18) | ((test_char[1] & 0x3F) << 12) |
-                            ((test_char[2] & 0x3F) << 6) | (test_char[3] & 0x3F);
+                codepoint = (static_cast<uint>(test_char[0] & 0x07) << 18) | (static_cast<uint>(test_char[1] & 0x3F) << 12) |
+                            (static_cast<uint>(test_char[2] & 0x3F) << 6) | static_cast<uint>(test_char[3] & 0x3F);
             }
         }
         

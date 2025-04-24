@@ -114,7 +114,7 @@ private:
                 
                 // Capitalize the weather description
                 if (!description.empty()) {
-                    description[0] = std::toupper(description[0]);
+                    description[0] = static_cast<char>(std::toupper(description[0]));
                 }
                 
                 ImGui::Text("%s", description.c_str());
@@ -153,7 +153,7 @@ private:
             ImGui::Spacing();
             
             // Only show the forecast periods
-            const int forecast_items_to_show = std::min(5, static_cast<int>(forecast->list.size()));
+            const size_t forecast_items_to_show = std::min(5ul, forecast->list.size());
             
             // Start a table
             if (ImGui::BeginTable("forecast_table", 3, ImGuiTableFlags_BordersInnerV)) {
@@ -162,7 +162,7 @@ private:
                 ImGui::TableSetupColumn("Condition");
                 ImGui::TableHeadersRow();
                 
-                for (int i = 0; i < forecast_items_to_show; i++) {
+                for (size_t i = 0; i < forecast_items_to_show; i++) {
                     const auto& item = forecast->list[i];
                     
                     // Get the time
@@ -180,7 +180,7 @@ private:
                         
                         // Capitalize the condition
                         if (!condition.empty()) {
-                            condition[0] = std::toupper(condition[0]);
+                            condition[0] = static_cast<char>(std::toupper(condition[0]));
                         }
                     }
                     

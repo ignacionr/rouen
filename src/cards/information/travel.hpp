@@ -439,20 +439,20 @@ public:
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         
         // Get current time for animation
-        float time = ImGui::GetTime() * 5.0f;
+        auto time = ImGui::GetTime() * 5.0f;
         
         // Draw spinner segments
         const int NUM_SEGMENTS = 8;
         for (int i = 0; i < NUM_SEGMENTS; i++) {
-            float t = time + (float)i * 0.25f;
-            float a = (t * (float)M_PI * 2.0f) / (float)NUM_SEGMENTS;
-            float b = ((t + 0.25f) * (float)M_PI * 2.0f) / (float)NUM_SEGMENTS;
+            auto t = time + static_cast<float>(i) * 0.25f;
+            auto a = (t * M_PI * 2.0f) / (float)NUM_SEGMENTS;
+            auto b = ((t + 0.25f) * M_PI * 2.0f) / (float)NUM_SEGMENTS;
             
             // Calculate alpha based on time
             float alpha = 0.1f + 0.9f * (1.0f - (float)i / (float)NUM_SEGMENTS);
             ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(colors[0].x, colors[0].y, colors[0].z, alpha));
             
-            draw_list->PathArcTo(center, RADIUS, a, b, 12);
+            draw_list->PathArcTo(center, RADIUS, static_cast<float>(a), static_cast<float>(b), 12);
             draw_list->PathStroke(color, false, 2.0f);
         }
         

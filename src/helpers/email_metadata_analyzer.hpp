@@ -261,15 +261,15 @@ namespace mail {
             std::string combined = subject + from + date;
             if (!combined.empty()) {
                 // Simple string hash
-                for (char c : combined) {
-                    hash_value = ((hash_value << 5) + hash_value) + c;
+                for (auto c : combined) {
+                    hash_value = ((hash_value << 5) + hash_value) + static_cast<size_t>(c);
                 }
                 alt_id += std::to_string(hash_value);
             } else {
                 // Truly last resort - use the first 100 chars of email content
                 std::string sample = email_content.substr(0, std::min(size_t(100), email_content.length()));
                 for (char c : sample) {
-                    hash_value = ((hash_value << 5) + hash_value) + c;
+                    hash_value = ((hash_value << 5) + hash_value) + static_cast<size_t>(c);
                 }
                 alt_id += std::to_string(hash_value);
             }

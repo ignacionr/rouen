@@ -56,7 +56,7 @@ namespace mail {
             // Find all encoded words
             while (std::regex_search(search_start, header.cend(), match, encoded_word_regex)) {
                 std::string charset = match[1];
-                char encoding = std::toupper(match[2].str()[0]);
+                auto encoding = std::toupper(match[2].str()[0]);
                 std::string encoded_text = match[3];
                 
                 std::string decoded;
@@ -76,7 +76,7 @@ namespace mail {
             }
             
             // Apply replacements from right to left to maintain correct positions
-            for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
+            for (auto i = positions.size() - 1; i >= 0; --i) {
                 auto [pos, len] = positions[i];
                 result.replace(pos, len, replacements[i]);
             }
@@ -125,13 +125,13 @@ namespace mail {
             std::string result;
             std::vector<int> char_array_4(4, 0);
             std::vector<int> char_array_3(3, 0);
-            int i = 0, j = 0;
-            int in_len = input.size();
+            size_t i = 0, j = 0;
+            size_t in_len = input.size();
             unsigned char c = 0;
             
-            while (in_len-- && (input[i] != '=') && is_base64(input[i])) {
-                c = input[i++];
-                c = base64_chars.find(c);
+            while (in_len-- && (input[i] != '=') && is_base64(static_cast<unsigned char>(input[i]))) {
+                c = static_cast<unsigned char>(input[i++]);
+                c = static_cast<unsigned char>(base64_chars.find(static_cast<char>(c)));
                 
                 char_array_4[j++] = c;
                 if (j == 4) {
@@ -140,7 +140,7 @@ namespace mail {
                     char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
                     
                     for (j = 0; j < 3; j++) {
-                        result += char_array_3[j];
+                        result += static_cast<char>(char_array_3[j]);
                     }
                     j = 0;
                 }
@@ -157,7 +157,7 @@ namespace mail {
                 char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
                 
                 for (i = 0; i < left - 1; i++) {
-                    result += char_array_3[i];
+                    result += static_cast<char>(char_array_3[i]);
                 }
             }
             

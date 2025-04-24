@@ -165,7 +165,12 @@ namespace ignacionr
         }
 
         // Function to send a message to GPT and receive the reply
-        auto sendMessage(std::string_view message, auto do_post, std::string_view role = "user", std::string_view model = "grok-2-latest", float temperature = 0.45)
+        auto sendMessage(
+            std::string_view message, 
+            auto do_post, 
+            std::string_view role = "user", 
+            std::string_view model = "grok-2-latest", 
+            float temperature = 0.45f)
         {
             wait_min_time();
             // Append the new message to the conversation history
