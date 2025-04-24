@@ -123,16 +123,18 @@ public:
      */
     WeatherHost(std::function<std::string(std::string_view)> system_runner) 
         : system_runner_(system_runner),
-          last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)) // Force initial update
+          last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)), // Force initial update
+          consecutive_failures_(0),
+          backoff_minutes_(0)
     {
-        DB_INFO("WeatherHost: Initializing");
+        WEATHER_INFO("WeatherHost: Initializing");
         
         // Get the API key from the environment variable
         api_key_ = std::getenv("OPENWEATHER_KEY");
         if (api_key_.empty()) {
-            DB_ERROR("WeatherHost: OpenWeather API key not found in environment variables");
+            WEATHER_ERROR("WeatherHost: OpenWeather API key not found in environment variables");
         } else {
-            DB_INFO_FMT("WeatherHost: Using OpenWeather API key: {}", api_key_);
+            WEATHER_INFO_FMT("WeatherHost: Using OpenWeather API key: {}", api_key_);
         }
         
         // Default location - can be improved with geolocation
@@ -167,7 +169,14 @@ public:
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::minutes>(now - last_update_time_).count();
         
-        // Update weather every 30 minutes
+        // If we're in a backoff period due to previous failures, respect it
+        if (consecutive_failures_ > 0 && elapsed < backoff_minutes_) {
+            WEATHER_INFO_FMT("WeatherHost: Skipping update due to backoff period ({} min remaining)", 
+                        backoff_minutes_ - elapsed);
+            return false;
+        }
+        
+        // Update weather every 30 minutes, or if we don't have data yet
         return elapsed >= 30 || current_weather_data_.empty() || forecast_data_.empty();
     }
 
@@ -186,13 +195,13 @@ public:
             weather::CurrentWeather data;
             auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, current_weather_data_);
             if (error) {
-                DB_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
+                WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
                             glz::format_error(error));
                 return std::nullopt;
             }
             return data;
         } catch (const std::exception& e) {
-            DB_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
+            WEATHER_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
             return std::nullopt;
         }
     }
@@ -212,13 +221,13 @@ public:
             weather::Forecast data;
             auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, forecast_data_);
             if (error) {
-                DB_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
+                WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
                             glz::format_error(error));
                 return std::nullopt;
             }
             return data;
         } catch (const std::exception& e) {
-            DB_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
+            WEATHER_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
             return std::nullopt;
         }
     }
@@ -240,7 +249,7 @@ public:
         std::lock_guard<std::mutex> lock(host_mutex);
         
         if (!shared_host) {
-            DB_INFO("WeatherHost: Creating new shared WeatherHost instance");
+            WEATHER_INFO("WeatherHost: Creating new shared WeatherHost instance");
             shared_host = std::make_shared<WeatherHost>([](std::string_view cmd) -> std::string {
                 return ""; // Not using system commands in this implementation
             });
@@ -281,37 +290,63 @@ private:
             location_, api_key_
         );
         
+        // Flag to track success of both API calls
+        std::atomic<bool> current_success = false;
+        std::atomic<bool> forecast_success = false;
+        
         // Fetch current weather
-        std::thread current_thread([this, current_url]() {
+        std::thread current_thread([this, current_url, &current_success]() {
             try {
                 http::fetch fetcher(60); // Increase timeout for potential delays
                 std::string response = fetcher(current_url);
                 
                 std::lock_guard<std::mutex> lock(mutex_);
                 current_weather_data_ = response;
-                DB_INFO("WeatherHost: Fetched current weather data");
+                current_success = true;
+                WEATHER_INFO("WeatherHost: Fetched current weather data");
             } catch (const std::exception& e) {
-                DB_ERROR_FMT("WeatherHost: Failed to fetch current weather: {}", e.what());
+                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch current weather: {}", e.what());
             }
         });
         
         // Fetch forecast
-        std::thread forecast_thread([this, forecast_url]() {
+        std::thread forecast_thread([this, forecast_url, &forecast_success]() {
             try {
                 http::fetch fetcher(60); // Increase timeout for potential delays
                 std::string response = fetcher(forecast_url);
                 
                 std::lock_guard<std::mutex> lock(mutex_);
                 forecast_data_ = response;
-                DB_INFO("WeatherHost: Fetched forecast data");
+                forecast_success = true;
+                WEATHER_INFO("WeatherHost: Fetched forecast data");
             } catch (const std::exception& e) {
-                DB_ERROR_FMT("WeatherHost: Failed to fetch forecast: {}", e.what());
+                WEATHER_ERROR_FMT("WeatherHost: Failed to fetch forecast: {}", e.what());
             }
         });
         
-        // Let the threads run independently
-        current_thread.detach();
-        forecast_thread.detach();
+        // Wait for both threads to complete
+        current_thread.join();
+        forecast_thread.join();
+        
+        // Update backoff state based on success or failure
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (current_success && forecast_success) {
+            // Successfully fetched both - reset backoff
+            if (consecutive_failures_ > 0) {
+                WEATHER_INFO("WeatherHost: API calls successful, resetting backoff");
+                consecutive_failures_ = 0;
+                backoff_minutes_ = 0;
+            }
+        } else {
+            // At least one API call failed - increase backoff
+            consecutive_failures_++;
+            
+            // Exponential backoff: 5, 10, 20, 40, 60, 60, ... minutes (capped at 60)
+            backoff_minutes_ = std::min(consecutive_failures_ < 2 ? 5 : backoff_minutes_ * 2, 60);
+            
+            WEATHER_WARN_FMT("WeatherHost: API call(s) failed, increased backoff to {} minutes after {} consecutive failures", 
+                       backoff_minutes_, consecutive_failures_);
+        }
     }
 
     std::function<std::string(std::string_view)> system_runner_;
@@ -321,6 +356,8 @@ private:
     std::string current_weather_data_;
     std::string forecast_data_;
     std::chrono::steady_clock::time_point last_update_time_;
+    int consecutive_failures_;
+    int backoff_minutes_;
 };
 
 } // namespace rouen::hosts

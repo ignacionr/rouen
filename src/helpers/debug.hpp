@@ -41,6 +41,13 @@
 #define RSS_DEBUG(message) LOG_COMPONENT("RSS", LOG_LEVEL_DEBUG, message)
 #define RSS_TRACE(message) LOG_COMPONENT("RSS", LOG_LEVEL_TRACE, message)
 
+// Weather component logging macros
+#define WEATHER_ERROR(message) LOG_COMPONENT("WEATHER", LOG_LEVEL_ERROR, message)
+#define WEATHER_WARN(message) LOG_COMPONENT("WEATHER", LOG_LEVEL_WARN, message)
+#define WEATHER_INFO(message) LOG_COMPONENT("WEATHER", LOG_LEVEL_INFO, message)
+#define WEATHER_DEBUG(message) LOG_COMPONENT("WEATHER", LOG_LEVEL_DEBUG, message)
+#define WEATHER_TRACE(message) LOG_COMPONENT("WEATHER", LOG_LEVEL_TRACE, message)
+
 // SQLite component logging macros - renamed to avoid conflict with SQLite's own macros
 #define DB_ERROR(message) LOG_COMPONENT("SQLITE", LOG_LEVEL_ERROR, message)
 #define DB_WARN(message) LOG_COMPONENT("SQLITE", LOG_LEVEL_WARN, message)
@@ -104,6 +111,13 @@ namespace debug {
 #define RSS_INFO_FMT(fmt, ...) RSS_INFO(debug::format_log(fmt, __VA_ARGS__))
 #define RSS_DEBUG_FMT(fmt, ...) RSS_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 #define RSS_TRACE_FMT(fmt, ...) RSS_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Weather component format macros
+#define WEATHER_ERROR_FMT(fmt, ...) WEATHER_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define WEATHER_WARN_FMT(fmt, ...) WEATHER_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define WEATHER_INFO_FMT(fmt, ...) WEATHER_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define WEATHER_DEBUG_FMT(fmt, ...) WEATHER_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define WEATHER_TRACE_FMT(fmt, ...) WEATHER_TRACE(debug::format_log(fmt, __VA_ARGS__))
 
 // SQLite format macros - renamed to avoid conflict
 #define DB_ERROR_FMT(fmt, ...) DB_ERROR(debug::format_log(fmt, __VA_ARGS__))
