@@ -21,8 +21,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -Wdouble-promotion   # Warn about implicit doubles from float
     -Wformat=2           # Warn about printf format issues
     -Wimplicit-fallthrough # Warn about fallthrough in switch statements
-    # -Wunused             # Warn about unused variables/functions
-    # -Werror              # Treat warnings as errors
+    -Wunused             # Warn about unused variables/functions
+    -Werror              # Treat warnings as errors
   )
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   # Similar flags for GCC
