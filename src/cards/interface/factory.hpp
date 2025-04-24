@@ -110,6 +110,10 @@ namespace rouen::cards {
                         if (pos1 == std::string::npos) {
                             throw std::runtime_error("Invalid mail URI format");
                         }
+                        pos1 = params.find(':', pos1 + 1);
+                        if (pos1 == std::string::npos) {
+                            throw std::runtime_error("Invalid mail URI format");
+                        }
                         
                         std::string host = params.substr(0, pos1);
                         

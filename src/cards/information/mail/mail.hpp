@@ -97,7 +97,7 @@ namespace rouen::cards
 
         std::string get_uri() const override
         {
-            return host_url_.empty() ? "mail" : std::format("mail:{}:{}:{}", host_url_, username_, password_);
+            return host_url_.empty() ? "mail" : std::format("mail:{}:{}", host_url_, username_);
         }
 
         void refresh_messages()
