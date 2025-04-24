@@ -14,8 +14,8 @@ namespace editor {
 class TextEditor : public EditorInterface {
 public:
     TextEditor() 
-        : should_focus_(false),
-          file_modified_(false)
+        : file_modified_(false)
+        , should_focus_(false)
     {
         // Initialize colors
         success_color = {0.0f, 1.0f, 0.0f, 1.0f}; // Green success text

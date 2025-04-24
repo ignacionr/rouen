@@ -34,9 +34,9 @@ namespace http {
                 curl_easy_setopt(curl, CURLOPT_USERAGENT, "rouen/1.0");
                 curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_);
                 curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
+                #if defined(_WIN32) || defined(_WIN64)
                 char *pproxy_str = nullptr;
                 size_t len = 0;
-                #if defined(_WIN32) || defined(_WIN64)
                 if (!_dupenv_s(&pproxy_str, &len, "HTTP_PROXY") && pproxy_str != nullptr) {
                     curl_easy_setopt(curl, CURLOPT_PROXY, pproxy_str);
                 }
@@ -92,9 +92,9 @@ namespace http {
                 curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
                 curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, data.size());
+                #if defined(_WIN32) || defined(_WIN64)
                 char *pproxy_str = nullptr;
                 size_t len = 0;
-                #if defined(_WIN32) || defined(_WIN64)
                 if (!_dupenv_s(&pproxy_str, &len, "HTTP_PROXY") && pproxy_str != nullptr) {
                     curl_easy_setopt(curl, CURLOPT_PROXY, pproxy_str);
                 }

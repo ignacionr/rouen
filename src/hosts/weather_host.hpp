@@ -121,9 +121,8 @@ public:
     /**
      * Constructor initializes the Weather host with a system runner
      */
-    WeatherHost(std::function<std::string(std::string_view)> system_runner) 
-        : system_runner_(system_runner),
-          last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)), // Force initial update
+    WeatherHost() 
+        : last_update_time_(std::chrono::steady_clock::now() - std::chrono::hours(2)), // Force initial update
           consecutive_failures_(0),
           backoff_minutes_(0)
     {
@@ -250,9 +249,7 @@ public:
         
         if (!shared_host) {
             WEATHER_INFO("WeatherHost: Creating new shared WeatherHost instance");
-            shared_host = std::make_shared<WeatherHost>([](std::string_view cmd) -> std::string {
-                return ""; // Not using system commands in this implementation
-            });
+            shared_host = std::make_shared<WeatherHost>();
         }
         
         return shared_host;
@@ -349,7 +346,6 @@ private:
         }
     }
 
-    std::function<std::string(std::string_view)> system_runner_;
     mutable std::mutex mutex_;
     std::string api_key_;
     std::string location_;

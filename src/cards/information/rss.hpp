@@ -173,9 +173,7 @@ public:
         // If the weak_ptr has expired or was never initialized, create a new instance
         if (!shared_host) {
             RSS_INFO("Creating new shared RSSHost instance");
-            shared_host = std::make_shared<hosts::RSSHost>([](std::string_view cmd) -> std::string {
-                return ""; // Not using system commands in this implementation
-            });
+            shared_host = std::make_shared<hosts::RSSHost>();
             weak_host = shared_host; // Store a weak_ptr, not keeping the object alive
             RSS_INFO("Shared RSSHost instance created");
         } else {

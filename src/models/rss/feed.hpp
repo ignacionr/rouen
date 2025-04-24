@@ -58,8 +58,6 @@ namespace media::rss {
             std::string summary_;
         };
 
-        feed(std::function<std::string(std::string_view)> system_runner) : system_runner_(system_runner) {}
-
         void operator()(std::string_view partial_contents) {
             contents += partial_contents;
             tinyxml2::XMLDocument doc;
@@ -367,7 +365,6 @@ namespace media::rss {
         std::string feed_link;
         std::string feed_description;
         std::vector<item> items;
-        std::function<std::string(std::string_view)> system_runner_;
         long long repo_id;
         std::set<std::string> tags;
 

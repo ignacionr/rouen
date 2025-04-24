@@ -106,8 +106,7 @@ namespace rouen::cards
             last_refresh_ = std::chrono::steady_clock::now();
 
             // Start a new thread for refreshing
-            refresh_thread_ = std::jthread([this](std::stop_token stop_token)
-            {
+            refresh_thread_ = std::jthread([this] {
                 execute_safely([this]() {
                     if (mail_screen_) {
                         mail_screen_->refresh();

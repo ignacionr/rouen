@@ -139,7 +139,6 @@ struct deck {
         color_setup colors(c.get_color(0), c.get_color(1));
 
         // does it overlap the screen?
-        auto const screen_size {ImGui::GetMainViewport()->Size};
         if (c.grab_focus) {
             c.grab_focus = false;
             ImGui::SetNextWindowFocus();

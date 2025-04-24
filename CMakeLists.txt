@@ -12,8 +12,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(
     -Wall                # Enable all common warnings
-    # -Wextra              # Enable extra warnings
-    # -Wpedantic           # Enforce strict ISO C++
+    -Wextra              # Enable extra warnings
+    -Wpedantic           # Enforce strict ISO C++
     # -Wshadow             # Warn when a variable declaration shadows another
     # -Wconversion         # Warn on implicit type conversions
     # -Wsign-conversion    # Warn on sign conversions
@@ -73,9 +73,13 @@ target_include_directories(imcolortextedit PRIVATE
   /usr/include/stb
   ${imguicolortextedit_SOURCE_DIR}
 )
-target_compile_options(imcolortextedit PRIVATE 
-  -UIMGUI_DISABLE_OBSOLETE_FUNCTIONS
-)
+
+# Disable sign comparison warnings only for the imcolortextedit library
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
+endif()
 
 # Add the executable
 add_executable(rouen 

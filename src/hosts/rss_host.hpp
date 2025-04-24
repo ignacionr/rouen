@@ -52,9 +52,8 @@ public:
     /**
      * Constructor initializes the RSS host with a system runner and loads existing feeds
      */
-    RSSHost(std::function<std::string(std::string_view)> system_runner) 
-        : system_runner_(system_runner),
-          repo_("rss.db")
+    RSSHost() 
+        : repo_("rss.db")
     {
         RSS_INFO("RSSHost constructor starting...");
         // Load existing feeds but defer loading items until they're needed
@@ -65,7 +64,7 @@ public:
             repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url) {
                 RSS_DEBUG_FMT("Found feed: ID={}, URL={}", feed_id, (url ? url : "null"));
                 
-                auto feed_ptr = std::make_shared<media::rss::feed>(system_runner_);
+                auto feed_ptr = std::make_shared<media::rss::feed>();
                 feed_ptr->feed_title = title ? title : "";
                 feed_ptr->source_link = url ? url : "";
                 feed_ptr->feed_link = url ? url : "";
@@ -256,7 +255,7 @@ private:
     std::shared_ptr<media::rss::feed> addFeedSync(std::string_view url, auto quitting) {
         try {
             // Download and parse the feed
-            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(url, system_runner_));
+            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(url));
             
             if (quitting()) return nullptr;
 
@@ -339,10 +338,10 @@ private:
     }
 
     // Fetch and parse a feed from a URL with improved error handling
-    static media::rss::feed getFeed(std::string_view url, std::function<std::string(std::string_view)> system_runner) {
+    static media::rss::feed getFeed(std::string_view url) {
         try {
-            http::fetch fetch(60); // Increase timeout for large feeds
-            media::rss::feed parser{system_runner};
+            http::fetch fetch{60}; // Increase timeout for large feeds
+            media::rss::feed parser;
             parser.source_link = url;
             
             // Set up proper headers for better compatibility
@@ -363,7 +362,6 @@ private:
     std::atomic<std::shared_ptr<std::vector<std::shared_ptr<media::rss::feed>>>> feeds_ = 
         std::make_shared<std::vector<std::shared_ptr<media::rss::feed>>>();
     
-    std::function<std::string(std::string_view)> system_runner_;
     std::jthread fetch_thread_;
     media::rss::sqliterepo repo_;
 };

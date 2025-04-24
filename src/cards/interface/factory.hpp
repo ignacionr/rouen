@@ -53,31 +53,31 @@ namespace rouen::cards {
 
         static std::unordered_map<std::string, factory_t> const& dictionary() {
             static std::unordered_map<std::string, factory_t> dictionary {
-                {"git", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"git", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<git>();
                 }},
-                {"menu", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"menu", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<menu>();
                 }},
-                {"dir", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"dir", [](std::string_view uri, SDL_Renderer* ) {
                     return std::make_shared<fs_directory>(uri);
                 }},
-                {"pomodoro", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"pomodoro", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<pomodoro>();
                 }},
-                {"sysinfo", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"sysinfo", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<sysinfo_card>();
                 }},
-                {"grok", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"grok", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<grok>();
                 }},
-                {"radio", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"radio", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<radio>();
                 }},
-                {"envvars", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"envvars", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<envvars_card>();
                 }},
-                {"rss", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"rss", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<rss>();
                 }},
                 {"rss-feed", [](std::string_view uri, SDL_Renderer* renderer) {
@@ -87,10 +87,10 @@ namespace rouen::cards {
                     }
                     return feed;
                 }},
-                {"rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"rss-item", [](std::string_view uri, SDL_Renderer* ) {
                     return std::make_shared<rss_item>(std::string(uri));
                 }},
-                {"calendar", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"calendar", [](std::string_view uri, SDL_Renderer* ) {
                     if (uri.empty()) {
                         // Use default URL from environment variable
                         return std::make_shared<calendar>();
@@ -99,7 +99,7 @@ namespace rouen::cards {
                         return std::make_shared<calendar>(std::string(uri));
                     }
                 }},
-                {"mail", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"mail", [](std::string_view uri, SDL_Renderer* ) {
                     if (uri.empty()) {
                         // Use default credentials from environment
                         return std::make_shared<mail>();
@@ -124,16 +124,16 @@ namespace rouen::cards {
                         return std::make_shared<mail>(host, username, password);
                     }
                 }},
-                {"travel", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"travel", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<travel>();
                 }},
-                {"travel-plan", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"travel-plan", [](std::string_view uri, SDL_Renderer* ) {
                     return std::make_shared<travel_plan>(uri);
                 }},
-                {"dbrepair", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"dbrepair", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<dbrepair_card>();
                 }},
-                {"weather", [](std::string_view uri, SDL_Renderer* renderer) {
+                {"weather", [](std::string_view uri, SDL_Renderer* ) {
                     return std::make_shared<weather>(uri);
                 }}
             };

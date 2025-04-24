@@ -45,7 +45,7 @@ namespace mail {
                 // Check if the record already exists
                 bool exists = false;
                 std::string check_sql = "SELECT 1 FROM email_metadata WHERE id = ?";
-                db_.exec(check_sql, [&exists](sqlite3_stmt* stmt) {
+                db_.exec(check_sql, [&exists](sqlite3_stmt* ) {
                     exists = true;
                 }, metadata.id);
 

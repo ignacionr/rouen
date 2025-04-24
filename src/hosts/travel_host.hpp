@@ -16,9 +16,8 @@ namespace rouen::hosts {
 
 class TravelHost {
 public:
-    TravelHost(std::function<std::string(std::string_view)> system_runner) 
-        : system_runner_(system_runner), 
-          repo_("travel.db"),
+    TravelHost() 
+        : repo_("travel.db"),
           initialized_(false),
           initializing_(false) {
         DB_INFO("TravelHost: Initializing travel host");
@@ -61,8 +60,8 @@ public:
             
             // Try to catch any specific issues during the scan_plans call
             try {
-                repo_.scan_plans([this, &new_plans](long long id, const char* title, const char* start_date, 
-                                 const char* end_date, const char* status) {
+                repo_.scan_plans([this, &new_plans](long long id, const char* , const char* , 
+                                 const char* , const char* ) {
                     DB_INFO_FMT("TravelHost: Loading plan {} from database", id);
                     
                     try {
@@ -318,8 +317,8 @@ public:
             
             // Load plans from the database
             DB_INFO("TravelHost: Loading plans from database for refresh");
-            repo_.scan_plans([this, &new_plans](long long id, const char* title, const char* start_date, 
-                             const char* end_date, const char* status) {
+            repo_.scan_plans([this, &new_plans](long long id, const char* , const char* , 
+                             const char* , const char* ) {
                 DB_INFO_FMT("TravelHost: Loading plan {} from database", id);
                 auto plan = std::make_shared<media::travel::plan>();
                 repo_.get_plan(id, *plan);
@@ -353,9 +352,7 @@ public:
             // If the weak_ptr has expired or was never initialized, create a new instance
             if (!shared_host) {
                 DB_INFO("TravelHost: Creating new shared TravelHost instance");
-                shared_host = std::make_shared<TravelHost>([](std::string_view cmd) -> std::string {
-                    return ""; // Not using system commands in this implementation
-                });
+                shared_host = std::make_shared<TravelHost>();
                 weak_host = shared_host; // Store a weak_ptr, not keeping the object alive
             }
             
@@ -363,9 +360,7 @@ public:
         } catch (const std::exception& e) {
             DB_ERROR_FMT("TravelHost: Exception in getHost: {}", e.what());
             // Fallback to creating a new instance in case of failure
-            return std::make_shared<TravelHost>([](std::string_view cmd) -> std::string {
-                return "";
-            });
+            return std::make_shared<TravelHost>();
         }
     }
 
@@ -415,7 +410,6 @@ private:
         }
     }
 
-    std::function<std::string(std::string_view)> system_runner_;
     media::travel::sqliterepo repo_;
     std::vector<std::shared_ptr<media::travel::plan>> travel_plans_;
     std::mutex plans_mutex_;

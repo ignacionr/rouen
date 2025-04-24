@@ -432,7 +432,6 @@ public:
     void render_loading_spinner() {
         // Add a loading spinner animation
         const float RADIUS = 15.0f;
-        const ImU32 COLOR = ImGui::ColorConvertFloat4ToU32(colors[0]);
         
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImVec2 center = ImVec2(pos.x + RADIUS, pos.y + RADIUS);

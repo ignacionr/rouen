@@ -15,10 +15,11 @@ namespace editor {
 class ImageEditor : public EditorInterface {
 public:
     ImageEditor() 
-        : image_texture_(nullptr)
-        , image_width_(0)
-        , image_height_(0)
-        , should_focus_(false)
+        : 
+          should_focus_{false}
+        , image_texture_{nullptr}
+        , image_width_{0}
+        , image_height_{0}
     {
         // Initialize colors
         error_color = {1.0f, 0.0f, 0.0f, 1.0f};   // Red error text
@@ -142,8 +143,8 @@ private:
     bool should_focus_ = false;  // Flag to track when the window should grab focus
     
     // Image handling
-    SDL_Renderer* renderer_ = nullptr;
-    SDL_Texture* image_texture_ = nullptr;
+    SDL_Renderer* renderer_ {nullptr};
+    SDL_Texture* image_texture_ {nullptr};
     int image_width_ = 0;
     int image_height_ = 0;
 
