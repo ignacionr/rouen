@@ -21,7 +21,7 @@ public:
     }
     
     // Process all queued operations
-    void process_queue(SDL_Renderer* renderer) {
+    void process_queue(SDL_Renderer* /*renderer*/) {
         std::lock_guard<std::mutex> lock(mutex_);
         
         while (!operations_.empty()) {            

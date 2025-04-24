@@ -45,7 +45,7 @@ namespace rouen::cards {
             return render_window([this]() {
                 if (!radio_model) {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Radio model not initialized");
-                    return;
+                    return; // This is fine in a void lambda
                 }
                 
                 // Get current station and all station names

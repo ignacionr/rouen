@@ -136,7 +136,7 @@ private:
             ImGui::Columns(1);
             
         } catch (const std::exception& e) {
-            ImGui::TextColored(colors[4], "Error displaying weather data: %s", e.what());
+            ImGui::TextColored(colors[4], "%s", ("Error displaying weather data: " + std::string(e.what())).c_str());
         }
     }
     
@@ -200,7 +200,7 @@ private:
                 ImGui::EndTable();
             }
         } catch (const std::exception& e) {
-            ImGui::TextColored(colors[4], "Error displaying forecast data: %s", e.what());
+            ImGui::TextColored(colors[4], "%s", ("Error displaying forecast data: " + std::string(e.what())).c_str());
         }
     }
     

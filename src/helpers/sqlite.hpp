@@ -210,13 +210,11 @@ namespace hosting::db
                     sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
                 }
             } else {
-                static_assert(always_false<T>::value, "Unsupported parameter type");
+                // Fix always_false implementation to properly trigger a compile-time error
+                static_assert(sizeof(T) != sizeof(T), "Unsupported parameter type");
             }
         }
 
-        template <typename T>
-        struct always_false : std::false_type {};
-        
         sqlite3 *db_ {nullptr};
         mutable std::mutex mutex_;  // Protect concurrent access
         std::string db_path_;       // Keep path for debug info

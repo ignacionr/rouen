@@ -145,7 +145,7 @@ struct git: public card {
     
     void render_index() {
         // Get repository data from the model
-        const auto& repos = git_model->getRepos();
+        // const auto& repos = git_model->getRepos(); // Commented out unused variable
         const auto& repo_paths = git_model->getRepoPaths();
 
         // Display the list of repositories with their statuses as colored dots

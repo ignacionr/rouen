@@ -57,8 +57,8 @@ struct sysinfo_card : public card {
         struct statvfs stat;
         statvfs(path.c_str(), &stat);
         
-        double total = static_cast<double>(stat.f_blocks) * stat.f_frsize / (1024 * 1024 * 1024); // Total space in GB
-        double free = static_cast<double>(stat.f_bfree) * stat.f_frsize / (1024 * 1024 * 1024);  // Free space in GB
+        double total = static_cast<double>(stat.f_blocks) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
+        double free = static_cast<double>(stat.f_bfree) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
         double used = total - free; // Used space in GB
         
         return {total, used, free};
@@ -67,26 +67,40 @@ struct sysinfo_card : public card {
     // Get CPU usage in percentage
     double get_cpu_usage() {
         static unsigned long long prev_idle = 0, prev_total = 0;
-        unsigned long long idle, total;
+        unsigned long long idle = 0, total = 0;
         
         std::ifstream file("/proc/stat");
+        if (!file.is_open()) {
+            return 0.0; // Return 0 if we can't open the file
+        }
+        
         std::string line;
-        std::getline(file, line);
+        if (!std::getline(file, line)) {
+            file.close();
+            return 0.0; // Return 0 if we can't read the line
+        }
         file.close();
         
         std::istringstream iss(line);
         std::string cpu;
-        unsigned long long user, nice, system, idle_time, iowait, irq, softirq, steal, guest, guest_nice;
+        unsigned long long user = 0, nice = 0, system = 0, idle_time = 0, 
+                           iowait = 0, irq = 0, softirq = 0, steal = 0, 
+                           guest = 0, guest_nice = 0;
         
         iss >> cpu >> user >> nice >> system >> idle_time >> iowait >> irq >> softirq >> steal >> guest >> guest_nice;
+        
+        // Check if we successfully read all values
+        if (iss.fail()) {
+            return 0.0; // Return 0 if parsing failed
+        }
         
         idle = idle_time + iowait;
         total = idle + user + nice + system + irq + softirq + steal;
         
         double percent = 0.0;
         if (prev_total > 0 && total > prev_total) {
-            double idle_delta = idle - prev_idle;
-            double total_delta = total - prev_total;
+            double idle_delta = static_cast<double>(idle - prev_idle);
+            double total_delta = static_cast<double>(total - prev_total);
             percent = 100.0 * (1.0 - idle_delta / total_delta);
         }
         
@@ -119,19 +133,19 @@ struct sysinfo_card : public card {
             // System uptime information
             struct sysinfo si;
             sysinfo(&si);
-            int days = si.uptime / (60 * 60 * 24);
-            int hours = (si.uptime / (60 * 60)) % 24;
-            int minutes = (si.uptime / 60) % 60;
-            int seconds = si.uptime % 60;
+            long days = si.uptime / (60 * 60 * 24);
+            int hours = static_cast<int>((si.uptime / (60 * 60)) % 24);
+            int minutes = static_cast<int>((si.uptime / 60) % 60);
+            int seconds = static_cast<int>(si.uptime % 60);
             
-            ImGui::Text("System Uptime: %d days, %d:%02d:%02d", days, hours, minutes, seconds);
+            ImGui::Text("System Uptime: %ld days, %d:%02d:%02d", days, hours, minutes, seconds);
             ImGui::Separator();
             
             // Memory section
             ImGui::Text("Memory Usage:");
             auto [mem_total, mem_used, mem_free] = memory_info;
             std::string mem_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", mem_used, mem_total, (mem_used / mem_total) * 100.0);
-            draw_progress_bar("RAM", mem_used / mem_total, mem_text.c_str());
+            draw_progress_bar("RAM", static_cast<float>(mem_used / mem_total), mem_text.c_str());
             
             ImGui::Spacing();
             
@@ -139,14 +153,14 @@ struct sysinfo_card : public card {
             ImGui::Text("Disk Usage:");
             auto [disk_total, disk_used, disk_free] = disk_info;
             std::string disk_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", disk_used, disk_total, (disk_used / disk_total) * 100.0);
-            draw_progress_bar("Disk", disk_used / disk_total, disk_text.c_str());
+            draw_progress_bar("Disk", static_cast<float>(disk_used / disk_total), disk_text.c_str());
             
             ImGui::Spacing();
             
             // CPU usage section
             ImGui::Text("CPU Usage:");
             std::string cpu_text = std::format("{:.1f}%", cpu_usage);
-            draw_progress_bar("CPU", cpu_usage / 100.0f, cpu_text.c_str());
+            draw_progress_bar("CPU", static_cast<float>(cpu_usage / 100.0), cpu_text.c_str());
             
             // Display number of processes
             ImGui::Text("Running Processes: %d", si.procs);

@@ -77,7 +77,7 @@ namespace rouen::cards {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                         {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
-                        {"Exit Application", []() { auto was_exiting = "exit"_fnb(); }}
+                        {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }} // Fixed: Use [[maybe_unused]] to suppress nodiscard warning
                     }}
                 };
                 
@@ -99,7 +99,7 @@ namespace rouen::cards {
                 bool enter_pressed = false;
                 
                 // Command palette style input box at the top
-                ImGui::TextColored(colors[5], "Launch Application");
+                ImGui::TextColored(colors[5], "%s", "Launch Application");
                 ImGui::Separator();
                 
                 // Search box with icon
@@ -180,17 +180,17 @@ namespace rouen::cards {
                     // Handle keyboard navigation
                     if (ImGui::IsWindowFocused()) {
                         if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && !filtered_items.empty()) {
-                            selected_index = (selected_index + 1) % filtered_items.size();
+                            selected_index = static_cast<int>((static_cast<size_t>(selected_index) + 1) % filtered_items.size());
                         }
                         else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && !filtered_items.empty()) {
-                            selected_index = (selected_index + filtered_items.size() - 1) % filtered_items.size();
+                            selected_index = static_cast<int>((static_cast<size_t>(selected_index) + filtered_items.size() - 1) % filtered_items.size());
                         }
                         
                         // Execute the selected command on Enter key
                         if (enter_pressed && !filtered_items.empty()) {
-                            if (selected_index >= 0 && selected_index < filtered_items.size()) {
-                                auto [cat_idx, item_idx, _] = filtered_items[selected_index];
-                                menu_categories[cat_idx].items[item_idx].second();
+                            if (selected_index >= 0 && static_cast<size_t>(selected_index) < filtered_items.size()) {
+                                auto [cat_idx, item_idx, _] = filtered_items[static_cast<size_t>(selected_index)];
+                                menu_categories[static_cast<size_t>(cat_idx)].items[static_cast<size_t>(item_idx)].second();
                                 // also clear the filter
                                 search_buffer[0] = '\0';
                             }
@@ -202,7 +202,7 @@ namespace rouen::cards {
                     
                     // If no items match the filter, show a message
                     if (filtered_items.empty()) {
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", "No applications match your search");
                     } 
                     else {
                         // Render filtered items
@@ -210,14 +210,14 @@ namespace rouen::cards {
                             auto [cat_idx, item_idx, item_text] = filtered_items[i];
                             
                             // Set selection color for the currently selected item
-                            bool is_selected = (i == selected_index);
+                            bool is_selected = (static_cast<int>(i) == selected_index);
                             
                             ImGui::PushStyleColor(ImGuiCol_Header, colors[2]);
                             ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors[3]);
                             ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors[4]);
                             
                             if (ImGui::Selectable(item_text.c_str(), is_selected)) {
-                                menu_categories[cat_idx].items[item_idx].second();
+                                menu_categories[static_cast<size_t>(cat_idx)].items[static_cast<size_t>(item_idx)].second();
                             }
                             
                             // Make the selected item visible - auto-scroll to it
