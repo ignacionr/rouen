@@ -50,7 +50,7 @@ public:
         }
         
         // Adjust size to be larger for content display
-        width = 600.0f;
+        width *= 2.0f;
         
         // Set refresh rate to check media playback status
         requested_fps = 1;
@@ -92,10 +92,6 @@ public:
                         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Failed to load item");
                         return;
                     }
-                    
-                    // Title at top
-                    ImGui::TextColored(colors[2], "%s", item.title.c_str());
-                    ImGui::Separator();
                     
                     // Original URL link
                     ImGui::TextColored(colors[4], "Source: ");

@@ -34,7 +34,7 @@ namespace rouen::cards {
             get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
             get_color(12, ImVec4(0.2f, 0.3f, 0.4f, 1.0f));   // Chat background
             
-            requested_fps = 30;
+            requested_fps = 1;
             
             // Read API key from environment
             char* api_key = std::getenv("GROK_API_KEY");
@@ -43,6 +43,7 @@ namespace rouen::cards {
                 gpt = std::make_unique<ignacionr::cppgpt>(grok_api_key, ignacionr::cppgpt::grok_base);
                 gpt->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest.");
             }
+            width *= 2.0f;
         }
 
         bool render() override {

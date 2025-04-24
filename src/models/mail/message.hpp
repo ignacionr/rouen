@@ -76,9 +76,9 @@ namespace mail {
             }
             
             // Apply replacements from right to left to maintain correct positions
-            for (auto i = positions.size() - 1; i >= 0; --i) {
-                auto [pos, len] = positions[i];
-                result.replace(pos, len, replacements[i]);
+            for (int i = static_cast<int>(positions.size()) - 1; i >= 0; --i) {
+                auto [pos, len] = positions[static_cast<size_t>(i)];
+                result.replace(pos, len, replacements[static_cast<size_t>(i)]);
             }
             
             return result;
