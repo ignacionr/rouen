@@ -116,11 +116,10 @@ public:
                     // Media enclosure playback controls
                     if (!item.enclosure.empty()) {
                         ImGui::Separator();
-                        ImGui::TextColored(colors[2], "Media:");
                         
                         // Use the media_player helper for playback controls
                         try {
-                            media_player::player(item.enclosure, colors[4]);
+                            media_player::player(item.enclosure, colors[2]);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in media player: {}", e.what());
                         }

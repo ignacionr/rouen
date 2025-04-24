@@ -384,9 +384,9 @@ struct deck {
         auto right_corner_offset {size.x};
         float left_corner;
         for (auto& c : cards_) {
-            right_corner_offset -= c->width - 2.0f;
+            right_corner_offset -= c->width + 2.0f;
             if (c->is_focused) {
-                left_corner = right_corner_offset + c->width - size.x;
+                left_corner = right_corner_offset + c->width - size.x + 2.0f;
                 break;
             }
         }

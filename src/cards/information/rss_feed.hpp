@@ -120,9 +120,6 @@ public:
         try {
             return render_window([this]() {
                 try {
-                    // Feed title at top
-                    ImGui::TextColored(colors[2], "%s", feed_title.c_str());
-                    
                     // Display the feed image if we have one
                     if (feed_image_texture && feed_image_width > 0 && feed_image_height > 0) {
                         // Set fixed height of 140.0f and scale width to maintain aspect ratio
