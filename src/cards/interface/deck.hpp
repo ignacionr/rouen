@@ -382,17 +382,22 @@ struct deck {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-        auto x = 2.0f;
-        auto ensure_visible_x {size.x};
+        auto right_corner_offset {size.x};
+        float left_corner;
         for (auto& c : cards_) {
-            ensure_visible_x -= c->width + 2.0f;
+            right_corner_offset -= c->width - 2.0f;
             if (c->is_focused) {
+                left_corner = right_corner_offset + c->width - size.x;
                 break;
             }
         }
-        if (ensure_visible_x < 0.0f) {
-            x = ensure_visible_x;
+        if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
+            start_x = right_corner_offset;
         }
+        if (start_x < left_corner) {
+            start_x = left_corner;
+        }
+        auto x{start_x};
         auto y = editor_.empty() ? 450.0f : 250.0f;
         auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
             [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
@@ -422,4 +427,5 @@ private:
     ImVec4 editor_background_color;
     ImVec4 text_color;
     editor editor_;
+    float start_x {2.0f};
 };
