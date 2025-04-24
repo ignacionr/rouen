@@ -25,9 +25,9 @@ namespace mail {
         
         void render() noexcept {
             if (ImGui::BeginTable("Messages", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
-                ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 130);
                 ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, 100);
+                ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, 130);
                 ImGui::TableHeadersRow();
                 
                 for (auto& msg : messages_) {

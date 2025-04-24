@@ -315,34 +315,30 @@ namespace rouen::cards
                 ImGui::Separator();
             }
             
-            // Create a child window with scrolling for the time slots
-            if (ImGui::BeginChild("DayViewScrollRegion", ImVec2(0, 400), false, ImGuiWindowFlags_HorizontalScrollbar)) {
-                // Render time slots (from 0 to 23 hours)
-                for (int hour = 0; hour < 24; hour++) {
-                    std::string time_label = std::format("{:02d}:00", hour);
+            // Render time slots (from 0 to 23 hours)
+            for (int hour = 0; hour < 24; hour++) {
+                std::string time_label = std::format("{:02d}:00", hour);
+                
+                // Check if we have events for this hour
+                if (hourly_events.find(hour) != hourly_events.end() && !hourly_events[hour].empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // Title color
+                    ImGui::Text("%s", time_label.c_str());
+                    ImGui::PopStyleColor();
                     
-                    // Check if we have events for this hour
-                    if (hourly_events.find(hour) != hourly_events.end() && !hourly_events[hour].empty()) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // Title color
-                        ImGui::Text("%s", time_label.c_str());
-                        ImGui::PopStyleColor();
-                        
-                        // Render events for this hour
-                        for (const auto* event_ptr : hourly_events[hour]) {
-                            render_day_view_event(*event_ptr);
-                        }
-                    } else {
-                        // Display empty time slot with lighter color
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 0.7f));
-                        ImGui::Text("%s", time_label.c_str());
-                        ImGui::PopStyleColor();
+                    // Render events for this hour
+                    for (const auto* event_ptr : hourly_events[hour]) {
+                        render_day_view_event(*event_ptr);
                     }
-                    
-                    // Add a subtle separator between hours
-                    ImGui::Separator();
+                } else {
+                    // Display empty time slot with lighter color
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 0.7f));
+                    ImGui::Text("%s", time_label.c_str());
+                    ImGui::PopStyleColor();
                 }
+                
+                // Add a subtle separator between hours
+                ImGui::Separator();
             }
-            ImGui::EndChild();
         }
 
         void render_day_view_event(const ::calendar::event& event)
