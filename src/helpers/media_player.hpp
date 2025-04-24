@@ -327,7 +327,7 @@ struct media_player {
         }
         
         // Seek to a specific position in the media
-        bool seekTo(double position_seconds) {
+        bool seekTo(auto position_seconds) {
             if (!is_playing || !mpv_socket.is_connected()) {
                 return false;
             }
@@ -404,12 +404,12 @@ struct media_player {
                     // Check if the user clicked on the progress bar
                     if (ImGui::IsItemClicked()) {
                         // Calculate the normalized position (0.0 to 1.0) based on mouse X position
-                        float mouse_x = ImGui::GetIO().MousePos.x;
-                        float rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
+                        auto mouse_x = ImGui::GetIO().MousePos.x;
+                        auto rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
                         rel_x = std::max(0.0f, std::min(1.0f, rel_x)); // Clamp to valid range
                         
                         // Convert to seconds and seek to that position
-                        double target_pos = rel_x * current_dur;
+                        auto target_pos = static_cast<double>(rel_x) * current_dur;
                         item.seekTo(target_pos);
                     }
                 } else {

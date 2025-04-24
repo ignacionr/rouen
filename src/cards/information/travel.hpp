@@ -439,14 +439,14 @@ public:
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         
         // Get current time for animation
-        auto time = ImGui::GetTime() * 5.0f;
+        auto time = ImGui::GetTime() * 5.0;
         
         // Draw spinner segments
         const int NUM_SEGMENTS = 8;
         for (int i = 0; i < NUM_SEGMENTS; i++) {
-            auto t = time + static_cast<float>(i) * 0.25f;
-            auto a = (t * M_PI * 2.0f) / (float)NUM_SEGMENTS;
-            auto b = ((t + 0.25f) * M_PI * 2.0f) / (float)NUM_SEGMENTS;
+            auto t = time + i * 0.25;
+            auto a = (t * M_PI * 2.0) / NUM_SEGMENTS;
+            auto b = ((t + 0.25) * M_PI * 2.0) / NUM_SEGMENTS;
             
             // Calculate alpha based on time
             float alpha = 0.1f + 0.9f * (1.0f - (float)i / (float)NUM_SEGMENTS);
