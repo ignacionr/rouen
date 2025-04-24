@@ -12,13 +12,42 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ## Features
 
-- **Card-based interface**: Modular design with draggable, resizable cards
-- **Git integration**: Visual Git status tracking and operations
-- **Pomodoro timer**: Stay focused with built-in time management
-- **Code editor**: Syntax highlighting powered by ImGuiColorTextEdit
-- **File system navigation**: Browse directories efficiently
-- **System monitoring**: Track system resources
-- **Dark theme**: Eye-friendly interface designed for long sessions
+### Development Tools
+- **Git Integration**: View repository status, commits, branches and diffs visually
+- **File System Navigation**: Browse, filter, and manage directories with color-coded file types
+- **Code Editor**: Syntax highlighting powered by ImGuiColorTextEdit
+
+### Productivity
+- **Pomodoro Timer**: Stay focused with built-in time management techniques
+- **Cards System**: Modular design with draggable, resizable, and persistent cards
+- **Menu Launcher**: Quick-access command palette with search functionality
+
+### Information & Planning
+- **Calendar**: Sync and view events with Google Calendar integration
+- **Travel Planner**: Create and manage travel plans with destinations and budgets
+- **Email Client**: Connect to IMAP/SMTP servers to read and compose emails
+- **Weather Info**: Check current conditions and forecasts for any location
+- **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader
+- **AI Assistant**: Interact with Grok AI for help and information
+
+### System Utilities
+- **System Monitor**: Track CPU, memory, disk usage, and uptime
+- **Environment Variables**: View and manage system environment variables
+- **Database Repair**: Maintain and fix SQLite database files
+
+### Media
+- **Internet Radio**: Listen to streaming radio stations
+
+### Interface
+- **Dark Theme**: Eye-friendly interface designed for long coding sessions
+- **Customizable Colors**: Each card features its own themed color scheme
+- **Keyboard Shortcuts**: Power user navigation and quick access to functions
+- **Card Snapshots**: Capture and save card contents as images
+- **Persistent State**: Automatically save and restore your workspace layout
+
+## Documentation
+
+- [Card Infrastructure](src/cards/README.md) - Guide to the card and deck architecture
 
 ## Building from Source
 
