@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <glaze/json.hpp>
 
 #include "../../helpers/fetch.hpp"
 #include "login_host.hpp"
@@ -18,38 +18,38 @@ namespace rouen::models::github {
             login_host_ = host;
         }
 
-        nlohmann::json const& user() const {
+        glz::json_t const& user() const {
             if (user_.empty()) {
                 user_ = fetch_user();
             }
             return user_;
         }
 
-        nlohmann::json organizations() const {
+        glz::json_t organizations() const {
             return fetch("https://api.github.com/user/orgs");
         }
 
-        nlohmann::json fetch_user() const {
+        glz::json_t fetch_user() const {
             return fetch("https://api.github.com/user");
         }
 
-        nlohmann::json org_repos(std::string_view org) const {
+        glz::json_t org_repos(std::string_view org) const {
             return fetch(std::format("https://api.github.com/orgs/{}/repos", org));
         }
 
-        nlohmann::json user_repos() const {
+        glz::json_t user_repos() const {
             return fetch_all("https://api.github.com/user/repos");
         }
 
-        nlohmann::json find_repo(std::string_view full_name) const {
+        glz::json_t find_repo(std::string_view full_name) const {
             return fetch(std::format("https://api.github.com/repos/{}", full_name));
         }
 
-        nlohmann::json repo_workflows(std::string_view full_name) const {
+        glz::json_t repo_workflows(std::string_view full_name) const {
             return fetch(std::format("https://api.github.com/repos/{}/actions/workflows", full_name));
         }
 
-        nlohmann::json workflow_runs(std::string_view url) const {
+        glz::json_t workflow_runs(std::string_view url) const {
             // Fix: convert string_view to string before concatenation
             std::string url_str(url);
             return fetch(url_str + "/runs");
@@ -69,20 +69,28 @@ namespace rouen::models::github {
             return source;
         }
 
-        nlohmann::json fetch(const std::string &url) const {
-            return nlohmann::json::parse(fetch_string(url));
+        glz::json_t fetch(const std::string &url) const {
+            std::string json_str = fetch_string(url);
+            glz::json_t result;
+            auto ec = glz::read_json(result, json_str);
+            if (ec) {
+                // Handle error - return empty json object on error
+                return glz::json_t{};
+            }
+            return result;
         }
 
-        nlohmann::json fetch_all(const std::string &url) const {
+        glz::json_t fetch_all(const std::string &url) const {
             static auto constexpr page_size {100};
-            nlohmann::json::array_t result;
+            glz::json_t::array_t result;
             for (int page = 1; ; ++page) {
-                auto const source { fetch(std::format("{}?per_page={}&page={}", url, page_size, page)) };
+                auto source = fetch(std::format("{}?per_page={}&page={}", url, page_size, page));
                 if (source.empty()) {
                     break;
                 }
-                result.insert(result.end(), source.begin(), source.end());
-                if (source.size() < page_size) {
+                auto& source_array = source.get_array();
+                result.insert(result.end(), source_array.begin(), source_array.end());
+                if (source_array.size() < page_size) {
                     break;
                 }
             }
@@ -102,6 +110,6 @@ namespace rouen::models::github {
         
     private:
         std::shared_ptr<login_host> login_host_;
-        mutable nlohmann::json user_;
+        mutable glz::json_t user_;
     };
 }

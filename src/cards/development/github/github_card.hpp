@@ -7,7 +7,7 @@
 #include <filesystem>
 
 #include <imgui.h>
-#include <nlohmann/json.hpp>
+#include <glaze/json.hpp>
 
 #include "../../interface/card.hpp"
 #include "../../../models/github/host.hpp"
@@ -69,13 +69,16 @@ namespace rouen::cards {
                     
                     // Save token to file
                     std::string filename = get_config_filename();
-                    nlohmann::json config;
+                    glz::json_t config;
                     config["token"] = login_host_->personal_token();
                     
                     std::ofstream file(filename);
                     if (file.is_open()) {
-                        file << config.dump(2); // Pretty-print with 2 spaces
-                        file.close();
+                        auto result = config.dump();
+                        if (result) {
+                            file << *result;
+                            file.close();
+                        }
                     }
                 } catch (std::exception const &) {
                     // Log error or handle it
@@ -95,11 +98,13 @@ namespace rouen::cards {
                     // Read and parse JSON
                     std::ifstream file(filename);
                     if (file.is_open()) {
-                        nlohmann::json config;
-                        file >> config;
+                        std::string json_str;
+                        file >> json_str;
                         
-                        if (config.contains("token")) {
-                            login_host_->set_personal_token(config["token"].get<std::string>());
+                        glz::json_t config;
+                        auto ec = glz::read_json(config, json_str);
+                        if (!ec && config.contains("token")) {
+                            login_host_->set_personal_token(config["token"].get_string());
                         }
                     }
                 } catch (std::exception const &) {
@@ -145,11 +150,12 @@ namespace rouen::cards {
                                 if (ImGui::BeginCombo("Organizations", selected_org_login_.c_str())) {
                                     try {
                                         // List all organizations
-                                        for (auto const &org : organizations_) {
-                                            if (ImGui::Selectable(org["login"].get_ref<const std::string&>().c_str())) {
-                                                selected_org_login_ = org["login"].get<std::string>();
+                                        for (auto const &org : organizations_.get_array()) {
+                                            if (ImGui::Selectable(org["login"].get_string().c_str())) {
+                                                selected_org_login_ = org["login"].get_string();
                                                 repos_.clear();
-                                                for (auto repo_json: host_->org_repos(selected_org_login_)) {
+                                                auto repos = host_->org_repos(selected_org_login_);
+                                                for (auto& repo_json : repos.get_array()) {
                                                     repos_.emplace_back(repo_json, host_);
                                                 }
                                             }
@@ -160,7 +166,8 @@ namespace rouen::cards {
                                         if (ImGui::Selectable(all_option)) {
                                             selected_org_login_ = all_option;
                                             repos_.clear();
-                                            for (auto repo_json: host_->user_repos()) {
+                                            auto repos = host_->user_repos();
+                                            for (auto& repo_json : repos.get_array()) {
                                                 repos_.emplace_back(repo_json, host_);
                                             }
                                         }
@@ -243,8 +250,8 @@ namespace rouen::cards {
             std::string repo_name_;
             std::string repo_filter_;
             std::string latest_error_;
-            nlohmann::json organizations_{};
-            nlohmann::json user_info_{};
+            glz::json_t organizations_{};
+            glz::json_t user_info_{};
             helpers::views::json_view json_view_;
     };
 }

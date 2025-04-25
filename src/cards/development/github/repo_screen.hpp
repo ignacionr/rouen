@@ -4,7 +4,7 @@
 #include <string>
 
 #include <imgui.h>
-#include <nlohmann/json.hpp>
+#include <glaze/json.hpp>
 
 #include "../../../models/github/host.hpp"
 #include "../../../helpers/views/json_view.hpp"
@@ -12,15 +12,15 @@
 
 namespace rouen::cards::github {
     struct repo_screen {
-        repo_screen(nlohmann::json repo, std::shared_ptr<models::github::host> host) 
+        repo_screen(glz::json_t repo, std::shared_ptr<models::github::host> host) 
             : repo_{std::move(repo)}, host_{host} {}
 
         std::string const &name() const {
-            return repo_.at("name").get_ref<const std::string &>();
+            return repo_["name"].get_string();
         }
 
         std::string const &full_name() const {
-            return repo_.at("full_name").get_ref<const std::string &>();
+            return repo_["full_name"].get_string();
         }
 
         void render() {
@@ -57,20 +57,20 @@ namespace rouen::cards::github {
                 
                 // Render each workflow if workflows are loaded
                 if (!workflows_.empty() && workflows_.contains("workflows")) {
-                    for (auto const &workflow : workflows_.at("workflows")) {
-                        ImGui::PushID(workflow.at("name").get_ref<const std::string&>().c_str());
+                    for (auto const &workflow : workflows_["workflows"].get_array()) {
+                        ImGui::PushID(workflow["name"].get_string().c_str());
                         
                         // Display workflow name
-                        ImGui::TextUnformatted(workflow.at("name").get_ref<const std::string&>().c_str());
+                        ImGui::TextUnformatted(workflow["name"].get_string().c_str());
                         
                         // Add button to fetch workflow runs
                         if (ImGui::SmallButton("Fetch Runs")) {
-                            workflow_runs_[workflow.at("name").get<std::string>()] = 
-                                host_->workflow_runs(workflow.at("url").get<std::string>());
+                            workflow_runs_[workflow["name"].get_string()] = 
+                                host_->workflow_runs(workflow["url"].get_string());
                         }
                         
                         // Display workflow runs if available
-                        auto it = workflow_runs_.find(workflow.at("name").get<std::string>());
+                        auto it = workflow_runs_.find(workflow["name"].get_string());
                         if (it != workflow_runs_.end()) {
                             auto& runs = it->second;
                             
@@ -86,14 +86,16 @@ namespace rouen::cards::github {
                                 ImGui::TableSetupColumn("##actions");
                                 ImGui::TableHeadersRow();
                                 
-                                for (auto const &run : runs.at("workflow_runs")) {
-                                    ImGui::PushID(run.at("id").get<int>());
+                                for (auto const &run : runs["workflow_runs"].get_array()) {
+                                    ImGui::PushID(static_cast<int>(run["id"].get_number()));
                                     ImGui::TableNextRow();
                                     
                                     // Status column
                                     ImGui::TableNextColumn();
-                                    auto const &conclusion_el {run.at("conclusion")};
-                                    auto const &conclusion {conclusion_el.is_string() ? conclusion_el.get_ref<const std::string&>() : "pending"};
+                                    std::string conclusion = "pending";
+                                    if (run.contains("conclusion") && run["conclusion"].is_string()) {
+                                        conclusion = run["conclusion"].get_string();
+                                    }
                                     
                                     // Color-coded status icons
                                     if (conclusion == "failure") {
@@ -108,26 +110,26 @@ namespace rouen::cards::github {
                                     }
                                     
                                     ImGui::SameLine();
-                                    ImGui::TextUnformatted(run.at("status").get_ref<const std::string&>().c_str());
+                                    ImGui::TextUnformatted(run["status"].get_string().c_str());
                                     ImGui::SameLine();
                                     ImGui::TextUnformatted(conclusion.c_str());
                                     
                                     // Title column
                                     ImGui::TableNextColumn();
-                                    ImGui::TextUnformatted(run.at("display_title").get_ref<const std::string&>().c_str());
+                                    ImGui::TextUnformatted(run["display_title"].get_string().c_str());
                                     
                                     // Started At column
                                     ImGui::TableNextColumn();
-                                    ImGui::TextUnformatted(run.at("run_started_at").get_ref<const std::string&>().c_str());
+                                    ImGui::TextUnformatted(run["run_started_at"].get_string().c_str());
                                     
                                     // Hash column
                                     ImGui::TableNextColumn();
-                                    ImGui::TextUnformatted(run.at("head_sha").get_ref<const std::string&>().c_str());
+                                    ImGui::TextUnformatted(run["head_sha"].get_string().c_str());
                                     
                                     // Actions column
                                     ImGui::TableNextColumn();
                                     if (ImGui::SmallButton(ICON_MD_WEB " Open...")) {
-                                        host_->open_url(run.at("html_url").get<std::string>());
+                                        host_->open_url(run["html_url"].get_string());
                                     }
                                     
                                     ImGui::PopID();
@@ -145,18 +147,18 @@ namespace rouen::cards::github {
             
             // Repository actions
             if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " Open in Browser")) {
-                host_->open_url(repo_.at("html_url").get<std::string>());
+                host_->open_url(repo_["html_url"].get_string());
             }
             
             ImGui::PopID();
         }
 
     private:
-        nlohmann::json repo_;
+        glz::json_t repo_;
         std::shared_ptr<models::github::host> host_;
         bool show_details_{false};
-        nlohmann::json workflows_{};
-        std::unordered_map<std::string, nlohmann::json> workflow_runs_{};
+        glz::json_t workflows_{};
+        std::unordered_map<std::string, glz::json_t> workflow_runs_{};
         helpers::views::json_view json_view_;
     };
 }
