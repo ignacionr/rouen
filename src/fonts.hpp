@@ -2,6 +2,7 @@
 
 #include <imgui/imgui.h>
 #include <string>
+#include "../external/IconsMaterialDesign.h"
 
 namespace rouen::fonts {
     enum class FontType {

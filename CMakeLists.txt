@@ -86,6 +86,7 @@ add_executable(rouen
   src/rouen.cpp
   src/main_wnd.cpp
   src/fonts.cpp
+  src/cards/development/github_registrar.cpp  # GitHub card registration
   )
 
 target_include_directories(rouen PRIVATE 

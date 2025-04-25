@@ -56,6 +56,7 @@ namespace rouen::cards {
                 static std::vector<MenuCategory> menu_categories = {
                     { "Development", {
                         {"Git", []() { "create_card"_sfn("git"); }},
+                        {"GitHub", []() { "create_card"_sfn("github"); }},
                         {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
                         {"Home Directory", []() { "create_card"_sfn("dir:/home"); }}
                     }},

@@ -16,17 +16,43 @@ namespace rouen::fonts {
             0x2000, 0x206F, // General Punctuation (includes special quotes and apostrophes)
             0,
         };
+        
+        // Setup Material Design Icons font
+        // Use a smaller range that fits within ImWchar limits (unsigned short)
+        static const ImWchar icon_ranges[] = { 
+            ICON_MIN_MD, 
+            static_cast<ImWchar>(0xFFFF), // Limit to what ImWchar can hold
+            0 
+        };
+        
         auto & io = ImGui::GetIO();
+        
+        // First load regular fonts
         io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", base_size, NULL, ranges);
+        
+        // Create a merged font with icons
+        ImFontConfig icons_config;
+        icons_config.MergeMode = true;  // Set merge mode to true
+        icons_config.PixelSnapH = true;
+        icons_config.GlyphOffset = ImVec2(0, 2.0f); // Align icons with text
+        
+        // Merge Material Design Icons with the default font
+        io.Fonts->AddFontFromFileTTF("external/MaterialIcons-Regular.ttf", base_size, &icons_config, icon_ranges);
+        
+        // Add monospace font
         io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", base_size, NULL, ranges);
+        
+        // Also merge Material Design Icons with the monospace font
+        icons_config.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF("external/MaterialIcons-Regular.ttf", base_size, &icons_config, icon_ranges);
     }
 
     ImFont* get_font(FontType type) {
         auto & io = ImGui::GetIO();
         if (type == FontType::Default) {
-            return io.Fonts->Fonts[0];
+            return io.Fonts->Fonts[0]; // Default font merged with icons
         } else if (type == FontType::Mono) {
-            return io.Fonts->Fonts[1];
+            return io.Fonts->Fonts[2]; // Monospace font merged with icons 
         }
         return nullptr;
     }

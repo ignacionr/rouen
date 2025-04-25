@@ -25,6 +25,11 @@
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
 
+// Forward declare GitHub card to avoid circular dependency
+namespace rouen::cards {
+    struct github_card;
+}
+
 namespace rouen::cards {
     struct factory {
         using factory_t = std::function<card::ptr(std::string_view, SDL_Renderer*)>;
@@ -52,11 +57,11 @@ namespace rouen::cards {
         }
 
         static std::unordered_map<std::string, factory_t> const& dictionary() {
-            static std::unordered_map<std::string, factory_t> dictionary {
-                {"git", [](std::string_view , SDL_Renderer* ) {
+            static std::unordered_map<std::string, factory_t> instance = {
+                {"git", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<git>();
                 }},
-                {"menu", [](std::string_view , SDL_Renderer* ) {
+                {"menu", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<menu>();
                 }},
                 {"dir", [](std::string_view uri, SDL_Renderer* ) {
@@ -138,7 +143,8 @@ namespace rouen::cards {
                     return std::make_shared<weather>(uri);
                 }}
             };
-            return dictionary;
+            
+            return instance;
         }
     };
 }
