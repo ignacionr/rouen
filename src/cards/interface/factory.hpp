@@ -11,6 +11,7 @@
 #include "menu.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../development/fs-directory.hpp"
+#include "../development/cmake.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/dbrepair.hpp"
 #include "../information/grok.hpp"
@@ -66,6 +67,9 @@ namespace rouen::cards {
                 }},
                 {"dir", [](std::string_view uri, SDL_Renderer* ) {
                     return std::make_shared<fs_directory>(uri);
+                }},
+                {"cmake", [](std::string_view uri, SDL_Renderer* ) {
+                    return std::make_shared<cmake_card>(uri);
                 }},
                 {"pomodoro", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<pomodoro>();

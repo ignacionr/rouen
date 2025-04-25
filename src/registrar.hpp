@@ -80,6 +80,19 @@ public:
     private:
         std::shared_ptr<std::function<result_t()>> svc_;
     };
+    
+    // New class to support functions with two parameters (string and shared_ptr)
+    class call_fn_str_ptr {
+    public:
+        call_fn_str_ptr(std::string const &name) : 
+            svc_{registrar::get<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(name)} {}
+        
+        void operator()(std::string const &cmd, std::shared_ptr<std::function<void(std::string)>> callback) const {
+            (*svc_)(cmd, callback);
+        }
+    private:
+        std::shared_ptr<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>> svc_;
+    };
 
 private:
     // Type-erased storage for different service types
@@ -110,4 +123,8 @@ inline registrar::call_fn_ret<bool> operator ""_fnb(const char* str, size_t) {
 
 inline registrar::call_fn_ret<std::string> operator""_fns(const char* str, size_t) {
     return registrar::call_fn_ret<std::string>{std::string{str}};
+}
+
+inline registrar::call_fn_str_ptr operator ""_sfn2(const char* str, size_t) {
+    return registrar::call_fn_str_ptr{std::string{str}};
 }

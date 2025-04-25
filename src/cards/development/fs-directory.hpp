@@ -131,7 +131,13 @@ namespace rouen::cards
                                 }
                             }
                             else {
-                                "edit"_sfn(entry.path().string());
+                                // If Ctrl is pressed and it's a CMakeLists.txt file, open a cmake card
+                                if (ImGui::GetIO().KeyCtrl && entry.path().filename() == "CMakeLists.txt") {
+                                    "create_card"_sfn(std::format("cmake:{}", entry.path().string()));
+                                } else {
+                                    // For other files or normal clicking, use the default editor
+                                    "edit"_sfn(entry.path().string());
+                                }
                             }
                         }
                         ImGui::PopStyleColor(); // Don't forget to pop the color after each item

@@ -62,6 +62,27 @@ The `factory` class (in `interface/factory.hpp`) creates card instances based on
 4. Cards can be closed by the user (Ctrl+W) or programmatically
 5. Card URIs are saved to `rouen.ini` for persistence
 
+## Available Cards
+
+The system includes many example cards:
+
+- `menu` - Application menu and card launcher
+- `git` - Git repository browser
+- `github` - GitHub repository browser
+- `cmake` - CMake project viewer and builder
+- `sysinfo` - System information display
+- `fs_directory` - File system explorer
+- `pomodoro` - Time management tool
+- `calendar` - Google Calendar integration
+- `grok` - AI chat assistant
+- `rss` - RSS feed reader
+- `travel` - Travel planner
+- `weather` - Weather information
+- `mail` - Email client
+- `radio` - Internet radio player
+- `envvars` - Environment variables viewer
+- `dbrepair` - Database repair tool
+
 ## Creating a New Card
 
 ### 1. Define a new card class:
@@ -144,17 +165,6 @@ Add your card to the factory dictionary in `interface/factory.hpp`:
 - Set `requested_fps` appropriately (1 for static content, higher for animations)
 - Minimize heavy operations in the render loop
 - Consider using background threads for expensive operations
-
-## Examples
-
-The system includes many example cards:
-
-- `menu` - Application menu and card launcher
-- `git` - Git repository browser
-- `sysinfo` - System information display
-- `fs_directory` - File system explorer
-
-Study these implementations for practical examples of card design patterns.
 
 ## Advanced Features
 

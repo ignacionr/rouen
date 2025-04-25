@@ -52,7 +52,7 @@ namespace rouen::fonts {
         if (type == FontType::Default) {
             return io.Fonts->Fonts[0]; // Default font merged with icons
         } else if (type == FontType::Mono) {
-            return io.Fonts->Fonts[2]; // Monospace font merged with icons 
+            return io.Fonts->Fonts[1]; // Monospace font merged with icons 
         }
         return nullptr;
     }
