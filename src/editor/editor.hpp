@@ -84,7 +84,8 @@ public:
             }
         }
         
-        if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_MenuBar)) {
+        if (ImGui::Begin("Editor", nullptr, 
+            ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoSavedSettings)) {
             // Add a menu bar with standard options
             renderMenuBar();
             

@@ -43,7 +43,7 @@ struct card {
         if (window_title.empty()) {
             name("Unnamed Card");
         }
-        if (ImGui::Begin(window_title.c_str(), &is_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize)) {
+        if (ImGui::Begin(window_title.c_str(), &is_open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings)) {
             is_open &= run_focused_handlers();
             render_func();
         }
