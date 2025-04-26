@@ -63,6 +63,7 @@ namespace rouen::cards {
                     }},
                     { "Productivity", {
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
+                        {"Alarm", []() { "create_card"_sfn("alarm"); }},
                     }},
                     { "Information", {
                         {"Calendar", []() { "create_card"_sfn("calendar"); }},

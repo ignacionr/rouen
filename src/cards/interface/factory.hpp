@@ -10,6 +10,7 @@
 #include "../development/git.hpp"
 #include "menu.hpp"
 #include "../productivity/pomodoro.hpp"
+#include "../productivity/alarm.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/cmake.hpp"
 #include "../system/sysinfo.hpp"
@@ -73,6 +74,9 @@ namespace rouen::cards {
                 }},
                 {"pomodoro", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<pomodoro>();
+                }},
+                {"alarm", [](std::string_view uri, SDL_Renderer* ) {
+                    return std::make_shared<alarm>(uri);
                 }},
                 {"sysinfo", [](std::string_view , SDL_Renderer* ) {
                     return std::make_shared<sysinfo_card>();
