@@ -1,11 +1,11 @@
 #pragma once
 
-#include <string>
 #include <chrono>
 #include <cmath>
 #include <format>
 #include <iomanip>
 #include <sstream>
+#include <string>
 
 #include <imgui/imgui.h>
 
@@ -278,8 +278,8 @@ namespace rouen::cards {
             auto dd = ImGui::GetWindowDrawList();
             
             // Adaptive block visualization based on remaining time
-            int num_blocks = 12;  // Default: 12 blocks of 5 minutes (1 hour)
-            int minutes_per_block = 5;
+            int num_blocks = 6;  // Default: 6 blocks of 10 minutes (1 hour)
+            int minutes_per_block = 10;
             std::string label_suffix = "min";
             
             auto total_minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count();
@@ -289,6 +289,10 @@ namespace rouen::cards {
                 num_blocks = std::min(static_cast<int>(total_minutes / 60) + 1, 8); // Limit to 8 blocks
                 minutes_per_block = 60;
                 label_suffix = "hr";
+            } else if (total_minutes <= 30) {
+                num_blocks = std::min(6, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
+                minutes_per_block = 5;
+                label_suffix = "min";
             } else if (total_minutes <= 5) {
                 // For times <= 5 minutes, show in 1-minute blocks
                 num_blocks = 5;
@@ -296,8 +300,8 @@ namespace rouen::cards {
                 label_suffix = "min";
             } else {
                 // Default: 5-minute blocks
-                num_blocks = std::min(12, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
-                minutes_per_block = 5;
+                num_blocks = std::min(6, static_cast<int>(total_minutes / 6) + 1); // Adapt to available time
+                minutes_per_block = 10;
                 label_suffix = "min";
             }
             
@@ -314,8 +318,12 @@ namespace rouen::cards {
             if (minutes_per_block == 60) {
                 // For hour blocks
                 blocks_to_fill = static_cast<float>(total_minutes) / static_cast<float>(minutes_per_block);
-            } else if (minutes_per_block == 5) {
+            } else if (minutes_per_block == 10) {
                 // For 5-minute blocks (only count up to 1 hour)
+                auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
+                blocks_to_fill = std::min(static_cast<float>(total_seconds), 3600.0f) / (static_cast<float>(minutes_per_block) * 60.0f);
+            } else if (minutes_per_block == 5) {
+                // For 5-minute blocks (only count up to 30 minutes)
                 auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
                 blocks_to_fill = std::min(static_cast<float>(total_seconds), 3600.0f) / (static_cast<float>(minutes_per_block) * 60.0f);
             } else {

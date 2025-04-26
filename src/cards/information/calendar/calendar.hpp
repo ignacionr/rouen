@@ -202,8 +202,14 @@ namespace rouen::cards
                     // Summary column
                     ImGui::TableSetColumnIndex(1);
                     if (ImGui::Selectable(event.summary.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
-                        selected_event_ = event;
-                        show_event_details_ = true;
+                        if (ImGui::GetIO().KeyCtrl) {
+                            // Create alarm card when Ctrl+click on event
+                            create_alarm_from_event(event);
+                        } else {
+                            // Normal selection behavior
+                            selected_event_ = event;
+                            show_event_details_ = true;
+                        }
                     }
                     
                     // Location column
@@ -365,8 +371,14 @@ namespace rouen::cards
             // Event summary with click to view details
             ImGui::PushStyleColor(ImGuiCol_Text, colors[3]); // Use the active/positive color
             if (ImGui::Selectable(event.summary.c_str(), false)) {
-                selected_event_ = event;
-                show_event_details_ = true;
+                if (ImGui::GetIO().KeyCtrl) {
+                    // Create alarm card when Ctrl+click on event
+                    create_alarm_from_event(event);
+                } else {
+                    // Normal selection behavior
+                    selected_event_ = event;
+                    show_event_details_ = true;
+                }
             }
             ImGui::PopStyleColor();
             
@@ -408,6 +420,21 @@ namespace rouen::cards
             } else {
                 ImGui::Text("Start: %s", selected_event_.start.c_str());
                 ImGui::Text("End:   %s", selected_event_.end.c_str());
+            }
+            
+            // Add Set Alarm button
+            if (!selected_event_.all_day) {
+                ImGui::SameLine();
+                if (ImGui::Button("Set Alarm")) {
+                    create_alarm_from_event(selected_event_);
+                }
+                
+                // Add tooltip explanation
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Create an alarm card for this event");
+                    ImGui::EndTooltip();
+                }
             }
             
             // Location
@@ -477,6 +504,23 @@ namespace rouen::cards
                     }
                 }
             });
+        }
+
+        // Add helper method to create alarm from event
+        void create_alarm_from_event(const ::calendar::event& event) {
+            if (event.all_day) {
+                // Don't create alarms for all-day events
+                return;
+            }
+            
+            // Extract the time from the event start time
+            // Format is typically "YYYY-MM-DDTHH:MM:SS"
+            if (event.start.length() >= 16) {
+                std::string time_str = event.start.substr(11, 5); // Extract HH:MM
+                
+                // Create alarm card with the event time
+                "create_card"_sfn(std::format("alarm:{}", time_str));
+            }
         }
     };
 } // namespace rouen::cards
