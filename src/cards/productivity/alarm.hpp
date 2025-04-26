@@ -23,7 +23,7 @@ namespace rouen::cards {
             get_color(3, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Light gray for secondary text
             
             requested_fps = 60;
-            width = 350.0f;
+            width = 175.0f; // Reduced to half the default width (default is 300.0f)
             
             // Set up default alarm time (1 hour from current time)
             auto current_time = std::chrono::system_clock::now();
@@ -92,46 +92,49 @@ namespace rouen::cards {
         void render_alarm_content() {
             auto const current_time = std::chrono::system_clock::now();
             
-            // Time setting interface
-            ImGui::PushItemWidth(100);
+            // Current alarm time display - make it prominent at the top
+            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(time_buffer).x) * 0.5f);
+            ImGui::Text("%s", time_buffer);
+            ImGui::PopFont();
             
-            if (ImGui::InputText("##time", time_buffer, sizeof(time_buffer), 
-                                ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_CharsNoBlank)) {
-                parse_time(std::string(time_buffer));
+            // Time setting interface - now vertical layout
+            if (ImGui::CollapsingHeader("Set")) {
+                ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.9f);
+                
+                if (ImGui::InputText("##time", time_buffer, sizeof(time_buffer), 
+                                    ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_CharsNoBlank)) {
+                    parse_time(std::string(time_buffer));
+                }
+                
+                // Show hint text when input is empty
+                if (time_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+                    auto pos = ImGui::GetItemRectMin();
+                    ImGui::GetWindowDrawList()->AddText(
+                        ImVec2(pos.x + 5, pos.y + 2),
+                        ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                        "HH:MM"
+                    );
+                }
+                
+                ImGui::PopItemWidth();
+                
+                if (ImGui::Button("Reset", ImVec2(ImGui::GetWindowWidth() * 0.9f, 0))) {
+                    reset();
+                }
+                
+                ImGui::Spacing();
+                
+                float button_width = ImGui::GetWindowWidth() * 0.4f;
+                
+                if (ImGui::Button("+5m", ImVec2(button_width, 0))) add_minutes(5);
+                ImGui::SameLine();
+                if (ImGui::Button("+15m", ImVec2(button_width, 0))) add_minutes(15);
+                
+                if (ImGui::Button("+30m", ImVec2(button_width, 0))) add_minutes(30);
+                ImGui::SameLine();
+                if (ImGui::Button("+1h", ImVec2(button_width, 0))) add_minutes(60);
             }
-            
-            // Show hint text when input is empty
-            if (time_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                auto pos = ImGui::GetItemRectMin();
-                ImGui::GetWindowDrawList()->AddText(
-                    ImVec2(pos.x + 5, pos.y + 2),
-                    ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    "HH:MM"
-                );
-            }
-            
-            ImGui::SameLine();
-            if (ImGui::Button("Set Now")) {
-                set_to_current_time();
-            }
-            
-            ImGui::SameLine();
-            if (ImGui::Button("Reset")) {
-                reset();
-            }
-            
-            ImGui::PopItemWidth();
-            
-            // Quick time buttons
-            ImGui::Spacing();
-            if (ImGui::Button("+5m")) add_minutes(5);
-            ImGui::SameLine();
-            if (ImGui::Button("+15m")) add_minutes(15);
-            ImGui::SameLine();
-            if (ImGui::Button("+30m")) add_minutes(30);
-            ImGui::SameLine();
-            if (ImGui::Button("+1h")) add_minutes(60);
-            
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
@@ -140,6 +143,8 @@ namespace rouen::cards {
             auto time_remaining = get_time_remaining(current_time);
             
             if (time_remaining <= std::chrono::seconds(0)) {
+                // Center the alarm notification
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("Time's up!").x) * 0.5f);
                 ImGui::TextColored(colors[0], "Time's up!");
                 
                 // Flashing effect for alarm text
@@ -151,25 +156,35 @@ namespace rouen::cards {
                     flash_direction *= -1.0f;
                 }
                 
-                // Make the alarm text extra large
-                ImGui::SetWindowFontScale(2.0f);
+                // Make the alarm text extra large and centered
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("ALARM").x) * 0.5f);
                 ImGui::TextColored(
                     ImVec4(1.0f, flash_intensity, flash_intensity, 1.0f),
                     "ALARM"
                 );
-                ImGui::SetWindowFontScale(1.0f);
+                ImGui::PopFont();
             } else {
-                // Show remaining time in hours, minutes, seconds
+                // Show remaining time in hours, minutes, seconds - centered
                 auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
                 auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
                 auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
                 
-                ImGui::TextColored(colors[2], "Remaining:");
-                ImGui::SameLine();
-                ImGui::Text("%02ld:%02ld:%02ld", hours, minutes, seconds);
+                ImGui::Text("Remaining:");
                 
-                // Visual progress indicator with adaptive blocks
-                draw_progress_blocks(time_remaining);
+                // Make the time display larger and centered
+                char time_str[16];
+                std::snprintf(time_str, sizeof(time_str), "%02ld:%02ld:%02ld", hours, minutes, seconds);
+                
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(time_str).x) * 0.5f);
+                ImGui::TextColored(colors[2], "%s", time_str);
+                ImGui::PopFont();
+                
+                ImGui::Spacing();
+                
+                // Visual progress indicator with stacked blocks
+                draw_vertical_progress_blocks(time_remaining);
             }
         }
         
@@ -255,13 +270,10 @@ namespace rouen::cards {
             return duration > std::chrono::seconds(0) ? duration : std::chrono::seconds(0);
         }
         
-        void draw_progress_blocks(std::chrono::seconds time_remaining) {
+        // Draw progress blocks in a vertical layout
+        void draw_vertical_progress_blocks(std::chrono::seconds time_remaining) {
             auto const pos = ImGui::GetWindowPos();
             auto const content_width = ImGui::GetWindowWidth() - 20.0f; // Padding
-            
-            auto const center = ImVec2 {
-                pos.x + ImGui::GetWindowWidth() / 2,
-                pos.y + ImGui::GetWindowHeight() / 2 + 30.0f};
             
             auto dd = ImGui::GetWindowDrawList();
             
@@ -274,7 +286,7 @@ namespace rouen::cards {
             
             if (total_minutes > 60) {
                 // For times > 1 hour, show in 1-hour blocks
-                num_blocks = 12;
+                num_blocks = std::min(static_cast<int>(total_minutes / 60) + 1, 8); // Limit to 8 blocks
                 minutes_per_block = 60;
                 label_suffix = "hr";
             } else if (total_minutes <= 5) {
@@ -284,16 +296,17 @@ namespace rouen::cards {
                 label_suffix = "min";
             } else {
                 // Default: 5-minute blocks
-                num_blocks = 12;
+                num_blocks = std::min(12, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
                 minutes_per_block = 5;
                 label_suffix = "min";
             }
             
-            const float block_width = content_width / static_cast<float>(num_blocks);
-            const float block_height = 30.0f;
-            const float block_padding = 2.0f;
-            const float start_x = pos.x + 10.0f;
-            const float start_y = center.y + 20.0f;
+            // Draw blocks vertically
+            const float block_height = 24.0f;
+            const float block_width = content_width * 0.9f;
+            const float block_padding = 4.0f;
+            const float start_x = pos.x + (ImGui::GetWindowWidth() - block_width) * 0.5f;
+            float start_y = ImGui::GetCursorScreenPos().y;
             
             // Calculate how many blocks to fill
             float blocks_to_fill = 0.0f;
@@ -303,12 +316,10 @@ namespace rouen::cards {
                 blocks_to_fill = static_cast<float>(total_minutes) / static_cast<float>(minutes_per_block);
             } else if (minutes_per_block == 5) {
                 // For 5-minute blocks (only count up to 1 hour)
-                // Get seconds for more precise visualization
                 auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
                 blocks_to_fill = std::min(static_cast<float>(total_seconds), 3600.0f) / (static_cast<float>(minutes_per_block) * 60.0f);
             } else {
                 // For 1-minute blocks (only count up to 5 minutes)
-                // Get seconds for more precise visualization
                 auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
                 blocks_to_fill = std::min(static_cast<float>(total_seconds), 300.0f) / 60.0f;
             }
@@ -316,36 +327,41 @@ namespace rouen::cards {
             auto complete_blocks = static_cast<int>(blocks_to_fill);
             auto partial_block_pct = blocks_to_fill - static_cast<float>(complete_blocks);
             
-            // Draw outline for all blocks
+            // Reserve space for the blocks
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (block_height + block_padding) * static_cast<float>(num_blocks) + 5.0f);
+            
+            // Draw blocks from bottom to top (lowest time value at the bottom)
             for (int i = 0; i < num_blocks; ++i) {
-                float block_x = start_x + static_cast<float>(i) * block_width;
+                float block_y = start_y + static_cast<float>(num_blocks - 1 - i) * (block_height + block_padding);
                 
                 // Draw outline
                 dd->AddRect(
-                    ImVec2(block_x, start_y),
-                    ImVec2(block_x + block_width - block_padding, start_y + block_height),
+                    ImVec2(start_x, block_y),
+                    ImVec2(start_x + block_width, block_y + block_height),
                     ImGui::ColorConvertFloat4ToU32(colors[3]),
-                    2.0f
+                    4.0f
                 );
                 
                 // Fill completed blocks
                 if (i < complete_blocks) {
                     // Fully fill this block
                     dd->AddRectFilled(
-                        ImVec2(block_x, start_y),
-                        ImVec2(block_x + block_width - block_padding, start_y + block_height),
-                        ImGui::ColorConvertFloat4ToU32(colors[0])
+                        ImVec2(start_x, block_y),
+                        ImVec2(start_x + block_width, block_y + block_height),
+                        ImGui::ColorConvertFloat4ToU32(colors[0]),
+                        4.0f
                     );
                 } else if (i == complete_blocks && partial_block_pct > 0.0f) {
                     // Partially fill this block
                     dd->AddRectFilled(
-                        ImVec2(block_x, start_y),
-                        ImVec2(block_x + (block_width - block_padding) * partial_block_pct, start_y + block_height),
-                        ImGui::ColorConvertFloat4ToU32(colors[2])
+                        ImVec2(start_x, block_y + block_height * (1.0f - partial_block_pct)),
+                        ImVec2(start_x + block_width, block_y + block_height),
+                        ImGui::ColorConvertFloat4ToU32(colors[2]),
+                        4.0f
                     );
                 }
                 
-                // Add the block number
+                // Add the block time label
                 char time_label[16];
                 int label_value = (i + 1) * minutes_per_block;
                 
@@ -360,16 +376,12 @@ namespace rouen::cards {
                 // Center the text in the block
                 auto text_size = ImGui::CalcTextSize(time_label);
                 dd->AddText(
-                    ImVec2(block_x + (block_width - block_padding) / 2 - text_size.x / 2, 
-                         start_y + block_height / 2 - text_size.y / 2),
+                    ImVec2(start_x + block_width / 2 - text_size.x / 2, 
+                         block_y + block_height / 2 - text_size.y / 2),
                     ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)),
                     time_label
                 );
             }
-            
-            // Add label for the progress bar
-            ImGui::SetCursorPosY(start_y + block_height + 10.0f);
-            
         }
         
         std::string get_uri() const override {
