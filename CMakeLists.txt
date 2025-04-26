@@ -10,35 +10,60 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Compiler warnings
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Core warnings that should be enabled immediately
   add_compile_options(
     -Wall                # Enable all common warnings
     -Wextra              # Enable extra warnings
     -Wpedantic           # Enforce strict ISO C++
-    -Wshadow             # Warn when a variable declaration shadows another
-    -Wconversion         # Warn on implicit type conversions
-    -Wsign-conversion    # Warn on sign conversions
     -Wnull-dereference   # Warn about null pointer dereference
-    -Wdouble-promotion   # Warn about implicit doubles from float
     -Wformat=2           # Warn about printf format issues
     -Wimplicit-fallthrough # Warn about fallthrough in switch statements
     -Wunused             # Warn about unused variables/functions
     -Werror              # Treat warnings as errors
   )
+
+  # Warnings for third-party code can be suppressed
+  set(THIRD_PARTY_DIRS
+    "${imguicolortextedit_SOURCE_DIR}"
+  )
+
+  # Add more strict warnings only for our own code
+  function(target_add_strict_warnings target)
+    target_compile_options(${target} PRIVATE
+      # Conversion warnings (more aggressive)
+      -Wconversion
+      -Wsign-conversion
+      -Wdouble-promotion
+
+      # Shadow warnings  
+      -Wshadow
+
+      # Important structural warnings
+      -Wunreachable-code
+      -Wself-assign
+      -Woverloaded-virtual 
+
+      # More advanced warnings to implement gradually
+      # -Wold-style-cast      # Very common in C/C++ interop code
+      # -Wcast-align          # Memory alignment issues
+      -Wrange-loop-analysis # Range-based for loop issues
+      -Wredundant-move     # Unnecessary move operations
+      -Wundef              # Undefined macro use in #if
+      -Wdeprecated         # Deprecated feature usage
+    )
+  endfunction()
+
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   # Similar flags for GCC
   add_compile_options(
     -Wall 
-    # -Wextra 
-    # -Wpedantic 
-    # -Wshadow 
-    # -Wconversion
-    # -Wsign-conversion 
-    # -Wnull-dereference 
-    # -Wdouble-promotion
-    # -Wformat=2 
-    # -Wimplicit-fallthrough 
-    # -Wunused 
-    # -Werror
+    -Wextra 
+    -Wpedantic 
+    -Wunused
+    -Wnull-dereference 
+    -Wformat=2 
+    -Wimplicit-fallthrough
+    -Werror              # Treat warnings as errors
   )
 endif()
 
@@ -109,3 +134,8 @@ target_link_libraries(rouen PRIVATE
   tinyxml2                # Add TinyXML2 library
   imcolortextedit
 )
+
+# Apply stricter warnings only to our code, not third-party libraries
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_add_strict_warnings(rouen)
+endif()

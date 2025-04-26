@@ -79,6 +79,47 @@ make
 ./rouen
 ```
 
+## Compiler Warning Flags
+
+Rouen is developed with strict compiler warning settings to ensure high-quality, robust code. We use a two-tiered approach to warnings:
+
+### Base Warnings (All Code)
+These warnings apply to all code, including third-party libraries:
+- `-Wall`: Enable all common warnings
+- `-Wextra`: Enable extra warnings not covered by `-Wall`
+- `-Wpedantic`: Enforce strict ISO C++ compliance
+- `-Wnull-dereference`: Warn about potential null pointer dereferences
+- `-Wformat=2`: Warn about printf format issues
+- `-Wimplicit-fallthrough`: Warn about fallthrough in switch statements
+- `-Wunused`: Warn about unused variables/functions
+
+### Strict Warnings (Project Code Only)
+These stricter warnings only apply to the project's code, not third-party libraries:
+- `-Wconversion`: Warn on implicit type conversions
+- `-Wsign-conversion`: Warn on sign conversions
+- `-Wdouble-promotion`: Warn about implicit doubles from float
+- `-Wshadow`: Warn when a variable declaration shadows another
+- `-Wunreachable-code`: Warn about unreachable code
+- `-Wself-assign`: Warn about self-assignment
+- `-Woverloaded-virtual`: Warn when a virtual function declaration hides another
+- `-Wrange-loop-analysis`: Warn about issues with range-based for loops
+- `-Wredundant-move`: Warn about redundant move operations
+- `-Wundef`: Warn if an undefined identifier is evaluated in #if
+- `-Wdeprecated`: Warn about deprecated feature usage
+
+After all warnings are addressed, we enable `-Werror` to treat warnings as errors, ensuring the codebase remains warning-free.
+
+### Developer Guidelines
+
+When contributing to Rouen:
+
+1. **Maintain Warning-Free Code**: All code must compile without warnings when using the project's strict compiler settings.
+2. **Don't Disable Warnings**: Avoid using pragma directives to disable warnings in your code.
+3. **Fix Issues, Don't Hide Them**: Address the root cause of warnings rather than suppressing them.
+4. **Test with Warnings Enabled**: Always test your changes with all warning flags enabled.
+
+These strict settings help catch potential bugs early, ensure consistent code quality, and maintain the project's long-term stability and maintainability.
+
 ## License
 
 Open source - see LICENSE file for details.

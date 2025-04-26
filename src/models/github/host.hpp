@@ -99,12 +99,15 @@ namespace rouen::models::github {
 
         void open_url(const std::string &url) const {
             // Use system browser to open the URL
-            #ifdef _WIN32
-                system(std::format("start {}", url).c_str());
-            #elif __APPLE__
+            #ifdef __APPLE__
+                // Apple-specific code
                 system(std::format("open {}", url).c_str());
-            #else
+            #elif defined(__linux__)
+                // Linux-specific code
                 system(std::format("xdg-open {}", url).c_str());
+            #else
+                // Default code
+                system(std::format("start {}", url).c_str());
             #endif
         }
         
