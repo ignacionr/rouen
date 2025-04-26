@@ -279,14 +279,14 @@ namespace rouen::cards {
                 num_blocks = std::min(static_cast<int>(total_minutes / 60) + 1, 8); // Limit to 8 blocks
                 minutes_per_block = 60;
                 label_suffix = "hr";
-            } else if (total_minutes <= 30) {
-                num_blocks = std::min(6, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
-                minutes_per_block = 5;
-                label_suffix = "min";
             } else if (total_minutes <= 5) {
                 // For times <= 5 minutes, show in 1-minute blocks
                 num_blocks = 5;
                 minutes_per_block = 1;
+                label_suffix = "min";
+            } else if (total_minutes <= 30) {
+                num_blocks = std::min(6, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
+                minutes_per_block = 5;
                 label_suffix = "min";
             } else {
                 // Default: 5-minute blocks
