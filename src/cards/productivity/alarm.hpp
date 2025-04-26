@@ -92,12 +92,52 @@ namespace rouen::cards {
         void render_alarm_content() {
             auto const current_time = std::chrono::system_clock::now();
             
-            // Current alarm time display - make it prominent at the top
-            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
-            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(time_buffer).x) * 0.5f);
-            ImGui::Text("%s", time_buffer);
-            ImGui::PopFont();
+            ImGui::TextUnformatted(time_buffer);
+            ImGui::SameLine();
+                        
+            // Show alarm status
+            auto time_remaining = get_time_remaining(current_time);
             
+            if (time_remaining <= std::chrono::seconds(0)) {
+                // Center the alarm notification
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("Time's up!").x) * 0.5f);
+                ImGui::TextColored(colors[0], "Time's up!");
+                
+                // Flashing effect for alarm text
+                static float flash_intensity = 0.0f;
+                static float flash_direction = 1.0f;
+                
+                flash_intensity += flash_direction * 0.05f;
+                if (flash_intensity >= 1.0f || flash_intensity <= 0.0f) {
+                    flash_direction *= -1.0f;
+                }
+                
+                // Make the alarm text extra large and centered
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("ALARM").x) * 0.5f);
+                ImGui::TextColored(
+                    ImVec4(1.0f, flash_intensity, flash_intensity, 1.0f),
+                    "ALARM"
+                );
+                ImGui::PopFont();
+            } else {
+                // Show remaining time in hours, minutes, seconds - centered
+                auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
+                auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
+                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
+                
+                // Make the time display larger and centered
+                char time_str[16];
+                std::snprintf(time_str, sizeof(time_str), "%02ld:%02ld:%02ld", hours, minutes, seconds);
+                
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                ImGui::TextColored(colors[2], "%s", time_str);
+                ImGui::PopFont();
+                
+                // Visual progress indicator with stacked blocks
+                draw_vertical_progress_blocks(time_remaining);
+            }
+
             // Time setting interface - now vertical layout
             if (ImGui::CollapsingHeader("Set")) {
                 ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.9f);
@@ -135,57 +175,7 @@ namespace rouen::cards {
                 ImGui::SameLine();
                 if (ImGui::Button("+1h", ImVec2(button_width, 0))) add_minutes(60);
             }
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
             
-            // Show alarm status
-            auto time_remaining = get_time_remaining(current_time);
-            
-            if (time_remaining <= std::chrono::seconds(0)) {
-                // Center the alarm notification
-                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("Time's up!").x) * 0.5f);
-                ImGui::TextColored(colors[0], "Time's up!");
-                
-                // Flashing effect for alarm text
-                static float flash_intensity = 0.0f;
-                static float flash_direction = 1.0f;
-                
-                flash_intensity += flash_direction * 0.05f;
-                if (flash_intensity >= 1.0f || flash_intensity <= 0.0f) {
-                    flash_direction *= -1.0f;
-                }
-                
-                // Make the alarm text extra large and centered
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
-                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("ALARM").x) * 0.5f);
-                ImGui::TextColored(
-                    ImVec4(1.0f, flash_intensity, flash_intensity, 1.0f),
-                    "ALARM"
-                );
-                ImGui::PopFont();
-            } else {
-                // Show remaining time in hours, minutes, seconds - centered
-                auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
-                auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
-                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
-                
-                ImGui::Text("Remaining:");
-                
-                // Make the time display larger and centered
-                char time_str[16];
-                std::snprintf(time_str, sizeof(time_str), "%02ld:%02ld:%02ld", hours, minutes, seconds);
-                
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
-                ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(time_str).x) * 0.5f);
-                ImGui::TextColored(colors[2], "%s", time_str);
-                ImGui::PopFont();
-                
-                ImGui::Spacing();
-                
-                // Visual progress indicator with stacked blocks
-                draw_vertical_progress_blocks(time_remaining);
-            }
         }
         
         void reset() {
