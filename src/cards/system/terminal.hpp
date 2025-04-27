@@ -157,57 +157,13 @@ public:
             // Separator
             ImGui::Separator();
             
-            // Command input area (at the bottom)
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, colors[7]);
-            
-            // Focus the input box on start
-            if (focus_input) {
-                ImGui::SetKeyboardFocusHere();
-                focus_input = false;
+            // Check if we need to show the sudo password prompt
+            if (show_sudo_prompt) {
+                render_sudo_prompt(window_width);
+            } else {
+                // Regular command input area (at the bottom)
+                render_command_input(window_width);
             }
-            
-            // Process keyboard shortcuts for history navigation
-            bool enter_pressed = false;
-            
-            // Input field - Using standard char array instead of std::string to avoid imgui_stdlib dependency
-            static char input_buffer[1024] = "";
-            
-            // Copy current input_text to input_buffer if not empty
-            if (!input_text.empty() && input_buffer[0] == '\0') {
-                strncpy(input_buffer, input_text.c_str(), sizeof(input_buffer) - 1);
-                input_buffer[sizeof(input_buffer) - 1] = '\0';
-                input_text.clear();
-            }
-            
-            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-                if (navigate_history(true, input_buffer, sizeof(input_buffer))) {
-                    // History navigation updated the input buffer
-                    focus_input = true;
-                }
-            } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-                if (navigate_history(false, input_buffer, sizeof(input_buffer))) {
-                    // History navigation updated the input buffer
-                    focus_input = true;
-                }
-            } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-                enter_pressed = true;
-            }
-            
-            ImGui::SetNextItemWidth(window_width);
-            if (ImGui::InputText("##CommandInput", input_buffer, IM_ARRAYSIZE(input_buffer), 
-                              ImGuiInputTextFlags_EnterReturnsTrue,
-                              nullptr, nullptr)) {
-                enter_pressed = true;
-            }
-            
-            // Process the command if enter was pressed
-            if (enter_pressed && input_buffer[0] != '\0') {
-                execute_command(input_buffer, ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl));
-                input_buffer[0] = '\0';  // Clear the input
-                focus_input = true;
-            }
-            
-            ImGui::PopStyleColor();
             
             // Status indicator for running processes
             if (is_command_running) {
@@ -216,6 +172,98 @@ public:
                 spinner_counter++;
             }
         });
+    }
+    
+    // Render the sudo password prompt
+    void render_sudo_prompt(float window_width) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors[7]);
+        
+        // Focus the password input on first display
+        static bool first_display = true;
+        if (first_display) {
+            ImGui::SetKeyboardFocusHere();
+            first_display = false;
+        }
+        
+        // Password input (displayed as asterisks)
+        static char password_buffer[128] = "";
+        ImGui::SetNextItemWidth(window_width - 70);
+        bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, IM_ARRAYSIZE(password_buffer), 
+                                            ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
+                                            nullptr, nullptr);
+        
+        ImGui::SameLine();
+        
+        // Submit button
+        if (ImGui::Button("Submit", ImVec2(60, 0)) || enter_pressed) {
+            if (password_buffer[0] != '\0') {
+                // Attempt to restart the bash session with sudo
+                restart_with_sudo(password_buffer);
+                
+                // Clear password for security
+                memset(password_buffer, 0, sizeof(password_buffer));
+                
+                // Hide the prompt and reset for next time
+                show_sudo_prompt = false;
+                first_display = true;
+            }
+        }
+        
+        ImGui::PopStyleColor();
+    }
+    
+    // Render the regular command input
+    void render_command_input(float window_width) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, colors[7]);
+        
+        // Focus the input box when requested
+        if (focus_input) {
+            ImGui::SetKeyboardFocusHere();
+            focus_input = false;
+        }
+        
+        // Process keyboard shortcuts for history navigation
+        bool enter_pressed = false;
+        
+        // Input field - Using standard char array
+        static char input_buffer[1024] = "";
+        
+        // Copy current input_text to input_buffer if not empty
+        if (!input_text.empty() && input_buffer[0] == '\0') {
+            strncpy(input_buffer, input_text.c_str(), sizeof(input_buffer) - 1);
+            input_buffer[sizeof(input_buffer) - 1] = '\0';
+            input_text.clear();
+        }
+        
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+            if (navigate_history(true, input_buffer, sizeof(input_buffer))) {
+                // History navigation updated the input buffer
+                focus_input = true;
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+            if (navigate_history(false, input_buffer, sizeof(input_buffer))) {
+                // History navigation updated the input buffer
+                focus_input = true;
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            enter_pressed = true;
+        }
+        
+        ImGui::SetNextItemWidth(window_width);
+        if (ImGui::InputText("##CommandInput", input_buffer, IM_ARRAYSIZE(input_buffer), 
+                          ImGuiInputTextFlags_EnterReturnsTrue,
+                          nullptr, nullptr)) {
+            enter_pressed = true;
+        }
+        
+        // Process the command if enter was pressed
+        if (enter_pressed && input_buffer[0] != '\0') {
+            execute_command(input_buffer, ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl));
+            input_buffer[0] = '\0';  // Clear the input
+            focus_input = true;
+        }
+        
+        ImGui::PopStyleColor();
     }
     
     std::string get_uri() const override {
@@ -615,6 +663,7 @@ private:
 #endif
     }
     
+    // Execute command with sudo if needed
     void execute_command(const std::string& command, bool use_llm = false) {
         // If use_llm is true, generate a shell command using Grok
         std::string cmd_to_execute = command;
@@ -629,6 +678,19 @@ private:
                 // If command generation failed, fallback to original command
                 add_to_output("Failed to generate command with Grok. Using original command.", OutputType::StdErr);
             }
+        }
+        
+        // Check if command needs sudo privileges
+        if (cmd_to_execute.starts_with("sudo ")) {
+            // Remember the command without sudo for later execution
+            sudo_command = cmd_to_execute.substr(5);
+            
+            // Inform the user about the sudo prompt
+            add_to_output("This command requires sudo privileges. Please enter your password:", OutputType::System);
+            
+            // Show the sudo password prompt
+            show_sudo_prompt = true;
+            return;
         }
         
         // Add command to output buffer and history
@@ -889,6 +951,10 @@ private:
     bool focus_input = true;
     bool should_auto_scroll = false;
     
+    // Sudo functionality
+    bool show_sudo_prompt = false;
+    std::string sudo_command;  // Stores the command to run after sudo authentication
+    
     using OutputEntry = std::pair<std::string, OutputType>;
     std::deque<OutputEntry> output_buffer;
     std::mutex output_mutex;
@@ -913,6 +979,166 @@ private:
     // Animation for running process
     int spinner_counter = 0;
     const char spinner_chars[4] = {'|', '/', '-', '\\'};
+    
+    // Restart bash session with sudo privileges
+    void restart_with_sudo(const char* password) {
+#ifndef _WIN32
+        // Prepare a message to inform the user that we're starting a sudo session
+        add_to_output("Starting sudo session...", OutputType::System);
+        
+        // Remember the current working directory
+        std::string previous_cwd = current_working_dir;
+        
+        // Terminate current bash session
+        terminate_bash_session();
+        
+        // Create pipes for the new bash session
+        int stdin_pipe[2];    // For writing to bash's stdin
+        int stdout_pipe[2];   // For reading from bash's stdout
+        int stderr_pipe[2];   // For reading from bash's stderr
+        
+        // Create pipes
+        if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
+            TERM_ERROR("Failed to create pipes for sudo bash session");
+            add_to_output("Failed to start sudo session: pipe creation error", OutputType::StdErr);
+            
+            // Restart a regular bash session
+            initialize_bash_session();
+            add_to_output("", OutputType::Blank);
+            add_prompt();
+            return;
+        }
+        
+        // Fork a child process for sudo
+        bash_pid = fork();
+        
+        if (bash_pid == -1) {
+            // Fork failed
+            TERM_ERROR("Failed to fork process for sudo bash session");
+            add_to_output("Failed to start sudo session: fork error", OutputType::StdErr);
+            
+            // Close pipes
+            close(stdin_pipe[0]);
+            close(stdin_pipe[1]);
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+            
+            // Restart a regular bash session
+            initialize_bash_session();
+            add_to_output("", OutputType::Blank);
+            add_prompt();
+            return;
+        } else if (bash_pid == 0) {
+            // Child process
+            
+            // Redirect stdin/stdout/stderr
+            dup2(stdin_pipe[0], STDIN_FILENO);
+            dup2(stdout_pipe[1], STDOUT_FILENO);
+            dup2(stderr_pipe[1], STDERR_FILENO);
+            
+            // Close unused pipe ends
+            close(stdin_pipe[0]);
+            close(stdin_pipe[1]);
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+            
+            // Execute sudo to start a privileged bash session
+            execl("/usr/bin/sudo", "sudo", "-S", "bash", "--noediting", "--noprofile", "--norc", "+m", NULL);
+            
+            // If execl returns, there was an error
+            perror("execl");
+            exit(1);
+        } else {
+            // Parent process
+            
+            // Close unused pipe ends
+            close(stdin_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[1]);
+            
+            // Store pipe file descriptors
+            bash_stdin_fd = stdin_pipe[1];
+            bash_stdout_fd = stdout_pipe[0];
+            bash_stderr_fd = stderr_pipe[0];
+            
+            // Set pipes to non-blocking mode
+            int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
+            fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            flags = fcntl(bash_stdout_fd, F_GETFL, 0);
+            fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            flags = fcntl(bash_stderr_fd, F_GETFL, 0);
+            fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            // Start reader threads for bash output
+            bash_stdout_reader_thread = std::jthread([this](std::stop_token stoken) {
+                read_bash_stream(stoken, bash_stdout_fd, OutputType::StdOut);
+            });
+            
+            bash_stderr_reader_thread = std::jthread([this](std::stop_token stoken) {
+                read_bash_stream(stoken, bash_stderr_fd, OutputType::StdErr);
+            });
+            
+            // Send the password to sudo (the -S flag makes sudo read the password from stdin)
+            std::string pwd_with_nl = std::string(password) + "\n";
+            write(bash_stdin_fd, pwd_with_nl.c_str(), pwd_with_nl.length());
+            
+            // Wait a moment for sudo to process the password
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            
+            // Set up the environment for the sudo session
+            send_to_bash("export PS1=\"ROUEN_PROMPT|\"");
+            send_to_bash("export TERM=dumb");
+            send_to_bash("set +H");
+            
+            // Change to the previous working directory
+            send_to_bash(std::format("cd \"{}\"", previous_cwd));
+            
+            // Check if we have a command to run
+            if (!sudo_command.empty()) {
+                // Execute the sudo command
+                add_to_output("", OutputType::Blank);
+                add_to_output(sudo_command, OutputType::Command);
+                
+                // Add to command history (without 'sudo')
+                command_history.push_back(sudo_command);
+                if (command_history.size() > 50) {  // Limit history size
+                    command_history.erase(command_history.begin());
+                }
+                history_index = command_history.size();
+                
+                // Execute the command
+                is_command_running = true;
+                send_to_bash(sudo_command);
+                
+                // Clear the stored sudo command
+                sudo_command.clear();
+            }
+            
+            use_interactive_bash = true;
+            TERM_INFO("Sudo bash session started successfully");
+            
+            // Add a note about being in a sudo session
+            add_to_output("", OutputType::Blank);
+            add_to_output("You are now in a sudo session. Be careful with privileged commands.", OutputType::System);
+        }
+#else
+        // Windows doesn't support sudo - just show an error
+        add_to_output("Sudo is not supported on Windows.", OutputType::StdErr);
+        
+        // Clear the stored sudo command
+        sudo_command.clear();
+        
+        // Add a blank line and prompt
+        add_to_output("", OutputType::Blank);
+        add_prompt();
+#endif
+    }
 };
 
 } // namespace rouen::cards
