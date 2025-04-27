@@ -1,17 +1,22 @@
 #pragma once
 
+// 1. Standard includes in alphabetic order
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <string>
 #include <vector>
-#include <algorithm>
-#include <cctype>
 
-#include "card.hpp"
-#include <SDL2/SDL.h>
+// 2. Libraries used in the project, in alphabetic order
 #include <imgui/imgui.h>
-#include "../../registrar.hpp"
+#include <SDL2/SDL.h>
+
+// 3. All other includes
 #include "../../helpers/string_helper.hpp"
+#include "../../registrar.hpp"
+#include "card.hpp"
 
 namespace rouen::cards {
     struct menu: public card {
@@ -163,7 +168,7 @@ namespace rouen::cards {
                 } else {
                     // Filter and display search results
                     for (const auto& [cat_idx, item_idx, item_text] : all_menu_items) {
-                        if (helpers::StringHelper::contains_case_insensitive(item_text, search_text)) {
+                        if (::helpers::StringHelper::contains_case_insensitive(item_text, search_text)) {
                             filtered_items.push_back(std::make_tuple(cat_idx, item_idx, item_text));
                         }
                     }

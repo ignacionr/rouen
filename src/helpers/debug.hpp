@@ -1,8 +1,15 @@
 #pragma once
 
-#include <iostream>
+// 1. Standard includes in alphabetic order
 #include <format>
+#include <iostream>
 #include <string_view>
+
+// 2. Libraries used in the project, in alphabetic order
+// None in this file
+
+// 3. All other includes
+// None in this file
 
 // Define logging levels
 #define LOG_LEVEL_NONE 0

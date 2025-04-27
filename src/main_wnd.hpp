@@ -1,15 +1,19 @@
 #pragma once
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_sdl2.h>
-#include <imgui/backends/imgui_impl_sdlrenderer2.h>
+// 1. Standard includes in alphabetic order
+#include <functional>
 #include <iostream>
 #include <memory>
-#include <functional>
 #include <string>
 
+// 2. Libraries used in the project, in alphabetic order
+#include <imgui/backends/imgui_impl_sdl2.h>
+#include <imgui/backends/imgui_impl_sdlrenderer2.h>
+#include <imgui/imgui.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+
+// 3. All other includes
 #include "helpers/deferred_operations.hpp"
 #include "registrar.hpp"
 

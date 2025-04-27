@@ -1,7 +1,12 @@
 #pragma once
 
-#include <imgui/imgui.h>
+// 1. Standard includes in alphabetic order
 #include <string>
+
+// 2. Libraries used in the project, in alphabetic order
+#include <imgui/imgui.h>
+
+// 3. All other includes
 #include "../external/IconsMaterialDesign.h"
 
 namespace rouen::fonts {

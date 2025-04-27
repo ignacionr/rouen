@@ -1,10 +1,16 @@
 #pragma once
 
-#include <memory>
+// 1. Standard includes in alphabetic order
 #include <array>
-#include <functional>
 #include <format>
+#include <functional>
+#include <memory>
+
+// 2. Libraries used in the project, in alphabetic order
 #include <imgui/imgui.h>
+
+// 3. All other includes
+// None in this file
 
 struct card {
     using ptr = std::shared_ptr<card>;

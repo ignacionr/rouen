@@ -1,5 +1,6 @@
 #pragma once
 
+// 1. Standard includes in alphabetic order
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -8,6 +9,12 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// 2. Libraries used in the project, in alphabetic order
+// None in this file
+
+// 3. All other includes
+// None in this file
 
 class registrar {
 public:

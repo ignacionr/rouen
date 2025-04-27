@@ -1,19 +1,20 @@
+// 1. Standard includes in alphabetic order
+#include <iostream>
+#include <mutex>
+#include <thread>
+
+// 2. Libraries used in the project, in alphabetic order
 #include <imgui/imgui.h>
 #include <SDL2/SDL.h>
-#include <iostream>
-#include <thread>
-#include <mutex>
 
-// Add include for our new main_wnd class
-#include "main_wnd.hpp"
-
-// These are still needed for the registrar and deck
+// 3. All other includes
 #include "cards/interface/deck.hpp"
-#include "registrar.hpp"
-#include "helpers/notify_service.hpp"
 #include "helpers/debug.hpp"
-#include "helpers/process_helper.hpp" // Added this include for ProcessHelper
 #include "helpers/deferred_operations.hpp" // For deferred operations
+#include "helpers/notify_service.hpp"
+#include "helpers/process_helper.hpp" // Added this include for ProcessHelper
+#include "main_wnd.hpp"
+#include "registrar.hpp"
 
 int main() {
     notify_service notify; // Initialize the notify service

@@ -1,31 +1,35 @@
 #pragma once
 
+// 1. Standard includes in alphabetic order
 #include <memory>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
+// 2. Libraries used in the project, in alphabetic order
 #include <SDL2/SDL.h>
+
+// 3. All other includes
 #include "card.hpp"
-#include "../development/git.hpp"
 #include "menu.hpp"
-#include "../productivity/pomodoro.hpp"
-#include "../productivity/alarm.hpp"
-#include "../development/fs-directory.hpp"
 #include "../development/cmake.hpp"
-#include "../system/sysinfo.hpp"
-#include "../system/dbrepair.hpp"
+#include "../development/fs-directory.hpp"
+#include "../development/git.hpp"
+#include "../information/calendar/calendar.hpp"
 #include "../information/grok.hpp"
-#include "../media/radio.hpp"
-#include "../system/envvars.hpp"
+#include "../information/mail/mail.hpp"
 #include "../information/rss.hpp"
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
-#include "../information/mail/mail.hpp"
-#include "../information/calendar/calendar.hpp"
 #include "../information/travel.hpp"
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
+#include "../media/radio.hpp"
+#include "../productivity/alarm.hpp"
+#include "../productivity/pomodoro.hpp"
+#include "../system/dbrepair.hpp"
+#include "../system/envvars.hpp"
+#include "../system/sysinfo.hpp"
 
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
@@ -59,51 +63,69 @@ namespace rouen::cards {
         }
 
         static std::unordered_map<std::string, factory_t> const& dictionary() {
-            static std::unordered_map<std::string, factory_t> instance = {
-                {"git", [](std::string_view, SDL_Renderer*) {
+            static std::unordered_map<std::string, factory_t> instance;
+            
+            // Initialize the dictionary only once
+            static bool initialized = false;
+            if (!initialized) {
+                // Add card factories
+                instance.emplace("git", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<git>();
-                }},
-                {"menu", [](std::string_view, SDL_Renderer*) {
+                });
+                
+                instance.emplace("menu", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<menu>();
-                }},
-                {"dir", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("dir", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<fs_directory>(uri);
-                }},
-                {"cmake", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("cmake", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<cmake_card>(uri);
-                }},
-                {"pomodoro", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("pomodoro", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<pomodoro>();
-                }},
-                {"alarm", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("alarm", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<alarm>(uri);
-                }},
-                {"sysinfo", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("sysinfo", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<sysinfo_card>();
-                }},
-                {"grok", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("grok", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<grok>();
-                }},
-                {"radio", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("radio", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<radio>();
-                }},
-                {"envvars", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<envvars_card>();
-                }},
-                {"rss", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("rss", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<rss>();
-                }},
-                {"rss-feed", [](std::string_view uri, SDL_Renderer* renderer) {
+                });
+                
+                instance.emplace("rss-feed", [](std::string_view uri, SDL_Renderer* renderer) {
                     auto feed = std::make_shared<rss_feed>(std::string(uri));
                     if (renderer) {
                         feed->set_renderer(renderer);
                     }
                     return feed;
-                }},
-                {"rss-item", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("rss-item", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<rss_item>(std::string(uri));
-                }},
-                {"calendar", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("calendar", [](std::string_view uri, SDL_Renderer*) {
                     if (uri.empty()) {
                         // Use default URL from environment variable
                         return std::make_shared<calendar>();
@@ -111,8 +133,9 @@ namespace rouen::cards {
                         // Use provided URL
                         return std::make_shared<calendar>(std::string(uri));
                     }
-                }},
-                {"mail", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("mail", [](std::string_view uri, SDL_Renderer*) {
                     if (uri.empty()) {
                         // Use default credentials from environment
                         return std::make_shared<mail>();
@@ -137,20 +160,26 @@ namespace rouen::cards {
                         
                         return std::make_shared<mail>(host, username, password);
                     }
-                }},
-                {"travel", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("travel", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<travel>();
-                }},
-                {"travel-plan", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("travel-plan", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<travel_plan>(uri);
-                }},
-                {"dbrepair", [](std::string_view , SDL_Renderer* ) {
+                });
+                
+                instance.emplace("dbrepair", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<dbrepair_card>();
-                }},
-                {"weather", [](std::string_view uri, SDL_Renderer* ) {
+                });
+                
+                instance.emplace("weather", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<weather>(uri);
-                }}
-            };
+                });
+                
+                initialized = true;
+            }
             
             return instance;
         }

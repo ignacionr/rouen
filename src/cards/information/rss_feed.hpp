@@ -45,7 +45,7 @@ public:
         rss_host = rss::getHost();
         
         // Initialize the image cache
-        image_cache = std::make_shared<helpers::ImageCache>(
+        image_cache = std::make_shared<::helpers::ImageCache>(
             "rss_images.db",         // SQLite database for image cache
             "cache/rss_images",      // Cache directory for image files
             30                       // Expire images after 30 days
@@ -255,7 +255,7 @@ private:
     SDL_Texture* feed_image_texture = nullptr;
     int feed_image_width = 0;
     int feed_image_height = 0;
-    std::shared_ptr<helpers::ImageCache> image_cache;
+    std::shared_ptr<::helpers::ImageCache> image_cache;
 };
 
 } // namespace rouen::cards

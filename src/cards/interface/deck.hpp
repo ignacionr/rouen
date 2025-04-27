@@ -1,23 +1,27 @@
 #pragma once
 
+// 1. Standard includes in alphabetic order
+#include <algorithm> // Added for std::find_if
+#include <chrono>    // Added for timestamp
+#include <fstream>   // Added for file I/O
 #include <functional>
+#include <iomanip>   // Added for std::put_time
+#include <iostream>  // Added for console output
+#include <sstream>   // Added for string stream
 #include <string>
 #include <utility>
 #include <vector>
-#include <algorithm> // Added for std::find_if
+
+// 2. Libraries used in the project, in alphabetic order
 #include <imgui/imgui.h>
-#include <fstream>   // Added for file I/O
-#include <sstream>   // Added for string stream
-#include <chrono>    // Added for timestamp
-#include <iomanip>   // Added for std::put_time
-#include <iostream>  // Added for console output
 #include <SDL2/SDL_image.h> // Added for saving PNG files
 
-#include "factory.hpp"
-#include "../productivity/editor.hpp"
-#include "../../registrar.hpp"
-#include "../../helpers/deferred_operations.hpp"
+// 3. All other includes
 #include "../../helpers/capture_helper.hpp"
+#include "../../helpers/deferred_operations.hpp"
+#include "../../registrar.hpp"
+#include "../productivity/editor.hpp"
+#include "factory.hpp"
 
 struct deck {
     deck(SDL_Renderer* renderer): renderer(renderer), editor_() {

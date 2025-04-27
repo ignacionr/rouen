@@ -1,6 +1,7 @@
-#include "fonts.hpp"
 #include <codecvt>
 #include <locale>
+
+#include "fonts.hpp"
 
 namespace rouen::fonts {
     void setup() {

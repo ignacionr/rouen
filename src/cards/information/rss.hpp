@@ -128,8 +128,8 @@ public:
                         
                         // Filter based on search query if search text is present
                         if (!search_text.empty() && 
-                            !helpers::StringHelper::contains_case_insensitive(title, search_text) && 
-                            !helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
+                            !::helpers::StringHelper::contains_case_insensitive(title, search_text) && 
+                            !::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
                             ImGui::PopID();
                             continue; // Skip items that don't match the search
                         }

@@ -1,14 +1,18 @@
-#include "main_wnd.hpp"
-#include "cards/interface/deck.hpp"
-#include "helpers/debug.hpp"
+// 1. Standard includes in alphabetic order
+// None in this file's top section
 
-// Add STB implementation defines
+// 2. Libraries used in the project, in alphabetic order
+// Add STB implementation defines first
 #define STB_RECT_PACK_IMPLEMENTATION
 #include <imgui/imstb_rectpack.h>
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <imgui/imstb_truetype.h>
 
+// 3. All other includes
+#include "cards/interface/deck.hpp"
 #include "fonts.hpp"
+#include "helpers/debug.hpp"
+#include "main_wnd.hpp"
 
 main_wnd::main_wnd() 
     : m_window(nullptr)
