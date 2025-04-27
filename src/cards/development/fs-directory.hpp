@@ -44,6 +44,12 @@ namespace rouen::cards
 
         void receive_keystrokes()
         {
+            if (ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_T) && ImGui::GetIO().KeyCtrl)
+            {
+                "create_card"_sfn(std::format("terminal:{}", path_.string()));
+                // expunge the strokes
+                [[maybe_unused]] auto r {"keystrokes"_fns()};
+            }
             for (char c : "keystrokes"_fns())
             {
                 if (c == '\b')
