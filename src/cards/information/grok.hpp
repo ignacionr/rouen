@@ -9,6 +9,7 @@
 
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/api_keys.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -36,10 +37,9 @@ namespace rouen::cards {
             
             requested_fps = 1;
             
-            // Read API key from environment
-            char* api_key = std::getenv("GROK_API_KEY");
-            if (api_key) {
-                grok_api_key = api_key;
+            // Read API key from centralized API key manager
+            grok_api_key = helpers::ApiKeys::get_grok_api_key();
+            if (!grok_api_key.empty()) {
                 gpt = std::make_unique<ignacionr::cppgpt>(grok_api_key, ignacionr::cppgpt::grok_base);
                 gpt->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest.");
             }

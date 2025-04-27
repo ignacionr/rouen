@@ -7,16 +7,30 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
+#include <filesystem>
+#include <fstream>
+#include <cstring>
+#include <poll.h>
+#include <errno.h>
+
+// Required Linux/POSIX headers
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
+#endif
 
 #include <imgui/imgui.h>
 
-// Remove imgui_stdlib dependency
-// #include <imgui/misc/cpp/imgui_stdlib.h>
-
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/api_keys.hpp"
+#include "../../helpers/cppgpt.hpp"
+#include "../../helpers/fetch.hpp"
 
 // Define terminal-specific logging macros
 #define TERM_ERROR(message) LOG_COMPONENT("TERM", LOG_LEVEL_ERROR, message)
@@ -61,9 +75,13 @@ public:
             current_working_dir = std::string(initial_dir);
         }
         
+        // Initialize the interactive bash session
+        initialize_bash_session();
+        
         // Add initial welcome message
-        add_to_output(std::format("Terminal initialized in {}", current_working_dir), OutputType::System);
+        add_to_output(std::format("Interactive Bash Terminal initialized in {}", current_working_dir), OutputType::System);
         add_to_output("Type commands and press Enter to execute. Use Up/Down arrows for history.", OutputType::System);
+        add_to_output("Press Ctrl+Enter to use Grok AI to convert natural language to Bash commands.", OutputType::System);
         add_to_output("", OutputType::Blank);
         
         // Add prompt
@@ -71,8 +89,15 @@ public:
     }
     
     ~terminal() override {
-        // Stop all running processes
-        terminate_current_process();
+        // Stop all running processes and terminate the bash session
+        terminate_bash_session();
+    }
+    
+    // Execute a command to explicitly test stderr output
+    void test_stderr_output() {
+        const std::string test_cmd = "bash -c 'echo This is stdout; echo This is stderr >&2; ls /nonexistent-directory; invalid_command'";
+        add_to_output("Running stderr test command...", OutputType::System);
+        execute_command(test_cmd);
     }
     
     bool render() override {
@@ -80,6 +105,11 @@ public:
             // Calculate window dimensions
             const float window_width = ImGui::GetContentRegionAvail().x;
             const float footer_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+            
+            // Test for stderr - press F5 for a quick test
+            if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
+                test_stderr_output();
+            }
             
             // Render the output area (taking most of the space)
             if (ImGui::BeginChild("OutputScrollRegion", ImVec2(window_width, -footer_height), true)) {
@@ -172,7 +202,7 @@ public:
             
             // Process the command if enter was pressed
             if (enter_pressed && input_buffer[0] != '\0') {
-                execute_command(input_buffer);
+                execute_command(input_buffer, ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl));
                 input_buffer[0] = '\0';  // Clear the input
                 focus_input = true;
             }
@@ -238,6 +268,11 @@ private:
         output_buffer.clear();
         output_buffer.emplace_back("Terminal cleared.", OutputType::System);
         output_buffer.emplace_back("", OutputType::Blank);
+        
+        // Get current working directory from bash
+        update_cwd_from_bash();
+        
+        // Add prompt with updated working directory
         output_buffer.emplace_back(std::format("{}$ ", current_working_dir), OutputType::Prompt);
         should_auto_scroll = true;
     }
@@ -248,55 +283,419 @@ private:
         add_to_output(prompt, OutputType::Prompt);
     }
     
-    void execute_command(const std::string& command) {
+    // Initialize interactive bash session
+    void initialize_bash_session() {
+        // Terminate any existing session
+        terminate_bash_session();
+        
+        // Create pipes for communication with bash
+        int stdin_pipe[2];    // For writing to bash's stdin
+        int stdout_pipe[2];   // For reading from bash's stdout
+        int stderr_pipe[2];   // For reading from bash's stderr
+        
+#ifdef _WIN32
+        TERM_ERROR("Interactive bash sessions are not supported on Windows. Falling back to command-by-command mode.");
+        use_interactive_bash = false;
+        return;
+#else
+        // Create pipes
+        if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
+            TERM_ERROR("Failed to create pipes for bash session");
+            use_interactive_bash = false;
+            return;
+        }
+        
+        // Fork a child process for bash
+        bash_pid = fork();
+        
+        if (bash_pid == -1) {
+            // Fork failed
+            TERM_ERROR("Failed to fork process for bash session");
+            close(stdin_pipe[0]);
+            close(stdin_pipe[1]);
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+            use_interactive_bash = false;
+            return;
+        } else if (bash_pid == 0) {
+            // Child process (bash)
+            
+            // Redirect stdin/stdout/stderr
+            dup2(stdin_pipe[0], STDIN_FILENO);
+            dup2(stdout_pipe[1], STDOUT_FILENO);
+            dup2(stderr_pipe[1], STDERR_FILENO); // Now stderr is separate
+            
+            // Close unused pipe ends
+            close(stdin_pipe[0]);
+            close(stdin_pipe[1]);
+            close(stdout_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[0]);
+            close(stderr_pipe[1]);
+            
+            // Execute bash with interactive options but explicitly disable job control
+            // Using +m to disable job control and avoid the warnings
+            // Also using --norc to avoid loading .bashrc files that might try to set up job control
+            execl("/bin/bash", "bash", "--noediting", "--noprofile", "--norc", "+m", "-i", 
+                  "-c", "export PS1=\"ROUEN_PROMPT|\"; export TERM=dumb; exec bash --norc +m", 
+                  nullptr);
+            
+            // If execl returns, there was an error
+            perror("execl");
+            exit(1);
+        } else {
+            // Parent process
+            
+            // Close unused pipe ends
+            close(stdin_pipe[0]);
+            close(stdout_pipe[1]);
+            close(stderr_pipe[1]);
+            
+            // Store pipe file descriptors
+            bash_stdin_fd = stdin_pipe[1];
+            bash_stdout_fd = stdout_pipe[0];
+            bash_stderr_fd = stderr_pipe[0];
+            
+            // Set pipes to non-blocking mode
+            int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
+            fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            flags = fcntl(bash_stdout_fd, F_GETFL, 0);
+            fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            flags = fcntl(bash_stderr_fd, F_GETFL, 0);
+            fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
+            
+            // Start reader threads for bash output
+            bash_stdout_reader_thread = std::jthread([this](std::stop_token stoken) {
+                read_bash_stream(stoken, bash_stdout_fd, OutputType::StdOut);
+            });
+            
+            bash_stderr_reader_thread = std::jthread([this](std::stop_token stoken) {
+                read_bash_stream(stoken, bash_stderr_fd, OutputType::StdErr);
+            });
+            
+            // Change to initial directory
+            send_to_bash(std::format("cd \"{}\"", current_working_dir));
+            
+            use_interactive_bash = true;
+            TERM_INFO("Interactive bash session started successfully");
+        }
+#endif
+    }
+    
+    // Terminate bash session
+    void terminate_bash_session() {
+#ifndef _WIN32
+        if (bash_pid > 0) {
+            // Stop reader threads
+            if (bash_stdout_reader_thread.joinable()) {
+                bash_stdout_reader_thread.request_stop();
+                bash_stdout_reader_thread.join();
+            }
+            
+            if (bash_stderr_reader_thread.joinable()) {
+                bash_stderr_reader_thread.request_stop();
+                bash_stderr_reader_thread.join();
+            }
+            
+            // Send exit command to bash
+            if (bash_stdin_fd >= 0) {
+                // Send the exit command to bash
+                write(bash_stdin_fd, "exit\n", 5);
+                close(bash_stdin_fd);
+                bash_stdin_fd = -1;
+            }
+            
+            // Close stdout pipe
+            if (bash_stdout_fd >= 0) {
+                close(bash_stdout_fd);
+                bash_stdout_fd = -1;
+            }
+            
+            // Close stderr pipe
+            if (bash_stderr_fd >= 0) {
+                close(bash_stderr_fd);
+                bash_stderr_fd = -1;
+            }
+            
+            // Give bash a moment to exit cleanly
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Kill the process if it's still running
+            int status;
+            pid_t result = waitpid(bash_pid, &status, WNOHANG);
+            if (result == 0) {
+                // Process is still running, kill it
+                kill(bash_pid, SIGTERM);
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                
+                // Force kill if still running
+                result = waitpid(bash_pid, &status, WNOHANG);
+                if (result == 0) {
+                    kill(bash_pid, SIGKILL);
+                }
+            }
+            
+            bash_pid = -1;
+            TERM_INFO("Bash session terminated");
+        }
+#endif
+    }
+    
+    // Send command to interactive bash session with improved output handling
+    void send_to_bash(const std::string& command) {
+#ifndef _WIN32
+        if (bash_stdin_fd >= 0) {
+            // Add a new command group that runs the command and then signals completion
+            // This helps ensure we capture all output, particularly for short-running commands
+            std::string wrapped_command = "{\n"
+                                        + command + "\n"
+                                        + "echo $? > /tmp/rouen_cmd_status\n"  // Save exit code
+                                        + "} && sleep 0.1 && echo -e \"\\nROUEN_CMD_DONE\"\n";
+            
+            // Write command to bash's stdin
+            write(bash_stdin_fd, wrapped_command.c_str(), wrapped_command.length());
+        }
+#endif
+    }
+    
+    // Reader thread for bash output stream (stdout or stderr)
+    void read_bash_stream(std::stop_token stoken, int pipe_fd, OutputType output_type) {
+#ifndef _WIN32
+        if (pipe_fd < 0) return;
+        
+        char buffer[4096];
+        std::string accumulated_output;
+        bool command_running = false;
+        
+        // Set up poll structure to check for data
+        struct pollfd pfd;
+        pfd.fd = pipe_fd;
+        pfd.events = POLLIN;
+        
+        while (!stoken.stop_requested()) {
+            // Poll with a short timeout
+            int poll_result = poll(&pfd, 1, 10); // 10ms timeout
+            
+            if (poll_result > 0 && (pfd.revents & POLLIN)) {
+                // Data is available to read
+                ssize_t bytes_read = read(pipe_fd, buffer, sizeof(buffer) - 1);
+                
+                if (bytes_read > 0) {
+                    // Null-terminate the buffer
+                    buffer[bytes_read] = '\0';
+                    
+                    // Add to accumulated output
+                    accumulated_output += buffer;
+                    
+                    // Process accumulated output line by line
+                    size_t pos = 0;
+                    size_t end_line;
+                    
+                    while ((end_line = accumulated_output.find('\n', pos)) != std::string::npos) {
+                        // Extract line
+                        std::string line = accumulated_output.substr(pos, end_line - pos);
+                        pos = end_line + 1;
+                        
+                        // Special handling for stdout stream
+                        if (output_type == OutputType::StdOut) {
+                            // Check for special markers
+                            if (line.starts_with("ROUEN_PROMPT|")) {
+                                // Bash prompt - indicates command has finished
+                                is_command_running = false;
+                                command_running = false;
+                                
+                                // Update current working directory
+                                update_cwd_from_bash();
+                                
+                                // Add prompt to output
+                                add_to_output("", OutputType::Blank);
+                                add_prompt();
+                                continue;
+                            } else if (line == "ROUEN_CMD_DONE") {
+                                // End marker for command output
+                                is_command_running = false;
+                                command_running = false;
+                                continue;
+                            } else if (!command_running && 
+                                      (line.empty() || line.find("bash") != std::string::npos || 
+                                       line.find("TERM=") != std::string::npos)) {
+                                // Ignore initial bash startup messages
+                                continue;
+                            }
+                        }
+                        
+                        // Regular output line - stdout or stderr
+                        command_running = true;
+                        add_to_output(line, output_type);
+                    }
+                    
+                    // Keep any remaining partial line
+                    accumulated_output.erase(0, pos);
+                    
+                } else if (bytes_read == 0) {
+                    // EOF - bash has closed the pipe
+                    TERM_WARN_FMT("Bash {} stream closed unexpectedly", output_type == OutputType::StdOut ? "stdout" : "stderr");
+                    break;
+                } else if (bytes_read < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                        // No data available, continue to next poll
+                        continue;
+                    } else {
+                        // Error
+                        TERM_ERROR_FMT("Error reading from bash {}: {}", 
+                            output_type == OutputType::StdOut ? "stdout" : "stderr", 
+                            strerror(errno));
+                        break;
+                    }
+                }
+            } else if (poll_result < 0) {
+                // Poll error
+                if (errno != EINTR) {
+                    TERM_ERROR_FMT("Poll error on bash {}: {}", 
+                        output_type == OutputType::StdOut ? "stdout" : "stderr", 
+                        strerror(errno));
+                    break;
+                }
+            }
+            // Poll timeout or no data - just continue
+        }
+        
+        TERM_INFO_FMT("Bash {} reader thread exiting", output_type == OutputType::StdOut ? "stdout" : "stderr");
+#endif
+    }
+    
+    // Get current working directory from bash
+    void update_cwd_from_bash() {
+#ifndef _WIN32
+        if (!use_interactive_bash || bash_stdin_fd < 0) return;
+        
+        // Create a temporary file for bash to write the pwd to
+        char temp_filename[] = "/tmp/rouen_pwd_XXXXXX";
+        int temp_fd = mkstemp(temp_filename);
+        
+        if (temp_fd != -1) {
+            close(temp_fd);
+            
+            // Send command to write pwd to the temporary file
+            send_to_bash(std::format("pwd > \"{}\"", temp_filename));
+            
+            // Wait for the command to complete
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Read the file
+            std::ifstream pwd_file(temp_filename);
+            if (pwd_file) {
+                std::string pwd;
+                std::getline(pwd_file, pwd);
+                
+                if (!pwd.empty()) {
+                    current_working_dir = pwd;
+                }
+            }
+            
+            // Remove the temporary file
+            std::remove(temp_filename);
+        }
+#endif
+    }
+    
+    void execute_command(const std::string& command, bool use_llm = false) {
+        // If use_llm is true, generate a shell command using Grok
+        std::string cmd_to_execute = command;
+        
+        if (use_llm) {
+            std::string generated_cmd = generate_shell_command(command);
+            if (!generated_cmd.empty()) {
+                // Show what command was generated
+                add_to_output(std::format("Grok generated command: {}", generated_cmd), OutputType::System);
+                cmd_to_execute = generated_cmd;
+            } else {
+                // If command generation failed, fallback to original command
+                add_to_output("Failed to generate command with Grok. Using original command.", OutputType::StdErr);
+            }
+        }
+        
         // Add command to output buffer and history
-        add_to_output(command, OutputType::Command);
+        add_to_output(cmd_to_execute, OutputType::Command);
         
         // Add to command history
-        command_history.push_back(command);
+        command_history.push_back(cmd_to_execute);
         if (command_history.size() > 50) {  // Limit history size
             command_history.erase(command_history.begin());
         }
         history_index = command_history.size();
         
-        // Check for built-in commands
-        if (command == "clear" || command == "cls") {
-            // Use our new clear_terminal function to avoid mutex deadlock
+        // Handle special built-in commands first
+        if (cmd_to_execute == "clear" || cmd_to_execute == "cls") {
             clear_terminal();
-            return;
-        } else if (command.substr(0, 3) == "cd ") {
-            // Change directory
-            std::string new_dir = command.substr(3);
-            
-            // Handle relative and absolute paths
-            std::filesystem::path target_path;
-            if (new_dir.empty() || new_dir == "~") {
-                // Home directory
-                target_path = std::getenv("HOME") ? std::getenv("HOME") : "/";
-            } else if (new_dir[0] == '/') {
-                // Absolute path
-                target_path = new_dir;
-            } else {
-                // Relative path
-                target_path = std::filesystem::path(current_working_dir) / new_dir;
-            }
-            
-            // Check if directory exists
-            std::error_code ec;
-            if (std::filesystem::is_directory(target_path, ec)) {
-                current_working_dir = std::filesystem::canonical(target_path).string();
-                add_to_output(std::format("Directory changed to: {}", current_working_dir), OutputType::StdOut);
-            } else {
-                add_to_output(std::format("Error: '{}' is not a valid directory", new_dir), OutputType::StdErr);
-            }
-            
-            add_to_output("", OutputType::Blank);
-            add_prompt();
             return;
         }
         
-        // Handle other commands - execute in a separate process
-        execute_external_command(command);
+        // For interactive bash mode
+        if (use_interactive_bash) {
+            // Set command as running
+            is_command_running = true;
+            
+            // Send command to bash
+            send_to_bash(cmd_to_execute);
+        } else {
+            // For non-interactive mode or if interactive mode is not available
+            // Use the traditional command execution
+            execute_external_command(cmd_to_execute);
+        }
+    }
+    
+    // Use Grok to generate a shell command from a natural language description
+    std::string generate_shell_command(const std::string& description) {
+        // Get Grok API key using our centralized API key manager
+        std::string api_key = rouen::helpers::ApiKeys::get_grok_api_key();
+        if (api_key.empty()) {
+            add_to_output("Error: GROK_API_KEY environment variable is not set.", OutputType::StdErr);
+            return "";
+        }
+        
+        try {
+            // Add a loader to indicate processing
+            add_to_output("Generating shell command with Grok AI...", OutputType::System);
+            
+            // Initialize Grok client
+            ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+            
+            // Add system instructions for the AI
+            gpt.add_instructions(
+                "You are a Linux shell command generator. Convert the user's natural language request into "
+                "the most appropriate bash command. Respond ONLY with the exact command, without any explanations, "
+                "backticks, markdown formatting or additional text. Only provide a bash command that can be executed "
+                "directly in a Linux terminal. Ensure the command is safe and efficient."
+            );
+            
+            // Send the request to Grok
+            http::fetch fetcher;
+            auto response = gpt.sendMessage(
+                description,
+                [&fetcher](const std::string& url, const std::string& data, auto header_client) {
+                    return fetcher.post(url, data, header_client);
+                },
+                "user",
+                "grok-2-latest"
+            );
+            
+            // Extract the command from the response
+            std::string command = response.choices[0].message.content;
+            
+            // Clean up the command (remove quotes, backticks, etc.)
+            command = command.substr(command.find_first_not_of(" \t\n`"));
+            command = command.substr(0, command.find_last_not_of(" \t\n`") + 1);
+            
+            return command;
+        } catch (const std::exception& e) {
+            add_to_output(std::format("Error generating command: {}", e.what()), OutputType::StdErr);
+            return "";
+        }
     }
     
     void execute_external_command(const std::string& command) {
@@ -363,7 +762,10 @@ private:
     }
     
     void check_command_output() {
-        // Check if command has finished
+        // For interactive bash mode, the command status is handled in the reader thread
+        if (use_interactive_bash) return;
+        
+        // Check if command has finished in non-interactive mode
         if (is_command_running) {
             bool should_close = false;
             
@@ -407,7 +809,7 @@ private:
     }
     
     void terminate_current_process() {
-        if (is_command_running) {
+        if (is_command_running && !use_interactive_bash) {
             // Ask the thread to stop
             if (output_reader_thread.joinable()) {
                 output_reader_thread.request_stop();
@@ -484,6 +886,17 @@ private:
     FILE* command_pipe = nullptr;
     std::jthread output_reader_thread;
     bool is_command_running = false;
+    
+    // Interactive bash session variables
+    bool use_interactive_bash = false;
+#ifndef _WIN32
+    pid_t bash_pid = -1;
+    int bash_stdin_fd = -1;
+    int bash_stdout_fd = -1;
+    int bash_stderr_fd = -1;
+    std::jthread bash_stdout_reader_thread;
+    std::jthread bash_stderr_reader_thread;
+#endif
     
     // Animation for running process
     int spinner_counter = 0;

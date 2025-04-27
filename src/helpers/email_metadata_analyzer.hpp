@@ -11,6 +11,7 @@
 
 #include "cppgpt.hpp"
 #include "fetch.hpp"
+#include "api_keys.hpp"
 #include "../registrar.hpp"
 #include "../models/mail/metadata_repo.hpp"
 
@@ -38,9 +39,8 @@ namespace mail {
                     return json_result;
                 }
                 
-                // Create cppgpt instance with API key and base URL
-                // Use Grok API instead of OpenAI
-                std::string api_key = std::getenv("GROK_API_KEY");
+                // Use centralized API key manager instead of direct environment access
+                std::string api_key = rouen::helpers::ApiKeys::get_grok_api_key();
                 if (api_key.empty()) {
                     "notify"_sfn("Warning: GROK_API_KEY environment variable not set");
                     
@@ -60,6 +60,7 @@ namespace mail {
                     return json_result;
                 }
                 
+                // Create cppgpt instance with API key and base URL
                 ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
                 
                 // Add system instructions for the AI
