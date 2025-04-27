@@ -71,6 +71,7 @@ namespace rouen::cards {
                     }},
                     { "System", {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},
+                        {"Terminal", []() { "create_card"_sfn("terminal"); }},
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                         {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
                         {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }} // Fixed: Use [[maybe_unused]] to suppress nodiscard warning

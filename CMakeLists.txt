@@ -14,12 +14,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(
     -Wall                # Enable all common warnings
     -Wextra              # Enable extra warnings
-    -Wpedantic           # Enforce strict ISO C++
-    -Wnull-dereference   # Warn about null pointer dereference
-    -Wformat=2           # Warn about printf format issues
-    -Wimplicit-fallthrough # Warn about fallthrough in switch statements
-    -Wunused             # Warn about unused variables/functions
-    -Werror              # Treat warnings as errors
   )
 
   # Warnings for third-party code can be suppressed
@@ -30,6 +24,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # Add more strict warnings only for our own code
   function(target_add_strict_warnings target)
     target_compile_options(${target} PRIVATE
+      -Werror              # Treat warnings as errors
+      -Wpedantic           # Enforce strict ISO C++
+      -Wnull-dereference   # Warn about null pointer dereference
+      -Wformat=2           # Warn about printf format issues
+      -Wimplicit-fallthrough # Warn about fallthrough in switch statements
+      -Wunused             # Warn about unused variables/functions
+
       # Conversion warnings (more aggressive)
       -Wconversion
       -Wsign-conversion

@@ -30,6 +30,7 @@
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
 #include "../system/sysinfo.hpp"
+#include "../system/terminal.hpp"
 
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
@@ -107,6 +108,11 @@ namespace rouen::cards {
                 
                 instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<envvars_card>();
+                });
+                
+                // Register the new terminal card
+                instance.emplace("terminal", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<terminal>(uri);
                 });
                 
                 instance.emplace("rss", [](std::string_view, SDL_Renderer*) {
