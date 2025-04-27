@@ -325,7 +325,7 @@ private:
             // Redirect stdin/stdout/stderr
             dup2(stdin_pipe[0], STDIN_FILENO);
             dup2(stdout_pipe[1], STDOUT_FILENO);
-            dup2(stderr_pipe[1], STDERR_FILENO); // Now stderr is separate
+            dup2(stderr_pipe[1], STDERR_FILENO);
             
             // Close unused pipe ends
             close(stdin_pipe[0]);
@@ -335,12 +335,9 @@ private:
             close(stderr_pipe[0]);
             close(stderr_pipe[1]);
             
-            // Execute bash with interactive options but explicitly disable job control
-            // Using +m to disable job control and avoid the warnings
-            // Also using --norc to avoid loading .bashrc files that might try to set up job control
-            execl("/bin/bash", "bash", "--noediting", "--noprofile", "--norc", "+m", "-i", 
-                  "-c", "export PS1=\"ROUEN_PROMPT|\"; export TERM=dumb; exec bash --norc +m", 
-                  nullptr);
+            // Execute bash with interactive but non-login options
+            execl("/bin/bash", "bash", "--noediting", "--noprofile", "--norc", "+m", 
+                  "-c", "exec bash --norc +m", NULL);
             
             // If execl returns, there was an error
             perror("execl");
@@ -376,6 +373,13 @@ private:
             bash_stderr_reader_thread = std::jthread([this](std::stop_token stoken) {
                 read_bash_stream(stoken, bash_stderr_fd, OutputType::StdErr);
             });
+            
+            // Customize bash environment - use PS1 that doesn't have job control messages
+            send_to_bash("export PS1=\"ROUEN_PROMPT|\"");
+            send_to_bash("export TERM=dumb");
+            
+            // Disable history expansion to avoid problems with '!' character
+            send_to_bash("set +H");
             
             // Change to initial directory
             send_to_bash(std::format("cd \"{}\"", current_working_dir));
@@ -445,19 +449,20 @@ private:
 #endif
     }
     
-    // Send command to interactive bash session with improved output handling
+    // Send command to interactive bash session
     void send_to_bash(const std::string& command) {
 #ifndef _WIN32
         if (bash_stdin_fd >= 0) {
-            // Add a new command group that runs the command and then signals completion
-            // This helps ensure we capture all output, particularly for short-running commands
-            std::string wrapped_command = "{\n"
-                                        + command + "\n"
-                                        + "echo $? > /tmp/rouen_cmd_status\n"  // Save exit code
-                                        + "} && sleep 0.1 && echo -e \"\\nROUEN_CMD_DONE\"\n";
+            // Simply append a newline to the command and send it directly
+            std::string cmd_with_nl = command + "\n";
             
             // Write command to bash's stdin
-            write(bash_stdin_fd, wrapped_command.c_str(), wrapped_command.length());
+            write(bash_stdin_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
+            
+            // Send a separate echo command to mark the end of output
+            // Use a unique string that's unlikely to appear in normal output
+            std::string end_marker = "echo ROUEN_CMD_DONE\n";
+            write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
         }
 #endif
     }
@@ -499,6 +504,13 @@ private:
                         // Extract line
                         std::string line = accumulated_output.substr(pos, end_line - pos);
                         pos = end_line + 1;
+                        
+                        // Filter out job control warning messages
+                        if (line.find("cannot set terminal process group") != std::string::npos ||
+                            line.find("no job control in shell") != std::string::npos) {
+                            // Skip these bash startup warning messages
+                            continue;
+                        }
                         
                         // Special handling for stdout stream
                         if (output_type == OutputType::StdOut) {
