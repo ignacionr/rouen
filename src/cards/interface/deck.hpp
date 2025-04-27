@@ -390,6 +390,11 @@ struct deck {
                 break;
             }
         }
+        static float last_viewport_width = size.x;
+        if (last_viewport_width != size.x) {
+            start_x = 0.0f;
+            last_viewport_width = size.x;
+        }
         if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
             start_x = right_corner_offset;
         }
