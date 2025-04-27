@@ -11,6 +11,7 @@
 #include <SDL2/SDL.h>
 #include <imgui/imgui.h>
 #include "../../registrar.hpp"
+#include "../../helpers/string_helper.hpp"
 
 namespace rouen::cards {
     struct menu: public card {
@@ -30,19 +31,6 @@ namespace rouen::cards {
 
         std::string get_uri() const override {
             return "menu";
-        }
-        
-        // Helper function to convert string to lowercase for case-insensitive comparison
-        static std::string to_lower(const std::string& str) {
-            std::string result = str;
-            std::transform(result.begin(), result.end(), result.begin(), 
-                           [](unsigned char c) { return std::tolower(c); });
-            return result;
-        }
-        
-        // Function to check if haystack contains needle (case-insensitive)
-        static bool contains_case_insensitive(const std::string& haystack, const std::string& needle) {
-            return to_lower(haystack).find(to_lower(needle)) != std::string::npos;
         }
         
         bool render() override {
@@ -175,7 +163,7 @@ namespace rouen::cards {
                 } else {
                     // Filter and display search results
                     for (const auto& [cat_idx, item_idx, item_text] : all_menu_items) {
-                        if (contains_case_insensitive(item_text, search_text)) {
+                        if (helpers::StringHelper::contains_case_insensitive(item_text, search_text)) {
                             filtered_items.push_back(std::make_tuple(cat_idx, item_idx, item_text));
                         }
                     }

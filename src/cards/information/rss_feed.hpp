@@ -12,6 +12,7 @@
 #include "rss.hpp"
 #include "../../hosts/rss_host.hpp"
 #include "../../helpers/image_cache.hpp"
+#include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/debug.hpp"
 

@@ -13,6 +13,7 @@
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/string_helper.hpp"
 #include "../../hosts/rss_host.hpp"
 #include "../../models/rss/feed.hpp"
 #include "../../registrar.hpp"
@@ -85,17 +86,39 @@ public:
             // Feeds section title
             ImGui::TextColored(colors[2], "Your RSS Feeds:");
             
+            // Search functionality
+            static char search_buffer[256] = "";
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
+            ImGui::PushItemWidth(-1);
+            
+            ImGui::InputText("##search", search_buffer, IM_ARRAYSIZE(search_buffer));
+            
+            // Show placeholder text when input is empty
+            if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+                auto pos = ImGui::GetItemRectMin();
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2(pos.x + 5, pos.y + 2),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                    "Search feeds... (Type to filter)"
+                );
+            }
+            ImGui::PopItemWidth();
+            ImGui::PopStyleColor(); // Pop FrameBg
+            
+            ImGui::Separator();
+            
             // Create scrollable area for feeds
             if (ImGui::BeginChild("FeedsScrollArea", ImVec2(0, 0), true)) {
                 auto feeds = rss_host->feeds();
                 if (feeds.empty()) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds added yet");
                 } else {
-                    // Display all feeds
+                    std::string search_text = search_buffer;
+                    bool has_matches = false;
+                    
+                    // Display matching feeds
                     for (const auto& feed : feeds) {
                         ImGui::PushID(feed->source_link.c_str());
-                        
-                        ImGui::BeginGroup();
                         
                         // Feed title with truncation if needed
                         std::string title = feed->feed_title;
@@ -103,12 +126,25 @@ public:
                             title = feed->source_link;
                         }
                         
-                        // Limit title length and add ellipsis if too long
-                        if (title.length() > 40) {
-                            title = title.substr(0, 37) + "...";
+                        // Filter based on search query if search text is present
+                        if (!search_text.empty() && 
+                            !helpers::StringHelper::contains_case_insensitive(title, search_text) && 
+                            !helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
+                            ImGui::PopID();
+                            continue; // Skip items that don't match the search
                         }
                         
-                        if (ImGui::Selectable(title.c_str(), false)) {
+                        has_matches = true;
+                        
+                        ImGui::BeginGroup();
+                        
+                        // Limit title length and add ellipsis if too long
+                        std::string display_title = title;
+                        if (display_title.length() > 40) {
+                            display_title = display_title.substr(0, 37) + "...";
+                        }
+                        
+                        if (ImGui::Selectable(display_title.c_str(), false)) {
                             // Open feed items in a new card
                             std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
                             "create_card"_sfn(feed_uri);
@@ -130,6 +166,12 @@ public:
                         ImGui::EndGroup();
                         
                         ImGui::PopID();
+                    }
+                    
+                    // Show message when no feeds match the search
+                    if (!search_text.empty() && !has_matches) {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+                            "No feeds match your search");
                     }
                     
                     // Process deletion requests
