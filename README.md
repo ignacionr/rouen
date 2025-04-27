@@ -51,6 +51,85 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - [Hosts Infrastructure](src/hosts/README.md) - Documentation for external service connectors
 - [Models Infrastructure](src/models/README.md) - Guide to data models and business logic
 
+## Logging System
+
+Rouen uses a comprehensive logging system for debugging and error tracking. The system is defined in `src/helpers/debug.hpp` and provides component-specific logging at various severity levels.
+
+### Log Levels
+
+- **ERROR**: Critical issues that prevent functionality from working correctly
+- **WARN**: Non-critical issues that might cause unexpected behavior
+- **INFO**: General information about application state
+- **DEBUG**: Detailed information for debugging purposes
+- **TRACE**: Low-level diagnostic information
+
+### Using the Logging System
+
+Each component has its own set of logging macros:
+
+```cpp
+// Basic logging example for the SYSTEM component
+SYS_ERROR("An error occurred");
+SYS_WARN("A warning message");
+SYS_INFO("An informational message");
+SYS_DEBUG("A debug message");
+SYS_TRACE("A trace message");
+
+// Format-enabled logging (C++23 std::format)
+SYS_ERROR_FMT("Error in function {}: {}", function_name, error_code);
+```
+
+### Adding Logging to a New Component
+
+To add logging for a new component:
+
+1. Add the component-specific macros to `src/helpers/debug.hpp`:
+
+```cpp
+// Component-specific logging macros
+#define COMPONENT_ERROR(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_ERROR, message)
+#define COMPONENT_WARN(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_WARN, message)
+#define COMPONENT_INFO(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_INFO, message)
+#define COMPONENT_DEBUG(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_DEBUG, message)
+#define COMPONENT_TRACE(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_TRACE, message)
+
+// Format-enabled macros
+#define COMPONENT_ERROR_FMT(fmt, ...) COMPONENT_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define COMPONENT_WARN_FMT(fmt, ...) COMPONENT_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define COMPONENT_INFO_FMT(fmt, ...) COMPONENT_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define COMPONENT_DEBUG_FMT(fmt, ...) COMPONENT_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define COMPONENT_TRACE_FMT(fmt, ...) COMPONENT_TRACE(debug::format_log(fmt, __VA_ARGS__))
+```
+
+2. Or define them in your component's header file:
+
+```cpp
+// Include the debug header
+#include "helpers/debug.hpp"
+
+// Define component-specific logging macros
+#define COMPONENT_ERROR(message) LOG_COMPONENT("COMPONENT", LOG_LEVEL_ERROR, message)
+// ... additional macro definitions ...
+```
+
+### Best Practices
+
+- Use ERROR for critical failures that prevent functionality from working
+- Use WARN for non-critical issues that might affect behavior
+- Use INFO for important state changes and successful operations
+- Use DEBUG for detailed operation tracking during development
+- Use TRACE for low-level debugging information
+- Prefer format-enabled macros (_FMT) for complex messages with variables
+- Always include relevant context in error messages (function names, error codes, etc.)
+- Never use raw `perror()` or `std::cerr` directly; use the logging system instead
+
+### Runtime Log Level Control
+
+The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variable:
+- In debug builds, warnings and errors are shown by default
+- In release builds, only errors are shown
+- You can override this by defining `ROUEN_LOG_LEVEL` at compile time
+
 ## Building from Source
 
 ### Prerequisites

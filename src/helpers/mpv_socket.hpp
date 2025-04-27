@@ -7,6 +7,21 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include "debug.hpp"
+
+// MPV component logging macros
+#define MPV_ERROR(message) LOG_COMPONENT("MPV", LOG_LEVEL_ERROR, message)
+#define MPV_WARN(message) LOG_COMPONENT("MPV", LOG_LEVEL_WARN, message)
+#define MPV_INFO(message) LOG_COMPONENT("MPV", LOG_LEVEL_INFO, message)
+#define MPV_DEBUG(message) LOG_COMPONENT("MPV", LOG_LEVEL_DEBUG, message)
+#define MPV_TRACE(message) LOG_COMPONENT("MPV", LOG_LEVEL_TRACE, message)
+
+// MPV component format macros
+#define MPV_ERROR_FMT(fmt, ...) MPV_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define MPV_WARN_FMT(fmt, ...) MPV_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define MPV_INFO_FMT(fmt, ...) MPV_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define MPV_DEBUG_FMT(fmt, ...) MPV_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define MPV_TRACE_FMT(fmt, ...) MPV_TRACE(debug::format_log(fmt, __VA_ARGS__))
 
 // Helper class to handle MPV player interaction via socket
 class mpv_socket_helper {
@@ -46,7 +61,7 @@ public:
         // Create socket
         socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (socket_fd == -1) {
-            perror("Socket creation failed");
+            MPV_ERROR_FMT("Socket creation failed: {}", std::strerror(errno));
             return false;
         }
         
@@ -66,7 +81,7 @@ public:
         
         // Check if socket exists
         if (!std::filesystem::exists(socket_path)) {
-            perror("Socket file does not exist");
+            MPV_ERROR("Socket file does not exist");
             close(socket_fd);
             socket_fd = -1;
             return false;
@@ -74,12 +89,13 @@ public:
         
         // Connect to socket
         if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-            perror("Connection failed");
+            MPV_ERROR_FMT("Connection failed: {}", std::strerror(errno));
             close(socket_fd);
             socket_fd = -1;
             return false;
         }
         
+        MPV_INFO_FMT("Successfully connected to MPV socket at {}", socket_path);
         return true;
     }
     
@@ -87,12 +103,20 @@ public:
         // First check if the socket is valid
         if (socket_fd < 0) return false;
         
-        // Send the command
-        ssize_t bytes_sent = send(socket_fd, command.c_str(), command.length(), 0);
+        // Send the command with MSG_NOSIGNAL to prevent SIGPIPE signals
+        ssize_t bytes_sent = send(socket_fd, command.c_str(), command.length(), MSG_NOSIGNAL);
         if (bytes_sent != static_cast<ssize_t>(command.length())) {
             // Handle send error
             if (bytes_sent < 0) {
-                perror("Socket send error");
+                // Check specifically for broken pipe error
+                if (errno == EPIPE) {
+                    // MPV process has likely terminated
+                    MPV_ERROR("Socket send error: broken pipe (MPV process likely terminated)");
+                } else {
+                    MPV_ERROR_FMT("Socket send error: {}", std::strerror(errno));
+                }
+            } else {
+                MPV_WARN_FMT("Partial data sent: {} of {} bytes", bytes_sent, command.length());
             }
             // Close the socket on error
             close(socket_fd);
@@ -100,6 +124,7 @@ public:
             return false;
         }
         
+        MPV_DEBUG_FMT("Command sent: {}", command);
         return true;
     }
     
@@ -115,18 +140,31 @@ public:
         tv.tv_sec = 0;
         tv.tv_usec = timeout_ms * 1000; // Convert to microseconds
         
-        if (select(socket_fd + 1, &readfds, NULL, NULL, &tv) > 0) {
+        int select_result = select(socket_fd + 1, &readfds, NULL, NULL, &tv);
+        if (select_result > 0) {
             ssize_t bytes_read = recv(socket_fd, buffer, buffer_size - 1, 0);
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
+                MPV_TRACE_FMT("Received {} bytes from socket", bytes_read);
                 return true;
-            } else if (bytes_read == 0 || (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-                // Socket closed or error
+            } else if (bytes_read == 0) {
+                // Socket closed
+                MPV_WARN("Socket connection closed by MPV");
+                close(socket_fd);
+                socket_fd = -1;
+                return false;
+            } else if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                // Socket error
+                MPV_ERROR_FMT("Socket receive error: {}", std::strerror(errno));
                 close(socket_fd);
                 socket_fd = -1;
                 return false;
             }
+        } else if (select_result < 0) {
+            MPV_ERROR_FMT("Socket select error: {}", std::strerror(errno));
+            return false;
         }
+        // Timeout occurred
         return false;
     }
     
