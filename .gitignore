@@ -7,3 +7,4 @@ rss_images.db*
 cache
 rouen.ini
 card_*.png
+**/.DS_Store

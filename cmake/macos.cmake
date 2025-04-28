@@ -70,3 +70,155 @@ if(CURRENT_LINK_LIBRARIES)
   list(REMOVE_ITEM CURRENT_LINK_LIBRARIES "glfw" "GL")
   set_target_properties(${PROJECT_NAME} PROPERTIES LINK_LIBRARIES "${CURRENT_LINK_LIBRARIES}")
 endif()
+
+# -----------------------------------------------------------------------------
+# macOS Application Bundle Configuration
+# -----------------------------------------------------------------------------
+
+# Set up the application as a proper macOS bundle
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  MACOSX_BUNDLE TRUE
+  MACOSX_BUNDLE_GUI_IDENTIFIER "com.rouen.app"
+  MACOSX_BUNDLE_BUNDLE_NAME "Rouen"
+  MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+  MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+  MACOSX_BUNDLE_COPYRIGHT "Copyright © 2025 Rouen Contributors"
+  MACOSX_BUNDLE_INFO_STRING "RSS and Productivity Dashboard"
+  MACOSX_BUNDLE_ICON_FILE "Rouen.icns"
+)
+
+# Set application bundle resources directory
+set(MACOSX_BUNDLE_RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources")
+
+# Create application icon from PNG (if PNG exists)
+if(EXISTS "${CMAKE_SOURCE_DIR}/img/Rouen.png")
+  message(STATUS "Found application icon PNG, creating .icns file")
+  
+  # Create Resources directory in the build dir for icon creation
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset")
+  
+  # Convert PNG to ICNS using sips and iconutil
+  # This creates multiple resolution icon files from the original PNG
+  set(ICON_SIZES "16;32;64;128;256;512;1024")
+  foreach(SIZE IN LISTS ICON_SIZES)
+    # Calculate double resolution for retina
+    math(EXPR SIZE2X "${SIZE} * 2")
+    
+    # Create standard and retina (2x) versions
+    add_custom_command(
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}.png"
+      COMMAND /usr/bin/sips -z ${SIZE} ${SIZE} "${CMAKE_SOURCE_DIR}/img/Rouen.png" 
+              --out "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}.png"
+      DEPENDS "${CMAKE_SOURCE_DIR}/img/Rouen.png"
+      COMMENT "Creating ${SIZE}x${SIZE} icon for app bundle"
+    )
+    
+    # Create 2x versions (for retina)
+    if(NOT SIZE EQUAL 1024)
+      add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}@2x.png"
+        COMMAND /usr/bin/sips -z ${SIZE2X} ${SIZE2X} "${CMAKE_SOURCE_DIR}/img/Rouen.png" 
+                --out "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}@2x.png"
+        DEPENDS "${CMAKE_SOURCE_DIR}/img/Rouen.png"
+        COMMENT "Creating ${SIZE}x${SIZE}@2x icon for app bundle"
+      )
+    endif()
+  endforeach()
+  
+  # Convert the iconset to ICNS
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
+    COMMAND /usr/bin/iconutil -c icns "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset" 
+            -o "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_16x16.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_32x32.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_64x64.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_128x128.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_256x256.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_512x512.png"
+            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_1024x1024.png"
+    COMMENT "Generating Rouen.icns from iconset"
+  )
+  
+  # Add the icon to the resources
+  set_source_files_properties(
+    "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
+    PROPERTIES MACOSX_PACKAGE_LOCATION "Resources"
+  )
+  
+  # Add the icon file to the target sources
+  target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns")
+endif()
+
+# Create custom Info.plist file
+configure_file(
+  "${CMAKE_SOURCE_DIR}/cmake/Info.plist.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+  @ONLY
+)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+  MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
+)
+
+# Bundle resource files in the application package
+set(RESOURCE_FILES
+  "${CMAKE_SOURCE_DIR}/podcasts.txt"
+  "${CMAKE_SOURCE_DIR}/presets.txt"
+  "${CMAKE_SOURCE_DIR}/rouen.ini"
+  "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
+)
+
+# Copy resources into the bundle
+foreach(RES_FILE ${RESOURCE_FILES})
+  get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${RES_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/${RES_FILENAME}"
+    COMMENT "Copying ${RES_FILENAME} to app bundle Resources"
+  )
+endforeach()
+
+# Create Resources/img directory and copy images
+file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
+foreach(IMG_FILE ${IMAGE_FILES})
+  get_filename_component(IMG_FILENAME ${IMG_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory 
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/img"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${IMG_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/img/${IMG_FILENAME}"
+    COMMENT "Copying ${IMG_FILENAME} to app bundle Resources/img"
+  )
+endforeach()
+
+# Add option for code signing
+option(ENABLE_CODESIGN "Enable code signing of the application bundle" OFF)
+if(ENABLE_CODESIGN)
+  # The developer ID must be set in a CMake variable or passed via command line
+  if(NOT DEFINED DEVELOPER_ID)
+    message(WARNING "DEVELOPER_ID not set. If you enable code signing, please set -DDEVELOPER_ID=\"Developer ID Application: Your Name (TEAMID)\"")
+  else()
+    add_custom_command(
+      TARGET ${PROJECT_NAME} POST_BUILD
+      COMMAND codesign --force --deep --sign "${DEVELOPER_ID}" 
+              "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app"
+      COMMENT "Code signing application with identity: ${DEVELOPER_ID}"
+    )
+    message(STATUS "Code signing enabled with identity: ${DEVELOPER_ID}")
+  endif()
+endif()
+
+# Add a custom target to create a DMG installer
+add_custom_target(dmg
+  COMMAND hdiutil create -volname "Rouen" -srcfolder 
+          "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app" 
+          -ov -format UDZO "${CMAKE_CURRENT_BINARY_DIR}/Rouen-${PROJECT_VERSION}.dmg"
+  DEPENDS ${PROJECT_NAME}
+  COMMENT "Creating DMG installer for Rouen"
+)
+
+message(STATUS "macOS application bundle configuration completed")
