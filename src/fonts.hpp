@@ -15,7 +15,7 @@ namespace rouen::fonts {
         Mono
     };
 
-    auto constexpr base_size { 15.0f };
+    auto constexpr base_size { 13.0f };
     void setup();
     ImFont* get_font(FontType type);
 
