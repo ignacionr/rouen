@@ -15,6 +15,8 @@
 #include "imgui.h"
 // Include our compatibility layer for C++20/23 features
 #include "../../../helpers/compat/compat.hpp"
+// Include Material Design icons
+#include "../../../../external/IconsMaterialDesign.h"
 
 #include "../../../models/calendar/calendar_fetcher.hpp"
 #include "../../../models/calendar/event.hpp"
@@ -233,7 +235,7 @@ namespace rouen::cards
             // Display current date with navigation buttons
             ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
             
-            if (ImGui::Button("◀")) {
+            if (ImGui::Button(ICON_MD_CHEVRON_LEFT)) { // Using Material Design icon instead of "<<"
                 // Parse current date
                 std::tm date_tm = {};
                 std::istringstream ss(current_date_);
@@ -256,7 +258,7 @@ namespace rouen::cards
             ImGui::PopStyleColor();
             
             ImGui::SameLine();
-            if (ImGui::Button("▶")) {
+            if (ImGui::Button(ICON_MD_CHEVRON_RIGHT)) { // Using Material Design icon instead of ">>"
                 // Parse current date
                 std::tm date_tm = {};
                 std::istringstream ss(current_date_);
@@ -368,7 +370,14 @@ namespace rouen::cards
             
             // Event card style
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.2f, 0.3f, 0.3f, 0.3f));
-            ImGui::BeginChild(("event_" + event.id).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0), true);
+            
+            // Calculate minimum height for the event card based on content
+            // Use a reasonable minimum height that works well on macOS
+            const float min_event_height = ImGui::GetTextLineHeightWithSpacing() * 2.5f;
+            
+            ImGui::BeginChild(("event_" + event.id).c_str(), 
+                             ImVec2(ImGui::GetContentRegionAvail().x, min_event_height), 
+                             true);
             
             // Event summary with click to view details
             ImGui::PushStyleColor(ImGuiCol_Text, colors[3]); // Use the active/positive color

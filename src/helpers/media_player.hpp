@@ -14,6 +14,7 @@
 #include "imgui.h"
 #include "../registrar.hpp"
 #include "mpv_socket.hpp"
+#include "../../external/IconsMaterialDesign.h" // Add this line to include Material Design Icons
 
 struct media_player {
     struct item {
@@ -380,8 +381,8 @@ struct media_player {
                         item.formatTime(current_pos).c_str(),
                         item.formatTime(current_dur).c_str());
                 }
-                // Stop button with a square symbol
-                if (ImGui::Button(" \u25A0 ")) {  // U+25A0 BLACK SQUARE
+                // Stop button with Material Design icon instead of Unicode square
+                if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
                     item.stopMedia();
                 }
                 // Show playback position if available
@@ -418,8 +419,8 @@ struct media_player {
             } else {
                 // Set text alignment to left-aligned before creating the button
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-                // Play button with triangle symbol
-                if (ImGui::Button(std::format(" \u25B6 {}", title).data(), ImVec2(-1, 0))) {
+                // Play button with Material Design icon instead of Unicode triangle
+                if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(-1, 0))) {
                     stopAll();
                     item.playMedia();
                 }
