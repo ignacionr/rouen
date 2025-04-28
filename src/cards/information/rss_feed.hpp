@@ -3,10 +3,11 @@
 #include <algorithm>
 #include <chrono>
 #include <format>
-#include "imgui.h"
 #include <memory>
 #include <string>
 #include <vector>
+#include "imgui.h"
+#include "../../external/IconsMaterialDesign.h" // Added icon header
 
 #include "../interface/card.hpp"
 #include "rss.hpp"
@@ -121,6 +122,27 @@ public:
         try {
             return render_window([this]() {
                 try {
+                    auto currenty_y { ImGui::GetCursorPosY() };
+                    // Add refresh button at the top of the card
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.9f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 1.0f));
+                    
+                    // Right-align the refresh button
+                    float window_width = ImGui::GetContentRegionAvail().x;
+                    ImGui::SetCursorPosX(window_width - 30.0f); // 30 is the button width
+                    
+                    if (ImGui::Button(ICON_MD_REFRESH)) {
+                        refreshFeed();
+                    }
+                    
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Refresh feed");
+                    }
+                    
+                    ImGui::PopStyleColor(3);
+                    
+                    ImGui::SetCursorPosY(currenty_y);
                     // Display the feed image if we have one
                     if (feed_image_texture && feed_image_width > 0 && feed_image_height > 0) {
                         // Set fixed height of 140.0f and scale width to maintain aspect ratio
@@ -240,6 +262,30 @@ public:
 
     std::string get_uri() const override {
         return std::format("rss-feed:{}", feed_id);
+    }
+    
+    void refreshFeed() {
+        try {
+            RSS_INFO_FMT("Refreshing RSS feed: {}", feed_title);
+            
+            // Check if feed ID is valid
+            if (feed_id < 0 || !rss_host) {
+                RSS_ERROR("Cannot refresh feed: invalid feed ID or RSS host not available");
+                return;
+            }
+            
+            // Trigger a refresh in the RSS host
+            if (rss_host->refreshFeed(feed_id)) {
+                // Load the updated feed items
+                loadFeed();
+                RSS_INFO_FMT("Successfully refreshed RSS feed: {}", feed_title);
+            } else {
+                RSS_ERROR_FMT("Failed to refresh RSS feed: {}", feed_title);
+            }
+        }
+        catch (const std::exception& e) {
+            RSS_ERROR_FMT("Exception while refreshing feed: {}", e.what());
+        }
     }
     
 private:

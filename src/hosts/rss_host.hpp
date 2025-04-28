@@ -343,6 +343,48 @@ public:
         }
     }
 
+    /**
+     * Refresh a specific feed by ID
+     * Returns true if the refresh was successful
+     */
+    bool refreshFeed(long long feed_id) {
+        try {
+            RSS_INFO_FMT("Refreshing feed with ID: {}", feed_id);
+            
+            // Find the feed URL from the repository
+            std::optional<std::string> feed_url;
+            
+            repo_.scan_feeds([&feed_url, feed_id](long long id, const char* url, const char* /*title*/, const char* /*image_url*/) {
+                if (id == feed_id && url) {
+                    feed_url = url;
+                }
+            });
+            
+            if (!feed_url) {
+                RSS_ERROR_FMT("Could not find URL for feed ID: {}", feed_id);
+                return false;
+            }
+            
+            // Use a lambda to bypass the quit check in sync feed refresh
+            auto never_quit = []() { return false; };
+            
+            // Fetch the feed synchronously
+            auto refreshed_feed = addFeedSync(*feed_url, never_quit);
+            
+            if (refreshed_feed) {
+                RSS_INFO_FMT("Successfully refreshed feed ID: {}", feed_id);
+                return true;
+            } else {
+                RSS_ERROR_FMT("Failed to refresh feed ID: {}", feed_id);
+                return false;
+            }
+        } 
+        catch (const std::exception& e) {
+            RSS_ERROR_FMT("Exception while refreshing feed ID {}: {}", feed_id, e.what());
+            return false;
+        }
+    }
+
 private:
     // Callback for the HTTP fetch operation
     static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
