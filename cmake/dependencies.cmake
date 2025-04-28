@@ -5,35 +5,42 @@ find_package(OpenGL REQUIRED)
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
 
-# TinyXML2 handling (works with Homebrew installations on macOS)
-find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
-  PATH_SUFFIXES include
-  PATHS
-  /usr/local/include
-  /usr/include
-  /opt/local/include
-  /opt/homebrew/include  # Important for M1/M2 Macs with Homebrew
-)
-
-find_library(TINYXML2_LIBRARIES
-  NAMES tinyxml2
-  PATHS
-  /usr/local/lib
-  /usr/lib
-  /opt/local/lib
-  /opt/homebrew/lib  # Important for M1/M2 Macs with Homebrew
-)
-
-if(NOT TINYXML2_INCLUDE_DIRS)
-  message(FATAL_ERROR "TinyXML2 headers not found")
+# TinyXML2 handling - improved for macOS (especially for Homebrew installations)
+find_package(PkgConfig QUIET)
+if(PKG_CONFIG_FOUND)
+  pkg_check_modules(TINYXML2 QUIET tinyxml2)
 endif()
 
-if(NOT TINYXML2_LIBRARIES)
-  message(FATAL_ERROR "TinyXML2 library not found")
+if(NOT TINYXML2_FOUND)
+  find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
+    PATH_SUFFIXES include
+    PATHS
+    /usr/local/include
+    /usr/include
+    /opt/local/include
+    /opt/homebrew/include  # Important for M1/M2 Macs with Homebrew
+  )
+
+  find_library(TINYXML2_LIBRARIES
+    NAMES tinyxml2
+    PATHS
+    /usr/local/lib
+    /usr/lib
+    /opt/local/lib
+    /opt/homebrew/lib  # Important for M1/M2 Macs with Homebrew
+  )
+
+  if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)
+    set(TINYXML2_FOUND TRUE)
+  endif()
 endif()
 
-message(STATUS "Found TinyXML2: ${TINYXML2_LIBRARIES}")
-message(STATUS "TinyXML2 include directories: ${TINYXML2_INCLUDE_DIRS}")
+if(NOT TINYXML2_FOUND)
+  message(FATAL_ERROR "TinyXML2 not found. Please install it using 'brew install tinyxml2' or the appropriate package manager for your system.")
+else()
+  message(STATUS "Found TinyXML2: ${TINYXML2_LIBRARIES}")
+  message(STATUS "TinyXML2 include directories: ${TINYXML2_INCLUDE_DIRS}")
+endif()
 
 # SDL2 handling without requiring SDL2Config.cmake
 find_path(SDL2_INCLUDE_DIRS SDL.h
@@ -97,14 +104,9 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 
-FetchContent_Declare(
-  imguicolortextedit
-  GIT_REPOSITORY https://github.com/BalazsJako/ImGuiColorTextEdit.git
-  GIT_TAG master
-  GIT_SHALLOW TRUE
-)
+# Removed FetchContent_Declare for imguicolortextedit since we're using local files
 
-FetchContent_MakeAvailable(imgui glaze imguicolortextedit)
+FetchContent_MakeAvailable(imgui glaze)
 
 # Create ImGui library
 add_library(imgui STATIC
@@ -130,13 +132,13 @@ target_link_libraries(imgui PUBLIC
   ${OPENGL_LIBRARIES}
 )
 
-# Set up ImColorTextEdit library
+# Set up ImColorTextEdit library using local files
 add_library(imcolortextedit 
-  ${imguicolortextedit_SOURCE_DIR}/TextEditor.cpp
+  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
 )
-target_include_directories(imcolortextedit PRIVATE 
+target_include_directories(imcolortextedit PUBLIC 
   ${imgui_SOURCE_DIR}
-  ${imguicolortextedit_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CMAKE_SOURCE_DIR}/src/helpers
 )
 

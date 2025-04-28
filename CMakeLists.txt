@@ -60,7 +60,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   ${imgui_SOURCE_DIR}
   ${imgui_SOURCE_DIR}/backends
   /usr/include/stb
-  ${imguicolortextedit_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CURL_INCLUDE_DIRS}
   ${SQLite3_INCLUDE_DIRS}
   ${TINYXML2_INCLUDE_DIRS}
