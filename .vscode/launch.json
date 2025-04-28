@@ -18,7 +18,7 @@
         ],
         "externalConsole": false,
         "MIMode": "lldb",
-        "preLaunchTask": "cmake: CMake: build"
+        "preLaunchTask": "CMake: build"
     },
     {
         "name": "(gdb) Launch Linux",
