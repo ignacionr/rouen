@@ -13,6 +13,8 @@
 #include <vector>
 #include <thread>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
@@ -85,6 +87,10 @@ public:
             RSS_ERROR_FMT("Exception during RSSHost feed scanning: {}", e.what());
         }
         
+        // Load podcasts from podcasts.txt file if it exists
+        // This must happen AFTER loading existing feeds so we can properly check for duplicates
+        loadPodcastsFromFile();
+        
         // Refresh feeds (this will happen in a background thread)
         RSS_INFO("RSSHost starting feed refresh in background thread...");
         refreshFeeds(std::move(urls));
@@ -101,6 +107,10 @@ public:
      * Add new feeds from a list of URLs
      */
     void addFeeds(std::vector<std::string> urls) {
+        RSS_WARN_FMT("addFeeds called with {} URLs", urls.size());
+        for (const auto& url : urls) {
+            RSS_WARN_FMT("URL being added: {}", url);
+        }
         refreshFeeds(std::move(urls));
     }
 
@@ -226,6 +236,113 @@ public:
         return result;
     }
 
+    /**
+     * Load podcasts from a file if it exists and directly add them to the database
+     * This checks for a podcasts.txt file in the current directory
+     * and adds any RSS feed URLs found in the file
+     */
+    void loadPodcastsFromFile() {
+        RSS_WARN("Checking for podcasts.txt file...");
+        const std::string filename = "podcasts.txt";
+        
+        // Check if file exists before attempting to read
+        if (!std::filesystem::exists(filename)) {
+            RSS_WARN("podcasts.txt file not found, skipping");
+            return;
+        }
+        
+        // Get absolute path for better debugging
+        std::filesystem::path abs_path = std::filesystem::absolute(filename);
+        RSS_WARN_FMT("Reading podcasts from {} file (absolute path: {})", filename, abs_path.string());
+        
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            RSS_ERROR_FMT("Failed to open {} file", filename);
+            return;
+        }
+        
+        // Read the file line by line
+        std::string line;
+        std::vector<std::string> podcast_urls;
+        int line_count = 0;
+        int added_count = 0;
+        
+        while (std::getline(file, line)) {
+            line_count++;
+            
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#') {
+                RSS_DEBUG_FMT("Line {}: Skipping comment or empty line", line_count);
+                continue;
+            }
+            
+            // Trim whitespace
+            line.erase(0, line.find_first_not_of(" \t"));
+            if (!line.empty() && line.find_last_not_of(" \t") != std::string::npos) {
+                line.erase(line.find_last_not_of(" \t") + 1);
+            }
+            
+            if (!line.empty()) {
+                podcast_urls.push_back(line);
+                RSS_WARN_FMT("Line {}: Found podcast URL: {}", line_count, line);
+            }
+        }
+        
+        RSS_WARN_FMT("Found {} URLs in podcasts.txt", podcast_urls.size());
+        
+        if (podcast_urls.empty()) {
+            RSS_WARN_FMT("No valid podcast URLs found in {}", filename);
+            return;
+        }
+        
+        RSS_WARN_FMT("Processing {} podcasts from {}", podcast_urls.size(), filename);
+        
+        // Directly process each URL and add it to the database
+        for (const auto& url : podcast_urls) {
+            // First check if this URL already exists in the repository
+            bool exists = false;
+            {
+                std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+                for (const auto& feed : feeds_) {
+                    if (feed->source_link == url || feed->feed_link == url) {
+                        RSS_WARN_FMT("Podcast already exists: {}", url);
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (!exists) {
+                RSS_WARN_FMT("Adding new podcast URL to database: {}", url);
+                // Directly add to database with default values
+                long long feed_id = repo_.upsert_feed(url, url, "");
+                
+                if (feed_id > 0) {
+                    // Create minimal feed representation for the UI
+                    auto feed_ptr = std::make_shared<media::rss::feed>();
+                    feed_ptr->feed_title = url;  // Use URL as title initially
+                    feed_ptr->source_link = url;
+                    feed_ptr->feed_link = url;
+                    feed_ptr->repo_id = feed_id;
+                    
+                    // Add to in-memory collection
+                    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+                    feeds_.emplace_back(feed_ptr);
+                    added_count++;
+                    RSS_WARN_FMT("Added feed ID={} to database and memory", feed_id);
+                } else {
+                    RSS_ERROR_FMT("Failed to add podcast to database: {}", url);
+                }
+            }
+        }
+        
+        RSS_WARN_FMT("Directly added {} new podcasts from {}", added_count, filename);
+        
+        if (added_count > 0) {
+            "notify"_sfn(std::format("Added {} new podcasts from {}", added_count, filename));
+        }
+    }
+
 private:
     // Callback for the HTTP fetch operation
     static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -234,23 +351,94 @@ private:
         return size * nmemb;
     }
 
-    // Refresh feeds in a background thread
+    // Refresh feeds in a background thread with performance improvements
     void refreshFeeds(std::vector<std::string> urls) {
-        fetch_thread_ = std::jthread([this, urls] (std::stop_token stoken) {
+        // Define how many feeds to process in parallel
+        const int BATCH_SIZE = 5;
+        
+        fetch_thread_ = std::jthread([this, urls = std::move(urls)] (std::stop_token stoken) {
             auto quit_job = [stoken]() -> bool {
                 return "quitting"_fnb() || stoken.stop_requested();
             };
-            for (const auto& url_str : urls) {
-                try {
-                    addFeedSync(url_str, quit_job);
-                } 
-                catch (const std::exception& e) {
-                    "notify"_sfn(std::format("Failed to add feed {}: {}\n", url_str, e.what()));
+            
+            // Track successful feeds for notification purposes
+            int success_count = 0;
+            int error_count = 0;
+            
+            // Process feeds in batches to balance performance
+            for (size_t i = 0; i < urls.size(); i += BATCH_SIZE) {
+                // Create a batch of worker threads
+                std::vector<std::jthread> workers;
+                std::mutex results_mutex;
+                std::vector<std::shared_ptr<media::rss::feed>> batch_results;
+                
+                // Process up to BATCH_SIZE feeds in parallel
+                size_t end = std::min(i + BATCH_SIZE, urls.size());
+                
+                for (size_t j = i; j < end; ++j) {
+                    if (quit_job()) break;
+                    
+                    workers.emplace_back([this, &urls, j, &results_mutex, &batch_results, &success_count, 
+                                         &error_count, &quit_job](std::stop_token worker_stoken) {
+                        // Create a composite quit check that includes the worker thread's stop token
+                        auto worker_quit = [worker_stoken, &quit_job]() -> bool {
+                            return quit_job() || worker_stoken.stop_requested();
+                        };
+                        
+                        try {
+                            // Only attempt to add the feed if we're not quitting
+                            if (!worker_quit()) {
+                                RSS_WARN_FMT("Starting to process feed: {}", urls[j]);
+                                auto feed_ptr = addFeedSync(urls[j], worker_quit);
+                                
+                                if (feed_ptr) {
+                                    RSS_WARN_FMT("Successfully fetched and processed feed: {}", urls[j]);
+                                    std::lock_guard<std::mutex> lock(results_mutex);
+                                    batch_results.push_back(feed_ptr);
+                                    ++success_count;
+                                    
+                                    // Update the UI periodically to show progress
+                                    if (success_count % 5 == 0) {
+                                        "notify"_sfn(std::format("Progress: {} RSS feeds loaded so far...", success_count));
+                                    }
+                                }
+                            }
+                        } catch (const std::exception& e) {
+                            RSS_ERROR_FMT("Failed to add feed {}: {}", urls[j], e.what());
+                            "notify"_sfn(std::format("Failed to add feed {}", urls[j]));
+                            
+                            std::lock_guard<std::mutex> lock(results_mutex);
+                            ++error_count;
+                        } catch (...) {
+                            RSS_ERROR_FMT("Failed to add feed {} with unknown error", urls[j]);
+                            
+                            std::lock_guard<std::mutex> lock(results_mutex);
+                            ++error_count;
+                        }
+                    });
                 }
-                catch (...) {
-                    "notify"_sfn(std::format("Failed to add feed {}\n", url_str));
+                
+                // Wait for all workers in this batch to complete
+                for (auto& worker : workers) {
+                    worker.join();
                 }
+                
                 if (quit_job()) break;
+                
+                // If we've processed at least 10 feeds, notify the user of the current progress
+                if (i + BATCH_SIZE >= 10 && success_count > 0) {
+                    "notify"_sfn(std::format("Loaded {} out of {} RSS feeds so far...", 
+                                             success_count, urls.size()));
+                }
+            }
+            
+            // Final notification
+            if (success_count > 0) {
+                "notify"_sfn(std::format("Successfully loaded {} RSS feeds. Restart the RSS card to see all feeds.", success_count));
+            }
+            
+            if (error_count > 0) {
+                "notify"_sfn(std::format("{} feeds failed to load. Check the logs for details.", error_count));
             }
         });
     }
@@ -342,6 +530,7 @@ private:
     // Fetch and parse a feed from a URL with improved error handling
     static media::rss::feed getFeed(std::string_view url) {
         try {
+            RSS_WARN_FMT("Starting feed fetch for URL: {}", url);
             http::fetch fetch{60}; // Increase timeout for large feeds
             media::rss::feed parser;
             parser.source_link = url;
@@ -353,8 +542,10 @@ private:
             };
             
             fetch(std::string{url}, header_client, writeCallback, &parser);
+            RSS_WARN_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
             return parser;
         } catch (const std::exception& e) {
+            RSS_ERROR_FMT("Failed to fetch feed {}: {}", url, e.what());
             throw std::runtime_error(std::string("Failed to fetch feed: ") + e.what());
         }
     }

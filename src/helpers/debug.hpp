@@ -25,7 +25,7 @@
     // In release builds, only show errors by default
     #define ROUEN_LOG_LEVEL LOG_LEVEL_ERROR
 #else
-    // In debug builds, show info logs by default
+    // In debug builds, show warnings by default for better RSS feed visibility
     #define ROUEN_LOG_LEVEL LOG_LEVEL_WARN
 #endif
 #endif
