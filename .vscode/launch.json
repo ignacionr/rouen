@@ -8,7 +8,7 @@
         "name": "(lldb) Launch macOS",
         "type": "cppdbg",
         "request": "launch",
-        "program": "${workspaceFolder}/build/rouen",
+        "program": "${workspaceFolder}/build/rouen.app/Contents/MacOS/rouen",
         "args": [],
         "stopAtEntry": false,
         "cwd": "${workspaceFolder}",

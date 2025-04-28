@@ -136,8 +136,8 @@ struct deck {
         };
     };
 
-    bool render(card &c, float &x, float height, int &requested_fps) {
-        ImGui::SetNextWindowPos({x, 2.0f}, ImGuiCond_Always);
+    bool render(card &c, float &x, float height, int &requested_fps, float y = 0.0f) {
+        ImGui::SetNextWindowPos({x, y}, ImGuiCond_Always);
         ImGui::SetNextWindowSize({c.width, height}, ImGuiCond_Always);
 
         color_setup colors(c.get_color(0), c.get_color(1));
@@ -385,37 +385,57 @@ struct deck {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-        auto right_corner_offset {size.x};
-        float left_corner;
-        for (auto& c : cards_) {
-            right_corner_offset -= c->width + 2.0f;
-            if (c->is_focused) {
-                left_corner = right_corner_offset + c->width - size.x + 2.0f;
-                break;
+        bool const empty_editor = editor_.empty();
+        if (empty_editor) {
+            float x = 0.0f;
+            float y = 0.0f;
+            auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
+                [this, &x, &result, &y, size] (auto c) { 
+                    if ((x + c->width) > size.x) {
+                        x = 0.0f;
+                        y += 450.0f + 2.0f;
+                    }
+                    if (render(*c, x, 450.0f, result.requested_fps, y)) {
+                        return false;
+                    }
+                    return true;
+                 });
+            cards_.erase(cards_to_remove, cards_.end());
+        }
+        else {
+            auto right_corner_offset {size.x};
+            float left_corner;
+            for (auto& c : cards_) {
+                right_corner_offset -= c->width + 2.0f;
+                if (c->is_focused) {
+                    left_corner = right_corner_offset + c->width - size.x + 2.0f;
+                    break;
+                }
             }
-        }
-        static float last_viewport_width = size.x;
-        if (last_viewport_width != size.x) {
-            start_x = 0.0f;
-            last_viewport_width = size.x;
-        }
-        if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
-            start_x = right_corner_offset;
-        }
-        if (start_x < left_corner) {
-            start_x = left_corner;
-        }
-        auto x{start_x};
-        auto y = editor_.empty() ? 450.0f : 250.0f;
-        auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-            [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
-        cards_.erase(cards_to_remove, cards_.end());
+            static float last_viewport_width = size.x;
+            if (last_viewport_width != size.x) {
+                start_x = 0.0f;
+                last_viewport_width = size.x;
+            }
+            if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
+                start_x = right_corner_offset;
+            }
+            if (start_x < left_corner) {
+                start_x = left_corner;
+            }
+            auto x{start_x};
+            auto y = empty_editor ? 450.0f : 250.0f;
+            auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
+                [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
+            cards_.erase(cards_to_remove, cards_.end());
 
-        // Render the editor window
-        ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
-        editor_.render();
+            // Render the editor window
+            ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
+            ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
+            editor_.render();
+            ImGui::PopStyleColor();
+        }
 
         // Save card state when a card is added or removed
         static size_t last_card_count = 0;
@@ -424,7 +444,7 @@ struct deck {
             last_card_count = cards_.size();
         }
 
-        ImGui::PopStyleColor(4);
+        ImGui::PopStyleColor(3);
         return result;
     }
 

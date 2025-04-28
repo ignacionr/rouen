@@ -1,12 +1,13 @@
 #pragma once
 
+#include <chrono>
 #include <format>
-#include <memory>
+#include <future>
+#include <mutex>
 #include <string>
 #include <vector>
-
 #include <glaze/json.hpp>
-
+#include "../../helpers/platform_utils.hpp"
 #include "../../helpers/fetch.hpp"
 #include "login_host.hpp"
 #include "../../registrar.hpp"
@@ -98,17 +99,8 @@ namespace rouen::models::github {
         }
 
         void open_url(const std::string &url) const {
-            // Use system browser to open the URL
-            #ifdef __APPLE__
-                // Apple-specific code
-                system(std::format("open {}", url).c_str());
-            #elif defined(__linux__)
-                // Linux-specific code
-                system(std::format("xdg-open {}", url).c_str());
-            #else
-                // Default code
-                system(std::format("start {}", url).c_str());
-            #endif
+            // Use platform-specific function to open the URL
+            system(rouen::platform::open_file(url).c_str());
         }
         
     private:

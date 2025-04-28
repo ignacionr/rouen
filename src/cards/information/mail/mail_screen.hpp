@@ -17,6 +17,7 @@
 #include "../../../helpers/email_metadata_analyzer.hpp"
 #include "../../interface/card.hpp"
 #include "../../../registrar.hpp"
+#include "../../../helpers/platform_utils.hpp"
 
 namespace mail {
     class mail_screen {
@@ -71,8 +72,7 @@ namespace mail {
                             }
                             if (ImGui::SmallButton(action.c_str())) {
                                 // Open the URL using the system's default browser
-                                // This is platform-specific, but since we're providing a Linux implementation:
-                                std::string cmd = std::format("xdg-open \"{}\"", link);
+                                std::string cmd = rouen::platform::open_file(link);
                                 system(cmd.c_str());
                             }
                         }
@@ -222,7 +222,7 @@ namespace mail {
                         if (!metadata.id.empty()) {
                             // Format the URL and open it
                             std::string url = std::format("https://mail.google.com/mail/u/0/#search/rfc822msgid:{}", metadata.id);
-                            std::string cmd = std::format("xdg-open \"{}\"", url);
+                            std::string cmd = rouen::platform::open_file(url);
                             system(cmd.c_str());
                         } else {
                             "notify"_sfn("Could not find message ID in metadata");

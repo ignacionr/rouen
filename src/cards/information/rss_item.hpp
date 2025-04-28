@@ -12,6 +12,7 @@
 #include "rss.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../hosts/rss_host.hpp"
 
 namespace rouen::cards {
@@ -97,8 +98,8 @@ public:
                     ImGui::TextColored(colors[4], "Source: ");
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Open in Browser")) {
-                        // Open URL in browser
-                        auto command = std::format("xdg-open \"{}\" &", item_link);
+                        // Open URL in browser using platform-specific command
+                        auto command = rouen::platform::open_file(item_link, true);
                         std::system(command.c_str());
                     }
                     

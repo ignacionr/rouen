@@ -12,6 +12,7 @@
 
 #include "../interface/card.hpp"
 #include "../../registrar.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 namespace rouen::cards
 {
@@ -136,8 +137,8 @@ namespace rouen::cards
             } else if (action == "install") {
                 cmd = std::format("cd {} && cmake --install .", build_dir_.string());
             } else if (action == "open_dir") {
-                // Use xdg-open to open the build directory in the file manager
-                cmd = std::format("xdg-open {}", build_dir_.string());
+                // Use platform-specific command to open the build directory in the file manager
+                cmd = platform::open_file(build_dir_.string());
             } else if (action == "rebuild") {
                 // Clean and then build
                 cmd = std::format("cd {} && cmake --build . --target clean && cmake --build .", build_dir_.string());

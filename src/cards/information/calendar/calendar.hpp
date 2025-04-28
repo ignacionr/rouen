@@ -22,6 +22,7 @@
 #include "../../../models/calendar/event.hpp"
 #include "../../../registrar.hpp"
 #include "../../interface/card.hpp"
+#include "../../../helpers/platform_utils.hpp"
 
 namespace rouen::cards
 {
@@ -472,8 +473,8 @@ namespace rouen::cards
             if (!selected_event_.htmlLink.empty()) {
                 ImGui::Spacing();
                 if (ImGui::Button("Open in Google Calendar")) {
-                    // Open link using xdg-open on Linux
-                    std::string cmd = "xdg-open \"" + selected_event_.htmlLink + "\" &";
+                    // Open link using platform-specific command
+                    std::string cmd = rouen::platform::open_file(selected_event_.htmlLink, true);
                     system(cmd.c_str());
                 }
             }
