@@ -354,10 +354,14 @@ namespace rouen::cards {
                     );
                 } else if (i == complete_blocks && partial_block_pct > 0.0f) {
                     // Partially fill this block
+                    auto color {colors[2]};
+                    // Adjust alpha for a breathing effect
+                    static int breath_passe = 0;
+                    color.w = 0.65f + 0.35f * std::sin(0.02f * static_cast<float>(++breath_passe));
                     dd->AddRectFilled(
                         ImVec2(start_x, block_y + block_height * (1.0f - partial_block_pct)),
                         ImVec2(start_x + block_width, block_y + block_height),
-                        ImGui::ColorConvertFloat4ToU32(colors[2]),
+                        ImGui::ColorConvertFloat4ToU32(color),
                         4.0f
                     );
                 }
