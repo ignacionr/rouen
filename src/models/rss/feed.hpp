@@ -11,7 +11,7 @@
 #include <regex>
 #include <iomanip>
 
-#include <tinyxml2.h>
+#include "tinyxml2.h" // Changed from <tinyxml2.h> to "tinyxml2.h" for macOS compatibility
 #include "../../helpers/fetch.hpp"
 #include "../../registrar.hpp"
 

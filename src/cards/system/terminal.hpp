@@ -24,7 +24,7 @@
 #include <signal.h>
 #endif
 
-#include <imgui/imgui.h>
+#include "imgui.h"
 
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"

@@ -4,10 +4,10 @@
 #include <queue>
 #include <mutex>
 #include <memory>
-#include <SDL2/SDL.h>
-#include <imgui/imgui.h>
-#include <imgui/backends/imgui_impl_sdl2.h>
-#include <imgui/backends/imgui_impl_sdlrenderer2.h>
+#include <SDL.h>
+#include "imgui.h"
+#include "backends/imgui_impl_sdl2.h"
+#include "backends/imgui_impl_sdlrenderer2.h"
 
 // A service that queues operations to be executed after the ImGui frame is completed
 class deferred_operations {

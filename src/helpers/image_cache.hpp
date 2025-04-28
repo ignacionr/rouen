@@ -6,7 +6,7 @@
 #include <mutex>
 #include <vector>
 #include <fstream>
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #include "fetch.hpp"
 #include "sqlite.hpp"

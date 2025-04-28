@@ -11,7 +11,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include <imgui/imgui.h>
+#include "imgui.h"
 #include "../registrar.hpp"
 #include "mpv_socket.hpp"
 

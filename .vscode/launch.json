@@ -5,7 +5,23 @@
     "version": "0.2.0",
     "configurations": [
     {
-        "name": "(gdb) Launch",
+        "name": "(lldb) Launch macOS",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            // Environment variables for macOS, if needed
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "cmake: CMake: build"
+    },
+    {
+        "name": "(gdb) Launch Linux",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/build/rouen",

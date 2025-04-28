@@ -12,7 +12,9 @@
 #include <sstream>
 #include <iomanip>
 
-#include <imgui/imgui.h>
+#include "imgui.h"
+// Include our compatibility layer for C++20/23 features
+#include "../../../helpers/compat/compat.hpp"
 
 #include "../../../models/calendar/calendar_fetcher.hpp"
 #include "../../../models/calendar/event.hpp"
@@ -120,7 +122,7 @@ namespace rouen::cards
             auto minutes = elapsed_seconds / 60;
             auto seconds = elapsed_seconds % 60;
             
-            ImGui::Text("Last refresh: %ld:%02ld ago", minutes, seconds);
+            ImGui::Text("Last refresh: %lld:%02lld ago", minutes, seconds);
             ImGui::SameLine();
             
             if (ImGui::Button("Refresh Now")) {

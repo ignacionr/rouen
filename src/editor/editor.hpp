@@ -5,8 +5,8 @@
 #include <algorithm>
 #include <cctype>
 
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
+#include "imgui.h"
+#include <SDL.h>
 
 #include "../registrar.hpp"
 #include "editor_interface.hpp"

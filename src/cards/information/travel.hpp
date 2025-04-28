@@ -1,6 +1,6 @@
 #pragma once
 
-#include <imgui/imgui.h>
+#include "imgui.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -95,9 +95,8 @@ public:
     
     // Convert date info to string in YYYY-MM-DD format
     std::string date_to_string(int year, int month, int day) {
-        char date_str[11];
-        std::snprintf(date_str, sizeof(date_str), "%04d-%02d-%02d", year, month + 1, day);
-        return std::string(date_str);
+        // Use std::format instead of std::snprintf for modern C++ style and type safety
+        return std::format("{:04d}-{:02d}-{:02d}", year, month + 1, day);
     }
     
     // Get number of days in a month
@@ -149,19 +148,20 @@ public:
             ImGui::SameLine();
             
             // Month/Year display in the center
-            char month_year[32];
             static const char* month_names[] = {
                 "January", "February", "March", "April", "May", "June",
                 "July", "August", "September", "October", "November", "December"
             };
-            std::snprintf(month_year, sizeof(month_year), "%s %d", month_names[current_month], current_year);
             
-            float month_year_width = ImGui::CalcTextSize(month_year).x;
+            // Use std::format for type-safe formatting
+            std::string month_year_str = std::format("{} {}", month_names[current_month], current_year);
+            
+            float month_year_width = ImGui::CalcTextSize(month_year_str.c_str()).x;
             float available_width = ImGui::GetContentRegionAvail().x;
             float month_year_pos = (available_width - month_year_width) * 0.5f;
             
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + month_year_pos - 45.0f); // Adjust as needed
-            ImGui::Text("%s", month_year);
+            ImGui::Text("%s", month_year_str.c_str());
             
             ImGui::SameLine(available_width - 60.0f); // Position for next/next year buttons
             
@@ -216,12 +216,17 @@ public:
                 }
                 
                 char day_str[3];
-                std::snprintf(day_str, sizeof(day_str), "%d", day);
+                // Use std::format for day numbers
+                std::string day_fmt = std::format("{}", day);
+                std::strncpy(day_str, day_fmt.c_str(), sizeof(day_str) - 1);
+                day_str[sizeof(day_str) - 1] = '\0';  // Ensure null termination
                 
                 // Make day selectable
                 if (ImGui::Selectable(day_str, false, ImGuiSelectableFlags_AllowDoubleClick)) {
                     // Format the selected date to YYYY-MM-DD and store in the buffer
-                    std::snprintf(date_buffer, buffer_size, "%04d-%02d-%02d", current_year, current_month + 1, day);
+                    std::string formatted_date = std::format("{:04d}-{:02d}-{:02d}", current_year, current_month + 1, day);
+                    std::strncpy(date_buffer, formatted_date.c_str(), buffer_size - 1);
+                    date_buffer[buffer_size - 1] = '\0'; // Ensure null termination
                     value_changed = true;
                     ImGui::CloseCurrentPopup();
                 }
@@ -244,9 +249,11 @@ public:
             // Today button
             ImGui::Spacing();
             if (ImGui::Button("Today", ImVec2(120, 0))) {
-                // Set to today's date
-                std::snprintf(date_buffer, buffer_size, "%04d-%02d-%02d", 
+                // Set to today's date using std::format
+                std::string today_date = std::format("{:04d}-{:02d}-{:02d}", 
                     now_tm.tm_year + 1900, now_tm.tm_mon + 1, now_tm.tm_mday);
+                std::strncpy(date_buffer, today_date.c_str(), buffer_size - 1);
+                date_buffer[buffer_size - 1] = '\0'; // Ensure null termination
                 value_changed = true;
                 ImGui::CloseCurrentPopup();
             }
@@ -402,7 +409,12 @@ public:
                         description_buffer[0] = '\0';
                         start_date_buffer[0] = '\0';
                         end_date_buffer[0] = '\0';
-                        sprintf(budget_buffer, "0.0");
+                        
+                        // Use std::format for budget formatting
+                        std::string budget_fmt = std::format("{:.1f}", 0.0);
+                        std::strncpy(budget_buffer, budget_fmt.c_str(), sizeof(budget_buffer) - 1);
+                        budget_buffer[sizeof(budget_buffer) - 1] = '\0';
+                        
                         show_form = false;
                     }
                 }
@@ -416,7 +428,12 @@ public:
                 description_buffer[0] = '\0';
                 start_date_buffer[0] = '\0';
                 end_date_buffer[0] = '\0';
-                sprintf(budget_buffer, "0.0");
+                
+                // Use std::format for budget formatting
+                std::string budget_fmt = std::format("{:.1f}", 0.0);
+                std::strncpy(budget_buffer, budget_fmt.c_str(), sizeof(budget_buffer) - 1);
+                budget_buffer[sizeof(budget_buffer) - 1] = '\0';
+                
                 show_form = false;
             }
             

@@ -6,9 +6,17 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+
+// Platform-specific includes for system information
+#ifdef __APPLE__
+#include "../../helpers/compat/sysinfo.hpp" // macOS compatibility layer
+#include <sys/mount.h> // for statfs (macOS equivalent of statvfs)
+#else
 #include <sys/sysinfo.h>
 #include <sys/statvfs.h>
-#include <imgui/imgui.h>
+#endif
+
+#include "imgui.h"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -54,11 +62,19 @@ struct sysinfo_card : public card {
     
     // Get disk space information (total, used, free)
     std::tuple<double, double, double> get_disk_info(const std::string& path = "/") {
+#ifdef __APPLE__
+        struct statfs stat;
+        statfs(path.c_str(), &stat);
+        
+        double total = static_cast<double>(stat.f_blocks) * static_cast<double>(stat.f_bsize) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
+        double free = static_cast<double>(stat.f_bfree) * static_cast<double>(stat.f_bsize) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
+#else
         struct statvfs stat;
         statvfs(path.c_str(), &stat);
         
         double total = static_cast<double>(stat.f_blocks) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
         double free = static_cast<double>(stat.f_bfree) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
+#endif
         double used = total - free; // Used space in GB
         
         return {total, used, free};
@@ -66,6 +82,43 @@ struct sysinfo_card : public card {
     
     // Get CPU usage in percentage
     double get_cpu_usage() {
+#ifdef __APPLE__
+        // macOS CPU usage calculation
+        static host_cpu_load_info_data_t prev_cpu_load;
+        host_cpu_load_info_data_t cpu_load;
+        mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
+        
+        kern_return_t error = host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, 
+                                            (host_info_t)&cpu_load, &count);
+        if (error != KERN_SUCCESS) {
+            return 0.0;
+        }
+        
+        // Calculate CPU usage based on ticks with proper type casting to avoid precision loss warnings
+        unsigned long long user_diff = cpu_load.cpu_ticks[CPU_STATE_USER] - prev_cpu_load.cpu_ticks[CPU_STATE_USER];
+        unsigned long long system_diff = cpu_load.cpu_ticks[CPU_STATE_SYSTEM] - prev_cpu_load.cpu_ticks[CPU_STATE_SYSTEM];
+        unsigned long long idle_diff = cpu_load.cpu_ticks[CPU_STATE_IDLE] - prev_cpu_load.cpu_ticks[CPU_STATE_IDLE];
+        unsigned long long nice_diff = cpu_load.cpu_ticks[CPU_STATE_NICE] - prev_cpu_load.cpu_ticks[CPU_STATE_NICE];
+        
+        unsigned long long total_diff = user_diff + system_diff + idle_diff + nice_diff;
+        double percent = 0.0;
+        
+        if (total_diff > 0) {
+            // Cast to double before arithmetic operations to avoid precision loss
+            double user_diff_d = static_cast<double>(user_diff);
+            double system_diff_d = static_cast<double>(system_diff);
+            double nice_diff_d = static_cast<double>(nice_diff);
+            double total_diff_d = static_cast<double>(total_diff);
+            
+            percent = (user_diff_d + system_diff_d + nice_diff_d) * 100.0 / total_diff_d;
+        }
+        
+        // Save current CPU load for next calculation
+        prev_cpu_load = cpu_load;
+        
+        return percent;
+#else
+        // Linux CPU usage calculation
         static unsigned long long prev_idle = 0, prev_total = 0;
         unsigned long long idle = 0, total = 0;
         
@@ -108,6 +161,7 @@ struct sysinfo_card : public card {
         prev_total = total;
         
         return percent;
+#endif
     }
     
     // Draw a progress bar with text overlay

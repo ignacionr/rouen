@@ -1,6 +1,6 @@
 #pragma once
 
-#include <imgui/imgui.h>
+#include "imgui.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -329,7 +329,7 @@ private:
                         arrival_date_buffer[0] = '\0';
                         departure_date_buffer[0] = '\0';
                         accommodation_buffer[0] = '\0';
-                        sprintf(budget_buffer, "0.0");
+                        std::snprintf(budget_buffer, sizeof(budget_buffer), "0.0");
                         show_form = false;
                         
                         // Refresh plan data
@@ -348,7 +348,7 @@ private:
                 arrival_date_buffer[0] = '\0';
                 departure_date_buffer[0] = '\0';
                 accommodation_buffer[0] = '\0';
-                sprintf(budget_buffer, "0.0");
+                std::snprintf(budget_buffer, sizeof(budget_buffer), "0.0");
                 show_form = false;
             }
         } else {

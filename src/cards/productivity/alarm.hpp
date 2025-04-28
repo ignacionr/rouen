@@ -7,7 +7,7 @@
 #include <sstream>
 #include <string>
 
-#include <imgui/imgui.h>
+#include "imgui.h"
 
 #include "../interface/card.hpp"
 
@@ -126,12 +126,12 @@ namespace rouen::cards {
                 auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
                 auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
                 
-                // Make the time display larger and centered
-                char time_str[16];
-                std::snprintf(time_str, sizeof(time_str), "%02ld:%02ld:%02ld", hours, minutes, seconds);
+                // Make the time display larger and centered using std::format (C++20)
+                // This eliminates platform-specific format specifier issues
+                std::string time_str = std::format("{:02}:{:02}:{:02}", hours, minutes, seconds);
                 
                 ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
-                ImGui::TextColored(colors[2], "%s", time_str);
+                ImGui::TextColored(colors[2], "%s", time_str.c_str());
                 ImGui::PopFont();
                 
                 // Visual progress indicator with stacked blocks
@@ -251,8 +251,11 @@ namespace rouen::cards {
         void update_time_string() {
             auto time_t = std::chrono::system_clock::to_time_t(target_time);
             std::tm time_tm = *std::localtime(&time_t);
-            std::snprintf(time_buffer, sizeof(time_buffer), "%02d:%02d", 
-                         time_tm.tm_hour, time_tm.tm_min);
+            
+            // Use std::format instead of std::snprintf for type safety and modern C++ style
+            std::string formatted = std::format("{:02d}:{:02d}", time_tm.tm_hour, time_tm.tm_min);
+            std::strncpy(time_buffer, formatted.c_str(), sizeof(time_buffer) - 1);
+            time_buffer[sizeof(time_buffer) - 1] = '\0'; // Ensure null termination
         }
         
         std::chrono::seconds get_time_remaining(std::chrono::system_clock::time_point current_time) const {
@@ -360,24 +363,24 @@ namespace rouen::cards {
                 }
                 
                 // Add the block time label
-                char time_label[16];
+                std::string time_label;
                 int label_value = (i + 1) * minutes_per_block;
                 
                 if (minutes_per_block == 60) {
                     // For hour blocks, show as "1hr", "2hr", etc.
-                    std::snprintf(time_label, sizeof(time_label), "%d%s", (i + 1), label_suffix.c_str());
+                    time_label = std::format("{}{}", (i + 1), label_suffix);
                 } else {
-                    // For minute blocks, show as "5min", "10min", etc.
-                    std::snprintf(time_label, sizeof(time_label), "%d", label_value);
+                    // For minute blocks, show as "5", "10", etc.
+                    time_label = std::format("{}", label_value);
                 }
                 
                 // Center the text in the block
-                auto text_size = ImGui::CalcTextSize(time_label);
+                auto text_size = ImGui::CalcTextSize(time_label.c_str());
                 dd->AddText(
                     ImVec2(start_x + block_width / 2 - text_size.x / 2, 
                          block_y + block_height / 2 - text_size.y / 2),
                     ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)),
-                    time_label
+                    time_label.c_str()
                 );
             }
         }

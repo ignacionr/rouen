@@ -9,7 +9,9 @@
 #include <thread>
 #include <vector>
 
-#include <imgui/imgui.h>
+#include "imgui.h"
+// Include our compatibility layer for C++20/23 features
+#include "../../../helpers/compat/compat.hpp"
 
 #include "../../../models/mail/imap_host.hpp"
 #include "../../../models/mail/message.hpp"

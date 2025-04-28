@@ -4,9 +4,17 @@
 // 2. Libraries used in the project, in alphabetic order
 // Add STB implementation defines first
 #define STB_RECT_PACK_IMPLEMENTATION
+#ifdef __APPLE__
+#include "../build/_deps/imgui-src/imstb_rectpack.h"
+#else
 #include <imgui/imstb_rectpack.h>
+#endif
 #define STB_TRUETYPE_IMPLEMENTATION
+#ifdef __APPLE__
+#include "../build/_deps/imgui-src/imstb_truetype.h"
+#else
 #include <imgui/imstb_truetype.h>
+#endif
 
 // 3. All other includes
 #include "cards/interface/deck.hpp"

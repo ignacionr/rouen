@@ -7,11 +7,17 @@
 #include <string>
 
 // 2. Libraries used in the project, in alphabetic order
+// Use relative paths to ImGui backends to fix include errors on macOS
+#ifdef __APPLE__
+#include "../build/_deps/imgui-src/backends/imgui_impl_sdl2.h"
+#include "../build/_deps/imgui-src/backends/imgui_impl_sdlrenderer2.h"
+#else
 #include <imgui/backends/imgui_impl_sdl2.h>
 #include <imgui/backends/imgui_impl_sdlrenderer2.h>
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#endif
+#include "imgui.h"
+#include <SDL.h>
+#include <SDL_image.h>
 
 // 3. All other includes
 #include "helpers/deferred_operations.hpp"
@@ -50,7 +56,8 @@ private:
     bool m_immediate = false;
     int m_requested_fps = 1;
     std::string keystrokes_;
-
-    // Add instance of the MainWindow class
-    rouen::MainWindow m_main_window;
+    
+    // MainWindow is commented out as it's currently unused
+    // Uncomment when needed for implementation
+    // rouen::MainWindow m_main_window;
 };

@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#include "imgui.h"
+#include <SDL.h>
+#include <SDL_image.h>
 #include "../interface/card.hpp"
 #include "../../helpers/texture_helper.hpp"
 #include "../../models/git.hpp" // Include the git model

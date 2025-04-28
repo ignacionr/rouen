@@ -14,6 +14,9 @@
 #include <thread>
 #include <iostream>
 
+// Include our compatibility layer for C++20/23 features
+#include "../helpers/compat/compat.hpp"
+
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
@@ -73,8 +76,8 @@ public:
                 
                 // Don't load items here - they'll be loaded on demand
                 // Just record the feed metadata
-                auto feeds = feeds_.load();
-                feeds->emplace_back(feed_ptr);
+                std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+                feeds_.emplace_back(feed_ptr);
                 urls.emplace_back(url ? url : "");
                 RSS_DEBUG_FMT("Added feed ID={} to collection (deferred loading)", feed_id);
             });
@@ -118,22 +121,23 @@ public:
      * Get all feeds
      */
     auto feeds() const {
-        return *feeds_.load();
+        // Need to use const_cast because we need to lock the mutex in a const method
+        std::lock_guard<std::mutex> feeds_lock(*const_cast<std::mutex*>(&feeds_mutex_));
+        return feeds_;
     }
 
     /**
      * Delete a feed by URL
      */
     void deleteFeed(std::string_view url) {
-        auto feeds = feeds_.load();
-        auto pos = std::find_if(feeds->begin(), feeds->end(),
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        auto pos = std::find_if(feeds_.begin(), feeds_.end(),
                                [url](auto const& f) {
                                    return f->feed_link == url || f->source_link == url;
                                });
         
-        if (pos != feeds->end()) {
-            feeds->erase(pos);
-            feeds_.store(feeds);
+        if (pos != feeds_.end()) {
+            feeds_.erase(pos);
             repo_.delete_feed(url);
         }
     }
@@ -259,18 +263,17 @@ private:
             
             if (quitting()) return nullptr;
 
-            static std::mutex mutex;
-            std::lock_guard<std::mutex> lock(mutex);
-            auto feeds = feeds_.load();
+            std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+            auto& feeds = feeds_;
             
             // Check if the feed already exists
-            auto pos = std::find_if(feeds->begin(), feeds->end(),
+            auto pos = std::find_if(feeds.begin(), feeds.end(),
                                   [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link](auto const& f) {
                                       return f->feed_link == ourlink || f->source_link == oursrc;
                                   });
                                   
             // Add or merge with existing feed
-            if (pos != feeds->end()) {
+            if (pos != feeds.end()) {
                 // Update the existing feed
                 feed_ptr->repo_id = (*pos)->repo_id;
                 (*pos)->feed_title = feed_ptr->feed_title;
@@ -290,7 +293,7 @@ private:
                 }
                 feed_ptr = *pos;
             } else {
-                feeds->emplace_back(feed_ptr);
+                feeds.emplace_back(feed_ptr);
             }
             
             // Update the repository with feed info
@@ -321,14 +324,13 @@ private:
             }
             
             // Sort the feeds from the latest updated to the oldest
-            std::sort(feeds->begin(), feeds->end(),
+            std::sort(feeds.begin(), feeds.end(),
                     [](auto const& lhs, auto const& rhs) {
                         return lhs->items.empty() ? false : 
                               (rhs->items.empty() ? true : 
                                 lhs->items.front().updated > rhs->items.front().updated);
                     });
                     
-            feeds_.store(feeds);
             return feed_ptr;
         } catch (const std::exception& e) {
             // Log the error and rethrow for handling in the caller
@@ -358,9 +360,9 @@ private:
     }
 
 private:
-    // Thread-safe collection of feeds
-    std::atomic<std::shared_ptr<std::vector<std::shared_ptr<media::rss::feed>>>> feeds_ = 
-        std::make_shared<std::vector<std::shared_ptr<media::rss::feed>>>();
+    // Thread-safe collection of feeds using mutex instead of atomic
+    std::vector<std::shared_ptr<media::rss::feed>> feeds_;
+    std::mutex feeds_mutex_;
     
     std::jthread fetch_thread_;
     media::rss::sqliterepo repo_;

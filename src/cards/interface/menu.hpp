@@ -10,8 +10,8 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
+#include "imgui.h"
+#include <SDL.h>
 
 // 3. All other includes
 #include "../../helpers/string_helper.hpp"

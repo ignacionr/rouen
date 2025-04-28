@@ -13,8 +13,8 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include <imgui/imgui.h>
-#include <SDL2/SDL_image.h> // Added for saving PNG files
+#include "imgui.h"  // Updated path for ImGui
+#include <SDL_image.h> // Updated path for SDL_image on macOS
 
 // 3. All other includes
 #include "../../helpers/capture_helper.hpp"

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <string>
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#include "imgui.h"
+#include <SDL.h>
+#include <SDL_image.h>
 
 #include "editor_interface.hpp"
 #include "../helpers/texture_helper.hpp"

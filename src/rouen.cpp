@@ -4,8 +4,8 @@
 #include <thread>
 
 // 2. Libraries used in the project, in alphabetic order
-#include <imgui/imgui.h>
-#include <SDL2/SDL.h>
+#include "imgui.h"
+#include <SDL.h>  // Changed from SDL2/SDL.h to SDL.h for macOS compatibility
 
 // 3. All other includes
 #include "cards/interface/deck.hpp"
