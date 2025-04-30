@@ -95,7 +95,11 @@ namespace mail {
         
         void refresh() {
             try {
-                host_->connect();
+                // Try to establish a connection with retry logic
+                if (!connect_with_retry()) {
+                    return; // Exit if we can't connect after retries
+                }
+                
                 auto uids = host_->get_mail_uids();
                 
                 // Find messages that are new
@@ -170,6 +174,7 @@ namespace mail {
                 
             } catch (const std::exception& e) {
                 "notify"_sfn(std::format("Failed to refresh messages: {}", e.what()));
+                reset_connection();
             }
         }
         
@@ -178,6 +183,46 @@ namespace mail {
         std::vector<std::shared_ptr<message>> messages_;
         std::vector<std::function<void()>> pending_tasks_;
         EmailMetadataAnalyzer metadata_analyzer_;
+        bool is_connected_{false};
+        int connection_retry_count_{0};
+        
+        // Helper method to handle connection with retry logic
+        bool connect_with_retry(int max_retries = 3) {
+            if (is_connected_) {
+                return true; // Already connected
+            }
+            
+            for (int attempt = 0; attempt < max_retries; ++attempt) {
+                try {
+                    host_->connect();
+                    is_connected_ = true;
+                    connection_retry_count_ = 0;
+                    return true;
+                } catch (const std::exception& e) {
+                    connection_retry_count_++;
+                    "notify"_sfn(std::format("Connection attempt {}/{} failed: {}", 
+                        attempt + 1, max_retries, e.what()));
+                    
+                    // Only sleep between retries, not after the last one
+                    if (attempt < max_retries - 1) {
+                        std::this_thread::sleep_for(std::chrono::seconds(1 + attempt)); // Increasing backoff
+                    }
+                }
+            }
+            
+            "notify"_sfn(std::format("Failed to connect after {} attempts", max_retries));
+            return false;
+        }
+        
+        // Reset the connection state
+        void reset_connection() {
+            try {
+                host_->disconnect();
+            } catch (...) {
+                // Ignore exceptions during disconnect
+            }
+            is_connected_ = false;
+        }
         
         // Define a structure for email actions
         struct EmailAction {

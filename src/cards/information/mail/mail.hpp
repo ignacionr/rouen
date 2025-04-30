@@ -161,17 +161,67 @@ namespace rouen::cards
             }
         }
         
+        // Helper method for connection with retry logic (following C++23 style)
+        bool connect_with_retry(int max_retries = 3)
+        {
+            static std::mutex connection_mutex;
+            std::lock_guard lock(connection_mutex);
+            
+            for (int attempt = 0; attempt < max_retries; ++attempt) {
+                try {
+                    host_->connect();
+                    return true; // Successfully connected
+                } catch (const std::exception& e) {
+                    // Log the error with the attempt number
+                    "notify"_sfn(std::format("Connection attempt {}/{} failed: {}", 
+                        attempt + 1, max_retries, e.what()));
+                    
+                    // Only sleep between retries, not after the last attempt
+                    if (attempt < max_retries - 1) {
+                        // Exponential backoff with jitter for better retry behavior
+                        const auto base_delay = std::chrono::milliseconds(500 * (attempt + 1));
+                        const auto jitter = std::chrono::milliseconds(std::rand() % 200);
+                        std::this_thread::sleep_for(base_delay + jitter);
+                    }
+                }
+            }
+            
+            "notify"_sfn(std::format("Failed to connect after {} attempts", max_retries));
+            return false;
+        }
+        
         void render_mailbox_selector()
         {
             if (ImGui::BeginCombo("Mailbox", current_mailbox_.c_str())) {
                 if (mailboxes_.empty()) {
-                    // Lazy load mailboxes on first access
-                    execute_safely([this]() {
-                        host_->connect();
-                        host_->list_mailboxes([this](std::string_view mailbox) {
-                            mailboxes_.push_back(std::string(mailbox));
-                        });
-                    }, "Failed to load mailboxes");
+                    // Lazy load mailboxes on first access with robust error handling
+                    try {
+                        // First ensure we have a valid connection
+                        if (connect_with_retry()) {
+                            // Now that we're connected, try to list mailboxes
+                            try {
+                                host_->list_mailboxes([this](std::string_view mailbox) {
+                                    mailboxes_.push_back(std::string(mailbox));
+                                });
+                                
+                                // If no mailboxes were found, add a default one
+                                if (mailboxes_.empty()) {
+                                    mailboxes_.push_back("INBOX");
+                                }
+                            } catch (const std::exception& e) {
+                                "notify"_sfn(std::format("Failed to list mailboxes: {}", e.what()));
+                                // Add default mailbox for fallback
+                                mailboxes_.push_back("INBOX");
+                            }
+                        } else {
+                            // Connection failed after retries, add default mailbox
+                            mailboxes_.push_back("INBOX");
+                        }
+                    } catch (const std::exception& e) {
+                        "notify"_sfn(std::format("Unexpected error loading mailboxes: {}", e.what()));
+                        // Add default mailbox as fallback
+                        mailboxes_.push_back("INBOX");
+                    }
                 }
                 
                 for (const auto& mailbox : mailboxes_) {
