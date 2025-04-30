@@ -9,6 +9,11 @@
 #include <format>
 #include <future>
 #include <algorithm>
+#include <queue>
+#include <condition_variable>
+#include <functional>
+#include <random>       // For std::random_device, std::mt19937, and std::shuffle
+#include <unordered_map> // For std::unordered_map
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -46,21 +51,106 @@ struct device_info {
     std::chrono::system_clock::time_point last_seen{std::chrono::system_clock::now()};
 };
 
+// ThreadPool class for managing worker threads
+class ThreadPool {
+public:
+    explicit ThreadPool(size_t num_threads) : stop(false) {
+        for (size_t i = 0; i < num_threads; ++i) {
+            workers.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(queue_mutex);
+                        condition.wait(lock, [this] { 
+                            return stop || !tasks.empty(); 
+                        });
+                        
+                        if (stop && tasks.empty()) {
+                            return;
+                        }
+                        
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }
+                    
+                    task();
+                }
+            });
+        }
+        
+        NET_INFO_FMT("Created thread pool with {} worker threads", num_threads);
+    }
+    
+    ~ThreadPool() {
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            stop = true;
+        }
+        
+        condition.notify_all();
+        
+        for (std::thread &worker : workers) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+        
+        NET_INFO("Thread pool destroyed");
+    }
+    
+    template<class F>
+    void enqueue(F&& f) {
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            if (stop) {
+                throw std::runtime_error("Cannot enqueue on stopped ThreadPool");
+            }
+            
+            tasks.emplace(std::forward<F>(f));
+        }
+        
+        condition.notify_one();
+    }
+    
+    size_t get_thread_count() const {
+        return workers.size();
+    }
+    
+    size_t get_queue_size() {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        return tasks.size();
+    }
+    
+private:
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queue_mutex;
+    std::condition_variable condition;
+    bool stop;
+};
+
 class subnet_scanner : public card {
 public:
-    subnet_scanner() {
+    subnet_scanner() 
+        : thread_pool(std::thread::hardware_concurrency() > 0 ? 
+                     std::thread::hardware_concurrency() : 4) {
         // Set custom colors for the card
         colors[0] = {0.2f, 0.4f, 0.6f, 1.0f};   // Blue primary color
         colors[1] = {0.3f, 0.5f, 0.7f, 0.7f};   // Light blue secondary color
         colors[2] = {0.1f, 0.6f, 0.9f, 1.0f};   // Scan button color
         colors[3] = {0.0f, 0.8f, 0.2f, 1.0f};   // Online device color
         colors[4] = {0.8f, 0.2f, 0.2f, 1.0f};   // Offline device color
+        colors[5] = {0.5f, 0.5f, 0.1f, 1.0f};   // Thread activity color
         
         name("Subnet Scanner");
         width = 400.0f;  // Make the card a bit wider
+        requested_fps = 10; // Higher refresh rate to update progress more smoothly
         
         // Detect local interfaces and subnets
         detect_local_interfaces();
+        
+        // Log the number of threads created
+        NET_INFO_FMT("Subnet scanner initialized with {} threads", thread_pool.get_thread_count());
     }
     
     ~subnet_scanner() override {
@@ -80,6 +170,10 @@ public:
                 // Format using regular integers, not atomic
                 std::string progress_text = std::format("{}/{}", scanned, total);
                 ImGui::ProgressBar(progress, ImVec2(-1, 0), progress_text.c_str());
+                
+                // Show thread pool stats
+                ImGui::TextColored(colors[5], "Active threads: %zu, Queued tasks: %zu", 
+                                 thread_pool.get_thread_count(), thread_pool.get_queue_size());
                 
                 if (ImGui::Button("Stop Scan", ImVec2(120, 0))) {
                     stop_scan();
@@ -124,6 +218,11 @@ public:
                     // Timeout slider (in milliseconds)
                     ImGui::Text("Timeout (ms):");
                     ImGui::SliderInt("##timeout", &ping_timeout_ms, 100, 3000);
+                    
+                    // Number of worker threads slider
+                    size_t hw_threads = std::thread::hardware_concurrency();
+                    ImGui::Text("Threads to use (%zu available):", hw_threads);
+                    ImGui::SliderInt("##threads", &num_threads, 1, static_cast<int>(hw_threads * 2));
                     
                     ImGui::Separator();
                     
@@ -198,12 +297,16 @@ private:
     // Scan settings
     int scan_type = 0;  // 0 = ping scan, 1 = port scan
     int ping_timeout_ms = 500;
+    int num_threads = static_cast<int>(std::thread::hardware_concurrency());
+    
+    // Thread pool for parallel scanning
+    ThreadPool thread_pool;
     
     // Scan status
     std::atomic<bool> is_scanning{false};
     std::atomic<int> scanned_hosts{0};
     std::atomic<int> total_hosts{0};
-    std::thread scan_thread;
+    std::thread coordinator_thread;
     
     // Results
     std::vector<device_info> devices;
@@ -303,14 +406,19 @@ private:
         inet_pton(AF_INET, network_str.c_str(), &network_addr);
         unsigned int network_int = ntohl(network_addr.s_addr);
         
-        // Start the scan in a separate thread
-        scan_thread = std::thread([this, network_int, host_bits]() {
-            NET_INFO_FMT("Starting subnet scan on {}", selected_subnet);
+        // Start the scan coordinator thread
+        coordinator_thread = std::thread([this, network_int, host_bits]() {
+            NET_INFO_FMT("Starting subnet scan on {} using {} threads", 
+                        selected_subnet, num_threads);
             
             unsigned int network_size = 1 << host_bits;
             
-            // Start from .1 (skip network address)
-            for (unsigned int i = 1; i < network_size - 1 && is_scanning; i++) {
+            // Create a synchronized queue of IP addresses to scan
+            std::vector<std::string> ip_queue;
+            ip_queue.reserve(network_size - 2);
+            
+            // Generate all IP addresses in the subnet
+            for (unsigned int i = 1; i < network_size - 1; i++) {
                 unsigned int host_ip = network_int + i;
                 
                 struct in_addr ip_addr;
@@ -319,42 +427,67 @@ private:
                 char ip_str[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &ip_addr, ip_str, INET_ADDRSTRLEN);
                 
-                // Check if the host is online
-                bool is_online = ping_host_with_ports(ip_str);
-                
-                if (is_online || scan_type == 1) {  // Always add if deep scan or if online
-                    device_info device;
-                    device.ip_address = ip_str;
-                    device.is_online = is_online;
-                    
-                    // Try to resolve hostname
-                    resolve_hostname(ip_str, device.hostname);
-                    
-                    // Add the device to our list
-                    {
-                        std::lock_guard<std::mutex> lock(devices_mutex);
-                        
-                        // Check if the device is already in our list
-                        auto it = std::find_if(devices.begin(), devices.end(),
-                            [&](const auto& d) { return d.ip_address == device.ip_address; });
-                        
-                        if (it != devices.end()) {
-                            // Update existing device
-                            it->hostname = device.hostname;
-                            it->is_online = device.is_online;
-                            it->last_seen = std::chrono::system_clock::now();
-                        } else {
-                            // Add new device
-                            devices.push_back(device);
-                        }
-                    }
+                ip_queue.push_back(ip_str);
+            }
+            
+            // Shuffle the IP addresses to distribute the load more evenly
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(ip_queue.begin(), ip_queue.end(), g);
+            
+            std::atomic<size_t> completed_tasks{0};
+            std::atomic<size_t> total_tasks{ip_queue.size()};
+            
+            // Submit scanning tasks to the thread pool
+            for (const auto& ip : ip_queue) {
+                if (!is_scanning) {
+                    break;  // Stop if scanning was cancelled
                 }
                 
-                scanned_hosts++;
+                thread_pool.enqueue([this, ip, &completed_tasks]() {
+                    // Check if the host is online
+                    bool is_online = ping_host_with_ports(ip.c_str());
+                    
+                    if (is_online || scan_type == 1) {  // Always add if deep scan or if online
+                        device_info device;
+                        device.ip_address = ip;
+                        device.is_online = is_online;
+                        
+                        // Try to resolve hostname
+                        resolve_hostname(ip.c_str(), device.hostname);
+                        
+                        // Add the device to our list
+                        {
+                            std::lock_guard<std::mutex> lock(devices_mutex);
+                            
+                            // Check if the device is already in our list
+                            auto it = std::find_if(devices.begin(), devices.end(),
+                                [&](const auto& d) { return d.ip_address == device.ip_address; });
+                            
+                            if (it != devices.end()) {
+                                // Update existing device
+                                it->hostname = device.hostname;
+                                it->is_online = device.is_online;
+                                it->last_seen = std::chrono::system_clock::now();
+                            } else {
+                                // Add new device
+                                devices.push_back(device);
+                            }
+                        }
+                    }
+                    
+                    scanned_hosts++;
+                    completed_tasks++;
+                });
+            }
+            
+            // Wait for all tasks to complete or for scanning to be cancelled
+            while (completed_tasks < total_tasks && is_scanning) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             
             // Sort the devices by IP address (numeric order)
-            {
+            if (!devices.empty()) {
                 std::lock_guard<std::mutex> lock(devices_mutex);
                 std::sort(devices.begin(), devices.end(), [](const auto& a, const auto& b) {
                     return inet_addr(a.ip_address.c_str()) < inet_addr(b.ip_address.c_str());
@@ -365,7 +498,7 @@ private:
             NET_INFO("Subnet scan completed");
         });
         
-        scan_thread.detach();
+        coordinator_thread.detach();
     }
     
     // Stop an ongoing scan
@@ -373,79 +506,12 @@ private:
         if (is_scanning) {
             is_scanning = false;
             
-            // Wait for the scan thread to finish
-            if (scan_thread.joinable()) {
-                scan_thread.join();
+            // Wait for the coordinator thread to finish
+            if (coordinator_thread.joinable()) {
+                coordinator_thread.join();
             }
             
             NET_INFO("Subnet scan stopped by user");
-        }
-    }
-    
-    // Ping a host to check if it's online
-    bool ping_host(const char* ip_str) {
-        // Create the socket
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock < 0) {
-            NET_WARN_FMT("Failed to create socket for {}", ip_str);
-            return false;
-        }
-        
-        // Set the socket to non-blocking mode
-        int flags = fcntl(sock, F_GETFL, 0);
-        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-        
-        // Prepare the address
-        struct sockaddr_in addr;
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(80);  // HTTP port
-        inet_pton(AF_INET, ip_str, &addr.sin_addr);
-        
-        // Attempt to connect (non-blocking)
-        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
-        
-        // Handle the non-blocking connect
-        if (result < 0) {
-            if (errno == EINPROGRESS) {
-                // Select with timeout to wait for connection
-                fd_set write_fds;
-                FD_ZERO(&write_fds);
-                FD_SET(sock, &write_fds);
-                
-                // Prepare timeout
-                struct timeval timeout;
-                timeout.tv_sec = ping_timeout_ms / 1000;
-                timeout.tv_usec = (ping_timeout_ms % 1000) * 1000;
-                
-                // Wait for the socket to become writable (connection complete) or timeout
-                result = select(sock + 1, nullptr, &write_fds, nullptr, &timeout);
-                
-                if (result > 0) {
-                    // Socket became writable, but we need to check if connection succeeded
-                    int error = 0;
-                    socklen_t len = sizeof(error);
-                    if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &len) < 0 || error) {
-                        // Connection failed
-                        close(sock);
-                        return false;
-                    }
-                    // Connection succeeded
-                    close(sock);
-                    return true;
-                } else {
-                    // Timeout or error
-                    close(sock);
-                    return false;
-                }
-            } else {
-                // Immediate connection failure
-                close(sock);
-                return false;
-            }
-        } else {
-            // Immediate connection success (rare but possible)
-            close(sock);
-            return true;
         }
     }
     
