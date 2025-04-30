@@ -370,12 +370,15 @@ private:
                               filter_text_, filter_text_);
         }
         
+        // Explicitly include status conditions to get backlog items
+        // This is crucial for showing backlog issues that might be filtered out by default
         if (jql.empty()) {
-            jql = "order by updated DESC";
+            jql = "status in (Open, \"In Progress\", Reopened, \"To Do\", Backlog, \"Selected for Development\", New, \"In Review\", Done, Closed) order by updated DESC";
         } else {
-            jql += " order by updated DESC";
+            jql += " AND status in (Open, \"In Progress\", Reopened, \"To Do\", Backlog, \"Selected for Development\", New, \"In Review\", Done, Closed) order by updated DESC";
         }
         
+        JIRA_DEBUG_FMT("Searching JIRA with JQL: {}", jql);
         search_future_ = jira_model_->search_issues(jql, current_page_ * items_per_page_, items_per_page_);
     }
     

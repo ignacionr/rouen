@@ -291,6 +291,11 @@ struct jira_search_result {
             "total", &T::total,
             "issues", &T::issues
         );
+        
+        // Configure options to ignore unknown keys
+        static constexpr auto opt = glz::opts{
+            .error_on_unknown_keys = false
+        };
     };
 };
 

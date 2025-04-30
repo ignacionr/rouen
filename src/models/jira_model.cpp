@@ -314,12 +314,21 @@ std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& p
         std::vector<jira_issue> issues;
         
         try {
-            // Construct JQL query
+            // Construct JQL query that includes all issues including backlog items
             std::string jql = std::format("project = {} ORDER BY updated DESC", project_key);
             
             // Use search API with JQL
             auto search_result = search_issues(jql, 0, max_results).get();
+            
+            // If no issues found, try with a more explicit query that includes all statuses
+            if (search_result.issues.empty()) {
+                JIRA_INFO_FMT("No issues found with basic query, trying with expanded query for project {}", project_key);
+                jql = std::format("project = {} AND status in (Open, \"In Progress\", Reopened, \"To Do\", Backlog, \"Selected for Development\", New, \"In Review\", Done, Closed) ORDER BY updated DESC", project_key);
+                search_result = search_issues(jql, 0, max_results).get();
+            }
+            
             issues = search_result.issues;
+            JIRA_INFO_FMT("Retrieved {} issues for project {}", issues.size(), project_key);
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error getting JIRA issues: {}", e.what());
         }
@@ -594,18 +603,20 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             payload["fields"] = fields_array;
             
             std::string json_payload;
-            auto write_result = glz::write_json(payload, json_payload);
-            if (!write_result) {
-                throw std::runtime_error("Failed to serialize JSON payload");
+            auto write_error = glz::write_json(payload, json_payload);
+            if (write_error) {
+                throw std::runtime_error(std::format("Failed to serialize JSON payload: {}", glz::format_error(write_error)));
             }
             
             // Make API request
             std::string response = make_request("search", "POST", json_payload);
             
             // Parse JSON response
-            auto json_result = glz::read_json<jira_search_result>(response);
-            if (json_result.has_value()) {
-                result = json_result.value();
+            auto result_error = glz::read<glz::opts{.error_on_unknown_keys = false}>(result, response);
+
+            if (result_error) {
+                std::cerr << "Failed to parse search result JSON: " << glz::format_error(result_error) << std::endl;
+                throw std::runtime_error("Failed to parse search result JSON");
             }
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error searching JIRA issues: {}", e.what());
