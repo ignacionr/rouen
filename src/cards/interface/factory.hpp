@@ -29,6 +29,7 @@
 #include "../productivity/pomodoro.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
+#include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/terminal.hpp"
 
@@ -96,6 +97,10 @@ namespace rouen::cards {
                 
                 instance.emplace("sysinfo", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<sysinfo_card>();
+                });
+                
+                instance.emplace("subnet-scanner", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<subnet_scanner>();
                 });
                 
                 instance.emplace("grok", [](std::string_view, SDL_Renderer*) {
