@@ -26,6 +26,7 @@
 #include "../information/weather.hpp"
 #include "../media/radio.hpp"
 #include "../productivity/alarm.hpp"
+#include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
@@ -36,6 +37,7 @@
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
     struct github_card;
+    class dummy_jira_card; // Forward declaration for the dummy Jira card
 }
 
 namespace rouen::cards {
@@ -189,6 +191,21 @@ namespace rouen::cards {
                     return std::make_shared<weather>(uri);
                 });
                 
+                // Explicitly register Jira cards here rather than relying solely on the registrar
+                instance.emplace("jira", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<jira_card>();
+                });
+
+                instance.emplace("jira-projects", [](std::string_view, SDL_Renderer*) {
+                    auto card = std::make_shared<jira_card>();
+                    return card;
+                });
+
+                instance.emplace("jira-search", [](std::string_view, SDL_Renderer*) {
+                    auto card = std::make_shared<jira_card>();
+                    return card;
+                });
+
                 initialized = true;
             }
             

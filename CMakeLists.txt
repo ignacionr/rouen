@@ -76,6 +76,8 @@ add_executable(${PROJECT_NAME}
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/cards/development/github_registrar.cpp
+  src/cards/productivity/jira_registrar.cpp
+  src/models/jira_model.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 

@@ -80,6 +80,9 @@ The system includes many example cards:
 - `weather` - Weather information
 - `mail` - Email client
 - `radio` - Internet radio player
+- `jira` - Jira issue management
+- `jira-projects` - Jira project overview and visualization
+- `jira-search` - Advanced Jira search with JQL
 - `envvars` - Environment variables viewer
 - `dbrepair` - Database repair tool
 

@@ -57,6 +57,9 @@ namespace rouen::cards {
                     { "Productivity", {
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                         {"Alarm", []() { "create_card"_sfn("alarm"); }},
+                        {"Jira", []() { "create_card"_sfn("jira"); }},
+                        {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
+                        {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
                     }},
                     { "Information", {
                         {"Calendar", []() { "create_card"_sfn("calendar"); }},

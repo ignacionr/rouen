@@ -2,6 +2,7 @@
 
 #include <string>
 #include <format>
+#include <cstdlib>
 
 namespace rouen::platform
 {
@@ -31,5 +32,17 @@ namespace rouen::platform
         #endif
         
         return cmd;
+    }
+    
+    /**
+     * Get the value of an environment variable
+     *
+     * @param name The name of the environment variable
+     * @return The value of the environment variable or empty string if not set
+     */
+    inline std::string get_env(const std::string& name)
+    {
+        const char* value = std::getenv(name.c_str());
+        return value ? std::string(value) : std::string();
     }
 }
