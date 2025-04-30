@@ -29,11 +29,33 @@ else()
   message(STATUS "Release build enabled with optimizations")
 endif()
 
-# Specify the Homebrew-installed LLVM compiler and libraries for better C++23 support
-set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
-set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++")
+# Platform-specific compiler settings
+if(APPLE)
+  # Specify the Homebrew-installed LLVM compiler and libraries for macOS
+  set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
+  set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++")
+elseif(UNIX AND NOT APPLE)
+  # Use clang on Linux if available
+  find_program(CLANG_EXECUTABLE clang)
+  find_program(CLANGPP_EXECUTABLE clang++)
+  
+  if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
+    set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
+    set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
+    message(STATUS "Using Clang/Clang++ for Linux build")
+  else()
+    message(STATUS "Clang not found, using default system compiler")
+  endif()
+  
+  # Configure the generator to use Ninja if available
+  find_program(NINJA_EXECUTABLE ninja)
+  if(NINJA_EXECUTABLE)
+    set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "")
+    message(STATUS "Using Ninja build system")
+  endif()
+endif()
 
 # Project name and version
 project(rouen VERSION 1.0 LANGUAGES CXX)
@@ -85,11 +107,11 @@ endif()
 # Platform-specific configuration
 if(APPLE)
   include(cmake/macos.cmake)
+elseif(UNIX AND NOT APPLE)
+  include(cmake/linux.cmake)
 endif()
 
-# If we add Windows/Linux support, we can include them conditionally:
+# If we add Windows support, we can include it conditionally:
 # if(WIN32)
 #   include(cmake/windows.cmake)
-# elseif(UNIX AND NOT APPLE)
-#   include(cmake/linux.cmake)
 # endif()
