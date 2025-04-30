@@ -72,7 +72,7 @@ namespace http {
                     throw std::runtime_error(std::format("Error: HTTP response code {}", response_code));
                 }
                 curl_easy_cleanup(curl);
-                DB_DEBUG_FMT("Successfully fetched URL: {}", url);
+                DB_INFO_FMT("Successfully fetched URL: {}", url);
                 return response;
             }
             throw std::runtime_error("Error: curl_easy_init failed.");

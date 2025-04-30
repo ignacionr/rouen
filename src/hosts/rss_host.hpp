@@ -430,11 +430,11 @@ private:
                         try {
                             // Only attempt to add the feed if we're not quitting
                             if (!worker_quit()) {
-                                RSS_WARN_FMT("Starting to process feed: {}", urls[j]);
+                                RSS_INFO_FMT("Starting to process feed: {}", urls[j]);
                                 auto feed_ptr = addFeedSync(urls[j], worker_quit);
                                 
                                 if (feed_ptr) {
-                                    RSS_WARN_FMT("Successfully fetched and processed feed: {}", urls[j]);
+                                    RSS_INFO_FMT("Successfully fetched and processed feed: {}", urls[j]);
                                     std::lock_guard<std::mutex> lock(results_mutex);
                                     batch_results.push_back(feed_ptr);
                                     ++success_count;
@@ -572,7 +572,7 @@ private:
     // Fetch and parse a feed from a URL with improved error handling
     static media::rss::feed getFeed(std::string_view url) {
         try {
-            RSS_WARN_FMT("Starting feed fetch for URL: {}", url);
+            RSS_INFO_FMT("Starting feed fetch for URL: {}", url);
             http::fetch fetch{60}; // Increase timeout for large feeds
             media::rss::feed parser;
             parser.source_link = url;
@@ -584,7 +584,7 @@ private:
             };
             
             fetch(std::string{url}, header_client, writeCallback, &parser);
-            RSS_WARN_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
+            RSS_INFO_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
             return parser;
         } catch (const std::exception& e) {
             RSS_ERROR_FMT("Failed to fetch feed {}: {}", url, e.what());
