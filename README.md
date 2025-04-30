@@ -33,6 +33,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime
 - **Environment Variables**: View and manage system environment variables
+- **Subnet Scanner**: Discover and monitor devices on your local network
 - **Database Repair**: Maintain and fix SQLite database files
 
 ### Media
