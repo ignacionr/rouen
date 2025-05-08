@@ -70,7 +70,8 @@ namespace rouen::cards {
                         {"Email", []() { "create_card"_sfn("mail"); }}
                     }},
                     { "Media", {
-                        {"Radio", []() { "create_card"_sfn("radio"); }}
+                        {"Radio", []() { "create_card"_sfn("radio"); }},
+                        {"Chess Replay", []() { "create_card"_sfn("chess"); }}
                     }},
                     { "System", {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},

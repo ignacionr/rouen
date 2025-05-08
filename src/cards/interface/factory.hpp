@@ -24,6 +24,7 @@
 #include "../information/travel.hpp"
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
+#include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/jira_card.hpp"
@@ -204,6 +205,11 @@ namespace rouen::cards {
                 instance.emplace("jira-search", [](std::string_view, SDL_Renderer*) {
                     auto card = std::make_shared<jira_card>();
                     return card;
+                });
+                
+                // Register the chess replay card
+                instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
+                    return std::make_shared<chess_replay>(pgn_path);
                 });
 
                 initialized = true;

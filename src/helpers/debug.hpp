@@ -4,6 +4,8 @@
 #include <format>
 #include <iostream>
 #include <string_view>
+#include <sstream>
+#include <iomanip>
 
 // 2. Libraries used in the project, in alphabetic order
 // None in this file
@@ -26,7 +28,7 @@
     #define ROUEN_LOG_LEVEL LOG_LEVEL_ERROR
 #else
     // In debug builds, show warnings by default for better RSS feed visibility
-    #define ROUEN_LOG_LEVEL LOG_LEVEL_WARN
+    #define ROUEN_LOG_LEVEL LOG_LEVEL_TRACE
 #endif
 #endif
 
@@ -104,8 +106,75 @@
 #define SYS_DEBUG(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_DEBUG, message)
 #define SYS_TRACE(message) LOG_COMPONENT("SYSTEM", LOG_LEVEL_TRACE, message)
 
+// Chess-specific logging macros
+#define CHESS_ERROR(message) LOG_COMPONENT("CHESS", LOG_LEVEL_ERROR, message)
+#define CHESS_WARN(message) LOG_COMPONENT("CHESS", LOG_LEVEL_WARN, message)
+#define CHESS_INFO(message) LOG_COMPONENT("CHESS", LOG_LEVEL_INFO, message)
+#define CHESS_DEBUG(message) LOG_COMPONENT("CHESS", LOG_LEVEL_DEBUG, message)
+#define CHESS_TRACE(message) LOG_COMPONENT("CHESS", LOG_LEVEL_TRACE, message)
+
 namespace debug {
-    // Helper function for format-based logging
+    // Convert char32_t to a string representation for logging
+    inline std::string char32_to_string(char32_t c) {
+        std::stringstream ss;
+        ss << "U+" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+           << static_cast<uint32_t>(c);
+        return ss.str();
+    }
+    
+    // Convert char32_t to a hex representation without the U+ prefix
+    inline std::string char32_to_hex(char32_t c) {
+        std::stringstream ss;
+        ss << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+           << static_cast<uint32_t>(c);
+        return ss.str();
+    }
+}
+
+// C++23 formatter for char32_t with support for hex format specifier
+template<>
+struct std::formatter<char32_t> {
+    // Store whether we should format as hex
+    bool hex_format = false;
+    
+    // Parse the format specification to detect if we should use hex format
+    constexpr auto parse(std::format_parse_context& ctx) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        
+        // If we have any format specifier
+        if (it != end && *it == ':') {
+            // Move past the colon
+            ++it;
+            
+            // Check if next character is 'X' for hex format
+            if (it != end && (*it == 'X' || *it == 'x')) {
+                hex_format = true;
+                ++it;
+            }
+            
+            // Skip any additional format parameters
+            while (it != end && *it != '}') ++it;
+        }
+        
+        return it;
+    }
+    
+    // Format the char32_t based on the parsed format spec
+    template<typename FormatContext>
+    auto format(char32_t c, FormatContext& ctx) const {
+        if (hex_format) {
+            // Format as hex without U+ prefix
+            return std::format_to(ctx.out(), "{}", debug::char32_to_hex(c));
+        } else {
+            // Default format with U+ prefix
+            return std::format_to(ctx.out(), "{}", debug::char32_to_string(c));
+        }
+    }
+};
+
+namespace debug {
+    // Helper function for format-based logging with proper C++23 support for all types
     template<typename... Args>
     inline std::string format_log(std::format_string<Args...> fmt, Args&&... args) {
         return std::format(fmt, std::forward<Args>(args)...);
@@ -174,3 +243,10 @@ namespace debug {
 #define SYS_INFO_FMT(fmt, ...) SYS_INFO(debug::format_log(fmt, __VA_ARGS__))
 #define SYS_DEBUG_FMT(fmt, ...) SYS_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 #define SYS_TRACE_FMT(fmt, ...) SYS_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Chess component format macros
+#define CHESS_ERROR_FMT(fmt, ...) CHESS_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define CHESS_WARN_FMT(fmt, ...) CHESS_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define CHESS_INFO_FMT(fmt, ...) CHESS_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define CHESS_DEBUG_FMT(fmt, ...) CHESS_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define CHESS_TRACE_FMT(fmt, ...) CHESS_TRACE(debug::format_log(fmt, __VA_ARGS__))

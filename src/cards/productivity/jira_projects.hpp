@@ -275,9 +275,8 @@ private:
                     const auto& stats = project_statistics_[project.key];
                     
                     if (stats.total_issues > 0) {
-                        float done_ratio = static_cast<float>(stats.done_issues) / stats.total_issues;
-                        float in_progress_ratio = static_cast<float>(stats.in_progress_issues) / stats.total_issues;
-                        // Removed the unused open_ratio variable that was causing the build error
+                        float done_ratio = static_cast<float>(stats.done_issues) / static_cast<float>(stats.total_issues);
+                        float in_progress_ratio = static_cast<float>(stats.in_progress_issues) / static_cast<float>(stats.total_issues);
                         
                         // Progress bars for each status
                         ImVec2 bar_pos = ImGui::GetCursorScreenPos();
@@ -305,7 +304,7 @@ private:
                         
                         // Add the percentage text centered on the bar
                         char overlay_text[32];
-                        snprintf(overlay_text, sizeof(overlay_text), "%.0f%% Complete", done_ratio * 100.0f);
+                        snprintf(overlay_text, sizeof(overlay_text), "%.0f%% Complete", static_cast<double>(done_ratio * 100.0f));
                         ImVec2 text_size = ImGui::CalcTextSize(overlay_text);
                         ImVec2 text_pos(
                             bar_pos.x + (bar_size.x - text_size.x) * 0.5f,
@@ -481,7 +480,7 @@ private:
                 ImGui::SameLine(text_width);
                 
                 // Bar
-                float percentage = total > 0 ? static_cast<float>(count) / total : 0.0f;
+                float percentage = total > 0 ? static_cast<float>(count) / static_cast<float>(total) : 0.0f;
                 ImVec2 bar_pos = ImGui::GetCursorScreenPos();
                 
                 // Choose color based on issue type
@@ -511,7 +510,7 @@ private:
                 // Count and percentage text
                 ImGui::Dummy(ImVec2(bar_width, bar_height));
                 ImGui::SameLine();
-                ImGui::Text("%d (%.0f%%)", count, percentage * 100.0f);
+                ImGui::Text("%d (%.0f%%)", count, static_cast<double>(percentage * 100.0f));
                 
                 ImGui::Spacing();
             }
@@ -572,7 +571,7 @@ private:
                 ImGui::SameLine(text_width);
                 
                 // Bar
-                float percentage = total > 0 ? static_cast<float>(count) / total : 0.0f;
+                float percentage = total > 0 ? static_cast<float>(count) / static_cast<float>(total) : 0.0f;
                 ImVec2 bar_pos = ImGui::GetCursorScreenPos();
                 
                 // Background bar
@@ -587,7 +586,7 @@ private:
                     // Find max count for scaling
                     int max_count = sorted_assignees[0].second;
                     // Normalize the current count to a value between 0.0 and 0.33 (red to green)
-                    hue = 0.33f * static_cast<float>(count) / max_count;
+                    hue = 0.33f * static_cast<float>(count) / static_cast<float>(max_count);
                 }
                 
                 ImVec4 bar_color;
@@ -603,7 +602,7 @@ private:
                 // Count and percentage text
                 ImGui::Dummy(ImVec2(bar_width, bar_height));
                 ImGui::SameLine();
-                ImGui::Text("%d (%.0f%%)", count, percentage * 100.0f);
+                ImGui::Text("%d (%.0f%%)", count, static_cast<double>(percentage * 100.0f));
                 
                 ImGui::Spacing();
             }
