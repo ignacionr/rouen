@@ -118,6 +118,10 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_TIMEOUT, timeout_);
             curl_easy_setopt(handle.get(), CURLOPT_CONNECTTIMEOUT, connect_timeout_);
             
+            // Enable automatic redirect following
+            curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
             
@@ -198,6 +202,10 @@ public:
             // Set timeouts
             curl_easy_setopt(handle.get(), CURLOPT_TIMEOUT, timeout_);
             curl_easy_setopt(handle.get(), CURLOPT_CONNECTTIMEOUT, connect_timeout_);
+            
+            // Enable automatic redirect following
+            curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -289,6 +297,10 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_TIMEOUT, timeout_);
             curl_easy_setopt(handle.get(), CURLOPT_CONNECTTIMEOUT, connect_timeout_);
             
+            // Enable automatic redirect following
+            curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
             
@@ -375,6 +387,10 @@ public:
             // Set timeouts
             curl_easy_setopt(handle.get(), CURLOPT_TIMEOUT, timeout_);
             curl_easy_setopt(handle.get(), CURLOPT_CONNECTTIMEOUT, connect_timeout_);
+            
+            // Enable automatic redirect following
+            curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
