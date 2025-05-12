@@ -166,6 +166,10 @@ namespace rouen::cards {
                 ImGui::Spacing();
                 
                 float button_width = ImGui::GetWindowWidth() * 0.4f;
+
+                if (ImGui::Button("-2m", ImVec2(button_width, 0))) add_minutes(-2);
+                ImGui::SameLine();
+                if (ImGui::Button("-5m", ImVec2(button_width, 0))) add_minutes(-5);
                 
                 if (ImGui::Button("+5m", ImVec2(button_width, 0))) add_minutes(5);
                 ImGui::SameLine();
