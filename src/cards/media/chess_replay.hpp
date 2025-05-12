@@ -6,138 +6,19 @@
 #include <chrono>
 #include <fstream>
 #include <array>
+#include <unordered_map>
+#include <filesystem>
 
 #include "imgui.h"
+#include <SDL.h>
+#include <SDL_image.h>
+
 #include "../interface/card.hpp"
 #include "../../models/chess/chess.hpp"
 #include "../../helpers/debug.hpp"  // Include debug system for better logging
+#include "../../helpers/texture_helper.hpp"
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"  // For font utilities
-
-// Define chess symbols for direct use and better debugging
-namespace rouen::chess_symbols {
-    // Define chess piece symbols using Unicode code points (more reliable than UTF-8 byte sequences)
-    // White pieces
-    inline constexpr char32_t WHITE_KING_CODEPOINT = 0x2654;   // ♔ U+2654
-    inline constexpr char32_t WHITE_QUEEN_CODEPOINT = 0x2655;  // ♕ U+2655
-    inline constexpr char32_t WHITE_ROOK_CODEPOINT = 0x2656;   // ♖ U+2656
-    inline constexpr char32_t WHITE_BISHOP_CODEPOINT = 0x2657; // ♗ U+2657
-    inline constexpr char32_t WHITE_KNIGHT_CODEPOINT = 0x2658; // ♘ U+2658
-    inline constexpr char32_t WHITE_PAWN_CODEPOINT = 0x2659;   // ♙ U+2659
-    
-    // Black pieces
-    inline constexpr char32_t BLACK_KING_CODEPOINT = 0x265A;   // ♚ U+265A
-    inline constexpr char32_t BLACK_QUEEN_CODEPOINT = 0x265B;  // ♛ U+265B
-    inline constexpr char32_t BLACK_ROOK_CODEPOINT = 0x265C;   // ♜ U+265C
-    inline constexpr char32_t BLACK_BISHOP_CODEPOINT = 0x265D; // ♝ U+265D
-    inline constexpr char32_t BLACK_KNIGHT_CODEPOINT = 0x265E; // ♞ U+265E
-    inline constexpr char32_t BLACK_PAWN_CODEPOINT = 0x265F;   // ♟ U+265F
-    
-    // UTF-8 encoded strings for display and debugging
-    // Note: Using UTF-8 literal strings in a C++23 compatible way
-    inline constexpr const char WHITE_KING[] = "\xE2\x99\x94";   // ♔ U+2654
-    inline constexpr const char WHITE_QUEEN[] = "\xE2\x99\x95";  // ♕ U+2655
-    inline constexpr const char WHITE_ROOK[] = "\xE2\x99\x96";   // ♖ U+2656
-    inline constexpr const char WHITE_BISHOP[] = "\xE2\x99\x97"; // ♗ U+2657
-    inline constexpr const char WHITE_KNIGHT[] = "\xE2\x99\x98"; // ♘ U+2658
-    inline constexpr const char WHITE_PAWN[] = "\xE2\x99\x99";   // ♙ U+2659
-    
-    inline constexpr const char BLACK_KING[] = "\xE2\x99\x9A";   // ♚ U+265A
-    inline constexpr const char BLACK_QUEEN[] = "\xE2\x99\x9B";  // ♛ U+265B
-    inline constexpr const char BLACK_ROOK[] = "\xE2\x99\x9C";   // ♜ U+265C
-    inline constexpr const char BLACK_BISHOP[] = "\xE2\x99\x9D"; // ♝ U+265D
-    inline constexpr const char BLACK_KNIGHT[] = "\xE2\x99\x9E"; // ♞ U+265E
-    inline constexpr const char BLACK_PAWN[] = "\xE2\x99\x9F";   // ♟ U+265F
-
-    // Helper to get a unicode code point from the piece enum
-    inline char32_t get_unicode_codepoint(rouen::models::chess::Piece piece) {
-        using Piece = rouen::models::chess::Piece;
-        
-        switch (piece) {
-            case Piece::WhiteKing: return WHITE_KING_CODEPOINT;
-            case Piece::WhiteQueen: return WHITE_QUEEN_CODEPOINT;
-            case Piece::WhiteRook: return WHITE_ROOK_CODEPOINT;
-            case Piece::WhiteBishop: return WHITE_BISHOP_CODEPOINT;
-            case Piece::WhiteKnight: return WHITE_KNIGHT_CODEPOINT;
-            case Piece::WhitePawn: return WHITE_PAWN_CODEPOINT;
-            case Piece::BlackKing: return BLACK_KING_CODEPOINT;
-            case Piece::BlackQueen: return BLACK_QUEEN_CODEPOINT;
-            case Piece::BlackRook: return BLACK_ROOK_CODEPOINT;
-            case Piece::BlackBishop: return BLACK_BISHOP_CODEPOINT;
-            case Piece::BlackKnight: return BLACK_KNIGHT_CODEPOINT;
-            case Piece::BlackPawn: return BLACK_PAWN_CODEPOINT;
-            default: return ' ';
-        }
-    }
-
-    // Helper to get a unicode chess piece from the piece enum
-    inline const char* get_unicode_piece(rouen::models::chess::Piece piece) {
-        using Piece = rouen::models::chess::Piece;
-        
-        switch (piece) {
-            case Piece::WhiteKing: return WHITE_KING;
-            case Piece::WhiteQueen: return WHITE_QUEEN;
-            case Piece::WhiteRook: return WHITE_ROOK;
-            case Piece::WhiteBishop: return WHITE_BISHOP;
-            case Piece::WhiteKnight: return WHITE_KNIGHT;
-            case Piece::WhitePawn: return WHITE_PAWN;
-            case Piece::BlackKing: return BLACK_KING;
-            case Piece::BlackQueen: return BLACK_QUEEN;
-            case Piece::BlackRook: return BLACK_ROOK;
-            case Piece::BlackBishop: return BLACK_BISHOP;
-            case Piece::BlackKnight: return BLACK_KNIGHT;
-            case Piece::BlackPawn: return BLACK_PAWN;
-            default: return " ";
-        }
-    }
-    
-    // Check if chess symbols are available in the font
-    inline bool verify_chess_symbols() {
-        static bool verified = false;
-        static bool all_available = false;
-        
-        if (!verified) {
-            // Check actual codepoints in the font
-            all_available = true;
-            
-            // Array of all chess symbol codepoints
-            std::array<char32_t, 12> codepoints = {
-                WHITE_KING_CODEPOINT, WHITE_QUEEN_CODEPOINT, WHITE_ROOK_CODEPOINT, 
-                WHITE_BISHOP_CODEPOINT, WHITE_KNIGHT_CODEPOINT, WHITE_PAWN_CODEPOINT,
-                BLACK_KING_CODEPOINT, BLACK_QUEEN_CODEPOINT, BLACK_ROOK_CODEPOINT, 
-                BLACK_BISHOP_CODEPOINT, BLACK_KNIGHT_CODEPOINT, BLACK_PAWN_CODEPOINT
-            };
-            
-            // Corresponding UTF-8 strings for logging
-            std::array<const char*, 12> symbols = {
-                WHITE_KING, WHITE_QUEEN, WHITE_ROOK, WHITE_BISHOP, WHITE_KNIGHT, WHITE_PAWN,
-                BLACK_KING, BLACK_QUEEN, BLACK_ROOK, BLACK_BISHOP, BLACK_KNIGHT, BLACK_PAWN
-            };
-            
-            // Check each codepoint directly
-            for (size_t i = 0; i < codepoints.size(); ++i) {
-                bool is_available = fonts::is_glyph_available(static_cast<ImWchar>(codepoints[i]), fonts::FontType::ChessSymbols);
-                CHESS_INFO_FMT("Chess symbol '{}' (U+{:04X}) available in dedicated font: {}", 
-                               symbols[i], static_cast<uint32_t>(codepoints[i]), 
-                               is_available ? "yes" : "no");
-                
-                if (!is_available) {
-                    all_available = false;
-                }
-            }
-            
-            verified = true;
-            
-            if (!all_available) {
-                CHESS_WARN("Some chess symbols are not available in the chess symbols font");
-            } else {
-                CHESS_INFO("All chess symbols are available in the chess symbols font");
-            }
-        }
-        
-        return all_available;
-    }
-}
 
 namespace rouen::cards {
     
@@ -151,11 +32,11 @@ public:
         // Additional colors for board and pieces
         get_color(2, ImVec4(0.8f, 0.8f, 0.7f, 1.0f)); // Light squares
         get_color(3, ImVec4(0.5f, 0.6f, 0.4f, 1.0f)); // Dark squares
-        get_color(4, ImVec4(0.9f, 0.9f, 0.9f, 1.0f)); // White pieces
-        get_color(5, ImVec4(0.2f, 0.2f, 0.2f, 1.0f)); // Black pieces
+        get_color(4, ImVec4(0.9f, 0.9f, 0.9f, 1.0f)); // White pieces (fallback)
+        get_color(5, ImVec4(0.2f, 0.2f, 0.2f, 1.0f)); // Black pieces (fallback)
         get_color(6, ImVec4(0.9f, 0.5f, 0.5f, 0.7f)); // Highlighted square
         get_color(7, ImVec4(0.3f, 0.7f, 0.3f, 0.7f)); // Last move indicator
-        get_color(8, ImVec4(0.8f, 0.4f, 0.4f, 1.0f)); // Fallback piece color (for text-based fallback)
+        get_color(8, ImVec4(0.8f, 0.4f, 0.4f, 1.0f)); // Error color
         
         name("Chess Replay");
         requested_fps = 30;  // Higher refresh rate for smoother animations
@@ -164,18 +45,37 @@ public:
         // Create chess game model
         game = std::make_unique<models::chess::Game>();
         
+        // Try to get the SDL renderer from the registrar
+        try {
+            renderer = *registrar::get<SDL_Renderer*>("main_renderer");
+            CHESS_INFO("Got main renderer for chess piece images");
+        } catch (const std::exception& e) {
+            CHESS_ERROR_FMT("Failed to get renderer from registrar: {}", e.what());
+            renderer = nullptr;
+        }
+        
+        // Load chess piece textures
+        if (renderer) {
+            load_piece_textures();
+        }
+        
         // If a PGN path was provided, load it
         if (!pgn_path.empty()) {
             load_pgn(std::string(pgn_path));
         }
         
-        // Verify that chess symbols are available
-        has_chess_symbols = chess_symbols::verify_chess_symbols();
-        
         CHESS_INFO("Chess replay card initialized");
     }
     
     ~chess_replay() override {
+        // Clean up textures
+        for (auto& [piece, texture] : piece_textures) {
+            if (texture) {
+                SDL_DestroyTexture(texture);
+                texture = nullptr;
+            }
+        }
+        
         CHESS_INFO("Chess replay card destroyed");
     }
     
@@ -233,6 +133,50 @@ public:
     }
     
 private:
+    // Load chess piece textures from image files
+    void load_piece_textures() {
+        // Get the current application directory using std::filesystem
+        std::filesystem::path app_path = std::filesystem::current_path();
+        
+        // File paths for the chess piece images - using relative paths
+        const std::vector<std::pair<models::chess::Piece, std::string>> piece_files = {
+            {models::chess::Piece::WhiteKing, "img/Chess_klt60.png"},
+            {models::chess::Piece::WhiteQueen, "img/Chess_qlt60.png"},
+            {models::chess::Piece::WhiteRook, "img/Chess_rlt60.png"},
+            {models::chess::Piece::WhiteBishop, "img/Chess_blt60.png"},
+            {models::chess::Piece::WhiteKnight, "img/Chess_nlt60.png"},
+            {models::chess::Piece::WhitePawn, "img/Chess_plt60.png"},
+            {models::chess::Piece::BlackKing, "img/Chess_kdt60.png"},
+            {models::chess::Piece::BlackQueen, "img/Chess_qdt60.png"},
+            {models::chess::Piece::BlackRook, "img/Chess_rdt60.png"},
+            {models::chess::Piece::BlackBishop, "img/Chess_bdt60.png"},
+            {models::chess::Piece::BlackKnight, "img/Chess_ndt60.png"},
+            {models::chess::Piece::BlackPawn, "img/Chess_pdt60.png"}
+        };
+        
+        // Load each texture
+        std::size_t success_count = 0;
+        for (const auto& [piece, file_path] : piece_files) {
+            // Create the full path to the image file
+            std::filesystem::path full_path = app_path / file_path;
+            
+            int width, height;
+            SDL_Texture* texture = TextureHelper::loadTextureFromFile(renderer, full_path.string().c_str(), width, height);
+            
+            if (texture) {
+                piece_textures[piece] = texture;
+                piece_dimensions[piece] = std::make_pair(width, height);
+                success_count++;
+                CHESS_INFO_FMT("Loaded chess piece texture: {}", file_path);
+            } else {
+                CHESS_ERROR_FMT("Failed to load chess piece texture: {}", file_path);
+            }
+        }
+        
+        CHESS_INFO_FMT("Loaded {}/{} chess piece textures", success_count, piece_files.size());
+        textures_loaded = (success_count == piece_files.size());
+    }
+    
     // Render the chess board
     void render_board(float board_size, float square_size) {
         if (!game) return;
@@ -292,92 +236,94 @@ private:
                 // Get piece at this square
                 models::chess::Piece piece = board_array[static_cast<std::size_t>(rank) * 8 + static_cast<std::size_t>(file)];
                 if (piece != models::chess::Piece::None) {
-                    // Determine piece color
-                    ImVec4 piece_color = models::chess::Board::is_white(piece) ? colors[4] : colors[5];
-                    
-                    // Get the Unicode code point for this chess piece
-                    char32_t piece_codepoint = chess_symbols::get_unicode_codepoint(piece);
-                    
-                    // Calculate center position for the piece
-                    const float text_center_x = square_pos.x + square_size * 0.5f;
-                    const float text_center_y = square_pos.y + square_size * 0.5f;
-                    
-                    // Use a larger font size for chess pieces
-                    float font_size = square_size * 0.85f;
-                    
-                    // Get the dedicated chess symbols font
-                    ImFont* chess_font = fonts::get_font(fonts::FontType::ChessSymbols);
-                    
-                    // If we have a dedicated chess font, use it; otherwise fall back to default
-                    if (chess_font != nullptr) {
-                        // We'll create a temporary single character string for drawing
-                        // since ImGui's AddText expects a UTF-8 string
-                        char piece_utf8[8] = {0}; // UTF-8 can require up to 4 bytes per character + null terminator
+                    // Draw piece using image texture if available
+                    if (renderer && textures_loaded && piece_textures.count(piece) > 0 && piece_textures[piece] != nullptr) {
+                        SDL_Texture* texture = piece_textures[piece];
+                        auto [tex_width, tex_height] = piece_dimensions[piece];
                         
-                        // Convert the codepoint to a UTF-8 string
-                        if (piece_codepoint < 0x80) {
-                            // 1-byte character (ASCII)
-                            piece_utf8[0] = static_cast<char>(piece_codepoint);
-                        } else if (piece_codepoint < 0x800) {
-                            // 2-byte character
-                            piece_utf8[0] = static_cast<char>(0xC0 | ((piece_codepoint >> 6) & 0x1F));
-                            piece_utf8[1] = static_cast<char>(0x80 | (piece_codepoint & 0x3F));
-                        } else if (piece_codepoint < 0x10000) {
-                            // 3-byte character (our chess symbols are in this range - U+2654 to U+265F)
-                            piece_utf8[0] = static_cast<char>(0xE0 | ((piece_codepoint >> 12) & 0x0F));
-                            piece_utf8[1] = static_cast<char>(0x80 | ((piece_codepoint >> 6) & 0x3F));
-                            piece_utf8[2] = static_cast<char>(0x80 | (piece_codepoint & 0x3F));
-                        } else {
-                            // 4-byte character
-                            piece_utf8[0] = static_cast<char>(0xF0 | ((piece_codepoint >> 18) & 0x07));
-                            piece_utf8[1] = static_cast<char>(0x80 | ((piece_codepoint >> 12) & 0x3F));
-                            piece_utf8[2] = static_cast<char>(0x80 | ((piece_codepoint >> 6) & 0x3F));
-                            piece_utf8[3] = static_cast<char>(0x80 | (piece_codepoint & 0x3F));
+                        // Calculate scaling to fit the square
+                        float scale = square_size / static_cast<float>(tex_width);
+                        if (static_cast<float>(tex_height) * scale > square_size) {
+                            scale = square_size / static_cast<float>(tex_height);
                         }
                         
-                        // Calculate text dimensions for perfect centering
-                        ImVec2 text_size = chess_font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, piece_utf8);
+                        // Scale down slightly to leave a small margin
+                        scale *= 0.9f;
                         
-                        // Calculate position for perfectly centered display
-                        ImVec2 text_pos(
-                            text_center_x - (text_size.x * 0.5f),
-                            text_center_y - (text_size.y * 0.5f)
+                        // Calculate final dimensions
+                        float piece_width = static_cast<float>(tex_width) * scale;
+                        float piece_height = static_cast<float>(tex_height) * scale;
+                        
+                        // Calculate position to center the piece in the square
+                        ImVec2 piece_pos = ImVec2(
+                            square_pos.x + (square_size - piece_width) * 0.5f,
+                            square_pos.y + (square_size - piece_height) * 0.5f
                         );
                         
-                        // Draw the Unicode chess piece with the dedicated chess font
-                        draw_list->AddText(chess_font, font_size, text_pos, 
-                                           ImGui::ColorConvertFloat4ToU32(piece_color), piece_utf8);
-                        
-                        // Debug: Log what we're drawing
-                        // CHESS_DEBUG_FMT("Drawing piece at {},{}: codepoint U+{:04X}, utf8: {}", 
-                        //                file, rank, static_cast<uint32_t>(piece_codepoint), piece_utf8);
+                        // Draw the texture
+                        draw_list->AddImage(
+                            (ImTextureID)(intptr_t)texture,
+                            piece_pos,
+                            ImVec2(piece_pos.x + piece_width, piece_pos.y + piece_height)
+                        );
                     } else {
-                        // Fall back to the current font if the chess font isn't available
-                        ImFont* default_font = ImGui::GetFont();
+                        // Fallback to a colored rectangle if image not available
+                        ImVec4 piece_color = models::chess::Board::is_white(piece) ? colors[4] : colors[5];
                         
-                        // Use a fallback color to indicate we're using the default font
-                        if (!has_chess_symbols) {
-                            piece_color = colors[8]; // Fallback color
-                        }
+                        // Draw a placeholder for the piece
+                        float piece_size = square_size * 0.7f;
+                        float piece_margin = (square_size - piece_size) * 0.5f;
                         
-                        // Get the UTF-8 string for this piece
-                        const char* piece_char = chess_symbols::get_unicode_piece(piece);
-                        
-                        // Calculate text dimensions with default font
-                        ImVec2 text_size = default_font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, piece_char);
-                        
-                        // Calculate position for perfectly centered display
-                        ImVec2 text_pos(
-                            text_center_x - (text_size.x * 0.5f),
-                            text_center_y - (text_size.y * 0.5f)
+                        draw_list->AddRectFilled(
+                            ImVec2(square_pos.x + piece_margin, square_pos.y + piece_margin),
+                            ImVec2(square_pos.x + piece_margin + piece_size, square_pos.y + piece_margin + piece_size),
+                            ImGui::ColorConvertFloat4ToU32(piece_color),
+                            piece_size * 0.25f  // Rounded corners
                         );
                         
-                        // Draw with default font as fallback
-                        draw_list->AddText(default_font, font_size, text_pos, 
-                                           ImGui::ColorConvertFloat4ToU32(piece_color), piece_char);
+                        // Add a piece identifier letter in the center
+                        char piece_label = get_piece_letter(piece);
+                        ImVec2 text_size = ImGui::CalcTextSize(&piece_label, &piece_label + 1);
+                        
+                        draw_list->AddText(
+                            ImVec2(square_pos.x + (square_size - text_size.x) * 0.5f,
+                                   square_pos.y + (square_size - text_size.y) * 0.5f),
+                            ImGui::ColorConvertFloat4ToU32(ImVec4(0.0f, 0.0f, 0.0f, 1.0f)),
+                            &piece_label, &piece_label + 1
+                        );
                     }
                 }
             }
+        }
+    }
+    
+    // Helper to get a letter representing the piece for fallback display
+    char get_piece_letter(models::chess::Piece piece) {
+        using Piece = models::chess::Piece;
+        
+        bool is_white = models::chess::Board::is_white(piece);
+        
+        switch (piece) {
+            case Piece::WhiteKing:
+            case Piece::BlackKing:
+                return is_white ? 'K' : 'k';
+            case Piece::WhiteQueen:
+            case Piece::BlackQueen:
+                return is_white ? 'Q' : 'q';
+            case Piece::WhiteRook:
+            case Piece::BlackRook:
+                return is_white ? 'R' : 'r';
+            case Piece::WhiteBishop:
+            case Piece::BlackBishop:
+                return is_white ? 'B' : 'b';
+            case Piece::WhiteKnight:
+            case Piece::BlackKnight:
+                return is_white ? 'N' : 'n';
+            case Piece::WhitePawn:
+            case Piece::BlackPawn:
+                return is_white ? 'P' : 'p';
+            default:
+                return ' ';
         }
     }
     
@@ -555,7 +501,12 @@ private:
     std::string loaded_pgn_path;
     bool autoplay = false;
     float autoplay_speed = 1.0f;
-    bool has_chess_symbols = false;
+    
+    // SDL Renderer and textures
+    SDL_Renderer* renderer = nullptr;
+    std::unordered_map<models::chess::Piece, SDL_Texture*> piece_textures;
+    std::unordered_map<models::chess::Piece, std::pair<int, int>> piece_dimensions;
+    bool textures_loaded = false;
 };
 
 } // namespace rouen::cards
