@@ -8,6 +8,11 @@
 #include <array>
 #include <unordered_map>
 #include <filesystem>
+#include <future>
+#include <optional>
+#include <algorithm>
+#include <map>
+#include <glaze/json.hpp>
 
 #include "imgui.h"
 #include <SDL.h>
@@ -17,11 +22,138 @@
 #include "../../models/chess/chess.hpp"
 #include "../../helpers/debug.hpp"  // Include debug system for better logging
 #include "../../helpers/texture_helper.hpp"
+#include "../../helpers/fetch.hpp"  // For Chess.com API requests
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"  // For font utilities
+#include "../../../external/IconsMaterialDesign.h"
+
+// Chess-specific debug macros are already defined in debug.hpp
+// No need to redefine them here
 
 namespace rouen::cards {
     
+// Chess.com API response structures
+struct ChessGameArchive {
+    std::string url;
+    std::string pgn;
+    std::string time_class;
+    int64_t end_time;
+    std::string white_username;
+    std::string black_username;
+    std::string result;
+};
+
+// JSON structure for Chess.com API game response
+struct ChessComGame {
+    std::string url;
+    std::string pgn;
+    std::string time_class;
+    int64_t end_time;
+    
+    // Add missing fields that might be in the actual response
+    struct Players {
+        struct Player {
+            std::string username;
+            int result; // 'win', 'lose', 'draw' encoded as integers
+            
+            // Define additional fields as needed
+            std::string rating;
+        };
+        
+        Player white;
+        Player black;
+    };
+    
+    Players players;
+    std::string result; // The game result string (e.g., "1-0")
+    
+    // Additional fields can be added here as needed
+};
+
+// JSON structure for Chess.com API archives response
+struct ChessComArchives {
+    std::vector<std::string> archives;
+};
+
+// JSON structure for Chess.com API games response
+struct ChessComGamesResponse {
+    std::vector<ChessComGame> games;
+};
+
+// Glaze metadata for Chess.com API structures
+} // namespace rouen::cards
+
+// Define glaze schema for Chess.com API structures
+template <>
+struct glz::meta<rouen::cards::ChessComGame::Players::Player> {
+    using T = rouen::cards::ChessComGame::Players::Player;
+    static constexpr auto value = glz::object(
+        "username", &T::username,
+        "result", &T::result,
+        "rating", &T::rating
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::cards::ChessComGame::Players> {
+    using T = rouen::cards::ChessComGame::Players;
+    static constexpr auto value = glz::object(
+        "white", &T::white,
+        "black", &T::black
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::cards::ChessComGame> {
+    using T = rouen::cards::ChessComGame;
+    static constexpr auto value = glz::object(
+        "url", &T::url,
+        "pgn", &T::pgn,
+        "time_class", &T::time_class,
+        "end_time", &T::end_time,
+        "players", &T::players,
+        "result", &T::result
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::cards::ChessComArchives> {
+    using T = rouen::cards::ChessComArchives;
+    static constexpr auto value = glz::object(
+        "archives", &T::archives
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::cards::ChessComGamesResponse> {
+    using T = rouen::cards::ChessComGamesResponse;
+    static constexpr auto value = glz::object(
+        "games", &T::games
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+namespace rouen::cards {
+
 class chess_replay : public card {
 public:
     chess_replay(std::string_view pgn_path = "") {
@@ -37,6 +169,7 @@ public:
         get_color(6, ImVec4(0.9f, 0.5f, 0.5f, 0.7f)); // Highlighted square
         get_color(7, ImVec4(0.3f, 0.7f, 0.3f, 0.7f)); // Last move indicator
         get_color(8, ImVec4(0.8f, 0.4f, 0.4f, 1.0f)); // Error color
+        get_color(9, ImVec4(0.3f, 0.3f, 0.8f, 1.0f)); // Info color for Chess.com
         
         name("Chess Replay");
         requested_fps = 30;  // Higher refresh rate for smoother animations
@@ -80,6 +213,11 @@ public:
     }
     
     std::string get_uri() const override {
+        // Return chess-com URI if this is from the Chess.com integration
+        if (from_chess_com && !chess_com_username.empty()) {
+            return "chess-com:" + chess_com_username;
+        }
+        
         return "chess";
     }
     
@@ -90,9 +228,22 @@ public:
                 return;
             }
             
+            // Check if we need to auto-search for a username
+            if (auto_search_on_render) {
+                auto_search_on_render = false; // Only do this once
+                fetch_player_archives(username_buffer);
+                from_chess_com = true;
+                chess_com_username = username_buffer;
+            }
+            
             // Calculate board size based on card width
             float board_size = std::min(width - 40.0f, 400.0f);
             float square_size = board_size / 8.0f;
+            
+            // Show Chess.com API UI at the top
+            render_chess_com_ui();
+            
+            ImGui::Separator();
             
             // Create a two-column layout: board on left, controls and moves on right
             ImGui::Columns(2, "ChessLayout", false);
@@ -111,6 +262,9 @@ public:
             
             // Reset column layout
             ImGui::Columns(1);
+            
+            // Process any pending API responses
+            process_api_responses();
         });
     }
     
@@ -132,7 +286,401 @@ public:
         return success;
     }
     
+    // Load PGN from string content
+    bool load_pgn_content(const std::string& pgn_content) {
+        if (!game) {
+            CHESS_ERROR("Chess game model not initialized");
+            return false;
+        }
+        
+        bool success = game->load_from_pgn(pgn_content);
+        if (success) {
+            CHESS_INFO("Successfully loaded PGN from content");
+        } else {
+            CHESS_ERROR("Failed to load PGN from content");
+        }
+        
+        return success;
+    }
+    
+    // Set the username to search for Chess.com games (public method for registrar)
+    void set_chess_com_username(const std::string& username) {
+        std::strncpy(username_buffer, username.c_str(), sizeof(username_buffer) - 1);
+        username_buffer[sizeof(username_buffer) - 1] = '\0';
+        chess_com_username = username;
+        from_chess_com = true;
+        auto_search_on_render = true;
+    }
+    
 private:
+    // Fix common issues with Chess.com PGN format
+    std::string fix_chess_com_pgn(const std::string& pgn) {
+        if (pgn.empty()) {
+            return pgn;
+        }
+        
+        std::string fixed_pgn = pgn;
+        
+        // Fix 1: Some PGNs have escaped newlines that should be real newlines
+        size_t pos = 0;
+        while ((pos = fixed_pgn.find("\\n", pos)) != std::string::npos) {
+            fixed_pgn.replace(pos, 2, "\n");
+            pos += 1; // Move past the inserted newline
+        }
+        
+        // Fix 2: Some PGNs have incorrect tag formatting
+        pos = 0;
+        while ((pos = fixed_pgn.find("[", pos)) != std::string::npos) {
+            // Check if there's no space after the tag name
+            size_t tag_end = fixed_pgn.find(" ", pos);
+            size_t quote_start = fixed_pgn.find("\"", pos);
+            
+            // If there's a quote before a space or no space, we need to add one
+            if (quote_start != std::string::npos && (tag_end == std::string::npos || quote_start < tag_end)) {
+                // Get the tag name
+                std::string tag_name = fixed_pgn.substr(pos + 1, quote_start - pos - 1);
+                // Replace with properly formatted tag
+                fixed_pgn.replace(pos, quote_start - pos, "[" + tag_name + " ");
+            }
+            
+            pos = fixed_pgn.find("]", pos);
+            if (pos != std::string::npos) {
+                pos++; // Move past the closing bracket
+            } else {
+                break; // Avoid infinite loop if there's no closing bracket
+            }
+        }
+        
+        // Fix 3: Ensure there's a blank line between tags and moves
+        pos = fixed_pgn.rfind("]");
+        if (pos != std::string::npos) {
+            // Check if there are already two newlines after the last tag
+            size_t next_pos = pos + 1;
+            size_t newline_count = 0;
+            while (next_pos < fixed_pgn.size() && fixed_pgn[next_pos] == '\n') {
+                newline_count++;
+                next_pos++;
+            }
+            
+            // If not enough newlines, add them
+            if (newline_count < 2) {
+                fixed_pgn.insert(pos + 1, std::string(2 - newline_count, '\n'));
+            }
+        }
+        
+        // Fix 4: Some PGNs have inconsistent move number formatting
+        // For example: 1. e4 e5 2...Nf6 instead of 1. e4 e5 2. Nf6
+        std::regex move_number_ellipsis(R"((\d+)\.\.\.([A-Za-z0-9]))");
+        fixed_pgn = std::regex_replace(fixed_pgn, move_number_ellipsis, "$1. $2");
+        
+        // Fix 5: Handle any other specific Chess.com formatting issues
+        
+        CHESS_DEBUG_FMT("Fixed PGN from {} characters to {} characters", pgn.length(), fixed_pgn.length());
+        return fixed_pgn;
+    }
+
+    // Render Chess.com API integration UI
+    void render_chess_com_ui() {
+        ImGui::TextColored(colors[9], "Chess.com Player Games");
+        
+        // Username input field
+        ImGui::SetNextItemWidth(200.0f);
+        if (ImGui::InputText("##ChessUsername", username_buffer, sizeof(username_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            fetch_player_archives(username_buffer);
+            chess_com_username = username_buffer;
+            from_chess_com = true;
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Search")) {
+            fetch_player_archives(username_buffer);
+            chess_com_username = username_buffer;
+            from_chess_com = true;
+        }
+        
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Enter a Chess.com username and click Search to find their games");
+        }
+        
+        // Show loading indicator if fetching data
+        if (is_fetching_archives || is_fetching_games) {
+            ImGui::SameLine();
+            ImGui::Text("Loading...");
+        }
+        
+        // Show error if one occurred
+        if (!api_error.empty()) {
+            ImGui::TextColored(colors[8], "Error: %s", api_error.c_str());
+        }
+        
+        // Archive months dropdown
+        if (!player_archives.empty()) {
+            ImGui::SetNextItemWidth(200.0f);
+            if (ImGui::BeginCombo("##ArchiveMonths", selected_archive.empty() ? "Select Month" : selected_archive.c_str())) {
+                for (const auto& archive : player_archives) {
+                    // Extract month/year from URL: https://api.chess.com/pub/player/{username}/games/YYYY/MM
+                    std::string month_display = archive.substr(archive.length() - 7); // Get "YYYY/MM"
+                    month_display[4] = '-'; // Replace / with -
+                    
+                    bool is_selected = (selected_archive == month_display);
+                    if (ImGui::Selectable(month_display.c_str(), is_selected)) {
+                        selected_archive = month_display;
+                        fetch_archive_games(archive);
+                    }
+                    
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            
+            // Games list
+            if (!archive_games.empty()) {
+                ImGui::SetNextItemWidth(500.0f);
+                if (ImGui::BeginCombo("##GamesList", selected_game_index < 0 ? 
+                                    "Select Game" : 
+                                    format_game_display(archive_games[static_cast<size_t>(selected_game_index)]).c_str())) {
+                    for (size_t i = 0; i < archive_games.size(); ++i) {
+                        const auto& chess_game_item = archive_games[i];
+                        std::string game_display = format_game_display(chess_game_item);
+                        
+                        bool is_selected = (selected_game_index == static_cast<int>(i));
+                        if (ImGui::Selectable(game_display.c_str(), is_selected)) {
+                            selected_game_index = static_cast<int>(i);
+                            load_selected_game();
+                        }
+                        
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+        }
+    }
+    
+    // Format a game for display in the dropdown
+    std::string format_game_display(const ChessGameArchive& chess_game) {
+        // Format date from timestamp
+        std::time_t time = static_cast<std::time_t>(chess_game.end_time);
+        std::tm* tm = std::localtime(&time);
+        char date_buf[20];
+        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", tm);
+        
+        // Format time class (e.g., blitz, rapid)
+        std::string time_class = chess_game.time_class;
+        if (!time_class.empty()) {
+            time_class[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(time_class[0])));
+        }
+        
+        return std::string(date_buf) + " - " + 
+               chess_game.white_username + " vs " + chess_game.black_username + 
+               " [" + time_class + "] " + chess_game.result;
+    }
+    
+    // Fetch player archives from Chess.com API
+    void fetch_player_archives(const std::string& username) {
+        if (username.empty()) {
+            api_error = "Please enter a username";
+            return;
+        }
+        
+        // Clear previous results
+        player_archives.clear();
+        archive_games.clear();
+        selected_archive.clear();
+        selected_game_index = -1;
+        api_error.clear();
+        
+        // Set fetching flag
+        is_fetching_archives = true;
+        
+        // Start async fetch
+        archives_future = std::async(std::launch::async, [username]() {
+            try {
+                http::fetch fetcher;
+                std::string url = "https://api.chess.com/pub/player/" + username + "/games/archives";
+                std::string response = fetcher(url);
+                
+                return std::make_pair(true, response);
+            } catch (const std::exception& e) {
+                return std::make_pair(false, std::string(e.what()));
+            }
+        });
+    }
+    
+    // Fetch games from a specific archive
+    void fetch_archive_games(const std::string& archive_url) {
+        // Clear previous results
+        archive_games.clear();
+        selected_game_index = -1;
+        api_error.clear();
+        
+        // Set fetching flag
+        is_fetching_games = true;
+        
+        // Start async fetch
+        games_future = std::async(std::launch::async, [archive_url]() {
+            try {
+                http::fetch fetcher;
+                std::string response = fetcher(archive_url);
+                
+                return std::make_pair(true, response);
+            } catch (const std::exception& e) {
+                return std::make_pair(false, std::string(e.what()));
+            }
+        });
+    }
+    
+    // Process any completed API responses
+    void process_api_responses() {
+        // Check archives future
+        if (is_fetching_archives && archives_future.valid()) {
+            auto status = archives_future.wait_for(std::chrono::seconds(0));
+            if (status == std::future_status::ready) {
+                auto [success, result] = archives_future.get();
+                is_fetching_archives = false;
+                
+                if (success) {
+                    try {
+                        // Parse JSON to extract archive URLs
+                        ChessComArchives archives;
+                        auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(archives, result);
+                        if (read_error) {
+                            api_error = std::string("Error parsing response: ") + glz::format_error(read_error);
+                        } else {
+                            player_archives = archives.archives;
+                        }
+                    } catch (const std::exception& e) {
+                        api_error = std::string("Error parsing response: ") + e.what();
+                    }
+                } else {
+                    api_error = result;
+                }
+            }
+        }
+        
+        // Check games future
+        if (is_fetching_games && games_future.valid()) {
+            auto status = games_future.wait_for(std::chrono::seconds(0));
+            if (status == std::future_status::ready) {
+                auto [success, result] = games_future.get();
+                is_fetching_games = false;
+                
+                if (success) {
+                    try {
+                        // Parse JSON to extract games
+                        ChessComGamesResponse games_response;
+                        auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(games_response, result);
+                        if (!read_error) {
+                            archive_games.clear();
+                            for (const auto& game_item : games_response.games) {
+                                ChessGameArchive archive_game;
+                                archive_game.url = game_item.url;
+                                archive_game.pgn = game_item.pgn;
+                                archive_game.time_class = game_item.time_class;
+                                archive_game.end_time = game_item.end_time;
+                                
+                                // Extract player information from the structured player data
+                                if (game_item.players.white.username.empty() || game_item.players.black.username.empty()) {
+                                    // If player info isn't available in the structured data, try to extract from PGN
+                                    // This is a fallback in case the API response format changes
+                                    extract_player_info_from_pgn(game_item.pgn, archive_game);
+                                } else {
+                                    // Use the properly parsed player information
+                                    archive_game.white_username = game_item.players.white.username;
+                                    archive_game.black_username = game_item.players.black.username;
+                                }
+                                
+                                // Use the result field if available, otherwise derive from players' results
+                                if (!game_item.result.empty()) {
+                                    archive_game.result = game_item.result;
+                                } else {
+                                    // Determine result based on player results (win/loss/draw)
+                                    if (game_item.players.white.result == 1) {
+                                        archive_game.result = "1-0";
+                                    } else if (game_item.players.black.result == 1) {
+                                        archive_game.result = "0-1";
+                                    } else {
+                                        archive_game.result = "1/2-1/2";
+                                    }
+                                }
+                                
+                                archive_games.push_back(archive_game);
+                            }
+                        } else {
+                            api_error = std::string("Error parsing response: ") + glz::format_error(read_error);
+                        }
+                    } catch (const std::exception& e) {
+                        api_error = std::string("Error parsing response: ") + e.what();
+                    }
+                } else {
+                    api_error = result;
+                }
+            }
+        }
+    }
+    
+    // Load the selected game
+    void load_selected_game() {
+        if (selected_game_index < 0 || static_cast<size_t>(selected_game_index) >= archive_games.size()) {
+            CHESS_ERROR("Invalid selected game index");
+            return;
+        }
+        
+        const auto& selected_game = archive_games[static_cast<size_t>(selected_game_index)];
+        if (selected_game.pgn.empty()) {
+            CHESS_ERROR("Selected game has empty PGN");
+            return;
+        }
+        
+        // Log the first part of the PGN for debugging
+        CHESS_INFO_FMT("Loading PGN: {}", selected_game.pgn.substr(0, std::min(size_t(100), selected_game.pgn.size())));
+        
+        // Use the Glaze JSON library to properly unescape the JSON string
+        std::string clean_pgn;
+        try {
+            // Properly unescape the PGN string using the JSON library
+            auto read_result = glz::read_json(clean_pgn, "\"" + selected_game.pgn + "\"");
+            if (!read_result) {
+                CHESS_ERROR_FMT("Error unescaping PGN: {}", glz::format_error(read_result));
+                // Fallback to direct PGN if Glaze unescaping fails
+                clean_pgn = selected_game.pgn;
+            } else {
+                CHESS_INFO("Successfully unescaped PGN JSON string");
+            }
+        } catch (const std::exception& e) {
+            CHESS_ERROR_FMT("Error unescaping PGN: {}", e.what());
+            
+            // Fallback to direct PGN if Glaze unescaping fails
+            clean_pgn = selected_game.pgn;
+        }
+        
+        // Ensure PGN starts with a valid tag
+        if (!clean_pgn.empty() && clean_pgn.front() != '[') {
+            CHESS_WARN("PGN doesn't start with a tag, adding Event tag");
+            clean_pgn = "[Event \"Chess.com Game\"]\n" + clean_pgn;
+        }
+        
+        // Fix common issues with Chess.com PGN format
+        clean_pgn = fix_chess_com_pgn(clean_pgn);
+        
+        // Try to load the PGN content
+        bool success = load_pgn_content(clean_pgn);
+        
+        if (!success) {
+            CHESS_ERROR("Failed to load selected game PGN");
+            api_error = "Failed to load game. Invalid PGN format.";
+        } else {
+            api_error.clear();
+            CHESS_INFO("Successfully loaded selected game");
+        }
+    }
+    
     // Load chess piece textures from image files
     void load_piece_textures() {
         // Get the current application directory using std::filesystem
@@ -495,6 +1043,37 @@ private:
         }
         ImGui::EndChild();
     }
+
+    // Helper method to extract player information from PGN string
+    void extract_player_info_from_pgn(const std::string& pgn, ChessGameArchive& archive_game) {
+        // Try to find White and Black player tags in the PGN
+        auto extract_tag_value = [](const std::string& pgn, const std::string& tag) -> std::string {
+            std::string search_pattern = "[" + tag + " \"";
+            size_t start_pos = pgn.find(search_pattern);
+            if (start_pos != std::string::npos) {
+                start_pos += search_pattern.length();
+                size_t end_pos = pgn.find("\"]", start_pos);
+                if (end_pos != std::string::npos) {
+                    return pgn.substr(start_pos, end_pos - start_pos);
+                }
+            }
+            return "";
+        };
+        
+        // Extract player names
+        archive_game.white_username = extract_tag_value(pgn, "White");
+        archive_game.black_username = extract_tag_value(pgn, "Black");
+        
+        // Extract result if not already set
+        if (archive_game.result.empty()) {
+            archive_game.result = extract_tag_value(pgn, "Result");
+        }
+        
+        // If we couldn't extract player names, use placeholders
+        if (archive_game.white_username.empty()) archive_game.white_username = "White";
+        if (archive_game.black_username.empty()) archive_game.black_username = "Black";
+        if (archive_game.result.empty()) archive_game.result = "*";
+    }
     
 private:
     std::unique_ptr<models::chess::Game> game;
@@ -507,6 +1086,23 @@ private:
     std::unordered_map<models::chess::Piece, SDL_Texture*> piece_textures;
     std::unordered_map<models::chess::Piece, std::pair<int, int>> piece_dimensions;
     bool textures_loaded = false;
+    
+    // Chess.com API related members
+    char username_buffer[64] = {};
+    std::vector<std::string> player_archives;
+    std::vector<ChessGameArchive> archive_games;
+    std::string selected_archive;
+    int selected_game_index = -1;
+    bool is_fetching_archives = false;
+    bool is_fetching_games = false;
+    std::string api_error;
+    bool auto_search_on_render = false;
+    bool from_chess_com = false;
+    std::string chess_com_username;
+    
+    // Async futures for API requests
+    std::future<std::pair<bool, std::string>> archives_future;
+    std::future<std::pair<bool, std::string>> games_future;
 };
 
 } // namespace rouen::cards

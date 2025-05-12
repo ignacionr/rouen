@@ -56,7 +56,8 @@ namespace rouen::models::github {
             return fetch(url_str + "/runs");
         }
 
-        http::fetch::header_client_t header_client() const {
+        // Updated to match the type used in the fetch.hpp implementation
+        auto header_client() const {
             // Fix: store the bearer header in a variable before capturing it
             std::string bearer = std::format("Authorization: Bearer {}", login_host_->personal_token());
             return [bearer](auto setheader) {
