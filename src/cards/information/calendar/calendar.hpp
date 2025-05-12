@@ -329,9 +329,16 @@ namespace rouen::cards
                 ImGui::Separator();
             }
             
+            // Calculate the current hour once before rendering time slots
+            int current_hour = -1;
+            if (is_today) {
+                auto now = std::chrono::system_clock::now();
+                auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm = *std::localtime(&now_time_t);
+                current_hour = now_tm.tm_hour;
+            }
+            
             // Render time slots (from 0 to 23 hours)
-            int current_hour = is_today ? std::chrono::duration_cast<std::chrono::hours>(
-                std::chrono::system_clock::now().time_since_epoch()).count() % 24 : -1;
             for (int hour = 0; hour < 24; hour++) {
                 std::string time_label = std::format("{:02d}:00", hour);
                 
