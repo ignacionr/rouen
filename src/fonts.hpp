@@ -16,8 +16,7 @@ namespace rouen::fonts {
     // The different font types available
     enum class FontType {
         Default,      // Default font
-        Mono,         // Monospace font
-        ChessSymbols  // Specialized font for chess symbols
+        Mono          // Monospace font
     };
 
     // Setup fonts for the application
