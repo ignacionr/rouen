@@ -35,8 +35,7 @@ public:
         // Get the weather host
         weather_host = std::make_shared<hosts::WeatherHost>();
 
-        weather_host->setLocation(location);
-        weather_host->refreshWeather();
+        setLocation(location);
         
         DB_INFO("Weather card: Constructor completed");
     }
@@ -162,9 +161,7 @@ private:
                 ImGui::TableSetupColumn("Condition");
                 ImGui::TableHeadersRow();
                 
-                for (size_t i = 0; i < forecast_items_to_show; i++) {
-                    const auto& item = forecast->list[i];
-                    
+                for (const auto& item : forecast->list | std::views::take(forecast_items_to_show)) {
                     // Get the time
                     std::string time_str = item.dt_txt;
                     // Format shows "YYYY-MM-DD HH:MM:SS" - we just want hours
@@ -219,23 +216,33 @@ private:
         ImGui::PushItemWidth(-1);
         if (ImGui::InputText("##location", location_buffer_, sizeof(location_buffer_), 
                               ImGuiInputTextFlags_EnterReturnsTrue)) {
-            // Update location when Enter is pressed
-            weather_host->setLocation(location_buffer_);
-            // Force a refresh
-            weather_host->refreshWeather();
+            setLocation(location_buffer_);
         }
         ImGui::PopItemWidth();
         
         ImGui::SameLine();
         if (ImGui::Button("Update")) {
-            weather_host->setLocation(location_buffer_);
-            weather_host->refreshWeather();
+            setLocation(location_buffer_);
         }
         
         ImGui::TextColored(colors[5], "Format: City,CountryCode (e.g., London,uk)");
     }
     
 private:
+    void setLocation(std::string_view location) {
+        weather_host->setLocation(location);
+        weather_host->refreshWeather();
+        auto current_weather = weather_host->getCurrentWeather();
+        if (current_weather) {
+            auto location_name = current_weather->name;
+            std::string country = current_weather->sys.country;
+            if (!country.empty()) {
+                location_name += ", " + country;
+            }
+            name(std::format("Weather in {}", location_name));
+        }
+    }
+
     std::shared_ptr<hosts::WeatherHost> weather_host;
     bool initialized_{false};
     char location_buffer_[64]{};

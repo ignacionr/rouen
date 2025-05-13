@@ -148,8 +148,8 @@ public:
         if (location_ != location) {
             location_ = location;
             // Invalidate current data to force refresh on next request
-            current_weather_data_.clear();
-            forecast_data_.clear();
+            current_weather_.reset();
+            forecast_.reset();
         }
     }
 
@@ -176,33 +176,17 @@ public:
         }
         
         // Update weather every 30 minutes, or if we don't have data yet
-        return elapsed >= 30 || current_weather_data_.empty() || forecast_data_.empty();
+        return elapsed >= 30 || !current_weather_ || !forecast_;
     }
 
     /**
      * Get the current weather data
      */
-    std::optional<weather::CurrentWeather> getCurrentWeather() {
+    const std::optional<weather::CurrentWeather> &getCurrentWeather() {
         updateWeatherIfNeeded();
         
         std::lock_guard<std::mutex> lock(mutex_);
-        if (current_weather_data_.empty()) {
-            return std::nullopt;
-        }
-        
-        try {
-            weather::CurrentWeather data;
-            auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, current_weather_data_);
-            if (error) {
-                WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
-                            glz::format_error(error));
-                return std::nullopt;
-            }
-            return data;
-        } catch (const std::exception& e) {
-            WEATHER_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
-            return std::nullopt;
-        }
+        return current_weather_;
     }
 
     /**
@@ -212,23 +196,7 @@ public:
         updateWeatherIfNeeded();
         
         std::lock_guard<std::mutex> lock(mutex_);
-        if (forecast_data_.empty()) {
-            return std::nullopt;
-        }
-        
-        try {
-            weather::Forecast data;
-            auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, forecast_data_);
-            if (error) {
-                WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
-                            glz::format_error(error));
-                return std::nullopt;
-            }
-            return data;
-        } catch (const std::exception& e) {
-            WEATHER_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
-            return std::nullopt;
-        }
+        return forecast_;
     }
 
     /**
@@ -291,14 +259,15 @@ private:
         std::atomic<bool> current_success = false;
         std::atomic<bool> forecast_success = false;
         
+        // Temporary storage for thread results
+        std::string current_data;
+        std::string forecast_data;
+        
         // Fetch current weather
-        std::thread current_thread([this, current_url, &current_success]() {
+        std::thread current_thread([current_url, &current_data, &current_success]() {
             try {
                 http::fetch fetcher(60); // Increase timeout for potential delays
-                std::string response = fetcher(current_url);
-                
-                std::lock_guard<std::mutex> lock(mutex_);
-                current_weather_data_ = response;
+                current_data = fetcher(current_url);
                 current_success = true;
                 WEATHER_INFO("WeatherHost: Fetched current weather data");
             } catch (const std::exception& e) {
@@ -307,13 +276,10 @@ private:
         });
         
         // Fetch forecast
-        std::thread forecast_thread([this, forecast_url, &forecast_success]() {
+        std::thread forecast_thread([forecast_url, &forecast_data, &forecast_success]() {
             try {
                 http::fetch fetcher(60); // Increase timeout for potential delays
-                std::string response = fetcher(forecast_url);
-                
-                std::lock_guard<std::mutex> lock(mutex_);
-                forecast_data_ = response;
+                forecast_data = fetcher(forecast_url);
                 forecast_success = true;
                 WEATHER_INFO("WeatherHost: Fetched forecast data");
             } catch (const std::exception& e) {
@@ -325,8 +291,46 @@ private:
         current_thread.join();
         forecast_thread.join();
         
-        // Update backoff state based on success or failure
+        // Process results and update backoff state
         std::lock_guard<std::mutex> lock(mutex_);
+        
+        // Parse current weather if fetch was successful
+        if (current_success) {
+            try {
+                weather::CurrentWeather data;
+                auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, current_data);
+                if (error) {
+                    WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
+                                glz::format_error(error));
+                    current_success = false;
+                } else {
+                    current_weather_ = std::move(data);
+                }
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Exception parsing current weather data: {}", e.what());
+                current_success = false;
+            }
+        }
+        
+        // Parse forecast if fetch was successful
+        if (forecast_success) {
+            try {
+                weather::Forecast data;
+                auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, forecast_data);
+                if (error) {
+                    WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
+                                glz::format_error(error));
+                    forecast_success = false;
+                } else {
+                    forecast_ = std::move(data);
+                }
+            } catch (const std::exception& e) {
+                WEATHER_ERROR_FMT("WeatherHost: Exception parsing forecast data: {}", e.what());
+                forecast_success = false;
+            }
+        }
+        
+        // Update backoff state based on success or failure
         if (current_success && forecast_success) {
             // Successfully fetched both - reset backoff
             if (consecutive_failures_ > 0) {
@@ -334,6 +338,7 @@ private:
                 consecutive_failures_ = 0;
                 backoff_minutes_ = 0;
             }
+            // The weather name is available for card classes to use
         } else {
             // At least one API call failed - increase backoff
             consecutive_failures_++;
@@ -349,8 +354,8 @@ private:
     mutable std::mutex mutex_;
     std::string api_key_;
     std::string location_;
-    std::string current_weather_data_;
-    std::string forecast_data_;
+    std::optional<weather::CurrentWeather> current_weather_;
+    std::optional<weather::Forecast> forecast_;
     std::chrono::steady_clock::time_point last_update_time_;
     int consecutive_failures_;
     int backoff_minutes_;
