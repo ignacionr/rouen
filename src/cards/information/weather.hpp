@@ -69,17 +69,18 @@ public:
 private:
     void render_time() {
         // Get current time
-        auto now = std::chrono::system_clock::now();
-        auto time_t_now = std::chrono::system_clock::to_time_t(now);
-        std::tm local_tm = *std::localtime(&time_t_now);
+        auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+        auto current_weather = weather_host->getCurrentWeather();
+        if (current_weather) {
+            // Adjust time zone based on weather data
+            auto timezone_offset = std::chrono::seconds(current_weather->timezone);
+            now += timezone_offset;
+        }
         
-        // Format time
-        std::string time_str = std::format("{:02d}:{:02d}:{:02d}", 
-            local_tm.tm_hour, local_tm.tm_min, local_tm.tm_sec);
+        // Format time and date using C++23 std::format with chrono formatting
+        std::string time_str = std::format("{:%H:%M:%S}", now);
         
-        // Format date
-        std::string date_str = std::format("{:02d}/{:02d}/{:04d}", 
-            local_tm.tm_mday, local_tm.tm_mon + 1, local_tm.tm_year + 1900);
+        std::string date_str = std::format("{:%d/%m/%Y}", now);
         
         // Display time in large font
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Monospaced font
