@@ -8,6 +8,7 @@
 #include <chrono>
 #include <format>
 #include <algorithm>
+#include <expected>
 
 #include "imgui.h"
 #include "../interface/card.hpp"
@@ -16,6 +17,7 @@
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../../external/IconsMaterialDesign.h"
+#include "jira_ui_components.hpp"
 
 namespace rouen::cards {
 
@@ -60,39 +62,38 @@ public:
             if (!jira_host_->is_connected()) {
                 render_connection_screen();
             } else {
-                // Connected - show main interface
-                if (ImGui::BeginTabBar("JiraTabs")) {
-                    if (ImGui::BeginTabItem("Projects")) {
-                        render_projects_tab();
-                        ImGui::EndTabItem();
-                    }
-                    
-                    if (ImGui::BeginTabItem("My Issues")) {
-                        render_my_issues_tab();
-                        ImGui::EndTabItem();
-                    }
-                    
-                    if (ImGui::BeginTabItem("Search")) {
-                        render_search_tab();
-                        ImGui::EndTabItem();
-                    }
-                    
-                    if (ImGui::BeginTabItem("Create Issue")) {
-                        render_create_issue_tab();
-                        ImGui::EndTabItem();
-                    }
-                    
-                    ImGui::EndTabBar();
-                }
-                
-                // Logout button (bottom right)
-                ImGui::Separator();
-                ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - 100);
-                if (ImGui::Button("Logout", ImVec2(100, 0))) {
-                    jira_host_->disconnect();
-                }
+                // Connected - show main interface with tab bar
+                render_main_interface();
             }
         });
+    }
+    
+    void render_main_interface() {
+        if (ImGui::BeginTabBar("JiraTabs")) {
+            // Render all tabs
+            render_tab("Projects", [this]{ render_projects_tab(); });
+            render_tab("My Issues", [this]{ render_my_issues_tab(); });
+            render_tab("Search", [this]{ render_search_tab(); });
+            render_tab("Create Issue", [this]{ render_create_issue_tab(); });
+            
+            ImGui::EndTabBar();
+        }
+        
+        // Logout button (bottom right)
+        ImGui::Separator();
+        ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - 100);
+        if (ImGui::Button("Logout", ImVec2(100, 0))) {
+            jira_host_->disconnect();
+        }
+    }
+    
+    // Helper to render a tab with a consistent pattern
+    template <typename Func>
+    void render_tab(const char* label, Func content_renderer) {
+        if (ImGui::BeginTabItem(label)) {
+            content_renderer();
+            ImGui::EndTabItem();
+        }
     }
     
     std::string get_uri() const override {
@@ -112,75 +113,67 @@ private:
         }
         
         // Profiles selection
-        if (!available_profiles_.empty()) {
-            ImGui::Text("Select a saved profile:");
-            
-            for (const auto& profile : available_profiles_) {
-                std::string label = profile.name;
-                if (profile.is_environment) {
-                    label += " (environment)";
-                }
-                
-                if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0)) {
-                        try_connect(profile);
-                    } else {
-                        current_profile_ = profile;
-                        // Fix character array assignments by using strncpy
-                        std::strncpy(url_buffer_, profile.server_url.c_str(), sizeof(url_buffer_) - 1);
-                        std::strncpy(username_buffer_, profile.username.c_str(), sizeof(username_buffer_) - 1);
-                        std::strncpy(token_buffer_, profile.api_token.c_str(), sizeof(token_buffer_) - 1);
-                        std::strncpy(profile_name_buffer_, profile.name.c_str(), sizeof(profile_name_buffer_) - 1);
-                    }
-                }
-            }
-            
-            ImGui::Separator();
-        }
+        render_saved_profiles();
+        ImGui::Separator();
         
         // Manual connection form
+        render_connection_form();
+    }
+    
+    void render_saved_profiles() {
+        if (available_profiles_.empty()) return;
+        
+        ImGui::Text("Select a saved profile:");
+        
+        for (const auto& profile : available_profiles_) {
+            std::string label = profile.name;
+            if (profile.is_environment) {
+                label += " (environment)";
+            }
+            
+            if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (ImGui::IsMouseDoubleClicked(0)) {
+                    try_connect(profile);
+                } else {
+                    populate_form_with_profile(profile);
+                }
+            }
+        }
+    }
+    
+    void populate_form_with_profile(const models::jira_connection_profile& profile) {
+        current_profile_ = profile;
+        std::strncpy(url_buffer_, profile.server_url.c_str(), sizeof(url_buffer_) - 1);
+        std::strncpy(username_buffer_, profile.username.c_str(), sizeof(username_buffer_) - 1);
+        std::strncpy(token_buffer_, profile.api_token.c_str(), sizeof(token_buffer_) - 1);
+        std::strncpy(profile_name_buffer_, profile.name.c_str(), sizeof(profile_name_buffer_) - 1);
+    }
+    
+    void render_connection_form() {
         ImGui::Text("Connect manually:");
         
         // Profile name (only for saving)
-        ImGui::InputText("Profile Name", profile_name_buffer_, sizeof(profile_name_buffer_));
+        jira_ui::render_input_field("Profile Name", profile_name_buffer_);
         
         // Server URL
-        ImGui::InputText("Server URL", url_buffer_, sizeof(url_buffer_));
+        jira_ui::render_input_field("Server URL", url_buffer_);
         
         // Username
-        ImGui::InputText("Username", username_buffer_, sizeof(username_buffer_));
+        jira_ui::render_input_field("Username", username_buffer_);
         
         // API Token (password field)
-        ImGui::InputText("API Token", token_buffer_, sizeof(token_buffer_), ImGuiInputTextFlags_Password);
+        jira_ui::render_input_field("API Token", token_buffer_, ImGuiInputTextFlags_Password);
         
-        // Connect button
+        // Action buttons
         if (ImGui::Button("Connect", ImVec2(120, 0))) {
-            // Create a profile from the form data
-            models::jira_connection_profile profile;
-            profile.name = profile_name_buffer_;
-            profile.server_url = url_buffer_;
-            profile.username = username_buffer_;
-            profile.api_token = token_buffer_;
-            
-            // Try to connect
-            try_connect(profile);
+            try_connect(create_profile_from_form());
         }
         
         ImGui::SameLine();
         
         // Save profile button
         if (ImGui::Button("Save Profile", ImVec2(120, 0))) {
-            // Create a profile from the form data
-            models::jira_connection_profile profile;
-            profile.name = profile_name_buffer_;
-            profile.server_url = url_buffer_;
-            profile.username = username_buffer_;
-            profile.api_token = token_buffer_;
-            
-            // Save the profile
-            jira_host_->save_profile(profile);
-            
-            // Refresh the profiles list
+            jira_host_->save_profile(create_profile_from_form());
             refresh_profiles();
         }
         
@@ -192,6 +185,15 @@ private:
         }
     }
     
+    models::jira_connection_profile create_profile_from_form() {
+        models::jira_connection_profile profile;
+        profile.name = profile_name_buffer_;
+        profile.server_url = url_buffer_;
+        profile.username = username_buffer_;
+        profile.api_token = token_buffer_;
+        return profile;
+    }
+    
     // Projects tab rendering
     void render_projects_tab() {
         // Refresh button
@@ -200,13 +202,8 @@ private:
         }
         
         // Show loading indicator or error
-        if (is_loading_projects_) {
-            ImGui::TextColored(colors[1], "Loading projects...");
-        } else if (!error_message_.empty()) {
-            ImGui::TextColored(colors[2], "%s", error_message_.c_str());
-        } else if (projects_.empty()) {
-            ImGui::TextColored(colors[5], "No projects found. Click Refresh to try again.");
-        }
+        render_loading_or_error(is_loading_projects_, error_message_, projects_.empty(), 
+                             "Loading projects...", "No projects found. Click Refresh to try again.");
         
         // Project filter
         ImGui::PushItemWidth(-1);
@@ -215,10 +212,7 @@ private:
         
         // Projects list
         if (ImGui::BeginTable("ProjectsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-            ImGui::TableHeadersRow();
+            jira_ui::TableRenderers::setup_project_table_headers();
             
             std::string filter = project_filter_;
             std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
@@ -263,6 +257,26 @@ private:
         }
         
         // Show selected project details
+        render_project_issues();
+        
+        // Issue details popup
+        render_issue_details_popup();
+    }
+    
+    // Helper to show loading status, errors or empty state messages
+    void render_loading_or_error(bool is_loading, const std::string& error, bool is_empty,
+                              const char* loading_msg, const char* empty_msg) {
+        if (is_loading) {
+            ImGui::TextColored(colors[1], "%s", loading_msg);
+        } else if (!error.empty()) {
+            ImGui::TextColored(colors[2], "%s", error.c_str());
+        } else if (is_empty) {
+            ImGui::TextColored(colors[5], "%s", empty_msg);
+        }
+    }
+    
+    // Project issues section
+    void render_project_issues() {
         if (selected_project_.key.empty()) {
             return;
         }
@@ -284,62 +298,68 @@ private:
         
         // Issues table
         if (ImGui::BeginTable("IssuesTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            jira_ui::TableRenderers::setup_issue_table_headers();
+            
+            // Status column will be rendered inline
+            
+            // Use our filterable table component
+            jira_ui::render_filterable_table(
+                project_issues_,
+                issue_filter_,
+                colors,
+                [this](const models::jira_issue& issue) {
+                    selected_issue_ = issue;
+                    show_issue_details_ = true;
+                },
+                [this](const models::jira_issue& issue) {
+                    jira_ui::TableRenderers::render_status_column(issue, colors);
+                }
+            );
+            
+            ImGui::EndTable();
+        }
+    }
+    
+    // My Issues tab rendering
+    void render_my_issues_tab() {
+        // Refresh button and status filter
+        render_my_issues_header();
+        
+        // Show loading indicator or error
+        render_loading_or_error(is_loading_my_issues_, error_message_, my_issues_.empty(),
+                             "Loading issues...", "No issues assigned to you found.");
+        
+        // Issue filter
+        ImGui::PushItemWidth(-1);
+        ImGui::InputTextWithHint("##my_issue_filter", "Filter issues...", my_issue_filter_, sizeof(my_issue_filter_));
+        ImGui::PopItemWidth();
+        
+        // Issues table
+        if (ImGui::BeginTable("MyIssuesTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            // Setup table headers
             ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthFixed, 80.0f);
             ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
             ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 80.0f);
             ImGui::TableHeadersRow();
             
-            std::string filter = issue_filter_;
-            std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+            // Extra columns will be rendered inline
             
-            for (const auto& issue : project_issues_) {
-                // Apply filter
-                std::string summary_lower = issue.summary;
-                std::string key_lower = issue.key;
-                std::transform(summary_lower.begin(), summary_lower.end(), summary_lower.begin(), ::tolower);
-                std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
-                
-                if (!filter.empty() && 
-                    summary_lower.find(filter) == std::string::npos && 
-                    key_lower.find(filter) == std::string::npos) {
-                    continue;
-                }
-                
-                // Issue row
-                ImGui::TableNextRow();
-                
-                // Key column
-                ImGui::TableNextColumn();
-                ImGui::TextColored(colors[0], "%s", issue.key.c_str());
-                
-                // Summary column
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", issue.summary.c_str());
-                
-                // Status column
-                ImGui::TableNextColumn();
-                ImVec4 status_color = colors[5]; // Default gray
-                
-                // Map status category to color
-                if (issue.status.category == "To Do") {
-                    status_color = colors[5]; // Gray
-                } else if (issue.status.category == "In Progress") {
-                    status_color = colors[8]; // Yellow
-                } else if (issue.status.category == "Done") {
-                    status_color = colors[9]; // Green
-                }
-                
-                ImGui::TextColored(status_color, "%s", issue.status.name.c_str());
-                
-                // Actions column
-                ImGui::TableNextColumn();
-                std::string view_btn_id = "View##" + issue.key;
-                if (ImGui::Button(view_btn_id.c_str())) {
+            // Use our filterable table component
+            jira_ui::render_filterable_table(
+                my_issues_,
+                my_issue_filter_,
+                colors,
+                [this](const models::jira_issue& issue) {
                     selected_issue_ = issue;
                     show_issue_details_ = true;
+                },
+                [this](const models::jira_issue& issue) {
+                    jira_ui::TableRenderers::render_project_column(issue);
+                    jira_ui::TableRenderers::render_status_column(issue, colors);
                 }
-            }
+            );
             
             ImGui::EndTable();
         }
@@ -348,9 +368,7 @@ private:
         render_issue_details_popup();
     }
     
-    // My Issues tab rendering
-    void render_my_issues_tab() {
-        // Refresh button
+    void render_my_issues_header() {
         if (ImGui::Button("Refresh My Issues")) {
             refresh_my_issues();
         }
@@ -360,110 +378,20 @@ private:
         // Status filter dropdown
         ImGui::SetNextItemWidth(150);
         if (ImGui::BeginCombo("Status Filter", status_filter_.c_str())) {
-            if (ImGui::Selectable("All", status_filter_ == "All")) {
-                status_filter_ = "All";
-                refresh_my_issues();
-            }
-            if (ImGui::Selectable("To Do", status_filter_ == "To Do")) {
-                status_filter_ = "To Do";
-                refresh_my_issues();
-            }
-            if (ImGui::Selectable("In Progress", status_filter_ == "In Progress")) {
-                status_filter_ = "In Progress";
-                refresh_my_issues();
-            }
-            if (ImGui::Selectable("Done", status_filter_ == "Done")) {
-                status_filter_ = "Done";
-                refresh_my_issues();
-            }
+            render_status_filter_options();
             ImGui::EndCombo();
         }
+    }
+    
+    void render_status_filter_options() {
+        const std::array<std::string, 4> status_options = {"All", "To Do", "In Progress", "Done"};
         
-        // Show loading indicator or error
-        if (is_loading_my_issues_) {
-            ImGui::TextColored(colors[1], "Loading issues...");
-        } else if (!error_message_.empty()) {
-            ImGui::TextColored(colors[2], "%s", error_message_.c_str());
-        } else if (my_issues_.empty()) {
-            ImGui::TextColored(colors[5], "No issues assigned to you found.");
-        }
-        
-        // Issue filter
-        ImGui::PushItemWidth(-1);
-        ImGui::InputTextWithHint("##my_issue_filter", "Filter issues...", my_issue_filter_, sizeof(my_issue_filter_));
-        ImGui::PopItemWidth();
-        
-        // Issues table
-        if (ImGui::BeginTable("MyIssuesTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-            ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableHeadersRow();
-            
-            std::string filter = my_issue_filter_;
-            std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
-            
-            for (const auto& issue : my_issues_) {
-                // Apply filter
-                std::string summary_lower = issue.summary;
-                std::string key_lower = issue.key;
-                std::transform(summary_lower.begin(), summary_lower.end(), summary_lower.begin(), ::tolower);
-                std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
-                
-                if (!filter.empty() && 
-                    summary_lower.find(filter) == std::string::npos && 
-                    key_lower.find(filter) == std::string::npos) {
-                    continue;
-                }
-                
-                // Issue row
-                ImGui::TableNextRow();
-                
-                // Key column
-                ImGui::TableNextColumn();
-                ImGui::TextColored(colors[0], "%s", issue.key.c_str());
-                
-                // Project column
-                ImGui::TableNextColumn();
-                // Extract project key from issue key (e.g., "PROJ-123" -> "PROJ")
-                std::string project_key = issue.key.substr(0, issue.key.find('-'));
-                ImGui::Text("%s", project_key.c_str());
-                
-                // Summary column
-                ImGui::TableNextColumn();
-                ImGui::Text("%s", issue.summary.c_str());
-                
-                // Status column
-                ImGui::TableNextColumn();
-                ImVec4 status_color = colors[5]; // Default gray
-                
-                // Map status category to color
-                if (issue.status.category == "To Do") {
-                    status_color = colors[5]; // Gray
-                } else if (issue.status.category == "In Progress") {
-                    status_color = colors[8]; // Yellow
-                } else if (issue.status.category == "Done") {
-                    status_color = colors[9]; // Green
-                }
-                
-                ImGui::TextColored(status_color, "%s", issue.status.name.c_str());
-                
-                // Actions column
-                ImGui::TableNextColumn();
-                std::string view_btn_id = "View##" + issue.key;
-                if (ImGui::Button(view_btn_id.c_str())) {
-                    selected_issue_ = issue;
-                    show_issue_details_ = true;
-                }
+        for (const auto& option : status_options) {
+            if (ImGui::Selectable(option.c_str(), status_filter_ == option)) {
+                status_filter_ = option;
+                refresh_my_issues();
             }
-            
-            ImGui::EndTable();
         }
-        
-        // Issue details popup
-        render_issue_details_popup();
     }
     
     // Search tab rendering
@@ -471,18 +399,7 @@ private:
         ImGui::TextColored(colors[0], "Search Issues with JQL");
         ImGui::TextWrapped("JQL (Jira Query Language) lets you search for issues with complex criteria");
         
-        // JQL Query input
-        ImGui::PushItemWidth(-120); // Leave space for the button
-        ImGui::InputTextWithHint("##jql_query", "Enter JQL query... (e.g., project = KEY AND status = \"In Progress\")", 
-                               jql_query_, sizeof(jql_query_));
-        ImGui::PopItemWidth();
-        
-        ImGui::SameLine();
-        
-        // Search button
-        if (ImGui::Button("Search", ImVec2(100, 0))) {
-            perform_jql_search();
-        }
+        render_search_input();
         
         // Example JQL queries
         if (ImGui::TreeNode("Example Queries")) {
@@ -497,79 +414,76 @@ private:
             ImGui::TextColored(colors[2], "%s", search_error_.c_str());
         }
         
-        // Search results
-        if (!search_results_.issues.empty()) {
-            ImGui::Separator();
-            ImGui::TextColored(colors[0], "Search Results: %d issue(s) found", search_results_.total);
-            
-            if (search_results_.total > static_cast<int>(search_results_.issues.size())) {
-                ImGui::SameLine();
-                ImGui::TextColored(colors[4], "(showing %zu of %d)", 
-                                 search_results_.issues.size(), search_results_.total);
-                
-                // Load more button
-                if (ImGui::Button("Load More")) {
-                    load_more_search_results();
-                }
-            }
-            
-            // Results table
-            if (ImGui::BeginTable("SearchResultsTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-                ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                ImGui::TableHeadersRow();
-                
-                for (const auto& issue : search_results_.issues) {
-                    // Issue row
-                    ImGui::TableNextRow();
-                    
-                    // Key column
-                    ImGui::TableNextColumn();
-                    ImGui::TextColored(colors[0], "%s", issue.key.c_str());
-                    
-                    // Project column
-                    ImGui::TableNextColumn();
-                    // Extract project key from issue key (e.g., "PROJ-123" -> "PROJ")
-                    std::string project_key = issue.key.substr(0, issue.key.find('-'));
-                    ImGui::Text("%s", project_key.c_str());
-                    
-                    // Summary column
-                    ImGui::TableNextColumn();
-                    ImGui::Text("%s", issue.summary.c_str());
-                    
-                    // Status column
-                    ImGui::TableNextColumn();
-                    ImVec4 status_color = colors[5]; // Default gray
-                    
-                    // Map status category to color
-                    if (issue.status.category == "To Do") {
-                        status_color = colors[5]; // Gray
-                    } else if (issue.status.category == "In Progress") {
-                        status_color = colors[8]; // Yellow
-                    } else if (issue.status.category == "Done") {
-                        status_color = colors[9]; // Green
-                    }
-                    
-                    ImGui::TextColored(status_color, "%s", issue.status.name.c_str());
-                    
-                    // Actions column
-                    ImGui::TableNextColumn();
-                    std::string view_btn_id = "View##" + issue.key;
-                    if (ImGui::Button(view_btn_id.c_str())) {
-                        selected_issue_ = issue;
-                        show_issue_details_ = true;
-                    }
-                }
-                
-                ImGui::EndTable();
-            }
-        }
+        render_search_results();
         
         // Issue details popup
         render_issue_details_popup();
+    }
+    
+    void render_search_input() {
+        // JQL Query input
+        ImGui::PushItemWidth(-120); // Leave space for the button
+        ImGui::InputTextWithHint("##jql_query", "Enter JQL query... (e.g., project = KEY AND status = \"In Progress\")", 
+                              jql_query_, sizeof(jql_query_));
+        ImGui::PopItemWidth();
+        
+        ImGui::SameLine();
+        
+        // Search button
+        if (ImGui::Button("Search", ImVec2(100, 0))) {
+            perform_jql_search();
+        }
+    }
+    
+    void render_search_results() {
+        if (search_results_.issues.empty()) {
+            return;
+        }
+        
+        ImGui::Separator();
+        ImGui::TextColored(colors[0], "Search Results: %d issue(s) found", search_results_.total);
+        
+        if (search_results_.total > static_cast<int>(search_results_.issues.size())) {
+            ImGui::SameLine();
+            ImGui::TextColored(colors[4], "(showing %zu of %d)", 
+                            search_results_.issues.size(), search_results_.total);
+            
+            // Load more button
+            if (ImGui::Button("Load More")) {
+                load_more_search_results();
+            }
+        }
+        
+        // Results table
+        if (ImGui::BeginTable("SearchResultsTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            // Setup columns
+            ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Project", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableHeadersRow();
+            
+            // Extra columns will be rendered inline
+            
+            // Use our filterable table component - search results don't need additional filtering
+            // So we're passing an empty filter string
+            jira_ui::render_filterable_table(
+                search_results_.issues,
+                "",
+                colors,
+                [this](const models::jira_issue& issue) {
+                    selected_issue_ = issue;
+                    show_issue_details_ = true;
+                },
+                [this](const models::jira_issue& issue) {
+                    jira_ui::TableRenderers::render_project_column(issue);
+                    jira_ui::TableRenderers::render_status_column(issue, colors);
+                }
+            );
+            
+            ImGui::EndTable();
+        }
     }
     
     // Create issue tab rendering
@@ -577,6 +491,17 @@ private:
         ImGui::TextColored(colors[0], "Create New Issue");
         
         // Project selection
+        render_project_selection();
+        
+        // Issue form
+        if (!selected_project_key_.empty()) {
+            render_issue_form();
+        } else {
+            ImGui::TextColored(colors[5], "Please select a project first");
+        }
+    }
+    
+    void render_project_selection() {
         ImGui::Text("Project:");
         ImGui::SameLine();
         
@@ -597,58 +522,64 @@ private:
         if (ImGui::Button("Refresh Projects")) {
             refresh_projects();
         }
+    }
+    
+    void render_issue_form() {
+        // Issue type selection
+        ImGui::Text("Issue Type:");
+        ImGui::SameLine();
         
-        // Issue type selection (only show if project is selected)
-        if (!selected_project_key_.empty()) {
-            ImGui::Text("Issue Type:");
-            ImGui::SameLine();
-            
-            // Issue type dropdown
-            ImGui::SetNextItemWidth(200);
-            if (ImGui::BeginCombo("##issue_type_select", selected_issue_type_.c_str())) {
-                for (const auto& type : issue_types_) {
-                    if (ImGui::Selectable(type.name.c_str(), selected_issue_type_ == type.name)) {
-                        selected_issue_type_ = type.name;
-                    }
+        // Issue type dropdown
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::BeginCombo("##issue_type_select", selected_issue_type_.c_str())) {
+            for (const auto& type : issue_types_) {
+                if (ImGui::Selectable(type.name.c_str(), selected_issue_type_ == type.name)) {
+                    selected_issue_type_ = type.name;
                 }
-                ImGui::EndCombo();
             }
-            
-            // Summary
-            ImGui::Text("Summary:");
-            ImGui::PushItemWidth(-1);
-            ImGui::InputText("##summary", issue_summary_, sizeof(issue_summary_));
-            ImGui::PopItemWidth();
-            
-            // Description
-            ImGui::Text("Description:");
-            ImGui::PushItemWidth(-1);
-            ImGui::InputTextMultiline("##description", issue_description_, sizeof(issue_description_), 
-                                    ImVec2(-1, 150));
-            ImGui::PopItemWidth();
-            
-            // Create button
-            if (ImGui::Button("Create Issue", ImVec2(150, 0))) {
-                create_issue();
-            }
-            
-            ImGui::SameLine();
-            
-            // Reset button
-            if (ImGui::Button("Reset Form", ImVec2(150, 0))) {
-                reset_create_form();
-            }
-            
-            // Success or error message
-            if (!create_issue_error_.empty()) {
-                ImGui::TextColored(colors[2], "%s", create_issue_error_.c_str());
-            }
-            
-            if (!create_issue_success_.empty()) {
-                ImGui::TextColored(colors[3], "%s", create_issue_success_.c_str());
-            }
-        } else {
-            ImGui::TextColored(colors[5], "Please select a project first");
+            ImGui::EndCombo();
+        }
+        
+        // Summary
+        ImGui::Text("Summary:");
+        ImGui::PushItemWidth(-1);
+        ImGui::InputText("##summary", issue_summary_, sizeof(issue_summary_));
+        ImGui::PopItemWidth();
+        
+        // Description
+        ImGui::Text("Description:");
+        ImGui::PushItemWidth(-1);
+        ImGui::InputTextMultiline("##description", issue_description_, sizeof(issue_description_), 
+                                ImVec2(-1, 150));
+        ImGui::PopItemWidth();
+        
+        // Action buttons
+        render_form_buttons();
+        
+        // Messages
+        render_form_messages();
+    }
+    
+    void render_form_buttons() {
+        if (ImGui::Button("Create Issue", ImVec2(150, 0))) {
+            create_issue();
+        }
+        
+        ImGui::SameLine();
+        
+        // Reset button
+        if (ImGui::Button("Reset Form", ImVec2(150, 0))) {
+            reset_create_form();
+        }
+    }
+    
+    void render_form_messages() {
+        if (!create_issue_error_.empty()) {
+            ImGui::TextColored(colors[2], "%s", create_issue_error_.c_str());
+        }
+        
+        if (!create_issue_success_.empty()) {
+            ImGui::TextColored(colors[3], "%s", create_issue_success_.c_str());
         }
     }
     
@@ -663,86 +594,12 @@ private:
         ImGui::OpenPopup(std::format("Issue: {}", selected_issue_.key).c_str());
         
         if (ImGui::BeginPopupModal(std::format("Issue: {}", selected_issue_.key).c_str(), &show_issue_details_)) {
-            // Key and basic info section
-            ImGui::TextColored(colors[0], "%s: %s", selected_issue_.key.c_str(), selected_issue_.summary.c_str());
-            
-            // Status with color
-            ImVec4 status_color = colors[5]; // Default gray
-            
-            // Map status category to color
-            if (selected_issue_.status.category == "To Do") {
-                status_color = colors[5]; // Gray
-            } else if (selected_issue_.status.category == "In Progress") {
-                status_color = colors[8]; // Yellow
-            } else if (selected_issue_.status.category == "Done") {
-                status_color = colors[9]; // Green
-            }
-            
-            ImGui::TextColored(status_color, "Status: %s", selected_issue_.status.name.c_str());
-            
-            // Issue type
-            ImGui::Text("Type: %s", selected_issue_.issue_type.name.c_str());
-            
-            // Assignee
-            if (!selected_issue_.assignee.display_name.empty()) {
-                ImGui::Text("Assignee: %s", selected_issue_.assignee.display_name.c_str());
-            } else {
-                ImGui::TextColored(colors[5], "Assignee: Unassigned");
-            }
-            
-            // Created/Updated
-            ImGui::Text("Created: %s", format_jira_date(selected_issue_.created).c_str());
-            ImGui::Text("Updated: %s", format_jira_date(selected_issue_.updated).c_str());
-            
-            ImGui::Separator();
-            
-            // Description (in a scrollable region)
-            ImGui::TextColored(colors[0], "Description:");
-            ImGui::BeginChild("Description", ImVec2(0, 200), true);
-            if (!selected_issue_.description.empty()) {
-                ImGui::TextWrapped("%s", selected_issue_.description.c_str());
-            } else {
-                ImGui::TextColored(colors[5], "No description provided");
-            }
-            ImGui::EndChild();
-            
-            // Transitions
-            ImGui::Separator();
-            ImGui::TextColored(colors[0], "Transitions:");
-            
-            // Only load transitions if we haven't loaded them yet
-            if (issue_transitions_.empty() && !is_loading_transitions_) {
-                load_issue_transitions(selected_issue_.key);
-            }
-            
-            if (is_loading_transitions_) {
-                ImGui::TextColored(colors[1], "Loading available transitions...");
-            } else if (issue_transitions_.empty()) {
-                ImGui::TextColored(colors[5], "No transitions available");
-            } else {
-                for (const auto& transition : issue_transitions_) {
-                    if (ImGui::Button(transition.name.c_str(), ImVec2(150, 0))) {
-                        transition_issue(selected_issue_.key, transition.id);
-                    }
-                    ImGui::SameLine();
-                    
-                    // Show target status
-                    ImGui::TextColored(colors[5], "-> %s", transition.to_status.name.c_str());
-                    
-                    // Wrap buttons after 2 transitions
-                    if (&transition != &issue_transitions_.back() && 
-                        (&transition - &issue_transitions_.front() + 1) % 2 == 0) {
-                        ImGui::NewLine();
-                    } else {
-                        ImGui::SameLine();
-                    }
-                }
-            }
-            
-            ImGui::NewLine();
-            ImGui::Separator();
+            render_issue_basic_info();
+            render_issue_description();
+            render_issue_transitions();
             
             // Close button
+            ImGui::Separator();
             if (ImGui::Button("Close", ImVec2(120, 0))) {
                 show_issue_details_ = false;
                 issue_transitions_.clear();
@@ -750,6 +607,91 @@ private:
             
             ImGui::EndPopup();
         }
+    }
+    
+    void render_issue_basic_info() {
+        // Key and summary
+        ImGui::TextColored(colors[0], "%s: %s", selected_issue_.key.c_str(), selected_issue_.summary.c_str());
+        
+        // Status with color
+        ImVec4 status_color = colors[5]; // Default gray
+        if (selected_issue_.status.category == "To Do") {
+            status_color = colors[5]; // Gray
+        } else if (selected_issue_.status.category == "In Progress") {
+            status_color = colors[8]; // Yellow
+        } else if (selected_issue_.status.category == "Done") {
+            status_color = colors[9]; // Green
+        }
+        ImGui::TextColored(status_color, "Status: %s", selected_issue_.status.name.c_str());
+        
+        // Issue type
+        ImGui::Text("Type: %s", selected_issue_.issue_type.name.c_str());
+        
+        // Assignee
+        if (!selected_issue_.assignee.display_name.empty()) {
+            ImGui::Text("Assignee: %s", selected_issue_.assignee.display_name.c_str());
+        } else {
+            ImGui::TextColored(colors[5], "Assignee: Unassigned");
+        }
+        
+        // Created/Updated
+        ImGui::Text("Created: %s", format_jira_date(selected_issue_.created).c_str());
+        ImGui::Text("Updated: %s", format_jira_date(selected_issue_.updated).c_str());
+        
+        ImGui::Separator();
+    }
+    
+    void render_issue_description() {
+        // Description (in a scrollable region)
+        ImGui::TextColored(colors[0], "Description:");
+        ImGui::BeginChild("Description", ImVec2(0, 200), true);
+        if (!selected_issue_.description.empty()) {
+            ImGui::TextWrapped("%s", selected_issue_.description.c_str());
+        } else {
+            ImGui::TextColored(colors[5], "No description provided");
+        }
+        ImGui::EndChild();
+    }
+    
+    void render_issue_transitions() {
+        ImGui::Separator();
+        ImGui::TextColored(colors[0], "Transitions:");
+        
+        // Only load transitions if we haven't loaded them yet
+        if (issue_transitions_.empty() && !is_loading_transitions_) {
+            load_issue_transitions(selected_issue_.key);
+        }
+        
+        if (is_loading_transitions_) {
+            ImGui::TextColored(colors[1], "Loading available transitions...");
+        } else if (issue_transitions_.empty()) {
+            ImGui::TextColored(colors[5], "No transitions available");
+        } else {
+            for (size_t i = 0; i < issue_transitions_.size(); i++) {
+                const auto& transition = issue_transitions_[i];
+                
+                // Render transition button and status
+                if (ImGui::Button(transition.name.c_str(), ImVec2(150, 0))) {
+                    transition_issue(selected_issue_.key, transition.id);
+                }
+                ImGui::SameLine();
+                
+                // Show target status
+                ImGui::TextColored(colors[5], "-> %s", transition.to_status.name.c_str());
+                
+                // Wrap buttons after 2 transitions
+                bool is_last = (i == issue_transitions_.size() - 1);
+                bool wrap_line = (!is_last && (i + 1) % 2 == 0);
+                
+                if (wrap_line) {
+                    ImGui::NewLine();
+                } else if (!is_last) {
+                    ImGui::SameLine();
+                }
+            }
+        }
+        
+        ImGui::NewLine();
     }
     
     // Example JQL queries rendering
@@ -812,17 +754,19 @@ private:
         
         auto future = jira_host_->get_projects();
         
-        // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                projects_ = future.get();
-                is_loading_projects_ = false;
-            } catch (const std::exception& e) {
-                error_message_ = std::format("Error loading projects: {}", e.what());
-                is_loading_projects_ = false;
-                JIRA_ERROR_FMT("Error loading projects: {}", e.what());
-            }
-        }).detach();
+        // Handle the future asynchronously using our common handler
+        jira_ui::execute_async<std::vector<models::jira_project>>(
+            std::move(future),
+            [this](const std::vector<models::jira_project>& result) {
+                projects_ = result;
+            },
+            [this](const std::string& error) {
+                error_message_ = std::format("Error loading projects: {}", error);
+                JIRA_ERROR_FMT("Error loading projects: {}", error);
+            },
+            nullptr,
+            &is_loading_projects_
+        );
     }
     
     // Load issues for a specific project
@@ -834,17 +778,17 @@ private:
         auto future = jira_host_->search_issues(jql);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                auto result = future.get();
-                // Store the issues from the search result
+        jira_ui::execute_async<models::jira_search_result>(
+            std::move(future),
+            [this](const models::jira_search_result& result) {
                 project_issues_ = result.issues;
-                is_loading_issues_ = false;
-            } catch (const std::exception& e) {
-                error_message_ = std::format("Failed to load issues: {}", e.what());
-                is_loading_issues_ = false;
-            }
-        }).detach();
+            },
+            [this](const std::string& error) {
+                error_message_ = std::format("Failed to load issues: {}", error);
+            },
+            nullptr,
+            &is_loading_issues_
+        );
     }
     
     // Load issues assigned to current user
@@ -864,17 +808,18 @@ private:
         auto future = jira_host_->search_issues(jql);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                auto search_result = future.get();
-                my_issues_ = search_result.issues;
-                is_loading_my_issues_ = false;
-            } catch (const std::exception& e) {
-                error_message_ = std::format("Error loading your issues: {}", e.what());
-                is_loading_my_issues_ = false;
-                JIRA_ERROR_FMT("Error loading user issues: {}", e.what());
-            }
-        }).detach();
+        jira_ui::execute_async<models::jira_search_result>(
+            std::move(future),
+            [this](const models::jira_search_result& result) {
+                my_issues_ = result.issues;
+            },
+            [this](const std::string& error) {
+                error_message_ = std::format("Error loading your issues: {}", error);
+                JIRA_ERROR_FMT("Error loading user issues: {}", error);
+            },
+            nullptr,
+            &is_loading_my_issues_
+        );
     }
     
     // Load issue types for a project
@@ -918,16 +863,18 @@ private:
         auto future = jira_host_->search_issues(jql_query_, current_search_start_at_);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                search_results_ = future.get();
-                is_loading_search_results_ = false;
-            } catch (const std::exception& e) {
-                search_error_ = std::format("Search error: {}", e.what());
-                is_loading_search_results_ = false;
-                JIRA_ERROR_FMT("JQL search error: {}", e.what());
-            }
-        }).detach();
+        jira_ui::execute_async<models::jira_search_result>(
+            std::move(future),
+            [this](const models::jira_search_result& result) {
+                search_results_ = result;
+            },
+            [this](const std::string& error) {
+                search_error_ = std::format("Search error: {}", error);
+                JIRA_ERROR_FMT("JQL search error: {}", error);
+            },
+            nullptr,
+            &is_loading_search_results_
+        );
     }
     
     // Load more search results (pagination)
@@ -942,24 +889,23 @@ private:
         auto future = jira_host_->search_issues(jql_query_, current_search_start_at_);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                auto next_page = future.get();
-                
+        jira_ui::execute_async<models::jira_search_result>(
+            std::move(future),
+            [this](const models::jira_search_result& result) {
                 // Append new issues to existing results
                 search_results_.issues.insert(
                     search_results_.issues.end(), 
-                    next_page.issues.begin(), 
-                    next_page.issues.end()
+                    result.issues.begin(), 
+                    result.issues.end()
                 );
-                
-                is_loading_search_results_ = false;
-            } catch (const std::exception& e) {
-                search_error_ = std::format("Error loading more results: {}", e.what());
-                is_loading_search_results_ = false;
-                JIRA_ERROR_FMT("Error loading more search results: {}", e.what());
-            }
-        }).detach();
+            },
+            [this](const std::string& error) {
+                search_error_ = std::format("Error loading more results: {}", error);
+                JIRA_ERROR_FMT("Error loading more search results: {}", error);
+            },
+            nullptr,
+            &is_loading_search_results_
+        );
     }
     
     // Load transitions for an issue
@@ -969,16 +915,18 @@ private:
         auto future = jira_host_->get_transitions(issue_key);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                issue_transitions_ = future.get();
-                is_loading_transitions_ = false;
-            } catch (const std::exception& e) {
-                error_message_ = std::format("Error loading transitions: {}", e.what());
-                is_loading_transitions_ = false;
-                JIRA_ERROR_FMT("Error loading issue transitions: {}", e.what());
-            }
-        }).detach();
+        jira_ui::execute_async<std::vector<models::jira_transition>>(
+            std::move(future),
+            [this](const std::vector<models::jira_transition>& result) {
+                issue_transitions_ = result;
+            },
+            [this](const std::string& error) {
+                error_message_ = std::format("Error loading transitions: {}", error);
+                JIRA_ERROR_FMT("Error loading issue transitions: {}", error);
+            },
+            nullptr,
+            &is_loading_transitions_
+        );
     }
     
     // Transition an issue to a new status
@@ -987,10 +935,10 @@ private:
             // Success - refresh the issue details
             auto future = jira_host_->get_issue(issue_key);
             
-            std::thread([this, issue_key, future = std::move(future)]() mutable {
-                try {
-                    auto updated_issue = future.get();
-                    selected_issue_ = updated_issue;
+            jira_ui::execute_async<models::jira_issue>(
+                std::move(future),
+                [this, issue_key](const models::jira_issue& result) {
+                    selected_issue_ = result;
                     
                     // Also refresh transitions
                     issue_transitions_.clear();
@@ -1001,11 +949,12 @@ private:
                     if (!selected_project_.key.empty()) {
                         load_project_issues(selected_project_.key);
                     }
-                } catch (const std::exception& e) {
-                    error_message_ = std::format("Error refreshing issue: {}", e.what());
-                    JIRA_ERROR_FMT("Error refreshing issue after transition: {}", e.what());
+                },
+                [this](const std::string& error) {
+                    error_message_ = std::format("Error refreshing issue: {}", error);
+                    JIRA_ERROR_FMT("Error refreshing issue after transition: {}", error);
                 }
-            }).detach();
+            );
         } else {
             error_message_ = "Failed to transition issue";
             JIRA_ERROR("Failed to transition issue");
@@ -1043,13 +992,12 @@ private:
         auto future = jira_host_->create_issue(issue_data);
         
         // Handle the future asynchronously
-        std::thread([this, future = std::move(future)]() mutable {
-            try {
-                auto created_issue = future.get();
-                
-                if (!created_issue.key.empty()) {
-                    create_issue_success_ = std::format("Issue created: {}", created_issue.key);
-                    JIRA_INFO_FMT("Issue created successfully: {}", created_issue.key);
+        jira_ui::execute_async<models::jira_issue>(
+            std::move(future),
+            [this](const models::jira_issue& result) {
+                if (!result.key.empty()) {
+                    create_issue_success_ = std::format("Issue created: {}", result.key);
+                    JIRA_INFO_FMT("Issue created successfully: {}", result.key);
                     
                     // Reset form
                     reset_create_form();
@@ -1063,11 +1011,12 @@ private:
                     create_issue_error_ = "Failed to create issue";
                     JIRA_ERROR("Failed to create issue");
                 }
-            } catch (const std::exception& e) {
-                create_issue_error_ = std::format("Error creating issue: {}", e.what());
-                JIRA_ERROR_FMT("Error creating issue: {}", e.what());
+            },
+            [this](const std::string& error) {
+                create_issue_error_ = std::format("Error creating issue: {}", error);
+                JIRA_ERROR_FMT("Error creating issue: {}", error);
             }
-        }).detach();
+        );
     }
     
     // Reset create issue form
@@ -1086,11 +1035,7 @@ private:
         
         // Example JIRA date: "2023-05-22T14:35:30.000+0000"
         // Just extract the date part for simplicity
-        if (jira_date.size() >= 10) {
-            return jira_date.substr(0, 10);
-        }
-        
-        return jira_date;
+        return jira_date.size() >= 10 ? jira_date.substr(0, 10) : jira_date;
     }
     
     // JIRA model
