@@ -412,13 +412,20 @@ struct deck {
         if (empty_editor) {
             float x = 0.0f;
             float y = 0.0f;
+            float row_height;
+            if (size.y > 500.0f) {
+                row_height = size.y / 2.0f - 2.0f;
+            }
+            else {
+                row_height = size.y - 2.0f;
+            }
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, &result, &y, size] (auto c) { 
+                [this, &x, &result, &y, size, row_height] (auto c) { 
                     if ((x + c->width) > size.x) {
                         x = 0.0f;
-                        y += 450.0f + 2.0f;
+                        y += row_height + 2.0f;
                     }
-                    if (render(*c, x, 450.0f, result.requested_fps, y)) {
+                    if (render(*c, x, row_height, result.requested_fps, y)) {
                         return false;
                     }
                     return true;
