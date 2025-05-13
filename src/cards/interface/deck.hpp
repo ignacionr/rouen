@@ -155,103 +155,126 @@ struct deck {
     }
 
     void handle_shortcuts() {
-        if (ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift) {
-            if (ImGui::IsKeyPressed(ImGuiKey_P)) {
-                // Handle Ctrl+Shift+P shortcut
-                // Check if a menu card already exists
-                auto menu_card = std::find_if(cards_.begin(), cards_.end(), 
-                    [](const auto& card) { 
-                        // Check if the window title contains "Menu"
-                        return card->window_title.find("Menu") != std::string::npos; 
-                    });
-                
-                if (menu_card != cards_.end()) {
-                    // Select existing menu card
-                    (*menu_card)->grab_focus = true;
-                } else {
-                    // Create a new menu card if none exists
-                    create_card("menu", true);
+        if (ImGui::GetIO().KeyCtrl) {
+            if (ImGui::GetIO().KeyShift) {
+                if (ImGui::IsKeyPressed(ImGuiKey_P)) {
+                    // Handle Ctrl+Shift+P shortcut
+                    // Check if a menu card already exists
+                    auto menu_card = std::find_if(cards_.begin(), cards_.end(), 
+                        [](const auto& card) { 
+                            // Check if the window title contains "Menu"
+                            return card->window_title.find("Menu") != std::string::npos; 
+                        });
+                    
+                    if (menu_card != cards_.end()) {
+                        // Select existing menu card
+                        (*menu_card)->grab_focus = true;
+                    } else {
+                        // Create a new menu card if none exists
+                        create_card("menu", true);
+                    }
                 }
-            }
-            else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
-                // Find the first card that is focused
-                auto focused_card = std::find_if(cards_.begin(), cards_.end(),
-                    [](const auto& card) { return card->is_focused; });
-                if (focused_card != cards_.end()) {
-                    // Get a snapshot of the focused card
-                    // Create a unique filename with timestamp
-                    auto now = std::chrono::system_clock::now();
-                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-                    std::stringstream ss;
-                    ss << "card_" << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S") << ".png";
-                    std::string filename = ss.str();
-                    
-                    // Create a render function that draws the card content
-                    auto render_function = [this, &focused_card]() {
-                        auto &c = *(*focused_card);
-                        // Create a temporary rendering environment for the card
-                        // without its window decorations
-                        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-                        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+                    // Find the first card that is focused
+                    auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                        [](const auto& card) { return card->is_focused; });
+                    if (focused_card != cards_.end()) {
+                        // Get a snapshot of the focused card
+                        // Create a unique filename with timestamp
+                        auto now = std::chrono::system_clock::now();
+                        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                        std::stringstream ss;
+                        ss << "card_" << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S") << ".png";
+                        std::string filename = ss.str();
+                        
+                        // Create a render function that draws the card content
+                        auto render_function = [this, &focused_card]() {
+                            auto &c = *(*focused_card);
+                            // Create a temporary rendering environment for the card
+                            // without its window decorations
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
-                        ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
-                        ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
-                        ImGui::PushStyleColor(ImGuiCol_Text, text_color);                
-                        color_setup colors(c.get_color(0), c.get_color(1));
-                        
-                        c.render();
-                        ImGui::PopStyleColor(3); // Pop the style colors
-                        ImGui::PopStyleVar(2); // Pop the style variables
-                    };
-                    
-                    // Get card dimensions
-                    int width = static_cast<int>((*focused_card)->width);
-                    int height = static_cast<int>(450.0f); // Use the standard card height
-                    
-                    // Use our capture helper to get a texture with the card contents
-                    SDL_Texture* snapshot_texture = rouen::helpers::capture_imgui(
-                        width, height, render_function, renderer);
-                    
-                    if (snapshot_texture) {
-                        // Read the pixel data from the texture
-                        int texture_width, texture_height;
-                        SDL_QueryTexture(snapshot_texture, nullptr, nullptr, &texture_width, &texture_height);
-                        
-                        // Create a surface to store the pixel data
-                        SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
-                            0, texture_width, texture_height, 32, SDL_PIXELFORMAT_RGBA32);
-                        
-                        if (surface) {
-                            // We can't directly lock a render target texture, so we need to use SDL_RenderReadPixels
-                            // Make sure we're rendering to the texture we want to capture
-                            SDL_SetRenderTarget(renderer, snapshot_texture);
+                            ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+                            ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
+                            ImGui::PushStyleColor(ImGuiCol_Text, text_color);                
+                            color_setup colors(c.get_color(0), c.get_color(1));
                             
-                            // Read pixels directly into the surface
-                            SDL_Rect rect = { 0, 0, texture_width, texture_height };
-                            if (SDL_RenderReadPixels(renderer, &rect, 
-                                                    surface->format->format, 
-                                                    surface->pixels, 
-                                                    surface->pitch) == 0) {
-                                // Save the surface as PNG
-                                if (IMG_SavePNG(surface, filename.c_str()) == 0) {
-                                    // Success - show a message or notification if desired
-                                    std::cout << "Card snapshot saved to " << filename << std::endl;
+                            c.render();
+                            ImGui::PopStyleColor(3); // Pop the style colors
+                            ImGui::PopStyleVar(2); // Pop the style variables
+                        };
+                        
+                        // Get card dimensions
+                        int width = static_cast<int>((*focused_card)->width);
+                        int height = static_cast<int>(450.0f); // Use the standard card height
+                        
+                        // Use our capture helper to get a texture with the card contents
+                        SDL_Texture* snapshot_texture = rouen::helpers::capture_imgui(
+                            width, height, render_function, renderer);
+                        
+                        if (snapshot_texture) {
+                            // Read the pixel data from the texture
+                            int texture_width, texture_height;
+                            SDL_QueryTexture(snapshot_texture, nullptr, nullptr, &texture_width, &texture_height);
+                            
+                            // Create a surface to store the pixel data
+                            SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
+                                0, texture_width, texture_height, 32, SDL_PIXELFORMAT_RGBA32);
+                            
+                            if (surface) {
+                                // We can't directly lock a render target texture, so we need to use SDL_RenderReadPixels
+                                // Make sure we're rendering to the texture we want to capture
+                                SDL_SetRenderTarget(renderer, snapshot_texture);
+                                
+                                // Read pixels directly into the surface
+                                SDL_Rect rect = { 0, 0, texture_width, texture_height };
+                                if (SDL_RenderReadPixels(renderer, &rect, 
+                                                        surface->format->format, 
+                                                        surface->pixels, 
+                                                        surface->pitch) == 0) {
+                                    // Save the surface as PNG
+                                    if (IMG_SavePNG(surface, filename.c_str()) == 0) {
+                                        // Success - show a message or notification if desired
+                                        std::cout << "Card snapshot saved to " << filename << std::endl;
+                                    } else {
+                                        std::cerr << "Failed to save snapshot: " << IMG_GetError() << std::endl;
+                                    }
                                 } else {
-                                    std::cerr << "Failed to save snapshot: " << IMG_GetError() << std::endl;
+                                    std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << std::endl;
                                 }
-                            } else {
-                                std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << std::endl;
+                                
+                                // Restore the default render target
+                                SDL_SetRenderTarget(renderer, nullptr);
+                                
+                                // Clean up the surface
+                                SDL_FreeSurface(surface);
                             }
                             
-                            // Restore the default render target
-                            SDL_SetRenderTarget(renderer, nullptr);
-                            
-                            // Clean up the surface
-                            SDL_FreeSurface(surface);
+                            // Clean up the texture
+                            SDL_DestroyTexture(snapshot_texture);
                         }
-                        
-                        // Clean up the texture
-                        SDL_DestroyTexture(snapshot_texture);
+                    }
+            }
+            
+                else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                    // Handle Ctrl+Right Arrow shortcut
+                    auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                        [](const auto& card) { return card->is_focused; });
+                    if (focused_card != cards_.end()) {
+                        // Move the focused card to the right
+                        if (focused_card + 1 != cards_.end()) {
+                            std::iter_swap(focused_card, focused_card + 1);
+                        }
+                    }
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                    // Handle Ctrl+Left Arrow shortcut
+                    auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                        [](const auto& card) { return card->is_focused; });
+                    if (focused_card != cards_.begin()) {
+                        // Move the focused card to the left
+                        std::iter_swap(focused_card, focused_card - 1);
                     }
                 }
             }
