@@ -33,7 +33,7 @@ public:
         requested_fps = 1;  // Update once per second for the clock
         
         // Get the weather host
-        weather_host = hosts::WeatherHost::getHost();
+        weather_host = std::make_shared<hosts::WeatherHost>();
 
         weather_host->setLocation(location);
         weather_host->refreshWeather();
@@ -205,24 +205,22 @@ private:
     }
     
     void render_location_input() {
-        static char location_buffer[64] = "";
-        static bool initialized = false;
         
-        if (!initialized) {
+        if (!initialized_) {
             std::string current_location = weather_host->getLocation();
-            strncpy(location_buffer, current_location.c_str(), sizeof(location_buffer) - 1);
-            location_buffer[sizeof(location_buffer) - 1] = '\0';
-            initialized = true;
+            auto len = std::min(current_location.size(), sizeof(location_buffer_) - 1);
+            strncpy(location_buffer_, current_location.c_str(), len + 1);
+            initialized_ = true;
         }
         
         ImGui::Separator();
         ImGui::TextColored(colors[2], "Location:");
         
         ImGui::PushItemWidth(-1);
-        if (ImGui::InputText("##location", location_buffer, sizeof(location_buffer), 
+        if (ImGui::InputText("##location", location_buffer_, sizeof(location_buffer_), 
                               ImGuiInputTextFlags_EnterReturnsTrue)) {
             // Update location when Enter is pressed
-            weather_host->setLocation(location_buffer);
+            weather_host->setLocation(location_buffer_);
             // Force a refresh
             weather_host->refreshWeather();
         }
@@ -230,7 +228,7 @@ private:
         
         ImGui::SameLine();
         if (ImGui::Button("Update")) {
-            weather_host->setLocation(location_buffer);
+            weather_host->setLocation(location_buffer_);
             weather_host->refreshWeather();
         }
         
@@ -239,6 +237,8 @@ private:
     
 private:
     std::shared_ptr<hosts::WeatherHost> weather_host;
+    bool initialized_{false};
+    char location_buffer_[64]{};
 };
 
 } // namespace rouen::cards
