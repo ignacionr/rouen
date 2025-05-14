@@ -411,26 +411,38 @@ struct deck {
         bool const empty_editor = editor_.empty();
         if (empty_editor) {
             float x = 0.0f;
-            float y = 0.0f;
-            float row_height;
-            if (size.y > 500.0f) {
-                row_height = size.y / 2.0f - 2.0f;
-            }
-            else {
-                row_height = size.y - 2.0f;
-            }
-            auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, &result, &y, size, row_height] (auto c) { 
+            std::vector<std::vector<std::shared_ptr<card>>> rows;
+            {
+                auto row = std::reference_wrapper(rows.emplace_back());
+                for (auto& c : cards_) {
                     if ((x + c->width) > size.x) {
+                        if (!row.get().empty()) {
+                            row = std::reference_wrapper(rows.emplace_back());
+                        }
                         x = 0.0f;
-                        y += row_height + 2.0f;
                     }
-                    if (render(*c, x, row_height, result.requested_fps, y)) {
-                        return false;
+                    row.get().push_back(c);
+                    x += c->width;
+                }
+            }
+            float const row_height { std::max(size.y / rows.size(), card::min_card_height) };
+            float y = 0.0f;
+            std::set<card::ptr> cards_to_remove;
+            for (auto& row : rows) {
+                x = 0.0f;
+                for (auto& c : row) {
+                    if (!render(*c, x, row_height, result.requested_fps, y)) {
+                        cards_to_remove.insert(c);
                     }
-                    return true;
+                }
+                y += row_height;
+            }
+
+            auto cards_to_remove_main = std::remove_if(cards_.begin(), cards_.end(),
+                [&cards_to_remove] (auto &c) {
+                    return cards_to_remove.find(c) != cards_to_remove.end();
                  });
-            cards_.erase(cards_to_remove, cards_.end());
+            cards_.erase(cards_to_remove_main, cards_.end());
         }
         else {
             auto right_corner_offset {size.x};

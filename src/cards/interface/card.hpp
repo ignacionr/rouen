@@ -17,6 +17,7 @@ struct card {
     
     // Use a fixed-size array instead of a vector to avoid dynamic memory management issues
     static constexpr size_t MAX_COLORS = 16;
+    static constexpr float min_card_height = 200.0f;
     using color_array = std::array<ImVec4, MAX_COLORS>;
     
     // Constructor - initialize all colors to default values
