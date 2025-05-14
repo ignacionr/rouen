@@ -183,13 +183,19 @@ endforeach()
 
 # Create Resources/img directory and copy images
 file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
+# Create the destination directory first (just once)
+add_custom_command(
+  TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory 
+          "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/img"
+  COMMENT "Creating Resources/img directory in app bundle"
+)
+# Copy each file, but check if it exists first
 foreach(IMG_FILE ${IMAGE_FILES})
   get_filename_component(IMG_FILENAME ${IMG_FILE} NAME)
   add_custom_command(
     TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory 
-            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/img"
-    COMMAND ${CMAKE_COMMAND} -E copy
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${IMG_FILE}"
             "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/img/${IMG_FILENAME}"
     COMMENT "Copying ${IMG_FILENAME} to app bundle Resources/img"

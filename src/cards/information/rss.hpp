@@ -108,7 +108,9 @@ public:
             ImGui::Separator();
             
             // Create scrollable area for feeds
-            if (ImGui::BeginChild("FeedsScrollArea", ImVec2(0, 0), true)) {
+            auto available_size = ImGui::GetContentRegionAvail();
+            ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - 53);
+            if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
                 auto feeds = rss_host->feeds();
                 if (feeds.empty()) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds added yet");
