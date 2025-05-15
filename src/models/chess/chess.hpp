@@ -488,6 +488,20 @@ private:
             if (token.back() == '.' || token == "1/2-1/2" || token == "1-0" || token == "0-1" || token == "*") {
                 continue;
             }
+
+            // eventually, a move will be followed by its metadata
+            // such as {[%clk 0:15:08.9]}
+            // Remove any metadata
+            if (token.front() == '{') {
+                
+                for (size_t end_brace = token.find('}'); end_brace == std::string::npos; end_brace = token.find('}')) {
+                    // keep consuming the metadata
+                    if (!(stream >> token)) {
+                        break;
+                    }
+                }
+                continue;
+            }
             
             // Check for check/checkmate indicators
             bool is_check = token.back() == '+';
