@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <map>
 #include <regex>
-#include "imgui.h"
+#include "../helpers/imgui_include.hpp"
 
 class TextEditor
 {
