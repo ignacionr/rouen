@@ -671,8 +671,6 @@ private:
         if (use_llm) {
             std::string generated_cmd = generate_shell_command(command);
             if (!generated_cmd.empty()) {
-                // Show what command was generated
-                add_to_output(std::format("Grok generated command: {}", generated_cmd), OutputType::System);
                 cmd_to_execute = generated_cmd;
             } else {
                 // If command generation failed, fallback to original command
