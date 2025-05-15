@@ -36,7 +36,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        width = 400.0f;
+        width = 430.0f;
         
         // Use the shared host instance instead of creating a new one
         rss_host = getHost();
@@ -82,7 +82,7 @@ public:
     }
 
     bool render() override {
-        return render_window([this]() {
+        return render_window([this] {
             // Feeds section title
             ImGui::TextColored(colors[2], "Your RSS Feeds:");
             
@@ -117,59 +117,9 @@ public:
                 } else {
                     std::string search_text = search_buffer;
                     bool has_matches = false;
-                    
-                    // Display matching feeds
-                    for (const auto& feed : feeds) {
-                        ImGui::PushID(feed->source_link.c_str());
-                        
-                        // Feed title with truncation if needed
-                        std::string title = feed->feed_title;
-                        if (title.empty()) {
-                            title = feed->source_link;
-                        }
-                        
-                        // Filter based on search query if search text is present
-                        if (!search_text.empty() && 
-                            !::helpers::StringHelper::contains_case_insensitive(title, search_text) && 
-                            !::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
-                            ImGui::PopID();
-                            continue; // Skip items that don't match the search
-                        }
-                        
-                        has_matches = true;
-                        
-                        ImGui::BeginGroup();
-                        
-                        // Limit title length and add ellipsis if too long
-                        std::string display_title = title;
-                        if (display_title.length() > 40) {
-                            display_title = display_title.substr(0, 37) + "...";
-                        }
-                        
-                        if (ImGui::Selectable(display_title.c_str(), false)) {
-                            // Open feed items in a new card
-                            std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
-                            "create_card"_sfn(feed_uri);
-                        }
-                        
-                        // Item count
-                        ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                        ImGui::TextColored(
-                            ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
-                            "%zu items", feed->items.size()
-                        );
-                        
-                        // Delete button
-                        ImGui::SameLine(ImGui::GetWindowWidth() - 30);
-                        if (ImGui::SmallButton("×")) {
-                            feeds_to_delete.push_back(feed->source_link);
-                        }
-                        
-                        ImGui::EndGroup();
-                        
-                        ImGui::PopID();
-                    }
-                    
+
+                    render_feed_list(feeds, search_text, has_matches);
+
                     // Show message when no feeds match the search
                     if (!search_text.empty() && !has_matches) {
                         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
@@ -190,7 +140,62 @@ public:
             render_add_feed();
         });
     }
-    
+
+    void render_feed_list(auto &feeds, std::string &search_text, bool &has_matches)
+    {
+        // Setup ImGui table for feeds
+        if (ImGui::BeginTable("FeedsTable", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY))
+        {
+            ImGui::TableSetupColumn("Feed", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
+            ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthFixed, 80.0f, 1);
+
+            for (const auto &feed : feeds)
+            {
+                ImGui::PushID(feed->source_link.c_str());
+
+                std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+
+                // Filter based on search query if search text is present
+                if (!search_text.empty() &&
+                    !::helpers::StringHelper::contains_case_insensitive(title, search_text) &&
+                    !::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text))
+                {
+                    ImGui::PopID();
+                    continue; // Skip items that don't match the search
+                }
+
+                has_matches = true;
+
+                ImGui::TableNextRow();
+
+                // Feed title (with truncation)
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::Selectable(title.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
+                {
+                    std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
+                    "create_card"_sfn(feed_uri);
+                }
+
+                // Item count
+                ImGui::TableSetColumnIndex(1);
+                // Use the fixed-width font
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+                ImGui::TextColored(
+                    ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
+                    "%7zu", feed->items.size());
+                ImGui::PopFont();
+                ImGui::SameLine();
+                if (ImGui::SmallButton("×"))
+                {
+                    feeds_to_delete.push_back(feed->source_link);
+                }
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
     // Add a new feed by URL
     bool addFeed(const std::string& url) {
         try {
