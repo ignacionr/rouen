@@ -8,6 +8,7 @@
 #include <optional>
 #include <utility>
 #include <glaze/json.hpp>
+#include <regex>
 
 #include "debug.hpp"
 #include "fetch.hpp"

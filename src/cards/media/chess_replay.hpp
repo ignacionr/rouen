@@ -24,6 +24,7 @@
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"  // For font utilities
 #include "../../../external/IconsMaterialDesign.h"
+#include "chess_com_integration.hpp"
 
 // Chess-specific debug macros are already defined in debug.hpp
 // No need to redefine them here
@@ -32,7 +33,9 @@ namespace rouen::cards {
 
 class chess_replay : public card {
 public:
-    chess_replay(std::string_view pgn_path = "") {
+    chess_replay(std::string_view pgn_path = "")
+        : game(std::make_unique<models::chess::Game>()),
+          chess_com_integration(chess_com_state, chess_api) {
         // Set custom colors for the chess card
         colors[0] = {0.4f, 0.6f, 0.3f, 1.0f}; // Green primary color
         colors[1] = {0.5f, 0.7f, 0.4f, 0.7f}; // Lighter green secondary color
@@ -50,9 +53,6 @@ public:
         name("Chess Replay");
         requested_fps = 30;  // Higher refresh rate for smoother animations
         width = 700.0f;      // Wider card to accommodate board and move list
-        
-        // Create chess game model
-        game = std::make_unique<models::chess::Game>();
         
         // Try to get the SDL renderer from the registrar
         try {
@@ -90,8 +90,8 @@ public:
     
     std::string get_uri() const override {
         // Return chess-com URI if this is from the Chess.com integration
-        if (from_chess_com && !chess_com_username.empty()) {
-            return "chess-com:" + chess_com_username;
+        if (chess_com_state.from_chess_com && !chess_com_state.chess_com_username.empty()) {
+            return "chess-com:" + chess_com_state.chess_com_username;
         }
         
         return "chess";
@@ -104,20 +104,12 @@ public:
                 return;
             }
             
-            // Check if we need to auto-search for a username
-            if (auto_search_on_render) {
-                auto_search_on_render = false; // Only do this once
-                fetch_player_archives(username_buffer);
-                from_chess_com = true;
-                chess_com_username = username_buffer;
-            }
+            // Chess.com UI
+            chess_com_integration.render_ui(colors[9], colors[8], [this](){ load_selected_game(); });
             
             // Calculate board size based on card width
             float board_size = std::min(width - 40.0f, 400.0f);
             float square_size = board_size / 8.0f;
-            
-            // Show Chess.com API UI at the top
-            render_chess_com_ui();
             
             ImGui::Separator();
             
@@ -140,7 +132,7 @@ public:
             ImGui::Columns(1);
             
             // Process any pending API responses
-            process_api_responses();
+            chess_com_integration.process_api_responses();
         });
     }
     
@@ -181,199 +173,36 @@ public:
     
     // Set the username to search for Chess.com games (public method for registrar)
     void set_chess_com_username(const std::string& username) {
-        std::strncpy(username_buffer, username.c_str(), sizeof(username_buffer) - 1);
-        username_buffer[sizeof(username_buffer) - 1] = '\0';
-        chess_com_username = username;
-        from_chess_com = true;
-        auto_search_on_render = true;
+        std::strncpy(chess_com_state.username_buffer, username.c_str(), sizeof(chess_com_state.username_buffer) - 1);
+        chess_com_state.username_buffer[sizeof(chess_com_state.username_buffer) - 1] = '\0';
+        chess_com_state.chess_com_username = username;
+        chess_com_state.from_chess_com = true;
+        chess_com_state.auto_search_on_render = true;
     }
     
-private:
-    // Render Chess.com API integration UI
-    void render_chess_com_ui() {
-        ImGui::TextColored(colors[9], "Chess.com Player Games");
-        
-        // Username input field
-        ImGui::SetNextItemWidth(200.0f);
-        if (ImGui::InputText("##ChessUsername", username_buffer, sizeof(username_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            fetch_player_archives(username_buffer);
-            chess_com_username = username_buffer;
-            from_chess_com = true;
-        }
-        
-        ImGui::SameLine();
-        if (ImGui::Button("Search")) {
-            fetch_player_archives(username_buffer);
-            chess_com_username = username_buffer;
-            from_chess_com = true;
-        }
-        
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Enter a Chess.com username and click Search to find their games");
-        }
-        
-        // Show loading indicator if fetching data
-        if (is_fetching_archives || is_fetching_games) {
-            ImGui::SameLine();
-            ImGui::Text("Loading...");
-        }
-        
-        // Show error if one occurred
-        if (!api_error.empty()) {
-            ImGui::TextColored(colors[8], "Error: %s", api_error.c_str());
-        }
-        
-        // Archive months dropdown
-        if (!player_archives.empty()) {
-            ImGui::SetNextItemWidth(200.0f);
-            if (ImGui::BeginCombo("##ArchiveMonths", selected_archive.empty() ? "Select Month" : selected_archive.c_str())) {
-                for (const auto& archive : player_archives) {
-                    // Extract month/year from URL: https://api.chess.com/pub/player/{username}/games/YYYY/MM
-                    std::string month_display = archive.substr(archive.length() - 7); // Get "YYYY/MM"
-                    month_display[4] = '-'; // Replace / with -
-                    
-                    bool is_selected = (selected_archive == month_display);
-                    if (ImGui::Selectable(month_display.c_str(), is_selected)) {
-                        selected_archive = month_display;
-                        fetch_archive_games(archive);
-                    }
-                    
-                    if (is_selected) {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            
-            // Games list
-            if (!archive_games.empty()) {
-                ImGui::SetNextItemWidth(500.0f);
-                if (ImGui::BeginCombo("##GamesList", selected_game_index < 0 ? 
-                                    "Select Game" : 
-                                    chess_api.format_game_display(archive_games[static_cast<size_t>(selected_game_index)]).c_str())) {
-                    for (size_t i = 0; i < archive_games.size(); ++i) {
-                        const auto& chess_game_item = archive_games[i];
-                        std::string game_display = chess_api.format_game_display(chess_game_item);
-                        
-                        bool is_selected = (selected_game_index == static_cast<int>(i));
-                        if (ImGui::Selectable(game_display.c_str(), is_selected)) {
-                            selected_game_index = static_cast<int>(i);
-                            load_selected_game();
-                        }
-                        
-                        if (is_selected) {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-            }
-        }
-    }
-    
-    // Fetch player archives from Chess.com API
-    void fetch_player_archives(const std::string& username) {
-        if (username.empty()) {
-            api_error = "Please enter a username";
-            return;
-        }
-        
-        // Clear previous results
-        player_archives.clear();
-        archive_games.clear();
-        selected_archive.clear();
-        selected_game_index = -1;
-        api_error.clear();
-        
-        // Set fetching flag
-        is_fetching_archives = true;
-        
-        // Start async fetch using the ChessComApiClient
-        archives_future = chess_api.fetch_player_archives(username);
-    }
-    
-    // Fetch games from a specific archive
-    void fetch_archive_games(const std::string& archive_url) {
-        // Clear previous results
-        archive_games.clear();
-        selected_game_index = -1;
-        api_error.clear();
-        
-        // Set fetching flag
-        is_fetching_games = true;
-        
-        // Start async fetch using the ChessComApiClient
-        games_future = chess_api.fetch_archive_games(archive_url);
-    }
-    
-    // Process any completed API responses
-    void process_api_responses() {
-        // Check archives future
-        if (is_fetching_archives && archives_future.valid()) {
-            auto status = archives_future.wait_for(std::chrono::seconds(0));
-            if (status == std::future_status::ready) {
-                auto [success, result] = archives_future.get();
-                is_fetching_archives = false;
-                
-                if (success) {
-                    bool parsed = chess_api.process_archives_response(result, player_archives);
-                    if (!parsed) {
-                        api_error = "Error parsing archives response";
-                    }
-                } else {
-                    api_error = result;
-                }
-            }
-        }
-        
-        // Check games future
-        if (is_fetching_games && games_future.valid()) {
-            auto status = games_future.wait_for(std::chrono::seconds(0));
-            if (status == std::future_status::ready) {
-                auto [success, result] = games_future.get();
-                is_fetching_games = false;
-                
-                if (success) {
-                    bool parsed = chess_api.process_games_response(result, archive_games);
-                    if (!parsed) {
-                        api_error = "Error parsing games response";
-                    }
-                } else {
-                    api_error = result;
-                }
-            }
-        }
-    }
-    
-    // Load the selected game
     void load_selected_game() {
-        if (selected_game_index < 0 || static_cast<size_t>(selected_game_index) >= archive_games.size()) {
+        if (!chess_com_integration.has_selected_game()) {
             CHESS_ERROR("Invalid selected game index");
             return;
         }
         
-        const auto& selected_game = archive_games[static_cast<size_t>(selected_game_index)];
-        if (selected_game.pgn.empty()) {
+        std::string pgn = chess_com_integration.get_selected_pgn();
+        if (pgn.empty()) {
             CHESS_ERROR("Selected game has empty PGN");
             return;
         }
         
-        // Log the first part of the PGN for debugging
-        CHESS_INFO_FMT("Loading PGN: {}", selected_game.pgn.substr(0, std::min(size_t(100), selected_game.pgn.size())));
+        CHESS_INFO_FMT("Loading PGN: {}", pgn.substr(0, std::min(size_t(100), pgn.size())));
         
-        // Use the ChessComApiClient to prepare the PGN for loading
-        std::string clean_pgn = chess_api.prepare_pgn_for_loading(selected_game.pgn);
+        std::string clean_pgn = chess_api.prepare_pgn_for_loading(pgn);
         
-        // Try to load the PGN content
         bool success = load_pgn_content(clean_pgn);
         
         if (!success) {
             CHESS_ERROR("Failed to load selected game PGN");
-            api_error = "Failed to load game. Invalid PGN format.";
+            chess_com_state.api_error = "Failed to load game. Invalid PGN format.";
         } else {
-            api_error.clear();
+            chess_com_state.api_error.clear();
             CHESS_INFO("Successfully loaded selected game");
         }
     }
@@ -425,17 +254,17 @@ private:
     // Render the chess board
     void render_board(float board_size, float square_size) {
         if (!game) return;
-        
+
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         ImVec2 board_pos = ImGui::GetCursorScreenPos();
-        
+
         // Draw board background
         ImGui::Dummy(ImVec2(board_size, board_size));
-        
-        // Get current position from the game
+
+        // Get current position from the game (this will reflect the current move index)
         const auto& board = game->get_current_position();
         const auto& board_array = board.get_board();
-        
+
         // Draw squares and pieces
         for (int rank = 7; rank >= 0; --rank) {
             for (int file = 0; file < 8; ++file) {
@@ -592,20 +421,7 @@ private:
         } else {
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No game loaded");
         }
-        
-        // PGN file loading button
-        if (ImGui::Button("Load PGN File")) {
-            // In a real application, you'd open a file dialog
-            // For now, let's assume a fixed file path or use the previously loaded one
-            std::string filepath = "/path/to/chess/game.pgn";
-            if (!loaded_pgn_path.empty()) {
-                filepath = loaded_pgn_path;
-            }
-            
-            load_pgn(filepath);
-        }
-        
-        ImGui::SameLine();
+        ImGui::Separator();
         
         // Reset button
         if (ImGui::Button("Reset")) {
@@ -616,65 +432,49 @@ private:
     // Render playback controls
     void render_controls() {
         if (!game) return;
-        
+
         ImGui::TextColored(colors[0], "Playback Controls:");
-        
+
         // Calculate current and total moves
         size_t current_move = game->get_current_move_index();
         size_t total_moves = game->get_move_count();
-        
+
         // Display move counter
         ImGui::Text("Move: %zu / %zu", current_move, total_moves);
-        
+
         // Navigation buttons
         if (ImGui::Button("<<")) {
-            // First move
             game->first_move();
         }
-        
         ImGui::SameLine();
-        
         if (ImGui::Button("<")) {
-            // Previous move
             game->previous_move();
         }
-        
         ImGui::SameLine();
-        
         if (ImGui::Button(">")) {
-            // Next move
             game->next_move();
         }
-        
         ImGui::SameLine();
-        
         if (ImGui::Button(">>")) {
-            // Last move
             game->last_move();
         }
-        
+
         // Autoplay controls
         ImGui::Checkbox("Autoplay", &autoplay);
-        
         if (autoplay) {
-            // Autoplay speed slider
             ImGui::SameLine();
             ImGui::SetNextItemWidth(100.0f);
             ImGui::SliderFloat("##Speed", &autoplay_speed, 0.5f, 3.0f, "%.1fx");
-            
+
             // Handle autoplay logic - move to the next position after the delay
             static std::chrono::steady_clock::time_point last_move_time = std::chrono::steady_clock::now();
             auto current_time = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_move_time).count();
-            
-            // Calculate delay based on speed (base delay of 2000ms divided by speed)
             int delay_ms = static_cast<int>(2000.0f / autoplay_speed);
-            
             if (elapsed > delay_ms && current_move < total_moves) {
                 game->next_move();
                 last_move_time = current_time;
             } else if (current_move >= total_moves) {
-                // Stop autoplay when we reach the end
                 autoplay = false;
             }
         }
@@ -683,56 +483,35 @@ private:
     // Render the move list
     void render_move_list() {
         if (!game) return;
-        
+
         ImGui::TextColored(colors[0], "Move List:");
-        
-        // Get all moves from the game
         const auto& moves = game->get_moves();
         if (moves.empty()) {
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No moves");
             return;
         }
-        
-        // Calculate current move
         size_t current_move_index = game->get_current_move_index();
-        
-        // Show moves in a scrollable region
         if (ImGui::BeginChild("MovesList", ImVec2(0, 200), true)) {
             for (size_t i = 0; i < moves.size(); ++i) {
-                // Display move number for white moves (every other move)
                 if (i % 2 == 0) {
                     ImGui::Text("%zu.", (i / 2) + 1);
                     ImGui::SameLine();
                 }
-                
-                // Determine if this is the current move
                 bool is_current_move = (i == current_move_index - 1);
-                
-                // Highlight the current move
                 if (is_current_move) {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[7]));
                 }
-                
-                // Display the move in algebraic notation
                 const auto& move = moves[i];
-                
-                // Format with indicators for check/checkmate
                 std::string move_text = move.algebraic;
                 if (move.is_check) move_text += "+";
                 if (move.is_checkmate) move_text += "#";
-                
-                // Make the move clickable
                 if (ImGui::Selectable(move_text.c_str(), is_current_move)) {
-                    // When clicked, move to this position
+                    // When clicked, move to this position (i+1, since 0 = initial position)
                     game->set_position(i + 1);
                 }
-                
-                // End highlighting
                 if (is_current_move) {
                     ImGui::PopStyleColor();
                 }
-                
-                // For white moves, stay on the same line for the black move to follow
                 if (i % 2 == 0 && i < moves.size() - 1) {
                     ImGui::SameLine();
                 }
@@ -746,31 +525,13 @@ private:
     std::string loaded_pgn_path;
     bool autoplay = false;
     float autoplay_speed = 1.0f;
-    
-    // SDL Renderer and textures
     SDL_Renderer* renderer = nullptr;
     std::unordered_map<models::chess::Piece, SDL_Texture*> piece_textures;
     std::unordered_map<models::chess::Piece, std::pair<int, int>> piece_dimensions;
     bool textures_loaded = false;
-    
-    // Chess.com API related members
-    char username_buffer[64] = {};
-    std::vector<std::string> player_archives;
-    std::vector<rouen::chess::ChessGameArchive> archive_games;
-    std::string selected_archive;
-    int selected_game_index = -1;
-    bool is_fetching_archives = false;
-    bool is_fetching_games = false;
-    std::string api_error;
-    bool auto_search_on_render = false;
-    bool from_chess_com = false;
-    std::string chess_com_username;
-    
-    // Chess.com API client
+    ChessComIntegrationState chess_com_state;
     chess::ChessComApiClient chess_api;
-    // Async futures for API requests
-    std::future<std::pair<bool, std::string>> archives_future;
-    std::future<std::pair<bool, std::string>> games_future;
+    ChessComIntegration chess_com_integration;
 };
 
 } // namespace rouen::cards

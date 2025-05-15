@@ -28,7 +28,7 @@
     #define ROUEN_LOG_LEVEL LOG_LEVEL_ERROR
 #else
     // In debug builds, show warnings by default for better RSS feed visibility
-    #define ROUEN_LOG_LEVEL LOG_LEVEL_WARN
+    #define ROUEN_LOG_LEVEL LOG_LEVEL_TRACE
 #endif
 #endif
 

@@ -135,6 +135,7 @@ public:
     
     // Apply a move to the board
     void apply_move(const Move& move) {
+        CHESS_TRACE_FMT("apply_move: {} -> {} ({})", move.from.to_algebraic(), move.to.to_algebraic(), move.algebraic);
         if (!move.from.is_valid() || !move.to.is_valid()) {
             CHESS_WARN_FMT("Invalid move: from={} to={}", 
                          move.from.to_algebraic(), move.to.to_algebraic());
@@ -265,7 +266,7 @@ public:
         event = "Chess Game";
         site = "";
         date = "";
-        round = "";
+        round_str = "";
         result = "*";
         CHESS_INFO("Game reset");
     }
@@ -293,12 +294,13 @@ public:
     }
     
     // Get the current position of the board
-    Board get_current_position() const {
+    const Board& get_current_position() const {
         return board;
     }
     
     // Set the current move index and update the board accordingly
     void set_position(size_t move_index) {
+        CHESS_TRACE_FMT("set_position called with move_index={} (current_move_index={})", move_index, current_move_index);
         if (move_index > moves.size()) {
             CHESS_WARN_FMT("Invalid move index: {}. Total moves: {}", 
                          move_index, moves.size());
@@ -309,6 +311,7 @@ public:
         board.reset_to_starting_position();
         
         for (size_t i = 0; i < move_index; ++i) {
+            CHESS_TRACE_FMT("Applying move {}: {}", i, moves[i].algebraic);
             board.apply_move(moves[i]);
         }
         
@@ -318,26 +321,24 @@ public:
     
     // Move to the next position
     bool next_move() {
+        CHESS_TRACE_FMT("next_move called (current_move_index={})", current_move_index);
         if (current_move_index >= moves.size()) {
             CHESS_INFO("Already at the last move");
             return false;
         }
-        
-        board.apply_move(moves[current_move_index]);
-        current_move_index++;
+        set_position(current_move_index + 1);
         CHESS_INFO_FMT("Advanced to move {}/{}", current_move_index, moves.size());
         return true;
     }
     
     // Move to the previous position
     bool previous_move() {
+        CHESS_TRACE_FMT("previous_move called (current_move_index={})", current_move_index);
         if (current_move_index == 0) {
             CHESS_INFO("Already at the starting position");
             return false;
         }
-        
-        current_move_index--;
-        set_position(current_move_index);
+        set_position(current_move_index - 1);
         CHESS_INFO_FMT("Went back to move {}/{}", current_move_index, moves.size());
         return true;
     }
@@ -416,7 +417,7 @@ public:
         info << "Event: " << event << "\n";
         if (!site.empty()) info << "Site: " << site << "\n";
         if (!date.empty()) info << "Date: " << date << "\n";
-        if (!round.empty()) info << "Round: " << round << "\n";
+        if (!round_str.empty()) info << "Round: " << round_str << "\n";
         info << "White: " << white_player << "\n";
         info << "Black: " << black_player << "\n";
         info << "Result: " << result << "\n";
@@ -428,7 +429,7 @@ public:
     std::string event;
     std::string site;
     std::string date;
-    std::string round;
+    std::string round_str;
     std::string white_player;
     std::string black_player;
     std::string result;
@@ -464,7 +465,7 @@ private:
         } else if (name == "Date") {
             date = value;
         } else if (name == "Round") {
-            round = value;
+            round_str = value;
         } else if (name == "White") {
             white_player = value;
         } else if (name == "Black") {
@@ -479,51 +480,210 @@ private:
     // Parse PGN move text and convert to Move objects
     std::vector<Move> parse_pgn_moves(const std::string& move_text) {
         std::vector<Move> parsed_moves;
-        
         std::istringstream stream(move_text);
         std::string token;
-        
+        // We'll need a working board to resolve from/to squares
+        Board working_board = board;
+        bool white_to_move = (moves.size() % 2 == 0);
         while (stream >> token) {
-            // Skip move numbers (e.g., "1.", "2.", etc.)
+            // Skip move numbers and results
             if (token.back() == '.' || token == "1/2-1/2" || token == "1-0" || token == "0-1" || token == "*") {
                 continue;
             }
-
-            // eventually, a move will be followed by its metadata
-            // such as {[%clk 0:15:08.9]}
-            // Remove any metadata
+            // Skip metadata and stray braces
             if (token.front() == '{') {
-                
                 for (size_t end_brace = token.find('}'); end_brace == std::string::npos; end_brace = token.find('}')) {
-                    // keep consuming the metadata
-                    if (!(stream >> token)) {
-                        break;
-                    }
+                    if (!(stream >> token)) break;
                 }
                 continue;
             }
-            
-            // Check for check/checkmate indicators
-            bool is_check = token.back() == '+';
-            bool is_checkmate = token.back() == '#';
-            
-            if (is_check || is_checkmate) {
-                token.pop_back(); // Remove the indicator
+            // Skip stray closing braces
+            if (token == "}") {
+                continue;
             }
-            
-            // Create a simple move object with the algebraic notation
+            // Remove check/checkmate indicators
+            bool is_check = false, is_checkmate = false;
+            if (!token.empty() && token.back() == '+') { is_check = true; token.pop_back(); }
+            if (!token.empty() && token.back() == '#') { is_checkmate = true; token.pop_back(); }
+            // Castling
+            if (token == "O-O" || token == "0-0") {
+                // King-side castle
+                Move move;
+                move.is_castle = true;
+                move.is_check = is_check;
+                move.is_checkmate = is_checkmate;
+                move.algebraic = token;
+                if (white_to_move) {
+                    move.from = Position{4, 0};
+                    move.to = Position{6, 0};
+                } else {
+                    move.from = Position{4, 7};
+                    move.to = Position{6, 7};
+                }
+                parsed_moves.push_back(move);
+                working_board.apply_move(move);
+                white_to_move = !white_to_move;
+                continue;
+            } else if (token == "O-O-O" || token == "0-0-0") {
+                // Queen-side castle
+                Move move;
+                move.is_castle = true;
+                move.is_check = is_check;
+                move.is_checkmate = is_checkmate;
+                move.algebraic = token;
+                if (white_to_move) {
+                    move.from = Position{4, 0};
+                    move.to = Position{2, 0};
+                } else {
+                    move.from = Position{4, 7};
+                    move.to = Position{2, 7};
+                }
+                parsed_moves.push_back(move);
+                working_board.apply_move(move);
+                white_to_move = !white_to_move;
+                continue;
+            }
+            // Promotion (e.g. e8=Q)
+            std::string move_token = token;
+            Piece promotion = Piece::None;
+            size_t eq = move_token.find('=');
+            if (eq != std::string::npos && eq + 1 < move_token.size()) {
+                char promo = move_token[eq + 1];
+                switch (promo) {
+                    case 'Q': promotion = white_to_move ? Piece::WhiteQueen : Piece::BlackQueen; break;
+                    case 'R': promotion = white_to_move ? Piece::WhiteRook : Piece::BlackRook; break;
+                    case 'B': promotion = white_to_move ? Piece::WhiteBishop : Piece::BlackBishop; break;
+                    case 'N': promotion = white_to_move ? Piece::WhiteKnight : Piece::BlackKnight; break;
+                }
+                move_token = move_token.substr(0, eq); // Remove =Q
+            }
+            // Parse the move
             Move move;
             move.algebraic = token;
             move.is_check = is_check;
             move.is_checkmate = is_checkmate;
-            
+            move.promotion = promotion;
+            CHESS_TRACE_FMT("Parsing move: {} (token: {})", token, move_token);
+            // Piece type
+            Piece moving_piece = Piece::WhitePawn;
+            size_t idx = 0;
+            if (move_token[0] >= 'A' && move_token[0] <= 'Z' && move_token[0] != 'O') {
+                CHESS_TRACE_FMT("Detected piece: {}", move_token[0]);
+                switch (move_token[0]) {
+                    case 'N': moving_piece = white_to_move ? Piece::WhiteKnight : Piece::BlackKnight; break;
+                    case 'B': moving_piece = white_to_move ? Piece::WhiteBishop : Piece::BlackBishop; break;
+                    case 'R': moving_piece = white_to_move ? Piece::WhiteRook : Piece::BlackRook; break;
+                    case 'Q': moving_piece = white_to_move ? Piece::WhiteQueen : Piece::BlackQueen; break;
+                    case 'K': moving_piece = white_to_move ? Piece::WhiteKing : Piece::BlackKing; break;
+                    default: moving_piece = white_to_move ? Piece::WhitePawn : Piece::BlackPawn; break;
+                }
+                idx = 1;
+            } else {
+                moving_piece = white_to_move ? Piece::WhitePawn : Piece::BlackPawn;
+            }
+            // Capture
+            bool is_capture = false;
+            size_t x_idx = move_token.find('x');
+            if (x_idx != std::string::npos) {
+                is_capture = true;
+                move_token.erase(x_idx, 1);
+            }
+            // Disambiguation
+            char disambig_file = 0, disambig_rank = 0;
+            // For pawn captures, disambiguation is always the file
+            if (moving_piece == Piece::WhitePawn || moving_piece == Piece::BlackPawn) {
+                if (is_capture && move_token.size() >= 4 && move_token[1] == 'x') {
+                    disambig_file = move_token[0];
+                }
+            }
+            if (idx < move_token.size() && move_token.size() - idx > 2) {
+                if (move_token.size() - idx == 3) {
+                    if (move_token[idx] >= 'a' && move_token[idx] <= 'h') disambig_file = move_token[idx];
+                    else if (move_token[idx] >= '1' && move_token[idx] <= '8') disambig_rank = move_token[idx];
+                    ++idx;
+                } else if (move_token.size() - idx == 4) {
+                    disambig_file = move_token[idx];
+                    disambig_rank = move_token[idx + 1];
+                    idx += 2;
+                }
+            }
+            CHESS_TRACE_FMT("Disambiguation: file={}, rank={}", disambig_file ? std::string(1, disambig_file) : "-", disambig_rank ? std::string(1, disambig_rank) : "-");
+            // Destination square
+            std::string to_sq = move_token.substr(move_token.size() - 2, 2);
+            Position to = Position::from_algebraic(to_sq);
+            move.to = to;
+            CHESS_TRACE_FMT("Destination square: {}", to.to_algebraic());
+            // Find the from square
+            Position from{-1, -1};
+            bool found = false;
+            for (int rank = 0; rank < 8; ++rank) {
+                for (int file = 0; file < 8; ++file) {
+                    Position pos{file, rank};
+                    Piece p = working_board.get_piece(pos);
+                    if (p != moving_piece) continue;
+                    // Pawn capture disambiguation
+                    if ((moving_piece == Piece::WhitePawn || moving_piece == Piece::BlackPawn) && is_capture && disambig_file) {
+                        if (file != (disambig_file - 'a')) continue;
+                    }
+                    // Disambiguation for other pieces
+                    if (moving_piece != Piece::WhitePawn && moving_piece != Piece::BlackPawn) {
+                        if (disambig_file && file != (disambig_file - 'a')) continue;
+                        if (disambig_rank && rank != (disambig_rank - '1')) continue;
+                    }
+                    // Can this piece move to 'to'?
+                    bool can_move = false;
+                    int df = to.file - file, dr = to.rank - rank;
+                    switch (moving_piece) {
+                        case Piece::WhitePawn:
+                            if (white_to_move && dr == 1 && df == 0 && !is_capture) can_move = true;
+                            else if (white_to_move && dr == 1 && abs(df) == 1 && is_capture) can_move = true;
+                            else if (white_to_move && rank == 1 && dr == 2 && df == 0 && !is_capture) can_move = true;
+                            break;
+                        case Piece::BlackPawn:
+                            if (!white_to_move && dr == -1 && df == 0 && !is_capture) can_move = true;
+                            else if (!white_to_move && dr == -1 && abs(df) == 1 && is_capture) can_move = true;
+                            else if (!white_to_move && rank == 6 && dr == -2 && df == 0 && !is_capture) can_move = true;
+                            break;
+                        case Piece::WhiteKnight:
+                        case Piece::BlackKnight:
+                            if ((abs(df) == 2 && abs(dr) == 1) || (abs(df) == 1 && abs(dr) == 2)) can_move = true;
+                            break;
+                        case Piece::WhiteBishop:
+                        case Piece::BlackBishop:
+                            if (abs(df) == abs(dr) && df != 0) can_move = true;
+                            break;
+                        case Piece::WhiteRook:
+                        case Piece::BlackRook:
+                            if ((df == 0 && dr != 0) || (dr == 0 && df != 0)) can_move = true;
+                            break;
+                        case Piece::WhiteQueen:
+                        case Piece::BlackQueen:
+                            if ((abs(df) == abs(dr) && df != 0) || (df == 0 && dr != 0) || (dr == 0 && df != 0)) can_move = true;
+                            break;
+                        case Piece::WhiteKing:
+                        case Piece::BlackKing:
+                            if (abs(df) <= 1 && abs(dr) <= 1 && (df != 0 || dr != 0)) can_move = true;
+                            break;
+                        default: break;
+                    }
+                    if (can_move) {
+                        from = pos;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            CHESS_TRACE_FMT("Resolved from square: {}", from.to_algebraic());
+            move.from = from;
+            move.is_capture = is_capture;
+            if (!from.is_valid() || !to.is_valid()) {
+                CHESS_WARN_FMT("Could not resolve move: {} (from {} to {})", move.algebraic, from.to_algebraic(), to.to_algebraic());
+            }
             parsed_moves.push_back(move);
-            CHESS_DEBUG_FMT("Parsed move: {}{}{}", 
-                         token, 
-                         is_check ? "+" : "", 
-                         is_checkmate ? "#" : "");
+            working_board.apply_move(move);
+            white_to_move = !white_to_move;
         }
-        
         return parsed_moves;
     }
 };

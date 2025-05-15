@@ -78,6 +78,7 @@ add_executable(${PROJECT_NAME}
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
   src/models/jira_model.cpp
+  src/cards/media/chess_com_integration.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
