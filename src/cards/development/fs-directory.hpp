@@ -154,9 +154,16 @@ namespace rouen::cards
                             if (entry.is_directory()) {
                                 // if Ctrl is pressed, open on a different card
                                 if (ImGui::GetIO().KeyCtrl) {
-                                    "create_card"_sfn(std::format("dir:{}", entry.path().string()));
+                                    if (ImGui::GetIO().KeyShift) {
+                                        // open as terminal
+                                        "create_card"_sfn(std::format("terminal:{}", entry.path().string()));
+                                    }
+                                    else {
+                                        // open in a new card
+                                        "create_card"_sfn(std::format("dir:{}", entry.path().string()));
+                                    }
                                 } else {
-                                    // otherwise, open in the same card
+                                    // open in the same card
                                     path_ = entry.path();
                                     name(path_.string());
                                     filter_.clear();
