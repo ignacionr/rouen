@@ -52,7 +52,7 @@ namespace rouen::cards {
                         {"GitHub", []() { "create_card"_sfn("github"); }},
                         {"CMake", []() { "create_card"_sfn("cmake:" + std::filesystem::current_path().string() + "/CMakeLists.txt"); }},
                         {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
-                        {"Home Directory", []() { "create_card"_sfn("dir:/home"); }}
+                        {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}
                     }},
                     { "Productivity", {
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},

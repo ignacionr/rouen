@@ -3,16 +3,44 @@
 #include <filesystem>
 #include <format>
 #include <string>
+#include <string_view>
+#include <regex>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 #include "../interface/card.hpp"
 
 namespace rouen::cards
 {
+    // Helper function to resolve environment variables in path
+    inline std::string resolve_env_variables(std::string_view path_with_vars) {
+        std::string result(path_with_vars);
+        std::regex env_var_regex("\\$(\\w+)");
+        
+        // Find all environment variables in the path and replace them
+        std::smatch match;
+        std::string temp = result;
+        while (std::regex_search(temp, match, env_var_regex)) {
+            std::string var_name = match[1].str();
+            std::string var_value = platform::get_env(var_name);
+            
+            // Replace the variable with its value
+            size_t pos = result.find("$" + var_name);
+            if (pos != std::string::npos) {
+                result.replace(pos, var_name.length() + 1, var_value);
+            }
+            
+            // Continue searching in the remaining string
+            temp = match.suffix();
+        }
+        
+        return result;
+    }
+
     struct fs_directory : public card
     {
-        fs_directory(std::string_view path) : path_{path}
+        fs_directory(std::string_view path) : path_{resolve_env_variables(path)}
         {
             // Base colors (already set in the vector)
             colors[0] = {0.37f, 0.53f, 0.71f, 1.0f};  // Primary color - blue accent
@@ -34,7 +62,7 @@ namespace rouen::cards
                 path_ = std::filesystem::current_path();
             }
 
-            name(path);
+            name(path_.string());
         }
 
         std::string get_uri() const override
@@ -80,8 +108,6 @@ namespace rouen::cards
                 if (ImGui::IsWindowFocused()) {
                     receive_keystrokes();
                 }
-                ImGui::Text("Directory: %s", path_.string().c_str());
-                ImGui::Separator();
                 
                 // List files in the directory
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2])); // Parent directory color
