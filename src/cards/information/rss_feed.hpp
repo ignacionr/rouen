@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include "../../external/IconsMaterialDesign.h" // Added icon header
 
 #include "../interface/card.hpp"

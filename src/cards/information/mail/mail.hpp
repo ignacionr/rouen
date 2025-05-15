@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "imgui.h"
+#include "../../../helpers/imgui_include.hpp"
 // Include our compatibility layer for C++20/23 features
 #include "../../../helpers/compat/compat.hpp"
 

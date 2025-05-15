@@ -5,7 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdlib>
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 
 // The environ variable is a C global, defined outside any namespace

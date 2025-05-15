@@ -14,7 +14,7 @@
 #include <map>
 #include <glaze/json.hpp>
 
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 

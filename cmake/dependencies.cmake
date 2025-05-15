@@ -163,6 +163,14 @@ target_link_libraries(imgui PUBLIC
   ${OPENGL_LIBRARIES}
 )
 
+# Disable specific warnings for ImGui to prevent -Wnontrivial-memcall warnings
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(imgui PRIVATE -Wno-nontrivial-memcall)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # GCC equivalent if needed
+  target_compile_options(imgui PRIVATE -Wno-class-memaccess)
+endif()
+
 # Set up ImColorTextEdit library using local files
 add_library(imcolortextedit 
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp

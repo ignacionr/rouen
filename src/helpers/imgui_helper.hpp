@@ -8,7 +8,15 @@
 #include <iomanip>
 
 // 2. Libraries used in the project, in alphabetic order
-// None in this file
+// When including imgui.h, temporarily disable nontrivial-memcall warnings
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnontrivial-memcall"
+#endif
+// Include any ImGui headers here
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 // 3. All other includes
 // None in this file

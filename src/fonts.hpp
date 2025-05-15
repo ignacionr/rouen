@@ -4,7 +4,7 @@
 #include <string>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "imgui.h"
+#include "helpers/imgui_include.hpp"
 
 // 3. All other includes
 #include "../external/IconsMaterialDesign.h"

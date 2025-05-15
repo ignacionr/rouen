@@ -2,7 +2,7 @@
 
 #include <string>
 #include <glaze/json.hpp>
-#include <imgui.h>
+#include "../imgui_include.hpp"
 
 namespace rouen::helpers::views {
     class json_view {

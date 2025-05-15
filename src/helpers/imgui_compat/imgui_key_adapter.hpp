@@ -1,6 +1,6 @@
 #pragma once
 
-#include "imgui.h"
+#include "../imgui_include.hpp"
 
 // This file provides compatibility between ImGuiColorTextEdit and newer ImGui versions
 // by implementing adapter functions for the deprecated API

@@ -10,7 +10,7 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include <SDL.h>
 
 // 3. All other includes

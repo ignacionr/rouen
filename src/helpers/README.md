@@ -15,6 +15,8 @@ This directory contains various helper classes and utilities used throughout the
 | `email_metadata_analyzer.hpp` | Analyzes and processes email metadata |
 | `fetch.hpp` | HTTP client for making API requests (built on libcurl) |
 | `image_cache.hpp` | Caches and manages images |
+| `imgui_include.hpp` | Wrapper for ImGui headers with warning suppression |
+| `imgui_helper.hpp` | Utilities for working with ImGui |
 | `media_player.hpp` | Interface for media playback |
 | `mpv_socket.hpp` | Socket-based communication with MPV media player |
 | `notify_service.hpp` | Notification service |
@@ -44,6 +46,61 @@ std::string response = fetcher.post(
     }
 );
 ```
+
+## Handling ImGui Warnings
+
+To suppress specific warnings from ImGui headers (such as `-Wnontrivial-memcall`), use the provided wrapper:
+
+```cpp
+// Instead of:
+#include <imgui.h>
+
+// Use (with proper relative path):
+#include "path/to/helpers/imgui_include.hpp"
+```
+
+### Examples for Different Directory Levels
+
+For files in different locations relative to the `helpers` directory, use the appropriate relative path:
+
+```cpp
+// For files directly in the /src directory:
+#include "helpers/imgui_include.hpp"
+
+// For files in /src/cards:
+#include "../helpers/imgui_include.hpp"
+
+// For files in /src/cards/productivity:
+#include "../../helpers/imgui_include.hpp"
+
+// For files in /src/cards/information/calendar:
+#include "../../../helpers/imgui_include.hpp"
+
+// For files within the helpers directory:
+#include "./imgui_include.hpp"
+```
+
+### How It Works
+
+The wrapper header (`imgui_include.hpp`) encapsulates all ImGui headers and uses compiler-specific pragmas to disable specific warnings only for those headers:
+
+- For Clang: Disables `-Wnontrivial-memcall` warnings
+- For GCC: Disables `-Wclass-memaccess` warnings (equivalent to Clang's warning)
+
+This allows for clean compilation without modifying the ImGui source code directly. The CMake configuration also applies warning suppression flags when building the ImGui library target.
+
+For example, in a file located in `src/cards/information/`:
+```cpp
+#include "../../helpers/imgui_include.hpp"
+```
+
+To automatically update ImGui includes, run:
+```bash
+./update_imgui_includes.sh
+```
+
+This wrapper handles diagnostic suppression for both Clang and GCC. The CMake configuration also 
+applies warning suppression flags when building the ImGui library target.
 
 ## Notes
 

@@ -13,7 +13,7 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "imgui.h"  // Updated path for ImGui
+#include "../../helpers/imgui_include.hpp"  // Updated path for ImGui
 #include <SDL_image.h> // Updated path for SDL_image on macOS
 
 // 3. All other includes

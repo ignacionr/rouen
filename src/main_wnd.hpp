@@ -7,15 +7,7 @@
 #include <string>
 
 // 2. Libraries used in the project, in alphabetic order
-// Use relative paths to ImGui backends to fix include errors on macOS
-#ifdef __APPLE__
-#include "../build/_deps/imgui-src/backends/imgui_impl_sdl2.h"
-#include "../build/_deps/imgui-src/backends/imgui_impl_sdlrenderer2.h"
-#else
-#include <imgui/backends/imgui_impl_sdl2.h>
-#include <imgui/backends/imgui_impl_sdlrenderer2.h>
-#endif
-#include "imgui.h"
+#include "helpers/imgui_include.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 

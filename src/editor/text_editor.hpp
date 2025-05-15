@@ -2,7 +2,7 @@
 
 #include <fstream>
 #include <string>
-#include "imgui.h"
+#include "../helpers/imgui_include.hpp"
 #include <TextEditor.h>
 
 #include "editor_interface.hpp"

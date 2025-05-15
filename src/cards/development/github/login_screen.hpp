@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <imgui.h>
+#include "../../../helpers/imgui_include.hpp"
 
 #include "../../../models/github/login_host.hpp"
 #include "../../../../external/IconsMaterialDesign.h"

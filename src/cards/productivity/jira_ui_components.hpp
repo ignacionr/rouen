@@ -10,7 +10,7 @@
 #include <future>
 #include <optional>
 
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include "../../models/jira_model.hpp"
 #include "../../helpers/debug.hpp"
 

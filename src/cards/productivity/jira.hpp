@@ -2,7 +2,7 @@
 
 #include "../interface/card.hpp"
 #include "../../models/jira_model.hpp"
-#include <imgui.h>
+#include "../../helpers/imgui_include.hpp"  // Use our wrapper to avoid warnings
 #include <memory>
 #include <string>
 #include <vector>

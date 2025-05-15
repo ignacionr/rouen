@@ -7,7 +7,7 @@
 #include <memory>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 
 // 3. All other includes
 // None in this file

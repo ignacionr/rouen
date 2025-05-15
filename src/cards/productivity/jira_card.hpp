@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <expected>
 
-#include "imgui.h"
+#include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 #include "../../models/jira_model.hpp"
 #include "../../helpers/views/json_view.hpp"

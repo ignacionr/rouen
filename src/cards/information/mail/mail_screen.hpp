@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "imgui.h"
+#include "../../../helpers/imgui_include.hpp"
 
 #include "../../../models/mail/imap_host.hpp"
 #include "../../../models/mail/message.hpp"

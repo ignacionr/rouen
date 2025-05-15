@@ -11,7 +11,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "imgui.h"
+#include "./imgui_include.hpp"
 #include "../registrar.hpp"
 #include "mpv_socket.hpp"
 #include "../../external/IconsMaterialDesign.h" // Add this line to include Material Design Icons
