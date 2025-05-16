@@ -85,6 +85,7 @@ The system includes many example cards:
 - `jira-search` - Advanced Jira search with JQL
 - `envvars` - Environment variables viewer
 - `dbrepair` - Database repair tool
+- `alarm` - Alarm card with sound notification, snooze, and stop controls
 
 ## Creating a New Card
 

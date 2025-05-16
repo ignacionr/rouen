@@ -8,6 +8,7 @@
 #include <string>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/media_player.hpp"
 
 #include "../interface/card.hpp"
 
@@ -44,25 +45,31 @@ namespace rouen::cards {
         }
 
         bool render() override {
-            // Add card blinking effect when alarm is going off
             auto time_remaining = get_time_remaining(std::chrono::system_clock::now());
-            
+
+            // Play alarm sound in loop if ringing and not already playing
             if (time_remaining <= std::chrono::seconds(0)) {
-                // When alarm is going off, blink the entire card with a 1-second interval
+                if (!alarm_playing) {
+                    media_player_alarm_helper::play_sound_loop("img/alarm.mp3");
+                    alarm_playing = true;
+                }
+            } else {
+                // Stop alarm sound if not ringing
+                if (alarm_playing) {
+                    media_player_alarm_helper::stop_sound_loop();
+                    alarm_playing = false;
+                }
+            }
+
+            if (time_remaining <= std::chrono::seconds(0)) {
                 static auto last_blink_time = std::chrono::steady_clock::now();
                 static bool is_visible = true;
-                
                 auto now = std::chrono::steady_clock::now();
-                auto time_since_blink = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    now - last_blink_time).count();
-                
-                // Blink every 1000ms (1 second)
+                auto time_since_blink = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_blink_time).count();
                 if (time_since_blink >= 1000) {
                     is_visible = !is_visible;
                     last_blink_time = now;
                 }
-                
-                // Make the card background blink by changing its alpha
                 if (!is_visible) {
                     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.8f, 0.2f, 0.2f, 0.9f));
                     ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 0.9f));
@@ -72,54 +79,45 @@ namespace rouen::cards {
                     ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.0f, 0.0f, 0.7f));
                     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.1f, 0.1f, 0.7f));
                 }
-                
-                // Ensure we return the stack to normal state
                 bool result = render_window([this]() {
                     render_alarm_content();
                 });
-                
                 ImGui::PopStyleColor(3);
                 return result;
             }
-            
-            // Normal rendering when alarm is not going off
             return render_window([this]() {
                 render_alarm_content();
             });
         }
-        
-        // Separated the actual content rendering to avoid duplication
+
         void render_alarm_content() {
             auto const current_time = std::chrono::system_clock::now();
-            
             ImGui::TextUnformatted(time_buffer);
             ImGui::SameLine();
-                        
-            // Show alarm status
             auto time_remaining = get_time_remaining(current_time);
-            
             if (time_remaining <= std::chrono::seconds(0)) {
-                // Center the alarm notification
                 ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("Time's up!").x) * 0.5f);
                 ImGui::TextColored(colors[0], "Time's up!");
-                
-                // Flashing effect for alarm text
                 static float flash_intensity = 0.0f;
                 static float flash_direction = 1.0f;
-                
                 flash_intensity += flash_direction * 0.05f;
                 if (flash_intensity >= 1.0f || flash_intensity <= 0.0f) {
                     flash_direction *= -1.0f;
                 }
-                
-                // Make the alarm text extra large and centered
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("ALARM").x) * 0.5f);
-                ImGui::TextColored(
-                    ImVec4(1.0f, flash_intensity, flash_intensity, 1.0f),
-                    "ALARM"
-                );
+                ImGui::TextColored(ImVec4(1.0f, flash_intensity, flash_intensity, 1.0f), "ALARM");
                 ImGui::PopFont();
+                // Snooze and Stop buttons
+                ImGui::Spacing();
+                float button_width = ImGui::GetWindowWidth() * 0.45f;
+                if (ImGui::Button("Snooze 5m", ImVec2(button_width, 0))) {
+                    snooze(5);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Stop", ImVec2(button_width, 0))) {
+                    stop_alarm();
+                }
             } else {
                 // Show remaining time in hours, minutes, seconds - centered
                 auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
@@ -182,24 +180,42 @@ namespace rouen::cards {
             
         }
         
-        void reset() {
-            // Reset to current time
+        void snooze(int minutes) {
             set_to_current_time();
-            // Add default time (30 minutes)
+            add_minutes(minutes);
+            alarm_playing = false;
+            media_player_alarm_helper::stop_sound_loop();
+        }
+        void stop_alarm() {
+            alarm_playing = false;
+            media_player_alarm_helper::stop_sound_loop();
+            set_to_current_time();
+        }
+        void reset() {
+            set_to_current_time();
             add_minutes(30);
+            if (alarm_playing) {
+                alarm_playing = false;
+                media_player_alarm_helper::stop_sound_loop();
+            }
         }
-        
         void set_to_current_time() {
-            auto current_time = std::chrono::system_clock::now();
-            target_time = current_time;
+            target_time = std::chrono::system_clock::now();
             update_time_string();
+            if (alarm_playing) {
+                alarm_playing = false;
+                media_player_alarm_helper::stop_sound_loop();
+            }
         }
-        
         void add_minutes(int minutes) {
             target_time += std::chrono::minutes(minutes);
             update_time_string();
+            auto new_time_remaining = get_time_remaining(std::chrono::system_clock::now());
+            if (alarm_playing && new_time_remaining > std::chrono::seconds(0)) {
+                alarm_playing = false;
+                media_player_alarm_helper::stop_sound_loop();
+            }
         }
-        
         void parse_time(const std::string& time_str) {
             // Handle several formats: "HH:MM", "HH:MM:SS", or just "HHMM"
             int hours = 0, minutes = 0;
@@ -234,21 +250,19 @@ namespace rouen::cards {
                 auto current_time = std::chrono::system_clock::now();
                 auto current_time_t = std::chrono::system_clock::to_time_t(current_time);
                 std::tm current_tm = *std::localtime(&current_time_t);
-                
-                // Set the target time to the specified hour and minute of today
                 current_tm.tm_hour = hours;
                 current_tm.tm_min = minutes;
                 current_tm.tm_sec = 0;
-                
                 auto new_target = std::chrono::system_clock::from_time_t(std::mktime(&current_tm));
-                
-                // If the target time is in the past, add 24 hours
                 if (new_target < current_time) {
                     new_target += std::chrono::hours(24);
                 }
-                
                 target_time = new_target;
                 update_time_string();
+                if (alarm_playing) {
+                    alarm_playing = false;
+                    media_player_alarm_helper::stop_sound_loop();
+                }
             }
         }
         
@@ -401,8 +415,14 @@ namespace rouen::cards {
             return "alarm";
         }
 
+        ~alarm() override {
+            media_player_alarm_helper::stop_sound_loop();
+            alarm_playing = false;
+        }
+
     private:
         std::chrono::system_clock::time_point target_time;
-        char time_buffer[16] = {0}; // C-style array instead of std::array
+        char time_buffer[16] = {0};
+        bool alarm_playing = false;
     };
 }

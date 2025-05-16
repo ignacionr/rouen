@@ -19,6 +19,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ### Productivity
 - **Pomodoro Timer**: Stay focused with built-in time management techniques
+- **Alarm Card**: Set alarms with sound notification, snooze and stop controls (uses bundled alarm sound)
 - **Cards System**: Modular design with draggable, resizable, and persistent cards
 - **Menu Launcher**: Quick-access command palette with search functionality
 
@@ -38,6 +39,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ### Media
 - **Internet Radio**: Listen to streaming radio stations
+- **Alarm Sound**: Bundled alarm.mp3 is used for alarm notifications
 
 ### Interface
 - **Dark Theme**: Eye-friendly interface designed for long coding sessions

@@ -433,4 +433,47 @@ struct media_player {
         }
         ImGui::PopID();
     }
+}; // end of struct media_player
+
+// --- Alarm sound helpers (single static alarm_item for all alarm sound control) ---
+namespace media_player_alarm_helper {
+    // Shared alarm item for all alarm sound helpers
+    static media_player::item& alarm_item_instance() {
+        static media_player::item alarm_item;
+        return alarm_item;
+    }
+    // Play a local sound file in a loop (for alarm repeat)
+    static void play_sound_loop(std::string_view file_path) {
+        auto& alarm_item = alarm_item_instance();
+        alarm_item.url = file_path;
+        alarm_item.stopMedia(); // Stop any previous sound
+        // Set loop property for mpv
+        std::string command = "nohup mpv --no-video --loop=inf --really-quiet --input-ipc-server=" + alarm_item.mpv_socket.create_socket_path() + " \"" + std::string(file_path) + "\" > /dev/null 2>&1 & echo $!";
+        FILE* pipe = popen(command.c_str(), "r");
+        std::string result = "";
+        if (pipe) {
+            char buffer[128];
+            while (!feof(pipe)) {
+                if (fgets(buffer, 128, pipe) != nullptr)
+                    result += buffer;
+            }
+            pclose(pipe);
+        }
+        result.erase(0, result.find_first_not_of(" \n\r\t"));
+        result.erase(result.find_last_not_of(" \n\r\t") + 1);
+        try {
+            alarm_item.player_pid = std::stoi(result);
+            alarm_item.is_playing = true;
+            if (alarm_item.mpv_socket.init_socket(alarm_item.mpv_socket.get_socket_path())) {
+                alarm_item.startPositionTracking();
+            }
+        } catch (...) {
+            alarm_item.player_pid = 0;
+            alarm_item.is_playing = false;
+        }
+    }
+    static void stop_sound_loop() {
+        auto& alarm_item = alarm_item_instance();
+        alarm_item.stopMedia();
+    }
 };

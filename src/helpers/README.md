@@ -17,7 +17,7 @@ This directory contains various helper classes and utilities used throughout the
 | `image_cache.hpp` | Caches and manages images |
 | `imgui_include.hpp` | Wrapper for ImGui headers with warning suppression |
 | `imgui_helper.hpp` | Utilities for working with ImGui |
-| `media_player.hpp` | Interface for media playback |
+| `media_player.hpp` | Interface for media playback (includes play_sound_once for simple sound effects) |
 | `mpv_socket.hpp` | Socket-based communication with MPV media player |
 | `notify_service.hpp` | Notification service |
 | `platform_utils.hpp` | Platform-specific utilities |
@@ -101,6 +101,16 @@ To automatically update ImGui includes, run:
 
 This wrapper handles diagnostic suppression for both Clang and GCC. The CMake configuration also 
 applies warning suppression flags when building the ImGui library target.
+
+## Playing Simple Sounds
+
+The `media_player` helper provides a static `play_sound_once(path)` function for playing a local sound file (e.g., for alarms or notifications) without tracking playback position or duration.
+
+```cpp
+media_player::play_sound_once("img/alarm.mp3");
+```
+
+This uses the same MPV-based infrastructure as the main media player, ensuring DRY code and consistent playback.
 
 ## Notes
 

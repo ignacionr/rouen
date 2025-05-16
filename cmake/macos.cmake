@@ -167,6 +167,7 @@ set(RESOURCE_FILES
   "${CMAKE_SOURCE_DIR}/rouen.ini"
   "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/external/fonts/NotoSansSymbols-Regular.ttf"
+  "${CMAKE_SOURCE_DIR}/img/alarm.mp3"
 )
 
 # Copy resources into the bundle
