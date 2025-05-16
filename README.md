@@ -18,7 +18,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Code Editor**: Syntax highlighting powered by ImGuiColorTextEdit
 
 ### Productivity
-- **Pomodoro Timer**: Stay focused with built-in time management techniques
+- **Pomodoro Timer**: Stay focused with built-in time management techniques and sound notification when a session completes
 - **Alarm Card**: Set alarms with sound notification, snooze and stop controls (uses bundled alarm sound)
 - **Cards System**: Modular design with draggable, resizable, and persistent cards
 - **Menu Launcher**: Quick-access command palette with search functionality

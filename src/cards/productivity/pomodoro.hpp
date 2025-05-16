@@ -6,6 +6,7 @@
 #include <format>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/media_player.hpp"
 
 #include "../interface/card.hpp"
 
@@ -18,7 +19,23 @@ namespace rouen::cards {
             colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
             requested_fps = 60;
         }
+        ~pomodoro() override {
+            media_player_alarm_helper::stop_sound_loop();
+            pomodoro_playing = false;
+        }
         bool render() override {
+            auto const current_time = std::chrono::system_clock::now();
+            if (is_done(current_time)) {
+                if (!pomodoro_playing) {
+                    media_player_alarm_helper::play_sound_loop("img/alarm.mp3");
+                    pomodoro_playing = true;
+                }
+            } else {
+                if (pomodoro_playing) {
+                    media_player_alarm_helper::stop_sound_loop();
+                    pomodoro_playing = false;
+                }
+            }
             return render_window([this]() {
                 if (ImGui::SmallButton("Reset")) {
                     reset();
@@ -91,6 +108,10 @@ namespace rouen::cards {
         }
         void reset() {
             start_time = std::chrono::system_clock::now();
+            if (pomodoro_playing) {
+                media_player_alarm_helper::stop_sound_loop();
+                pomodoro_playing = false;
+            }
         }
         bool is_done(std::chrono::system_clock::time_point current_time) const {
             return std::chrono::duration_cast<std::chrono::minutes>(current_time - start_time).count() >= 25;
@@ -107,5 +128,6 @@ namespace rouen::cards {
         std::chrono::system_clock::time_point start_time {std::chrono::system_clock::now()};
         std::chrono::system_clock::time_point end_time {start_time + std::chrono::minutes(25)};
         ImVec4 third_color {1.0f, 1.0f, 0.0f, 0.5f};
+        bool pomodoro_playing = false;
     };
 }
