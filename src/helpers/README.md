@@ -20,7 +20,7 @@ This directory contains various helper classes and utilities used throughout the
 | `media_player.hpp` | Interface for media playback (includes play_sound_once for simple sound effects) |
 | `mpv_socket.hpp` | Socket-based communication with MPV media player |
 | `notify_service.hpp` | Notification service |
-| `platform_utils.hpp` | Platform-specific utilities |
+| `platform_utils.hpp` | Platform-specific utilities including resource path management |
 | `process_helper.hpp` | Utilities for managing processes |
 | `sqlite.hpp` | SQLite database wrapper |
 | `sqlite_keyvalue.hpp` | Key-value storage using SQLite |
@@ -102,11 +102,32 @@ To automatically update ImGui includes, run:
 This wrapper handles diagnostic suppression for both Clang and GCC. The CMake configuration also 
 applies warning suppression flags when building the ImGui library target.
 
+## Using Resource Path Utility
+
+The `platform_utils` helper provides a `get_resource_path` function to locate resource files in both development and bundled application environments:
+
+```cpp
+// Get the path to a resource file
+auto presets_path = rouen::platform::get_resource_path("presets.txt");
+
+// Get the path to a resource in a subdirectory
+auto alarm_path = rouen::platform::get_resource_path("alarm.mp3", "img");
+
+// Use the path with standard C++ file operations
+std::ifstream file(presets_path);
+```
+
+This handles the different file locations between:
+- Development environment (working directory)
+- macOS application bundle (Resources directory)
+- Linux packages
+
 ## Playing Simple Sounds
 
 The `media_player` helper provides a static `play_sound_once(path)` function for playing a local sound file (e.g., for alarms or notifications) without tracking playback position or duration.
 
 ```cpp
+// The path is automatically resolved through the resource path utility
 media_player::play_sound_once("img/alarm.mp3");
 ```
 

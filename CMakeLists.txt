@@ -97,7 +97,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   glaze::glaze 
   ${CURL_LIBRARIES}
   ${SQLite3_LIBRARIES}
-  ${TINYXML2_LIBRARIES}
+  "/opt/homebrew/lib/libtinyxml2.dylib"  # Direct path to TinyXML2 on macOS with Homebrew
   ${SDL2_LIBRARIES}
   ${SDL2_IMAGE_LIBRARIES}
 )

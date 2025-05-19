@@ -22,6 +22,7 @@
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
+#include "../helpers/platform_utils.hpp"
 #include "../models/rss/feed.hpp"
 #include "../models/rss/sqliterepo.hpp"
 
@@ -243,21 +244,21 @@ public:
      */
     void loadPodcastsFromFile() {
         RSS_WARN("Checking for podcasts.txt file...");
-        const std::string filename = "podcasts.txt";
+        
+        // Get the path to podcasts.txt using the resource path utility
+        auto podcasts_path = rouen::platform::get_resource_path("podcasts.txt");
         
         // Check if file exists before attempting to read
-        if (!std::filesystem::exists(filename)) {
-            RSS_WARN("podcasts.txt file not found, skipping");
+        if (!std::filesystem::exists(podcasts_path)) {
+            RSS_WARN_FMT("podcasts.txt file not found at path: {}, skipping", podcasts_path.string());
             return;
         }
         
-        // Get absolute path for better debugging
-        std::filesystem::path abs_path = std::filesystem::absolute(filename);
-        RSS_WARN_FMT("Reading podcasts from {} file (absolute path: {})", filename, abs_path.string());
+        RSS_WARN_FMT("Reading podcasts from file: {}", podcasts_path.string());
         
-        std::ifstream file(filename);
+        std::ifstream file(podcasts_path);
         if (!file.is_open()) {
-            RSS_ERROR_FMT("Failed to open {} file", filename);
+            RSS_ERROR_FMT("Failed to open {} file", podcasts_path.string());
             return;
         }
         
@@ -291,11 +292,11 @@ public:
         RSS_WARN_FMT("Found {} URLs in podcasts.txt", podcast_urls.size());
         
         if (podcast_urls.empty()) {
-            RSS_WARN_FMT("No valid podcast URLs found in {}", filename);
+            RSS_WARN_FMT("No valid podcast URLs found in {}", podcasts_path.string());
             return;
         }
         
-        RSS_WARN_FMT("Processing {} podcasts from {}", podcast_urls.size(), filename);
+        RSS_WARN_FMT("Processing {} podcasts from {}", podcast_urls.size(), podcasts_path.string());
         
         // Directly process each URL and add it to the database
         for (const auto& url : podcast_urls) {
@@ -336,10 +337,10 @@ public:
             }
         }
         
-        RSS_WARN_FMT("Directly added {} new podcasts from {}", added_count, filename);
+        RSS_WARN_FMT("Directly added {} new podcasts from {}", added_count, podcasts_path.string());
         
         if (added_count > 0) {
-            "notify"_sfn(std::format("Added {} new podcasts from {}", added_count, filename));
+            "notify"_sfn(std::format("Added {} new podcasts from {}", added_count, podcasts_path.string()));
         }
     }
 

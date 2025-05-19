@@ -30,6 +30,7 @@ if(NOT TINYXML2_FOUND)
     /usr/include
     /opt/local/include
     /opt/homebrew/include  # Important for M1/M2 Macs with Homebrew
+    /opt/homebrew/Cellar/tinyxml2/*/include  # Path to Homebrew Cellar
   )
 
   find_library(TINYXML2_LIBRARIES
@@ -40,6 +41,7 @@ if(NOT TINYXML2_FOUND)
     /usr/lib/x86_64-linux-gnu  # Common path on Debian/Ubuntu
     /opt/local/lib
     /opt/homebrew/lib  # Important for M1/M2 Macs with Homebrew
+    /opt/homebrew/Cellar/tinyxml2/*/lib  # Path to Homebrew Cellar
   )
 
   if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)

@@ -14,6 +14,7 @@
 #include "./imgui_include.hpp"
 #include "../registrar.hpp"
 #include "mpv_socket.hpp"
+#include "platform_utils.hpp"
 #include "../../external/IconsMaterialDesign.h" // Add this line to include Material Design Icons
 
 struct media_player {
@@ -445,10 +446,12 @@ namespace media_player_alarm_helper {
     // Play a local sound file in a loop (for alarm repeat)
     static void play_sound_loop(std::string_view file_path) {
         auto& alarm_item = alarm_item_instance();
-        alarm_item.url = file_path;
+        // Use resource path to find the file in both development and app bundle
+        auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
+        alarm_item.url = resource_path.string();
         alarm_item.stopMedia(); // Stop any previous sound
         // Set loop property for mpv
-        std::string command = "nohup mpv --no-video --loop=inf --really-quiet --input-ipc-server=" + alarm_item.mpv_socket.create_socket_path() + " \"" + std::string(file_path) + "\" > /dev/null 2>&1 & echo $!";
+        std::string command = "nohup mpv --no-video --loop=inf --really-quiet --input-ipc-server=" + alarm_item.mpv_socket.create_socket_path() + " \"" + alarm_item.url + "\" > /dev/null 2>&1 & echo $!";
         FILE* pipe = popen(command.c_str(), "r");
         std::string result = "";
         if (pipe) {

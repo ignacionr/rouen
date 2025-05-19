@@ -8,6 +8,7 @@
 #include <vector>
 #include "../helpers/media_player.hpp"
 #include "../helpers/debug.hpp"
+#include "../helpers/platform_utils.hpp"
 
 namespace rouen::models {
     // Radio station status enum
@@ -42,10 +43,13 @@ namespace rouen::models {
             station_names.clear();
             
             try {
+                // Get the path to the presets file using our resource path utility
+                auto presets_path = rouen::platform::get_resource_path("presets.txt");
+                
                 // Read presets file
-                std::ifstream presets_file("presets.txt");
+                std::ifstream presets_file(presets_path);
                 if (!presets_file.is_open()) {
-                    RADIO_ERROR("Failed to open presets.txt");
+                    RADIO_ERROR_FMT("Failed to open presets file: {}", presets_path.string());
                     return;
                 }
                 

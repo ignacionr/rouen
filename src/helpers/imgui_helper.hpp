@@ -203,6 +203,13 @@ namespace debug {
 #define WEATHER_DEBUG_FMT(fmt, ...) WEATHER_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 #define WEATHER_TRACE_FMT(fmt, ...) WEATHER_TRACE(debug::format_log(fmt, __VA_ARGS__))
 
+// Radio component format macros
+#define RADIO_ERROR_FMT(fmt, ...) RADIO_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_WARN_FMT(fmt, ...) RADIO_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_INFO_FMT(fmt, ...) RADIO_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_DEBUG_FMT(fmt, ...) RADIO_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define RADIO_TRACE_FMT(fmt, ...) RADIO_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
 // SQLite format macros - renamed to avoid conflict
 #define DB_ERROR_FMT(fmt, ...) DB_ERROR(debug::format_log(fmt, __VA_ARGS__))
 #define DB_WARN_FMT(fmt, ...) DB_WARN(debug::format_log(fmt, __VA_ARGS__))

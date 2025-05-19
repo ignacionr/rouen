@@ -48,11 +48,17 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Card Snapshots**: Capture and save card contents as images
 - **Persistent State**: Automatically save and restore your workspace layout
 
+### Resource Management
+- **Cross-Platform Resource Path**: Unified handling of resources in both development and app bundle environments
+- **Auto-discovery**: Automatic detection and loading of resources from appropriate locations
+- **Bundled Resources**: All required files (fonts, sounds, presets) are properly packaged in the application bundle
+
 ## Documentation
 
 - [Card Infrastructure](src/cards/README.md) - Guide to the card and deck architecture
 - [Hosts Infrastructure](src/hosts/README.md) - Documentation for external service connectors
 - [Models Infrastructure](src/models/README.md) - Guide to data models and business logic
+- [Platform Utilities](src/helpers/platform_utils.hpp) - Cross-platform utilities for resource handling and more
 
 ## Logging System
 

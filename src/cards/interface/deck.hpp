@@ -19,6 +19,7 @@
 // 3. All other includes
 #include "../../helpers/capture_helper.hpp"
 #include "../../helpers/deferred_operations.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../registrar.hpp"
 #include "../productivity/editor.hpp"
 #include "factory.hpp"
@@ -294,7 +295,8 @@ struct deck {
         
         // Save to a custom section in imgui.ini through a file write
         // First read the file to preserve other settings
-        std::ifstream ini_file("rouen.ini");
+        auto rouen_ini_path = rouen::platform::get_resource_path("rouen.ini");
+        std::ifstream ini_file(rouen_ini_path);
         std::stringstream buffer;
         bool found_rouen_section = false;
         bool in_rouen_section = false;
@@ -331,7 +333,7 @@ struct deck {
         }
         
         // Write back to the file
-        std::ofstream out_file("rouen.ini");
+        std::ofstream out_file(rouen_ini_path);
         if (out_file) {
             out_file << buffer.str();
             out_file.close();
@@ -341,7 +343,8 @@ struct deck {
     // Load cards from ImGui configuration
     void load_card_uris() {
         // Read from imgui.ini file
-        std::ifstream ini_file("rouen.ini");
+        auto rouen_ini_path = rouen::platform::get_resource_path("rouen.ini");
+        std::ifstream ini_file(rouen_ini_path);
         if (!ini_file) {
             // If file doesn't exist, create the default menu card
             create_card("menu", true);

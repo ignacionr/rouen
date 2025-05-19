@@ -9,6 +9,7 @@
 
 #include "fonts.hpp"
 #include "helpers/debug.hpp"  // For logging
+#include "helpers/platform_utils.hpp"  // For resource path utilities
 
 namespace rouen::fonts {
     // Helper function to find font file
@@ -120,15 +121,23 @@ namespace rouen::fonts {
             #endif
         }
         
-        // Get path to Material Icons font
-        std::vector<std::string> icon_search_paths = {
-            app_path,                              // Current working directory
-            app_path + "/external",                // /external subdirectory 
-            app_path + "/../external",             // One level up, for running from build dir
-            std::string(app_path + "/../../external") // Two levels up, alternative build layout
-        };
+        // Get path to Material Icons font using the resource path utility
+        std::filesystem::path material_icons_path = platform::get_resource_path("MaterialIcons-Regular.ttf", "");
         
-        std::string material_icons_path = find_font_path("MaterialIcons-Regular.ttf", icon_search_paths);
+        // Fallback to old method if not found
+        if (!std::filesystem::exists(material_icons_path)) {
+            std::vector<std::string> icon_search_paths = {
+                app_path,                              // Current working directory
+                app_path + "/external",                // /external subdirectory 
+                app_path + "/../external",             // One level up, for running from build dir
+                std::string(app_path + "/../../external") // Two levels up, alternative build layout
+            };
+            
+            std::string fallback_path = find_font_path("MaterialIcons-Regular.ttf", icon_search_paths);
+            if (!fallback_path.empty()) {
+                material_icons_path = fallback_path;
+            }
+        }
         
         // Log found font paths
         std::cout << "Default font path: " << default_font_path << std::endl;
