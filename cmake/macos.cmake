@@ -229,4 +229,10 @@ add_custom_target(dmg
   COMMENT "Creating DMG installer for Rouen"
 )
 
+# Add installation rule to copy app to /Applications folder
+install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app"
+        DESTINATION "/Applications"
+        USE_SOURCE_PERMISSIONS
+        COMPONENT Runtime)
+
 message(STATUS "macOS application bundle configuration completed")

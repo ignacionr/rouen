@@ -167,6 +167,18 @@ make
 ./rouen
 ```
 
+### Installation (macOS)
+
+To install Rouen.app to your Applications folder:
+
+```bash
+# After building the application
+cd build
+sudo cmake --install .
+```
+
+This will copy the Rouen.app bundle to your /Applications folder, making it available in Launchpad and Spotlight.
+
 ## Compiler Warning Flags
 
 Rouen is developed with strict compiler warning settings to ensure high-quality, robust code. We use a two-tiered approach to warnings:

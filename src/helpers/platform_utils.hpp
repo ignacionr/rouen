@@ -5,6 +5,14 @@
 #include <cstdlib>
 #include <filesystem>
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h> // For _NSGetExecutablePath
+#include <limits.h>      // For PATH_MAX
+#elif defined(__linux__)
+#include <unistd.h>      // For readlink
+#include <limits.h>      // For PATH_MAX
+#endif
+
 namespace rouen::platform
 {
     /**
@@ -55,8 +63,9 @@ namespace rouen::platform
      * files can be located both during development and in the deployed application bundle.
      * It searches multiple locations in priority order:
      * 1. macOS app bundle Contents/Resources directory
-     * 2. Current working directory
-     * 3. Parent directory (for running from build directories)
+     * 2. Executable directory
+     * 3. Current working directory
+     * 4. Parent directory (for running from build directories)
      *
      * @param filename The name of the resource file (e.g. "presets.txt")
      * @param resource_subdir Optional subdirectory within Resources (e.g. "img")
@@ -68,7 +77,36 @@ namespace rouen::platform
         std::vector<std::filesystem::path> search_paths;
         
         // Get the current executable path
-        auto exec_path = std::filesystem::current_path();
+        std::filesystem::path exec_path;
+        std::filesystem::path current_path = std::filesystem::current_path();
+        
+        // Get the actual executable path (platform specific)
+        #if defined(__APPLE__)
+        {
+            char path[PATH_MAX];
+            uint32_t size = sizeof(path);
+            if (_NSGetExecutablePath(path, &size) == 0) {
+                exec_path = std::filesystem::path(path).parent_path();
+            } else {
+                // Fallback to current path if _NSGetExecutablePath fails
+                exec_path = current_path;
+            }
+        }
+        #elif defined(__linux__)
+        {
+            char result[PATH_MAX];
+            ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+            if (count > 0) {
+                exec_path = std::filesystem::path(std::string(result, count)).parent_path();
+            } else {
+                // Fallback to current path if readlink fails
+                exec_path = current_path;
+            }
+        }
+        #else
+            // Fallback to current path for unsupported platforms
+            exec_path = current_path;
+        #endif
         
         #if defined(__APPLE__)
         // 1. macOS app bundle resource path
@@ -101,13 +139,18 @@ namespace rouen::platform
         }
         #endif
         
-        // 2. Current working directory
-        if (!resource_subdir.empty()) {
-            search_paths.push_back(exec_path / resource_subdir / filename);
+        // 2. Executable directory
+        {
+            search_paths.push_back(exec_path / filename);
         }
-        search_paths.push_back(exec_path / filename);
         
-        // 3. parent directory (for running from build dir)
+        // 3. Current working directory
+        if (!resource_subdir.empty()) {
+            search_paths.push_back(current_path / resource_subdir / filename);
+        }
+        search_paths.push_back(current_path / filename);
+        
+        // 4. parent directory (for running from build dir)
         if (!resource_subdir.empty()) {
             search_paths.push_back(exec_path.parent_path() / resource_subdir / filename);
         }
