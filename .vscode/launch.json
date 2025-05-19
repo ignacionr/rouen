@@ -11,7 +11,7 @@
         "program": "${workspaceFolder}/build/rouen.app/Contents/MacOS/rouen",
         "args": [],
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}/build/rouen.app",
         "environment": [
             // Environment variables for macOS, if needed
             { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" }

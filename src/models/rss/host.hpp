@@ -13,6 +13,7 @@
 
 #include "../../registrar.hpp"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "feed.hpp"
 #include "sqliterepo.hpp"
 
@@ -182,6 +183,6 @@ namespace media::rss
             fetch(std::string{url}, [](auto h){}, writeCallback, &parser);
             return parser;
         }
-        sqliterepo repo_{"rss.db"};
+        sqliterepo repo_{rouen::platform::get_user_data_path("rss.db").string()};
     };
 }

@@ -59,7 +59,7 @@ public:
      * Constructor initializes the RSS host with a system runner and loads existing feeds
      */
     RSSHost() 
-        : repo_("rss.db")
+        : repo_(rouen::platform::get_user_data_path("rss.db").string())
     {
         RSS_INFO("RSSHost constructor starting...");
         // Load existing feeds but defer loading items until they're needed

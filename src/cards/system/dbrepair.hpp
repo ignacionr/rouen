@@ -11,6 +11,7 @@
 #include "../interface/card.hpp"
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 namespace rouen::cards {
 
@@ -54,28 +55,37 @@ public:
     void refresh_database_list() {
         databases.clear();
         
-        // Find all .db files in the workspace root
-        for (const auto& entry : std::filesystem::directory_iterator(".")) {
-            if (entry.is_regular_file() && entry.path().extension() == ".db") {
-                DatabaseInfo info;
-                info.path = entry.path().string();
-                info.name = entry.path().filename().string();
-                info.size_bytes = entry.file_size();
-                
-                // Get file modification time
-                struct stat file_stat;
-                if (stat(info.path.c_str(), &file_stat) == 0) {
-                    info.last_modified = file_stat.st_mtime;
+        // Find all .db files in the workspace root and user data directory
+        std::vector<std::filesystem::path> search_paths = {
+            ".",  // Current directory
+            rouen::platform::get_user_data_path() // User data directory
+        };
+        
+        for (const auto& base_path : search_paths) {
+            if (!std::filesystem::exists(base_path)) continue;
+            
+            for (const auto& entry : std::filesystem::directory_iterator(base_path)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".db") {
+                    DatabaseInfo info;
+                    info.path = entry.path().string();
+                    info.name = entry.path().filename().string();
+                        info.size_bytes = entry.file_size();
+                    
+                    // Get file modification time
+                    struct stat file_stat;
+                    if (stat(info.path.c_str(), &file_stat) == 0) {
+                        info.last_modified = file_stat.st_mtime;
+                    }
+                    
+                    // Check for WAL and SHM files (indicating journaling)
+                    info.has_wal = std::filesystem::exists(info.path + "-wal");
+                    info.has_shm = std::filesystem::exists(info.path + "-shm");
+                    
+                    // Check if the database is corrupted
+                    info.status = check_database_status(info.path);
+                    
+                    databases.push_back(info);
                 }
-                
-                // Check for WAL and SHM files (indicating journaling)
-                info.has_wal = std::filesystem::exists(info.path + "-wal");
-                info.has_shm = std::filesystem::exists(info.path + "-shm");
-                
-                // Check if the database is corrupted
-                info.status = check_database_status(info.path);
-                
-                databases.push_back(info);
             }
         }
     }

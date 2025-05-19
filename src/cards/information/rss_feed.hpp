@@ -16,6 +16,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 namespace rouen::cards
 {
@@ -51,11 +52,14 @@ namespace rouen::cards
             // Get the RSS host controller
             rss_host = rss::getHost();
 
-            // Initialize the image cache
+            // Initialize the image cache with paths in user data directory
+            auto db_path = rouen::platform::get_user_data_path("rss_images.db").string();
+            auto cache_dir = rouen::platform::get_user_data_path("cache/rss_images").string();
+            
             image_cache = std::make_shared<::helpers::ImageCache>(
-                "rss_images.db",    // SQLite database for image cache
-                "cache/rss_images", // Cache directory for image files
-                30                  // Expire images after 30 days
+                db_path,          // SQLite database for image cache in user's data directory
+                cache_dir,        // Cache directory for image files in user's data directory
+                30                // Expire images after 30 days
             );
 
             // Load feed information and items

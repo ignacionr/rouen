@@ -12,14 +12,15 @@
 #include "cppgpt.hpp"
 #include "fetch.hpp"
 #include "api_keys.hpp"
+#include "platform_utils.hpp"
 #include "../registrar.hpp"
 #include "../models/mail/metadata_repo.hpp"
 
 namespace mail {
     class EmailMetadataAnalyzer {
     public:
-        EmailMetadataAnalyzer(const std::string& db_path = "email_metadata.db") 
-            : repository_(db_path) {}
+        EmailMetadataAnalyzer(const std::string& db_path = "") 
+            : repository_(db_path.empty() ? rouen::platform::get_user_data_path("email_metadata.db").string() : db_path) {}
 
         // Analyze email content and generate metadata using Grok AI
         std::string generate_metadata(const std::string& email_content) {

@@ -11,13 +11,14 @@
 #include "../models/travel/plan.hpp"
 #include "../models/travel/sqliterepo.hpp"
 #include "../helpers/debug.hpp" // Add debug header
+#include "../helpers/platform_utils.hpp" // For user data path
 
 namespace rouen::hosts {
 
 class TravelHost {
 public:
     TravelHost() 
-        : repo_("travel.db"),
+        : repo_(rouen::platform::get_user_data_path("travel.db").string()),
           initialized_(false),
           initializing_(false) {
         DB_INFO("TravelHost: Initializing travel host");

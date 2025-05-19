@@ -75,8 +75,17 @@ namespace rouen::platform
         {
             // Check if we're in an app bundle by looking at the path structure
             std::filesystem::path bundle_path = exec_path;
+            std::filesystem::path previous_path;
             while (!bundle_path.empty() && !bundle_path.string().ends_with(".app")) {
+                previous_path = bundle_path;
                 bundle_path = bundle_path.parent_path();
+                
+                // Check if we've reached the root directory (parent_path equals path)
+                if (bundle_path == previous_path) {
+                    // We've reached the root without finding a .app
+                    bundle_path = std::filesystem::path();  // Clear path to indicate not found
+                    break;
+                }
             }
             
             if (!bundle_path.empty()) {
@@ -114,5 +123,58 @@ namespace rouen::platform
         // If not found, return the first path (most likely location)
         // This will likely cause an error when used, but at least it's predictable
         return search_paths.front();
+    }
+
+    /**
+     * Get the path for user-specific data storage
+     * 
+     * This function returns a path suitable for storing user-specific application data:
+     * - On macOS: ~/Library/Application Support/Rouen/
+     * - On Linux: ~/.local/share/rouen/
+     * - Fallback: ~/.rouen/
+     *
+     * @param filename Optional filename to append to the path
+     * @param create_dirs Whether to create the directories if they don't exist
+     * @return The path to the user data directory or file
+     */
+    inline std::filesystem::path get_user_data_path(const std::string& filename = "", bool create_dirs = true)
+    {
+        std::filesystem::path user_data_dir;
+        
+        // Get user's home directory
+        std::string home_dir = get_env("HOME");
+        if (home_dir.empty()) {
+            // Fallback if HOME is not available
+            #if defined(_WIN32)
+                home_dir = get_env("USERPROFILE");
+            #else
+                // This is unlikely but provides a safeguard
+                home_dir = ".";
+            #endif
+        }
+        
+        // Create platform-specific user data directory
+        #if defined(__APPLE__)
+            // macOS: ~/Library/Application Support/Rouen/
+            user_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
+        #elif defined(__linux__)
+            // Linux: ~/.local/share/rouen/
+            user_data_dir = std::filesystem::path(home_dir) / ".local" / "share" / "rouen";
+        #else
+            // Fallback for other platforms: ~/.rouen/
+            user_data_dir = std::filesystem::path(home_dir) / ".rouen";
+        #endif
+        
+        // Create directories if requested and they don't exist
+        if (create_dirs && !std::filesystem::exists(user_data_dir)) {
+            std::filesystem::create_directories(user_data_dir);
+        }
+        
+        // If filename provided, append it to the path
+        if (!filename.empty()) {
+            return user_data_dir / filename;
+        }
+        
+        return user_data_dir;
     }
 }
