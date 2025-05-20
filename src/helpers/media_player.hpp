@@ -903,32 +903,16 @@ struct media_player {
                     args.push_back("--no-video");
                     args.push_back("--no-terminal");
                     args.push_back("--log-file=/tmp/mpv_full.log"); // Log to a file to help with debugging
-                    args.push_back("--msg-level=all=v");  // Verbose logging to help with debugging
+                    // args.push_back("--msg-level=all=v");  // Verbose logging to help with debugging
                     args.push_back("--keep-open=always");  // Keep mpv open even if playback fails
                     args.push_back("--idle=once");  // Stay open after file ends
                     
                     // Network related options to improve streaming reliability
-                    args.push_back("--network-timeout=10");  // 10 seconds network timeout (reduced from 15)
-                    args.push_back("--demuxer-max-back-bytes=1000000");  // Reduced buffer size to prevent hanging
-                    args.push_back("--demuxer-readahead-secs=15");  // Reduced readahead to prevent memory issues
                     args.push_back("--force-seekable=yes");  // Try to make stream seekable
-                    args.push_back("--stream-lavf-o=reconnect=1");  // Enable reconnection for HTTP streams
-                    args.push_back("--stream-lavf-o=reconnect_streamed=1");  // Reconnect if stream is interrupted
-                    args.push_back("--stream-lavf-o=reconnect_delay_max=2");  // Reduced reconnection delay
-                    args.push_back("--stream-lavf-o=reconnect_on_network_error=1");  // Reconnect on network errors
                     
                     // MPV expects HTTP error codes without quotes but with properly escaped commas
                     // args.push_back("--stream-lavf-o=reconnect_on_http_error=4xx\\,5xx");  // Reconnect on HTTP errors
-                    
-                    args.push_back("--no-cache-pause");  // Don't pause when the cache runs low
-                    args.push_back("--cache-secs=10");  // Cache up to 10 seconds
-                    
-                    // Only disable youtube-dl for non-YouTube URLs
-                    if (url.find("youtube.com") == std::string::npos && 
-                        url.find("youtu.be") == std::string::npos) {
-                        args.push_back("--no-ytdl");  // Disable youtube-dl integration if not needed
-                    }
-                    
+
                     // Add user agent if URL is HTTP/HTTPS to avoid server rejections
                     if (url.substr(0, 7) == "http://" || url.substr(0, 8) == "https://") {
                         args.push_back("--user-agent=\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36\"");
