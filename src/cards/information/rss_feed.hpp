@@ -299,6 +299,9 @@ namespace rouen::cards
                     // Load the updated feed items
                     loadFeed();
                     RSS_INFO_FMT("Successfully refreshed RSS feed: {}", feed_title);
+                    
+                    // Notify all main RSS cards to invalidate their cache for this feed
+                    "invalidate_freshness_cache"_sfn(feed_url);
                 }
                 else
                 {

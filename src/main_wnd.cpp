@@ -192,6 +192,20 @@ void main_wnd::run() {
         // Create deck
         deck main_deck(m_renderer);
 
+        // Register a service to visit all cards of a given type by pointer
+        registrar::add<std::function<void(std::string const&, std::function<void(card*)>)>>("for_each_card_ptr",
+            std::make_shared<std::function<void(std::string const&, std::function<void(card*)>)>>(
+                [&main_deck](std::string const& type, std::function<void(card*)> visitor) {
+                    for (const auto& c : main_deck.get_cards()) {
+                        // Compare type prefix (e.g., "rss" for main RSS card)
+                        if (c && c->get_uri().rfind(type, 0) == 0) {
+                            visitor(c.get());
+                        }
+                    }
+                }
+            )
+        );
+
         while (!m_done) {
             try {
                 // Process events

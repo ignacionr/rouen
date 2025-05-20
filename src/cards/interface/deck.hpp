@@ -493,6 +493,9 @@ struct deck {
         return result;
     }
 
+    // Public accessor for all cards (needed for registrar iteration)
+    const std::vector<std::shared_ptr<card>>& get_cards() const { return cards_; }
+
 private:
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
