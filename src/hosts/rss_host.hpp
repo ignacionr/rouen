@@ -441,7 +441,7 @@ private:
                                     ++success_count;
                                     
                                     // Update the UI periodically to show progress
-                                    if (success_count % 5 == 0) {
+                                    if (success_count % 25 == 0) {
                                         "notify"_sfn(std::format("Progress: {} RSS feeds loaded so far...", success_count));
                                     }
                                 }

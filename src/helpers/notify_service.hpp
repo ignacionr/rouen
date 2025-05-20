@@ -13,6 +13,7 @@ struct notify_service {
         registrar::add<std::function<void(std::string const&)>>("notify", 
             std::make_shared<std::function<void(std::string const&)>>(
                 [](std::string const &message) {
+                    system(std::format("say \"{}\"", message).c_str());
                     NOTIFY_INFO(message);
                 }
             )
