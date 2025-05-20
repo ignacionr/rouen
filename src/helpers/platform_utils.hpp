@@ -220,4 +220,50 @@ namespace rouen::platform
         
         return user_data_dir;
     }
+
+    // Add function to check if mpv is available in the system
+    inline bool check_mpv_availability(std::string& mpv_path) {
+        // Common installation paths
+        std::vector<std::string> common_paths = {
+            "/usr/local/bin/mpv",   // Homebrew on Intel Mac
+            "/opt/homebrew/bin/mpv" // Homebrew on Apple Silicon
+        };
+        
+        // Check common paths first
+        for (const auto& path : common_paths) {
+            if (std::filesystem::exists(path)) {
+                mpv_path = path;
+                return true;
+            }
+        }
+        
+        // Check if available in PATH by running 'which mpv'
+        std::string command = "which mpv 2>/dev/null";
+        std::string result;
+        
+        FILE* pipe = popen(command.c_str(), "r");
+        if (pipe) {
+            char buffer[256];
+            while (!feof(pipe)) {
+                if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                    result += buffer;
+                }
+            }
+            pclose(pipe);
+            
+            // Clean up result
+            if (!result.empty()) {
+                // Trim newlines
+                result.erase(result.find_last_not_of("\n\r") + 1);
+                if (!result.empty() && std::filesystem::exists(result)) {
+                    mpv_path = result;
+                    return true;
+                }
+            }
+        }
+        
+        // If we get here, mpv wasn't found
+        mpv_path = "mpv"; // Fall back to just the command name
+        return false;
+    }
 }

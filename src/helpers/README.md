@@ -133,6 +133,58 @@ media_player::play_sound_once("img/alarm.mp3");
 
 This uses the same MPV-based infrastructure as the main media player, ensuring DRY code and consistent playback.
 
+## Media Player Implementation
+
+The `media_player.hpp` provides a robust interface for playing audio content through MPV:
+
+```cpp
+// Create a media player instance and play a URL
+media_player::item media;
+media.url = "https://example.com/podcast.mp3";
+media.playMedia();
+
+// Check status and control playback
+if (media.is_playing) {
+    // Get current position and duration
+    double position = media.position;
+    double duration = media.duration;
+    
+    // Stop media when done
+    media.stopMedia();
+}
+```
+
+### Media Player Features
+
+- **URL Validation and Sanitization**: Automatically validates URLs and sanitizes them to handle special characters
+- **Process Management**: Creates and manages MPV processes with proper cleanup
+- **Socket Communication**: Exchanges commands and status information with MPV via Unix sockets
+- **Playback Position Tracking**: Continuously monitors playback position and duration
+- **Error Recovery**: Includes automatic reconnection and fault tolerance mechanisms
+- **Timeouts and Watchdogs**: Prevents hangs with timeout management and watchdog processes
+- **Network Optimization**: Configures MPV with optimal network streaming settings
+- **Detailed Logging**: Provides comprehensive diagnostic information for troubleshooting
+
+### Streaming Media Guidelines
+
+When playing streaming media like podcasts or internet radio:
+
+1. **URL Format**: Ensure URLs are properly formatted, including appropriate protocol prefixes
+2. **Timeout Settings**: Allow sufficient time for slow connections (built-in timeouts handle this automatically)
+3. **Network Issues**: The player will attempt to reconnect automatically if network issues occur
+4. **Special Characters**: URL sanitization handles most special characters, but avoid using unusual characters in URLs
+
+### Simple Sound Effects
+
+For simple one-off sound effects (like alarms or notifications), use the simplified interface:
+
+```cpp
+// Play a sound effect once
+media_player::play_sound_once("path/to/sound.mp3");
+```
+
+This uses the same MPV-based infrastructure as the main media player, ensuring DRY code and consistent playback.
+
 ## Notes
 
 - Most helpers are designed to be self-contained with minimal dependencies on other parts of the application.

@@ -19,6 +19,22 @@
         "externalConsole": false,
         "MIMode": "lldb",
         "preLaunchTask": "CMake: build"
+    },    
+    {
+        "name": "(lldb) Launch from Installed macOS",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "/Applications/rouen.app/Contents/MacOS/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "/",
+        "environment": [
+            // Environment variables for macOS, if needed
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "CMake: build"
     },
     {
         "name": "(gdb) Launch Linux",

@@ -10,7 +10,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   # Add more strict warnings only for our own code
   function(target_add_strict_warnings target)
     target_compile_options(${target} PRIVATE
-      -Werror              # Treat warnings as errors
+      -Werror              # Treat warnings as errors - ensure local code has no warnings
       -Wpedantic           # Enforce strict ISO C++
       -Wnull-dereference   # Warn about null pointer dereference
       -Wformat=2           # Warn about printf format issues
@@ -48,6 +48,16 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wnull-dereference 
     -Wformat=2 
     -Wimplicit-fallthrough
-    -Werror              # Treat warnings as errors
   )
+  
+  # Add function for GCC too
+  function(target_add_strict_warnings target)
+    target_compile_options(${target} PRIVATE
+      -Werror              # Treat warnings as errors
+      -Wconversion
+      -Wsign-conversion
+      -Wshadow
+      -Wunreachable-code
+    )
+  endfunction()
 endif()

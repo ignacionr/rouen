@@ -103,8 +103,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 # Apply stricter warnings only to our code, not third-party libraries
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+# We use -Werror for our code but not for third-party libraries
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_add_strict_warnings(${PROJECT_NAME})
+  message(STATUS "Applied -Werror and strict warnings to local code")
 endif()
 
 # Platform-specific configuration
