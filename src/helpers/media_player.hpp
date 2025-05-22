@@ -447,111 +447,12 @@ struct media_player {
             
             return result;
         }
-        
-        // Validate URLs before attempting to play them
-        bool validateURL(const std::string& url_to_check) {
-            if (url_to_check.empty()) {
-                MPV_ERROR("Cannot play empty URL");
-                return false;
-            }
-            
-            // Check for encoded URL protocol (resulting from incorrect sanitization)
-            std::string check_url = url_to_check;
-            if (check_url.find("%3A//") != std::string::npos || check_url.find("%3a//") != std::string::npos) {
-                // Fix URL by replacing %3A// with ://
-                MPV_INFO("Found encoded protocol in URL, fixing");
-                size_t pos = 0;
-                while ((pos = check_url.find("%3A//", pos)) != std::string::npos) {
-                    check_url.replace(pos, 5, "://");
-                    pos += 3;
-                }
-                pos = 0;
-                while ((pos = check_url.find("%3a//", pos)) != std::string::npos) {
-                    check_url.replace(pos, 5, "://");
-                    pos += 3;
-                }
-                // Continue validation with the fixed URL
-                MPV_INFO_FMT("Fixed URL: {} -> {}", url_to_check, check_url);
-                // Update the class member - we can't modify the parameter since it's const
-                const_cast<std::string&>(url) = check_url;
-            }
-            
-            // Check if it's a local file
-            if (check_url.find("://") == std::string::npos) {
-                // Might be a local file
-                if (std::filesystem::exists(check_url)) {
-                    MPV_INFO_FMT("URL is a valid local file: {}", check_url);
-                    return true;
-                } else {
-                    MPV_WARN_FMT("URL doesn't contain protocol and isn't a local file: {}", check_url);
-                    // Continue anyway as it might be in a special format mpv understands
-                }
-            }
-            
-            // Basic protocol check
-            bool is_remote_url = false;
-            bool is_http = (url_to_check.length() >= 7) && (url_to_check.substr(0, 7) == "http://");
-            bool is_https = (url_to_check.length() >= 8) && (url_to_check.substr(0, 8) == "https://");
-            bool is_rtsp = (url_to_check.length() >= 6) && (url_to_check.substr(0, 6) == "rtsp://");
-            bool is_rtmp = (url_to_check.length() >= 6) && (url_to_check.substr(0, 6) == "rtmp://");
-            
-            if (is_http || is_https || is_rtsp || is_rtmp) {
-                
-                MPV_INFO_FMT("URL has valid protocol: {}", url_to_check);
-                is_remote_url = true;
-                
-                // For remote URLs, add a basic connection check to prevent hanging
-                if (((url_to_check.length() >= 7) && (url_to_check.substr(0, 7) == "http://")) || 
-                    ((url_to_check.length() >= 8) && (url_to_check.substr(0, 8) == "https://"))) {
-                    MPV_INFO("Performing quick connection test for remote URL...");
-                    
-                    // Use curl to check if the URL is accessible with a short timeout
-                    std::string check_cmd = "curl -s -I --connect-timeout 3 -m 6 \"" + url_to_check + "\" > /dev/null 2>&1";
-                    int result = system(check_cmd.c_str());
-                    
-                    if (result != 0) {
-                        MPV_ERROR_FMT("Connection test failed for URL: {}", url_to_check);
-                        MPV_ERROR("URL may be unreachable or slow to respond");
-                        
-                        // Try with a HEAD request instead
-                        MPV_INFO("Trying alternate connection test with GET request...");
-                        check_cmd = "curl -s --connect-timeout 4 -m 8 -o /dev/null -L \"" + url_to_check + "\"";
-                        result = system(check_cmd.c_str());
-                        
-                        if (result != 0) {
-                            // We'll still try to play it, but we'll warn the user
-                            try {
-                                "notify"_sfn("Connection test failed for URL. Media may not play correctly.");
-                            } catch (...) {
-                                // Ignore notification errors
-                            }
-                        } else {
-                            MPV_INFO("Alternate connection test successful");
-                        }
-                    } else {
-                        MPV_INFO("Connection test successful");
-                    }
-                }
-                return true;
-            }
-            
-            if (!is_remote_url) {
-                MPV_WARN_FMT("URL has unknown protocol: {}", url_to_check);
-            }
-            return true; // Let mpv try to handle it anyway
-        }
 
         bool playMedia() {
             try {
-                // First validate the URL before attempting to play
-                if (!validateURL(url)) {
-                    MPV_ERROR("URL validation failed, not attempting playback");
-                    return false;
-                }
-                
                 // Sanitize the URL to handle special characters better
                 std::string sanitized_url = sanitizeURL(url);
-                
+
                 // Stop any current playback
                 stopMedia();
                 
@@ -1623,46 +1524,6 @@ struct media_player {
                                     // Process already terminated, no need to continue watchdog
                                     return;
                                 }
-                                
-                                // On the final check, test if the process is hanging
-                                if (i == 2) {
-                                    // Check if it's consuming CPU - if not, it might be hung
-                                    std::string cpu_cmd = "ps -o %cpu -p " + std::to_string(pid) + " | tail -n1";
-                                    FILE* cpu_pipe = popen(cpu_cmd.c_str(), "r");
-                                    std::string cpu_usage = "";
-                                    
-                                    if (cpu_pipe) {
-                                        char cpu_buffer[32];
-                                        if (fgets(cpu_buffer, sizeof(cpu_buffer), cpu_pipe) != nullptr) {
-                                            cpu_usage = cpu_buffer;
-                                        }
-                                        pclose(cpu_pipe);
-                                        
-                                        // Clean up result
-                                        cpu_usage.erase(0, cpu_usage.find_first_not_of(" \n\r\t"));
-                                        cpu_usage.erase(cpu_usage.find_last_not_of(" \n\r\t") + 1);
-                                        
-                                        try {
-                                            double cpu = std::stod(cpu_usage);
-                                            
-                                            // If CPU usage is low, check socket file status
-                                            if (cpu < 1.0) {
-                                                // Kill the process - it's likely hung
-                                                kill(pid, SIGKILL);
-                                                
-                                                // Try to notify the user
-                                                try {
-                                                    "notify"_sfn("Media playback appears to be hung and was terminated.");
-                                                } catch (...) {
-                                                    // Ignore notification errors
-                                                }
-                                            }
-                                        } catch (...) {
-                                            // Failed to parse CPU usage, terminate to be safe
-                                            kill(pid, SIGKILL);
-                                        }
-                                    }
-                                }
                             }
                         }
                     }).detach();
@@ -1847,6 +1708,7 @@ namespace media_player_alarm_helper {
             setsid();
             
             // Prepare arguments for MPV
+           
             // We need these to be in static storage so they don't get destroyed
             static std::string socket_arg;
             socket_arg = "--input-ipc-server=" + socket_path;

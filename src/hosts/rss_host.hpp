@@ -397,7 +397,7 @@ private:
     // Refresh feeds in a background thread with performance improvements
     void refreshFeeds(std::vector<std::string> urls) {
         // Define how many feeds to process in parallel
-        const int BATCH_SIZE = 5;
+        const int BATCH_SIZE = 15;
         
         fetch_thread_ = std::jthread([this, urls = std::move(urls)] (std::stop_token stoken) {
             auto quit_job = [stoken]() -> bool {
@@ -467,17 +467,11 @@ private:
                 }
                 
                 if (quit_job()) break;
-                
-                // If we've processed at least 10 feeds, notify the user of the current progress
-                if (i + BATCH_SIZE >= 10 && success_count > 0) {
-                    "notify"_sfn(std::format("Loaded {} out of {} RSS feeds so far...", 
-                                             success_count, urls.size()));
-                }
             }
             
             // Final notification
             if (success_count > 0) {
-                "notify"_sfn(std::format("Successfully loaded {} RSS feeds. Restart the RSS card to see all feeds.", success_count));
+                "notify"_sfn(std::format("Successfully loaded {} RSS feeds.", success_count));
             }
             
             if (error_count > 0) {
