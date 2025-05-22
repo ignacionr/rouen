@@ -160,10 +160,23 @@ if (media.is_playing) {
 - **Process Management**: Creates and manages MPV processes with proper cleanup
 - **Socket Communication**: Exchanges commands and status information with MPV via Unix sockets
 - **Playback Position Tracking**: Continuously monitors playback position and duration
+- **Volume Control**: Set and adjust playback volume in real time via MPV socket (ImGui slider in UI, or programmatically)
 - **Error Recovery**: Includes automatic reconnection and fault tolerance mechanisms
 - **Timeouts and Watchdogs**: Prevents hangs with timeout management and watchdog processes
 - **Network Optimization**: Configures MPV with optimal network streaming settings
 - **Detailed Logging**: Provides comprehensive diagnostic information for troubleshooting
+
+#### Example: Setting Volume
+
+You can set the playback volume (0-100) at runtime:
+
+```cpp
+media_player::item media;
+media.playMedia();
+media.setVolume(75); // Set volume to 75%
+```
+
+In the UI, a volume slider is available when media is playing.
 
 ### Streaming Media Guidelines
 

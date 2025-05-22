@@ -30,6 +30,7 @@ struct media_player {
         std::thread position_thread;
         std::atomic<bool> thread_running{false};
         std::mutex data_mutex;  // Add mutex to protect data access
+        std::atomic<int> volume{100}; // Default to 100%
 
         item() = default;
         
@@ -1557,6 +1558,19 @@ struct media_player {
             // Send the seek command to mpv
             return mpv_socket.send_command(seek_cmd);
         }
+        
+        // Set the output volume (0-100)
+        bool setVolume(int new_volume) {
+            if (!is_playing || !mpv_socket.is_connected()) {
+                return false;
+            }
+            // Clamp volume to 0-100
+            new_volume = std::clamp(new_volume, 0, 100);
+            std::string cmd = std::format("{{\"command\":[\"set_property\",\"volume\",{}],\"request_id\":4}}\n", new_volume);
+            bool ok = mpv_socket.send_command(cmd);
+            if (ok) volume = new_volume;
+            return ok;
+        }
     };
 
     using item_map = std::unordered_map<ImGuiID, item>;
@@ -1582,7 +1596,6 @@ struct media_player {
             if (item.player_pid > 0) {
                 item.checkMediaStatus(); // Update playback status
             }
-            
             if (item.is_playing) {
                 ImGui::TextUnformatted(title.data());
                 // Get safe copies of position and duration values with mutex protection
@@ -1592,42 +1605,35 @@ struct media_player {
                     current_pos = item.position;
                     current_dur = item.duration;
                 }
-                
                 if (current_pos > 0 && current_dur > 0) {
                     // Format and display playback time
                     ImGui::TextColored(info_color, "Playing: %s / %s", 
                         item.formatTime(current_pos).c_str(),
                         item.formatTime(current_dur).c_str());
                 }
+                // Volume slider
+                int vol = item.volume.load();
+                ImGui::Text("Volume");
+                ImGui::SameLine();
+                if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+                    item.setVolume(vol);
+                }
                 // Stop button with Material Design icon instead of Unicode square
                 if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
                     item.stopMedia();
                 }
-                // Show playback position if available
                 ImGui::SameLine();
                 if (current_dur > 0) {
-                    // Draw a progress bar with safe calculation
                     float progress = current_pos > 0 && current_dur > 0 ? 
                         static_cast<float>(current_pos / current_dur) : 0.0f;
-                    
-                    // Clamp progress to 0.0-1.0 range
                     progress = std::max(0.0f, std::min(1.0f, progress));
-                    
-                    // Store the cursor position before the progress bar
                     ImVec2 progress_bar_pos = ImGui::GetCursorScreenPos();
                     ImVec2 progress_bar_size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight());
-                    
-                    // Draw the progress bar
                     ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
-                    
-                    // Check if the user clicked on the progress bar
                     if (ImGui::IsItemClicked()) {
-                        // Calculate the normalized position (0.0 to 1.0) based on mouse X position
                         auto mouse_x = ImGui::GetIO().MousePos.x;
                         auto rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
-                        rel_x = std::max(0.0f, std::min(1.0f, rel_x)); // Clamp to valid range
-                        
-                        // Convert to seconds and seek to that position
+                        rel_x = std::max(0.0f, std::min(1.0f, rel_x));
                         auto target_pos = static_cast<double>(rel_x) * current_dur;
                         item.seekTo(target_pos);
                     }
@@ -1635,14 +1641,11 @@ struct media_player {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
             } else {
-                // Set text alignment to left-aligned before creating the button
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-                // Play button with Material Design icon instead of Unicode triangle
                 if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(-1, 0))) {
                     stopAll();
                     item.playMedia();
                 }
-                // Restore default style
                 ImGui::PopStyleVar();
             }
         }
