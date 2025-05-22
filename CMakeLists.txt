@@ -79,6 +79,16 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/jira_registrar.cpp
   src/models/jira_model.cpp
   src/cards/media/chess_com_integration.cpp
+  # RSS model refactor additions
+  src/models/rss/feed_item.cpp
+  src/models/rss/rss_date_parser.cpp
+  src/models/rss/feed_xml_parser.cpp
+  src/models/rss/rss_item_repo.cpp
+  # Mail model refactor additions
+  src/models/mail/metadata_serialization.cpp
+  # Git model refactor additions
+  src/models/git_process_helper.cpp
+  src/models/git_scanner.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 

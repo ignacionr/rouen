@@ -8,8 +8,9 @@
 #include <map>
 #include <string>
 #include <vector>
-#include "../helpers/process_helper.hpp"
 #include "../helpers/debug.hpp"
+#include "git_process_helper.hpp"
+#include "git_scanner.hpp"
 
 namespace rouen::models {
     // Enum class for git repository statuses
@@ -25,47 +26,7 @@ namespace rouen::models {
 
     struct git {
         git() {
-            scanForRepositories();
-        }
-
-        /**
-         * Scan the filesystem for Git repositories
-         * Searches under the user's HOME directory for .git folders
-         * and populates the repos map with the parent directories and their statuses
-         */
-        void scanForRepositories() {
-            const char* home = std::getenv("HOME");
-            if (home) {
-                try {
-                    std::filesystem::path homeDir(home);
-                    for (const auto& entry : std::filesystem::recursive_directory_iterator(
-                         homeDir, 
-                         std::filesystem::directory_options::skip_permission_denied)) {
-                        if (entry.is_directory() && entry.path().filename() == ".git") {
-                            std::string repo_path = entry.path().parent_path().string();
-                            repos[repo_path] = GitRepoStatus::Unknown; // Set initial status
-                            
-                            // Query the git status immediately
-                            std::string status_output = ProcessHelper::executeCommandInDirectory(repo_path, "git status");
-                            if (!status_output.empty()) {
-                                updateRepoStatus(repo_path, status_output);
-                            }
-                        }
-                    }
-                    
-                    // Create a sorted list of keys for display
-                    repo_paths.clear();
-                    for (const auto& [path, status] : repos) {
-                        repo_paths.push_back(path);
-                    }
-                    std::sort(repo_paths.begin(), repo_paths.end());
-                    
-                } catch (const std::exception& e) {
-                    GIT_ERROR_FMT("Error scanning for repositories: {}", e.what());
-                }
-            } else {
-                GIT_ERROR("Error: HOME environment variable not set");
-            }
+            GitScanner::scanForRepositories(repos, repo_paths);
         }
 
         /**
@@ -83,7 +44,7 @@ namespace rouen::models {
             std::string output = status_output;
             if (output.empty()) {
                 // If no status output provided, get it now
-                output = ProcessHelper::executeCommandInDirectory(repo_path, "git status");
+                output = GitProcessHelper::executeCommandInDirectory(repo_path, "git status");
                 if (output.empty()) {
                     return false;
                 }
@@ -120,7 +81,7 @@ namespace rouen::models {
                 return "";
             }
             
-            std::string status = ProcessHelper::executeCommandInDirectory(repo_path, "git status");
+            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, "git status");
             if (!status.empty()) {
                 updateRepoStatus(repo_path, status);
             }
@@ -154,7 +115,7 @@ namespace rouen::models {
                 return "";
             }
             
-            std::string result = ProcessHelper::executeCommandInDirectory(repo_path, "git push");
+            std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, "git push");
             // Update status after push
             if (!result.empty()) {
                 updateRepoStatus(repo_path);
@@ -191,7 +152,7 @@ namespace rouen::models {
             }
             
             // Get git status with porcelain format for easier parsing
-            std::string status = ProcessHelper::executeCommandInDirectory(repo_path, "git status -sb");
+            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, "git status -sb");
             if (status.empty()) {
                 return false;
             }

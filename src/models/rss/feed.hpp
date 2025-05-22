@@ -11,53 +11,15 @@
 #include <regex>
 #include <iomanip>
 
-#include "tinyxml2.h" // Changed from <tinyxml2.h> to "tinyxml2.h" for macOS compatibility
+#include "tinyxml2.h"
 #include "../../helpers/fetch.hpp"
 #include "../../registrar.hpp"
+#include "feed_item.hpp"
+#include "rss_date_parser.hpp"
+#include "feed_xml_parser.hpp"
 
 namespace media::rss {
     struct feed {
-
-        class item {
-        public:
-            std::string title;
-            std::string link;
-            std::string description;
-            std::string enclosure;
-            std::string image_url;
-            std::chrono::system_clock::time_point updated;
-
-            item() = default;
-            item(std::string_view title, std::string_view link, std::string_view description,
-                 std::string_view enclosure, std::string_view image_url,
-                 std::chrono::system_clock::time_point updated)
-                : title(title), link(link), description(description),
-                  enclosure(enclosure), image_url(image_url), updated(updated) {}
-
-            void refresh_summary() noexcept {
-                try {
-                    auto const link_contents = http::fetch{}(link);
-                    auto const summarize = registrar::get<std::function<std::string(std::string_view)>>({});
-                    auto text = (*summarize)(link_contents);
-                    summary_ = text;
-                }
-                catch (std::exception const &e) {
-                    summary_ = e.what();
-                }
-                catch (...) {
-                    summary_ = "Failed to summarize";
-                }
-            }
-            [[nodiscard]] std::string_view summary() noexcept {
-                if (summary_.empty()) {
-                    refresh_summary();
-                }
-                return summary_;
-            }
-        private:
-            std::string summary_;
-        };
-
         void operator()(std::string_view partial_contents) {
             contents += partial_contents;
             tinyxml2::XMLDocument doc;
@@ -86,96 +48,6 @@ namespace media::rss {
         std::string const &image_url() const {
             std::lock_guard<std::mutex> lock(image_mutex());
             return feed_image_url;
-        }
-
-        // Helper function to parse dates in multiple formats
-        std::chrono::system_clock::time_point parse_date(const char* date_str) {
-            if (!date_str || !*date_str) {
-                return std::chrono::system_clock::now();
-            }
-
-            std::tm tm = {};
-            bool parsed = false;
-            std::string date_string = date_str;
-
-            // Try RFC 822/1123 format (RSS 2.0 standard)
-            // Example: "Tue, 14 Apr 2020 18:16:11 +0000"
-            {
-                std::istringstream ss(date_string);
-                ss >> std::get_time(&tm, "%a, %d %b %Y %H:%M:%S");
-                if (!ss.fail()) {
-                    parsed = true;
-                    // Note: timezone is ignored in this simple version
-                }
-            }
-            
-            // Try ISO 8601 format (Atom standard)
-            // Example: "2024-12-07T06:49:08Z"
-            if (!parsed) {
-                std::istringstream ss(date_string);
-                tm = {};
-                ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-                if (!ss.fail()) {
-                    parsed = true;
-                }
-            }
-            
-            // Try SQL format (used in SQLite)
-            // Example: "2024-12-07 06:49:08"
-            if (!parsed) {
-                std::istringstream ss(date_string);
-                tm = {};
-                ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-                if (!ss.fail()) {
-                    parsed = true;
-                }
-            }
-            
-            // Try other common formats
-            if (!parsed) {
-                const std::vector<std::string> formats = {
-                    "%d %b %Y %H:%M:%S",     // "14 Apr 2020 18:16:11"
-                    "%b %d, %Y %H:%M:%S",    // "Apr 14, 2020 18:16:11"
-                    "%Y/%m/%d %H:%M:%S",     // "2020/04/14 18:16:11"
-                    "%d/%m/%Y %H:%M:%S",     // "14/04/2020 18:16:11"
-                    "%m/%d/%Y %H:%M:%S",     // "04/14/2020 18:16:11"
-                    "%Y-%m-%d",              // "2020-04-14" (date only)
-                    "%d %b %Y",              // "14 Apr 2020" (date only)
-                    "%b %d, %Y"              // "Apr 14, 2020" (date only)
-                };
-                
-                for (const auto& format : formats) {
-                    std::istringstream ss(date_string);
-                    tm = {};
-                    ss >> std::get_time(&tm, format.c_str());
-                    if (!ss.fail()) {
-                        parsed = true;
-                        break;
-                    }
-                }
-            }
-            
-            // Special case for malformed dates
-            if (!parsed && date_string.length() > 10) {
-                // Try to extract just the date part (first 10 chars) for YYYY-MM-DD
-                if (date_string[4] == '-' && date_string[7] == '-') {
-                    std::string just_date = date_string.substr(0, 10);
-                    std::istringstream ss(just_date);
-                    tm = {};
-                    ss >> std::get_time(&tm, "%Y-%m-%d");
-                    if (!ss.fail()) {
-                        parsed = true;
-                    }
-                }
-            }
-            
-            // Fallback to current time if parsing failed
-            if (!parsed) {
-                "notify"_sfn(std::format("Failed to parse RSS date: {}", date_string));
-                return std::chrono::system_clock::now();
-            }
-            
-            return std::chrono::system_clock::from_time_t(std::mktime(&tm));
         }
 
         void operator()(tinyxml2::XMLDocument const &doc) {
@@ -212,7 +84,7 @@ namespace media::rss {
                         xml_item;
                         xml_item = xml_item->NextSiblingElement("item")) 
                     {
-                        item new_item;
+                        feed_item new_item;
                         title = xml_item->FirstChildElement("title");
                         if (title) {
                             new_item.title = title->GetText();
@@ -238,6 +110,7 @@ namespace media::rss {
                         if (itunes_image) {
                             new_item.image_url = itunes_image->Attribute("href");
                         }
+                        
                         // Try various date formats in priority order
                         const char* date_text = nullptr;
                         if (auto pub_date = xml_item->FirstChildElement("pubDate"); pub_date) {
@@ -255,7 +128,7 @@ namespace media::rss {
                         
                         // Use our robust date parser
                         if (date_text) {
-                            new_item.updated = parse_date(date_text);
+                            new_item.updated = parse_rss_date(date_text);
                         } else {
                             // If no date found, use current time
                             new_item.updated = std::chrono::system_clock::now();
@@ -299,7 +172,7 @@ namespace media::rss {
                     xml_item; 
                     xml_item = xml_item->NextSiblingElement("entry")) 
                 {
-                    item new_item;
+                    feed_item new_item;
                     title = xml_item->FirstChildElement("title");
                     if (title) {
                         new_item.title = title->GetText();
@@ -349,7 +222,7 @@ namespace media::rss {
                     
                     // Use our robust date parser
                     if (date_text) {
-                        new_item.updated = parse_date(date_text);
+                        new_item.updated = parse_rss_date(date_text);
                     } else {
                         // If no date found, use current time
                         new_item.updated = std::chrono::system_clock::now();
@@ -364,10 +237,9 @@ namespace media::rss {
         std::string feed_title;
         std::string feed_link;
         std::string feed_description;
-        std::vector<item> items;
+        std::vector<feed_item> items;
         long long repo_id;
         std::set<std::string> tags;
-
     private:
         std::string feed_image_url;
     };

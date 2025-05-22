@@ -9,6 +9,7 @@
 
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
+#include "rss_item_repo.hpp"
 
 namespace media::rss
 {
@@ -85,65 +86,6 @@ namespace media::rss
             return result;
         }
 
-        // New method to batch-insert items for better performance
-        void batch_upsert_items(long long feed_id, const std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>>& items)
-        {
-            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
-            
-            RSS_DEBUG_FMT("batch_upsert_items starting for feed_id={}, item count={}", feed_id, items.size());
-            if (items.empty()) return;
-            
-            try {
-                // Begin transaction for batch operations
-                db_.exec("BEGIN TRANSACTION");
-                
-                for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
-                    // Truncate description if it's too large (SQLite text limit is ~1GB but we'll be conservative)
-                    std::string truncated_desc = description;
-                    if (truncated_desc.length() > 8192) { // Limit to 8KB
-                        truncated_desc = truncated_desc.substr(0, 8189) + "...";
-                    }
-                    
-                    std::string sql = "INSERT OR REPLACE INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
-                                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
-                    db_.exec(sql, {}, link, enclosure, feed_id, title, truncated_desc, pub_date, image_url);
-                }
-                
-                // Commit the transaction
-                db_.exec("COMMIT");
-                RSS_DEBUG_FMT("batch_upsert_items complete for feed_id={}", feed_id);
-            } catch (const std::exception& e) {
-                // Rollback on error
-                try {
-                    db_.exec("ROLLBACK");
-                } catch (...) {
-                    // Ignore rollback errors
-                }
-                RSS_ERROR_FMT("Error in batch_upsert_items: {}", e.what());
-                throw std::runtime_error(std::string("Error in batch_upsert_items: ") + e.what());
-            }
-        }
-
-        void upsert_item(long long feed_id, std::string_view title, std::string_view enclosure, std::string_view link, std::string_view description, std::string_view pub_date, std::string_view image_url)
-        {
-            RSS_DEBUG_FMT("upsert_item starting for feed_id={}, link={}", feed_id, link);
-            try {
-                // Truncate description if it's too large
-                std::string truncated_desc;
-                if (description.length() > 8192) { // Limit to 8KB
-                    truncated_desc = std::string(description.substr(0, 8189)) + "...";
-                    description = truncated_desc;
-                }
-                
-                std::string sql = "INSERT OR REPLACE INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)";
-                db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);
-                RSS_DEBUG_FMT("upsert_item complete for feed_id={}, link={}", feed_id, link);
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error in upsert_item: {}", e.what());
-                throw std::runtime_error(std::string("Error in upsert_item: ") + e.what());
-            }
-        }
-
         void update_feed(std::string_view url, std::string_view title, std::string_view image_url)
         {
             RSS_DEBUG_FMT("update_feed starting for url={}", url);
@@ -215,58 +157,68 @@ namespace media::rss
             }
         }
 
-        void scan_items(long long feed_id, auto sink)
-        {
-            RSS_DEBUG_FMT("scan_items starting for feed_id={}...", feed_id);
+        // Forward batch_upsert_items to maintain compatibility with existing code
+        void batch_upsert_items(long long feed_id, const std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>>& items) {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            
+            RSS_DEBUG_FMT("batch_upsert_items starting for feed_id={}, item count={}", feed_id, items.size());
+            if (items.empty()) return;
+            
             try {
-                // Use a limit clause to avoid potential memory issues with large feeds
-                std::string sql = "SELECT link, enclosure, title, description, pub_date, image_url FROM item WHERE feed_id = ? ORDER BY pub_date DESC LIMIT 500";
-                int item_count = 0;
+                // Begin transaction for batch operations
+                db_.exec("BEGIN TRANSACTION");
                 
-                // Set a timeout for this operation to prevent hanging
-                auto start_time = std::chrono::steady_clock::now();
-                auto timeout = std::chrono::seconds(10); // 10-second timeout
-                
-                db_.exec(sql, [&sink, &item_count, &start_time, timeout](sqlite3_stmt *stmt) {
-                    // Check for timeout periodically
-                    if (item_count % 10 == 0) {
-                        auto now = std::chrono::steady_clock::now();
-                        if (now - start_time > timeout) {
-                            RSS_WARN_FMT("scan_items timeout reached, processed {} items", item_count);
-                            return 1; // Signal to stop processing
-                        }
-                    }
+                for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
+                    std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                                    "ON CONFLICT(link) DO "
+                                    "UPDATE SET enclosure=excluded.enclosure, title=excluded.title, "
+                                    "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url";
                     
-                    item_count++;
-                    try {
-                        // Handle potentially NULL columns safely
-                        const char* link = (sqlite3_column_type(stmt, 0) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)) : "";
-                        const char* enclosure = (sqlite3_column_type(stmt, 1) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1)) : "";
-                        const char* title = (sqlite3_column_type(stmt, 2) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)) : "";
-                        const char* description = (sqlite3_column_type(stmt, 3) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3)) : "";
-                        const char* pub_date = (sqlite3_column_type(stmt, 4) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4)) : "";
-                        const char* image_url = (sqlite3_column_type(stmt, 5) != SQLITE_NULL) ? 
-                            reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5)) : "";
-                            
-                        sink(link, enclosure, title, description, pub_date, image_url);
-                    } catch (const std::exception& e) {
-                        RSS_ERROR_FMT("Error processing RSS item at index {}: {}", item_count, e.what());
-                    }
-                    return 0;
-                }, feed_id);
+                    db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);
+                }
                 
-                RSS_DEBUG_FMT("scan_items complete for feed_id={}, found {} items", feed_id, item_count);
+                // Commit the transaction
+                db_.exec("COMMIT");
+                RSS_DEBUG_FMT("batch_upsert_items completed for feed_id={}", feed_id);
+                
             } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error in scan_items: {}", e.what());
-                throw std::runtime_error(std::string("Error in scan_items: ") + e.what());
+                // Rollback on error
+                db_.exec("ROLLBACK");
+                RSS_ERROR_FMT("Error in batch_upsert_items: {}", e.what());
             }
         }
 
+        // Forward scan_items to maintain compatibility with existing code
+        template <typename Sink>
+        void scan_items(long long feed_id, Sink sink) {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            
+            try {
+                std::string sql = "SELECT link, enclosure, title, description, pub_date, image_url FROM item WHERE feed_id = ? ORDER BY pub_date DESC";
+                db_.exec(sql, [&sink](sqlite3_stmt *stmt) {
+                    const char* link = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    const char* enclosure = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                    const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+                    const char* description = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+                    const char* pub_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+                    const char* image_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    
+                    sink(
+                        link ? link : "", 
+                        enclosure ? enclosure : "", 
+                        title ? title : "", 
+                        description ? description : "", 
+                        pub_date ? pub_date : "", 
+                        image_url ? image_url : ""
+                    );
+                }, feed_id);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in scan_items: {}", e.what());
+            }
+        }
+
+        // Item-related methods are now in rss_item_repo
     private:
         hosting::db::sqlite db_;
         std::mutex mutex_;  // For thread-safe operations

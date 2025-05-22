@@ -181,9 +181,13 @@ public:
         
         repo_.scan_items(feed_id, [&items](const char* link, const char* enclosure, const char* title, 
                                          const char* description, const char* pub_date, const char* image_url) {
-            // Parse the date string
+            // Mark unused parameters to avoid warnings
+            (void)link; (void)enclosure; (void)title;
+            (void)description; (void)pub_date; (void)image_url;
+            
+            // Parse the date string 
             std::tm tm = {};
-            std::istringstream ss(pub_date);
+            std::istringstream ss(pub_date ? pub_date : "");
             ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
             auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
             
@@ -216,10 +220,14 @@ public:
         
         repo_.scan_items(feed_id, [&result, &item_link](const char* link, const char* enclosure, const char* title, 
                                                      const char* description, const char* pub_date, const char* image_url) {
+            // Mark unused parameters to avoid warnings
+            (void)link; (void)enclosure; (void)title;
+            (void)description; (void)pub_date; (void)image_url;
+            
             if (link && item_link == link) {
                 // Parse the date string
                 std::tm tm = {};
-                std::istringstream ss(pub_date);
+                std::istringstream ss(pub_date ? pub_date : "");
                 ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
                 auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
                 

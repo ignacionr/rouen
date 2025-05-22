@@ -8,7 +8,8 @@
 #include <glaze/glaze.hpp>
 
 #include "../../helpers/sqlite.hpp"
-#include "email_metadata.hpp"  // Include the EmailMetadata struct definition
+#include "email_metadata.hpp"
+#include "metadata_serialization.hpp"
 
 namespace mail {
     class MetadataRepository {
@@ -31,14 +32,11 @@ namespace mail {
         bool store(const EmailMetadata& metadata) {
             try {
                 std::string tags_json;
-                auto tags_res = glz::write_json(metadata.tags, tags_json);
-                if (tags_res) {
+                if (!serialize_tags(metadata.tags, tags_json)) {
                     return false;
                 }
-                
                 std::string action_links_json;
-                auto action_links_res = glz::write_json(metadata.action_links, action_links_json);
-                if (action_links_res) {
+                if (!serialize_action_links(metadata.action_links, action_links_json)) {
                     return false;
                 }
 
@@ -101,22 +99,14 @@ namespace mail {
                     
                     // Parse the tags from JSON
                     const char* tags_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-                    if (tags_json && *tags_json) {
-                        auto res = glz::read_json(metadata.tags, tags_json);
-                        if (res) {
-                            // If parsing failed, set a default tag
-                            metadata.tags = {"parse_error"};
-                        }
+                    if (!deserialize_tags(tags_json, metadata.tags)) {
+                        metadata.tags = {"parse_error"};
                     }
                     
                     // Parse the action_links from JSON
                     const char* action_links_json = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-                    if (action_links_json && *action_links_json) {
-                        auto res = glz::read_json(metadata.action_links, action_links_json);
-                        if (res) {
-                            // If parsing failed, set an empty map
-                            metadata.action_links = {};
-                        }
+                    if (!deserialize_action_links(action_links_json, metadata.action_links)) {
+                        metadata.action_links = {};
                     }
                     
                     result = metadata;
