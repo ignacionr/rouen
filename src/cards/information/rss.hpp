@@ -207,14 +207,6 @@ public:
                 // Get color based on feed freshness
                 ImVec4 freshness_color = get_freshness_color(feed, now);
                 
-                // Debug output to check which color is being applied
-                if (!feed->items.empty()) {
-                    RSS_DEBUG_FMT("Feed '{}' has {} items, newest item is {} hours old, color: [{:.1f}, {:.1f}, {:.1f}]", 
-                        title, feed->items.size(), 
-                        std::chrono::duration_cast<std::chrono::hours>(now - feed->items.front().updated).count(),
-                        freshness_color.x, freshness_color.y, freshness_color.z);
-                }
-                
                 // Apply the freshness color
                 ImGui::PushStyleColor(ImGuiCol_Text, freshness_color);
                 
