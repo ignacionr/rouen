@@ -89,6 +89,11 @@ add_executable(${PROJECT_NAME}
   # Git model refactor additions
   src/models/git_process_helper.cpp
   src/models/git_scanner.cpp
+  # Terminal refactor additions
+  src/cards/system/terminal.cpp
+  src/cards/system/terminal_output.cpp
+  src/cards/system/terminal_bash.cpp
+  src/cards/system/terminal_commands.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
