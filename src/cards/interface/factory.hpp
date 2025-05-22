@@ -38,7 +38,6 @@
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
     struct github_card;
-    class dummy_jira_card; // Forward declaration for the dummy Jira card
 }
 
 namespace rouen::cards {
