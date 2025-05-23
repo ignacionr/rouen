@@ -198,8 +198,10 @@ namespace ignacionr
 
             // Parse the API response
             ChatCompletion response;
-            auto read_error = glz::read_json(response, r);
+            auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(response, r);
             if (read_error) {
+                std::cerr << "Error reading response: " << glz::format_error(read_error) << std::endl;
+                std::cerr << "Response: " << r << std::endl;
                 throw std::runtime_error("Failed to parse response: " + glz::format_error(read_error));
             }
             

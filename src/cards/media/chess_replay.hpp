@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <map>
+#include <future>
+#include <cmath>
 #include <glaze/json.hpp>
 
 #include "../../helpers/imgui_include.hpp"
@@ -25,6 +27,7 @@
 #include "../../fonts.hpp"  // For font utilities
 #include "../../../external/IconsMaterialDesign.h"
 #include "chess_com_integration.hpp"
+#include "../../helpers/chess_game_analyzer.hpp"
 
 // Chess-specific debug macros are already defined in debug.hpp
 // No need to redefine them here
@@ -121,7 +124,7 @@ public:
             render_board(board_size, square_size);
             ImGui::NextColumn();
             
-            // Right column: Game info, controls, and move list
+            // Right column: Game info, controls, AI analysis, and move list
             render_game_info();
             ImGui::Separator();
             render_controls();
@@ -130,6 +133,9 @@ public:
             
             // Reset column layout
             ImGui::Columns(1);
+            
+            ImGui::Separator();
+            render_ai_analysis_section();
             
             // Process any pending API responses
             chess_com_integration.process_api_responses();
@@ -519,6 +525,116 @@ public:
         }
         ImGui::EndChild();
     }
+
+    // Render AI analysis section
+    void render_ai_analysis_section() {
+        if (!game || game->get_move_count() == 0) {
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Load a game to enable AI analysis");
+            return;
+        }
+
+        ImGui::TextColored(colors[0], "AI Analysis:");
+        
+        // Button row for AI services
+        if (ImGui::Button("Full Commentary")) {
+            start_ai_analysis("commentary");
+        }
+        
+        if (ImGui::Button("Game Summary")) {
+            start_ai_analysis("summary");
+        }
+        
+        // Player selection for improvement analysis
+        static int selected_player = 0;
+        const char* players[] = {game->white_player.c_str(), game->black_player.c_str()};
+        ImGui::SetNextItemWidth(100.0f);
+        ImGui::Combo("##PlayerSelect", &selected_player, players, 2);
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Improve Player")) {
+            std::string player_name = (selected_player == 0) ? game->white_player : game->black_player;
+            start_ai_analysis("improvement", player_name);
+        }
+        
+        // Show analysis status
+        if (ai_analysis_in_progress) {
+            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.3f, 1.0f), "AI analysis in progress...");
+            
+            // Spinner animation
+            static float spinner_angle = 0.0f;
+            spinner_angle += 0.1f;
+            if (spinner_angle > 6.28f) spinner_angle = 0.0f;
+            
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            pos.x += 10.0f;
+            pos.y += 10.0f;
+            
+            float radius = 8.0f;
+            
+            for (int i = 0; i < 8; ++i) {
+                float angle = spinner_angle + static_cast<float>(i) * 0.785f; // 45 degrees
+                float alpha = 1.0f - (static_cast<float>(i) * 0.125f);
+                ImVec2 point = ImVec2(
+                    pos.x + std::cos(angle) * radius,
+                    pos.y + std::sin(angle) * radius
+                );
+                ImU32 point_color = ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.3f, alpha));
+                draw_list->AddCircleFilled(point, 2.0f, point_color);
+            }
+            
+            ImGui::Dummy(ImVec2(0, 20.0f));
+        }
+        
+        // Display analysis results
+        if (!current_analysis_result.content.empty()) {
+            ImGui::TextColored(colors[0], "Analysis Result:");
+            
+            if (current_analysis_result.success) {
+                // Display the analysis in a scrollable text box
+                if (ImGui::BeginChild("AnalysisResult", ImVec2(0, 150), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+                    ImGui::TextWrapped("%s", current_analysis_result.content.c_str());
+                }
+                ImGui::EndChild();
+                
+                // Button to clear the analysis
+                if (ImGui::Button("Clear Analysis")) {
+                    current_analysis_result = rouen::helpers::ChessAnalysisResult{};
+                }
+            } else {
+                ImGui::TextColored(colors[8], "Error: %s", current_analysis_result.error_message.c_str());
+            }
+        }
+        
+        // Process any completed AI analysis
+        check_ai_analysis_completion();
+    }
+
+    // Start AI analysis
+    void start_ai_analysis(const std::string& analysis_type, const std::string& player_name = "") {
+        if (!game || ai_analysis_in_progress) return;
+
+        ai_analysis_in_progress = true;
+        current_analysis_result = rouen::helpers::ChessAnalysisResult{};
+
+        if (analysis_type == "commentary") {
+            ai_analysis_future = ai_analyzer.generate_commentary_async(*game);
+        } else if (analysis_type == "summary") {
+            ai_analysis_future = ai_analyzer.generate_summary_async(*game);
+        } else if (analysis_type == "improvement" && !player_name.empty()) {
+            ai_analysis_future = ai_analyzer.generate_improvement_async(*game, player_name);
+        }
+    }
+
+    // Check if AI analysis is complete
+    void check_ai_analysis_completion() {
+        if (!ai_analysis_in_progress || !ai_analysis_future.valid()) return;
+
+        if (ai_analysis_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+            current_analysis_result = ai_analysis_future.get();
+            ai_analysis_in_progress = false;
+        }
+    }
     
 private:
     std::unique_ptr<models::chess::Game> game;
@@ -532,6 +648,12 @@ private:
     ChessComIntegrationState chess_com_state;
     chess::ChessComApiClient chess_api;
     ChessComIntegration chess_com_integration;
+    
+    // AI Analysis members
+    rouen::helpers::ChessGameAnalyzer ai_analyzer;
+    std::future<rouen::helpers::ChessAnalysisResult> ai_analysis_future;
+    rouen::helpers::ChessAnalysisResult current_analysis_result;
+    bool ai_analysis_in_progress = false;
 };
 
 } // namespace rouen::cards

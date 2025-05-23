@@ -202,3 +202,41 @@ registrar::add<std::function<void(std::string)>>(
 ### Card Snapshots
 
 Cards can be captured as images using the Ctrl+Shift+S shortcut. This saves the current card as a PNG file.
+
+## Chess Replay Card with AI Analysis
+
+The chess replay card (`chess_replay`) provides advanced game analysis capabilities powered by AI:
+
+### Features
+
+- **PGN File Loading**: Load chess games from PGN files or Chess.com integration
+- **Interactive Board**: Visual representation with piece images
+- **Move Navigation**: Step through games move by move with autoplay option
+- **AI-Powered Analysis**: Three AI services using Grok API:
+  1. **Full Commentary**: Detailed move-by-move analysis and strategic insights
+  2. **Game Summary**: Concise overview with one key strategic insight
+  3. **Player Improvement**: Specific actionable advice for a selected player
+
+### AI Integration
+
+The chess replay card uses the `ChessGameAnalyzer` helper class which:
+
+- Converts game data to structured JSON for AI processing
+- Provides asynchronous AI operations to prevent UI blocking
+- Handles error states and displays appropriate feedback
+- Uses the centralized API key management system
+
+### Usage
+
+1. Load a chess game (via PGN file or Chess.com integration)
+2. Use the AI analysis buttons in the right panel:
+   - **Full Commentary**: Get comprehensive game analysis
+   - **Game Summary**: Get a brief summary with strategic insight
+   - **Improve Player**: Select white/black player and get improvement suggestions
+3. Results appear in a scrollable text area below the buttons
+
+### Requirements
+
+- Grok API key must be configured via environment variable `GROK_API_KEY`
+- Internet connection for AI analysis requests
+- Valid chess game loaded (non-empty move list)
