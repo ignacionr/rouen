@@ -435,8 +435,8 @@ private:
         std::string result;
         
         int val = 0, valb = -6;
-        for (unsigned char c : input) {
-            val = (val << 8) + c;
+        for (auto c : input) {
+            val = (val << 8) + static_cast<int>(static_cast<unsigned char>(c));
             valb += 8;
             while (valb >= 0) {
                 result.push_back(chars[(val >> valb) & 0x3F]);
@@ -456,10 +456,10 @@ private:
         static constexpr std::array<int, 128> lookup = []() {
             std::array<int, 128> arr{};
             arr.fill(-1);
-            for (int i = 0; i < 26; ++i) arr['A' + i] = i;
-            for (int i = 0; i < 26; ++i) arr['a' + i] = i + 26;
-            for (int i = 0; i < 10; ++i) arr['0' + i] = i + 52;
-            arr['+'] = 62; arr['/'] = 63;
+            for (int i = 0; i < 26; ++i) arr[static_cast<std::size_t>('A') + static_cast<std::size_t>(i)] = i;
+            for (int i = 0; i < 26; ++i) arr[static_cast<std::size_t>('a') + static_cast<std::size_t>(i)] = i + 26;
+            for (int i = 0; i < 10; ++i) arr[static_cast<std::size_t>('0') + static_cast<std::size_t>(i)] = i + 52;
+            arr[static_cast<std::size_t>('+')] = 62; arr[static_cast<std::size_t>('/')] = 63;
             return arr;
         }();
         
@@ -467,8 +467,8 @@ private:
         int val = 0, valb = -8;
         
         for (char c : input) {
-            if (lookup[c] == -1) break;
-            val = (val << 6) + lookup[c];
+            if (lookup[static_cast<unsigned char>(c)] == -1) break;
+            val = (val << 6) + lookup[static_cast<unsigned char>(c)];
             valb += 6;
             if (valb >= 0) {
                 result.push_back(char((val >> valb) & 0xFF));
@@ -480,7 +480,7 @@ private:
 
     std::string encode_hex(const std::string& input) {
         std::string result;
-        for (unsigned char c : input) {
+        for (auto c : input) {
             result += std::format("{:02x}", c);
         }
         return result;
