@@ -27,6 +27,7 @@
 #include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
 #include "../productivity/alarm.hpp"
+#include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../system/dbrepair.hpp"
@@ -95,6 +96,10 @@ namespace rouen::cards {
                 
                 instance.emplace("alarm", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<alarm>(uri);
+                });
+                
+                instance.emplace("converter", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<converter>();
                 });
                 
                 instance.emplace("sysinfo", [](std::string_view, SDL_Renderer*) {
