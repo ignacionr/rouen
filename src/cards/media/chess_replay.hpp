@@ -23,6 +23,7 @@
 #include "../../helpers/debug.hpp"  // Include debug system for better logging
 #include "../../helpers/texture_helper.hpp"
 #include "../../helpers/chess_com_api.hpp"  // New dedicated helper for Chess.com API
+#include "../../helpers/platform_utils.hpp"  // For proper resource path handling
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"  // For font utilities
 #include "../../../external/IconsMaterialDesign.h"
@@ -133,7 +134,7 @@ public:
             
             // Reset column layout
             ImGui::Columns(1);
-            
+
             ImGui::Separator();
             render_ai_analysis_section();
             
@@ -215,30 +216,27 @@ public:
     
     // Load chess piece textures from image files
     void load_piece_textures() {
-        // Get the current application directory using std::filesystem
-        std::filesystem::path app_path = std::filesystem::current_path();
-        
-        // File paths for the chess piece images - using relative paths
+        // File names for the chess piece images
         const std::vector<std::pair<models::chess::Piece, std::string>> piece_files = {
-            {models::chess::Piece::WhiteKing, "img/Chess_klt60.png"},
-            {models::chess::Piece::WhiteQueen, "img/Chess_qlt60.png"},
-            {models::chess::Piece::WhiteRook, "img/Chess_rlt60.png"},
-            {models::chess::Piece::WhiteBishop, "img/Chess_blt60.png"},
-            {models::chess::Piece::WhiteKnight, "img/Chess_nlt60.png"},
-            {models::chess::Piece::WhitePawn, "img/Chess_plt60.png"},
-            {models::chess::Piece::BlackKing, "img/Chess_kdt60.png"},
-            {models::chess::Piece::BlackQueen, "img/Chess_qdt60.png"},
-            {models::chess::Piece::BlackRook, "img/Chess_rdt60.png"},
-            {models::chess::Piece::BlackBishop, "img/Chess_bdt60.png"},
-            {models::chess::Piece::BlackKnight, "img/Chess_ndt60.png"},
-            {models::chess::Piece::BlackPawn, "img/Chess_pdt60.png"}
+            {models::chess::Piece::WhiteKing, "Chess_klt60.png"},
+            {models::chess::Piece::WhiteQueen, "Chess_qlt60.png"},
+            {models::chess::Piece::WhiteRook, "Chess_rlt60.png"},
+            {models::chess::Piece::WhiteBishop, "Chess_blt60.png"},
+            {models::chess::Piece::WhiteKnight, "Chess_nlt60.png"},
+            {models::chess::Piece::WhitePawn, "Chess_plt60.png"},
+            {models::chess::Piece::BlackKing, "Chess_kdt60.png"},
+            {models::chess::Piece::BlackQueen, "Chess_qdt60.png"},
+            {models::chess::Piece::BlackRook, "Chess_rdt60.png"},
+            {models::chess::Piece::BlackBishop, "Chess_bdt60.png"},
+            {models::chess::Piece::BlackKnight, "Chess_ndt60.png"},
+            {models::chess::Piece::BlackPawn, "Chess_pdt60.png"}
         };
         
         // Load each texture
         std::size_t success_count = 0;
-        for (const auto& [piece, file_path] : piece_files) {
-            // Create the full path to the image file
-            std::filesystem::path full_path = app_path / file_path;
+        for (const auto& [piece, filename] : piece_files) {
+            // Use the proper resource path resolution function
+            std::filesystem::path full_path = rouen::platform::get_resource_path(filename, "img");
             
             int width, height;
             SDL_Texture* texture = TextureHelper::loadTextureFromFile(renderer, full_path.string().c_str(), width, height);
@@ -247,9 +245,9 @@ public:
                 piece_textures[piece] = texture;
                 piece_dimensions[piece] = std::make_pair(width, height);
                 success_count++;
-                CHESS_INFO_FMT("Loaded chess piece texture: {}", file_path);
+                CHESS_INFO_FMT("Loaded chess piece texture: {}", full_path.string());
             } else {
-                CHESS_ERROR_FMT("Failed to load chess piece texture: {}", file_path);
+                CHESS_ERROR_FMT("Failed to load chess piece texture: {}", full_path.string());
             }
         }
         
