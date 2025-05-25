@@ -4,6 +4,7 @@
 find_package(OpenGL REQUIRED)
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Platform-specific dependencies
 if(UNIX AND NOT APPLE)

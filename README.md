@@ -31,6 +31,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Weather Info**: Check current conditions and forecasts for any location
 - **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader
 - **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
+- **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime

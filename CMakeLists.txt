@@ -77,6 +77,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/capture_helper.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
+  src/cards/information/bybit_registrar.cpp
   src/models/jira_model.cpp
   src/cards/media/chess_com_integration.cpp
   # RSS model refactor additions
@@ -115,6 +116,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   "/opt/homebrew/lib/libtinyxml2.dylib"  # Direct path to TinyXML2 on macOS with Homebrew
   ${SDL2_LIBRARIES}
   ${SDL2_IMAGE_LIBRARIES}
+  OpenSSL::SSL
+  OpenSSL::Crypto
 )
 
 # Apply stricter warnings only to our code, not third-party libraries
