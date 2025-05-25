@@ -74,7 +74,7 @@ The system includes many example cards:
 - `fs_directory` - File system explorer
 - `pomodoro` - Time management tool
 - `calendar` - Google Calendar integration
-- `grok` - AI chat assistant
+- `grok` - AI chat assistant with optimized message bubbles and scrolling
 - `rss` - RSS feed reader
 - `travel` - Travel planner
 - `weather` - Weather information

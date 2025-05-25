@@ -78,44 +78,61 @@ namespace rouen::cards {
                     for (const auto& message : chat_history) {
                         bool is_user = message.first == "user";
                         
+                        // Calculate message bubble width and text layout
+                        const float max_width = width_for_content * 0.85f;
+                        const float min_width = width_for_content * 0.2f;
+                        const ImVec2 padding(10.0f, 8.0f);
+                        
+                        // Calculate the text size with wrapping to determine bubble height
+                        const float content_width = is_user ? 
+                            std::min(max_width, std::max(min_width, max_width)) : max_width;
+                        const float text_width = content_width - padding.x * 2.0f;
+                        
+                        // Calculate wrapped text height for the sender and message
+                        const float line_height = ImGui::GetTextLineHeightWithSpacing();
+                        const float sender_height = line_height; // "You" or "Grok" single line
+                        const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
+                        
+                        // Calculate message text height with proper wrapping
+                        ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, text_width);
+                        const float message_height = std::max(text_size.y, line_height); // Ensure minimum height
+                        
+                        // Total bubble height including padding with some extra space for comfort
+                        const float bubble_height = sender_height + separator_height + message_height + padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y;
+                        
                         // Set background color for message bubbles
                         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(
                             is_user ? colors[2] : colors[3]));
                         
-                        // Add padding and rounded corners for message bubbles
-                        const float bubble_rounding = 5.0f;
-                        const ImVec2 padding(10.0f, 8.0f);
+                        // Position user messages to the right
+                        if (is_user) {
+                            ImGui::SetCursorPosX(width_for_content - content_width - 10.0f);
+                        }
                         
-                        // Create a child window for the message with proper styling
+                        // Create message bubble with proper styling and calculated size
+                        const float bubble_rounding = 5.0f;
                         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, bubble_rounding);
                         ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
                         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
                         
-                        // Align user messages to the right, assistant messages to the left
-                        const float max_width = width_for_content * 0.85f;
-                        const float min_width = width_for_content * 0.2f;
-                        
-                        if (is_user) {
-                            // Right-align user messages (with some margin)
-                            float content_width = std::min(max_width, 
-                                std::max(min_width, ImGui::CalcTextSize(message.second.c_str()).x + padding.x * 2));
-                            ImGui::SetCursorPosX(width_for_content - content_width - 10.0f);
-                        }
-                        
                         // Generate unique ID for each message child window
-                        ImGui::BeginChild(std::to_string(reinterpret_cast<uintptr_t>(&message)).c_str(), 
-                            ImVec2(0, 0), true);
+                        std::string child_id = std::to_string(reinterpret_cast<uintptr_t>(&message)) + "_bubble";
+                        ImGui::BeginChild(child_id.c_str(), 
+                            ImVec2(content_width, bubble_height), true, 
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
                         
                         // Set text color based on sender
                         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(
                             is_user ? colors[4] : colors[5]));
                         
-                        // Display sender name in bold
-                        ImGui::TextWrapped("%s", is_user ? "You" : "Grok");
+                        // Display sender name
+                        ImGui::Text("%s", is_user ? "You" : "Grok");
                         ImGui::Separator();
                         
-                        // Display message content
+                        // Display message content with proper text wrapping
+                        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + text_width);
                         ImGui::TextWrapped("%s", message.second.c_str());
+                        ImGui::PopTextWrapPos();
                         
                         // End styling
                         ImGui::PopStyleColor(); // Text color
@@ -124,6 +141,8 @@ namespace rouen::cards {
                         ImGui::PopStyleVar(3); // Pop the 3 style vars we pushed
                         ImGui::PopStyleColor(); // Pop the child bg color
                         
+                        // Add consistent spacing between messages
+                        ImGui::Spacing();
                         ImGui::Spacing();
                     }
                     
@@ -137,9 +156,30 @@ namespace rouen::cards {
                 // Show a loading indicator if waiting for response
                 // Place the indicator outside the scrolling region
                 if (waiting_for_response) {
+                    ImGui::Separator();
                     ImGui::Spacing();
+                    
+                    // Create a subtle "thinking" bubble
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[3]));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
+                    
+                    ImGui::BeginChild("thinking_indicator", ImVec2(150, 40), true, ImGuiWindowFlags_NoScrollbar);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6]));
-                    ImGui::TextWrapped("Grok is thinking...");
+                    
+                    // Animated thinking dots
+                    float time = static_cast<float>(ImGui::GetTime());
+                    int dots = ((int)(time * 2) % 4);
+                    std::string thinking_text = "Grok is thinking";
+                    for (int i = 0; i < dots; i++) {
+                        thinking_text += ".";
+                    }
+                    
+                    ImGui::Text("%s", thinking_text.c_str());
+                    ImGui::PopStyleColor();
+                    ImGui::EndChild();
+                    
+                    ImGui::PopStyleVar(2);
                     ImGui::PopStyleColor();
                 }
                 
@@ -234,9 +274,6 @@ namespace rouen::cards {
         bool scroll_to_bottom = false;
         bool reclaim_focus = false;
         http::fetch fetcher;
-
-        // Color fields
-        std::array<ImVec4, 12> colors;
         
         void send_message(const std::string& message) {
             if (message.empty() || waiting_for_response) return;
@@ -273,12 +310,6 @@ namespace rouen::cards {
                 // Clear input text and set focus flag after a response is received
                 input_text.clear();
                 reclaim_focus = true;
-            }
-        }
-
-        void get_color(size_t index, const ImVec4& color) {
-            if (index < colors.size()) {
-                colors[index] = color;
             }
         }
     };
