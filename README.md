@@ -30,7 +30,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Email Client**: Connect to IMAP/SMTP servers to read and compose emails
 - **Weather Info**: Check current conditions and forecasts for any location
 - **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader
-- **AI Assistant**: Interact with Grok AI for help and information with optimized chat interface, proper message bubbles, and smooth scrolling
+- **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime
