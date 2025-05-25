@@ -3,6 +3,8 @@
 #include <chrono>
 #include <format>
 #include <mutex>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,10 +59,15 @@ namespace ignacionr
         UsageInfo usage;
         std::string system_fingerprint;
     };
+
+    struct SearchParameters {
+        std::string mode {"auto"};
+    };
     
     struct Payload {
         std::string model;
         std::vector<Message> messages;
+        std::optional<SearchParameters> search_parameters;
         float temperature;
     };
 }
@@ -141,6 +148,7 @@ struct glz::meta<ignacionr::Payload> {
     static constexpr auto value = object(
         "model", &T::model,
         "messages", &T::messages,
+        "search_parameters", &T::search_parameters,
         "temperature", &T::temperature
     );
 };
@@ -169,8 +177,10 @@ namespace ignacionr
             std::string_view message, 
             auto do_post, 
             std::string_view role = "user", 
-            std::string_view model = "grok-2-latest", 
-            float temperature = 0.45f)
+            std::string_view model = "grok-3-latest", 
+            std::string_view search_mode = {},
+            float temperature = 0.45f
+        )
         {
             wait_min_time();
             // Append the new message to the conversation history
@@ -180,6 +190,7 @@ namespace ignacionr
             Payload payload{
                 std::string(model),
                 conversation,
+                search_mode.empty() ? std::optional<SearchParameters>{} : SearchParameters{std::string(search_mode)},
                 temperature
             };
 

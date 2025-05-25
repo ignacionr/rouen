@@ -92,7 +92,7 @@ std::string TerminalCommands::generate_shell_command(const std::string& descript
                 return fetcher.post(url, data, header_client);
             },
             "user",
-            "grok-2-latest"
+            "grok-3-latest"
         );
         
         // Extract the command from the response

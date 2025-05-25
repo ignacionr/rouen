@@ -46,8 +46,17 @@ namespace rouen::cards {
             width *= 2.0f;
         }
 
+        void render_llm_controls() {
+            // whether to allow search
+            ImGui::Checkbox("Allow Search", &allow_search);
+            ImGui::SameLine();
+            // temperature slider
+            ImGui::SliderFloat("Temperature", &temperature, 0.0f, 1.0f);
+        }
+
         bool render() override {
             return render_window([this]() {
+                render_llm_controls();
                 // Apply custom colors to various UI elements
                 ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[12]));
                 ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
@@ -263,21 +272,23 @@ namespace rouen::cards {
             bool needs_recalc = true;
         };
         
-        std::unique_ptr<ignacionr::cppgpt> gpt;
-        std::string grok_api_key;
-        std::string api_key_input;
-        std::string input_text;
+        std::unique_ptr<ignacionr::cppgpt> gpt{};
+        std::string grok_api_key{};
+        std::string api_key_input{};
+        std::string input_text{};
         std::array<char, 1024> api_key_buffer{};
         std::array<char, 2048> input_buffer{};
-        std::deque<std::pair<std::string, std::string>> chat_history;
-        std::deque<MessageCache> message_cache;
-        std::optional<std::future<void>> pending_response;
-        bool waiting_for_response = false;
-        bool scroll_to_bottom = false;
-        bool reclaim_focus = false;
-        bool layout_dirty = true;
-        float last_width = 0.0f;
-        http::fetch fetcher;
+        std::deque<std::pair<std::string, std::string>> chat_history{};
+        std::deque<MessageCache> message_cache{};
+        std::optional<std::future<void>> pending_response{};
+        bool waiting_for_response{false};
+        bool scroll_to_bottom{false};
+        bool reclaim_focus{false};
+        bool layout_dirty{true};
+        float last_width{0.0f};
+        http::fetch fetcher{};
+        bool allow_search{false};
+        float temperature{0.45f};
         
         void send_message(const std::string& message) {
             if (message.empty() || waiting_for_response) return;
@@ -298,7 +309,8 @@ namespace rouen::cards {
                     auto response = gpt->sendMessage(message, 
                         [this](const std::string& url, const std::string& data, auto header_client) {
                             return fetcher.post(url, data, header_client);
-                        });
+                        },
+                        "user", "grok-3-latest", allow_search ? "on" : std::string_view{}, temperature);
                     
                     // Extract message content
                     std::string reply = response.choices[0].message.content;

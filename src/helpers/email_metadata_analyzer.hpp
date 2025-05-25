@@ -89,7 +89,7 @@ namespace mail {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-2-latest"  // Use Grok's model
+                    "grok-3-latest"  // Use Grok's model
                 );
                 
                 // Extract the AI's response from the structured response

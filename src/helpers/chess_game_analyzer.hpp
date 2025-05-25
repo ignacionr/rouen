@@ -128,7 +128,7 @@ namespace rouen::helpers {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-2-latest"
+                    "grok-3-latest"
                 );
 
                 result.content = response.choices[0].message.content;
@@ -179,7 +179,7 @@ namespace rouen::helpers {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-2-latest"
+                    "grok-3-latest"
                 );
 
                 result.content = response.choices[0].message.content;
@@ -239,7 +239,7 @@ namespace rouen::helpers {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-2-latest"
+                    "grok-3-latest"
                 );
 
                 result.content = response.choices[0].message.content;
