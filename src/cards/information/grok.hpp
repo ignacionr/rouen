@@ -35,7 +35,7 @@ namespace rouen::cards {
             get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
             get_color(12, ImVec4(0.2f, 0.3f, 0.4f, 1.0f));   // Chat background
             
-            requested_fps = 1;
+            requested_fps = 10; // Higher FPS for responsive input
             
             // Read API key from centralized API key manager
             grok_api_key = helpers::ApiKeys::get_grok_api_key();
@@ -64,58 +64,65 @@ namespace rouen::cards {
                 const float footer_height_to_reserve = thinking_indicator_height + input_height + ImGui::GetStyle().ItemSpacing.y;
                 
                 // Chat area
-                // Calculate window width properly accounting for padding
-                const float window_width = ImGui::GetContentRegionAvail().x;
-                // Reserve some space for scrollbar and window decorations
-                const float width_for_content = window_width - ImGui::GetStyle().ScrollbarSize - 10.0f;
-                
-                // Begin child with fixed width to prevent horizontal shifting
-                if (ImGui::BeginChild("ScrollingRegion", ImVec2(width_for_content, -footer_height_to_reserve), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+                // Begin child with no horizontal scrollbar (use 0 width to auto-size without horizontal scroll)
+                if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), true)) {
                     // Process any pending responses
                     process_pending_response();
                     
-                    // Display chat history
-                    for (const auto& message : chat_history) {
+                    // Check if layout needs to be recalculated
+                    float current_width = ImGui::GetContentRegionAvail().x;
+                    if (layout_dirty || std::abs(last_width - current_width) > 1.0f) {
+                        recalculate_layout(current_width);
+                        last_width = current_width;
+                        layout_dirty = false;
+                    }
+                    
+                    // Pre-calculate common values
+                    const ImVec2 padding(10.0f, 8.0f);
+                    const float bubble_rounding = 5.0f;
+                    
+                    // Pre-convert colors to avoid repeated conversions
+                    static const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(get_color(2));
+                    static const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(get_color(3));
+                    static const ImU32 user_text_color = ImGui::ColorConvertFloat4ToU32(get_color(4));
+                    static const ImU32 assistant_text_color = ImGui::ColorConvertFloat4ToU32(get_color(5));
+                    
+                    // Display chat history using cached values
+                    for (size_t i = 0; i < chat_history.size(); ++i) {
+                        const auto& message = chat_history[i];
+                        const auto& cache = message_cache[i];
                         bool is_user = message.first == "user";
                         
                         // Set background color for message bubbles
-                        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(
-                            is_user ? colors[2] : colors[3]));
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, is_user ? user_bg_color : assistant_bg_color);
                         
-                        // Add padding and rounded corners for message bubbles
-                        const float bubble_rounding = 5.0f;
-                        const ImVec2 padding(10.0f, 8.0f);
+                        // Position user messages to the right
+                        if (is_user) {
+                            float available_width = ImGui::GetContentRegionAvail().x;
+                            ImGui::SetCursorPosX(available_width - cache.content_width - 10.0f);
+                        }
                         
-                        // Create a child window for the message with proper styling
+                        // Create message bubble with cached size
                         ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, bubble_rounding);
                         ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
                         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
                         
-                        // Align user messages to the right, assistant messages to the left
-                        const float max_width = width_for_content * 0.85f;
-                        const float min_width = width_for_content * 0.2f;
-                        
-                        if (is_user) {
-                            // Right-align user messages (with some margin)
-                            float content_width = std::min(max_width, 
-                                std::max(min_width, ImGui::CalcTextSize(message.second.c_str()).x + padding.x * 2));
-                            ImGui::SetCursorPosX(width_for_content - content_width - 10.0f);
-                        }
-                        
-                        // Generate unique ID for each message child window
-                        ImGui::BeginChild(std::to_string(reinterpret_cast<uintptr_t>(&message)).c_str(), 
-                            ImVec2(0, 0), true);
+                        // Use pre-calculated child ID
+                        ImGui::BeginChild(cache.child_id.c_str(), 
+                            ImVec2(cache.content_width, cache.bubble_height), true, 
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
                         
                         // Set text color based on sender
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(
-                            is_user ? colors[4] : colors[5]));
+                        ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
                         
-                        // Display sender name in bold
-                        ImGui::TextWrapped("%s", is_user ? "You" : "Grok");
+                        // Display sender name
+                        ImGui::Text("%s", is_user ? "You" : "Grok");
                         ImGui::Separator();
                         
-                        // Display message content
+                        // Display message content with proper text wrapping
+                        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + cache.text_width);
                         ImGui::TextWrapped("%s", message.second.c_str());
+                        ImGui::PopTextWrapPos();
                         
                         // End styling
                         ImGui::PopStyleColor(); // Text color
@@ -124,6 +131,8 @@ namespace rouen::cards {
                         ImGui::PopStyleVar(3); // Pop the 3 style vars we pushed
                         ImGui::PopStyleColor(); // Pop the child bg color
                         
+                        // Add consistent spacing between messages
+                        ImGui::Spacing();
                         ImGui::Spacing();
                     }
                     
@@ -137,9 +146,33 @@ namespace rouen::cards {
                 // Show a loading indicator if waiting for response
                 // Place the indicator outside the scrolling region
                 if (waiting_for_response) {
+                    ImGui::Separator();
                     ImGui::Spacing();
+                    
+                    // Create a subtle "thinking" bubble
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[3]));
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
+                    
+                    ImGui::BeginChild("thinking_indicator", ImVec2(150, 40), true, ImGuiWindowFlags_NoScrollbar);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6]));
-                    ImGui::TextWrapped("Grok is thinking...");
+                    
+                    // Animated thinking dots - pre-computed strings for performance
+                    static const std::array<const char*, 4> thinking_frames = {
+                        "Grok is thinking",
+                        "Grok is thinking.",
+                        "Grok is thinking..",
+                        "Grok is thinking..."
+                    };
+                    
+                    float time = static_cast<float>(ImGui::GetTime());
+                    int dots = ((int)(time * 2) % 4);
+                    ImGui::Text("%s", thinking_frames[static_cast<size_t>(dots)]);
+                    
+                    ImGui::PopStyleColor();
+                    ImGui::EndChild();
+                    
+                    ImGui::PopStyleVar(2);
                     ImGui::PopStyleColor();
                 }
                 
@@ -222,6 +255,14 @@ namespace rouen::cards {
         }
 
     private:
+        struct MessageCache {
+            float bubble_height;
+            float content_width;
+            float text_width;
+            std::string child_id;
+            bool needs_recalc = true;
+        };
+        
         std::unique_ptr<ignacionr::cppgpt> gpt;
         std::string grok_api_key;
         std::string api_key_input;
@@ -229,20 +270,25 @@ namespace rouen::cards {
         std::array<char, 1024> api_key_buffer{};
         std::array<char, 2048> input_buffer{};
         std::deque<std::pair<std::string, std::string>> chat_history;
+        std::deque<MessageCache> message_cache;
         std::optional<std::future<void>> pending_response;
         bool waiting_for_response = false;
         bool scroll_to_bottom = false;
         bool reclaim_focus = false;
+        bool layout_dirty = true;
+        float last_width = 0.0f;
         http::fetch fetcher;
-
-        // Color fields
-        std::array<ImVec4, 12> colors;
         
         void send_message(const std::string& message) {
             if (message.empty() || waiting_for_response) return;
             
             // Add user message to history
             chat_history.emplace_back("user", message);
+            
+            // Add cache entry for the new message
+            message_cache.emplace_back();
+            layout_dirty = true;
+            
             scroll_to_bottom = true;
             waiting_for_response = true;
             
@@ -259,8 +305,14 @@ namespace rouen::cards {
                     
                     // Add to chat history
                     chat_history.emplace_back("assistant", reply);
+                    
+                    // Add cache entry for the response
+                    message_cache.emplace_back();
+                    layout_dirty = true;
                 } catch (const std::exception& e) {
                     chat_history.emplace_back("assistant", std::string("Error: ") + e.what());
+                    message_cache.emplace_back();
+                    layout_dirty = true;
                 }
                 waiting_for_response = false;
                 scroll_to_bottom = true;
@@ -275,10 +327,52 @@ namespace rouen::cards {
                 reclaim_focus = true;
             }
         }
-
-        void get_color(size_t index, const ImVec4& color) {
-            if (index < colors.size()) {
-                colors[index] = color;
+        
+        void recalculate_layout(float width_for_content) {
+            // Ensure cache matches history size
+            while (message_cache.size() < chat_history.size()) {
+                message_cache.emplace_back();
+            }
+            
+            // Get the actual available width within the child window
+            // Account for scrollbar that may appear when content overflows vertically
+            float available_width = width_for_content;
+            if (available_width <= 0) {
+                available_width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 20.0f;
+            }
+            
+            const ImVec2 padding(10.0f, 8.0f);
+            // Make max width more conservative to prevent horizontal overflow
+            const float max_width = available_width * 0.75f;  // More conservative from 0.80f
+            const float min_width = available_width * 0.15f;  
+            const float line_height = ImGui::GetTextLineHeightWithSpacing();
+            const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
+            
+            for (size_t i = 0; i < chat_history.size(); ++i) {
+                const auto& message = chat_history[i];
+                auto& cache = message_cache[i];
+                
+                if (!cache.needs_recalc) continue;
+                
+                bool is_user = message.first == "user";
+                
+                // Calculate content width with extra margin for scrollbar
+                cache.content_width = is_user ? 
+                    std::min(max_width, std::max(min_width, max_width)) : max_width;
+                cache.text_width = cache.content_width - padding.x * 2.0f;
+                
+                // Calculate message text height with proper wrapping
+                ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, cache.text_width);
+                const float message_height = std::max(text_size.y, line_height);
+                
+                // Calculate total bubble height
+                cache.bubble_height = line_height + separator_height + message_height + 
+                                    padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y;
+                
+                // Generate unique child ID
+                cache.child_id = std::to_string(reinterpret_cast<uintptr_t>(&message)) + "_bubble";
+                
+                cache.needs_recalc = false;
             }
         }
     };
