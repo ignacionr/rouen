@@ -557,7 +557,7 @@ private:
         
         // Generate HMAC-SHA256
         int key_len = static_cast<int>(api_secret_.length());
-        int data_len = static_cast<int>(payload.length());
+        auto data_len = payload.length();
         unsigned char* digest = HMAC(EVP_sha256(), 
                                    api_secret_.c_str(), key_len,
                                    reinterpret_cast<const unsigned char*>(payload.c_str()), data_len,

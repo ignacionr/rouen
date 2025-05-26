@@ -32,7 +32,7 @@ public:
         get_color(7, ImVec4(0.6f, 0.8f, 1.0f, 1.0f)); // Light blue for wallet types
         
         name("Bybit Assets");
-        width = 600.0f;  // Increased width to accommodate multiple wallets
+        width *= 1.10f;
         requested_fps = 1;  // Update once per second for moderate refresh
         
         // Initialize the Bybit host
@@ -61,6 +61,23 @@ public:
 private:
     std::shared_ptr<hosts::BybitHost> bybit_host;
     std::string last_error;
+    
+    // Helper function to render right-aligned text in table columns
+    void render_right_aligned_text(const std::string& text, const ImVec4& color) {
+        // Simple approach: use ImGui's built-in right alignment if available
+        // Otherwise, calculate manual alignment
+        ImVec2 content_avail = ImGui::GetContentRegionAvail();
+        float text_width = ImGui::CalcTextSize(text.c_str()).x;
+        
+        // Calculate offset for right alignment, but ensure minimum spacing
+        float offset = std::max(0.0f, content_avail.x - text_width - 4.0f); // 4px padding
+        
+        if (offset > 0.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+        }
+        
+        ImGui::TextColored(color, "%s", text.c_str());
+    }
     
     void render_no_credentials() {
         ImGui::TextColored(colors[2], "Bybit API Configuration Required");
@@ -119,13 +136,13 @@ private:
             std::string wallet_name;
             switch (wallet_type) {
                 case rouen::hosts::WalletType::UNIFIED:
-                    wallet_name = "🔄 Unified Trading";
+                    wallet_name = "Unified Trading";
                     break;
                 case rouen::hosts::WalletType::FUND:
-                    wallet_name = "💰 Funding Wallet";
+                    wallet_name = "Funding Wallet";
                     break;
                 case rouen::hosts::WalletType::EARN:
-                    wallet_name = "📈 Earn Wallet (Not Supported)";
+                    wallet_name = "Earn Wallet (Not Supported)";
                     break;
                 default:
                     wallet_name = "❓ Unknown Wallet";
@@ -153,9 +170,6 @@ private:
                     if (wallet_balance > 0) {
                         ImGui::TextColored(colors[2], "Total Wallet Balance (USD): $%.2f", wallet_balance);
                     }
-                } else {
-                    // For FUND wallets, show warning about currency conversion
-                    ImGui::TextColored(colors[6], "⚠️ Individual coin values shown (no USD conversion available)");
                 }
                 
                 ImGui::Spacing();
@@ -165,10 +179,10 @@ private:
                     ImGui::TextColored(colors[3], "Individual Holdings:");
                     
                     if (ImGui::BeginTable(("wallet_table_" + std::to_string(static_cast<int>(wallet_type))).c_str(), 3, 
-                                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
-                        ImGui::TableSetupColumn("Coin", ImGuiTableColumnFlags_WidthFixed, 80);
-                        ImGui::TableSetupColumn("Balance", ImGuiTableColumnFlags_WidthStretch);
-                        ImGui::TableSetupColumn("Transfer Available", ImGuiTableColumnFlags_WidthStretch);
+                                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit)) {
+                        ImGui::TableSetupColumn("Coin", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Balance", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                        ImGui::TableSetupColumn("Transfer Available", ImGuiTableColumnFlags_WidthFixed, 120.0f);
                         ImGui::TableHeadersRow();
                         
                         for (const auto& coin : wallet_data.coins) {
@@ -177,14 +191,20 @@ private:
                             
                             if (balance > 0.0001 || transferable > 0.0001) { // Only show meaningful balances
                                 ImGui::TableNextRow();
+                                
+                                // Coin name
                                 ImGui::TableSetColumnIndex(0);
                                 ImGui::TextColored(colors[0], "%s", coin.coin.c_str());
                                 
+                                // Right-align Balance column
                                 ImGui::TableSetColumnIndex(1);
-                                ImGui::Text("%.8f %s", balance, coin.coin.c_str());
+                                std::string balance_text = std::format("{:.4f}", balance);
+                                render_right_aligned_text(balance_text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
                                 
+                                // Right-align Transfer Available column
                                 ImGui::TableSetColumnIndex(2);
-                                ImGui::Text("%.8f %s", transferable, coin.coin.c_str());
+                                std::string transfer_text = std::format("{:.4f}", transferable);
+                                render_right_aligned_text(transfer_text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
                             }
                         }
                         ImGui::EndTable();
@@ -260,20 +280,22 @@ private:
                         ImGui::TableSetColumnIndex(0);
                         ImGui::Text("%s", coin.coin.c_str());
                         
-                        // Wallet balance
+                        // Wallet balance - right aligned
                         ImGui::TableSetColumnIndex(1);
                         if (wallet_balance > 0.0001) {
-                            ImGui::TextColored(colors[3], "%.6f", wallet_balance);
+                            std::string balance_text = std::format("{:.6f}", wallet_balance);
+                            render_right_aligned_text(balance_text, colors[3]);
                         } else {
-                            ImGui::TextColored(colors[5], "0.000000");
+                            render_right_aligned_text("0.000000", colors[5]);
                         }
                         
-                        // Transfer balance
+                        // Transfer balance - right aligned
                         ImGui::TableSetColumnIndex(2);
                         if (transfer_balance > 0.0001) {
-                            ImGui::TextColored(colors[3], "%.6f", transfer_balance);
+                            std::string transfer_text = std::format("{:.6f}", transfer_balance);
+                            render_right_aligned_text(transfer_text, colors[3]);
                         } else {
-                            ImGui::TextColored(colors[5], "0.000000");
+                            render_right_aligned_text("0.000000", colors[5]);
                         }
                     }
                 }
