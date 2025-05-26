@@ -29,17 +29,14 @@ public:
         get_color(4, ImVec4(0.8f, 0.4f, 0.4f, 1.0f)); // Red for negative values
         get_color(5, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Light gray for secondary text
         get_color(6, ImVec4(0.9f, 0.9f, 0.3f, 1.0f)); // Yellow for warnings/alerts
+        get_color(7, ImVec4(0.6f, 0.8f, 1.0f, 1.0f)); // Light blue for wallet types
         
         name("Bybit Assets");
-        width = 500.0f;
+        width = 600.0f;  // Increased width to accommodate multiple wallets
         requested_fps = 1;  // Update once per second for moderate refresh
         
         // Initialize the Bybit host
         bybit_host = std::make_shared<hosts::BybitHost>();
-        
-        // Initialize input buffers
-        std::memset(api_key_buffer, 0, sizeof(api_key_buffer));
-        std::memset(api_secret_buffer, 0, sizeof(api_secret_buffer));
         
         DB_INFO("Bybit Assets card: Constructor completed");
     }
@@ -48,23 +45,11 @@ public:
 
     bool render() override {
         return render_window([this]() {
-            // Configuration section
+            // Check if credentials are available from environment
             if (!bybit_host->hasCredentials()) {
-                render_configuration();
+                render_no_credentials();
             } else {
                 render_assets();
-            }
-            
-            ImGui::Separator();
-            
-            // Settings button to reconfigure
-            if (ImGui::Button("Settings")) {
-                show_settings = !show_settings;
-            }
-            
-            if (show_settings) {
-                ImGui::Separator();
-                render_configuration();
             }
         });
     }
@@ -75,58 +60,35 @@ public:
     
 private:
     std::shared_ptr<hosts::BybitHost> bybit_host;
-    char api_key_buffer[256];
-    char api_secret_buffer[256];
-    bool show_settings = false;
     std::string last_error;
     
-    void render_configuration() {
-        ImGui::TextColored(colors[2], "Bybit API Configuration");
-        ImGui::TextColored(colors[5], "Enter your Bybit API credentials to view your assets");
+    void render_no_credentials() {
+        ImGui::TextColored(colors[2], "Bybit API Configuration Required");
+        ImGui::TextColored(colors[4], "BYBIT_API_KEY and BYBIT_API_SECRET environment variables not found");
         
         ImGui::Spacing();
         ImGui::TextColored(colors[6], "Setup Instructions:");
         ImGui::BulletText("Go to Bybit > Account & Security > API Management");
         ImGui::BulletText("Create a new API key with 'Read' permissions");
-        ImGui::BulletText("Select 'Wallet' and 'Spot Trading' permissions");
-        ImGui::BulletText("Copy the API key and secret below");
+        ImGui::BulletText("Select 'Wallet' permissions for all account types");
+        ImGui::BulletText("Set environment variables:");
         
         ImGui::Spacing();
-        
-        ImGui::Text("API Key:");
-        ImGui::InputText("##api_key", api_key_buffer, sizeof(api_key_buffer), ImGuiInputTextFlags_Password);
-        
-        ImGui::Text("API Secret:");
-        ImGui::InputText("##api_secret", api_secret_buffer, sizeof(api_secret_buffer), ImGuiInputTextFlags_Password);
-        
-        ImGui::Spacing();
-        
-        if (ImGui::Button("Save Credentials")) {
-            if (strlen(api_key_buffer) > 0 && strlen(api_secret_buffer) > 0) {
-                bybit_host->setCredentials(std::string(api_key_buffer), std::string(api_secret_buffer));
-                show_settings = false;
-                last_error.clear();
-            } else {
-                last_error = "Please enter both API key and secret";
-            }
-        }
-        
-        if (!last_error.empty()) {
-            ImGui::Spacing();
-            ImGui::TextColored(colors[4], "Error: %s", last_error.c_str());
-        }
+        ImGui::TextColored(colors[5], "export BYBIT_API_KEY=\"your_api_key\"");
+        ImGui::TextColored(colors[5], "export BYBIT_API_SECRET=\"your_api_secret\"");
         
         ImGui::Spacing();
         ImGui::TextColored(colors[6], "⚠️ Security Notice:");
-        ImGui::TextColored(colors[5], "• API credentials are stored in memory only");
-        ImGui::TextColored(colors[5], "• Never share your API secret with anyone");
         ImGui::TextColored(colors[5], "• Use read-only permissions for safety");
+        ImGui::TextColored(colors[5], "• Never share your API secret with anyone");
+        ImGui::TextColored(colors[5], "• Restart the application after setting environment variables");
     }
     
     void render_assets() {
-        auto account_info = bybit_host->getAccountInfo();
+        // Fetch all wallet balances
+        auto all_wallets = bybit_host->getAllWalletBalances();
         
-        if (!account_info) {
+        if (all_wallets.empty()) {
             ImGui::TextColored(colors[4], "Failed to fetch account information");
             std::string error = bybit_host->getLastError();
             if (!error.empty()) {
@@ -135,25 +97,128 @@ private:
             }
             
             ImGui::TextColored(colors[6], "Common issues:");
-            ImGui::BulletText("Check your API key and secret");
+            ImGui::BulletText("Check your environment variables (BYBIT_API_KEY, BYBIT_API_SECRET)");
             ImGui::BulletText("Ensure API key has wallet read permissions");
-            ImGui::BulletText("Verify your Bybit account type");
-            ImGui::BulletText("Check network connectivity");
+            ImGui::BulletText("Verify network connectivity");
+            ImGui::BulletText("Check if API endpoints are accessible");
             
-            if (ImGui::Button("Retry")) {
-                // Force refresh by calling the API again
-                bybit_host->getAccountInfo();
-            }
+            ImGui::Spacing();
+            ImGui::TextColored(colors[5], "Note: Currently only UNIFIED and FUND wallet types are supported");
+            ImGui::TextColored(colors[5], "EARN wallets are not supported by Bybit's current API");
             return;
         }
+
+        // Show info about supported wallet types
+        ImGui::TextColored(colors[5], "Supported wallet types: UNIFIED Trading, FUND (Funding Wallet)");
+        ImGui::Spacing();
+
+        double total_portfolio_value = 0.0;
         
-        // Account summary
-        ImGui::TextColored(colors[2], "Account Summary");
+        // Display summary for each wallet type
+        for (const auto& [wallet_type, wallet_data] : all_wallets) {
+            std::string wallet_name;
+            switch (wallet_type) {
+                case rouen::hosts::WalletType::UNIFIED:
+                    wallet_name = "🔄 Unified Trading";
+                    break;
+                case rouen::hosts::WalletType::FUND:
+                    wallet_name = "💰 Funding Wallet";
+                    break;
+                case rouen::hosts::WalletType::EARN:
+                    wallet_name = "📈 Earn Wallet (Not Supported)";
+                    break;
+                default:
+                    wallet_name = "❓ Unknown Wallet";
+                    break;
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.3f, 0.4f, 0.8f));
+            if (ImGui::CollapsingHeader(wallet_name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::PopStyleColor();
+                
+                // Wallet summary
+                ImGui::Indent();
+                ImGui::TextColored(colors[0], "Account Type: %s", wallet_data.accountType.c_str());
+                
+                // Handle display differently based on wallet type
+                if (wallet_type == rouen::hosts::WalletType::UNIFIED) {
+                    // For UNIFIED wallets, use totalEquity which is already in USD
+                    double equity = wallet_data.getTotalEquity();
+                    if (equity > 0) {
+                        ImGui::TextColored(colors[1], "Total Equity (USD): $%.2f", equity);
+                        total_portfolio_value += equity;  // Only add USD values
+                    }
+                    
+                    double wallet_balance = wallet_data.getTotalWalletBalance();
+                    if (wallet_balance > 0) {
+                        ImGui::TextColored(colors[2], "Total Wallet Balance (USD): $%.2f", wallet_balance);
+                    }
+                } else {
+                    // For FUND wallets, show warning about currency conversion
+                    ImGui::TextColored(colors[6], "⚠️ Individual coin values shown (no USD conversion available)");
+                }
+                
+                ImGui::Spacing();
+                
+                // Individual coin balances
+                if (!wallet_data.coins.empty()) {
+                    ImGui::TextColored(colors[3], "Individual Holdings:");
+                    
+                    if (ImGui::BeginTable(("wallet_table_" + std::to_string(static_cast<int>(wallet_type))).c_str(), 3, 
+                                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                        ImGui::TableSetupColumn("Coin", ImGuiTableColumnFlags_WidthFixed, 80);
+                        ImGui::TableSetupColumn("Balance", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableSetupColumn("Transfer Available", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableHeadersRow();
+                        
+                        for (const auto& coin : wallet_data.coins) {
+                            double balance = coin.getWalletBalance();
+                            double transferable = coin.getTransferBalance();
+                            
+                            if (balance > 0.0001 || transferable > 0.0001) { // Only show meaningful balances
+                                ImGui::TableNextRow();
+                                ImGui::TableSetColumnIndex(0);
+                                ImGui::TextColored(colors[0], "%s", coin.coin.c_str());
+                                
+                                ImGui::TableSetColumnIndex(1);
+                                ImGui::Text("%.8f %s", balance, coin.coin.c_str());
+                                
+                                ImGui::TableSetColumnIndex(2);
+                                ImGui::Text("%.8f %s", transferable, coin.coin.c_str());
+                            }
+                        }
+                        ImGui::EndTable();
+                    }
+                } else {
+                    ImGui::TextColored(colors[5], "No coins found in this wallet");
+                }
+                
+                ImGui::Unindent();
+                ImGui::Spacing();
+            } else {
+                ImGui::PopStyleColor();
+            }
+        }
+        
+        // Total portfolio summary
+        ImGui::Separator();
+        if (total_portfolio_value > 0) {
+            ImGui::TextColored(colors[1], "Total USD Portfolio Value: $%.2f", total_portfolio_value);
+            ImGui::TextColored(colors[5], "(Only includes UNIFIED wallet with USD conversion)");
+        } else {
+            ImGui::TextColored(colors[5], "USD Portfolio Total: Not available");
+            ImGui::TextColored(colors[5], "(FUND wallet individual coin values shown above)");
+        }
+    }
+
+    void render_wallet_section(const std::string& wallet_name, const rouen::hosts::bybit::WalletData& wallet_data) {
+        ImGui::TextColored(colors[7], "%s", wallet_name.c_str());
         ImGui::Separator();
         
-        double total_equity = account_info->getTotalEquity();
-        double total_wallet_balance = account_info->getTotalWalletBalance();
+        double total_equity = wallet_data.getTotalEquity();
+        double total_wallet_balance = wallet_data.getTotalWalletBalance();
         
+        // Wallet summary
         ImGui::Text("Total Equity:");
         ImGui::SameLine();
         ImGui::TextColored(colors[3], "$%.2f", total_equity);
@@ -162,70 +227,64 @@ private:
         ImGui::SameLine();
         ImGui::TextColored(colors[3], "$%.2f", total_wallet_balance);
         
-        ImGui::Text("Account Type:");
-        ImGui::SameLine();
-        ImGui::TextColored(colors[5], "%s", account_info->accountType.c_str());
+        // Show assets if there are any with non-zero balances
+        bool has_assets = false;
+        for (const auto& coin : wallet_data.coins) {
+            if (coin.getWalletBalance() > 0.0001 || coin.getTransferBalance() > 0.0001) {
+                has_assets = true;
+                break;
+            }
+        }
         
-        ImGui::Spacing();
-        ImGui::TextColored(colors[2], "Asset Breakdown");
-        ImGui::Separator();
-        
-        // Asset table
-        if (ImGui::BeginTable("assets_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Sortable)) {
-            ImGui::TableSetupColumn("Coin", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("Wallet Balance", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            ImGui::TableSetupColumn("Transfer Balance", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
+        if (has_assets) {
+            ImGui::Spacing();
+            ImGui::TextColored(colors[5], "Assets:");
             
-            for (const auto& coin : account_info->coin) {
-                double wallet_balance = coin.getWalletBalance();
-                double transfer_balance = coin.getTransferBalance();
+            // Asset table for this wallet
+            std::string table_id = "assets_table_" + wallet_name;
+            if (ImGui::BeginTable(table_id.c_str(), 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("Coin", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                ImGui::TableSetupColumn("Wallet Balance", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                ImGui::TableSetupColumn("Transfer Balance", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                ImGui::TableHeadersRow();
                 
-                // Only show coins with non-zero balances
-                if (wallet_balance > 0.0001 || transfer_balance > 0.0001) {
-                    ImGui::TableNextRow();
+                for (const auto& coin : wallet_data.coins) {
+                    double wallet_balance = coin.getWalletBalance();
+                    double transfer_balance = coin.getTransferBalance();
                     
-                    // Coin name
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("%s", coin.coin.c_str());
-                    
-                    // Wallet balance
-                    ImGui::TableSetColumnIndex(1);
-                    if (wallet_balance > 0.0001) {
-                        ImGui::TextColored(colors[3], "%.6f", wallet_balance);
-                    } else {
-                        ImGui::TextColored(colors[5], "0.000000");
-                    }
-                    
-                    // Transfer balance
-                    ImGui::TableSetColumnIndex(2);
-                    if (transfer_balance > 0.0001) {
-                        ImGui::TextColored(colors[3], "%.6f", transfer_balance);
-                    } else {
-                        ImGui::TextColored(colors[5], "0.000000");
+                    // Only show coins with non-zero balances
+                    if (wallet_balance > 0.0001 || transfer_balance > 0.0001) {
+                        ImGui::TableNextRow();
+                        
+                        // Coin name
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%s", coin.coin.c_str());
+                        
+                        // Wallet balance
+                        ImGui::TableSetColumnIndex(1);
+                        if (wallet_balance > 0.0001) {
+                            ImGui::TextColored(colors[3], "%.6f", wallet_balance);
+                        } else {
+                            ImGui::TextColored(colors[5], "0.000000");
+                        }
+                        
+                        // Transfer balance
+                        ImGui::TableSetColumnIndex(2);
+                        if (transfer_balance > 0.0001) {
+                            ImGui::TextColored(colors[3], "%.6f", transfer_balance);
+                        } else {
+                            ImGui::TextColored(colors[5], "0.000000");
+                        }
                     }
                 }
+                
+                ImGui::EndTable();
             }
-            
-            ImGui::EndTable();
+        } else {
+            ImGui::TextColored(colors[5], "No assets with significant balances");
         }
         
         ImGui::Spacing();
-        
-        // Refresh button
-        if (ImGui::Button("Refresh")) {
-            // Force refresh by calling the API again
-            bybit_host->getAccountInfo();
-        }
-        
-        ImGui::SameLine();
-        
-        // Show last update time
-        auto now = std::chrono::system_clock::now();
-        auto time_t = std::chrono::system_clock::to_time_t(now);
-        std::stringstream ss;
-        ss << std::put_time(std::localtime(&time_t), "%H:%M:%S");
-        ImGui::TextColored(colors[5], "Last checked: %s", ss.str().c_str());
     }
 };
 
