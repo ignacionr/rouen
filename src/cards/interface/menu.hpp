@@ -68,7 +68,8 @@ namespace rouen::cards {
                         {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
                         {"Travel Plans", []() { "create_card"_sfn("travel"); }},
                         {"Weather & Time", []() { "create_card"_sfn("weather"); }},
-                        {"Email", []() { "create_card"_sfn("mail"); }}
+                        {"Email", []() { "create_card"_sfn("mail"); }},
+                        {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }}
                     }},
                     { "Media", {
                         {"Radio", []() { "create_card"_sfn("radio"); }},
