@@ -61,6 +61,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - [Hosts Infrastructure](src/hosts/README.md) - Documentation for external service connectors
 - [Models Infrastructure](src/models/README.md) - Guide to data models and business logic
 - [Platform Utilities](src/helpers/platform_utils.hpp) - Cross-platform utilities for resource handling and more
+- [Windows Build Guide](docs/windows-build.md) - Comprehensive guide for Windows builds and automated releases
 
 ## Logging System
 
@@ -153,6 +154,8 @@ The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variab
 
 ### Build Instructions
 
+#### Linux/macOS
+
 ```bash
 # Clone the repository
 git clone https://github.com/ignacionr/rouen.git
@@ -168,6 +171,48 @@ make
 # Run the application
 ./rouen
 ```
+
+#### Windows
+
+**Prerequisites:**
+- Visual Studio 2022 with C++ support
+- vcpkg package manager
+- Git
+
+**Build Steps:**
+
+```powershell
+# Clone the repository
+git clone https://github.com/ignacionr/rouen.git
+cd rouen
+
+# Install dependencies via vcpkg
+vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows
+
+# Create build directory
+mkdir build
+cd build
+
+# Configure with vcpkg toolchain
+cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg-root]/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+
+# Build
+cmake --build . --config Release
+
+# Run the application
+.\Release\rouen.exe
+```
+
+**Automated Windows Builds:**
+
+Windows releases are automatically built and published via GitHub Actions when a new release is created. The workflow:
+- Builds the application using the latest MSVC compiler
+- Includes all required DLLs and dependencies
+- Packages assets, fonts, and configuration files
+- Creates a ready-to-run ZIP archive
+- Publishes as a release artifact
+
+You can also trigger a manual build by running the "Windows Release Build" workflow from the Actions tab.
 
 ### Installation (macOS)
 

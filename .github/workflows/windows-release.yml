@@ -1,0 +1,157 @@
+name: Windows Release Build
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a new release'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  BUILD_TYPE: Release
+  VCPKG_DEFAULT_TRIPLET: x64-windows
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Setup vcpkg
+      uses: microsoft/setup-vcpkg@v1
+      with:
+        vcpkg-version: 'latest'
+
+    - name: Cache vcpkg packages
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ env.VCPKG_ROOT }}/installed
+          ${{ env.VCPKG_ROOT }}/packages
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'cmake/dependencies.cmake') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Install dependencies via vcpkg
+      run: |
+        vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows
+
+    - name: Configure CMake
+      run: |
+        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel
+
+    - name: Package application
+      shell: pwsh
+      run: |
+        # Create distribution directory
+        New-Item -ItemType Directory -Force -Path "${{github.workspace}}/dist"
+        
+        # Copy executable
+        Copy-Item "${{github.workspace}}/build/Release/rouen.exe" "${{github.workspace}}/dist/"
+        
+        # Copy required DLLs from vcpkg (handle errors gracefully)
+        $vcpkgBinPath = "${{env.VCPKG_ROOT}}/installed/x64-windows/bin"
+        if (Test-Path $vcpkgBinPath) {
+          Get-ChildItem "$vcpkgBinPath/*.dll" | Copy-Item -Destination "${{github.workspace}}/dist/" -ErrorAction SilentlyContinue
+        }
+        
+        # Copy assets if they exist
+        if (Test-Path "${{github.workspace}}/img") {
+          Copy-Item -Recurse "${{github.workspace}}/img" "${{github.workspace}}/dist/"
+        }
+        
+        if (Test-Path "${{github.workspace}}/external/fonts") {
+          Copy-Item -Recurse "${{github.workspace}}/external/fonts" "${{github.workspace}}/dist/"
+        }
+        
+        # Copy individual font files
+        $fontFiles = @(
+          "${{github.workspace}}/external/MaterialIcons-Regular.ttf",
+          "${{github.workspace}}/external/IconsMaterialDesign.h"
+        )
+        foreach ($file in $fontFiles) {
+          if (Test-Path $file) {
+            Copy-Item $file "${{github.workspace}}/dist/"
+          }
+        }
+        
+        # Copy configuration files
+        $configFiles = @(
+          "${{github.workspace}}/presets.txt",
+          "${{github.workspace}}/podcasts.txt",
+          "${{github.workspace}}/README.md",
+          "${{github.workspace}}/LICENSE"
+        )
+        foreach ($file in $configFiles) {
+          if (Test-Path $file) {
+            Copy-Item $file "${{github.workspace}}/dist/"
+          }
+        }
+
+    - name: Create ZIP archive
+      shell: pwsh
+      run: |
+        cd "${{github.workspace}}/dist"
+        Compress-Archive -Path * -DestinationPath "../rouen-windows-x64.zip"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rouen-windows-x64
+        path: rouen-windows-x64.zip
+
+    - name: Upload to release (on release event)
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./rouen-windows-x64.zip
+        asset_name: rouen-windows-x64.zip
+        asset_content_type: application/zip
+
+    - name: Create release (on workflow_dispatch)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        release_name: Release v${{ github.run_number }}
+        body: |
+          Automated Windows release build
+          
+          ## What's included:
+          - Windows x64 executable
+          - All required DLLs
+          - Assets and configuration files
+          - Documentation
+        draft: false
+        prerelease: false
+
+    - name: Upload to new release (on workflow_dispatch)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./rouen-windows-x64.zip
+        asset_name: rouen-windows-x64.zip
+        asset_content_type: application/zip

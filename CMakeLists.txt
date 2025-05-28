@@ -100,25 +100,56 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE 
   ${imgui_SOURCE_DIR}
   ${imgui_SOURCE_DIR}/backends
-  /usr/include/stb
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
-  ${CURL_INCLUDE_DIRS}
-  ${SQLite3_INCLUDE_DIRS}
-  ${TINYXML2_INCLUDE_DIRS}
 )
+
+# Platform-specific include directories
+if(WIN32)
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    # Windows paths will be handled by vcpkg automatically
+  )
+elseif(UNIX)
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    /usr/include/stb
+    ${CURL_INCLUDE_DIRS}
+    ${SQLite3_INCLUDE_DIRS}
+    ${TINYXML2_INCLUDE_DIRS}
+  )
+endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
   imgui
   imcolortextedit
   glaze::glaze 
-  ${CURL_LIBRARIES}
-  ${SQLite3_LIBRARIES}
-  "/opt/homebrew/lib/libtinyxml2.dylib"  # Direct path to TinyXML2 on macOS with Homebrew
-  ${SDL2_LIBRARIES}
-  ${SDL2_IMAGE_LIBRARIES}
+  CURL::libcurl
   OpenSSL::SSL
   OpenSSL::Crypto
 )
+
+# Platform-specific library linking
+if(WIN32)
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    SDL2::SDL2
+    SDL2::SDL2main
+    SDL2_image::SDL2_image
+    tinyxml2::tinyxml2
+    unofficial::sqlite3::sqlite3
+  )
+elseif(APPLE)
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    ${SDL2_LIBRARIES}
+    ${SDL2_IMAGE_LIBRARIES}
+    "/opt/homebrew/lib/libtinyxml2.dylib"  # Direct path to TinyXML2 on macOS with Homebrew
+    ${SQLite3_LIBRARIES}
+  )
+else()
+  target_link_libraries(${PROJECT_NAME} PRIVATE
+    ${SDL2_LIBRARIES}
+    ${SDL2_IMAGE_LIBRARIES}
+    ${TINYXML2_LIBRARIES}
+    ${SQLite3_LIBRARIES}
+  )
+endif()
 
 # Apply stricter warnings only to our code, not third-party libraries
 # We use -Werror for our code but not for third-party libraries
@@ -132,9 +163,6 @@ if(APPLE)
   include(cmake/macos.cmake)
 elseif(UNIX AND NOT APPLE)
   include(cmake/linux.cmake)
+elseif(WIN32)
+  include(cmake/windows.cmake)
 endif()
-
-# If we add Windows support, we can include it conditionally:
-# if(WIN32)
-#   include(cmake/windows.cmake)
-# endif()

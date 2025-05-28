@@ -1,13 +1,26 @@
 # External dependencies configuration
 
-# Find required packages
-find_package(OpenGL REQUIRED)
-find_package(CURL REQUIRED)
-find_package(SQLite3 REQUIRED)
-find_package(OpenSSL REQUIRED)
+# Find required packages (except on Windows where vcpkg handles everything)
+if(NOT WIN32)
+  find_package(OpenGL REQUIRED)
+  find_package(CURL REQUIRED)
+  find_package(SQLite3 REQUIRED)
+  find_package(OpenSSL REQUIRED)
+else()
+  # Windows uses vcpkg for all dependencies
+  find_package(OpenGL REQUIRED)
+  find_package(CURL CONFIG REQUIRED)
+  find_package(unofficial-sqlite3 CONFIG REQUIRED)
+  find_package(OpenSSL REQUIRED)
+endif()
 
 # Platform-specific dependencies
-if(UNIX AND NOT APPLE)
+if(WIN32)
+  # Windows dependencies via vcpkg
+  find_package(SDL2 CONFIG REQUIRED)
+  find_package(sdl2-image CONFIG REQUIRED)
+  find_package(tinyxml2 CONFIG REQUIRED)
+elseif(UNIX AND NOT APPLE)
   # Additional dependencies for Linux
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(GTK3 IMPORTED_TARGET gtk+-3.0)

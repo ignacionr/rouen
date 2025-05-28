@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "rouen",
+  "version": "1.0.0",
+  "description": "A modern, card-based productivity dashboard",
+  "homepage": "https://github.com/ignaciorodriguez/rouen",
+  "dependencies": [
+    "curl[ssl]",
+    "openssl",
+    "sqlite3",
+    "sdl2",
+    "sdl2-image",
+    "tinyxml2"
+  ],
+  "builtin-baseline": "latest"
+}
