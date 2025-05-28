@@ -37,10 +37,18 @@ main_wnd::main_wnd()
 }
 
 main_wnd::~main_wnd() {
-    // Cleanup
-    ImGui_ImplSDLRenderer2_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
+    // Cleanup ImGui only if it was properly initialized
+    if (m_imgui_renderer_initialized) {
+        ImGui_ImplSDLRenderer2_Shutdown();
+    }
+    
+    if (m_imgui_sdl_initialized) {
+        ImGui_ImplSDL2_Shutdown();
+    }
+    
+    if (m_imgui_context_created) {
+        ImGui::DestroyContext();
+    }
 
     // Remove renderer from registrar before destroying it
     registrar::remove<SDL_Renderer*>("main_renderer");
@@ -70,11 +78,21 @@ bool main_wnd::initialize() {
         
         // Initialize SDL_image
         int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
-        if ((IMG_Init(img_flags) & img_flags) != img_flags) {
-            DB_ERROR_FMT("Error initializing SDL_image: {}", IMG_GetError());
+        int img_init_result = IMG_Init(img_flags);
+        
+        // Check if at least PNG support is available (minimum requirement)
+        if (!(img_init_result & IMG_INIT_PNG)) {
+            DB_ERROR_FMT("Error initializing SDL_image PNG support: {}", IMG_GetError());
             SDL_Quit();
             return false;
         }
+        
+        // Log warning if JPEG support is not available
+        if (!(img_init_result & IMG_INIT_JPG)) {
+            DB_WARN("JPEG support not available in SDL_image - some features may be limited");
+        }
+        
+        DB_INFO_FMT("SDL_image initialized successfully with flags: 0x{:X}", img_init_result);
 
         // Create window with SDL
         SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -123,6 +141,7 @@ bool main_wnd::initialize() {
         // Initialize ImGui
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
+        m_imgui_context_created = true;
         ImGuiIO& io = ImGui::GetIO();
         (void)io;
 
@@ -140,16 +159,34 @@ bool main_wnd::initialize() {
             DB_ERROR("Failed to initialize ImGui SDL2 backend!");
             return false;
         }
+        m_imgui_sdl_initialized = true;
 
         // Initialize ImGui SDL Renderer backend
         if (!ImGui_ImplSDLRenderer2_Init(m_renderer)) {
             DB_ERROR("Failed to initialize ImGui SDL Renderer backend!");
             return false;
         }
+        m_imgui_renderer_initialized = true;
 
         return true;
     } catch (const std::exception& e) {
         DB_ERROR_FMT("Exception during initialization: {}", e.what());
+        
+        // Clean up ImGui components that were initialized
+        if (m_imgui_renderer_initialized) {
+            ImGui_ImplSDLRenderer2_Shutdown();
+            m_imgui_renderer_initialized = false;
+        }
+        
+        if (m_imgui_sdl_initialized) {
+            ImGui_ImplSDL2_Shutdown();
+            m_imgui_sdl_initialized = false;
+        }
+        
+        if (m_imgui_context_created) {
+            ImGui::DestroyContext();
+            m_imgui_context_created = false;
+        }
         
         // Clean up any resources that may have been allocated
         if (m_renderer) {
@@ -168,6 +205,22 @@ bool main_wnd::initialize() {
         return false;
     } catch (...) {
         DB_ERROR("Unknown exception during initialization");
+        
+        // Clean up ImGui components that were initialized
+        if (m_imgui_renderer_initialized) {
+            ImGui_ImplSDLRenderer2_Shutdown();
+            m_imgui_renderer_initialized = false;
+        }
+        
+        if (m_imgui_sdl_initialized) {
+            ImGui_ImplSDL2_Shutdown();
+            m_imgui_sdl_initialized = false;
+        }
+        
+        if (m_imgui_context_created) {
+            ImGui::DestroyContext();
+            m_imgui_context_created = false;
+        }
         
         // Clean up any resources that may have been allocated
         if (m_renderer) {

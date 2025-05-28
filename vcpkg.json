@@ -11,7 +11,10 @@
     "openssl",
     "sqlite3",
     "sdl2",
-    "sdl2-image",
+    {
+      "name": "sdl2-image",
+      "features": ["libjpeg-turbo"]
+    },
     "tinyxml2"
   ],
   "builtin-baseline": "3425f537d2f01c761d2d2cff59a7577eb4f568c0"

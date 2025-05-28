@@ -49,6 +49,11 @@ private:
     int m_requested_fps = 1;
     std::string keystrokes_;
     
+    // ImGui initialization state tracking
+    bool m_imgui_sdl_initialized = false;
+    bool m_imgui_renderer_initialized = false;
+    bool m_imgui_context_created = false;
+    
     // MainWindow is commented out as it's currently unused
     // Uncomment when needed for implementation
     // rouen::MainWindow m_main_window;
