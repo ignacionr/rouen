@@ -2,7 +2,60 @@
 
 This document summarizes the comprehensive Windows compatibility fixes implemented to resolve build errors in the GitHub Actions Windows build.
 
-## Issues Resolved
+## Latest Fixes (2025-05-28)
+
+### 6. Process Status Macros Missing (C3861)
+**Problem**: POSIX process status macros `WIFEXITED`, `WEXITSTATUS`, `WIFSIGNALED`, `WTERMSIG` not available on Windows.
+
+**Files Fixed**: `src/rouen.cpp`
+
+**Solution**: Added platform-specific includes and macro definitions for Windows compatibility:
+```cpp
+// Platform-specific includes for process status handling
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+// Windows doesn't have POSIX process status macros, so we define simple alternatives
+#define WIFEXITED(status) (true)
+#define WEXITSTATUS(status) (status)
+#define WIFSIGNALED(status) (false)
+#define WTERMSIG(status) (0)
+#define popen _popen
+#define pclose _pclose
+#else
+#include <sys/wait.h>
+#endif
+```
+
+### 7. Type Conversion Warning (C4267)
+**Problem**: Conversion from `size_t` to `int` in `fgets()` call, possible loss of data.
+
+**Files Fixed**: `src/rouen.cpp`
+
+**Solution**: Added explicit cast to avoid the warning:
+```cpp
+// Before
+while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+
+// After
+while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+```
+
+### 8. Unknown Type Identifier (C2061)
+**Problem**: `uint` type identifier not found on Windows.
+
+**Files Fixed**: `src/main_wnd.cpp`
+
+**Solution**: Changed `uint` to `unsigned int` for proper C++ standard compatibility:
+```cpp
+// Before
+codepoint = (static_cast<uint>(test_char[0] & 0x1F) << 6) | static_cast<uint>(test_char[1] & 0x3F);
+
+// After  
+codepoint = (static_cast<unsigned int>(test_char[0] & 0x1F) << 6) | static_cast<unsigned int>(test_char[1] & 0x3F);
+```
+
+## Issues Resolved (Previous Fixes)
 
 ### 1. Font Loading Path Conversion (C2664)
 **Problem**: `ImFont *ImFontAtlas::AddFontFromFileTTF` cannot convert `std::filesystem::path::value_type *` to `const char *` on Windows.
@@ -154,6 +207,9 @@ The fixes address all reported compilation errors:
 - ✅ C2065, C2039: Process ID handling resolved
 - ✅ C2440: Image cache path conversion resolved
 - ✅ C1083: Missing header includes resolved
+- ✅ C3861: Process status macros defined
+- ✅ C4267: Type conversion warning resolved
+- ✅ C2061: Unknown type identifier resolved
 
 These changes enable successful compilation on Windows while maintaining full functionality on Linux and macOS platforms.
 

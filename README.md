@@ -308,6 +308,14 @@ cmake --build . --config Release
 - **Process Management**: Windows-specific process enumeration and management
 - **Memory & Disk Monitoring**: Native Windows APIs for system resource monitoring
 - **Path Handling**: Robust Windows path handling with proper drive letter support
+- **POSIX Compatibility**: Cross-platform process status handling with Windows-specific implementations
+- **Type Safety**: Full C++23 compatibility with MSVC compiler and proper type conversions
+
+**Latest Compatibility Improvements (2025-05-28):**
+- Fixed POSIX process status macros (`WIFEXITED`, `WEXITSTATUS`, etc.) for Windows compatibility
+- Resolved type conversion warnings and missing identifiers
+- Enhanced cross-platform command execution support
+- Improved Unicode character handling in font systems
 
 **vcpkg Configuration Files:**
 - `vcpkg.json`: Defines project dependencies and features

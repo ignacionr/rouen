@@ -7,6 +7,21 @@
 #include "helpers/imgui_include.hpp"
 #include <SDL.h>  // Changed from SDL2/SDL.h to SDL.h for macOS compatibility
 
+// Platform-specific includes for process status handling
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+// Windows doesn't have POSIX process status macros, so we define simple alternatives
+#define WIFEXITED(status) (true)
+#define WEXITSTATUS(status) (status)
+#define WIFSIGNALED(status) (false)
+#define WTERMSIG(status) (0)
+#define popen _popen
+#define pclose _pclose
+#else
+#include <sys/wait.h>
+#endif
+
 // 3. All other includes
 #include "cards/interface/deck.hpp"
 #include "helpers/debug.hpp"
@@ -41,7 +56,7 @@ int main() {
                     bool has_output = false;
                     
                     // Read output incrementally
-                    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+                    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
                         has_output = true;
                         current_output += buffer.data();
                         
