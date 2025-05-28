@@ -9,3 +9,4 @@ rouen.ini
 card_*.png
 **/.DS_Store
 vcpkg_installed
+vcpkg/
