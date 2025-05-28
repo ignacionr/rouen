@@ -292,6 +292,7 @@ public:
     bool send_command(const std::string& command) {
 #ifdef _WIN32
         // Windows socket communication not supported yet
+        (void)command; // Suppress unreferenced parameter warning
         MPV_WARN("MPV socket communication not available on Windows");
         return false;
 #else
@@ -384,6 +385,7 @@ public:
     bool receive_response(char* buffer, size_t buffer_size, int timeout_ms = 200) {
 #ifdef _WIN32
         // Windows socket communication not supported yet
+        (void)buffer; (void)buffer_size; (void)timeout_ms; // Suppress unreferenced parameter warnings
         MPV_WARN("MPV socket communication not available on Windows");
         return false;
 #else

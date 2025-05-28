@@ -4,13 +4,22 @@
 #include <string>
 #include <thread>
 #include <chrono>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
+
+// Platform-specific includes
+#ifdef _WIN32
+    #include <windows.h>
+    #include <io.h>
+    #include <process.h>
+#else
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/stat.h>
+    #include <signal.h>
+#endif
+
 #include <vector>
 #include <filesystem>
 #include <fstream>
-#include <signal.h>
 
 namespace media_player_alarm_helper {
     static media_player_item& alarm_item_instance() {

@@ -498,7 +498,7 @@ namespace rouen::cards
                 }
                 
                 last_refresh_ = std::chrono::steady_clock::now();
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // Error will be shown in the UI via fetcher_->has_error()
             }
         }

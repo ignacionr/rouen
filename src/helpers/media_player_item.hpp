@@ -84,9 +84,19 @@ inline void media_player_item::stopMedia() {
     }
     mpv_socket.close_socket();
     if (player_pid > 0) {
+#ifdef _WIN32
+        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, player_pid);
+        if (hProcess != NULL) {
+            if (!TerminateProcess(hProcess, 0)) {
+                // Handle error - could log it
+            }
+            CloseHandle(hProcess);
+        }
+#else
         if (kill(player_pid, SIGTERM) == -1) {
             perror("Failed to terminate process");
         }
+#endif
         player_pid = 0;
         is_playing = false;
     }
@@ -137,6 +147,33 @@ inline std::string media_player_item::sanitizeURL(const std::string& input_url) 
 
 inline bool media_player_item::playMedia() {
     stopMedia(); // Ensure any previous media is stopped
+    
+#ifdef _WIN32
+    // Windows implementation using named pipes instead of Unix sockets
+    std::string pipe_name = "\\\\.\\pipe\\mpvsocket";
+    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " \"" + url + "\"";
+    
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+    
+    // Create the process
+    if (CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+        player_pid = pi.dwProcessId;
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        
+        mpv_socket.init_socket(pipe_name);
+        startPositionTracking();
+        is_playing = true;
+        return true;
+    } else {
+        return false;
+    }
+#else
+    // Unix implementation
     std::string socket_path = "/tmp/mpvsocket";
     player_pid = fork();
     if (player_pid == 0) {
@@ -150,7 +187,8 @@ inline bool media_player_item::playMedia() {
     mpv_socket.init_socket(socket_path);
     startPositionTracking();
     is_playing = true;
-    return true;
+    return player_pid > 0;
+#endif
 }
 
 inline std::string media_player_item::formatTime(double seconds) const {
