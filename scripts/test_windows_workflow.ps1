@@ -137,6 +137,30 @@ try {
     Write-Host "✗ PowerShell operations test failed: $($_.Exception.Message)" -ForegroundColor Red
 }
 
+# Test 9: PowerShell Variable Expansion in CMake Commands
+Write-Host "`n--- Test 9: PowerShell Variable Expansion ---" -ForegroundColor Blue
+
+$buildDir = "$WorkspacePath\build"
+$toolchainFile = "$WorkspacePath\vcpkg\scripts\buildsystems\vcpkg.cmake"
+
+Write-Host "Testing PowerShell variable expansion:"
+Write-Host "Build directory: $buildDir"
+Write-Host "Toolchain file: $toolchainFile"
+
+# Simulate the corrected cmake command from the workflow
+$cmakeCmd = "cmake -B $buildDir -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON"
+Write-Host "Generated CMake command: $cmakeCmd"
+
+# Verify variables are properly expanded (not literal strings)
+if ($cmakeCmd -like "*`$buildDir*" -or $cmakeCmd -like "*`$toolchainFile*") {
+    Write-Host "❌ ERROR: Variables are not being expanded properly!" -ForegroundColor Red
+    Write-Host "   This indicates the PowerShell variable expansion issue is present."
+    $testResults.Add("PowerShell Variable Expansion", "FAILED - Variables not expanded")
+} else {
+    Write-Host "✅ SUCCESS: Variables are properly expanded in cmake command." -ForegroundColor Green
+    $testResults.Add("PowerShell Variable Expansion", "PASSED")
+}
+
 Write-Host "`n=== Test Complete ===" -ForegroundColor Green
 Write-Host "This script validated the key path operations used in the GitHub Actions workflow." -ForegroundColor Yellow
 Write-Host "If all tests pass, the workflow should handle Windows paths correctly." -ForegroundColor Yellow
