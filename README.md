@@ -206,12 +206,15 @@ cmake --build . --parallel
 
 If you're using VS Code, the repository comes with pre-configured tasks and launch configurations:
 
+- **Initial Setup**: Use Cmd+Shift+P → "Tasks: Run Task" → "Setup vcpkg" to clone and bootstrap vcpkg (one-time setup)
+
 - **Build Tasks**: Use Cmd+Shift+P → "Tasks: Run Task" to access:
   - "Build with vcpkg" (default build task)
   - "Configure with vcpkg" / "Configure with vcpkg (Release)"
   - "Build with vcpkg (Release)"
   - "Clean vcpkg build"
-  - "Install vcpkg dependencies"
+  - "Install vcpkg dependencies" (auto-setups vcpkg if needed)
+  - "Setup vcpkg" (one-time vcpkg installation)
   - "Update vcpkg baseline"
   - Traditional build tasks for system dependencies
 
@@ -232,6 +235,14 @@ If you're using VS Code, the repository comes with pre-configured tasks and laun
 - Proper include paths for vcpkg dependencies
 - C++23 standard support
 - ARM64 architecture support on macOS
+- Automatic vcpkg setup when needed
+
+**First-Time Setup in VS Code:**
+1. Open the project in VS Code
+2. Run task: "Setup vcpkg" (one-time setup)
+3. Run task: "Install vcpkg dependencies"
+4. Run task: "Configure with vcpkg"
+5. Use Cmd+Shift+B to build
 - curl with SSL support
 - TinyXML2
 

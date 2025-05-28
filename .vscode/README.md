@@ -9,12 +9,13 @@ This directory contains VS Code-specific configuration files that provide a comp
 Provides multiple build tasks accessible via **Cmd+Shift+P → "Tasks: Run Task"**:
 
 #### vcpkg Tasks (Recommended)
+- **"Setup vcpkg"** 🔧 - One-time setup: clone and bootstrap vcpkg
 - **"Build with vcpkg"** ⭐ - Default build task (Cmd+Shift+B)
 - **"Configure with vcpkg"** - Configure Debug build with vcpkg
 - **"Configure with vcpkg (Release)"** - Configure Release build with vcpkg  
 - **"Build with vcpkg (Release)"** - Build Release version
 - **"Clean vcpkg build"** - Remove build-vcpkg directory
-- **"Install vcpkg dependencies"** - Install/update dependencies from manifest
+- **"Install vcpkg dependencies"** - Install/update dependencies from manifest (auto-setups vcpkg if needed)
 - **"Update vcpkg baseline"** - Update vcpkg to latest baseline
 - **"Run Rouen (vcpkg)"** - Build and launch the application
 
@@ -68,13 +69,23 @@ Optimized settings for C++ development:
 
 ## Quick Start Guide
 
-### 1. Build the Project
+### 1. First-Time Setup
+```
+Cmd+Shift+P → "Tasks: Run Task" → "Setup vcpkg"
+```
+
+### 2. Install Dependencies
+```
+Cmd+Shift+P → "Tasks: Run Task" → "Install vcpkg dependencies"
+```
+
+### 3. Build the Project
 ```
 Cmd+Shift+P → "Tasks: Run Task" → "Build with vcpkg"
 ```
 Or use the default build shortcut: **Cmd+Shift+B**
 
-### 2. Debug the Application
+### 4. Debug the Application
 ```
 F5 → Select "(lldb) Launch macOS - vcpkg build"
 ```
