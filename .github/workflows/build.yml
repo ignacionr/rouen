@@ -109,7 +109,21 @@ jobs:
         $buildDir = "$workspace\build"
         $toolchainFile = "$workspace\vcpkg\scripts\buildsystems\vcpkg.cmake"
         
-        cmake -B $buildDir -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+        Write-Host "Build directory: $buildDir"
+        Write-Host "Toolchain file: $toolchainFile"
+        
+        # Verify paths exist
+        if (-not (Test-Path $toolchainFile)) {
+          Write-Host "ERROR: Toolchain file not found at: $toolchainFile"
+          Get-ChildItem "$workspace\vcpkg\scripts\buildsystems\" -ErrorAction SilentlyContinue
+          exit 1
+        }
+        
+        # Use PowerShell string interpolation to ensure variable expansion
+        $cmakeCmd = "cmake -B `"$buildDir`" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_TOOLCHAIN_FILE=`"$toolchainFile`" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}"
+        Write-Host "Executing: $cmakeCmd"
+        
+        Invoke-Expression $cmakeCmd
       shell: pwsh
 
     - name: Build (Linux/macOS)

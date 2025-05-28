@@ -147,18 +147,42 @@ Write-Host "Testing PowerShell variable expansion:"
 Write-Host "Build directory: $buildDir"
 Write-Host "Toolchain file: $toolchainFile"
 
-# Simulate the corrected cmake command from the workflow
-$cmakeCmd = "cmake -B $buildDir -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON"
-Write-Host "Generated CMake command: $cmakeCmd"
+# Test the old approach (direct variable usage)
+$cmakeCmd1 = "cmake -B $buildDir -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=x64-windows"
+Write-Host "Direct variable approach: $cmakeCmd1"
 
-# Verify variables are properly expanded (not literal strings)
-if ($cmakeCmd -like "*`$buildDir*" -or $cmakeCmd -like "*`$toolchainFile*") {
+# Test the new robust approach (string interpolation with backticks)
+$cmakeCmd2 = "cmake -B `"$buildDir`" -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=`"$toolchainFile`" -DVCPKG_TARGET_TRIPLET=x64-windows"
+Write-Host "String interpolation approach: $cmakeCmd2"
+
+# Verify neither contains literal variable names
+$hasLiteralVars = ($cmakeCmd1 -like "*`$buildDir*" -or $cmakeCmd1 -like "*`$toolchainFile*" -or 
+                   $cmakeCmd2 -like "*`$buildDir*" -or $cmakeCmd2 -like "*`$toolchainFile*")
+
+if ($hasLiteralVars) {
     Write-Host "❌ ERROR: Variables are not being expanded properly!" -ForegroundColor Red
     Write-Host "   This indicates the PowerShell variable expansion issue is present."
     $testResults.Add("PowerShell Variable Expansion", "FAILED - Variables not expanded")
 } else {
-    Write-Host "✅ SUCCESS: Variables are properly expanded in cmake command." -ForegroundColor Green
+    Write-Host "✅ SUCCESS: Variables are properly expanded in cmake commands." -ForegroundColor Green
+    Write-Host "   Both approaches successfully expand PowerShell variables."
     $testResults.Add("PowerShell Variable Expansion", "PASSED")
+}
+
+# Test file path validation
+Write-Host "`n--- Path Validation Test ---" -ForegroundColor Blue
+if (Test-Path "$WorkspacePath\vcpkg") {
+    Write-Host "✅ vcpkg directory exists" -ForegroundColor Green
+    if (Test-Path "$WorkspacePath\vcpkg\scripts\buildsystems\vcpkg.cmake") {
+        Write-Host "✅ vcpkg.cmake toolchain file exists" -ForegroundColor Green
+        $testResults.Add("Toolchain File Path", "PASSED")
+    } else {
+        Write-Host "❌ vcpkg.cmake toolchain file not found" -ForegroundColor Red
+        $testResults.Add("Toolchain File Path", "FAILED - File not found")
+    }
+} else {
+    Write-Host "⚠️  vcpkg directory not found (expected in CI environment)" -ForegroundColor Yellow
+    $testResults.Add("Toolchain File Path", "SKIPPED - vcpkg not present")
 }
 
 Write-Host "`n=== Test Complete ===" -ForegroundColor Green

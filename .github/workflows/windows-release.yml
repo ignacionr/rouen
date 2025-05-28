@@ -111,7 +111,19 @@ jobs:
         $toolchainFile = "${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake"
         Write-Host "Build directory: $buildDir"
         Write-Host "Toolchain file: $toolchainFile"
-        cmake -B $buildDir -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON
+        
+        # Verify paths exist
+        if (-not (Test-Path $toolchainFile)) {
+          Write-Host "ERROR: Toolchain file not found at: $toolchainFile"
+          Get-ChildItem "${{ github.workspace }}\vcpkg\scripts\buildsystems\" -ErrorAction SilentlyContinue
+          exit 1
+        }
+        
+        # Use PowerShell string interpolation to ensure variable expansion
+        $cmakeCmd = "cmake -B `"$buildDir`" -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=`"$toolchainFile`" -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON"
+        Write-Host "Executing: $cmakeCmd"
+        
+        Invoke-Expression $cmakeCmd
       shell: pwsh
 
     - name: Build
