@@ -146,20 +146,110 @@ The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variab
 
 ### Prerequisites
 
-- C++23 compatible compiler
+- C++23 compatible compiler (GCC 13+, Clang 16+, or MSVC 2022+)
 - CMake 3.30+
-- SDL2 and SDL2_image
-- ImGui
-- GLFW
+- vcpkg package manager (recommended) or system packages
 
 ### Build Instructions
 
-#### Linux/macOS
+#### Option 1: Using vcpkg (Recommended)
+
+vcpkg provides the most reliable cross-platform dependency management. This is the preferred method for building Rouen.
+
+**Setup vcpkg:**
+
+```bash
+# Clone vcpkg (if not already installed)
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+
+# Bootstrap vcpkg
+./bootstrap-vcpkg.sh  # Linux/macOS
+# OR
+.\bootstrap-vcpkg.bat  # Windows
+
+# Install dependencies using manifest mode
+cd /path/to/rouen
+vcpkg install
+```
+
+**Build with vcpkg:**
 
 ```bash
 # Clone the repository
 git clone https://github.com/ignacionr/rouen.git
 cd rouen
+
+# Create build directory
+mkdir -p build-vcpkg && cd build-vcpkg
+
+# Configure with vcpkg toolchain
+cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# Build
+cmake --build . --parallel
+
+# Run the application
+./rouen.app/Contents/MacOS/rouen  # macOS
+# OR
+./rouen  # Linux
+```
+
+**Dependencies managed by vcpkg:**
+- SDL2 and SDL2_image
+- SQLite3 with JSON1 extension
+- OpenSSL
+- curl with SSL support
+- TinyXML2
+
+**VS Code Integration:**
+
+If you're using VS Code, the repository comes with pre-configured tasks and launch configurations:
+
+- **Build Tasks**: Use Cmd+Shift+P → "Tasks: Run Task" to access:
+  - "Build with vcpkg" (default build task)
+  - "Configure with vcpkg" / "Configure with vcpkg (Release)"
+  - "Build with vcpkg (Release)"
+  - "Clean vcpkg build"
+  - "Install vcpkg dependencies"
+  - "Update vcpkg baseline"
+  - Traditional build tasks for system dependencies
+
+- **Debug Configurations**: Multiple launch configurations for:
+  - macOS: vcpkg and traditional builds with lldb
+  - Linux: vcpkg and traditional builds with gdb
+  - Windows: vcpkg and traditional builds with msvc (when on Windows)
+
+- **IntelliSense**: The `.vscode/c_cpp_properties.json` includes configurations for:
+  - `macOS-vcpkg`: Uses vcpkg includes and ARM64 settings
+  - `macOS-traditional`: Uses system includes
+  - `Linux-vcpkg`: Uses vcpkg includes for Linux
+  - `Linux-traditional`: Uses system includes for Linux
+
+**Key VS Code Features:**
+- Default build directory: `build-vcpkg`
+- Automatic CMake toolchain configuration
+- Proper include paths for vcpkg dependencies
+- C++23 standard support
+- ARM64 architecture support on macOS
+- curl with SSL support
+- TinyXML2
+
+#### Option 2: System Dependencies (Linux/macOS)
+
+For development builds using system package managers:
+
+```bash
+# Clone the repository
+git clone https://github.com/ignacionr/rouen.git
+cd rouen
+
+# Install dependencies
+# Ubuntu/Debian:
+sudo apt-get install libsdl2-dev libsdl2-image-dev libsqlite3-dev libssl-dev libcurl4-openssl-dev libtinyxml2-dev
+
+# macOS with Homebrew:
+brew install sdl2 sdl2_image sqlite3 openssl curl tinyxml2
 
 # Create build directory
 mkdir -p build && cd build
@@ -175,7 +265,7 @@ make
 #### Windows
 
 **Prerequisites:**
-- Visual Studio 2022 with C++ support
+- Visual Studio 2022 with C++ support (or compatible C++23 compiler)
 - vcpkg package manager
 - Git
 
@@ -186,12 +276,12 @@ make
 git clone https://github.com/ignacionr/rouen.git
 cd rouen
 
-# Install dependencies via vcpkg
-vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows
+# Install dependencies via vcpkg (manifest mode - automatic)
+# Dependencies are defined in vcpkg.json and will be installed automatically
 
 # Create build directory
-mkdir build
-cd build
+mkdir build-vcpkg
+cd build-vcpkg
 
 # Configure with vcpkg toolchain
 cmake .. -DCMAKE_TOOLCHAIN_FILE=[vcpkg-root]/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
@@ -201,6 +291,20 @@ cmake --build . --config Release
 
 # Run the application
 .\Release\rouen.exe
+```
+
+**vcpkg Configuration Files:**
+- `vcpkg.json`: Defines project dependencies and features
+- `vcpkg-configuration.json`: Platform-specific settings (e.g., ARM64 on macOS)
+
+**Architecture Support:**
+- Windows: x64-windows, x86-windows, arm64-windows
+- macOS: arm64-osx (Apple Silicon), x64-osx (Intel)
+- Linux: x64-linux, arm64-linux
+
+**Note:** If you encounter vcpkg baseline errors, run:
+```bash
+./scripts/update_vcpkg_baseline.sh
 ```
 
 **Automated Windows Builds:**

@@ -38,6 +38,12 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE GL_SILENCE_DEPRECATION)
 find_library(COCOA_LIBRARY Cocoa REQUIRED)
 find_library(IOKIT_LIBRARY IOKit REQUIRED)
 find_library(COREVIDEO_LIBRARY CoreVideo REQUIRED)
+find_library(AUDIOTOOLBOX_LIBRARY AudioToolbox REQUIRED)
+find_library(COREHAPTICS_LIBRARY CoreHaptics REQUIRED)
+find_library(GAMECONTROLLER_LIBRARY GameController REQUIRED)
+find_library(METAL_LIBRARY Metal REQUIRED)
+find_library(FORCEFEEDBACK_LIBRARY ForceFeedback REQUIRED)
+find_library(CARBON_LIBRARY Carbon REQUIRED)
 
 # Configure GLFW specifically for macOS
 find_package(glfw3 QUIET)
@@ -58,6 +64,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${COCOA_LIBRARY}
   ${IOKIT_LIBRARY}
   ${COREVIDEO_LIBRARY}
+  ${AUDIOTOOLBOX_LIBRARY}
+  ${COREHAPTICS_LIBRARY}
+  ${GAMECONTROLLER_LIBRARY}
+  ${METAL_LIBRARY}
+  ${FORCEFEEDBACK_LIBRARY}
+  ${CARBON_LIBRARY}
   "-framework OpenGL"
   ${GLFW_LIBRARY}
   ${SDL2_LIBRARIES}

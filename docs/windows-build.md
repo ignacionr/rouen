@@ -110,9 +110,17 @@ The build system automatically:
 
 ### Common Issues
 
-1. **vcpkg not found**: Ensure vcpkg is installed and integrated
-2. **Missing DLLs**: The workflow handles this, but for local builds ensure vcpkg triplet matches
-3. **Build failures**: Check that all dependencies installed correctly with vcpkg
+1. **vcpkg baseline errors**: If you see "builtin-baseline was not a valid commit sha"
+   - Run `./scripts/update_vcpkg_baseline.sh` to automatically fix this
+   - Or manually update the `builtin-baseline` in `vcpkg.json` with a valid commit SHA from vcpkg repository
+   
+2. **vcpkg not found**: Ensure vcpkg is installed and integrated
+   - The workflow handles this automatically
+   - For local builds: `git clone https://github.com/Microsoft/vcpkg.git && cd vcpkg && ./bootstrap-vcpkg`
+
+3. **Missing DLLs**: The workflow handles this, but for local builds ensure vcpkg triplet matches
+
+4. **Build failures**: Check that all dependencies installed correctly with vcpkg
 
 ### Dependencies
 

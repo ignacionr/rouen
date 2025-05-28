@@ -19,6 +19,210 @@
 			"group": "build",
 			"problemMatcher": [],
 			"detail": "CMake template configure task"
+		},
+		{
+			"type": "shell",
+			"label": "Build with vcpkg",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build-vcpkg",
+				"--parallel"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build using vcpkg dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Configure with vcpkg",
+			"command": "cmake",
+			"args": [
+				"-B",
+				"build-vcpkg",
+				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+				"-DCMAKE_BUILD_TYPE=Debug"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [],
+			"detail": "Configure CMake with vcpkg toolchain"
+		},
+		{
+			"type": "shell",
+			"label": "Configure with vcpkg (Release)",
+			"command": "cmake",
+			"args": [
+				"-B",
+				"build-vcpkg",
+				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+				"-DCMAKE_BUILD_TYPE=Release"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [],
+			"detail": "Configure CMake with vcpkg toolchain for Release build"
+		},
+		{
+			"type": "shell",
+			"label": "Build with vcpkg (Release)",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build-vcpkg",
+				"--config",
+				"Release",
+				"--parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build Release version using vcpkg dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Clean vcpkg build",
+			"command": "rm",
+			"args": [
+				"-rf",
+				"build-vcpkg"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"detail": "Clean vcpkg build directory"
+		},
+		{
+			"type": "shell",
+			"label": "Install vcpkg dependencies",
+			"command": "${workspaceFolder}/vcpkg/vcpkg",
+			"args": [
+				"install"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Install vcpkg dependencies from manifest"
+		},
+		{
+			"type": "shell",
+			"label": "Update vcpkg baseline",
+			"command": "${workspaceFolder}/scripts/update_vcpkg_baseline.sh",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Update vcpkg baseline to latest version"
+		},
+		{
+			"type": "shell",
+			"label": "Configure traditional build",
+			"command": "cmake",
+			"args": [
+				"-B",
+				"build",
+				"-DCMAKE_BUILD_TYPE=Debug"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [],
+			"detail": "Configure CMake with system dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Build traditional",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build",
+				"--parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build using system dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Run Rouen (vcpkg)",
+			"command": "open",
+			"args": [
+				"build-vcpkg/rouen.app"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"dependsOn": "Build with vcpkg",
+			"detail": "Run the Rouen application built with vcpkg"
 		}
 	]
 }

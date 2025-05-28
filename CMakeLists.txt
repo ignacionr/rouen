@@ -127,19 +127,23 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 
 # Platform-specific library linking
-if(WIN32)
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  # Using vcpkg - use modern CMake targets
   target_link_libraries(${PROJECT_NAME} PRIVATE
-    SDL2::SDL2
-    SDL2::SDL2main
-    SDL2_image::SDL2_image
+    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+    $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
     tinyxml2::tinyxml2
     unofficial::sqlite3::sqlite3
   )
+elseif(WIN32)
+  # Windows without vcpkg
+  message(FATAL_ERROR "Windows builds require vcpkg")
 elseif(APPLE)
   target_link_libraries(${PROJECT_NAME} PRIVATE
     ${SDL2_LIBRARIES}
     ${SDL2_IMAGE_LIBRARIES}
-    "/opt/homebrew/lib/libtinyxml2.dylib"  # Direct path to TinyXML2 on macOS with Homebrew
+    ${TINYXML2_LIBRARIES}
     ${SQLite3_LIBRARIES}
   )
 else()

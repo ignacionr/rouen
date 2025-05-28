@@ -1,5 +1,5 @@
 imgui.ini
-build
+build*
 rss.db*
 email_metadata.db*
 travel.db*
@@ -8,3 +8,4 @@ cache
 rouen.ini
 card_*.png
 **/.DS_Store
+vcpkg_installed

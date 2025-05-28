@@ -92,15 +92,40 @@
         "__hash_table": "cpp",
         "__locale": "cpp"
     },
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/**",
-        "/usr/include/imgui",
-        "/usr/include/stb",
-        "${workspaceFolder}/build/_deps/imguicolortextedit-src",
-        "${workspaceFolder}/build/_deps/glaze-src/include"
+        "${workspaceFolder}/build-vcpkg/_deps/imguicolortextedit-src",
+        "${workspaceFolder}/build-vcpkg/_deps/glaze-src/include",
+        "${workspaceFolder}/vcpkg_installed/arm64-osx/include",
+        "${workspaceFolder}/build-vcpkg/vcpkg_installed/arm64-osx/include"
     ],
-    "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
-    "C_Cpp.intelliSenseEngine": "default"
+    "C_Cpp.default.intelliSenseMode": "macos-clang-arm64",
+    "C_Cpp.intelliSenseEngine": "default",
+    "cmake.buildDirectory": "${workspaceFolder}/build-vcpkg",
+    "cmake.configureSettings": {
+        "CMAKE_TOOLCHAIN_FILE": "${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_BUILD_TYPE": "Debug"
+    },
+    "cmake.generator": "Unix Makefiles",
+    "cmake.buildTask": true,
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "cmake.defaultVariants": {
+        "buildType": {
+            "default": "debug",
+            "choices": {
+                "debug": {
+                    "short": "Debug",
+                    "long": "Emit debug information",
+                    "buildType": "Debug"
+                },
+                "release": {
+                    "short": "Release",
+                    "long": "Optimize generated code",
+                    "buildType": "Release"
+                }
+            }
+        }
+    }
 }

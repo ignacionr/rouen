@@ -1,7 +1,58 @@
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "macOS-vcpkg",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/build-vcpkg/_deps/imguicolortextedit-src",
+                "${workspaceFolder}/build-vcpkg/_deps/glaze-src/include",
+                "${workspaceFolder}/vcpkg_installed/arm64-osx/include",
+                "${workspaceFolder}/build-vcpkg/vcpkg_installed/arm64-osx/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "intelliSenseMode": "macos-clang-arm64",
+            "compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "macOS-traditional",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/local/include",
+                "/opt/homebrew/include",
+                "${workspaceFolder}/build/_deps/imguicolortextedit-src",
+                "${workspaceFolder}/build/_deps/glaze-src/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "intelliSenseMode": "macos-clang-arm64",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "Linux-vcpkg",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/build-vcpkg/_deps/imguicolortextedit-src",
+                "${workspaceFolder}/build-vcpkg/_deps/glaze-src/include",
+                "${workspaceFolder}/vcpkg_installed/x64-linux/include",
+                "${workspaceFolder}/build-vcpkg/vcpkg_installed/x64-linux/include"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang++",
+            "cStandard": "c17",
+            "cppStandard": "c++23",
+            "intelliSenseMode": "linux-clang-x64",
+            "compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
+            "configurationProvider": "ms-vscode.cmake-tools"
+        },
+        {
+            "name": "Linux-traditional",
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/include/imgui",

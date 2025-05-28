@@ -5,7 +5,23 @@
     "version": "0.2.0",
     "configurations": [
     {
-        "name": "(lldb) Launch macOS",
+        "name": "(lldb) Launch macOS - vcpkg build",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}/build-vcpkg/rouen.app",
+        "environment": [
+            // Environment variables for macOS, if needed
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Build with vcpkg"
+    },
+    {
+        "name": "(lldb) Launch macOS - traditional build",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/build/rouen.app/Contents/MacOS/rouen",
@@ -37,7 +53,32 @@
         "preLaunchTask": "CMake: build"
     },
     {
-        "name": "(gdb) Launch Linux",
+        "name": "(gdb) Launch Linux - vcpkg build",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "externalConsole": false,
+        "MIMode": "gdb",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for gdb",
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+            },
+            {
+                "description": "Set Disassembly Flavor to Intel",
+                "text": "-gdb-set disassembly-flavor intel",
+                "ignoreFailures": true
+            }
+        ],
+        "preLaunchTask": "Build with vcpkg"
+    },
+    {
+        "name": "(gdb) Launch Linux - traditional build",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/build/rouen",

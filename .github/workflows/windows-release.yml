@@ -35,6 +35,20 @@ jobs:
           git clone https://github.com/Microsoft/vcpkg.git
         }
         cd vcpkg
+        
+        # Get the latest commit SHA for the baseline
+        $latestCommit = git rev-parse HEAD
+        Write-Host "Latest vcpkg commit: $latestCommit"
+        
+        # Update vcpkg.json with current baseline if needed
+        $vcpkgJsonPath = "${{ github.workspace }}\vcpkg.json"
+        if (Test-Path $vcpkgJsonPath) {
+          $vcpkgJson = Get-Content $vcpkgJsonPath | ConvertFrom-Json
+          $vcpkgJson.'builtin-baseline' = $latestCommit
+          $vcpkgJson | ConvertTo-Json -Depth 10 | Set-Content $vcpkgJsonPath
+          Write-Host "Updated vcpkg.json baseline to: $latestCommit"
+        }
+        
         .\bootstrap-vcpkg.bat
         # Add vcpkg to PATH and set environment variable
         echo "${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
@@ -56,7 +70,15 @@ jobs:
       run: |
         cd vcpkg
         .\vcpkg integrate install
-        .\vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows --recurse
+        
+        # Use manifest mode - vcpkg will read vcpkg.json automatically
+        cd "${{ github.workspace }}"
+        
+        # Install dependencies from vcpkg.json manifest
+        ${{ github.workspace }}\vcpkg\vcpkg install --triplet=x64-windows
+        
+        Write-Host "Installed packages:"
+        ${{ github.workspace }}\vcpkg\vcpkg list
       shell: pwsh
 
     - name: Configure CMake
