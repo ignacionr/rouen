@@ -4,9 +4,20 @@
 #include <chrono>
 #include <filesystem>
 #include <thread>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <unistd.h>
+
+// Platform-specific socket headers
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    // Windows doesn't have Unix domain sockets in the same way
+    // We'll need to use named pipes or TCP sockets as alternatives
+#else
+    #include <sys/socket.h>
+    #include <sys/un.h>
+    #include <unistd.h>
+#endif
+
 #include "debug.hpp"
 
 // MPV component logging macros
@@ -26,7 +37,11 @@
 // Helper class to handle MPV player interaction via socket
 class mpv_socket_helper {
 private:
+#ifdef _WIN32
+    SOCKET socket_fd{INVALID_SOCKET};
+#else
     int socket_fd{-1};
+#endif
     std::string socket_path;
     bool using_fd_socket{false}; // Flag to indicate if we're using direct FD socket
 
@@ -37,10 +52,17 @@ public:
     }
 
     void close_socket() {
+#ifdef _WIN32
+        if (socket_fd != INVALID_SOCKET) {
+            closesocket(socket_fd);
+            socket_fd = INVALID_SOCKET;
+        }
+#else
         if (socket_fd >= 0) {
             close(socket_fd);
             socket_fd = -1;
         }
+#endif
         
         // Remove socket file if it exists and we're using path-based socket
         if (!using_fd_socket && !socket_path.empty() && std::filesystem::exists(socket_path)) {

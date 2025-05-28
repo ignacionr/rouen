@@ -42,7 +42,7 @@
 
 // Convenience macro for component logging
 #define LOG_COMPONENT(component, level, message) \
-    if (level <= ROUEN_LOG_LEVEL) { \
+    if constexpr (level <= ROUEN_LOG_LEVEL) { \
         std::cerr << "[" << component << "][" << \
         (level == LOG_LEVEL_ERROR ? "ERROR" : \
          level == LOG_LEVEL_WARN ? "WARN" : \
