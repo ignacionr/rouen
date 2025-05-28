@@ -11,6 +11,10 @@
 #ifdef __APPLE__
 #include "../../helpers/compat/sysinfo.hpp" // macOS compatibility layer
 #include <sys/mount.h> // for statfs (macOS equivalent of statvfs)
+#elif defined(_WIN32)
+#include <windows.h>
+#include <psapi.h>
+#include <tlhelp32.h>
 #else
 #include <sys/sysinfo.h>
 #include <sys/statvfs.h>
@@ -50,6 +54,17 @@ struct sysinfo_card : public card {
     
     // Get memory information (total, used, free)
     std::tuple<double, double, double> get_memory_info() {
+#ifdef _WIN32
+        MEMORYSTATUSEX memStatus;
+        memStatus.dwLength = sizeof(memStatus);
+        if (GlobalMemoryStatusEx(&memStatus)) {
+            double total = static_cast<double>(memStatus.ullTotalPhys) / (1024.0 * 1024.0 * 1024.0); // Total RAM in GB
+            double free = static_cast<double>(memStatus.ullAvailPhys) / (1024.0 * 1024.0 * 1024.0);  // Available RAM in GB
+            double used = total - free; // Used RAM in GB
+            return {total, used, free};
+        }
+        return {0.0, 0.0, 0.0};
+#else
         struct sysinfo memInfo;
         sysinfo(&memInfo);
         
@@ -58,31 +73,89 @@ struct sysinfo_card : public card {
         double used = total - free; // Used RAM in GB
         
         return {total, used, free};
+#endif
     }
     
     // Get disk space information (total, used, free)
     std::tuple<double, double, double> get_disk_info(const std::string& path = "/") {
-#ifdef __APPLE__
+#ifdef _WIN32
+        // Windows: Use GetDiskFreeSpaceEx for C: drive by default
+        std::string drive_path = (path == "/") ? "C:\\" : path;
+        ULARGE_INTEGER freeBytesAvailable, totalNumberOfBytes, totalNumberOfFreeBytes;
+        
+        if (GetDiskFreeSpaceExA(drive_path.c_str(), &freeBytesAvailable, &totalNumberOfBytes, &totalNumberOfFreeBytes)) {
+            double total = static_cast<double>(totalNumberOfBytes.QuadPart) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
+            double free = static_cast<double>(totalNumberOfFreeBytes.QuadPart) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
+            double used = total - free; // Used space in GB
+            return {total, used, free};
+        }
+        return {0.0, 0.0, 0.0};
+#elif defined(__APPLE__)
         struct statfs stat;
         statfs(path.c_str(), &stat);
         
         double total = static_cast<double>(stat.f_blocks) * static_cast<double>(stat.f_bsize) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
         double free = static_cast<double>(stat.f_bfree) * static_cast<double>(stat.f_bsize) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
+        double used = total - free; // Used space in GB
+        return {total, used, free};
 #else
         struct statvfs stat;
         statvfs(path.c_str(), &stat);
         
         double total = static_cast<double>(stat.f_blocks) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0); // Total space in GB
         double free = static_cast<double>(stat.f_bfree) * static_cast<double>(stat.f_frsize) / (1024.0 * 1024.0 * 1024.0);  // Free space in GB
-#endif
         double used = total - free; // Used space in GB
-        
         return {total, used, free};
+#endif
     }
     
     // Get CPU usage in percentage
     double get_cpu_usage() {
-#ifdef __APPLE__
+#ifdef _WIN32
+        // Windows CPU usage calculation using Performance Data Helper (PDH)
+        static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
+        static int numProcessors = 0;
+        static HANDLE self = GetCurrentProcess();
+        static bool first_run = true;
+
+        if (first_run) {
+            SYSTEM_INFO sysInfo;
+            FILETIME ftime, fsys, fuser;
+
+            GetSystemInfo(&sysInfo);
+            numProcessors = sysInfo.dwNumberOfProcessors;
+
+            GetSystemTimeAsFileTime(&ftime);
+            memcpy(&lastCPU, &ftime, sizeof(FILETIME));
+
+            GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+            memcpy(&lastSysCPU, &fsys, sizeof(FILETIME));
+            memcpy(&lastUserCPU, &fuser, sizeof(FILETIME));
+            first_run = false;
+            return 0.0;
+        }
+
+        FILETIME ftime, fsys, fuser;
+        ULARGE_INTEGER now, sys, user;
+        double percent;
+
+        GetSystemTimeAsFileTime(&ftime);
+        memcpy(&now, &ftime, sizeof(FILETIME));
+
+        GetProcessTimes(self, &ftime, &ftime, &fsys, &fuser);
+        memcpy(&sys, &fsys, sizeof(FILETIME));
+        memcpy(&user, &fuser, sizeof(FILETIME));
+
+        percent = static_cast<double>(sys.QuadPart - lastSysCPU.QuadPart) +
+                  static_cast<double>(user.QuadPart - lastUserCPU.QuadPart);
+        percent /= static_cast<double>(now.QuadPart - lastCPU.QuadPart);
+        percent /= numProcessors;
+        lastCPU = now;
+        lastUserCPU = user;
+        lastSysCPU = sys;
+
+        return percent * 100.0;
+#elif defined(__APPLE__)
         // macOS CPU usage calculation
         static host_cpu_load_info_data_t prev_cpu_load;
         host_cpu_load_info_data_t cpu_load;
@@ -172,6 +245,45 @@ struct sysinfo_card : public card {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::Text("%s", label);
     }
+
+    // Get system uptime in seconds
+    long get_system_uptime() {
+#ifdef _WIN32
+        return static_cast<long>(GetTickCount64() / 1000);
+#elif defined(__APPLE__) || defined(__linux__)
+        struct sysinfo si;
+        sysinfo(&si);
+        return si.uptime;
+#else
+        return 0;
+#endif
+    }
+
+    // Get number of running processes
+    int get_process_count() {
+#ifdef _WIN32
+        int process_count = 0;
+        HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hProcessSnap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32 pe32;
+            pe32.dwSize = sizeof(PROCESSENTRY32);
+            
+            if (Process32First(hProcessSnap, &pe32)) {
+                do {
+                    process_count++;
+                } while (Process32Next(hProcessSnap, &pe32));
+            }
+            CloseHandle(hProcessSnap);
+        }
+        return process_count;
+#elif defined(__APPLE__) || defined(__linux__)
+        struct sysinfo si;
+        sysinfo(&si);
+        return si.procs;
+#else
+        return 0;
+#endif
+    }
     
     bool render() override {
         return render_window([this]() {
@@ -185,12 +297,11 @@ struct sysinfo_card : public card {
             }
             
             // System uptime information
-            struct sysinfo si;
-            sysinfo(&si);
-            long days = si.uptime / (60 * 60 * 24);
-            int hours = static_cast<int>((si.uptime / (60 * 60)) % 24);
-            int minutes = static_cast<int>((si.uptime / 60) % 60);
-            int seconds = static_cast<int>(si.uptime % 60);
+            long uptime_seconds = get_system_uptime();
+            long days = uptime_seconds / (60 * 60 * 24);
+            int hours = static_cast<int>((uptime_seconds / (60 * 60)) % 24);
+            int minutes = static_cast<int>((uptime_seconds / 60) % 60);
+            int seconds = static_cast<int>(uptime_seconds % 60);
             
             ImGui::Text("System Uptime: %ld days, %d:%02d:%02d", days, hours, minutes, seconds);
             ImGui::Separator();
@@ -217,7 +328,8 @@ struct sysinfo_card : public card {
             draw_progress_bar("CPU", static_cast<float>(cpu_usage / 100.0), cpu_text.c_str());
             
             // Display number of processes
-            ImGui::Text("Running Processes: %d", si.procs);
+            int process_count = get_process_count();
+            ImGui::Text("Running Processes: %d", process_count);
         });
     }
     

@@ -43,6 +43,8 @@ if(WIN32)
         winmm
         version
         setupapi
+        psapi       # For memory and process information
+        kernel32    # For system time and process APIs
     )
     
     # Handle DLL copying for vcpkg dependencies

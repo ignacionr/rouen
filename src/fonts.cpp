@@ -33,6 +33,14 @@ namespace rouen::fonts {
         paths.push_back("/Library/Fonts/");
         paths.push_back("/Users/ignaciorodriguez/Library/Fonts/");  // User fonts
         paths.push_back("/opt/homebrew/share/fonts/");              // Homebrew fonts location
+        #elif defined(_WIN32)
+        // Windows font paths
+        paths.push_back("C:/Windows/Fonts/");
+        // User fonts directory
+        std::string userprofile = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
+        if (!userprofile.empty()) {
+            paths.push_back(userprofile + "/AppData/Local/Microsoft/Windows/Fonts/");
+        }
         #else
         // Linux font paths
         paths.push_back("/usr/share/fonts/truetype/dejavu/");

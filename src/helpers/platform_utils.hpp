@@ -36,6 +36,10 @@ namespace rouen::platform
             // macOS uses the 'open' command (ignore background parameter)
             (void)background; // Silence unused parameter warning
             cmd = std::format("open \"{}\"", path);
+        #elif defined(_WIN32)
+            // Windows uses the 'start' command
+            (void)background; // Background is default behavior on Windows
+            cmd = std::format("start \"\" \"{}\"", path);
         #else
             // Linux and others use xdg-open
             cmd = std::format("xdg-open \"{}\"", path);
@@ -105,6 +109,17 @@ namespace rouen::platform
                 exec_path = std::filesystem::path(std::string(result, count)).parent_path();
             } else {
                 // Fallback to current path if readlink fails
+                exec_path = current_path;
+            }
+        }
+        #elif defined(_WIN32)
+        {
+            char path[MAX_PATH];
+            DWORD length = GetModuleFileNameA(NULL, path, MAX_PATH);
+            if (length > 0 && length < MAX_PATH) {
+                exec_path = std::filesystem::path(path).parent_path();
+            } else {
+                // Fallback to current path if GetModuleFileName fails
                 exec_path = current_path;
             }
         }
@@ -189,28 +204,46 @@ namespace rouen::platform
     {
         std::filesystem::path user_data_dir;
         
-        // Get user's home directory
-        std::string home_dir = get_env("HOME");
-        if (home_dir.empty()) {
-            // Fallback if HOME is not available
-            #if defined(_WIN32)
-                home_dir = get_env("USERPROFILE");
-            #else
-                // This is unlikely but provides a safeguard
-                home_dir = ".";
-            #endif
-        }
-        
         // Create platform-specific user data directory
         #if defined(__APPLE__)
             // macOS: ~/Library/Application Support/Rouen/
-            user_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
+            std::string home_dir = get_env("HOME");
+            if (!home_dir.empty()) {
+                user_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
+            } else {
+                user_data_dir = std::filesystem::path(".") / ".rouen";
+            }
         #elif defined(__linux__)
             // Linux: ~/.local/share/rouen/
-            user_data_dir = std::filesystem::path(home_dir) / ".local" / "share" / "rouen";
+            std::string home_dir = get_env("HOME");
+            if (!home_dir.empty()) {
+                user_data_dir = std::filesystem::path(home_dir) / ".local" / "share" / "rouen";
+            } else {
+                user_data_dir = std::filesystem::path(".") / ".rouen";
+            }
+        #elif defined(_WIN32)
+            // Windows: Use APPDATA environment variable for user-specific application data
+            std::string appdata = get_env("APPDATA");
+            if (!appdata.empty()) {
+                user_data_dir = std::filesystem::path(appdata) / "Rouen";
+            } else {
+                // Fallback to USERPROFILE if APPDATA is not available
+                std::string userprofile = get_env("USERPROFILE");
+                if (!userprofile.empty()) {
+                    user_data_dir = std::filesystem::path(userprofile) / "AppData" / "Roaming" / "Rouen";
+                } else {
+                    // Last resort fallback
+                    user_data_dir = std::filesystem::path(".") / ".rouen";
+                }
+            }
         #else
             // Fallback for other platforms: ~/.rouen/
-            user_data_dir = std::filesystem::path(home_dir) / ".rouen";
+            std::string home_dir = get_env("HOME");
+            if (!home_dir.empty()) {
+                user_data_dir = std::filesystem::path(home_dir) / ".rouen";
+            } else {
+                user_data_dir = std::filesystem::path(".") / ".rouen";
+            }
         #endif
         
         // Create directories if requested and they don't exist
