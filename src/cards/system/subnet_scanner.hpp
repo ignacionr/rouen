@@ -15,13 +15,23 @@
 #include <random>       // For std::random_device, std::mt19937, and std::shuffle
 #include <unordered_map> // For std::unordered_map
 
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <ifaddrs.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <fcntl.h>
+// Platform-specific network headers
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <iphlpapi.h>
+    #include <windows.h>
+    #pragma comment(lib, "ws2_32.lib")
+    #pragma comment(lib, "iphlpapi.lib")
+#else
+    #include <arpa/inet.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <ifaddrs.h>
+    #include <unistd.h>
+    #include <netdb.h>
+    #include <fcntl.h>
+#endif
 
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
@@ -134,6 +144,17 @@ public:
     subnet_scanner() 
         : thread_pool(std::thread::hardware_concurrency() > 0 ? 
                      std::thread::hardware_concurrency() : 4) {
+#ifdef _WIN32
+        // Initialize Winsock
+        WSADATA wsaData;
+        int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+        if (result != 0) {
+            NET_ERROR_FMT("WSAStartup failed with error: {}", result);
+        } else {
+            NET_INFO("Winsock initialized successfully");
+        }
+#endif
+        
         // Set custom colors for the card
         colors[0] = {0.2f, 0.4f, 0.6f, 1.0f};   // Blue primary color
         colors[1] = {0.3f, 0.5f, 0.7f, 0.7f};   // Light blue secondary color
@@ -155,6 +176,11 @@ public:
     
     ~subnet_scanner() override {
         stop_scan();
+#ifdef _WIN32
+        // Cleanup Winsock
+        WSACleanup();
+        NET_INFO("Winsock cleanup completed");
+#endif
     }
     
     bool render() override {
@@ -317,7 +343,92 @@ private:
         interfaces.clear();
         current_interface.clear();
         selected_subnet.clear();
+
+#ifdef _WIN32
+        // Windows implementation using GetAdaptersAddresses
+        ULONG outBufLen = 15000;
+        PIP_ADAPTER_ADDRESSES pAddresses = nullptr;
         
+        do {
+            pAddresses = (IP_ADAPTER_ADDRESSES*)malloc(outBufLen);
+            if (pAddresses == nullptr) {
+                NET_ERROR("Memory allocation failed for GetAdaptersAddresses");
+                return;
+            }
+
+            DWORD dwRetVal = GetAdaptersAddresses(AF_INET, 
+                GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                nullptr, pAddresses, &outBufLen);
+
+            if (dwRetVal == ERROR_BUFFER_OVERFLOW) {
+                free(pAddresses);
+                pAddresses = nullptr;
+            } else {
+                break;
+            }
+        } while (true);
+
+        if (pAddresses == nullptr) {
+            NET_ERROR("Failed to get adapter addresses");
+            return;
+        }
+
+        PIP_ADAPTER_ADDRESSES pCurrAddresses = pAddresses;
+        while (pCurrAddresses) {
+            if (pCurrAddresses->OperStatus == IfOperStatusUp) {
+                PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pCurrAddresses->FirstUnicastAddress;
+                while (pUnicast) {
+                    if (pUnicast->Address.lpSockaddr->sa_family == AF_INET) {
+                        struct sockaddr_in* sockaddr_ipv4 = (struct sockaddr_in*)pUnicast->Address.lpSockaddr;
+                        
+                        char ip[INET_ADDRSTRLEN];
+                        inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
+                        
+                        // Skip loopback interfaces
+                        if (strcmp(ip, "127.0.0.1") == 0) {
+                            pUnicast = pUnicast->Next;
+                            continue;
+                        }
+                        
+                        // Calculate subnet from prefix length
+                        UINT8 prefixLength = pUnicast->OnLinkPrefixLength;
+                        if (prefixLength > 0 && prefixLength <= 32) {
+                            UINT32 mask = 0xFFFFFFFF << (32 - prefixLength);
+                            UINT32 ip_int = ntohl(sockaddr_ipv4->sin_addr.s_addr);
+                            UINT32 network_int = ip_int & mask;
+                            
+                            struct in_addr network_addr;
+                            network_addr.s_addr = htonl(network_int);
+                            
+                            char network[INET_ADDRSTRLEN];
+                            inet_ntop(AF_INET, &network_addr, network, INET_ADDRSTRLEN);
+                            
+                            std::string subnet = std::format("{}/{}", network, prefixLength);
+                            
+                            // Convert wide string to regular string for interface name
+                            int size_needed = WideCharToMultiByte(CP_UTF8, 0, pCurrAddresses->FriendlyName, -1, nullptr, 0, nullptr, nullptr);
+                            std::string interface_name(size_needed - 1, 0);
+                            WideCharToMultiByte(CP_UTF8, 0, pCurrAddresses->FriendlyName, -1, &interface_name[0], size_needed, nullptr, nullptr);
+                            
+                            std::string display_name = std::format("{} ({})", interface_name, ip);
+                            interfaces[display_name] = subnet;
+                            
+                            // Select first non-loopback interface by default
+                            if (current_interface.empty()) {
+                                current_interface = display_name;
+                                selected_subnet = subnet;
+                            }
+                        }
+                    }
+                    pUnicast = pUnicast->Next;
+                }
+            }
+            pCurrAddresses = pCurrAddresses->Next;
+        }
+        
+        free(pAddresses);
+#else
+        // Unix implementation using getifaddrs
         struct ifaddrs *ifaddr, *ifa;
         
         if (getifaddrs(&ifaddr) == -1) {
@@ -375,6 +486,7 @@ private:
         }
         
         freeifaddrs(ifaddr);
+#endif
     }
     
     // Start a network scan
@@ -517,7 +629,75 @@ private:
     
     // Try connecting to a specific port with timeout
     bool try_port(const char* ip_str, int port) {
-        // Create the socket
+#ifdef _WIN32
+        // Windows implementation
+        SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == INVALID_SOCKET) {
+            return false;
+        }
+        
+        // Set the socket to non-blocking mode
+        unsigned long mode = 1;
+        if (ioctlsocket(sock, FIONBIO, &mode) != 0) {
+            closesocket(sock);
+            return false;
+        }
+        
+        // Prepare the address
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        inet_pton(AF_INET, ip_str, &addr.sin_addr);
+        
+        // Attempt to connect (non-blocking)
+        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        
+        // Handle the non-blocking connect
+        if (result == SOCKET_ERROR) {
+            int error = WSAGetLastError();
+            if (error == WSAEWOULDBLOCK) {
+                // Use select with timeout to wait for connection
+                fd_set write_fds;
+                FD_ZERO(&write_fds);
+                FD_SET(sock, &write_fds);
+                
+                // Prepare timeout
+                struct timeval timeout;
+                timeout.tv_sec = ping_timeout_ms / 1000;
+                timeout.tv_usec = (ping_timeout_ms % 1000) * 1000;
+                
+                // Wait for the socket to become writable (connection complete) or timeout
+                result = select(0, nullptr, &write_fds, nullptr, &timeout);
+                
+                if (result > 0) {
+                    // Socket became writable, but we need to check if connection succeeded
+                    int connect_error = 0;
+                    int len = sizeof(connect_error);
+                    if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&connect_error, &len) == SOCKET_ERROR || connect_error) {
+                        // Connection failed
+                        closesocket(sock);
+                        return false;
+                    }
+                    // Connection succeeded
+                    closesocket(sock);
+                    return true;
+                } else {
+                    // Timeout or error
+                    closesocket(sock);
+                    return false;
+                }
+            } else {
+                // Immediate connection failure
+                closesocket(sock);
+                return false;
+            }
+        } else {
+            // Immediate connection success (rare but possible)
+            closesocket(sock);
+            return true;
+        }
+#else
+        // Unix implementation
         int sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
             return false;
@@ -579,6 +759,7 @@ private:
             close(sock);
             return true;
         }
+#endif
     }
     
     bool ping_host_with_ports(const char* ip_str) {
@@ -601,7 +782,11 @@ private:
         
         // As a fallback, try ICMP ping using the system's ping command
         // Use a short timeout for the ping command as well
+#ifdef _WIN32
+        std::string cmd = std::format("ping -n 1 -w 1000 {} >nul 2>&1", ip_str);
+#else
         std::string cmd = std::format("ping -c 1 -W 1 {} > /dev/null 2>&1", ip_str);
+#endif
         int ping_result = system(cmd.c_str());
         
         return (ping_result == 0);

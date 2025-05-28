@@ -73,11 +73,18 @@ public:
     // For direct file descriptor socket approach
     void set_socket_fd(int fd) {
         // Close any existing socket first
+#ifdef _WIN32
+        if (socket_fd != INVALID_SOCKET) {
+            closesocket(socket_fd);
+        }
+        socket_fd = static_cast<SOCKET>(fd);
+#else
         if (socket_fd >= 0) {
             close(socket_fd);
         }
-        
         socket_fd = fd;
+#endif
+        
         using_fd_socket = true;
         socket_path.clear(); // Not using path-based socket
         
@@ -183,6 +190,12 @@ public:
             return false;
         }
         
+#ifdef _WIN32
+        // Windows doesn't support Unix domain sockets natively
+        // We'll use TCP sockets as an alternative for Windows
+        MPV_WARN("Windows doesn't support Unix domain sockets - MPV socket communication disabled");
+        return false;
+#else
         // Create socket
         socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (socket_fd == -1) {
@@ -273,9 +286,15 @@ public:
         
         MPV_INFO("Connection test successful - socket is properly initialized");
         return true;
+#endif // !_WIN32
     }
     
     bool send_command(const std::string& command) {
+#ifdef _WIN32
+        // Windows socket communication not supported yet
+        MPV_WARN("MPV socket communication not available on Windows");
+        return false;
+#else
         // First check if the socket is valid
         if (socket_fd < 0) {
             MPV_WARN("Cannot send command - socket not connected");
@@ -359,9 +378,15 @@ public:
         }
         
         return true;
+#endif // !_WIN32
     }
     
     bool receive_response(char* buffer, size_t buffer_size, int timeout_ms = 200) {
+#ifdef _WIN32
+        // Windows socket communication not supported yet
+        MPV_WARN("MPV socket communication not available on Windows");
+        return false;
+#else
         if (socket_fd < 0) {
             MPV_ERROR("Attempted to receive from invalid socket");
             return false;
@@ -443,13 +468,22 @@ public:
         
         // Return true if we received any data at all
         return total_bytes_read > 0;
+#endif // !_WIN32
     }
     
     bool is_connected() const {
+#ifdef _WIN32
+        return socket_fd != INVALID_SOCKET;
+#else
         return socket_fd >= 0;
+#endif
     }
     
     bool test_connection() {
+#ifdef _WIN32
+        // Windows socket communication not supported yet
+        return false;
+#else
         if (socket_fd < 0) {
             MPV_WARN("Socket test failed: invalid socket descriptor");
             return false;
@@ -520,10 +554,15 @@ public:
         
         MPV_ERROR("Socket test failed after multiple attempts");
         return false;
+#endif // !_WIN32
     }
     
     int get_socket_fd() const {
+#ifdef _WIN32
+        return static_cast<int>(socket_fd);
+#else
         return socket_fd;
+#endif
     }
     
     const std::string& get_socket_path() const {

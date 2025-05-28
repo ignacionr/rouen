@@ -247,7 +247,7 @@ public:
         try {
             // Use the RSSHost controller to add the feed
             return rss_host->addFeed(url);
-        } catch (const std::exception& e) {
+        } catch (const std::exception&) {
             // Handle error (could show in UI)
             return false;
         }

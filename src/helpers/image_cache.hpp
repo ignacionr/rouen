@@ -126,7 +126,7 @@ public:
             std::filesystem::remove(temp_path);
             return nullptr;
         }
-        catch (const std::exception& e) {
+        catch (const std::exception&) {
             return nullptr;
         }
     }

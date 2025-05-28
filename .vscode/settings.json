@@ -90,7 +90,9 @@
         "csignal": "cpp",
         "execution": "cpp",
         "__hash_table": "cpp",
-        "__locale": "cpp"
+        "__locale": "cpp",
+        "*.inc": "cpp",
+        "locale": "cpp"
     },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",

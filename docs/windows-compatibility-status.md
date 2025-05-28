@@ -33,6 +33,15 @@ Rouen has **complete Windows compatibility** with comprehensive native Windows A
 - **User Font Support**: Windows user font directory support (`%USERPROFILE%/AppData/Local/Microsoft/Windows/Fonts/`)
 - **Path Conversion**: Proper filesystem path to string conversion for Windows compatibility
 
+### Network Operations
+
+**✅ Windows Network API Integration:**
+- **Socket Operations**: Native Winsock2 support with proper initialization/cleanup (`WSAStartup`/`WSACleanup`)
+- **Interface Detection**: Windows `GetAdaptersAddresses()` API for network interface enumeration
+- **Network Scanning**: Windows-compatible socket operations with `ioctlsocket()` for non-blocking mode
+- **Command Integration**: Windows `ping` command support (`ping -n` vs Unix `ping -c`)
+- **Cross-platform Compatibility**: Unified socket interface supporting both Windows and Unix systems
+
 ### Build System
 
 **✅ Complete Windows Build Support:**
@@ -115,6 +124,8 @@ All dependencies are automatically managed through vcpkg with proper Windows con
 | File Operations | ✅ Complete | Windows commands + APIs |
 | User Directories | ✅ Complete | APPDATA/USERPROFILE |
 | Font System | ✅ Complete | Windows font directories |
+| Network Operations | ✅ Complete | Winsock2 + Windows networking APIs |
+| Socket Communications | ✅ Complete | Cross-platform socket abstraction |
 | Build System | ✅ Complete | CMake + vcpkg + MSVC |
 | CI/CD | ✅ Complete | GitHub Actions |
 | Package Management | ✅ Complete | vcpkg manifest mode |
