@@ -94,13 +94,16 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         flags = fcntl(bash_stderr_fd, F_GETFL, 0);
         fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
         
+        // Reset stop flag before starting threads
+        should_stop_threads = false;
+        
         // Start reader threads for bash output
-        bash_stdout_reader_thread = std::jthread([this, &output](std::stop_token stoken) {
-            read_bash_stream(stoken, bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
+        bash_stdout_reader_thread = std::thread([this, &output]() {
+            read_bash_stream(bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
-        bash_stderr_reader_thread = std::jthread([this, &output](std::stop_token stoken) {
-            read_bash_stream(stoken, bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
+        bash_stderr_reader_thread = std::thread([this, &output]() {
+            read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
         // Customize bash environment - use PS1 that doesn't have job control messages
@@ -122,14 +125,15 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
 void TerminalBash::terminate_bash_session() {
 #ifndef _WIN32
     if (bash_pid > 0) {
+        // Signal threads to stop
+        should_stop_threads = true;
+        
         // Stop reader threads
         if (bash_stdout_reader_thread.joinable()) {
-            bash_stdout_reader_thread.request_stop();
             bash_stdout_reader_thread.join();
         }
         
         if (bash_stderr_reader_thread.joinable()) {
-            bash_stderr_reader_thread.request_stop();
             bash_stderr_reader_thread.join();
         }
         
@@ -232,7 +236,7 @@ std::string TerminalBash::update_cwd_from_bash() {
     return current_working_dir;
 }
 
-void TerminalBash::read_bash_stream(std::stop_token stoken, int pipe_fd, OutputType output_type, 
+void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type, 
                                     TerminalOutput& output, bool& is_command_running) {
 #ifndef _WIN32
     if (pipe_fd < 0) return;
@@ -246,7 +250,7 @@ void TerminalBash::read_bash_stream(std::stop_token stoken, int pipe_fd, OutputT
     pfd.fd = pipe_fd;
     pfd.events = POLLIN;
     
-    while (!stoken.stop_requested()) {
+    while (!should_stop_threads.load()) {
         // Poll with a short timeout
         int poll_result = poll(&pfd, 1, 10); // 10ms timeout
         
@@ -442,13 +446,16 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         std::string pass_str = std::string(password) + "\n";
         write(bash_stdin_fd, pass_str.c_str(), pass_str.length());
         
+        // Reset stop flag before starting threads
+        should_stop_threads = false;
+        
         // Start reader threads for bash output
-        bash_stdout_reader_thread = std::jthread([this, &output](std::stop_token stoken) {
-            read_bash_stream(stoken, bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
+        bash_stdout_reader_thread = std::thread([this, &output]() {
+            read_bash_stream(bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
-        bash_stderr_reader_thread = std::jthread([this, &output](std::stop_token stoken) {
-            read_bash_stream(stoken, bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
+        bash_stderr_reader_thread = std::thread([this, &output]() {
+            read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
         // Set up the environment for the sudo session

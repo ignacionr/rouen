@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <glaze/glaze.hpp>
+#include "../../helpers/glaze_include.hpp"
 #include "email_metadata.hpp"
 
 namespace mail {

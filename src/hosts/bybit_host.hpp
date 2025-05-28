@@ -10,7 +10,7 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdlib>
-#include <glaze/glaze.hpp>
+#include "../helpers/glaze_include.hpp"
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
 #include <iomanip>

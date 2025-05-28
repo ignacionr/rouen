@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <glaze/json.hpp>
+#include "../glaze_include.hpp"
 #include "../imgui_include.hpp"
 
 namespace rouen::helpers::views {

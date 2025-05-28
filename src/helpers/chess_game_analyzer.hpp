@@ -6,7 +6,7 @@
 #include <memory>
 #include <optional>
 
-#include <glaze/glaze.hpp>
+#include "glaze_include.hpp"
 
 #include "cppgpt.hpp"
 #include "fetch.hpp"

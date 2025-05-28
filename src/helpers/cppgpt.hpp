@@ -10,7 +10,7 @@
 #include <vector>
 #include <string_view>
 
-#include <glaze/glaze.hpp>
+#include "glaze_include.hpp"
 
 namespace ignacionr
 {

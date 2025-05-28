@@ -166,8 +166,9 @@ target_link_libraries(imgui PUBLIC
   ${OPENGL_LIBRARIES}
 )
 
-# Disable specific warnings for ImGui to prevent -Wnontrivial-memcall warnings
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+# Disable specific warnings for ImGui to prevent warnings
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+  # Only apply for non-Apple Clang that supports the nontrivial-memcall flag
   target_compile_options(imgui PRIVATE -Wno-nontrivial-memcall)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   # GCC equivalent if needed

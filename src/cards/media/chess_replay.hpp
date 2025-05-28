@@ -12,7 +12,7 @@
 #include <map>
 #include <future>
 #include <cmath>
-#include <glaze/json.hpp>
+#include "../../helpers/glaze_include.hpp"
 
 #include "../../helpers/imgui_include.hpp"
 #include <SDL.h>

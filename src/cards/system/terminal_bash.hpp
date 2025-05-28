@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <format>
 #include <fstream>
 #include <cstring>
@@ -60,7 +61,7 @@ public:
 
 private:
     // Reader thread for bash output stream (stdout or stderr)
-    void read_bash_stream(std::stop_token stoken, int pipe_fd, OutputType output_type, 
+    void read_bash_stream(int pipe_fd, OutputType output_type, 
                          TerminalOutput& output, bool& is_command_running);
                          
     bool use_interactive_bash = false;
@@ -70,8 +71,9 @@ private:
     int bash_stdin_fd = -1;
     int bash_stdout_fd = -1;
     int bash_stderr_fd = -1;
-    std::jthread bash_stdout_reader_thread;
-    std::jthread bash_stderr_reader_thread;
+    std::thread bash_stdout_reader_thread;
+    std::thread bash_stderr_reader_thread;
+    std::atomic<bool> should_stop_threads{false};
 #endif
 
     // Output reference (set during initialization)

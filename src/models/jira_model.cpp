@@ -1,5 +1,5 @@
 #include "jira_model.hpp"
-#include <glaze/json.hpp>
+#include "../helpers/glaze_include.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <fstream>

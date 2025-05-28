@@ -145,10 +145,11 @@ void TerminalCommands::execute_external_command(const std::string& command,
         }
     }
     
-    // Start background thread to read the output
-    output_reader_thread = std::jthread([this, &output](std::stop_token stoken) {
+    // Reset stop flag and start background thread to read the output
+    should_stop_thread = false;
+    output_reader_thread = std::thread([this, &output]() {
         char buffer[4096];
-        while (!stoken.stop_requested()) {
+        while (!should_stop_thread.load()) {
             // Safely access the command_pipe with proper synchronization
             FILE* pipe_to_read = nullptr;
             {
@@ -216,7 +217,7 @@ void TerminalCommands::check_command_output(bool use_interactive_bash, bool& is_
                 
                 // Terminate the reader thread
                 if (output_reader_thread.joinable()) {
-                    output_reader_thread.request_stop();
+                    should_stop_thread = true;
                 }
             }
         }
@@ -227,7 +228,7 @@ void TerminalCommands::terminate_current_process(bool& is_command_running) {
     if (is_command_running) {
         // Ask the thread to stop
         if (output_reader_thread.joinable()) {
-            output_reader_thread.request_stop();
+            should_stop_thread = true;
             
             // Give the thread a moment to notice the stop request
             std::this_thread::sleep_for(std::chrono::milliseconds(50));

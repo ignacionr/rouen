@@ -3,6 +3,7 @@
 #include <string>
 #include <mutex>
 #include <thread>
+#include <atomic>
 #include <format>
 #include <cstring>
 
@@ -57,7 +58,8 @@ private:
     // Command pipe for non-interactive mode
     FILE* command_pipe = nullptr;
     std::mutex command_pipe_mutex;
-    std::jthread output_reader_thread;
+    std::thread output_reader_thread;
+    std::atomic<bool> should_stop_thread{false};
 };
 
 } // namespace rouen::cards

@@ -7,7 +7,7 @@
 #include <chrono>
 #include <optional>
 #include <utility>
-#include <glaze/json.hpp>
+#include "glaze_include.hpp"
 #include <regex>
 
 #include "debug.hpp"

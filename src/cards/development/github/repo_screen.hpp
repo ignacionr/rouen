@@ -4,7 +4,7 @@
 #include <string>
 
 #include "../../../helpers/imgui_include.hpp"
-#include <glaze/json.hpp>
+#include "../../../helpers/glaze_include.hpp"
 
 #include "../../../models/github/host.hpp"
 #include "../../../helpers/views/json_view.hpp"

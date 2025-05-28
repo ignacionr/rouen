@@ -1,7 +1,8 @@
 # macOS-specific configuration
 
 # Disable problematic warnings as errors for macOS builds
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion -Wno-error=implicit-fallthrough -Wno-error=nontrivial-memcall -Wno-error=implicit-int-float-conversion")
+# Note: -Wno-error=nontrivial-memcall is not supported by Apple Clang, removing it
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion -Wno-error=implicit-fallthrough -Wno-error=implicit-int-float-conversion")
 
 # Add macOS-specific debug flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

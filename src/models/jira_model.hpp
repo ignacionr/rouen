@@ -11,7 +11,7 @@
 #include "../helpers/debug.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/platform_utils.hpp"
-#include <glaze/glaze.hpp>
+#include "../helpers/glaze_include.hpp"
 
 // Define JIRA-specific logging macros
 #define JIRA_ERROR(message) LOG_COMPONENT("JIRA", LOG_LEVEL_ERROR, message)

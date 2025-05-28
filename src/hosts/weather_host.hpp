@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 #include <optional>
-#include <glaze/glaze.hpp>
+#include "../helpers/glaze_include.hpp"
 
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"

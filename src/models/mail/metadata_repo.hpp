@@ -5,7 +5,7 @@
 #include <optional>
 #include <format>
 
-#include <glaze/glaze.hpp>
+#include "../../helpers/glaze_include.hpp"
 
 #include "../../helpers/sqlite.hpp"
 #include "email_metadata.hpp"

@@ -31,11 +31,11 @@ endif()
 
 # Platform-specific compiler settings
 if(APPLE)
-  # Specify the Homebrew-installed LLVM compiler and libraries for macOS
-  set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
-  set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
+  # Use system clang for better compatibility with macOS headers
+  # set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
+  # set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++")
+  # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++")
 elseif(UNIX AND NOT APPLE)
   # Use clang on Linux if available
   find_program(CLANG_EXECUTABLE clang)
