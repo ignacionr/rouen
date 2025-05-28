@@ -206,13 +206,19 @@ cmake --build . --config Release
 **Automated Windows Builds:**
 
 Windows releases are automatically built and published via GitHub Actions when a new release is created. The workflow:
-- Builds the application using the latest MSVC compiler
+- Builds the application using the latest MSVC compiler and manually bootstrapped vcpkg
 - Includes all required DLLs and dependencies
 - Packages assets, fonts, and configuration files
 - Creates a ready-to-run ZIP archive
 - Publishes as a release artifact
 
 You can also trigger a manual build by running the "Windows Release Build" workflow from the Actions tab.
+
+**Troubleshooting GitHub Actions:**
+- The workflow automatically handles vcpkg setup, so no pre-configuration is needed
+- Build artifacts are always available even if release upload fails
+- Verbose logging helps diagnose any build issues
+- All required dependencies are cached for faster subsequent builds
 
 ### Installation (macOS)
 

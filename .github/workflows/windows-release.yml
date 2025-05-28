@@ -29,30 +29,51 @@ jobs:
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup vcpkg
-      uses: microsoft/setup-vcpkg@v1
-      with:
-        vcpkg-version: 'latest'
+      run: |
+        # Clone vcpkg if not cached
+        if (-not (Test-Path "vcpkg")) {
+          git clone https://github.com/Microsoft/vcpkg.git
+        }
+        cd vcpkg
+        .\bootstrap-vcpkg.bat
+        # Add vcpkg to PATH and set environment variable
+        echo "${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      shell: pwsh
 
     - name: Cache vcpkg packages
       uses: actions/cache@v4
       with:
         path: |
-          ${{ env.VCPKG_ROOT }}/installed
-          ${{ env.VCPKG_ROOT }}/packages
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json', 'cmake/dependencies.cmake') }}
+          ${{ github.workspace }}\vcpkg\installed
+          ${{ github.workspace }}\vcpkg\packages
+          ${{ github.workspace }}\vcpkg\buildtrees
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-v2
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
+          ${{ runner.os }}-vcpkg-v2
 
     - name: Install dependencies via vcpkg
       run: |
-        vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows
+        cd vcpkg
+        .\vcpkg integrate install
+        .\vcpkg install curl[ssl] openssl sqlite3 sdl2 sdl2-image tinyxml2 --triplet=x64-windows --recurse
+      shell: pwsh
 
     - name: Configure CMake
       run: |
-        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{env.VCPKG_ROOT}}/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows
+        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{github.workspace}}/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON
+      shell: pwsh
 
     - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel
+      run: |
+        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel --verbose
+      shell: pwsh
+
+    - name: List build output
+      run: |
+        Write-Host "Build directory contents:"
+        Get-ChildItem -Recurse "${{github.workspace}}/build" -Include "*.exe", "*.dll" | ForEach-Object { Write-Host $_.FullName }
+      shell: pwsh
 
     - name: Package application
       shell: pwsh
@@ -60,22 +81,50 @@ jobs:
         # Create distribution directory
         New-Item -ItemType Directory -Force -Path "${{github.workspace}}/dist"
         
-        # Copy executable
-        Copy-Item "${{github.workspace}}/build/Release/rouen.exe" "${{github.workspace}}/dist/"
+        # Find and copy executable (check both Debug and Release folders)
+        $exePaths = @(
+          "${{github.workspace}}/build/Release/rouen.exe",
+          "${{github.workspace}}/build/Debug/rouen.exe",
+          "${{github.workspace}}/build/rouen.exe"
+        )
+        
+        $exeFound = $false
+        foreach ($exePath in $exePaths) {
+          if (Test-Path $exePath) {
+            Write-Host "Found executable at: $exePath"
+            Copy-Item $exePath "${{github.workspace}}/dist/"
+            $exeFound = $true
+            break
+          }
+        }
+        
+        if (-not $exeFound) {
+          Write-Host "ERROR: Could not find rouen.exe in any expected location"
+          Get-ChildItem -Recurse "${{github.workspace}}/build" -Include "*.exe" | ForEach-Object { Write-Host "Found exe: $($_.FullName)" }
+          exit 1
+        }
         
         # Copy required DLLs from vcpkg (handle errors gracefully)
-        $vcpkgBinPath = "${{env.VCPKG_ROOT}}/installed/x64-windows/bin"
+        $vcpkgBinPath = "${{github.workspace}}/vcpkg/installed/x64-windows/bin"
         if (Test-Path $vcpkgBinPath) {
-          Get-ChildItem "$vcpkgBinPath/*.dll" | Copy-Item -Destination "${{github.workspace}}/dist/" -ErrorAction SilentlyContinue
+          Write-Host "Copying DLLs from: $vcpkgBinPath"
+          Get-ChildItem "$vcpkgBinPath/*.dll" | ForEach-Object { 
+            Write-Host "Copying DLL: $($_.Name)"
+            Copy-Item $_.FullName "${{github.workspace}}/dist/" -ErrorAction SilentlyContinue 
+          }
+        } else {
+          Write-Host "WARNING: vcpkg bin path not found: $vcpkgBinPath"
         }
         
         # Copy assets if they exist
         if (Test-Path "${{github.workspace}}/img") {
           Copy-Item -Recurse "${{github.workspace}}/img" "${{github.workspace}}/dist/"
+          Write-Host "Copied img directory"
         }
         
         if (Test-Path "${{github.workspace}}/external/fonts") {
           Copy-Item -Recurse "${{github.workspace}}/external/fonts" "${{github.workspace}}/dist/"
+          Write-Host "Copied fonts directory"
         }
         
         # Copy individual font files
@@ -86,6 +135,7 @@ jobs:
         foreach ($file in $fontFiles) {
           if (Test-Path $file) {
             Copy-Item $file "${{github.workspace}}/dist/"
+            Write-Host "Copied font file: $(Split-Path -Leaf $file)"
           }
         }
         
@@ -99,8 +149,13 @@ jobs:
         foreach ($file in $configFiles) {
           if (Test-Path $file) {
             Copy-Item $file "${{github.workspace}}/dist/"
+            Write-Host "Copied config file: $(Split-Path -Leaf $file)"
           }
         }
+        
+        # List final distribution contents
+        Write-Host "Final distribution contents:"
+        Get-ChildItem -Recurse "${{github.workspace}}/dist" | ForEach-Object { Write-Host $_.FullName }
 
     - name: Create ZIP archive
       shell: pwsh
@@ -128,12 +183,12 @@ jobs:
     - name: Create release (on workflow_dispatch)
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
       id: create_release
-      uses: actions/create-release@v1
+      uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: v${{ github.run_number }}
-        release_name: Release v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
         body: |
           Automated Windows release build
           
@@ -144,14 +199,4 @@ jobs:
           - Documentation
         draft: false
         prerelease: false
-
-    - name: Upload to new release (on workflow_dispatch)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./rouen-windows-x64.zip
-        asset_name: rouen-windows-x64.zip
-        asset_content_type: application/zip
+        files: rouen-windows-x64.zip

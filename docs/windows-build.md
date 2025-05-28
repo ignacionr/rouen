@@ -13,8 +13,9 @@ The `.github/workflows/windows-release.yml` workflow automatically builds Window
 
 1. **Environment Setup**
    - Uses `windows-latest` runner with MSVC toolchain
-   - Sets up vcpkg package manager
+   - Manually sets up vcpkg package manager (clones and bootstraps)
    - Caches dependencies for faster builds
+   - Integrates vcpkg with the build system
 
 2. **Dependency Installation**
    - Installs all required libraries via vcpkg:
@@ -28,18 +29,22 @@ The `.github/workflows/windows-release.yml` workflow automatically builds Window
    - Configures CMake with vcpkg toolchain
    - Builds in Release mode with optimizations
    - Uses parallel compilation for speed
+   - Includes verbose output for debugging
 
 4. **Packaging**
    - Creates a distribution directory
-   - Copies the executable and all required DLLs
+   - Intelligently finds the executable (handles different build configurations)
+   - Copies the executable and all required DLLs from vcpkg
    - Includes assets (images, fonts, sounds)
-   - Includes configuration files
+   - Includes configuration files and documentation
    - Creates a ZIP archive ready for distribution
+   - Provides detailed logging of the packaging process
 
 5. **Release Publishing**
-   - Uploads the ZIP as a build artifact
-   - Attaches it to the GitHub release (if triggered by release)
-   - Can create a new release (if manually triggered)
+   - Uploads the ZIP as a build artifact (always available)
+   - For release events: Attaches to the existing GitHub release
+   - For manual triggers: Can optionally create a new release using modern `softprops/action-gh-release` action
+   - Provides detailed release notes automatically
 
 ## Manual Windows Building
 
