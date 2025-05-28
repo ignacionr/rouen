@@ -8,6 +8,14 @@
 #include <chrono>
 #include <thread>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <tlhelp32.h>
+#else
+#include <sys/types.h>
+#include <signal.h>
+#endif
+
 #include "../../helpers/imgui_include.hpp"
 
 #include "../interface/card.hpp"
@@ -235,7 +243,13 @@ namespace rouen::cards
             
             // Only attempt to kill if we have a PID
             if (process_pid_ > 0) {
+#ifdef _WIN32
+                // On Windows, use taskkill to terminate the process tree
+                std::string kill_cmd = std::format("taskkill /F /T /PID {}", process_pid_);
+#else
+                // On Unix, use kill to terminate the process group
                 std::string kill_cmd = std::format("kill -TERM -{}", process_pid_);
+#endif
                 
                 // Execute the kill command
                 auto output_func = std::make_shared<std::function<void(std::string)>>(
@@ -412,6 +426,10 @@ namespace rouen::cards
         std::string last_action_;
         bool cmd_running_ = false;
         std::chrono::steady_clock::time_point start_time_;
-        pid_t process_pid_ = 0; // Process ID for tracking the running command
+#ifdef _WIN32
+        DWORD process_pid_ = 0; // Process ID for tracking the running command on Windows
+#else
+        pid_t process_pid_ = 0; // Process ID for tracking the running command on Unix
+#endif
     };
 }

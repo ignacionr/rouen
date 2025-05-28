@@ -11,6 +11,11 @@
 #elif defined(__linux__)
 #include <unistd.h>      // For readlink
 #include <limits.h>      // For PATH_MAX
+#elif defined(_WIN32)
+#include <windows.h>     // For GetModuleFileName
+#include <io.h>          // For _popen/_pclose
+#define popen _popen
+#define pclose _pclose
 #endif
 
 namespace rouen::platform
@@ -237,8 +242,12 @@ namespace rouen::platform
             }
         }
         
-        // Check if available in PATH by running 'which mpv'
+        // Check if available in PATH
+#ifdef _WIN32
+        std::string command = "where mpv.exe 2>nul";
+#else
         std::string command = "which mpv 2>/dev/null";
+#endif
         std::string result;
         
         FILE* pipe = popen(command.c_str(), "r");

@@ -49,10 +49,12 @@
 		{
 			"type": "shell",
 			"label": "Configure with vcpkg",
-			"command": "bash",
+			"command": "cmake",
 			"args": [
-				"-c",
-				"if [ ! -d 'vcpkg' ]; then echo 'vcpkg not found. Please run \"Setup vcpkg\" task first.'; exit 1; fi && cmake -B build-vcpkg -DCMAKE_TOOLCHAIN_FILE=${PWD}/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug"
+				"-B",
+				"build-vcpkg",
+				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+				"-DCMAKE_BUILD_TYPE=Debug"
 			],
 			"group": "build",
 			"presentation": {
@@ -69,10 +71,12 @@
 		{
 			"type": "shell",
 			"label": "Configure with vcpkg (Release)",
-			"command": "bash",
+			"command": "cmake",
 			"args": [
-				"-c",
-				"if [ ! -d 'vcpkg' ]; then echo 'vcpkg not found. Please run \"Setup vcpkg\" task first.'; exit 1; fi && cmake -B build-vcpkg -DCMAKE_TOOLCHAIN_FILE=${PWD}/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release"
+				"-B",
+				"build-vcpkg",
+				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+				"-DCMAKE_BUILD_TYPE=Release"
 			],
 			"group": "build",
 			"presentation": {
@@ -131,10 +135,9 @@
 		{
 			"type": "shell",
 			"label": "Install vcpkg dependencies",
-			"command": "bash",
+			"command": "${workspaceFolder}/vcpkg/vcpkg",
 			"args": [
-				"-c",
-				"if [ ! -d 'vcpkg' ]; then echo 'vcpkg not found, cloning...'; git clone https://github.com/Microsoft/vcpkg.git && cd vcpkg && ./bootstrap-vcpkg.sh; else echo 'vcpkg found, updating...'; cd vcpkg && git pull; fi && ./vcpkg/vcpkg install"
+				"install"
 			],
 			"group": "build",
 			"presentation": {
@@ -144,25 +147,7 @@
 				"panel": "shared"
 			},
 			"problemMatcher": [],
-			"detail": "Install vcpkg dependencies from manifest (auto-setup vcpkg if needed)"
-		},
-		{
-			"type": "shell",
-			"label": "Setup vcpkg",
-			"command": "bash",
-			"args": [
-				"-c",
-				"if [ ! -d 'vcpkg' ]; then echo 'Cloning vcpkg...'; git clone https://github.com/Microsoft/vcpkg.git; fi && cd vcpkg && echo 'Bootstrapping vcpkg...' && ./bootstrap-vcpkg.sh && echo 'vcpkg setup complete!'"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared"
-			},
-			"problemMatcher": [],
-			"detail": "Setup vcpkg package manager (clone and bootstrap)"
+			"detail": "Install vcpkg dependencies from manifest"
 		},
 		{
 			"type": "shell",

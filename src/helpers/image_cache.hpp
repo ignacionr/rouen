@@ -85,7 +85,8 @@ public:
         try {
             // Generate a filename based on URL hash
             auto url_hash = std::hash<std::string>{}(url);
-            std::string final_path = std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + ".img");
+            std::filesystem::path final_path_obj = std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + ".img");
+            std::string final_path = final_path_obj.string();
             std::string temp_path = final_path + ".tmp";
             
             // Create file for writing

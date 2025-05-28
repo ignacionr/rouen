@@ -9,10 +9,17 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+
+#ifndef _WIN32
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#else
+#include <windows.h>
+#include <process.h>
+#endif
+
 #include "./imgui_include.hpp"
 #include "mpv_socket.hpp"
 #include "platform_utils.hpp"

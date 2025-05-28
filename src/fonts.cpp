@@ -164,7 +164,7 @@ namespace rouen::fonts {
                 icons_config.OversampleV = 3;
                 strcpy(icons_config.Name, "Material Icons");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.c_str(), base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with default font" << std::endl;
             } else {
                 std::cerr << "WARNING: Could not find Material Icons font!" << std::endl;
@@ -185,7 +185,7 @@ namespace rouen::fonts {
                 icons_config.OversampleV = 3;
                 strcpy(icons_config.Name, "Material Icons (Mono)");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.c_str(), base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with monospace font" << std::endl;
             }
         } else {
