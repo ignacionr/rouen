@@ -41,30 +41,52 @@ jobs:
     - name: Setup vcpkg (Windows)
       if: runner.os == 'Windows'
       run: |
-        git clone https://github.com/Microsoft/vcpkg.git
-        cd vcpkg
+        $workspace = "${{ github.workspace }}"
+        $vcpkgPath = "$workspace\vcpkg"
+        
+        Write-Host "Setting up vcpkg for Windows..."
+        Write-Host "Workspace: $workspace"
+        Write-Host "vcpkg path: $vcpkgPath"
+        
+        git clone https://github.com/Microsoft/vcpkg.git $vcpkgPath
+        Set-Location $vcpkgPath
         .\bootstrap-vcpkg.bat
-        echo "${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        Add-Content $env:GITHUB_PATH $vcpkgPath
+        Add-Content $env:GITHUB_ENV "VCPKG_ROOT=$vcpkgPath"
+        
+        Write-Host "vcpkg setup completed"
       shell: pwsh
 
     - name: Cache vcpkg packages
       uses: actions/cache@v4
       with:
         path: |
-          ${{ github.workspace }}/vcpkg/installed
-          ${{ github.workspace }}/vcpkg/packages
-          ${{ github.workspace }}/vcpkg/buildtrees
-        key: ${{ runner.os }}-vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}-v1
+          vcpkg/installed
+          vcpkg/packages
+          vcpkg/buildtrees
+        key: ${{ runner.os }}-vcpkg-${{ matrix.triplet }}-${{ hashFiles('vcpkg.json') }}-v2
         restore-keys: |
-          ${{ runner.os }}-vcpkg-${{ matrix.triplet }}-v1
+          ${{ runner.os }}-vcpkg-${{ matrix.triplet }}-v2
 
-    - name: Install dependencies via vcpkg
+    - name: Install dependencies via vcpkg (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         cd ${{ github.workspace }}
         ${{ env.VCPKG_ROOT }}/vcpkg install --triplet=${{ matrix.triplet }}
         ${{ env.VCPKG_ROOT }}/vcpkg list
       shell: bash
+
+    - name: Install dependencies via vcpkg (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $vcpkgRoot = "$workspace\vcpkg"
+        
+        Set-Location $workspace
+        & "$vcpkgRoot\vcpkg.exe" install --triplet=${{ matrix.triplet }}
+        & "$vcpkgRoot\vcpkg.exe" list
+      shell: pwsh
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
@@ -72,15 +94,35 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config
 
-    - name: Configure CMake
+    - name: Configure CMake (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         cmake -B build \
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
           -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake \
           -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
 
-    - name: Build
+    - name: Configure CMake (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $buildDir = "$workspace\build"
+        $toolchainFile = "$workspace\vcpkg\scripts\buildsystems\vcpkg.cmake"
+        
+        cmake -B $buildDir -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+      shell: pwsh
+
+    - name: Build (Linux/macOS)
+      if: runner.os != 'Windows'
       run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+    - name: Build (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $buildDir = "$workspace\build"
+        cmake --build $buildDir --config ${{ matrix.build_type }} --parallel
+      shell: pwsh
 
     - name: Test build output (Linux/macOS)
       if: runner.os != 'Windows'

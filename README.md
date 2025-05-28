@@ -33,8 +33,13 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
 - **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
+### Cross-Platform Support
+- **Windows**: Full native Windows support with Windows API integration
+- **macOS**: Native macOS app bundle with system integration
+- **Linux**: Complete Linux desktop environment support
+
 ### System Utilities
-- **System Monitor**: Track CPU, memory, disk usage, and uptime
+- **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
 - **Environment Variables**: View and manage system environment variables
 - **Subnet Scanner**: Discover and monitor devices on your local network
 - **Database Repair**: Maintain and fix SQLite database files
@@ -264,6 +269,8 @@ make
 
 #### Windows
 
+Rouen has comprehensive Windows support with automated builds and releases.
+
 **Prerequisites:**
 - Visual Studio 2022 with C++ support (or compatible C++23 compiler)
 - vcpkg package manager
@@ -292,6 +299,15 @@ cmake --build . --config Release
 # Run the application
 .\Release\rouen.exe
 ```
+
+**Windows-Specific Features:**
+- **Full System Integration**: Complete Windows API integration for system monitoring
+- **Windows User Directories**: Proper APPDATA and user profile directory support
+- **Windows Font System**: Automatic Windows system font directory detection
+- **File Operations**: Native Windows `start` command support for opening files
+- **Process Management**: Windows-specific process enumeration and management
+- **Memory & Disk Monitoring**: Native Windows APIs for system resource monitoring
+- **Path Handling**: Robust Windows path handling with proper drive letter support
 
 **vcpkg Configuration Files:**
 - `vcpkg.json`: Defines project dependencies and features

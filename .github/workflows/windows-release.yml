@@ -23,23 +23,42 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Debug environment
+      run: |
+        Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "Workspace: ${{ github.workspace }}"
+        Write-Host "Environment variables:"
+        Get-ChildItem Env: | Where-Object { $_.Name -like "*GITHUB*" -or $_.Name -like "*RUNNER*" } | Format-Table Name, Value
+        Write-Host "Directory listing:"
+        Get-ChildItem ${{ github.workspace }} | Format-Table Name, Mode
+      shell: pwsh
+
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
 
     - name: Setup vcpkg
       run: |
+        $workspace = "${{ github.workspace }}"
+        $vcpkgPath = "$workspace\vcpkg"
+        
+        Write-Host "Workspace: $workspace"
+        Write-Host "vcpkg path: $vcpkgPath"
+        
         # Clone vcpkg if not cached
-        if (-not (Test-Path "vcpkg")) {
-          git clone https://github.com/Microsoft/vcpkg.git
+        if (-not (Test-Path $vcpkgPath)) {
+          Write-Host "Cloning vcpkg..."
+          git clone https://github.com/Microsoft/vcpkg.git $vcpkgPath
         }
-        cd vcpkg
+        
+        Set-Location $vcpkgPath
         
         # Get the latest commit SHA for the baseline
         $latestCommit = git rev-parse HEAD
         Write-Host "Latest vcpkg commit: $latestCommit"
         
         # Update vcpkg.json with current baseline if needed
-        $vcpkgJsonPath = "${{ github.workspace }}\vcpkg.json"
+        $vcpkgJsonPath = "$workspace\vcpkg.json"
         if (Test-Path $vcpkgJsonPath) {
           $vcpkgJson = Get-Content $vcpkgJsonPath | ConvertFrom-Json
           $vcpkgJson.'builtin-baseline' = $latestCommit
@@ -47,72 +66,91 @@ jobs:
           Write-Host "Updated vcpkg.json baseline to: $latestCommit"
         }
         
+        Write-Host "Bootstrapping vcpkg..."
         .\bootstrap-vcpkg.bat
+        
         # Add vcpkg to PATH and set environment variable
-        echo "${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        echo "VCPKG_ROOT=${{ github.workspace }}\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Add-Content $env:GITHUB_PATH $vcpkgPath
+        Add-Content $env:GITHUB_ENV "VCPKG_ROOT=$vcpkgPath"
+        
+        Write-Host "vcpkg setup completed"
       shell: pwsh
 
     - name: Cache vcpkg packages
       uses: actions/cache@v4
       with:
         path: |
-          ${{ github.workspace }}\vcpkg\installed
-          ${{ github.workspace }}\vcpkg\packages
-          ${{ github.workspace }}\vcpkg\buildtrees
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-v2
+          vcpkg\installed
+          vcpkg\packages
+          vcpkg\buildtrees
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-v3
         restore-keys: |
-          ${{ runner.os }}-vcpkg-v2
+          ${{ runner.os }}-vcpkg-v3
 
     - name: Install dependencies via vcpkg
       run: |
-        cd vcpkg
+        $workspace = "${{ github.workspace }}"
+        $vcpkgPath = "$workspace\vcpkg"
+        
+        Set-Location $vcpkgPath
         .\vcpkg integrate install
         
         # Use manifest mode - vcpkg will read vcpkg.json automatically
-        cd "${{ github.workspace }}"
+        Set-Location $workspace
         
         # Install dependencies from vcpkg.json manifest
-        ${{ github.workspace }}\vcpkg\vcpkg install --triplet=x64-windows
+        & "$vcpkgPath\vcpkg.exe" install --triplet=x64-windows
         
         Write-Host "Installed packages:"
-        ${{ github.workspace }}\vcpkg\vcpkg list
+        & "$vcpkgPath\vcpkg.exe" list
       shell: pwsh
 
     - name: Configure CMake
       run: |
-        cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=${{github.workspace}}/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON
+        $buildDir = "${{ github.workspace }}\build"
+        $toolchainFile = "${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake"
+        Write-Host "Build directory: $buildDir"
+        Write-Host "Toolchain file: $toolchainFile"
+        cmake -B $buildDir -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=$toolchainFile -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON
       shell: pwsh
 
     - name: Build
       run: |
-        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --parallel --verbose
+        $buildDir = "${{ github.workspace }}\build"
+        Write-Host "Building in directory: $buildDir"
+        cmake --build $buildDir --config ${{env.BUILD_TYPE}} --parallel --verbose
       shell: pwsh
 
     - name: List build output
       run: |
+        $buildDir = "${{ github.workspace }}\build"
         Write-Host "Build directory contents:"
-        Get-ChildItem -Recurse "${{github.workspace}}/build" -Include "*.exe", "*.dll" | ForEach-Object { Write-Host $_.FullName }
+        Get-ChildItem -Recurse $buildDir -Include "*.exe", "*.dll" | ForEach-Object { Write-Host $_.FullName }
       shell: pwsh
 
     - name: Package application
       shell: pwsh
       run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $buildDir = "$workspace\build"
+        
         # Create distribution directory
-        New-Item -ItemType Directory -Force -Path "${{github.workspace}}/dist"
+        New-Item -ItemType Directory -Force -Path $distDir
+        Write-Host "Created distribution directory: $distDir"
         
         # Find and copy executable (check both Debug and Release folders)
         $exePaths = @(
-          "${{github.workspace}}/build/Release/rouen.exe",
-          "${{github.workspace}}/build/Debug/rouen.exe",
-          "${{github.workspace}}/build/rouen.exe"
+          "$buildDir\Release\rouen.exe",
+          "$buildDir\Debug\rouen.exe",
+          "$buildDir\rouen.exe"
         )
         
         $exeFound = $false
         foreach ($exePath in $exePaths) {
           if (Test-Path $exePath) {
             Write-Host "Found executable at: $exePath"
-            Copy-Item $exePath "${{github.workspace}}/dist/"
+            Copy-Item $exePath $distDir
             $exeFound = $true
             break
           }
@@ -120,68 +158,75 @@ jobs:
         
         if (-not $exeFound) {
           Write-Host "ERROR: Could not find rouen.exe in any expected location"
-          Get-ChildItem -Recurse "${{github.workspace}}/build" -Include "*.exe" | ForEach-Object { Write-Host "Found exe: $($_.FullName)" }
+          Get-ChildItem -Recurse $buildDir -Include "*.exe" | ForEach-Object { Write-Host "Found exe: $($_.FullName)" }
           exit 1
         }
         
         # Copy required DLLs from vcpkg (handle errors gracefully)
-        $vcpkgBinPath = "${{github.workspace}}/vcpkg/installed/x64-windows/bin"
+        $vcpkgBinPath = "$workspace\vcpkg\installed\x64-windows\bin"
         if (Test-Path $vcpkgBinPath) {
           Write-Host "Copying DLLs from: $vcpkgBinPath"
-          Get-ChildItem "$vcpkgBinPath/*.dll" | ForEach-Object { 
+          Get-ChildItem "$vcpkgBinPath\*.dll" | ForEach-Object { 
             Write-Host "Copying DLL: $($_.Name)"
-            Copy-Item $_.FullName "${{github.workspace}}/dist/" -ErrorAction SilentlyContinue 
+            Copy-Item $_.FullName $distDir -ErrorAction SilentlyContinue 
           }
         } else {
           Write-Host "WARNING: vcpkg bin path not found: $vcpkgBinPath"
         }
         
         # Copy assets if they exist
-        if (Test-Path "${{github.workspace}}/img") {
-          Copy-Item -Recurse "${{github.workspace}}/img" "${{github.workspace}}/dist/"
+        $imgPath = "$workspace\img"
+        if (Test-Path $imgPath) {
+          Copy-Item -Recurse $imgPath $distDir
           Write-Host "Copied img directory"
         }
         
-        if (Test-Path "${{github.workspace}}/external/fonts") {
-          Copy-Item -Recurse "${{github.workspace}}/external/fonts" "${{github.workspace}}/dist/"
+        $fontsPath = "$workspace\external\fonts"
+        if (Test-Path $fontsPath) {
+          Copy-Item -Recurse $fontsPath $distDir
           Write-Host "Copied fonts directory"
         }
         
         # Copy individual font files
         $fontFiles = @(
-          "${{github.workspace}}/external/MaterialIcons-Regular.ttf",
-          "${{github.workspace}}/external/IconsMaterialDesign.h"
+          "$workspace\external\MaterialIcons-Regular.ttf",
+          "$workspace\external\IconsMaterialDesign.h"
         )
         foreach ($file in $fontFiles) {
           if (Test-Path $file) {
-            Copy-Item $file "${{github.workspace}}/dist/"
+            Copy-Item $file $distDir
             Write-Host "Copied font file: $(Split-Path -Leaf $file)"
           }
         }
         
         # Copy configuration files
         $configFiles = @(
-          "${{github.workspace}}/presets.txt",
-          "${{github.workspace}}/podcasts.txt",
-          "${{github.workspace}}/README.md",
-          "${{github.workspace}}/LICENSE"
+          "$workspace\presets.txt",
+          "$workspace\podcasts.txt",
+          "$workspace\README.md",
+          "$workspace\LICENSE"
         )
         foreach ($file in $configFiles) {
           if (Test-Path $file) {
-            Copy-Item $file "${{github.workspace}}/dist/"
+            Copy-Item $file $distDir
             Write-Host "Copied config file: $(Split-Path -Leaf $file)"
           }
         }
         
         # List final distribution contents
         Write-Host "Final distribution contents:"
-        Get-ChildItem -Recurse "${{github.workspace}}/dist" | ForEach-Object { Write-Host $_.FullName }
+        Get-ChildItem -Recurse $distDir | ForEach-Object { Write-Host $_.FullName }
 
     - name: Create ZIP archive
       shell: pwsh
       run: |
-        cd "${{github.workspace}}/dist"
-        Compress-Archive -Path * -DestinationPath "../rouen-windows-x64.zip"
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $zipPath = "$workspace\rouen-windows-x64.zip"
+        
+        Set-Location $distDir
+        Compress-Archive -Path * -DestinationPath $zipPath
+        Write-Host "Created ZIP archive: $zipPath"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
