@@ -46,7 +46,6 @@ static std::vector<jira_connection_profile> saved_profiles;
 
 // Forward declarations of helper methods
 static std::string strip_trailing_slash(const std::string& url);
-static std::string url_encode(const std::string& str);
 static std::string base64_encode(const std::string& input);
 static void load_profiles_from_env();
 static bool save_profiles(const std::vector<jira_connection_profile>& profiles);
@@ -785,31 +784,6 @@ static std::string strip_trailing_slash(const std::string& url) {
     }
     return url;
 }
-
-// Utility method to encode URL parameters
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#endif
-static std::string url_encode(const std::string& str) {
-    // Simple URL encoding
-    std::string encoded;
-    for (char c : str) {
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            encoded += c;
-        } else if (c == ' ') {
-            encoded += '+';
-        } else {
-            char hex[4];
-            snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned char>(c));
-            encoded += hex;
-        }
-    }
-    return encoded;
-}
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif
 
 // Base64 encoding utility
 static std::string base64_encode(const std::string& input) {

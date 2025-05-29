@@ -4,6 +4,11 @@
 #include <stdexcept>
 #include <array>
 
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#endif
+
 namespace rouen::models {
     std::string GitProcessHelper::executeCommandInDirectory(const std::string& dir, const std::string& command) {
         std::string full_cmd = "cd '" + dir + "' && " + command + " 2>&1";
