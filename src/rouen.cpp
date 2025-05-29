@@ -31,7 +31,14 @@
 #include "main_wnd.hpp"
 #include "registrar.hpp"
 
+// On Windows, SDL2 requires main to be renamed to SDL_main
+#ifdef _WIN32
+int SDL_main(int argc, char* argv[]) {
+    (void)argc; // Suppress unused parameter warning
+    (void)argv; // Suppress unused parameter warning
+#else
 int main() {
+#endif
     notify_service notify; // Initialize the notify service
     
     // Register the run_command function - non-blocking with incremental output
