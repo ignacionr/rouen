@@ -787,8 +787,10 @@ static std::string strip_trailing_slash(const std::string& url) {
 }
 
 // Utility method to encode URL parameters
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-function"
+#endif
 static std::string url_encode(const std::string& str) {
     // Simple URL encoding
     std::string encoded;
@@ -805,7 +807,9 @@ static std::string url_encode(const std::string& str) {
     }
     return encoded;
 }
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#endif
 
 // Base64 encoding utility
 static std::string base64_encode(const std::string& input) {
