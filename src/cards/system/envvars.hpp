@@ -8,8 +8,14 @@
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 
-// The environ variable is a C global, defined outside any namespace
-extern char **environ;
+// Platform-specific environ declaration
+#ifdef _WIN32
+    // On Windows, use _environ from stdlib.h (already included via cstdlib)
+    // No additional declaration needed as _environ is properly declared in stdlib.h
+#else
+    // The environ variable is a C global, defined outside any namespace
+    extern char **environ;
+#endif
 
 namespace rouen::cards {
 
@@ -45,7 +51,11 @@ struct envvars_card : public card {
         env_vars.clear();
         
         // Get environment variables
+#ifdef _WIN32
+        for (char **env = _environ; *env != nullptr; ++env) {
+#else
         for (char **env = environ; *env != nullptr; ++env) {
+#endif
             std::string entry = *env;
             auto pos = entry.find('=');
             if (pos != std::string::npos) {

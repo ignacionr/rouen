@@ -12,6 +12,8 @@
 // 3. All other includes
 #include "card.hpp"
 #include "menu.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../helpers/media_player_alarm.hpp"
 #include "../development/cmake.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/git.hpp"

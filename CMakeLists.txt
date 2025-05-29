@@ -22,8 +22,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   
   message(STATUS "Debug build enabled with symbols")
 else()
-  # Release optimizations
-  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+  # Release optimizations - handle differently for MSVC and GCC/Clang
+  if(MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2")
+  else()
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+  endif()
   add_compile_definitions(NDEBUG)
   
   message(STATUS "Release build enabled with optimizations")

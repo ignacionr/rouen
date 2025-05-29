@@ -152,8 +152,8 @@ private:
             ImGui::TextColored(colors[2], "Forecast");
             ImGui::Spacing();
             
-            // Only show the forecast periods
-            const size_t forecast_items_to_show = std::min(5ul, forecast->list.size());
+            // Only show the forecast periods - cast to same type to avoid template deduction issues
+            const size_t forecast_items_to_show = std::min(static_cast<size_t>(5), forecast->list.size());
             
             // Start a table
             if (ImGui::BeginTable("forecast_table", 3, ImGuiTableFlags_BordersInnerV)) {

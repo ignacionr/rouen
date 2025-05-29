@@ -26,6 +26,7 @@ namespace media_player_alarm_helper {
         static media_player_item alarm_item;
         return alarm_item;
     }
+    
     static void play_sound_loop(std::string_view file_path) {
         auto& alarm_item = alarm_item_instance();
         auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
@@ -38,6 +39,49 @@ namespace media_player_alarm_helper {
             try { "notify"_sfn("Cannot play alarm: MPV not found. Please install MPV using 'brew install mpv'."); } catch (...) {}
             return;
         }
+        
+#ifdef _WIN32
+        // Windows implementation using CreateProcess
+        static std::string socket_arg = "--input-ipc-server=" + socket_path;
+        std::vector<std::string> args = {
+            mpv_path,
+            "--no-video",
+            "--loop=inf", 
+            "--really-quiet",
+            "--keep-open=always",
+            "--idle=yes",
+            "--input-ipc-timeout=1000",
+            socket_arg,
+            alarm_item.url
+        };
+        
+        std::string cmdline;
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) cmdline += " ";
+            cmdline += "\"" + args[i] + "\"";
+        }
+        
+        STARTUPINFOA si = {sizeof(si)};
+        PROCESS_INFORMATION pi = {};
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        
+        if (CreateProcessA(nullptr, const_cast<char*>(cmdline.c_str()), nullptr, nullptr, 
+                          FALSE, CREATE_NEW_PROCESS_GROUP, nullptr, nullptr, &si, &pi)) {
+            alarm_item.player_pid = pi.dwProcessId;
+            alarm_item.is_playing = true;
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if (alarm_item.mpv_socket.init_socket(socket_path)) {
+                alarm_item.startPositionTracking();
+            }
+        } else {
+            alarm_item.player_pid = 0;
+            alarm_item.is_playing = false;
+        }
+#else
+        // Unix implementation using fork/exec
         pid_t pid = fork();
         if (pid == -1) return;
         else if (pid == 0) {
@@ -71,7 +115,9 @@ namespace media_player_alarm_helper {
             alarm_item.player_pid = 0;
             alarm_item.is_playing = false;
         }
+#endif
     }
+    
     static void stop_sound_loop() {
         auto& alarm_item = alarm_item_instance();
         alarm_item.stopMedia();

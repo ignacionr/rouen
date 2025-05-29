@@ -27,7 +27,11 @@
 
 struct media_player_item {
     std::string url;
+#ifdef _WIN32
+    DWORD player_pid{0};
+#else
     int player_pid{0};
+#endif
     bool is_playing{false};
     mpv_socket_helper mpv_socket;
     std::atomic<double> position{0.0};
@@ -57,6 +61,15 @@ using media_player_item_map = std::unordered_map<ImGuiID, media_player_item>;
 // --- Implementation ---
 
 inline bool media_player_item::checkMediaStatus() {
+#ifdef _WIN32
+    if (player_pid == 0) return false;
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, player_pid);
+    if (hProcess == NULL) return false;
+    DWORD exitCode;
+    bool isRunning = GetExitCodeProcess(hProcess, &exitCode) && (exitCode == STILL_ACTIVE);
+    CloseHandle(hProcess);
+    return isRunning;
+#else
     if (player_pid <= 0) return false;
     std::string command = "ps -p " + std::to_string(player_pid) + " > /dev/null 2>&1 && echo 1 || echo 0";
     FILE* pipe = popen(command.c_str(), "r");
@@ -73,6 +86,7 @@ inline bool media_player_item::checkMediaStatus() {
     result.erase(result.find_last_not_of(" \n\r\t") + 1);
     is_playing = (result == "1");
     return is_playing;
+#endif
 }
 
 inline void media_player_item::stopMedia() {
@@ -83,8 +97,8 @@ inline void media_player_item::stopMedia() {
         }
     }
     mpv_socket.close_socket();
-    if (player_pid > 0) {
 #ifdef _WIN32
+    if (player_pid != 0) {
         HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, player_pid);
         if (hProcess != NULL) {
             if (!TerminateProcess(hProcess, 0)) {
@@ -92,14 +106,17 @@ inline void media_player_item::stopMedia() {
             }
             CloseHandle(hProcess);
         }
+        player_pid = 0;
+    }
 #else
+    if (player_pid > 0) {
         if (kill(player_pid, SIGTERM) == -1) {
             perror("Failed to terminate process");
         }
-#endif
         player_pid = 0;
-        is_playing = false;
     }
+#endif
+    is_playing = false;
     position = 0.0;
     duration = 0.0;
 }

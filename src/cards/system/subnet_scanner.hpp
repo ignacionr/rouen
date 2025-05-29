@@ -646,7 +646,7 @@ private:
         // Prepare the address
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
+        addr.sin_port = htons(static_cast<u_short>(port));
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)
@@ -710,7 +710,7 @@ private:
         // Prepare the address
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
+        addr.sin_port = htons(static_cast<u_short>(port));
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)

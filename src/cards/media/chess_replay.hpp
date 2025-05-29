@@ -238,12 +238,12 @@ public:
             // Use the proper resource path resolution function
             std::filesystem::path full_path = rouen::platform::get_resource_path(filename, "img");
             
-            int width, height;
-            SDL_Texture* texture = TextureHelper::loadTextureFromFile(renderer, full_path.string().c_str(), width, height);
+            int tex_width, tex_height;
+            SDL_Texture* texture = TextureHelper::loadTextureFromFile(renderer, full_path.string().c_str(), tex_width, tex_height);
             
             if (texture) {
                 piece_textures[piece] = texture;
-                piece_dimensions[piece] = std::make_pair(width, height);
+                piece_dimensions[piece] = std::make_pair(tex_width, tex_height);
                 success_count++;
                 CHESS_INFO_FMT("Loaded chess piece texture: {}", full_path.string());
             } else {
