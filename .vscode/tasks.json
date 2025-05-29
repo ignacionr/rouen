@@ -44,17 +44,50 @@
 			"problemMatcher": [
 				"$gcc"
 			],
+			"dependsOn": [
+				"Install vcpkg dependencies",
+				"Configure with vcpkg"
+			],
+			"dependsOrder": "sequence",
 			"detail": "Build using vcpkg dependencies"
 		},
 		{
 			"type": "shell",
-			"label": "Configure with vcpkg",
+			"label": "Build Debug with vcpkg",
 			"command": "cmake",
 			"args": [
-				"-B",
+				"--build",
 				"build-vcpkg",
-				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-				"-DCMAKE_BUILD_TYPE=Debug"
+				"--config",
+				"Debug",
+				"--parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"dependsOn": [
+				"Install vcpkg dependencies",
+				"Configure Debug with vcpkg"
+			],
+			"dependsOrder": "sequence",
+			"detail": "Build debug version with optimal debugging flags"
+		},
+		{
+			"type": "shell",
+			"label": "Configure with vcpkg",
+			"command": "sh",
+			"args": [
+				"-c",
+				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug"
 			],
 			"group": "build",
 			"presentation": {
@@ -70,13 +103,58 @@
 		},
 		{
 			"type": "shell",
+			"label": "Configure Debug with vcpkg",
+			"command": "sh",
+			"args": [
+				"-c",
+				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS_DEBUG='-g -O0 -DDEBUG'"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [],
+			"detail": "Configure CMake with vcpkg toolchain for optimal debugging"
+		},
+		{
+			"type": "shell",
+			"label": "Quick Debug Setup",
+			"command": "echo",
+			"args": [
+				"Setting up debug environment..."
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"dependsOn": [
+				"Install vcpkg dependencies",
+				"Configure Debug with vcpkg",
+				"Build Debug with vcpkg"
+			],
+			"dependsOrder": "sequence",
+			"detail": "Complete debug setup: install dependencies, configure, and build"
+		},
+		{
+			"type": "shell",
 			"label": "Configure with vcpkg (Release)",
 			"command": "cmake",
 			"args": [
 				"-B",
 				"build-vcpkg",
 				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-				"-DCMAKE_BUILD_TYPE=Release"
+				"-DCMAKE_BUILD_TYPE=Release",
+				"-DVCPKG_INSTALLED_DIR=${workspaceFolder}/vcpkg_installed"
 			],
 			"group": "build",
 			"presentation": {

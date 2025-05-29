@@ -221,6 +221,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   # GCC equivalent if needed
   target_compile_options(imgui PRIVATE -Wno-class-memaccess)
+elseif(MSVC)
+  # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
+  target_compile_options(imgui PRIVATE /O2)
 endif()
 
 # Set up ImColorTextEdit library using local files
@@ -238,5 +241,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare -Wno-conversion -Wno-double-promotion)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
+elseif(MSVC)
+  # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
+  target_compile_options(imcolortextedit PRIVATE /O2)
 endif()
       

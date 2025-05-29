@@ -5,102 +5,114 @@
     "version": "0.2.0",
     "configurations": [
     {
-        "name": "(lldb) Launch macOS - vcpkg build",
+        "name": "🚀 Debug Rouen (vcpkg)",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
         "args": [],
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/build-vcpkg/rouen.app",
+        "cwd": "${workspaceFolder}",
         "environment": [
-            // Environment variables for macOS, if needed
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" }
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
         ],
         "externalConsole": false,
         "MIMode": "lldb",
-        "preLaunchTask": "Build with vcpkg"
+        "preLaunchTask": "Build with vcpkg",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
     },
     {
-        "name": "(lldb) Launch macOS - traditional build",
+        "name": "🔧 Debug Rouen (Quick Launch)",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🔧 Debug Rouen (Full Setup)",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Quick Debug Setup",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "📦 Debug Rouen (Traditional Build)",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/build/rouen.app/Contents/MacOS/rouen",
         "args": [],
         "stopAtEntry": false,
-        "cwd": "${workspaceFolder}/build/rouen.app",
+        "cwd": "${workspaceFolder}",
         "environment": [
-            // Environment variables for macOS, if needed
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" }
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
         ],
         "externalConsole": false,
         "MIMode": "lldb",
-        "preLaunchTask": "CMake: build"
+        "preLaunchTask": "CMake: build",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ]
     },    
     {
-        "name": "(lldb) Launch from Installed macOS",
+        "name": "🍎 Debug Installed Rouen",
         "type": "cppdbg",
         "request": "launch",
         "program": "/Applications/rouen.app/Contents/MacOS/rouen",
         "args": [],
         "stopAtEntry": false,
-        "cwd": "/",
-        "environment": [
-            // Environment variables for macOS, if needed
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "CMake: build"
-    },
-    {
-        "name": "(gdb) Launch Linux - vcpkg build",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
+        "cwd": "/Applications/rouen.app/Contents/MacOS",
         "environment": [],
         "externalConsole": false,
-        "MIMode": "gdb",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for gdb",
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "description": "Set Disassembly Flavor to Intel",
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ],
-        "preLaunchTask": "Build with vcpkg"
-    },
-    {
-        "name": "(gdb) Launch Linux - traditional build",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for gdb",
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "description": "Set Disassembly Flavor to Intel",
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ],
-        "preLaunchTask": "CMake: build"
-    }
-    ]
+        "MIMode": "lldb"
+    }    ]
 }

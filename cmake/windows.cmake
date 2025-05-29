@@ -21,6 +21,7 @@ if(WIN32)
             /W4  # High warning level
             /permissive-  # Disable non-conforming code
             /utf-8  # Use UTF-8 for source and execution character sets
+            /bigobj  # Allow large object files (needed for large translation units)
         )
         
         # Enable parallel compilation

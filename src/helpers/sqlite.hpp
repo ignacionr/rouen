@@ -123,7 +123,7 @@ namespace hosting::db
             
             sqlite3_stmt *stmt = nullptr;
             int prepare_retries = 0;
-            int prepare_rc;
+            int prepare_rc = SQLITE_OK;  // Initialize to avoid compiler warning
             
             // Retry prepare if database is busy
             while (prepare_retries < 5) {
@@ -146,7 +146,7 @@ namespace hosting::db
                 (bind_param(stmt, index++, args), ...);
 
                 int step_retries = 0;
-                int step_rc;
+                int step_rc = SQLITE_OK;  // Initialize to avoid compiler warning
                 
                 while (true) {
                     step_retries = 0;

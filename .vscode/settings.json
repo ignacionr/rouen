@@ -129,5 +129,15 @@
                 }
             }
         }
-    }
+    },
+    "debug.allowBreakpointsEverywhere": true,
+    "debug.inlineValues": "on",
+    "debug.showBreakpointsInOverviewRuler": true,
+    "debug.console.wordWrap": false,
+    "debug.console.fontSize": 12,
+    "C_Cpp.debugShortcut": true,
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.autocompleteAddParentheses": true,
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never }"
 }
