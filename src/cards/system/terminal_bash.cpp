@@ -195,6 +195,9 @@ void TerminalBash::send_to_bash(const std::string& command) {
         std::string end_marker = "echo ROUEN_CMD_DONE\n";
         write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
     }
+#else
+    // Windows doesn't support interactive bash sessions
+    (void)command;
 #endif
 }
 
@@ -238,7 +241,12 @@ std::string TerminalBash::update_cwd_from_bash() {
 
 void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type, 
                                     TerminalOutput& output, bool& is_command_running) {
-#ifndef _WIN32
+#ifdef _WIN32
+    (void)pipe_fd;
+    (void)output_type;
+    (void)output;
+    (void)is_command_running;
+#else
     if (pipe_fd < 0) return;
     
     char buffer[4096];
@@ -486,6 +494,10 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
     }
 #else
     // Windows doesn't support sudo - just show an error
+    (void)password;
+    (void)sudo_cmd;
+    (void)is_command_running;
+    
     output.add_to_output("Sudo is not supported on Windows.", OutputType::StdErr);
     
     // Add a blank line and prompt

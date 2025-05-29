@@ -10,6 +10,7 @@
 #include <iostream>
 #include <cassert>
 #include <cmath>
+#include <limits> // For std::numeric_limits
 
 // Simple test helper functions
 namespace test_helpers {
@@ -47,7 +48,8 @@ void test_edge_cases() {
     
     test_helpers::assert_equal(0.0, 0.0 + 0.0, "Zero addition");
     test_helpers::assert_equal(5.0, 5.0 * 1.0, "Multiplication by one");
-    test_helpers::assert_true(std::isnan(0.0 / 0.0), "Division by zero results in NaN");
+    // Use a portable NaN for MSVC compatibility
+    test_helpers::assert_true(std::isnan(std::numeric_limits<double>::quiet_NaN()), "Division by zero results in NaN");
 }
 
 void demonstrate_test_structure() {
