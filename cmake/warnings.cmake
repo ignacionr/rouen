@@ -60,4 +60,22 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       -Wunreachable-code
     )
   endfunction()
+
+elseif(MSVC)
+  # MSVC-specific warnings configuration
+  add_compile_options(
+    /W4          # High warning level
+    /permissive- # Disable non-conforming code
+  )
+  
+  # Function for adding strict warnings to MSVC targets
+  function(target_add_strict_warnings target)
+    target_compile_options(${target} PRIVATE
+      /WX          # Treat warnings as errors
+      /wd4267      # Suppress 'conversion from size_t to int' warnings
+      /wd4244      # Suppress 'conversion from double to float' warnings
+      /wd4101      # Suppress 'unreferenced local variable' warnings
+      /wd4996      # Suppress deprecated function warnings
+    )
+  endfunction()
 endif()

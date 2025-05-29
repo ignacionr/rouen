@@ -8,11 +8,15 @@ endif()
 # Debug-specific settings
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # Add debug symbols and disable optimizations
-  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
+  if(MSVC)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od")
+  else()
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
+  endif()
   
   # Enable address sanitizer for debug builds (optional)
   option(ENABLE_SANITIZER "Enable Address Sanitizer in Debug build" OFF)
-  if(ENABLE_SANITIZER)
+  if(ENABLE_SANITIZER AND NOT MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address -fno-omit-frame-pointer")
     set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fsanitize=address")
   endif()
@@ -31,6 +35,17 @@ else()
   add_compile_definitions(NDEBUG)
   
   message(STATUS "Release build enabled with optimizations")
+endif()
+
+# For MSVC, ensure no GCC/Clang flags leak in
+if(MSVC)
+  # Remove any GCC/Clang-specific flags that might be set by dependencies
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  string(REPLACE "-g" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  string(REPLACE "-g" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  string(REPLACE "-g" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
 # Platform-specific compiler settings
@@ -161,9 +176,9 @@ endif()
 
 # Apply stricter warnings only to our code, not third-party libraries
 # We use -Werror for our code but not for third-party libraries
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
   target_add_strict_warnings(${PROJECT_NAME})
-  message(STATUS "Applied -Werror and strict warnings to local code")
+  message(STATUS "Applied strict warnings to local code for ${CMAKE_CXX_COMPILER_ID}")
 endif()
 
 # Platform-specific configuration

@@ -91,7 +91,7 @@ namespace rouen::cards {
                     for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
                         for (size_t item_idx = 0; item_idx < menu_categories[cat_idx].items.size(); item_idx++) {
                             all_menu_items.push_back(std::make_tuple(
-                                cat_idx, item_idx, menu_categories[cat_idx].items[item_idx].first
+                                static_cast<int>(cat_idx), static_cast<int>(item_idx), menu_categories[cat_idx].items[item_idx].first
                             ));
                         }
                     }

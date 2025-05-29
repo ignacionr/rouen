@@ -34,9 +34,15 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
 ### Cross-Platform Support
-- **Windows**: Full native Windows support with Windows API integration
+- **Windows**: Full native Windows support with Windows API integration and MSVC compatibility
 - **macOS**: Native macOS app bundle with system integration
 - **Linux**: Complete Linux desktop environment support
+
+#### Windows-Specific Features
+- **MSVC Compatibility**: Optimized build configuration for Visual Studio 2022+
+- **Type Safety**: Enhanced type conversion handling for size_t/int compatibility
+- **Warning Suppression**: Targeted warning suppression for third-party libraries
+- **Optimization Flags**: Platform-specific optimization flags (/O2 for MSVC, -O3 for GCC/Clang)
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
@@ -198,7 +204,46 @@ cmake --build . --parallel
 ./rouen.app/Contents/MacOS/rouen  # macOS
 # OR
 ./rouen  # Linux
+# OR
+.\rouen.exe  # Windows
 ```
+
+#### Windows Build Notes
+
+⚠️ **Important**: Windows builds require proper vcpkg configuration to avoid CMake package discovery issues.
+
+**Required CMake Parameters for Windows:**
+```bash
+cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_INSTALLED_DIR=./vcpkg_installed
+```
+
+When building on Windows with MSVC, the project automatically:
+- Uses `/O2` optimization instead of GCC's `-O3` flag (MSVC doesn't support `-O3`)
+- Suppresses common type conversion warnings (C4267, C4244, C4101)
+- Enables large object file support (`/bigobj`) for complex template instantiations
+- Applies Windows-specific compiler flags for better compatibility
+- Removes any global `-O3` flags that would cause MSVC compilation errors
+
+**Complete Windows Build Example:**
+```cmd
+# Clone and setup
+git clone https://github.com/ignacionr/rouen.git
+cd rouen
+
+# Ensure vcpkg dependencies are installed
+.\vcpkg\vcpkg.exe install
+
+# Configure (Debug)
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=.\vcpkg\scripts\buildsystems\vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DVCPKG_INSTALLED_DIR=.\vcpkg_installed
+
+# Build
+cmake --build build --config Debug --parallel
+
+# Run
+.\build\rouen.exe
+```
+
+For GitHub Actions or CI builds on Windows, ensure the `DVCPKG_INSTALLED_DIR` parameter is correctly set to prevent package discovery failures.
 
 **Dependencies managed by vcpkg:**
 - SDL2 and SDL2_image

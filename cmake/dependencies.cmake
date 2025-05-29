@@ -224,6 +224,11 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 elseif(MSVC)
   # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
   target_compile_options(imgui PRIVATE /O2)
+  # Remove any -O3 flags that might have been set globally
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  # Set target-specific compile flags to ensure no -O3 flags are inherited
+  set_target_properties(imgui PROPERTIES COMPILE_FLAGS "")
 endif()
 
 # Set up ImColorTextEdit library using local files
@@ -236,6 +241,9 @@ target_include_directories(imcolortextedit PUBLIC
   ${CMAKE_SOURCE_DIR}/src/helpers
 )
 
+# Link imcolortextedit to imgui
+target_link_libraries(imcolortextedit PUBLIC imgui)
+
 # Disable sign comparison warnings only for the imcolortextedit library
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare -Wno-conversion -Wno-double-promotion)
@@ -244,5 +252,16 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 elseif(MSVC)
   # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
   target_compile_options(imcolortextedit PRIVATE /O2)
+  # Remove any -O3 flags that might have been set globally
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  # Set target-specific compile flags to ensure no -O3 flags are inherited
+  set_target_properties(imcolortextedit PROPERTIES COMPILE_FLAGS "")
+  # Add Windows-specific warning suppressions
+  target_compile_options(imcolortextedit PRIVATE
+    /wd4267  # Suppress 'conversion from size_t to int' warnings
+    /wd4244  # Suppress 'conversion from double to float' warnings
+    /wd4101  # Suppress 'unreferenced local variable' warnings
+  )
 endif()
       

@@ -87,7 +87,7 @@
 			"command": "sh",
 			"args": [
 				"-c",
-				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug"
+				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
 			],
 			"group": "build",
 			"presentation": {
@@ -107,7 +107,7 @@
 			"command": "sh",
 			"args": [
 				"-c",
-				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS_DEBUG='-g -O0 -DDEBUG'"
+				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS_DEBUG='-g -O0 -DDEBUG' -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
 			],
 			"group": "build",
 			"presentation": {

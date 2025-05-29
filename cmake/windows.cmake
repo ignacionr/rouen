@@ -22,6 +22,8 @@ if(WIN32)
             /permissive-  # Disable non-conforming code
             /utf-8  # Use UTF-8 for source and execution character sets
             /bigobj  # Allow large object files (needed for large translation units)
+            /wd4267  # Suppress 'conversion from size_t to int' warnings
+            /wd4244  # Suppress 'conversion from double to float' warnings
         )
         
         # Enable parallel compilation
