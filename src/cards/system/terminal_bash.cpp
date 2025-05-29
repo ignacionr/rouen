@@ -20,6 +20,7 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
 #ifdef _WIN32
     TERM_ERROR("Interactive bash sessions are not supported on Windows. Falling back to command-by-command mode.");
     use_interactive_bash = false;
+    (void)initial_dir; // Suppress unused variable warning
     return;
 #else
     // Create pipes for communication with bash
