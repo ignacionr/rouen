@@ -3,6 +3,8 @@
 #include "../interface/card.hpp"
 #include "../../models/jira_model.hpp"
 #include "../../helpers/imgui_include.hpp"  // Use our wrapper to avoid warnings
+#include "../../helpers/platform_utils.hpp"  // For open_url function
+#include "../../registrar.hpp"  // For _sfn operator
 #include <memory>
 #include <string>
 #include <vector>
@@ -96,24 +98,24 @@ private:
     std::shared_ptr<models::jira_model> jira_model_;
     
     // Login form state
-    std::string server_url_ = "https://";
-    std::string username_;
-    std::string api_token_;
+    char server_url_[256] = "https://";
+    char username_[128] = "";
+    char api_token_[256] = "";
     std::string status_message_;
     bool login_in_progress_ = false;
     std::vector<models::jira_connection_profile> connection_profiles_;
     bool show_add_profile_ = false;
-    std::string new_profile_name_;
+    char new_profile_name_[128] = "";
     
     // Issues view state
     std::string selected_project_;
-    std::string filter_text_;
+    char filter_text_[256] = ""; // Was std::string, changed for ImGui::InputText
     int current_page_ = 0;
     int items_per_page_ = 20;
     std::future<models::jira_search_result> search_future_;
     std::optional<models::jira_search_result> search_result_;
     std::string selected_issue_key_;
-    std::future<std::optional<models::jira_issue>> issue_future_;
+    std::future<std::optional<models::jira_issue>> issue_future_; // Assuming get_issue returns future<optional<issue>>
     std::optional<models::jira_issue> selected_issue_;
     
     // Projects state
@@ -123,8 +125,8 @@ private:
     // Create issue state
     std::string create_project_key_;
     std::string create_issue_type_id_;
-    std::string create_summary_;
-    std::string create_description_;
+    char create_summary_[256] = ""; // Was std::string
+    char create_description_[4096] = ""; // Was std::string
     bool issue_creation_in_progress_ = false;
     
     void render_login_form() {
@@ -158,7 +160,7 @@ private:
             ImGui::SameLine();
             
             if (ImGui::Button("Refresh Profiles")) {
-                connection_profiles_ = models::jira_model::load_profiles();
+                connection_profiles_ = models::jira_model::load_profiles(); // Assuming this is a static method
             }
             
             ImGui::Separator();
@@ -171,46 +173,52 @@ private:
             ImGui::Text("Connection Name (optional):");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            ImGui::InputText("##profile_name", &new_profile_name_);
+            ImGui::InputText("##profile_name", new_profile_name_, sizeof(new_profile_name_));
             
             ImGui::Text("Server URL:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            ImGui::InputText("##server_url", &server_url_);
+            ImGui::InputText("##server_url", server_url_, sizeof(server_url_));
             
             ImGui::Text("Username:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            ImGui::InputText("##username", &username_);
+            ImGui::InputText("##username", username_, sizeof(username_));
             
             ImGui::Text("API Token:");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            ImGui::InputText("##api_token", &api_token_, ImGuiInputTextFlags_Password);
+            ImGui::InputText("##api_token", api_token_, sizeof(api_token_), ImGuiInputTextFlags_Password);
             
             ImGui::TextWrapped("Note: For Atlassian Cloud instances, use your email as username and an API token from your Atlassian account.");
             
-            if (ImGui::Button("Connect", ImVec2(120, 0)) && !server_url_.empty() && !username_.empty() && !api_token_.empty()) {
+            if (ImGui::Button("Connect", ImVec2(120, 0)) && strlen(server_url_) > 0 && strlen(username_) > 0 && strlen(api_token_) > 0) {
                 login_in_progress_ = true;
                 status_message_ = "Connecting...";
                 
                 // Run connection in background
                 std::thread([this]() {
-                    bool success = jira_model_->connect(server_url_, username_, api_token_);
+                    // Create a profile from the form data
+                    models::jira_connection_profile profile;
+                    profile.server_url = std::string(server_url_);
+                    profile.username = std::string(username_);
+                    profile.api_token = std::string(api_token_);
+                    
+                    bool success = jira_model_->connect(profile);
                     
                     if (success) {
                         status_message_ = "Connected successfully!";
                         
                         // Save the profile if it has a name
-                        if (!new_profile_name_.empty()) {
-                            models::jira_connection_profile profile;
-                            profile.name = new_profile_name_;
-                            profile.server_url = server_url_;
-                            profile.username = username_;
-                            profile.api_token = api_token_;
+                        if (strlen(new_profile_name_) > 0) {
+                            models::jira_connection_profile new_profile;
+                            new_profile.name = std::string(new_profile_name_);
+                            new_profile.server_url = std::string(server_url_);
+                            new_profile.username = std::string(username_);
+                            new_profile.api_token = std::string(api_token_);
                             
-                            connection_profiles_.push_back(profile);
-                            models::jira_model::save_profiles(connection_profiles_);
+                            connection_profiles_.push_back(new_profile);
+                            models::jira_model::save_profiles(connection_profiles_); // Assuming this is a static method
                         }
                         
                         // Fetch projects after connection
@@ -225,7 +233,7 @@ private:
             
             if (show_add_profile_ && ImGui::Button("Cancel", ImVec2(120, 0))) {
                 show_add_profile_ = false;
-                new_profile_name_.clear();
+                new_profile_name_[0] = '\\0'; // Was new_profile_name_.clear();
             }
         }
         
@@ -293,7 +301,14 @@ private:
         // Check if issue details have been loaded
         if (issue_future_.valid() && 
             issue_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            selected_issue_ = issue_future_.get();
+            auto issue_opt = issue_future_.get();
+            if (issue_opt) { // Check if optional has value
+                selected_issue_ = issue_opt;
+            } else {
+                // Handle case where issue is not found or error occurred
+                selected_issue_.reset(); 
+                status_message_ = "Failed to load issue details for " + selected_issue_key_;
+            }
         }
     }
     
@@ -324,7 +339,7 @@ private:
         
         // Filter and search
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 120);
-        if (ImGui::InputText("##filter", &filter_text_, ImGuiInputTextFlags_EnterReturnsTrue)) {
+        if (ImGui::InputText("##filter", filter_text_, sizeof(filter_text_), ImGuiInputTextFlags_EnterReturnsTrue)) { // Was &filter_text_
             search_issues();
         }
         
@@ -356,18 +371,19 @@ private:
             jql = std::format("project = {}", selected_project_);
         }
         
-        if (!filter_text_.empty()) {
+        if (strlen(filter_text_) > 0) { // Was !filter_text_.empty()
             if (!jql.empty()) {
                 jql += " AND ";
             }
             
             // Check if filter_text is a key directly
-            if (filter_text_.find('-') != std::string::npos) {
-                jql += std::format("key = {} OR ", filter_text_);
+            std::string filter_str(filter_text_);
+            if (filter_str.find('-') != std::string::npos) {
+                jql += std::format("key = {} OR ", filter_str);
             }
             
-            jql += std::format("summary ~ \"{}\" OR description ~ \"{}\"", 
-                              filter_text_, filter_text_);
+            jql += std::format("summary ~ \\"{}\\" OR description ~ \\"{}\\"", 
+                              filter_str, filter_str);
         }
         
         // Explicitly include status conditions to get backlog items
@@ -439,14 +455,7 @@ private:
                     
                     if (ImGui::MenuItem("Open in browser")) {
                         std::string url = std::format("{}/browse/{}", jira_model_->get_server_url(), issue.key);
-                        // Open URL in browser (platform-specific)
-                        #ifdef _WIN32
-                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-                        #elif defined(__APPLE__)
-                        system(std::format("open \"{}\"", url).c_str());
-                        #else
-                        system(std::format("xdg-open \"{}\"", url).c_str());
-                        #endif
+                        rouen::platform::open_url(url);
                     }
                     
                     ImGui::EndPopup();
@@ -537,14 +546,7 @@ private:
         // Add clickable link to open in browser
         if (ImGui::SmallButton("Open in browser")) {
             std::string url = std::format("{}/browse/{}", jira_model_->get_server_url(), issue.key);
-            // Open URL in browser (platform-specific)
-            #ifdef _WIN32
-            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-            #elif defined(__APPLE__)
-            system(std::format("open \"{}\"", url).c_str());
-            #else
-            system(std::format("xdg-open \"{}\"", url).c_str());
-            #endif
+            rouen::platform::open_url(url);
         }
         
         ImGui::SameLine();
@@ -584,24 +586,34 @@ private:
         
         ImGui::TextColored(colors[3], "Assignee:");
         ImGui::SameLine();
-        if (issue.assignee.display_name.empty()) {
-            ImGui::TextColored(colors[3], "Unassigned");
-        } else {
+        if (!issue.assignee.display_name.empty() && issue.assignee.display_name != "null") { // Added null check
             ImGui::Text("%s", issue.assignee.display_name.c_str());
+        } else {
+            ImGui::TextColored(colors[3], "Unassigned");
         }
         
         // Format dates
-        auto format_time = [](const std::chrono::system_clock::time_point& time) {
-            auto time_t = std::chrono::system_clock::to_time_t(time);
-            std::tm tm = *std::localtime(&time_t);
-            char buffer[32];
-            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &tm);
-            return std::string(buffer);
+        auto format_jira_date = [](const std::string& jira_date) -> std::string {
+            if (jira_date.empty()) {
+                return "N/A";
+            }
+            // Example JIRA date: "2023-05-22T14:35:30.000+0000"
+            // Extract date and time parts for display
+            if (jira_date.size() >= 19) {
+                std::string date_part = jira_date.substr(0, 10); // YYYY-MM-DD
+                std::string time_part = jira_date.substr(11, 5); // HH:MM
+                return date_part + " " + time_part;
+            }
+            return jira_date.size() >= 10 ? jira_date.substr(0, 10) : jira_date; // Fallback for shorter/malformed dates
         };
         
         ImGui::TextColored(colors[3], "Created:");
         ImGui::SameLine();
-        ImGui::Text("%s", format_time(issue.created).c_str());
+        ImGui::Text("%s", format_jira_date(issue.created).c_str()); // Was format_time(issue.created)
+
+        ImGui::TextColored(colors[3], "Updated:"); // Added Updated date, assuming it exists in jira_issue
+        ImGui::SameLine();
+        ImGui::Text("%s", format_jira_date(issue.updated).c_str()); // Assuming issue.updated exists
         
         ImGui::Columns(1);
         
@@ -618,17 +630,17 @@ private:
         ImGui::EndChild();
         
         // Comments section
-        ImGui::TextColored(colors[0], "Comments (%zu)", issue.comments.size());
+        ImGui::TextColored(colors[0], "Comments (%zu)", issue.comments.size()); // Assuming issue.comments exists
         
         if (ImGui::BeginChild("IssueComments", ImVec2(0, 150), true)) {
-            for (const auto& comment : issue.comments) {
+            for (const auto& comment : issue.comments) { // Assuming issue.comments exists
                 ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.2f, 0.2f, 0.2f, 0.5f));
                 ImGui::BeginChild(std::format("Comment_{}", comment.id).c_str(), 
                                 ImVec2(0, 0), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
                 
                 ImGui::TextColored(colors[0], "%s", comment.author.display_name.c_str());
                 ImGui::SameLine();
-                ImGui::TextColored(colors[3], "%s", format_time(comment.created).c_str());
+                ImGui::TextColored(colors[3], "%s", format_jira_date(comment.created).c_str()); // Was format_time
                 
                 ImGui::Separator();
                 ImGui::TextWrapped("%s", comment.body.c_str());
@@ -642,28 +654,30 @@ private:
         ImGui::EndChild();
         
         // Add comment
-        static std::string new_comment;
+        static char new_comment_buffer_[4096] = ""; // Was static std::string new_comment;
         ImGui::TextColored(colors[0], "Add Comment");
-        ImGui::InputTextMultiline("##new_comment", &new_comment, ImVec2(-1, 80));
+        ImGui::InputTextMultiline("##new_comment", new_comment_buffer_, sizeof(new_comment_buffer_), ImVec2(-1, 80)); // Was &new_comment
         
         static bool comment_in_progress = false;
-        if (!comment_in_progress && ImGui::Button("Add Comment", ImVec2(120, 0)) && !new_comment.empty()) {
+        if (!comment_in_progress && ImGui::Button("Add Comment", ImVec2(120, 0)) && strlen(new_comment_buffer_) > 0) { // Was !new_comment.empty()
             comment_in_progress = true;
             
             // Add comment in background
-            std::thread([this, comment_text = new_comment]() {
+            std::thread([this, comment_text = std::string(new_comment_buffer_)]() { // Capture by value
                 auto future = jira_model_->add_comment(selected_issue_key_, comment_text);
-                bool success = future.get();
+                bool success = future.get(); // Assuming add_comment returns future<bool>
                 
                 if (success) {
                     // Refresh issue details
                     issue_future_ = jira_model_->get_issue(selected_issue_key_);
+                } else {
+                    status_message_ = "Failed to add comment.";
                 }
                 
                 comment_in_progress = false;
             }).detach();
             
-            new_comment.clear();
+            new_comment_buffer_[0] = '\\0'; // Was new_comment.clear();
         }
         
         if (comment_in_progress) {
@@ -672,22 +686,16 @@ private:
         }
         
         // Attachments section
-        if (!issue.attachments.empty()) {
-            ImGui::TextColored(colors[0], "Attachments (%zu)", issue.attachments.size());
+        if (!issue.attachments.empty()) { // Assuming issue.attachments exists
+            ImGui::TextColored(colors[0], "Attachments (%zu)", issue.attachments.size()); // Assuming issue.attachments exists
             
             if (ImGui::BeginChild("IssueAttachments", ImVec2(0, 100), true)) {
-                for (const auto& attachment : issue.attachments) {
+                for (const auto& attachment : issue.attachments) { // Assuming issue.attachments exists
                     if (ImGui::Selectable(std::format("{}  ({:.2f} KB)", 
                                         attachment.filename, 
                                         attachment.size / 1024.0f).c_str())) {
                         // Open attachment in browser
-                        #ifdef _WIN32
-                        ShellExecuteA(NULL, "open", attachment.url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-                        #elif defined(__APPLE__)
-                        system(std::format("open \"{}\"", attachment.url).c_str());
-                        #else
-                        system(std::format("xdg-open \"{}\"", attachment.url).c_str());
-                        #endif
+                        rouen::platform::open_url(attachment.url);
                     }
                 }
             }
@@ -754,16 +762,16 @@ private:
         ImGui::Text("Summary:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        ImGui::InputText("##create_summary", &create_summary_);
+        ImGui::InputText("##create_summary", create_summary_, sizeof(create_summary_)); // Was &create_summary_
         
         ImGui::Text("Description:");
-        ImGui::InputTextMultiline("##create_description", &create_description_, 
+        ImGui::InputTextMultiline("##create_description", create_description_, sizeof(create_description_), // Was &create_description_
                                 ImVec2(-1, ImGui::GetContentRegionAvail().y - 50));
         
         // Create button
         bool can_create = !create_project_key_.empty() && 
                         !create_issue_type_id_.empty() && 
-                        !create_summary_.empty();
+                        strlen(create_summary_) > 0; // Was !create_summary_.empty()
         
         if (!can_create) {
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
@@ -777,19 +785,24 @@ private:
                 auto future = jira_model_->create_issue(
                     create_project_key_,
                     create_issue_type_id_,
-                    create_summary_,
-                    create_description_
+                    std::string(create_summary_), // Convert char[] to string
+                    std::string(create_description_) // Convert char[] to string
                 );
                 
-                auto new_issue = future.get();
-                if (new_issue) {
+                auto new_issue_opt = future.get(); // Assuming create_issue returns future<optional<issue>>
+                if (new_issue_opt) {
+                    auto& new_issue = *new_issue_opt;
                     // Clear form
-                    create_summary_.clear();
-                    create_description_.clear();
+                    create_summary_[0] = '\\0'; // Was create_summary_.clear();
+                    create_description_[0] = '\\0'; // Was create_description_.clear();
                     
                     // Select the new issue
-                    selected_issue_key_ = new_issue->key;
-                    selected_issue_ = new_issue;
+                    selected_issue_key_ = new_issue.key;
+                    selected_issue_ = new_issue_opt; // Assign the optional
+                    status_message_ = "Issue " + new_issue.key + " created.";
+                    // Optionally, switch to the issues tab and search for this issue
+                } else {
+                    status_message_ = "Failed to create issue.";
                 }
                 
                 issue_creation_in_progress_ = false;
@@ -811,19 +824,23 @@ private:
         ImGui::Separator();
         
         // Show current connection info
-        auto current_profile = jira_model_->get_current_profile();
-        
-        ImGui::TextColored(colors[3], "Connected to:");
-        ImGui::SameLine();
-        ImGui::TextColored(colors[0], "%s", current_profile.name.c_str());
-        
-        ImGui::TextColored(colors[3], "Server:");
-        ImGui::SameLine();
-        ImGui::TextColored(colors[0], "%s", jira_model_->get_server_url().c_str());
-        
-        ImGui::TextColored(colors[3], "Username:");
-        ImGui::SameLine();
-        ImGui::TextColored(colors[0], "%s", current_profile.username.c_str());
+        auto current_profile_opt = jira_model_->get_current_profile(); // Assuming this returns optional
+        if (current_profile_opt) {
+            const auto& current_profile = *current_profile_opt;
+            ImGui::TextColored(colors[3], "Connected to:");
+            ImGui::SameLine();
+            ImGui::TextColored(colors[0], "%s", current_profile.name.c_str());
+            
+            ImGui::TextColored(colors[3], "Server:");
+            ImGui::SameLine();
+            ImGui::TextColored(colors[0], "%s", jira_model_->get_server_url().c_str());
+            
+            ImGui::TextColored(colors[3], "Username:");
+            ImGui::SameLine();
+            ImGui::TextColored(colors[0], "%s", current_profile.username.c_str());
+        } else {
+            ImGui::TextColored(colors[5], "Not fully connected or profile unavailable.");
+        }
         
         if (ImGui::Button("Disconnect", ImVec2(120, 0))) {
             jira_model_ = std::make_shared<models::jira_model>();

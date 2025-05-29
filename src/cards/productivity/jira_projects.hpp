@@ -3,6 +3,7 @@
 #include "../interface/card.hpp"
 #include "../../models/jira_model.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/platform_utils.hpp"  // For open_url function
 #include <memory>
 #include <string>
 #include <vector>
@@ -370,14 +371,7 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Open in Browser", ImVec2(120, 0))) {
             std::string url = std::format("{}/browse/{}", jira_model_->get_server_url(), selected_project_key_);
-            // Open URL in browser (platform-specific)
-            #ifdef _WIN32
-            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-            #elif defined(__APPLE__)
-            system(std::format("open \"{}\"", url).c_str());
-            #else
-            system(std::format("xdg-open \"{}\"", url).c_str());
-            #endif
+            rouen::platform::open_url(url);
         }
         
         ImGui::Separator();

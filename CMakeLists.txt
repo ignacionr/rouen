@@ -189,3 +189,7 @@ elseif(UNIX AND NOT APPLE)
 elseif(WIN32)
   include(cmake/windows.cmake)
 endif()
+
+# Enable CTest
+enable_testing()
+add_subdirectory(tests)

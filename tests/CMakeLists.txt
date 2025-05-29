@@ -12,11 +12,13 @@ include_directories(..)
 add_executable(test_bybit_currency_fix 
     test_currency_fix.cpp
 )
+add_test(NAME BybitCurrencyFixTest COMMAND test_bybit_currency_fix)
 
 # Example test for basic math operations
 add_executable(test_example_math
     test_example_math.cpp
 )
+add_test(NAME ExampleMathTest COMMAND test_example_math)
 
 # Set output directory for test executables
 set_target_properties(test_bybit_currency_fix test_example_math PROPERTIES

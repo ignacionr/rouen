@@ -3,6 +3,8 @@
 #include "../interface/card.hpp"
 #include "../../models/jira_model.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/platform_utils.hpp"  // For open_url function
+#include "../../registrar.hpp"  // For _sfn operator
 #include <memory>
 #include <string>
 #include <vector>
@@ -70,7 +72,8 @@ public:
             if (ImGui::BeginCombo("Saved Searches", "Select a saved search...")) {
                 for (const auto& saved : saved_searches_) {
                     if (ImGui::Selectable(saved.name.c_str())) {
-                        jql_query_ = saved.jql;
+                        std::strncpy(jql_query_, saved.jql.c_str(), sizeof(jql_query_) - 1);
+                        jql_query_[sizeof(jql_query_) - 1] = '\0';
                     }
                     
                     if (ImGui::IsItemHovered()) {
@@ -85,7 +88,7 @@ public:
             // JQL query input
             ImGui::Text("JQL Query:");
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 100);
-            if (ImGui::InputText("##jql", &jql_query_, ImGuiInputTextFlags_EnterReturnsTrue)) {
+            if (ImGui::InputText("##jql", jql_query_, sizeof(jql_query_), ImGuiInputTextFlags_EnterReturnsTrue)) {
                 execute_search();
             }
             
@@ -95,7 +98,7 @@ public:
             }
             
             // Save current search
-            if (!jql_query_.empty()) {
+            if (strlen(jql_query_) > 0) {
                 if (ImGui::Button("Save Search", ImVec2(100, 0))) {
                     ImGui::OpenPopup("SaveSearchPopup");
                 }
@@ -104,17 +107,17 @@ public:
             // Save search popup
             if (ImGui::BeginPopup("SaveSearchPopup")) {
                 ImGui::Text("Save Search As:");
-                ImGui::InputText("##save_name", &save_search_name_);
+                ImGui::InputText("##save_name", save_search_name_, sizeof(save_search_name_));
                 
-                if (ImGui::Button("Save") && !save_search_name_.empty()) {
-                    saved_searches_.push_back({save_search_name_, jql_query_});
-                    save_search_name_.clear();
+                if (ImGui::Button("Save") && strlen(save_search_name_) > 0) {
+                    saved_searches_.push_back({std::string(save_search_name_), std::string(jql_query_)});
+                    memset(save_search_name_, 0, sizeof(save_search_name_));
                     ImGui::CloseCurrentPopup();
                 }
                 
                 ImGui::SameLine();
                 if (ImGui::Button("Cancel")) {
-                    save_search_name_.clear();
+                    memset(save_search_name_, 0, sizeof(save_search_name_));
                     ImGui::CloseCurrentPopup();
                 }
                 
@@ -125,25 +128,29 @@ public:
             
             // Quick filters
             if (ImGui::Button("My Issues")) {
-                jql_query_ = "assignee = currentUser() ORDER BY updated DESC";
+                std::strncpy(jql_query_, "assignee = currentUser() ORDER BY updated DESC", sizeof(jql_query_) - 1);
+                jql_query_[sizeof(jql_query_) - 1] = '\0';
                 execute_search();
             }
             
             ImGui::SameLine();
             if (ImGui::Button("Reported by Me")) {
-                jql_query_ = "reporter = currentUser() ORDER BY updated DESC";
+                std::strncpy(jql_query_, "reporter = currentUser() ORDER BY updated DESC", sizeof(jql_query_) - 1);
+                jql_query_[sizeof(jql_query_) - 1] = '\0';
                 execute_search();
             }
             
             ImGui::SameLine();
             if (ImGui::Button("Updated Today")) {
-                jql_query_ = "updated >= startOfDay() ORDER BY updated DESC";
+                std::strncpy(jql_query_, "updated >= startOfDay() ORDER BY updated DESC", sizeof(jql_query_) - 1);
+                jql_query_[sizeof(jql_query_) - 1] = '\0';
                 execute_search();
             }
             
             ImGui::SameLine();
             if (ImGui::Button("Unresolved")) {
-                jql_query_ = "resolution = Unresolved ORDER BY updated DESC";
+                std::strncpy(jql_query_, "resolution = Unresolved ORDER BY updated DESC", sizeof(jql_query_) - 1);
+                jql_query_[sizeof(jql_query_) - 1] = '\0';
                 execute_search();
             }
             
@@ -161,7 +168,8 @@ public:
     // Allow setting initial JQL query via URI parameter
     static ptr create_with_query(std::string_view query) {
         auto card = std::make_shared<jira_search_card>();
-        card->jql_query_ = query;
+        std::strncpy(card->jql_query_, query.data(), sizeof(card->jql_query_) - 1);
+        card->jql_query_[sizeof(card->jql_query_) - 1] = '\0';
         card->execute_search();
         return card;
     }
@@ -175,7 +183,7 @@ private:
     std::shared_ptr<models::jira_model> jira_model_;
     
     // Search state
-    std::string jql_query_;
+    char jql_query_[1024] = "";
     std::future<models::jira_search_result> search_future_;
     std::optional<models::jira_search_result> search_result_;
     int current_page_ = 0;
@@ -185,12 +193,12 @@ private:
     
     // Issue details
     std::string selected_issue_key_;
-    std::future<std::optional<models::jira_issue>> issue_future_;
+    std::future<models::jira_issue> issue_future_;
     std::optional<models::jira_issue> selected_issue_;
     
     // Saved searches
     std::vector<saved_search> saved_searches_;
-    std::string save_search_name_;
+    char save_search_name_[256] = "";
     
     void check_async_operations() {
         // Check if search results have been loaded
@@ -203,7 +211,10 @@ private:
         // Check if issue details have been loaded
         if (issue_future_.valid() && 
             issue_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            selected_issue_ = issue_future_.get();
+            auto issue_result = issue_future_.get();
+            if (!issue_result.key.empty()) {
+                selected_issue_ = issue_result;
+            }
         }
     }
     
@@ -228,12 +239,13 @@ private:
         search_error_.clear();
         search_in_progress_ = true;
         
-        if (jql_query_.empty()) {
-            jql_query_ = "order by updated DESC";
+        if (strlen(jql_query_) == 0) {
+            std::strncpy(jql_query_, "order by updated DESC", sizeof(jql_query_) - 1);
+            jql_query_[sizeof(jql_query_) - 1] = '\0';
         }
         
         search_future_ = jira_model_->search_issues(
-            jql_query_, 
+            std::string(jql_query_), 
             current_page_ * items_per_page_, 
             items_per_page_
         );
@@ -246,7 +258,7 @@ private:
         }
         
         if (!search_result_.has_value()) {
-            if (!search_future_.valid() && jql_query_.empty()) {
+            if (!search_future_.valid() && strlen(jql_query_) == 0) {
                 ImGui::TextColored(colors[3], "Enter a JQL query to search");
             } else if (!search_future_.valid()) {
                 execute_search();
@@ -320,14 +332,7 @@ private:
                     
                     if (ImGui::MenuItem("Open in browser")) {
                         std::string url = std::format("{}/browse/{}", jira_model_->get_server_url(), issue.key);
-                        // Open URL in browser (platform-specific)
-                        #ifdef _WIN32
-                        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-                        #elif defined(__APPLE__)
-                        system(std::format("open \"{}\"", url).c_str());
-                        #else
-                        system(std::format("xdg-open \"{}\"", url).c_str());
-                        #endif
+                        rouen::platform::open_url(url);
                     }
                     
                     ImGui::EndPopup();
@@ -386,7 +391,7 @@ private:
             if (ImGui::Button("< Prev") && current_page_ > 0) {
                 current_page_--;
                 search_future_ = jira_model_->search_issues(
-                    jql_query_, 
+                    std::string(jql_query_), 
                     current_page_ * items_per_page_, 
                     items_per_page_
                 );
@@ -400,7 +405,7 @@ private:
             if (ImGui::Button("Next >") && current_page_ < max_page) {
                 current_page_++;
                 search_future_ = jira_model_->search_issues(
-                    jql_query_, 
+                    std::string(jql_query_), 
                     current_page_ * items_per_page_, 
                     items_per_page_
                 );
@@ -432,14 +437,7 @@ private:
         // Add clickable link to open in browser
         if (ImGui::SmallButton("Open in browser")) {
             std::string url = std::format("{}/browse/{}", jira_model_->get_server_url(), issue.key);
-            // Open URL in browser (platform-specific)
-            #ifdef _WIN32
-            ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
-            #elif defined(__APPLE__)
-            system(std::format("open \"{}\"", url).c_str());
-            #else
-            system(std::format("xdg-open \"{}\"", url).c_str());
-            #endif
+            rouen::platform::open_url(url);
         }
         
         ImGui::SameLine();
@@ -493,22 +491,28 @@ private:
             ImGui::Text("%s", issue.assignee.display_name.c_str());
         }
         
-        // Format dates
-        auto format_time = [](const std::chrono::system_clock::time_point& time) {
-            auto time_t = std::chrono::system_clock::to_time_t(time);
-            std::tm tm = *std::localtime(&time_t);
-            char buffer[32];
-            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &tm);
-            return std::string(buffer);
+        // Format JIRA date string
+        auto format_jira_date = [](const std::string& jira_date) -> std::string {
+            if (jira_date.empty()) {
+                return "";
+            }
+            // Example JIRA date: "2023-05-22T14:35:30.000+0000"
+            // Extract date and time parts for display
+            if (jira_date.size() >= 19) {
+                std::string date_part = jira_date.substr(0, 10); // YYYY-MM-DD
+                std::string time_part = jira_date.substr(11, 5); // HH:MM
+                return date_part + " " + time_part;
+            }
+            return jira_date.size() >= 10 ? jira_date.substr(0, 10) : jira_date;
         };
         
         ImGui::TextColored(colors[3], "Created:");
         ImGui::SameLine();
-        ImGui::Text("%s", format_time(issue.created).c_str());
+        ImGui::Text("%s", format_jira_date(issue.created).c_str());
         
         ImGui::TextColored(colors[3], "Updated:");
         ImGui::SameLine();
-        ImGui::Text("%s", format_time(issue.updated).c_str());
+        ImGui::Text("%s", format_jira_date(issue.updated).c_str());
         
         ImGui::Columns(1);
         
@@ -541,29 +545,37 @@ private:
         ImGui::TextColored(colors[0], "Related Searches");
         
         if (ImGui::Button("Same Project")) {
-            jql_query_ = std::format("project = {} ORDER BY updated DESC", issue.project.key);
+            std::string query = std::format("project = {} ORDER BY updated DESC", issue.project.key);
+            std::strncpy(jql_query_, query.c_str(), sizeof(jql_query_) - 1);
+            jql_query_[sizeof(jql_query_) - 1] = '\0';
             execute_search();
         }
         
         ImGui::SameLine();
         if (ImGui::Button("Same Type")) {
-            jql_query_ = std::format("project = {} AND issuetype = '{}' ORDER BY updated DESC", 
+            std::string query = std::format("project = {} AND issuetype = '{}' ORDER BY updated DESC", 
                                     issue.project.key, issue.issue_type.name);
+            std::strncpy(jql_query_, query.c_str(), sizeof(jql_query_) - 1);
+            jql_query_[sizeof(jql_query_) - 1] = '\0';
             execute_search();
         }
         
         ImGui::SameLine();
         if (ImGui::Button("Same Reporter")) {
-            jql_query_ = std::format("reporter = '{}' ORDER BY updated DESC", 
+            std::string query = std::format("reporter = '{}' ORDER BY updated DESC", 
                                     issue.reporter.display_name);
+            std::strncpy(jql_query_, query.c_str(), sizeof(jql_query_) - 1);
+            jql_query_[sizeof(jql_query_) - 1] = '\0';
             execute_search();
         }
         
         if (!issue.assignee.display_name.empty()) {
             ImGui::SameLine();
             if (ImGui::Button("Same Assignee")) {
-                jql_query_ = std::format("assignee = '{}' ORDER BY updated DESC", 
+                std::string query = std::format("assignee = '{}' ORDER BY updated DESC", 
                                         issue.assignee.display_name);
+                std::strncpy(jql_query_, query.c_str(), sizeof(jql_query_) - 1);
+                jql_query_[sizeof(jql_query_) - 1] = '\0';
                 execute_search();
             }
         }

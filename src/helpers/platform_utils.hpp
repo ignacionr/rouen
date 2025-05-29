@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <format>
 #include <cstdlib>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include <limits.h>      // For PATH_MAX
 #elif defined(_WIN32)
 #include <windows.h>     // For GetModuleFileName
+#include <shellapi.h>    // For ShellExecuteA
 #include <io.h>          // For _popen/_pclose
 #define popen _popen
 #define pclose _pclose
@@ -50,6 +52,31 @@ namespace rouen::platform
         #endif
         
         return cmd;
+    }
+    
+    /**
+     * Opens a URL or file directly using platform-specific APIs
+     * Uses ShellExecuteA on Windows, system() calls on other platforms
+     *
+     * @param url_or_path The URL or file path to open
+     * @return true if the operation was initiated successfully, false otherwise
+     */
+    inline bool open_url(const std::string& url_or_path)
+    {
+        #ifdef _WIN32
+            // Use Windows ShellExecuteA API for better integration
+            HINSTANCE result = ShellExecuteA(NULL, "open", url_or_path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            // ShellExecuteA returns a value greater than 32 if successful
+            return reinterpret_cast<intptr_t>(result) > 32;
+        #elif defined(__APPLE__)
+            // macOS uses the 'open' command
+            std::string cmd = std::format("open \"{}\"", url_or_path);
+            return system(cmd.c_str()) == 0;
+        #else
+            // Linux and others use xdg-open
+            std::string cmd = std::format("xdg-open \"{}\"", url_or_path);
+            return system(cmd.c_str()) == 0;
+        #endif
     }
     
     /**

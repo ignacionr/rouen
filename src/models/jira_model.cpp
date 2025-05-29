@@ -26,14 +26,7 @@ struct jira_server_info {
     std::string server_title;
 };
 
-// Comment structure declaration that's used in implementation but not in header
-struct jira_comment {
-    std::string id;
-    std::string body;
-    std::string created;
-    std::string updated;
-    jira_user author;
-};
+// jira_comment is now defined in the header file
 
 // Priority structure declaration used in implementation but not in header
 struct jira_priority {
@@ -860,6 +853,49 @@ static std::string base64_encode(const std::string& input) {
     }
     
     return encoded;
+}
+
+// Static method to save profiles (wrapper for the static function)
+void jira_model::save_profiles(const std::vector<jira_connection_profile>& profiles) {
+    std::lock_guard<std::mutex> lock(profiles_mutex);
+    saved_profiles = profiles;
+    ::rouen::models::save_profiles(profiles);
+}
+
+// Static method to get environment profiles
+std::vector<jira_connection_profile> jira_model::get_env_profiles() {
+    std::lock_guard<std::mutex> lock(profiles_mutex);
+    return environment_profiles;
+}
+
+// Get current profile
+jira_connection_profile jira_model::get_current_profile() const {
+    return current_profile_;
+}
+
+// Add comment to an issue
+std::future<bool> jira_model::add_comment(const std::string& issue_key, const std::string& comment_text) {
+    return std::async(std::launch::async, [this, issue_key, comment_text]() {
+        try {
+            // Construct request payload
+            glz::json_t payload;
+            payload["body"] = comment_text;
+            
+            std::string json_payload;
+            auto result = glz::write_json(payload, json_payload);
+            if (!result) {
+                throw std::runtime_error("Failed to serialize JSON payload");
+            }
+            
+            // Make API request
+            make_request(std::format("issue/{}/comment", issue_key), "POST", json_payload);
+            
+            return true;
+        } catch (const std::exception& e) {
+            JIRA_ERROR_FMT("Error adding comment to JIRA issue: {}", e.what());
+            return false;
+        }
+    });
 }
 
 } // namespace rouen::models

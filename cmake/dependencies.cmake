@@ -4,17 +4,20 @@
 if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   message(STATUS "Using vcpkg for dependency management")
   
+  # Add vcpkg installed directory (relative to build) to CMAKE_PREFIX_PATH for sqlite3 config
+  list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/vcpkg_installed/arm64-osx")
+  
   # Find dependencies via vcpkg
   find_package(OpenGL REQUIRED)
   find_package(CURL REQUIRED)
-  find_package(unofficial-sqlite3 CONFIG REQUIRED)
+  find_package(unofficial-sqlite3 CONFIG REQUIRED)  # Reverted to unofficial-sqlite3
   find_package(OpenSSL REQUIRED)
   find_package(SDL2 CONFIG REQUIRED)
   find_package(SDL2_image CONFIG REQUIRED)
   find_package(tinyxml2 CONFIG REQUIRED)
   
   # Set variables for compatibility with existing code
-  set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)
+  set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)  # Kept as unofficial::sqlite3::sqlite3
   set(TINYXML2_LIBRARIES tinyxml2::tinyxml2)
   set(SDL2_LIBRARIES $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
   set(SDL2_IMAGE_LIBRARIES $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>)
@@ -264,4 +267,3 @@ elseif(MSVC)
     /wd4101  # Suppress 'unreferenced local variable' warnings
   )
 endif()
-      

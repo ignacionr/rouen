@@ -165,6 +165,25 @@ struct jira_project {
     };
 };
 
+// Forward declarations for missing structures
+struct jira_comment {
+    std::string id;
+    std::string body;
+    std::string created;
+    std::string updated;
+    jira_user author;
+};
+
+struct jira_attachment {
+    std::string id;
+    std::string filename;
+    std::string url;
+    std::string content_type;
+    long size = 0;
+    std::string created;
+    jira_user author;
+};
+
 // JIRA issue representation
 struct jira_issue {
     std::string id;
@@ -175,9 +194,12 @@ struct jira_issue {
     jira_status status;
     jira_user assignee;
     jira_user reporter;
+    jira_project project;  // Add missing project field
     std::string created;
     std::string updated;
     std::vector<std::string> labels;
+    std::vector<jira_comment> comments;  // Add missing comments field
+    std::vector<jira_attachment> attachments;  // Add missing attachments field
     
     struct glaze {
         using T = jira_issue;
@@ -331,8 +353,16 @@ public:
     // Connection profile management
     static std::vector<jira_connection_profile> load_profiles();
     static void save_profile(const jira_connection_profile& profile);
+    static void save_profiles(const std::vector<jira_connection_profile>& profiles);  // Add missing method
     static void delete_profile(const std::string& profile_name);
     static std::vector<jira_connection_profile> detect_environment_profiles();
+    static std::vector<jira_connection_profile> get_env_profiles();  // Add missing method
+    
+    // Issue comment methods
+    std::future<bool> add_comment(const std::string& issue_key, const std::string& comment_text);  // Add missing method
+    
+    // Profile management
+    jira_connection_profile get_current_profile() const;  // Add missing method
     
     // Helper method to get the profiles file path (public to allow external utilities to work with it)
     static std::filesystem::path get_profiles_file_path() {
