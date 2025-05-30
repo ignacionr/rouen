@@ -39,9 +39,10 @@ jobs:
           ${{ github.workspace }}\vcpkg\installed
           ${{ github.workspace }}\vcpkg\buildtrees
           ${{ github.workspace }}\vcpkg\packages
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        key: ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-configuration.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
+          ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-
+          ${{ runner.os }}-vcpkg-built-
 
     - name: Setup vcpkg
       shell: cmd
@@ -49,37 +50,45 @@ jobs:
         set "workspace=${{ github.workspace }}"
         set "vcpkgDir=%workspace%\vcpkg"
         
-        if not exist "%vcpkgDir%\vcpkg.exe" (
-          echo Cloning vcpkg...
-          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
-          
-          echo Bootstrapping vcpkg...
-          cd /d "%vcpkgDir%"
-          
-          if exist "bootstrap-vcpkg.bat" (
-            echo Found bootstrap-vcpkg.bat, executing...
-            call bootstrap-vcpkg.bat
-            if errorlevel 1 (
-              echo ERROR: Bootstrap failed with exit code %errorlevel%
-              exit /b 1
-            )
-          ) else (
-            echo ERROR: bootstrap-vcpkg.bat not found in %cd%
-            dir bootstrap*
+        echo Setting up vcpkg...
+        
+        REM Always remove existing vcpkg directory to avoid corruption
+        if exist "%vcpkgDir%" (
+          echo Removing existing vcpkg directory...
+          rmdir /s /q "%vcpkgDir%"
+        )
+        
+        echo Cloning fresh vcpkg...
+        git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+        if errorlevel 1 (
+          echo ERROR: Failed to clone vcpkg
+          exit /b 1
+        )
+        
+        echo Bootstrapping vcpkg...
+        cd /d "%vcpkgDir%"
+        
+        if exist "bootstrap-vcpkg.bat" (
+          echo Found bootstrap-vcpkg.bat, executing...
+          call bootstrap-vcpkg.bat
+          if errorlevel 1 (
+            echo ERROR: Bootstrap failed with exit code %errorlevel%
             exit /b 1
           )
         ) else (
-          echo Using cached vcpkg installation
-          cd /d "%vcpkgDir%"
+          echo ERROR: bootstrap-vcpkg.bat not found in %cd%
+          dir bootstrap*
+          exit /b 1
         )
         
+        REM Verify vcpkg.exe was created
         if not exist "vcpkg.exe" (
           echo ERROR: vcpkg.exe not found after bootstrap
           dir *vcpkg*
           exit /b 1
         )
         
-        echo Installing vcpkg packages...
+        echo Installing vcpkg packages (using cache if available)...
         vcpkg.exe install --triplet x64-windows
         if errorlevel 1 (
           echo ERROR: Package installation failed
