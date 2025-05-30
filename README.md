@@ -384,18 +384,36 @@ cmake --build . --config Release
 
 **Automated Windows Releases:**
 
-Windows releases are automatically built and published via GitHub Actions when a new release is created. The dedicated Windows workflow:
-- Builds the application using the latest MSVC compiler and vcpkg package manager
-- Automatically detects and includes all required DLLs:
-  - **libcurl.dll** and SSL libraries for network functionality
-  - **crypt32.dll** and system libraries for cryptographic operations
-  - **SDL2.dll** and graphics libraries
-  - Visual C++ runtime redistributables
-- Packages assets, fonts, and configuration files
-- Creates a ready-to-run ZIP archive with comprehensive dependency manifest
-- Publishes as a release artifact with detailed troubleshooting information
+Windows releases are automatically built and published via GitHub Actions when a new release is created. The dedicated Windows workflow includes comprehensive fixes for DLL packaging:
 
-You can trigger a manual build by running the "Windows Release Build" workflow from the GitHub Actions tab.
+**DLL Collection Strategy:**
+- **CMake Post-Build Integration**: Automatically copies DLLs to the executable directory during build
+- **Dual-Layer DLL Discovery**: CMake copies DLLs first, then vcpkg fallback ensures nothing is missed
+- **Comprehensive Dependency Scanning**: Locates all required DLLs across multiple vcpkg directories
+- **Critical DLL Verification**: Specifically checks for libcurl.dll, SSL libraries, and system DLLs
+
+**Dependencies Automatically Included:**
+- **libcurl.dll** and SSL libraries (libssl-3-x64.dll, libcrypto-3-x64.dll) for network functionality
+- **crypt32.dll** and Windows system libraries for cryptographic operations  
+- **SDL2.dll** and SDL2_image.dll for graphics and multimedia
+- **zlib1.dll**, **tinyxml2.dll** for data handling
+- Visual C++ runtime redistributables (msvcp140.dll, vcruntime140.dll)
+
+**Enhanced Build Process:**
+- Fresh vcpkg clone with smart package caching to prevent corruption
+- Explicit VCPKG_TARGET_TRIPLET and VCPKG_INSTALLED_DIR configuration
+- Multiple fallback mechanisms for missing DLLs with extensive debugging
+- Emergency DLL search throughout the entire vcpkg installation
+- Comprehensive dependency manifest with troubleshooting guidance
+
+**Release Artifacts:**
+- Self-contained ZIP archive with all dependencies
+- DEPENDENCIES.txt manifest listing all included DLLs with categorization
+- Troubleshooting guidance for missing CURL or SSL libraries
+- Assets, fonts, and configuration files properly packaged
+
+**Manual Workflow Trigger:**
+You can trigger a manual build by running the "Windows Release Build" workflow from the GitHub Actions tab with an optional release creation toggle.
 
 **Why Windows-Only Releases?**
 - Windows has the most complex dependency management requirements

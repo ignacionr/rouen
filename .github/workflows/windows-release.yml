@@ -89,10 +89,17 @@ jobs:
         )
         
         echo Installing vcpkg packages (using cache if available)...
-        vcpkg.exe install --triplet x64-windows
+        vcpkg.exe install --triplet x64-windows --verbose
         if errorlevel 1 (
           echo ERROR: Package installation failed
           exit /b 1
+        )
+        
+        echo.
+        echo Forcing curl installation specifically...
+        vcpkg.exe install curl[ssl]:x64-windows --verbose
+        if errorlevel 1 (
+          echo WARNING: Explicit curl installation failed
         )
         
         echo Integrating vcpkg...
@@ -100,6 +107,25 @@ jobs:
         
         echo Listing installed packages...
         vcpkg.exe list
+        
+        echo Verifying curl installation...
+        vcpkg.exe list curl
+        if not errorlevel 0 (
+          echo WARNING: curl package may not be properly installed
+        )
+        
+        echo Checking for DLL files...
+        if exist "installed\x64-windows\bin" (
+          echo DLL files in bin directory:
+          dir "installed\x64-windows\bin\*.dll"
+        ) else (
+          echo WARNING: x64-windows\bin directory not found
+        )
+        
+        if exist "installed\x64-windows\debug\bin" (
+          echo DLL files in debug\bin directory:
+          dir "installed\x64-windows\debug\bin\*.dll"
+        )
 
     - name: Verify vcpkg installation
       shell: pwsh
@@ -108,27 +134,71 @@ jobs:
         $vcpkgDir = "$workspace\vcpkg"
         $binPath = "$vcpkgDir\installed\x64-windows\bin"
         
-        Write-Host "Verifying vcpkg installation..."
+        Write-Host "=== COMPREHENSIVE VCPKG VERIFICATION ==="
         Write-Host "vcpkg directory: $vcpkgDir"
         Write-Host "Binary path: $binPath"
         
-        if (Test-Path $binPath) {
-          Write-Host "✅ vcpkg bin directory exists"
-          $dlls = Get-ChildItem $binPath -Filter "*.dll" | Select-Object -First 10
-          Write-Host "Sample DLLs found:"
-          $dlls | ForEach-Object { Write-Host "  - $($_.Name)" }
+        # List all installed packages
+        Write-Host "`nInstalled packages:"
+        if (Test-Path "$vcpkgDir\vcpkg.exe") {
+          Set-Location $vcpkgDir
+          & ".\vcpkg.exe" list
         } else {
-          Write-Host "⚠️ vcpkg bin directory not found"
+          Write-Host "vcpkg.exe not found!"
+        }
+        
+        # Check if bin directory exists and list contents
+        if (Test-Path $binPath) {
+          Write-Host "`n✅ vcpkg bin directory exists"
+          $allFiles = Get-ChildItem $binPath | Sort-Object Name
+          Write-Host "Contents of bin directory ($($allFiles.Count) files):"
+          foreach ($file in $allFiles) {
+            $sizeKB = [math]::Round($file.Length / 1KB, 1)
+            Write-Host "  $($file.Name) ($sizeKB KB)"
+          }
+        } else {
+          Write-Host "`n⚠️ vcpkg bin directory not found"
+          
+          # Check if installed directory exists at all
+          $installedDir = "$vcpkgDir\installed"
+          if (Test-Path $installedDir) {
+            Write-Host "Installed directory exists, checking subdirectories:"
+            Get-ChildItem $installedDir | ForEach-Object { 
+              Write-Host "  - $($_.Name) $(if ($_.PSIsContainer) { "(directory)" } else { "(file)" })"
+            }
+            
+            # Check x64-windows subdirectory specifically
+            $x64WindowsDir = "$installedDir\x64-windows"
+            if (Test-Path $x64WindowsDir) {
+              Write-Host "x64-windows directory contents:"
+              Get-ChildItem $x64WindowsDir | ForEach-Object { 
+                Write-Host "    - $($_.Name) $(if ($_.PSIsContainer) { "(directory)" } else { "(file)" })"
+              }
+            }
+          }
         }
         
         # Check for specific required DLLs
         $requiredDlls = @("libcurl.dll", "libcurld.dll", "libssl-3-x64.dll", "libcrypto-3-x64.dll")
+        Write-Host "`n=== REQUIRED DLL CHECK ==="
         foreach ($dll in $requiredDlls) {
           $dllPath = "$binPath\$dll"
           if (Test-Path $dllPath) {
-            Write-Host "✅ Found $dll"
+            $sizeKB = [math]::Round((Get-Item $dllPath).Length / 1KB, 1)
+            Write-Host "✅ Found $dll ($sizeKB KB)"
           } else {
             Write-Host "⚠️ Missing $dll"
+            
+            # Search for it anywhere in the vcpkg installation
+            $foundFiles = Get-ChildItem -Recurse "$vcpkgDir\installed" -Filter $dll -ErrorAction SilentlyContinue
+            if ($foundFiles) {
+              foreach ($found in $foundFiles) {
+                $relativePath = $found.FullName.Replace("$vcpkgDir\", "")
+                Write-Host "  Found at: $relativePath"
+              }
+            } else {
+              Write-Host "  Not found anywhere in vcpkg installation"
+            }
           }
         }
 
@@ -142,8 +212,15 @@ jobs:
         cmake -B build -S . ^
           -DCMAKE_TOOLCHAIN_FILE="%workspace%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
+          -DVCPKG_INSTALLED_DIR="%workspace%\vcpkg\installed" ^
           -DCMAKE_BUILD_TYPE=Release ^
           -G "Visual Studio 17 2022" -A x64
+        
+        echo.
+        echo === CMAKE CONFIGURATION VERIFICATION ===
+        echo VCPKG_TARGET_TRIPLET=x64-windows
+        echo VCPKG_INSTALLED_DIR=%workspace%\vcpkg\installed
+        echo CMAKE_TOOLCHAIN_FILE=%workspace%\vcpkg\scripts\buildsystems\vcpkg.cmake
 
     - name: Build with CMake
       shell: cmd
@@ -153,6 +230,78 @@ jobs:
           echo ERROR: Build failed
           exit /b 1
         )
+
+    - name: Check build output for DLLs
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $buildDir = "$workspace\build"
+        
+        Write-Host "=== CHECKING BUILD OUTPUT FOR DLLs ==="
+        Write-Host "Build directory: $buildDir"
+        
+        # Search for all DLLs in build directory
+        $buildDlls = Get-ChildItem -Recurse $buildDir -Filter "*.dll" -ErrorAction SilentlyContinue
+        if ($buildDlls) {
+          Write-Host "`nDLLs found in build directory ($($buildDlls.Count) total):"
+          foreach ($dll in $buildDlls | Sort-Object FullName) {
+            $relativePath = $dll.FullName.Replace("$buildDir\", "")
+            $sizeKB = [math]::Round($dll.Length / 1KB, 1)
+            Write-Host "  $relativePath ($sizeKB KB)"
+            if ($dll.Name -like "*curl*") {
+              Write-Host "    *** CURL DLL FOUND IN BUILD: $($dll.FullName) ***"
+            }
+          }
+        } else {
+          Write-Host "No DLLs found in build directory"
+        }
+        
+        # Check Release subdirectory specifically
+        $releaseDir = "$buildDir\Release"
+        if (Test-Path $releaseDir) {
+          Write-Host "`nRelease directory contents:"
+          Get-ChildItem $releaseDir | ForEach-Object {
+            $sizeKB = if ($_.PSIsContainer) { "<DIR>" } else { "$([math]::Round($_.Length / 1KB, 1)) KB" }
+            Write-Host "  $($_.Name) ($sizeKB)"
+          }
+          
+          # Check if CMake copied DLLs to the same directory as the executable
+          $releaseDlls = Get-ChildItem "$releaseDir\*.dll" -ErrorAction SilentlyContinue
+          if ($releaseDlls) {
+            Write-Host "`n✅ CMake successfully copied DLLs to Release directory:"
+            foreach ($dll in $releaseDlls) {
+              $sizeKB = [math]::Round($dll.Length / 1KB, 1)
+              Write-Host "  ✅ $($dll.Name) ($sizeKB KB)"
+            }
+          } else {
+            Write-Host "`n⚠️ No DLLs found in Release directory - CMake DLL copying may have failed"
+          }
+        }
+        
+        # Check if CMake created the executable
+        $exePaths = @(
+          "$buildDir\Release\rouen.exe",
+          "$buildDir\Debug\rouen.exe",
+          "$buildDir\rouen.exe"
+        )
+        
+        foreach ($exePath in $exePaths) {
+          if (Test-Path $exePath) {
+            Write-Host "`n✅ Found executable: $exePath"
+            $exeDir = Split-Path $exePath -Parent
+            Write-Host "Executable directory: $exeDir"
+            
+            # List all files in the executable directory
+            $exeDirFiles = Get-ChildItem $exeDir -ErrorAction SilentlyContinue
+            Write-Host "Files in executable directory ($($exeDirFiles.Count) total):"
+            foreach ($file in $exeDirFiles) {
+              $sizeKB = if ($file.PSIsContainer) { "<DIR>" } else { "$([math]::Round($file.Length / 1KB, 1)) KB" }
+              $marker = if ($file.Name -like "*.dll") { "📦 DLL" } elseif ($file.Name -like "*.exe") { "🔧 EXE" } else { "📄" }
+              Write-Host "  $marker $($file.Name) ($sizeKB)"
+            }
+            break
+          }
+        }
 
     - name: Package application
       shell: pwsh
@@ -172,67 +321,146 @@ jobs:
         )
         
         $exeFound = $false
+        $exeDir = ""
         foreach ($exePath in $exePaths) {
           if (Test-Path $exePath) {
-            Write-Host "Found executable at: $exePath"
+            Write-Host "✅ Found executable at: $exePath"
             Copy-Item $exePath $distDir
             $exeFound = $true
+            $exeDir = Split-Path $exePath -Parent
+            
+            # PRIORITY: Copy DLLs from the same directory as the executable (CMake should have placed them here)
+            $exeDlls = Get-ChildItem "$exeDir\*.dll" -ErrorAction SilentlyContinue
+            if ($exeDlls) {
+              Write-Host "`n🎯 PRIORITY: Copying DLLs from executable directory ($($exeDlls.Count) found):"
+              foreach ($dll in $exeDlls) {
+                $destPath = "$distDir\$($dll.Name)"
+                Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
+                $sizeKB = [math]::Round($dll.Length / 1KB, 1)
+                Write-Host "  ✅ Copied from exe-dir: $($dll.Name) ($sizeKB KB)"
+                if ($dll.Name -like "*curl*") {
+                  Write-Host "    🎉 *** LIBCURL FOUND AND COPIED FROM EXE DIRECTORY! ***"
+                }
+              }
+            } else {
+              Write-Host "⚠️ No DLLs found in executable directory - CMake post-build copying may have failed"
+            }
             break
           }
         }
         
         if (-not $exeFound) {
-          Write-Host "ERROR: Could not find rouen.exe"
+          Write-Host "❌ ERROR: Could not find rouen.exe"
+          Write-Host "Available executables in build directory:"
           Get-ChildItem -Recurse $buildDir -Include "*.exe" | ForEach-Object { Write-Host "Found exe: $($_.FullName)" }
           exit 1
         }
+        
+        # Summary of what we have so far
+        $currentDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        Write-Host "`n📊 DLLs copied from executable directory: $($currentDlls.Count)"
+        if ($currentDlls.Count -gt 0) {
+          foreach ($dll in $currentDlls) {
+            Write-Host "  📦 $($dll.Name)"
+          }
+        }
 
-    - name: Copy vcpkg DLLs
+    - name: Copy vcpkg DLLs (fallback)
       shell: pwsh
       run: |
         $workspace = "${{ github.workspace }}"
         $distDir = "$workspace\dist"
         $vcpkgBinPath = "$workspace\vcpkg\installed\x64-windows\bin"
+        $vcpkgDebugBinPath = "$workspace\vcpkg\installed\x64-windows\debug\bin"
         
-        if (Test-Path $vcpkgBinPath) {
-          Write-Host "Copying DLLs from vcpkg: $vcpkgBinPath"
-          $dllFiles = Get-ChildItem "$vcpkgBinPath\*.dll" -ErrorAction SilentlyContinue
-          foreach ($dll in $dllFiles) {
-            Write-Host "  Copying: $($dll.Name)"
-            Copy-Item $dll.FullName $distDir -ErrorAction SilentlyContinue
-          }
-          Write-Host "Total vcpkg DLLs copied: $($dllFiles.Count)"
+        # Check what DLLs we already have from CMake
+        $existingDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        Write-Host "=== VCPKG DLL FALLBACK COPY ==="
+        Write-Host "DLLs already in dist from CMake: $($existingDlls.Count)"
+        
+        # Check if libcurl is already present
+        $curlPresent = $existingDlls | Where-Object { $_.Name -like "*curl*" }
+        if ($curlPresent) {
+          Write-Host "✅ CURL DLL already present from CMake: $($curlPresent.Name -join ', ')"
         } else {
-          Write-Host "vcpkg bin directory not found: $vcpkgBinPath"
+          Write-Host "⚠️ CURL DLL missing - will attempt vcpkg fallback copy"
         }
         
-        # Specifically look for critical DLLs that might be missing
-        $criticalDlls = @(
-          "libcurl.dll",
-          "libcurld.dll", 
-          "libssl-3-x64.dll",
-          "libcrypto-3-x64.dll",
-          "zlib1.dll",
-          "tinyxml2.dll",
-          "tinyxml2d.dll",
-          "SDL2.dll",
-          "SDL2d.dll",
-          "SDL2_image.dll",
-          "SDL2_imaged.dll"
-        )
+        Write-Host "`nvcpkg bin directories:"
+        Write-Host "  Release bin: $vcpkgBinPath (exists: $(Test-Path $vcpkgBinPath))"
+        Write-Host "  Debug bin: $vcpkgDebugBinPath (exists: $(Test-Path $vcpkgDebugBinPath))"
         
-        foreach ($criticalDll in $criticalDlls) {
-          $destPath = "$distDir\$criticalDll"
-          if (-not (Test-Path $destPath)) {
-            $sourcePath = "$vcpkgBinPath\$criticalDll"
-            if (Test-Path $sourcePath) {
-              Copy-Item $sourcePath $destPath -ErrorAction SilentlyContinue
-              Write-Host "  ✅ Found and copied critical DLL: $criticalDll"
+        # Copy from release bin if available (only if not already present)
+        if (Test-Path $vcpkgBinPath) {
+          $vcpkgDlls = Get-ChildItem "$vcpkgBinPath\*.dll" -ErrorAction SilentlyContinue
+          Write-Host "`nvcpkg release DLLs available: $($vcpkgDlls.Count)"
+          
+          $copiedCount = 0
+          foreach ($dll in $vcpkgDlls) {
+            $destPath = "$distDir\$($dll.Name)"
+            if (-not (Test-Path $destPath)) {
+              Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
+              Write-Host "  ✅ Fallback copied: $($dll.Name)"
+              $copiedCount++
+              if ($dll.Name -like "*curl*") {
+                Write-Host "    🎉 *** LIBCURL COPIED VIA VCPKG FALLBACK! ***"
+              }
             } else {
-              Write-Host "  ⚠️  Critical DLL not found: $criticalDll"
+              Write-Host "  ⏭️ Skipped (already exists): $($dll.Name)"
+            }
+          }
+          Write-Host "Fallback copied from vcpkg release: $copiedCount DLLs"
+        } else {
+          Write-Host "⚠️ vcpkg release bin directory not found"
+        }
+        
+        # Also check debug bin for any missing critical DLLs
+        if (Test-Path $vcpkgDebugBinPath) {
+          $debugDllFiles = Get-ChildItem "$vcpkgDebugBinPath\*.dll" -ErrorAction SilentlyContinue
+          $copiedDebugCount = 0
+          
+          foreach ($dll in $debugDllFiles) {
+            $destPath = "$distDir\$($dll.Name)"
+            # Only copy debug DLLs if release version doesn't exist
+            if (-not (Test-Path $destPath)) {
+              Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
+              Write-Host "  ✅ Debug fallback: $($dll.Name)"
+              $copiedDebugCount++
+            }
+          }
+          
+          if ($copiedDebugCount -gt 0) {
+            Write-Host "Fallback copied from vcpkg debug: $copiedDebugCount DLLs"
+          }
+        }
+        
+        # Final verification - check if we now have libcurl
+        $finalCurlCheck = Get-ChildItem "$distDir\*curl*.dll" -ErrorAction SilentlyContinue
+        if ($finalCurlCheck) {
+          Write-Host "`n✅ CURL DLLs now present in distribution:"
+          foreach ($curl in $finalCurlCheck) {
+            $sizeKB = [math]::Round($curl.Length / 1KB, 1)
+            Write-Host "  ✅ $($curl.Name) ($sizeKB KB)"
+          }
+        } else {
+          Write-Host "`n❌ CURL DLL still missing after fallback copy!"
+          
+          # Desperate search for any curl DLL anywhere in vcpkg
+          Write-Host "Performing desperate search for libcurl..."
+          $foundCurl = Get-ChildItem -Recurse "$workspace\vcpkg" -Filter "*curl*.dll" -ErrorAction SilentlyContinue | Select-Object -First 5
+          if ($foundCurl) {
+            Write-Host "Found CURL DLLs in vcpkg installation:"
+            foreach ($curl in $foundCurl) {
+              $relativePath = $curl.FullName.Replace("$workspace\vcpkg\", "")
+              Write-Host "  📍 $relativePath"
+              # Copy the first one we find
+              if (-not (Test-Path "$distDir\$($curl.Name)")) {
+                Copy-Item $curl.FullName "$distDir\$($curl.Name)" -ErrorAction SilentlyContinue
+                Write-Host "    🚑 EMERGENCY COPIED: $($curl.Name)"
+              }
             }
           } else {
-            Write-Host "  ✅ Critical DLL already present: $criticalDll"
+            Write-Host "❌ No CURL DLLs found anywhere in vcpkg installation!"
           }
         }
 
@@ -486,6 +714,7 @@ jobs:
         $manifestLines += "TROUBLESHOOTING:"
         if ($vcpkgDlls.Count -eq 0) {
           $manifestLines += "  ⚠️  WARNING: No vcpkg DLLs found! libcurl.dll and SSL libraries may be missing."
+          $manifestLines += "  🔧 This indicates CMake DLL copying failed. Check build logs for errors."
         } else {
           $manifestLines += "  ✅ vcpkg dependencies appear to be included."
         }
@@ -493,15 +722,20 @@ jobs:
         $curlFound = $dllFiles | Where-Object { $_.Name -like "*curl*" }
         if ($curlFound) {
           $manifestLines += "  ✅ CURL library found: $($curlFound.Name -join ', ')"
+          $manifestLines += "  🌐 Network functionality should work correctly."
         } else {
           $manifestLines += "  ❌ CURL library NOT found - network functionality may not work!"
+          $manifestLines += "  🔧 SOLUTION: Ensure vcpkg installed curl[ssl] and CMake copied DLLs correctly."
+          $manifestLines += "  🔧 Alternative: Download libcurl.dll manually and place it with the executable."
         }
         
         $sslFound = $dllFiles | Where-Object { $_.Name -like "*ssl*" -or $_.Name -like "*crypto*" }
         if ($sslFound) {
           $manifestLines += "  ✅ SSL/Crypto libraries found: $($sslFound.Name -join ', ')"
+          $manifestLines += "  🔒 Secure connections should work correctly."
         } else {
           $manifestLines += "  ❌ SSL/Crypto libraries NOT found - secure connections may not work!"
+          $manifestLines += "  🔧 SOLUTION: Ensure OpenSSL DLLs are properly installed and copied."
         }
         
         $manifestLines += ""

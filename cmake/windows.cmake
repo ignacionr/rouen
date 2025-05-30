@@ -51,7 +51,7 @@ if(WIN32)
     )
     
     # Handle DLL copying for vcpkg dependencies
-    if(VCPKG_TOOLCHAIN)
+    if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
         # Set up post-build steps to copy DLLs
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             set(CONFIG_SUFFIX "d")
@@ -59,22 +59,43 @@ if(WIN32)
             set(CONFIG_SUFFIX "")
         endif()
         
+        # Ensure VCPKG_TARGET_TRIPLET is set
+        if(NOT DEFINED VCPKG_TARGET_TRIPLET)
+            set(VCPKG_TARGET_TRIPLET "x64-windows")
+        endif()
+        
+        # Determine vcpkg installed directory
+        if(DEFINED VCPKG_INSTALLED_DIR)
+            set(VCPKG_BIN_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+        else()
+            # Fallback paths for vcpkg installation
+            set(VCPKG_BIN_DIR "${CMAKE_SOURCE_DIR}/vcpkg/installed/${VCPKG_TARGET_TRIPLET}/bin")
+        endif()
+        
+        message(STATUS "Windows DLL copying configured:")
+        message(STATUS "  VCPKG_TARGET_TRIPLET: ${VCPKG_TARGET_TRIPLET}")
+        message(STATUS "  VCPKG_BIN_DIR: ${VCPKG_BIN_DIR}")
+        message(STATUS "  CONFIG_SUFFIX: '${CONFIG_SUFFIX}'")
+        
         # Copy SDL2 DLLs
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/SDL2${CONFIG_SUFFIX}.dll"
+            "${VCPKG_BIN_DIR}/SDL2${CONFIG_SUFFIX}.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
+            COMMENT "Copying SDL2${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
         )
         
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/SDL2_image${CONFIG_SUFFIX}.dll"
+            "${VCPKG_BIN_DIR}/SDL2_image${CONFIG_SUFFIX}.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
+            COMMENT "Copying SDL2_image${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
         )
         
-        # Copy other required DLLs
+        # Copy other required DLLs (critical for functionality)
         set(REQUIRED_DLLS
             "libcurl${CONFIG_SUFFIX}.dll"
+            "libcurl.dll"
             "tinyxml2${CONFIG_SUFFIX}.dll"
             "libssl-3-x64.dll"
             "libcrypto-3-x64.dll"
@@ -84,11 +105,34 @@ if(WIN32)
         foreach(DLL ${REQUIRED_DLLS})
             add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/${DLL}"
+                "${VCPKG_BIN_DIR}/${DLL}"
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>
-                COMMAND_EXPAND_LISTS
+                COMMENT "Copying ${DLL} to $<TARGET_FILE_DIR:${PROJECT_NAME}> (if exists)"
+                # Don't fail if DLL doesn't exist (some may be debug/release specific)
             )
         endforeach()
+        
+        # Also try to copy from debug bin if in debug mode
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            set(VCPKG_DEBUG_BIN_DIR "${CMAKE_SOURCE_DIR}/vcpkg/installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+            message(STATUS "  VCPKG_DEBUG_BIN_DIR: ${VCPKG_DEBUG_BIN_DIR}")
+            
+            foreach(DLL ${REQUIRED_DLLS})
+                add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${VCPKG_DEBUG_BIN_DIR}/${DLL}"
+                    $<TARGET_FILE_DIR:${PROJECT_NAME}>
+                    COMMENT "Copying ${DLL} from debug bin to $<TARGET_FILE_DIR:${PROJECT_NAME}> (if exists)"
+                    # Don't fail if DLL doesn't exist
+                )
+            endforeach()
+        endif()
+        
+        # Add a final verification step
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "DLL copying completed for ${PROJECT_NAME}"
+            COMMAND ${CMAKE_COMMAND} -E echo "Executable directory: $<TARGET_FILE_DIR:${PROJECT_NAME}>"
+        )
     endif()
     
     # Windows-specific asset handling
