@@ -33,16 +33,22 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
 - **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
-### Cross-Platform Support
-- **Windows**: Full native Windows support with Windows API integration and MSVC compatibility
-- **macOS**: Native macOS app bundle with system integration
-- **Linux**: Complete Linux desktop environment support
+### Windows Release Focus
+Rouen is primarily developed and released for **Windows x64** with comprehensive automated builds and packaging.
 
-#### Windows-Specific Features
+#### Windows Features
 - **MSVC Compatibility**: Optimized build configuration for Visual Studio 2022+
+- **Automated Releases**: Complete GitHub Actions workflow for Windows builds
+- **DLL Packaging**: Automatic inclusion of all required dependencies (libcurl, OpenSSL, SDL2, etc.)
 - **Type Safety**: Enhanced type conversion handling for size_t/int compatibility
 - **Warning Suppression**: Targeted warning suppression for third-party libraries
-- **Optimization Flags**: Platform-specific optimization flags (/O2 for MSVC, -O3 for GCC/Clang)
+- **Optimization Flags**: Platform-specific optimization flags (/O2 for MSVC)
+
+#### Cross-Platform Development Support
+While releases are Windows-focused, the codebase supports:
+- **macOS**: Native development and building (manual build required)
+- **Linux**: Development support with manual configuration
+- **Windows**: Full automated CI/CD with release packaging
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
@@ -376,16 +382,26 @@ cmake --build . --config Release
 ./scripts/update_vcpkg_baseline.sh
 ```
 
-**Automated Windows Builds:**
+**Automated Windows Releases:**
 
-Windows releases are automatically built and published via GitHub Actions when a new release is created. The workflow:
-- Builds the application using the latest MSVC compiler and manually bootstrapped vcpkg
-- Includes all required DLLs and dependencies
+Windows releases are automatically built and published via GitHub Actions when a new release is created. The dedicated Windows workflow:
+- Builds the application using the latest MSVC compiler and vcpkg package manager
+- Automatically detects and includes all required DLLs:
+  - **libcurl.dll** and SSL libraries for network functionality
+  - **crypt32.dll** and system libraries for cryptographic operations
+  - **SDL2.dll** and graphics libraries
+  - Visual C++ runtime redistributables
 - Packages assets, fonts, and configuration files
-- Creates a ready-to-run ZIP archive
-- Publishes as a release artifact
+- Creates a ready-to-run ZIP archive with comprehensive dependency manifest
+- Publishes as a release artifact with detailed troubleshooting information
 
-You can also trigger a manual build by running the "Windows Release Build" workflow from the Actions tab.
+You can trigger a manual build by running the "Windows Release Build" workflow from the GitHub Actions tab.
+
+**Why Windows-Only Releases?**
+- Windows has the most complex dependency management requirements
+- vcpkg provides excellent Windows library packaging
+- GitHub Actions Windows runners offer reliable MSVC build environment
+- Most users require Windows binaries with all DLLs included
 
 **Troubleshooting GitHub Actions:**
 - The workflow automatically handles vcpkg setup, so no pre-configuration is needed
