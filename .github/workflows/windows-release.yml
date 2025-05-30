@@ -122,8 +122,39 @@ jobs:
             Write-Host "  Copying: $($dll.Name)"
             Copy-Item $dll.FullName $distDir -ErrorAction SilentlyContinue
           }
+          Write-Host "Total vcpkg DLLs copied: $($dllFiles.Count)"
         } else {
           Write-Host "vcpkg bin directory not found: $vcpkgBinPath"
+        }
+        
+        # Specifically look for critical DLLs that might be missing
+        $criticalDlls = @(
+          "libcurl.dll",
+          "libcurld.dll", 
+          "libssl-3-x64.dll",
+          "libcrypto-3-x64.dll",
+          "zlib1.dll",
+          "tinyxml2.dll",
+          "tinyxml2d.dll",
+          "SDL2.dll",
+          "SDL2d.dll",
+          "SDL2_image.dll",
+          "SDL2_imaged.dll"
+        )
+        
+        foreach ($criticalDll in $criticalDlls) {
+          $destPath = "$distDir\$criticalDll"
+          if (-not (Test-Path $destPath)) {
+            $sourcePath = "$vcpkgBinPath\$criticalDll"
+            if (Test-Path $sourcePath) {
+              Copy-Item $sourcePath $destPath -ErrorAction SilentlyContinue
+              Write-Host "  ✅ Found and copied critical DLL: $criticalDll"
+            } else {
+              Write-Host "  ⚠️  Critical DLL not found: $criticalDll"
+            }
+          } else {
+            Write-Host "  ✅ Critical DLL already present: $criticalDll"
+          }
         }
 
     - name: Copy Visual C++ Runtime DLLs
@@ -142,6 +173,13 @@ jobs:
           "concrt140.dll"
         )
         
+        # Critical Windows system DLLs needed for SSL/crypto functionality
+        $systemDlls = @(
+          "crypt32.dll",
+          "ws2_32.dll",
+          "advapi32.dll"
+        )
+        
         # Search paths for VC++ runtime
         $searchPaths = @(
           "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
@@ -150,6 +188,7 @@ jobs:
           "$env:SystemRoot\System32"
         )
         
+        Write-Host "=== Processing Visual C++ Runtime DLLs ==="
         foreach ($dll in $essentialDlls) {
           $destPath = "$distDir\$dll"
           if (-not (Test-Path $destPath)) {
@@ -159,19 +198,39 @@ jobs:
               if ($dllPath) {
                 try {
                   Copy-Item $dllPath.FullName $destPath -ErrorAction Stop
-                  Write-Host "  Copied essential DLL: $dll"
+                  Write-Host "  ✅ Copied essential DLL: $dll"
                   $found = $true
                   break
                 } catch {
-                  Write-Host "  Failed to copy $dll from $($dllPath.FullName)"
+                  Write-Host "  ❌ Failed to copy $dll from $($dllPath.FullName)"
                 }
               }
             }
             if (-not $found) {
-              Write-Host "  Warning: Could not find essential DLL: $dll"
+              Write-Host "  ⚠️  Warning: Could not find essential DLL: $dll"
             }
           } else {
-            Write-Host "  Essential DLL already exists: $dll"
+            Write-Host "  ✅ Essential DLL already exists: $dll"
+          }
+        }
+        
+        Write-Host "`n=== Processing System DLLs ==="
+        foreach ($dll in $systemDlls) {
+          $destPath = "$distDir\$dll"
+          if (-not (Test-Path $destPath)) {
+            $systemPath = "$env:SystemRoot\System32\$dll"
+            if (Test-Path $systemPath) {
+              try {
+                Copy-Item $systemPath $destPath -ErrorAction Stop
+                Write-Host "  ✅ Copied system DLL: $dll"
+              } catch {
+                Write-Host "  ⚠️  Note: Could not copy system DLL $dll (may not be redistributable)"
+              }
+            } else {
+              Write-Host "  ⚠️  System DLL not found: $dll"
+            }
+          } else {
+            Write-Host "  ✅ System DLL already exists: $dll"
           }
         }
 
@@ -211,6 +270,57 @@ jobs:
           }
         }
 
+    - name: Verify DLL dependencies
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $exePath = "$distDir\rouen.exe"
+        
+        if (-not (Test-Path $exePath)) {
+          Write-Host "❌ Executable not found for dependency check: $exePath"
+          exit 1
+        }
+        
+        Write-Host "=== DLL Dependency Analysis ==="
+        Write-Host "Executable: $exePath"
+        
+        # Use dumpbin if available (part of MSVC build tools)
+        $dumpbin = Get-Command "dumpbin.exe" -ErrorAction SilentlyContinue
+        if ($dumpbin) {
+          Write-Host "`nUsing dumpbin to analyze dependencies:"
+          try {
+            $dependencies = & $dumpbin /dependents $exePath 2>&1 | Select-String "\.dll" | ForEach-Object { $_.ToString().Trim() }
+            foreach ($dep in $dependencies) {
+              if ($dep -like "*.dll") {
+                $dllName = ($dep -split '\s+')[-1]
+                $localPath = "$distDir\$dllName"
+                if (Test-Path $localPath) {
+                  Write-Host "  ✅ $dllName (included)"
+                } else {
+                  Write-Host "  ⚠️  $dllName (system/external)"
+                }
+              }
+            }
+          } catch {
+            Write-Host "  Could not run dumpbin analysis: $($_.Exception.Message)"
+          }
+        } else {
+          Write-Host "dumpbin not available, skipping detailed dependency analysis"
+        }
+        
+        # List all DLLs we've collected
+        $collectedDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        Write-Host "`n=== Collected DLLs ($($collectedDlls.Count) total) ==="
+        foreach ($dll in $collectedDlls | Sort-Object Name) {
+          $sizeKB = [math]::Round($dll.Length / 1KB, 1)
+          Write-Host "  📦 $($dll.Name) ($sizeKB KB)"
+        }
+        
+        if ($collectedDlls.Count -eq 0) {
+          Write-Host "⚠️  WARNING: No DLLs found in distribution directory!"
+        }
+
     - name: Create dependency manifest
       shell: pwsh
       run: |
@@ -222,6 +332,25 @@ jobs:
         $totalDlls = $dllFiles.Count
         $totalSize = ($dllFiles | Measure-Object Length -Sum).Sum
         
+        # Categorize DLLs
+        $vcpkgDlls = @()
+        $runtimeDlls = @()
+        $systemDlls = @()
+        $otherDlls = @()
+        
+        foreach ($dll in $dllFiles) {
+          $name = $dll.Name.ToLower()
+          if ($name -like "*ssl*" -or $name -like "*curl*" -or $name -like "*sdl*" -or $name -like "*tiny*" -or $name -like "*zlib*") {
+            $vcpkgDlls += $dll
+          } elseif ($name -like "*vcruntime*" -or $name -like "*msvcp*" -or $name -like "*concrt*") {
+            $runtimeDlls += $dll
+          } elseif ($name -like "*crypt32*" -or $name -like "*ws2_32*" -or $name -like "*advapi32*") {
+            $systemDlls += $dll
+          } else {
+            $otherDlls += $dll
+          }
+        }
+        
         # Create manifest content using array and join
         $manifestLines = @()
         $manifestLines += "Rouen Windows x64 Distribution"
@@ -229,27 +358,86 @@ jobs:
         $manifestLines += ""
         $manifestLines += "This package contains the Rouen application with all required DLL dependencies."
         $manifestLines += ""
-        $manifestLines += "Total DLLs included: $totalDlls"
-        $manifestLines += "Total DLL size: $([math]::Round($totalSize / 1MB, 2)) MB"
+        $manifestLines += "SUMMARY:"
+        $manifestLines += "  Total DLLs included: $totalDlls"
+        $manifestLines += "  Total DLL size: $([math]::Round($totalSize / 1MB, 2)) MB"
+        $manifestLines += "  vcpkg libraries: $($vcpkgDlls.Count)"
+        $manifestLines += "  Runtime libraries: $($runtimeDlls.Count)" 
+        $manifestLines += "  System libraries: $($systemDlls.Count)"
+        $manifestLines += "  Other libraries: $($otherDlls.Count)"
         $manifestLines += ""
-        $manifestLines += "DLL List:"
-        $dllFiles | Sort-Object Name | ForEach-Object { 
-          $manifestLines += "- $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+        
+        if ($vcpkgDlls.Count -gt 0) {
+          $manifestLines += "VCPKG LIBRARIES:"
+          $vcpkgDlls | Sort-Object Name | ForEach-Object { 
+            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+          }
+          $manifestLines += ""
         }
+        
+        if ($runtimeDlls.Count -gt 0) {
+          $manifestLines += "VISUAL C++ RUNTIME:"
+          $runtimeDlls | Sort-Object Name | ForEach-Object { 
+            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+          }
+          $manifestLines += ""
+        }
+        
+        if ($systemDlls.Count -gt 0) {
+          $manifestLines += "SYSTEM LIBRARIES:"
+          $systemDlls | Sort-Object Name | ForEach-Object { 
+            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+          }
+          $manifestLines += ""
+        }
+        
+        if ($otherDlls.Count -gt 0) {
+          $manifestLines += "OTHER LIBRARIES:"
+          $otherDlls | Sort-Object Name | ForEach-Object { 
+            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+          }
+          $manifestLines += ""
+        }
+        
+        $manifestLines += "RUNTIME REQUIREMENTS:"
+        $manifestLines += "  - Windows 10 or later (x64)"
+        $manifestLines += "  - Visual C++ Redistributable 2019/2022 (included)"
         $manifestLines += ""
-        $manifestLines += "Runtime Requirements:"
-        $manifestLines += "- Windows 10 or later (x64)"
-        $manifestLines += "- Visual C++ Redistributable 2019/2022 (included)"
+        
+        $manifestLines += "TROUBLESHOOTING:"
+        if ($vcpkgDlls.Count -eq 0) {
+          $manifestLines += "  ⚠️  WARNING: No vcpkg DLLs found! libcurl.dll and SSL libraries may be missing."
+        } else {
+          $manifestLines += "  ✅ vcpkg dependencies appear to be included."
+        }
+        
+        $curlFound = $dllFiles | Where-Object { $_.Name -like "*curl*" }
+        if ($curlFound) {
+          $manifestLines += "  ✅ CURL library found: $($curlFound.Name -join ', ')"
+        } else {
+          $manifestLines += "  ❌ CURL library NOT found - network functionality may not work!"
+        }
+        
+        $sslFound = $dllFiles | Where-Object { $_.Name -like "*ssl*" -or $_.Name -like "*crypto*" }
+        if ($sslFound) {
+          $manifestLines += "  ✅ SSL/Crypto libraries found: $($sslFound.Name -join ', ')"
+        } else {
+          $manifestLines += "  ❌ SSL/Crypto libraries NOT found - secure connections may not work!"
+        }
+        
         $manifestLines += ""
-        $manifestLines += "If you encounter missing DLL errors, please ensure you have the latest"
-        $manifestLines += "Visual C++ Redistributable installed from Microsoft."
+        $manifestLines += "If you encounter missing DLL errors:"
+        $manifestLines += "  1. Ensure you have the latest Visual C++ Redistributable installed"
+        $manifestLines += "  2. Run the application from the same directory as this manifest"
+        $manifestLines += "  3. Check Windows Update for the latest system updates"
         $manifestLines += ""
         $manifestLines += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')"
         $manifestLines += "Build: GitHub Actions"
+        $manifestLines += "Workflow: Windows Release Build"
         
         $manifest = $manifestLines -join "`r`n"
         $manifest | Out-File -FilePath $manifestPath -Encoding UTF8
-        Write-Host "Created dependency manifest with $totalDlls DLLs"
+        Write-Host "Created comprehensive dependency manifest with $totalDlls DLLs"
         
         # List all files in distribution
         Write-Host "`nFinal distribution contents:"
