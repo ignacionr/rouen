@@ -1,144 +1,79 @@
 name: Windows Release Build
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       create_release:
-        description: 'Create a new release'
+        description: 'Create a GitHub release'
         required: false
         default: false
         type: boolean
-
-env:
-  BUILD_TYPE: Release
-  VCPKG_DEFAULT_TRIPLET: x64-windows
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
 
 jobs:
-  build-windows:
+  windows-build:
     runs-on: windows-latest
     
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-    - name: Debug environment
-      run: |
-        Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
-        Write-Host "Current directory: $(Get-Location)"
-        Write-Host "Workspace: ${{ github.workspace }}"
-        Write-Host "Environment variables:"
-        Get-ChildItem Env: | Where-Object { $_.Name -like "*GITHUB*" -or $_.Name -like "*RUNNER*" } | Format-Table Name, Value
-        Write-Host "Directory listing:"
-        Get-ChildItem ${{ github.workspace }} | Format-Table Name, Mode
+    - name: Setup vcpkg cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}\vcpkg\installed
+          ${{ github.workspace }}\vcpkg\buildtrees
+          ${{ github.workspace }}\vcpkg\packages
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Setup vcpkg
       shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        
+        if (-not (Test-Path "$workspace\vcpkg\vcpkg.exe")) {
+          Write-Host "Cloning vcpkg..."
+          git clone https://github.com/Microsoft/vcpkg.git "$workspace\vcpkg"
+          
+          Write-Host "Bootstrapping vcpkg..."
+          Set-Location "$workspace\vcpkg"
+          .\bootstrap-vcpkg.bat
+        } else {
+          Write-Host "Using cached vcpkg installation"
+          Set-Location "$workspace\vcpkg"
+        }
+        
+        Write-Host "Installing vcpkg packages..."
+        .\vcpkg.exe install --triplet x64-windows
+        
+        .\vcpkg.exe integrate install
 
     - name: Setup MSVC
       uses: microsoft/setup-msbuild@v2
 
-    - name: Setup vcpkg
-      run: |
-        $workspace = "${{ github.workspace }}"
-        $vcpkgPath = "$workspace\vcpkg"
-        
-        Write-Host "Workspace: $workspace"
-        Write-Host "vcpkg path: $vcpkgPath"
-        
-        # Clone vcpkg if not cached
-        if (-not (Test-Path $vcpkgPath)) {
-          Write-Host "Cloning vcpkg..."
-          git clone https://github.com/Microsoft/vcpkg.git $vcpkgPath
-        }
-        
-        Set-Location $vcpkgPath
-        
-        # Get the latest commit SHA for the baseline
-        $latestCommit = git rev-parse HEAD
-        Write-Host "Latest vcpkg commit: $latestCommit"
-        
-        # Update vcpkg.json with current baseline if needed
-        $vcpkgJsonPath = "$workspace\vcpkg.json"
-        if (Test-Path $vcpkgJsonPath) {
-          $vcpkgJson = Get-Content $vcpkgJsonPath | ConvertFrom-Json
-          $vcpkgJson.'builtin-baseline' = $latestCommit
-          $vcpkgJson | ConvertTo-Json -Depth 10 | Set-Content $vcpkgJsonPath
-          Write-Host "Updated vcpkg.json baseline to: $latestCommit"
-        }
-        
-        Write-Host "Bootstrapping vcpkg..."
-        .\bootstrap-vcpkg.bat
-        
-        # Add vcpkg to PATH and set environment variable
-        Add-Content $env:GITHUB_PATH $vcpkgPath
-        Add-Content $env:GITHUB_ENV "VCPKG_ROOT=$vcpkgPath"
-        
-        Write-Host "vcpkg setup completed"
-      shell: pwsh
-
-    - name: Cache vcpkg packages
-      uses: actions/cache@v4
-      with:
-        path: |
-          vcpkg\installed
-          vcpkg\packages
-          vcpkg\buildtrees
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-v3
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-v3
-
-    - name: Install dependencies via vcpkg
-      run: |
-        $workspace = "${{ github.workspace }}"
-        $vcpkgPath = "$workspace\vcpkg"
-        
-        Set-Location $vcpkgPath
-        .\vcpkg integrate install
-        
-        # Use manifest mode - vcpkg will read vcpkg.json automatically
-        Set-Location $workspace
-        
-        # Install dependencies from vcpkg.json manifest
-        & "$vcpkgPath\vcpkg.exe" install --triplet=x64-windows
-        
-        Write-Host "Installed packages:"
-        & "$vcpkgPath\vcpkg.exe" list
-      shell: pwsh
-
     - name: Configure CMake
-      run: |
-        $buildDir = "${{ github.workspace }}\build"
-        $toolchainFile = "${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake"
-        Write-Host "Build directory: $buildDir"
-        Write-Host "Toolchain file: $toolchainFile"
-        
-        # Verify paths exist
-        if (-not (Test-Path $toolchainFile)) {
-          Write-Host "ERROR: Toolchain file not found at: $toolchainFile"
-          Get-ChildItem "${{ github.workspace }}\vcpkg\scripts\buildsystems\" -ErrorAction SilentlyContinue
-          exit 1
-        }
-        
-        # Use PowerShell string interpolation to ensure variable expansion
-        $cmakeCmd = "cmake -B `"$buildDir`" -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DCMAKE_TOOLCHAIN_FILE=`"$toolchainFile`" -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_VERBOSE_MAKEFILE=ON"
-        Write-Host "Executing: $cmakeCmd"
-        
-        Invoke-Expression $cmakeCmd
       shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        cmake -B build -S . `
+          -DCMAKE_TOOLCHAIN_FILE="$workspace\vcpkg\scripts\buildsystems\vcpkg.cmake" `
+          -DVCPKG_TARGET_TRIPLET=x64-windows `
+          -DCMAKE_BUILD_TYPE=Release `
+          -G "Visual Studio 17 2022" -A x64
 
-    - name: Build
-      run: |
-        $buildDir = "${{ github.workspace }}\build"
-        Write-Host "Building in directory: $buildDir"
-        cmake --build $buildDir --config ${{env.BUILD_TYPE}} --parallel --verbose
-      shell: pwsh
-
-    - name: List build output
-      run: |
-        $buildDir = "${{ github.workspace }}\build"
-        Write-Host "Build directory contents:"
-        Get-ChildItem -Recurse $buildDir -Include "*.exe", "*.dll" | ForEach-Object { Write-Host $_.FullName }
-      shell: pwsh
+    - name: Build with CMake
+      run: cmake --build build --config Release --parallel
 
     - name: Package application
       shell: pwsh
@@ -147,11 +82,10 @@ jobs:
         $distDir = "$workspace\dist"
         $buildDir = "$workspace\build"
         
-        # Create distribution directory
         New-Item -ItemType Directory -Force -Path $distDir
         Write-Host "Created distribution directory: $distDir"
         
-        # Find and copy executable (check both Debug and Release folders)
+        # Find and copy executable
         $exePaths = @(
           "$buildDir\Release\rouen.exe",
           "$buildDir\Debug\rouen.exe",
@@ -169,65 +103,161 @@ jobs:
         }
         
         if (-not $exeFound) {
-          Write-Host "ERROR: Could not find rouen.exe in any expected location"
+          Write-Host "ERROR: Could not find rouen.exe"
           Get-ChildItem -Recurse $buildDir -Include "*.exe" | ForEach-Object { Write-Host "Found exe: $($_.FullName)" }
           exit 1
         }
-        
-        # Copy required DLLs from vcpkg (handle errors gracefully)
+
+    - name: Copy vcpkg DLLs
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
         $vcpkgBinPath = "$workspace\vcpkg\installed\x64-windows\bin"
+        
         if (Test-Path $vcpkgBinPath) {
-          Write-Host "Copying DLLs from: $vcpkgBinPath"
-          Get-ChildItem "$vcpkgBinPath\*.dll" | ForEach-Object { 
-            Write-Host "Copying DLL: $($_.Name)"
-            Copy-Item $_.FullName $distDir -ErrorAction SilentlyContinue 
+          Write-Host "Copying DLLs from vcpkg: $vcpkgBinPath"
+          $dllFiles = Get-ChildItem "$vcpkgBinPath\*.dll" -ErrorAction SilentlyContinue
+          foreach ($dll in $dllFiles) {
+            Write-Host "  Copying: $($dll.Name)"
+            Copy-Item $dll.FullName $distDir -ErrorAction SilentlyContinue
           }
         } else {
-          Write-Host "WARNING: vcpkg bin path not found: $vcpkgBinPath"
+          Write-Host "vcpkg bin directory not found: $vcpkgBinPath"
         }
+
+    - name: Copy Visual C++ Runtime DLLs
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
         
-        # Copy assets if they exist
-        $imgPath = "$workspace\img"
-        if (Test-Path $imgPath) {
-          Copy-Item -Recurse $imgPath $distDir
-          Write-Host "Copied img directory"
-        }
-        
-        $fontsPath = "$workspace\external\fonts"
-        if (Test-Path $fontsPath) {
-          Copy-Item -Recurse $fontsPath $distDir
-          Write-Host "Copied fonts directory"
-        }
-        
-        # Copy individual font files
-        $fontFiles = @(
-          "$workspace\external\MaterialIcons-Regular.ttf",
-          "$workspace\external\IconsMaterialDesign.h"
+        # Essential Visual C++ runtime DLLs
+        $essentialDlls = @(
+          "msvcp140.dll", 
+          "vcruntime140.dll", 
+          "vcruntime140_1.dll",
+          "msvcp140_1.dll",
+          "msvcp140_2.dll",
+          "concrt140.dll"
         )
-        foreach ($file in $fontFiles) {
-          if (Test-Path $file) {
-            Copy-Item $file $distDir
-            Write-Host "Copied font file: $(Split-Path -Leaf $file)"
+        
+        # Search paths for VC++ runtime
+        $searchPaths = @(
+          "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
+          "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
+          "$env:SystemRoot\System32"
+        )
+        
+        foreach ($dll in $essentialDlls) {
+          $destPath = "$distDir\$dll"
+          if (-not (Test-Path $destPath)) {
+            $found = $false
+            foreach ($searchPath in $searchPaths) {
+              $dllPath = Get-ChildItem -Path $searchPath -Filter $dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($dllPath) {
+                try {
+                  Copy-Item $dllPath.FullName $destPath -ErrorAction Stop
+                  Write-Host "  Copied essential DLL: $dll"
+                  $found = $true
+                  break
+                } catch {
+                  Write-Host "  Failed to copy $dll from $($dllPath.FullName)"
+                }
+              }
+            }
+            if (-not $found) {
+              Write-Host "  Warning: Could not find essential DLL: $dll"
+            }
+          } else {
+            Write-Host "  Essential DLL already exists: $dll"
+          }
+        }
+
+    - name: Copy additional assets
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        
+        # Copy directories if they exist
+        $assetPaths = @{
+          "$workspace\img" = "img directory"
+          "$workspace\external\fonts" = "fonts directory"
+        }
+        
+        foreach ($path in $assetPaths.Keys) {
+          if (Test-Path $path) {
+            Copy-Item -Recurse $path $distDir
+            Write-Host "Copied $($assetPaths[$path])"
           }
         }
         
-        # Copy configuration files
-        $configFiles = @(
+        # Copy individual files if they exist
+        $files = @(
+          "$workspace\external\MaterialIcons-Regular.ttf",
+          "$workspace\external\IconsMaterialDesign.h",
           "$workspace\presets.txt",
           "$workspace\podcasts.txt",
           "$workspace\README.md",
           "$workspace\LICENSE"
         )
-        foreach ($file in $configFiles) {
+        
+        foreach ($file in $files) {
           if (Test-Path $file) {
             Copy-Item $file $distDir
-            Write-Host "Copied config file: $(Split-Path -Leaf $file)"
+            Write-Host "Copied: $(Split-Path -Leaf $file)"
           }
         }
+
+    - name: Create dependency manifest
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $manifestPath = "$distDir\DEPENDENCIES.txt"
         
-        # List final distribution contents
-        Write-Host "Final distribution contents:"
-        Get-ChildItem -Recurse $distDir | ForEach-Object { Write-Host $_.FullName }
+        $dllFiles = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        $totalDlls = $dllFiles.Count
+        $totalSize = ($dllFiles | Measure-Object Length -Sum).Sum
+        
+        # Create manifest content using array and join
+        $manifestLines = @()
+        $manifestLines += "Rouen Windows x64 Distribution"
+        $manifestLines += "=============================="
+        $manifestLines += ""
+        $manifestLines += "This package contains the Rouen application with all required DLL dependencies."
+        $manifestLines += ""
+        $manifestLines += "Total DLLs included: $totalDlls"
+        $manifestLines += "Total DLL size: $([math]::Round($totalSize / 1MB, 2)) MB"
+        $manifestLines += ""
+        $manifestLines += "DLL List:"
+        $dllFiles | Sort-Object Name | ForEach-Object { 
+          $manifestLines += "- $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
+        }
+        $manifestLines += ""
+        $manifestLines += "Runtime Requirements:"
+        $manifestLines += "- Windows 10 or later (x64)"
+        $manifestLines += "- Visual C++ Redistributable 2019/2022 (included)"
+        $manifestLines += ""
+        $manifestLines += "If you encounter missing DLL errors, please ensure you have the latest"
+        $manifestLines += "Visual C++ Redistributable installed from Microsoft."
+        $manifestLines += ""
+        $manifestLines += "Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')"
+        $manifestLines += "Build: GitHub Actions"
+        
+        $manifest = $manifestLines -join "`r`n"
+        $manifest | Out-File -FilePath $manifestPath -Encoding UTF8
+        Write-Host "Created dependency manifest with $totalDlls DLLs"
+        
+        # List all files in distribution
+        Write-Host "`nFinal distribution contents:"
+        Get-ChildItem -Recurse $distDir | Sort-Object FullName | ForEach-Object { 
+          $relativePath = $_.FullName.Replace("$distDir\", "")
+          $size = if ($_.PSIsContainer) { "<DIR>" } else { "$([math]::Round($_.Length / 1KB, 1)) KB" }
+          Write-Host "  $relativePath ($size)"
+        }
 
     - name: Create ZIP archive
       shell: pwsh
@@ -237,8 +267,11 @@ jobs:
         $zipPath = "$workspace\rouen-windows-x64.zip"
         
         Set-Location $distDir
-        Compress-Archive -Path * -DestinationPath $zipPath
+        Compress-Archive -Path * -DestinationPath $zipPath -Force
+        
+        $zipInfo = Get-Item $zipPath
         Write-Host "Created ZIP archive: $zipPath"
+        Write-Host "Archive size: $([math]::Round($zipInfo.Length / 1MB, 2)) MB"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -259,7 +292,6 @@ jobs:
 
     - name: Create release (on workflow_dispatch)
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-      id: create_release
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -271,9 +303,11 @@ jobs:
           
           ## What's included:
           - Windows x64 executable
-          - All required DLLs
+          - All required DLLs and runtime dependencies
           - Assets and configuration files
           - Documentation
+          
+          This is a self-contained build that should run on any Windows 10+ system.
         draft: false
         prerelease: false
         files: rouen-windows-x64.zip
