@@ -89,7 +89,7 @@ jobs:
         )
         
         echo Installing vcpkg packages (using cache if available)...
-        vcpkg.exe install --triplet x64-windows --verbose
+        vcpkg.exe install --triplet x64-windows
         if errorlevel 1 (
           echo ERROR: Package installation failed
           exit /b 1
@@ -97,7 +97,7 @@ jobs:
         
         echo.
         echo Forcing curl installation specifically...
-        vcpkg.exe install curl[ssl]:x64-windows --verbose
+        vcpkg.exe install curl[ssl]:x64-windows
         if errorlevel 1 (
           echo WARNING: Explicit curl installation failed
         )
