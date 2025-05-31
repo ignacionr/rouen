@@ -15,6 +15,7 @@
       "name": "sdl2-image",
       "features": ["libjpeg-turbo"]
     },
-    "tinyxml2"
+    "tinyxml2",
+    "glaze"
   ]
 }

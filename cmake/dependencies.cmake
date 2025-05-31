@@ -15,6 +15,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   find_package(SDL2 CONFIG REQUIRED)
   find_package(SDL2_image CONFIG REQUIRED)
   find_package(tinyxml2 CONFIG REQUIRED)
+  find_package(glaze CONFIG REQUIRED)
   
   # Set variables for compatibility with existing code
   set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)  # Kept as unofficial::sqlite3::sqlite3
@@ -174,14 +175,7 @@ FetchContent_Declare(
   GIT_SHALLOW TRUE
 )
 
-FetchContent_Declare(
-  glaze
-  GIT_REPOSITORY https://github.com/stephenberry/glaze.git
-  GIT_TAG main
-  GIT_SHALLOW TRUE
-)
-
-FetchContent_MakeAvailable(imgui glaze)
+FetchContent_MakeAvailable(imgui)
 
 # Create ImGui library
 add_library(imgui STATIC
