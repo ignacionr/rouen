@@ -55,6 +55,7 @@ While releases are Windows-focused, the codebase supports:
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
+- **Settings Management**: Centralized configuration interface with category-based organization, search/filtering, sensitive value masking, and comprehensive status indicators for all application settings
 - **Environment Variables**: View and manage system environment variables
 - **Subnet Scanner**: Discover and monitor devices on your local network
 - **Database Repair**: Maintain and fix SQLite database files
@@ -82,6 +83,37 @@ While releases are Windows-focused, the codebase supports:
 - [Models Infrastructure](src/models/README.md) - Guide to data models and business logic
 - [Platform Utilities](src/helpers/platform_utils.hpp) - Cross-platform utilities for resource handling and more
 - [Windows Build Guide](docs/windows-build.md) - Comprehensive guide for Windows builds and automated releases
+
+## Configuration
+
+Rouen provides centralized configuration management through the Settings card, accessible via the System menu. The settings interface organizes all configuration options into logical categories:
+
+### Configuration Categories
+
+- **API Credentials**: Manage API keys for external services (Grok AI, Google Calendar, etc.)
+- **JIRA Profiles**: Configure JIRA server connections and authentication
+- **Bybit Config**: Set up cryptocurrency exchange API credentials
+- **System Paths**: Configure file system paths and directories
+- **Logging**: Control logging levels and output preferences
+- **General**: Application-wide settings and preferences
+
+### Settings Card Features
+
+- **Category-Based Organization**: Settings grouped by functional area for easy navigation
+- **Search and Filtering**: Quickly find specific settings using the search functionality
+- **Sensitive Value Masking**: API keys and passwords are masked by default with toggle visibility
+- **Status Indicators**: Color-coded status shows which settings are configured (SET), empty (EMPTY), required (REQUIRED), or sensitive (SENSITIVE)
+- **Missing Configuration Alerts**: Visual indicators highlight required settings that need configuration
+- **Live Updates**: Settings refresh automatically to reflect current configuration state
+
+### Environment Variables
+
+Some settings can also be configured via environment variables for automation and deployment:
+
+- `GROK_API_KEY`: API key for Grok AI integration
+- `ROUEN_LOG_LEVEL`: Override default logging level
+
+Access the Settings card through **System → Settings** in the application menu.
 
 ## Logging System
 

@@ -71,6 +71,7 @@ The system includes many example cards:
 - `github` - GitHub repository browser
 - `cmake` - CMake project viewer and builder
 - `sysinfo` - System information display
+- `settings` - Centralized configuration management with category-based display, search/filtering, and sensitive value masking
 - `fs_directory` - File system explorer
 - `pomodoro` - Time management tool
 - `calendar` - Google Calendar integration
@@ -240,3 +241,60 @@ The chess replay card uses the `ChessGameAnalyzer` helper class which:
 - Grok API key must be configured via environment variable `GROK_API_KEY`
 - Internet connection for AI analysis requests
 - Valid chess game loaded (non-empty move list)
+
+## Settings Card - Centralized Configuration Management
+
+The settings card (`settings`) provides a comprehensive interface for managing all application configuration through the ConfigService system.
+
+### Features
+
+- **Category-Based Organization**: Settings are grouped into logical categories for easy navigation:
+  - **API Credentials**: Manage API keys for external services (Grok AI, Google Calendar, etc.)
+  - **JIRA Profiles**: Configure JIRA server connections and authentication
+  - **Bybit Config**: Set up cryptocurrency exchange API credentials  
+  - **System Paths**: Configure file system paths and directories
+  - **Logging**: Control logging levels and output preferences
+  - **General**: Application-wide settings and preferences
+
+- **Advanced Search & Filtering**: 
+  - Real-time search across all setting names and descriptions
+  - Filter by configuration status (SET, EMPTY, REQUIRED, SENSITIVE)
+  - Quick navigation to specific settings
+
+- **Security Features**:
+  - Sensitive values (API keys, passwords) are masked by default
+  - Toggle visibility for sensitive fields when needed
+  - Clear visual indicators for sensitive data
+
+- **Status Indicators**: Color-coded badges show configuration state:
+  - **SET** (Green): Setting has a configured value
+  - **EMPTY** (Gray): Setting exists but has no value
+  - **REQUIRED** (Red): Critical setting that must be configured
+  - **SENSITIVE** (Orange): Contains sensitive data that should be protected
+
+- **Missing Configuration Alerts**: Visual warnings highlight required settings that need immediate attention
+
+### Integration with ConfigService
+
+The settings card leverages the centralized ConfigService (`src/helpers/config_service.hpp`) which:
+
+- Provides thread-safe access to all configuration data
+- Automatically categorizes settings based on key prefixes
+- Supports both environment variables and persistent storage
+- Handles sensitive data masking and security requirements
+- Offers real-time configuration updates across the application
+
+### Usage
+
+1. Access via **System → Settings** in the application menu
+2. Browse categories or use the search field to find specific settings
+3. View current configuration status with color-coded indicators
+4. Configure missing required settings as highlighted by the interface
+5. Toggle sensitive value visibility when needed for verification
+
+### Technical Details
+
+- Refreshes configuration data every 5 seconds to reflect external changes
+- Integrates with the application-wide theming system
+- Supports responsive layout that adapts to card width
+- Implements efficient rendering with minimal performance impact

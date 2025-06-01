@@ -34,6 +34,7 @@
 #include "../productivity/pomodoro.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
+#include "../system/settings.hpp"
 #include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/terminal.hpp"
@@ -122,6 +123,10 @@ namespace rouen::cards {
                 
                 instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<envvars_card>();
+                });
+                
+                instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<settings_card>();
                 });
                 
                 // Register the new terminal card
