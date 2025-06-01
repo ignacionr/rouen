@@ -1,8 +1,23 @@
 #include "config_service.hpp"
+#include "platform_utils.hpp"
 #include <sstream>
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
+#include <filesystem>
+#include <ranges>
+#include <chrono>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <limits.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#include <limits.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#endif
 
 #ifdef _WIN32
     #include <stdlib.h>
@@ -21,6 +36,8 @@ namespace rouen::helpers {
         std::lock_guard<std::mutex> lock(instance_mutex_);
         if (!instance_) {
             instance_ = std::shared_ptr<ConfigService>(new ConfigService());
+            // Load .env file if it exists
+            instance_->load_env_file();
             // Register default configurations
             instance_->register_default_configs();
         }
@@ -36,11 +53,11 @@ namespace rouen::helpers {
             return cache_it->second;
         }
         
-        // Use platform utility for consistent access
-        std::string value = platform::get_env(name);
+        // Use priority-based lookup (.env file first, then environment)
+        std::string value = get_env_value_priority(name);
         cache_[name] = value;
         
-        CONFIG_DEBUG_FMT("Retrieved environment variable '{}': '{}'", 
+        CONFIG_DEBUG_FMT("Retrieved configuration '{}': '{}'", 
                         name, mask_sensitive_value(value, is_sensitive_config(name)));
         
         return value;
@@ -440,6 +457,201 @@ namespace rouen::helpers {
                            value, name, e.what());
             return std::nullopt;
         }
+    }
+
+    // .env file support implementation
+    bool ConfigService::load_env_file(const std::string& file_path) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        
+        std::string env_file_path = file_path.empty() ? get_env_file_path() : file_path;
+        
+        // Check if .env file exists
+        if (!std::filesystem::exists(env_file_path)) {
+            CONFIG_DEBUG_FMT(".env file not found at: {}", env_file_path);
+            return false;
+        }
+        
+        std::ifstream env_file(env_file_path);
+        if (!env_file.is_open()) {
+            CONFIG_ERROR_FMT("Failed to open .env file: {}", env_file_path);
+            return false;
+        }
+        
+        // Clear existing .env values
+        env_file_values_.clear();
+        
+        std::string line;
+        int line_number = 0;
+        while (std::getline(env_file, line)) {
+            line_number++;
+            
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#') {
+                continue;
+            }
+            
+            auto [key, value] = parse_env_line(line);
+            if (!key.empty()) {
+                env_file_values_[key] = value;
+                CONFIG_DEBUG_FMT("Loaded from .env: {} = {}", key, 
+                               mask_sensitive_value(value, is_sensitive_config(key)));
+            } else {
+                CONFIG_WARN_FMT("Invalid .env line {} in {}: {}", line_number, env_file_path, line);
+            }
+        }
+        
+        env_file_loaded_ = true;
+        
+        // Clear cache to force re-evaluation with new .env values
+        cache_.clear();
+        
+        CONFIG_INFO_FMT("Loaded {} configuration entries from .env file: {}", 
+                       env_file_values_.size(), env_file_path);
+        
+        return true;
+    }
+
+    bool ConfigService::export_to_env_file(const std::string& file_path) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        
+        std::string env_file_path = file_path.empty() ? get_env_file_path() : file_path;
+        
+        std::ofstream env_file(env_file_path);
+        if (!env_file.is_open()) {
+            CONFIG_ERROR_FMT("Failed to create .env file: {}", env_file_path);
+            return false;
+        }
+        
+        // Write header comment
+        env_file << "# Rouen Application Configuration\n";
+        env_file << "# Generated on " << std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::system_clock::now()) << "\n";
+        env_file << "# This file contains all registered configuration values\n\n";
+        
+        // Group configs by category for better organization
+        std::map<Category, std::vector<ConfigEntry>> configs_by_category;
+        for (const auto& [name, config] : registered_configs_) {
+            // Update config value with current data
+            ConfigEntry current_config = config;
+            current_config.value = get_env_value_priority(name);
+            configs_by_category[config.category].push_back(current_config);
+        }
+        
+        // Category names for display
+        std::map<Category, std::string> category_names = {
+            {Category::API_CREDENTIALS, "API Credentials"},
+            {Category::JIRA_PROFILES, "JIRA Profiles"},
+            {Category::BYBIT_CONFIG, "Bybit Configuration"},
+            {Category::SYSTEM_PATHS, "System Paths"},
+            {Category::DATABASE_CONFIG, "Database Configuration"},
+            {Category::LOGGING_CONFIG, "Logging Configuration"},
+            {Category::GENERAL, "General Settings"}
+        };
+        
+        // Write configurations by category
+        for (const auto& [category, configs] : configs_by_category) {
+            if (configs.empty()) continue;
+            
+            env_file << "# " << category_names[category] << "\n";
+            
+            for (const auto& config : configs) {
+                // Write description as comment if available
+                if (!config.description.empty()) {
+                    env_file << "# " << config.description << "\n";
+                }
+                
+                // Write additional info
+                std::vector<std::string> flags;
+                if (config.is_required) flags.push_back("REQUIRED");
+                if (config.is_sensitive) flags.push_back("SENSITIVE");
+                if (!flags.empty()) {
+                    env_file << "# " << std::format("({})", std::ranges::fold_left(flags, std::string{}, 
+                        [](std::string acc, const std::string& flag) {
+                            return acc.empty() ? flag : acc + ", " + flag;
+                        })) << "\n";
+                }
+                
+                // Write the actual configuration
+                if (config.value.empty() && config.default_value.has_value()) {
+                    env_file << "# " << config.key << "=" << config.default_value.value() 
+                            << "  # (default value - uncomment to override)\n";
+                } else {
+                    env_file << config.key << "=" << config.value << "\n";
+                }
+                
+                env_file << "\n";
+            }
+        }
+        
+        CONFIG_INFO_FMT("Exported {} configuration entries to .env file: {}", 
+                       registered_configs_.size(), env_file_path);
+        
+        return true;
+    }
+
+    std::string ConfigService::get_env_file_path() const {
+        return get_executable_directory() + "/.env";
+    }
+
+    // Private helper methods
+    std::pair<std::string, std::string> ConfigService::parse_env_line(const std::string& line) const {
+        // Find the first = character
+        size_t eq_pos = line.find('=');
+        if (eq_pos == std::string::npos) {
+            return {"", ""};  // Invalid line
+        }
+        
+        std::string key = line.substr(0, eq_pos);
+        std::string value = line.substr(eq_pos + 1);
+        
+        // Trim whitespace from key
+        key.erase(0, key.find_first_not_of(" \t"));
+        key.erase(key.find_last_not_of(" \t") + 1);
+        
+        // Handle quoted values
+        if (value.length() >= 2) {
+            if ((value.front() == '"' && value.back() == '"') ||
+                (value.front() == '\'' && value.back() == '\'')) {
+                value = value.substr(1, value.length() - 2);
+            }
+        }
+        
+        // Handle escape sequences in value
+        std::string unescaped_value;
+        for (size_t i = 0; i < value.length(); ++i) {
+            if (value[i] == '\\' && i + 1 < value.length()) {
+                switch (value[i + 1]) {
+                    case 'n': unescaped_value += '\n'; ++i; break;
+                    case 't': unescaped_value += '\t'; ++i; break;
+                    case 'r': unescaped_value += '\r'; ++i; break;
+                    case '\\': unescaped_value += '\\'; ++i; break;
+                    case '"': unescaped_value += '"'; ++i; break;
+                    case '\'': unescaped_value += '\''; ++i; break;
+                    default: unescaped_value += value[i]; break;
+                }
+            } else {
+                unescaped_value += value[i];
+            }
+        }
+        
+        return {key, unescaped_value};
+    }
+
+    std::string ConfigService::get_executable_directory() const {
+        // Use the centralized platform-specific executable directory function
+        return rouen::platform::get_executable_directory().string();
+    }
+
+    std::string ConfigService::get_env_value_priority(const std::string& name) const {
+        // First check .env file values (if loaded)
+        if (env_file_loaded_) {
+            auto env_it = env_file_values_.find(name);
+            if (env_it != env_file_values_.end() && !env_it->second.empty()) {
+                return env_it->second;
+            }
+        }
+        
+        // Fall back to environment variables
+        return platform::get_env(name);
     }
 
 } // namespace rouen::helpers

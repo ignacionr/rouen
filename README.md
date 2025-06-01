@@ -105,13 +105,47 @@ Rouen provides centralized configuration management through the Settings card, a
 - **Status Indicators**: Color-coded status shows which settings are configured (SET), empty (EMPTY), required (REQUIRED), or sensitive (SENSITIVE)
 - **Missing Configuration Alerts**: Visual indicators highlight required settings that need configuration
 - **Live Updates**: Settings refresh automatically to reflect current configuration state
+- **Export to .env**: Generate a .env file with all current configuration for easy deployment and backup
 
 ### Environment Variables
 
-Some settings can also be configured via environment variables for automation and deployment:
+Configuration can be managed through environment variables or .env files for automation and deployment:
+
+#### .env File Support
+
+Rouen automatically loads configuration from a `.env` file located in the same directory as the executable. The .env file uses standard key=value format:
+
+```bash
+# API Credentials
+GROK_API_KEY=your_grok_api_key_here
+BYBIT_API_KEY=your_bybit_key
+
+# Logging Configuration  
+ROUEN_LOG_LEVEL=INFO
+ROUEN_DEBUG=true
+```
+
+**Features:**
+- **Automatic Loading**: .env file is loaded automatically when the application starts
+- **Priority Handling**: .env file values take precedence over system environment variables
+- **Export Functionality**: Use the "Export to .env" button in Settings to generate a .env file with all current configuration
+- **Comment Support**: Lines starting with # are treated as comments
+- **Quoted Values**: Supports both quoted and unquoted values with proper escape sequence handling
+
+#### Environment Variable Priority
+
+Configuration values are resolved in the following order (highest to lowest priority):
+1. Values from .env file
+2. System environment variables
+3. Default values (if configured)
+
+#### Common Environment Variables
 
 - `GROK_API_KEY`: API key for Grok AI integration
-- `ROUEN_LOG_LEVEL`: Override default logging level
+- `BYBIT_API_KEY`: API key for Bybit exchange integration
+- `BYBIT_SECRET`: Secret key for Bybit exchange integration
+- `ROUEN_LOG_LEVEL`: Override default logging level (ERROR, WARN, INFO, DEBUG, TRACE)
+- `ROUEN_DEBUG`: Enable debug mode (true/false)
 
 Access the Settings card through **System → Settings** in the application menu.
 

@@ -92,27 +92,16 @@ namespace rouen::platform
     }
 
     /**
-     * Get the full path to a resource file
-     * Handles both app bundle resources and development environment paths
+     * Get the directory containing the current executable
      * 
-     * This function provides a unified approach to resource management, ensuring that
-     * files can be located both during development and in the deployed application bundle.
-     * It searches multiple locations in priority order:
-     * 1. macOS app bundle Contents/Resources directory
-     * 2. Executable directory
-     * 3. Current working directory
-     * 4. Parent directory (for running from build directories)
+     * This function provides cross-platform access to the executable's directory.
+     * It uses platform-specific APIs to get the actual executable path rather than
+     * relying on working directory or argv[0] which can be unreliable.
      *
-     * @param filename The name of the resource file (e.g. "presets.txt")
-     * @param resource_subdir Optional subdirectory within Resources (e.g. "img")
-     * @return The full path to the resource file
+     * @return The directory path containing the current executable
      */
-    inline std::filesystem::path get_resource_path(const std::string& filename, const std::string& resource_subdir = "")
+    inline std::filesystem::path get_executable_directory()
     {
-        // Check several possible locations for the resources, starting with most likely
-        std::vector<std::filesystem::path> search_paths;
-        
-        // Get the current executable path
         std::filesystem::path exec_path;
         std::filesystem::path current_path = std::filesystem::current_path();
         
@@ -154,6 +143,34 @@ namespace rouen::platform
             // Fallback to current path for unsupported platforms
             exec_path = current_path;
         #endif
+        
+        return exec_path;
+    }
+
+    /**
+     * Get the full path to a resource file
+     * Handles both app bundle resources and development environment paths
+     * 
+     * This function provides a unified approach to resource management, ensuring that
+     * files can be located both during development and in the deployed application bundle.
+     * It searches multiple locations in priority order:
+     * 1. macOS app bundle Contents/Resources directory
+     * 2. Executable directory
+     * 3. Current working directory
+     * 4. Parent directory (for running from build directories)
+     *
+     * @param filename The name of the resource file (e.g. "presets.txt")
+     * @param resource_subdir Optional subdirectory within Resources (e.g. "img")
+     * @return The full path to the resource file
+     */
+    inline std::filesystem::path get_resource_path(const std::string& filename, const std::string& resource_subdir = "")
+    {
+        // Check several possible locations for the resources, starting with most likely
+        std::vector<std::filesystem::path> search_paths;
+        
+        // Use the centralized executable directory function to avoid code duplication
+        std::filesystem::path exec_path = get_executable_directory();
+        std::filesystem::path current_path = std::filesystem::current_path();
         
         #if defined(__APPLE__)
         // 1. macOS app bundle resource path

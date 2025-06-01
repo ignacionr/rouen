@@ -128,6 +128,13 @@ private:
         }
         
         ImGui::SameLine();
+        
+        // Export to .env button
+        if (ImGui::Button("Export to .env")) {
+            export_to_env_file();
+        }
+        
+        ImGui::SameLine();
         ImGui::Checkbox("Show Sensitive Values", &show_sensitive_values_);
         
         ImGui::SameLine();
@@ -298,6 +305,36 @@ private:
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f)); // Light gray
             ImGui::TextWrapped("%s", config.description.c_str());
             ImGui::PopStyleColor();
+        }
+    }
+    
+    void export_to_env_file() {
+        auto config_service = helpers::ConfigService::instance();
+        if (config_service->export_to_env_file()) {
+            // Show success message (could be enhanced with a popup or status indicator)
+            ImGui::OpenPopup("Export Success");
+        } else {
+            // Show error message
+            ImGui::OpenPopup("Export Error");
+        }
+        
+        // Handle popups
+        if (ImGui::BeginPopupModal("Export Success", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Configuration successfully exported to .env file!");
+            ImGui::Text("Location: %s", config_service->get_env_file_path().c_str());
+            if (ImGui::Button("OK")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        
+        if (ImGui::BeginPopupModal("Export Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Failed to export configuration to .env file.");
+            ImGui::Text("Please check file permissions and try again.");
+            if (ImGui::Button("OK")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
     }
 };

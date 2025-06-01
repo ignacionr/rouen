@@ -8,6 +8,7 @@ This directory contains various helper classes and utilities used throughout the
 |--------|-------------|
 | `api_keys.hpp` | Manages API keys for various services |
 | `capture_helper.hpp` | Assists with capturing and processing input |
+| `config_service.hpp` | Centralized configuration management with .env file support |
 | `cppgpt.hpp` | Integration with GPT APIs |
 | `date_picker.hpp` | UI helper for date selection |
 | `debug.hpp` | Debugging utilities and logging |
@@ -45,6 +46,58 @@ std::string response = fetcher.post(
         set_header("Authorization: Bearer token123");
     }
 );
+```
+
+## Using the ConfigService Helper
+
+The `config_service` helper provides centralized configuration management with automatic .env file support:
+
+```cpp
+// Get the singleton instance
+auto config = rouen::helpers::ConfigService::instance();
+
+// Register a configuration entry
+config->register_config(
+    "GROK_API_KEY",
+    rouen::helpers::ConfigService::Category::API_CREDENTIALS,
+    "API key for Grok AI integration",
+    true,  // required
+    true   // sensitive
+);
+
+// Get configuration value (checks .env file first, then environment variables, then defaults)
+std::string api_key = config->get_env("GROK_API_KEY");
+
+// Export all configuration to .env file
+bool success = config->export_to_env_file();
+
+// Load configuration from .env file manually
+bool loaded = config->load_env_file("path/to/.env");
+```
+
+### ConfigService Features
+
+- **Automatic .env file loading**: Loads `.env` file from executable directory on startup
+- **Priority-based value resolution**: .env file → environment variables → defaults
+- **Category organization**: Groups settings by functional area (API_CREDENTIALS, SYSTEM_PATHS, etc.)
+- **Export functionality**: Generate .env files with current configuration
+- **Type safety**: Proper handling of required vs optional configurations
+- **Sensitive value handling**: Special treatment for passwords and API keys
+- **Cross-platform compatibility**: Works on Windows, macOS, and Linux
+
+### .env File Format
+
+```bash
+# API Credentials
+GROK_API_KEY=your_api_key_here
+BYBIT_API_KEY=your_bybit_key
+
+# System Configuration
+ROUEN_LOG_LEVEL=INFO
+ROUEN_DEBUG=true
+
+# Quoted values with escaping
+COMPLEX_VALUE="value with spaces and \"quotes\""
 ```
 
 ## Handling ImGui Warnings

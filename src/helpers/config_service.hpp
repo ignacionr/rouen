@@ -90,6 +90,11 @@ namespace rouen::helpers {
         // System monitoring - get all environment variables
         std::map<std::string, std::string> get_all_env_vars() const;
 
+        // .env file support
+        bool load_env_file(const std::string& file_path = "");
+        bool export_to_env_file(const std::string& file_path = "") const;
+        std::string get_env_file_path() const;
+
     private:
         ConfigService() = default;
         
@@ -97,12 +102,21 @@ namespace rouen::helpers {
         mutable std::unordered_map<std::string, std::string> cache_;
         std::unordered_map<std::string, ConfigEntry> registered_configs_;
         std::function<void(const std::string&, const std::string&)> change_callback_;
+        
+        // .env file support
+        std::unordered_map<std::string, std::string> env_file_values_;
+        bool env_file_loaded_ = false;
 
         // Internal helpers
         void update_cache_entry(const std::string& name) const;
         std::string mask_sensitive_value(const std::string& value, bool is_sensitive) const;
         bool is_sensitive_config(const std::string& name) const;
         void register_default_configs();
+        
+        // .env file parsing helpers
+        std::pair<std::string, std::string> parse_env_line(const std::string& line) const;
+        std::string get_executable_directory() const;
+        std::string get_env_value_priority(const std::string& name) const;  // Check .env file first, then environment
         
         // Private helper that doesn't acquire mutex (assumes caller already has lock)
         std::vector<ConfigEntry> get_configs_by_category_unlocked(Category category) const;
