@@ -70,13 +70,18 @@ main_wnd::~main_wnd() {
 
 bool main_wnd::initialize() {
     try {
+        std::cout << "DEBUG: Starting main_wnd::initialize()" << std::endl;
+        
         // Initialize SDL
+        std::cout << "DEBUG: Initializing SDL..." << std::endl;
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
             DB_ERROR_FMT("SDL initialization error: {}", SDL_GetError());
             return false;
         }
+        std::cout << "DEBUG: SDL initialized successfully" << std::endl;
         
         // Initialize SDL_image
+        std::cout << "DEBUG: Initializing SDL_image..." << std::endl;
         int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
         int img_init_result = IMG_Init(img_flags);
         
@@ -86,6 +91,7 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
+        std::cout << "DEBUG: SDL_image initialized successfully" << std::endl;
         
         // Log warning if JPEG support is not available
         if (!(img_init_result & IMG_INIT_JPG)) {
@@ -95,6 +101,7 @@ bool main_wnd::initialize() {
         DB_INFO_FMT("SDL_image initialized successfully with flags: 0x{:X}", img_init_result);
 
         // Create window with SDL
+        std::cout << "DEBUG: Creating SDL window..." << std::endl;
         SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
         m_window = SDL_CreateWindow(
             "Rouen",
@@ -108,8 +115,10 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
+        std::cout << "DEBUG: SDL window created successfully" << std::endl;
 
         // Create renderer
+        std::cout << "DEBUG: Creating SDL renderer..." << std::endl;
         m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
         if (!m_renderer) {
             DB_ERROR_FMT("Error creating renderer: {}", SDL_GetError());
@@ -117,8 +126,10 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
+        std::cout << "DEBUG: SDL renderer created successfully" << std::endl;
 
         // Register renderer in the registrar
+        std::cout << "DEBUG: Registering renderer and services..." << std::endl;
         registrar::add<SDL_Renderer*>("main_renderer", std::make_shared<SDL_Renderer*>(m_renderer));
         
         // Register the deferred operations service
@@ -139,11 +150,13 @@ bool main_wnd::initialize() {
         ));
 
         // Initialize ImGui
+        std::cout << "DEBUG: Initializing ImGui..." << std::endl;
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         m_imgui_context_created = true;
         ImGuiIO& io = ImGui::GetIO();
         (void)io;
+        std::cout << "DEBUG: ImGui context created" << std::endl;
 
         // Enable keyboard and mouse controls
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;

@@ -13,6 +13,7 @@
 #include "../helpers/api_keys.hpp"
 #include "../helpers/debug.hpp"
 #include "../helpers/platform_utils.hpp"
+#include "../helpers/config_service.hpp"
 
 namespace fs = std::filesystem;
 
@@ -52,18 +53,38 @@ static bool save_profiles(const std::vector<jira_connection_profile>& profiles);
 
 // Implementation of the get_profiles_path method defined in the header
 std::filesystem::path jira_model::get_profiles_path() {
-    // Get app data directory
+    // Get app data directory using centralized configuration service
+    auto config_service = rouen::helpers::ConfigService::instance();
     fs::path app_data_dir;
     
     #ifdef _WIN32
-    app_data_dir = rouen::platform::get_env("APPDATA");
-    app_data_dir /= "Rouen";
+    std::string appdata = config_service->get_env("APPDATA");
+    if (!appdata.empty()) {
+        app_data_dir = appdata;
+        app_data_dir /= "Rouen";
+    } else {
+        // Fallback to USERPROFILE
+        std::string userprofile = config_service->get_env("USERPROFILE");
+        if (!userprofile.empty()) {
+            app_data_dir = std::filesystem::path(userprofile) / "AppData" / "Roaming" / "Rouen";
+        } else {
+            app_data_dir = std::filesystem::path(".") / ".rouen";
+        }
+    }
     #elif defined(__APPLE__)
-    app_data_dir = rouen::platform::get_env("HOME");
-    app_data_dir /= "Library/Application Support/Rouen";
+    std::string home_dir = config_service->get_env("HOME");
+    if (!home_dir.empty()) {
+        app_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
+    } else {
+        app_data_dir = std::filesystem::path(".") / ".rouen";
+    }
     #else
-    app_data_dir = rouen::platform::get_env("HOME");
-    app_data_dir /= ".config/rouen";
+    std::string home_dir = config_service->get_env("HOME");
+    if (!home_dir.empty()) {
+        app_data_dir = std::filesystem::path(home_dir) / ".config" / "rouen";
+    } else {
+        app_data_dir = std::filesystem::path(".") / ".rouen";
+    }
     #endif
     
     return app_data_dir / "jira_profiles.json";
@@ -83,28 +104,80 @@ jira_model::~jira_model() {
 
 // Load any profiles defined in environment variables
 static void load_profiles_from_env() {
+    // Use centralized configuration service for environment variable access
+    auto config_service = rouen::helpers::ConfigService::instance();
+    
     // Process environment variables to find JIRA profile groups
     environment_profiles.clear();
     
-    // Look for profiles with specific organization prefixes in env vars
-    const std::vector<std::string> env_prefixes = {"", "EYECU_", "VISUALBLASTERS_", "REXI_"};
+    // Get discovered JIRA profiles from configuration service
+    auto discovered_profiles = config_service->get_jira_profiles();
     
-    for (const auto& prefix : env_prefixes) {
-        auto url_env = rouen::platform::get_env(prefix + "JIRA_URL");
-        auto user_env = rouen::platform::get_env(prefix + "JIRA_USER");
-        auto token_env = rouen::platform::get_env(prefix + "JIRA_TOKEN");
+    for (const auto& profile_name : discovered_profiles) {
+        // Get JIRA configuration for this profile
+        auto url = config_service->get_jira_config(profile_name, "URL");
+        auto username = config_service->get_jira_config(profile_name, "USERNAME");
+        auto user = config_service->get_jira_config(profile_name, "USER");  // Alternative key
+        auto token = config_service->get_jira_config(profile_name, "TOKEN");
         
-        if (!url_env.empty() && !user_env.empty() && !token_env.empty()) {
+        // Use USER if USERNAME is not found
+        if (username.empty() && !user.empty()) {
+            username = user;
+        }
+        
+        if (!url.empty() && !username.empty() && !token.empty()) {
             jira_connection_profile profile;
-            profile.name = prefix.empty() ? "Default" : prefix.substr(0, prefix.size() - 1);
-            profile.server_url = url_env;
-            profile.username = user_env;
-            profile.api_token = token_env;
+            profile.name = profile_name;
+            profile.server_url = url;
+            profile.username = username;
+            profile.api_token = token;
             profile.is_environment = true;
+            profile.organization = profile_name;
             
             environment_profiles.push_back(profile);
+            
+            DB_INFO_FMT("Loaded JIRA profile '{}' from environment variables", profile_name);
+        } else {
+            DB_WARN_FMT("Incomplete JIRA configuration for profile '{}' - URL: {}, Username: {}, Token: {}", 
+                       profile_name, 
+                       url.empty() ? "missing" : "present",
+                       username.empty() ? "missing" : "present", 
+                       token.empty() ? "missing" : "present");
         }
     }
+    
+    // Also check for legacy environment variable patterns for backward compatibility
+    const std::vector<std::string> legacy_prefixes = {"", "EYECU_", "VISUALBLASTERS_", "REXI_"};
+    
+    for (const auto& prefix : legacy_prefixes) {
+        auto url_env = config_service->get_env(prefix + "JIRA_URL");
+        auto user_env = config_service->get_env(prefix + "JIRA_USER");
+        auto token_env = config_service->get_env(prefix + "JIRA_TOKEN");
+        
+        if (!url_env.empty() && !user_env.empty() && !token_env.empty()) {
+            std::string legacy_profile_name = prefix.empty() ? "Default" : prefix.substr(0, prefix.size() - 1);
+            
+            // Check if we already have this profile from the discovery process
+            bool already_exists = std::any_of(environment_profiles.begin(), environment_profiles.end(),
+                [&legacy_profile_name](const auto& p) { return p.name == legacy_profile_name; });
+            
+            if (!already_exists) {
+                jira_connection_profile profile;
+                profile.name = legacy_profile_name;
+                profile.server_url = url_env;
+                profile.username = user_env;
+                profile.api_token = token_env;
+                profile.is_environment = true;
+                profile.organization = legacy_profile_name;
+                
+                environment_profiles.push_back(profile);
+                
+                DB_INFO_FMT("Loaded legacy JIRA profile '{}' from environment variables", legacy_profile_name);
+            }
+        }
+    }
+    
+    DB_INFO_FMT("Loaded {} JIRA profiles from environment variables", environment_profiles.size());
 }
 
 // Get server information (helper function) using environment URL directly

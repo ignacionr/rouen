@@ -27,6 +27,7 @@
 #include "helpers/debug.hpp"
 #include "helpers/deferred_operations.hpp" // For deferred operations
 #include "helpers/notify_service.hpp"
+#include "helpers/config_service_init.hpp" // For configuration service initialization
 #include "helpers/process_helper.hpp" // Added this include for ProcessHelper
 #include "main_wnd.hpp"
 #include "registrar.hpp"
@@ -40,6 +41,9 @@ int SDL_main(int argc, char* argv[]) {
 int main() {
 #endif
     notify_service notify; // Initialize the notify service
+    
+    // Initialize the configuration service
+    rouen::helpers::ConfigServiceInitializer::initialize();
     
     // Register the run_command function - non-blocking with incremental output
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
@@ -125,11 +129,15 @@ int main() {
     );
     
     // Create and initialize the main window
+    std::cout << "Creating main window..." << std::endl;
     main_wnd window;
+    std::cout << "Initializing main window..." << std::endl;
     if (!window.initialize()) {
+        std::cout << "Failed to initialize window!" << std::endl;
         SYS_ERROR("Failed to initialize window");
         return -1;
     }
+    std::cout << "Main window initialized successfully, starting main loop..." << std::endl;
     
     // Run the main loop
     window.run();

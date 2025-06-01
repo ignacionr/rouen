@@ -17,6 +17,7 @@
 
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
+#include "../helpers/config_service.hpp"
 
 #define BYBIT_ERROR(message) LOG_COMPONENT("BYBIT", LOG_LEVEL_ERROR, message)
 #define BYBIT_ERROR_FMT(fmt, ...) BYBIT_ERROR(debug::format_log(fmt, __VA_ARGS__))
@@ -220,14 +221,13 @@ public:
     BybitHost() {
         BYBIT_INFO("BybitHost constructor starting...");
         
-        // Load API credentials from environment variables
-        const char* api_key_env = std::getenv("BYBIT_API_KEY");
-        const char* api_secret_env = std::getenv("BYBIT_API_SECRET");
+        // Load API credentials using centralized configuration service
+        auto config_service = helpers::ConfigService::instance();
+        api_key_ = config_service->get_bybit_api_key();
+        api_secret_ = config_service->get_bybit_secret();
         
-        if (api_key_env && api_secret_env) {
-            api_key_ = std::string(api_key_env);
-            api_secret_ = std::string(api_secret_env);
-            BYBIT_INFO("Loaded API credentials from environment variables");
+        if (!api_key_.empty() && !api_secret_.empty()) {
+            BYBIT_INFO("Loaded API credentials from centralized configuration service");
         } else {
             BYBIT_WARN("BYBIT_API_KEY and/or BYBIT_API_SECRET environment variables not found");
         }
@@ -335,7 +335,10 @@ private:
             BYBIT_DEBUG_FMT("Query String: {}", queryString);
             BYBIT_DEBUG_FMT("Signature: {} (length: {})", signature.substr(0, 16) + "...", signature.length());
             
-            std::string url = "https://api.bybit.com/v5/account/wallet-balance?" + queryString;
+            // Get Bybit API host from centralized configuration
+            auto config_service = helpers::ConfigService::instance();
+            std::string bybit_host = config_service->get_bybit_host();
+            std::string url = bybit_host + "/v5/account/wallet-balance?" + queryString;
 
             http::fetch fetcher(30); // 30 second timeout
             std::string response = fetcher(url, [this, timestamp, signature](auto set_header) {
@@ -423,7 +426,10 @@ private:
             BYBIT_DEBUG_FMT("Query String: {}", queryString);
             BYBIT_DEBUG_FMT("Signature: {} (length: {})", signature.substr(0, 16) + "...", signature.length());
             
-            std::string url = "https://api.bybit.com/v5/asset/transfer/query-account-coins-balance?" + queryString;
+            // Get Bybit API host from centralized configuration
+            auto config_service = helpers::ConfigService::instance();
+            std::string bybit_host = config_service->get_bybit_host();
+            std::string url = bybit_host + "/v5/asset/transfer/query-account-coins-balance?" + queryString;
 
             http::fetch fetcher(30); // 30 second timeout
             std::string response = fetcher(url, [this, timestamp, signature](auto set_header) {

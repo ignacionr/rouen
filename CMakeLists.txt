@@ -94,6 +94,7 @@ add_executable(${PROJECT_NAME}
   src/main_wnd.cpp
   src/fonts.cpp
   src/helpers/capture_helper.cpp
+  src/helpers/config_service.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
   src/cards/information/bybit_registrar.cpp

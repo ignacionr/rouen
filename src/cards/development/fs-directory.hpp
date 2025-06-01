@@ -8,6 +8,7 @@
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/config_service.hpp"
 
 #include "../interface/card.hpp"
 
@@ -18,12 +19,15 @@ namespace rouen::cards
         std::string result(path_with_vars);
         std::regex env_var_regex("\\$(\\w+)");
         
+        // Get centralized configuration service for consistent environment variable access
+        auto config_service = helpers::ConfigService::instance();
+        
         // Find all environment variables in the path and replace them
         std::smatch match;
         std::string temp = result;
         while (std::regex_search(temp, match, env_var_regex)) {
             std::string var_name = match[1].str();
-            std::string var_value = platform::get_env(var_name);
+            std::string var_value = config_service->get_env(var_name);
             
             // Replace the variable with its value
             size_t pos = result.find("$" + var_name);
