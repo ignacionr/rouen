@@ -94,6 +94,7 @@ Rouen provides centralized configuration management through the Settings card, a
 - **JIRA Profiles**: Configure JIRA server connections and authentication
 - **Bybit Config**: Set up cryptocurrency exchange API credentials
 - **System Paths**: Configure file system paths and directories
+- **Executable Paths**: Configure paths to external executables (mpv, git, cmake, etc.)
 - **Logging**: Control logging levels and output preferences
 - **General**: Application-wide settings and preferences
 
@@ -138,6 +139,38 @@ Configuration values are resolved in the following order (highest to lowest prio
 1. Values from .env file
 2. System environment variables
 3. Default values (if configured)
+
+#### Executable Path Configuration
+
+Rouen allows customization of external executable paths without modifying the source code. The following executables can be configured:
+
+- `MPV_PATH`: Path to the MPV media player (default: "mpv")
+- `CMAKE_PATH`: Path to CMake command (default: "cmake")
+- `GIT_PATH`: Path to Git command (default: "git")
+- `SAY_PATH`: Path to text-to-speech command (default: "say")
+- `BASH_PATH`: Path to Bash shell (default: "/bin/bash")
+- `SUDO_PATH`: Path to sudo command (default: "sudo")
+- `VSCODE_PATH`: Path to VS Code or an alternative editor (default: "code")
+- `PING_PATH`: Path to ping command (default: "ping")
+
+You can configure these paths using any of the following methods:
+
+1. Through the Settings card in the application UI (System → Settings → Executable Paths)
+2. By setting environment variables (e.g., `ROUEN_CMAKE_PATH=/usr/local/bin/cmake`)
+3. By adding entries to a .env file in the application directory:
+   ```
+   # External executable paths
+   ROUEN_MPV_PATH=/opt/mpv/bin/mpv
+   ROUEN_GIT_PATH=/usr/local/bin/git
+   ROUEN_VSCODE_PATH=/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code
+   ```
+
+**Path Validation**: Paths are validated when the application starts. If a path is invalid:
+- A warning is logged to the console
+- The application falls back to the default value
+- The configuration is automatically updated with the working default
+
+This ensures the application continues to function even if custom executable paths are misconfigured.
 
 #### Common Environment Variables
 

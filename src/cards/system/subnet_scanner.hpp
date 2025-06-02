@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <thread>
 #include <mutex>
 #include <atomic>
@@ -14,6 +13,8 @@
 #include <functional>
 #include <random>       // For std::random_device, std::mt19937, and std::shuffle
 #include <unordered_map> // For std::unordered_map
+#include <utility>
+#include <vector>
 
 // Platform-specific network headers
 #ifdef _WIN32
@@ -36,6 +37,7 @@
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/config_service.hpp"
 
 // Define subnet scanner specific logging macros
 #define NET_ERROR(message) LOG_COMPONENT("SUBNET", LOG_LEVEL_ERROR, message)
@@ -782,14 +784,7 @@ private:
         
         // As a fallback, try ICMP ping using the system's ping command
         // Use a short timeout for the ping command as well
-#ifdef _WIN32
-        std::string cmd = std::format("ping -n 1 -w 1000 {} >nul 2>&1", ip_str);
-#else
-        std::string cmd = std::format("ping -c 1 -W 1 {} > /dev/null 2>&1", ip_str);
-#endif
-        int ping_result = system(cmd.c_str());
-        
-        return (ping_result == 0);
+        return ping_host(ip_str);
     }
     
     // Resolve hostname from IP
@@ -807,6 +802,22 @@ private:
             hostname = host;
         } else {
             hostname = "";  // No hostname found
+        }
+    }
+    
+    bool ping_host(const std::string& host) {
+        std::string ping_path = CONFIG_SERVICE()->get_ping_path();
+        std::string cmd = std::format("{} -c 1 -W 1 {}", ping_path, host);
+#ifdef _WIN32
+        cmd = std::format("{} -n 1 -w 1000 {}", ping_path, host); // Windows-specific command
+#endif
+        int ping_result = system(cmd.c_str());
+        if (ping_result == 0) {
+            // Host is reachable
+            return true;
+        } else {
+            // Host is not reachable
+            return false;
         }
     }
 };

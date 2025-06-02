@@ -21,6 +21,7 @@
 #include "../interface/card.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/config_service.hpp"
 
 namespace rouen::cards
 {
@@ -129,27 +130,32 @@ namespace rouen::cards
                 return false;
             }
             
+            // Get the configured cmake path
+            std::string cmake_path = CONFIG_SERVICE()->get_cmake_path();
+            
             std::string cmd;
             if (action == "configure") {
                 if (!std::filesystem::exists(build_dir_)) {
                     std::filesystem::create_directories(build_dir_);
                 }
                 
-                cmd = std::format("cd {} && cmake -B . -S {}", 
+                cmd = std::format("cd {} && {} -B . -S {}", 
                     build_dir_.string(), 
+                    cmake_path,
                     std::filesystem::path(path_).parent_path().string());
             } else if (action == "build") {
-                cmd = std::format("cd {} && cmake --build .", build_dir_.string());
+                cmd = std::format("cd {} && {} --build .", build_dir_.string(), cmake_path);
             } else if (action == "clean") {
-                cmd = std::format("cd {} && cmake --build . --target clean", build_dir_.string());
+                cmd = std::format("cd {} && {} --build . --target clean", build_dir_.string(), cmake_path);
             } else if (action == "install") {
-                cmd = std::format("cd {} && cmake --install .", build_dir_.string());
+                cmd = std::format("cd {} && {} --install .", build_dir_.string(), cmake_path);
             } else if (action == "open_dir") {
                 // Use platform-specific command to open the build directory in the file manager
                 cmd = platform::open_file(build_dir_.string());
             } else if (action == "rebuild") {
                 // Clean and then build
-                cmd = std::format("cd {} && cmake --build . --target clean && cmake --build .", build_dir_.string());
+                cmd = std::format("cd {} && {} --build . --target clean && {} --build .", 
+                    build_dir_.string(), cmake_path, cmake_path);
             } else {
                 return false;
             }

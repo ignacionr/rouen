@@ -224,6 +224,24 @@ namespace rouen::helpers {
         register_config("ROUEN_DEBUG", Category::LOGGING_CONFIG, false, false,
                        "Enable debug mode");
 
+        // Executable paths
+        register_config("MPV_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to MPV media player executable", "mpv");
+        register_config("CMAKE_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to CMake build system executable", "cmake");
+        register_config("GIT_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to Git version control executable", "git");
+        register_config("SAY_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to system text-to-speech executable", "say");
+        register_config("BASH_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to Bash shell executable", "/bin/bash");
+        register_config("SUDO_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to sudo privilege escalation executable", "sudo");
+        register_config("VSCODE_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to the VS Code executable (e.g., code)", "code");
+        register_config("PING_PATH", Category::EXECUTABLE_PATHS, false, false,
+                       "Path to the ping executable (e.g., ping)", "ping");
+
         CONFIG_INFO("Default configurations registered");
     }
 
@@ -381,6 +399,104 @@ namespace rouen::helpers {
         
         return result;
     }
+
+/**
+ * Validates if an executable path exists and is executable
+ * 
+ * @param path The path to validate
+ * @return true if the path exists and is executable, false otherwise
+ */
+bool ConfigService::validate_executable_path(const std::string& path) const {
+    if (path.empty()) {
+        return false;
+    }
+    
+    // If the path contains no directory separators, we assume it's in PATH
+    if (path.find('/') == std::string::npos && path.find('\\') == std::string::npos) {
+        // For commands available in PATH, we can't directly check if they exist
+        // A more thorough check would use "which" or similar, but for simplicity
+        // we just return true here
+        return true;
+    }
+    
+    // Check if the file exists and is executable
+    std::filesystem::path file_path(path);
+    if (!std::filesystem::exists(file_path)) {
+        return false;
+    }
+    
+    // On POSIX systems, check if the file is executable
+#ifdef _WIN32
+    // On Windows, check for .exe, .com, .bat, .cmd extensions
+    std::string extension = file_path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+    return extension == ".exe" || extension == ".com" || extension == ".bat" || extension == ".cmd";
+#else
+    // On POSIX systems, check if the file has execute permission
+    namespace fs = std::filesystem;
+    try {
+        fs::perms p = fs::status(file_path).permissions();
+        return (p & fs::perms::owner_exec) != fs::perms::none ||
+               (p & fs::perms::group_exec) != fs::perms::none ||
+               (p & fs::perms::others_exec) != fs::perms::none;
+    } catch (const std::exception&) {
+        return false;
+    }
+#endif
+}
+
+/**
+ * Gets a validated executable path, falling back to a default value if the configured path is invalid
+ */
+std::string ConfigService::get_validated_executable_path(const std::string& env_name, const std::string& default_value) const {
+    std::string path = get_env(env_name);
+    
+    if (path.empty()) {
+        path = default_value;
+    }
+    
+    if (validate_executable_path(path)) {
+        return path;
+    }
+    
+    // Log a warning that we're using the default
+    CONFIG_WARN_FMT("Configured path for {} is invalid. Using default: {}", env_name, default_value);
+    
+    return default_value;
+}
+
+// Executable path getters with validation
+std::string ConfigService::get_mpv_path() const {
+    return get_validated_executable_path("MPV_PATH", "mpv");
+}
+
+std::string ConfigService::get_cmake_path() const {
+    return get_validated_executable_path("CMAKE_PATH", "cmake");
+}
+
+std::string ConfigService::get_git_path() const {
+    return get_validated_executable_path("GIT_PATH", "git");
+}
+
+std::string ConfigService::get_say_path() const {
+    return get_validated_executable_path("SAY_PATH", "say");
+}
+
+std::string ConfigService::get_bash_path() const {
+    return get_validated_executable_path("BASH_PATH", "/bin/bash");
+}
+
+std::string ConfigService::get_sudo_path() const {
+    return get_validated_executable_path("SUDO_PATH", "sudo");
+}
+
+std::string ConfigService::get_vscode_path() const {
+    return get_validated_executable_path("VSCODE_PATH", "code");
+}
+
+std::string ConfigService::get_ping_path() const {
+    return get_validated_executable_path("PING_PATH", "ping");
+}
 
     void ConfigService::refresh_cache() {
         std::lock_guard<std::mutex> lock(mutex_);

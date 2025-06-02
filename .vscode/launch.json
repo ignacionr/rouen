@@ -46,6 +46,13 @@
         ],
         "externalConsole": false,
         "MIMode": "lldb",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
         "logging": {
             "moduleLoad": false,
             "programOutput": true,

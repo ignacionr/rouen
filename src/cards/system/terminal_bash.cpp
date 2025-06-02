@@ -1,5 +1,6 @@
 #include "terminal_bash.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/config_service.hpp"
 
 namespace rouen::cards {
 
@@ -35,6 +36,9 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         return;
     }
     
+    // Get the configured bash path before forking
+    std::string bash_path = CONFIG_SERVICE()->get_bash_path();
+    
     // Fork a child process for bash
     bash_pid = fork();
     
@@ -66,8 +70,8 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         close(stderr_pipe[1]);
         
         // Execute bash with interactive but non-login options
-        execl("/bin/bash", "bash", "--noediting", "--noprofile", "--norc", "+m", 
-              "-c", "exec bash --norc +m", NULL);
+        execl(bash_path.c_str(), "bash", "--noediting", "--noprofile", "--norc", "+m", 
+              "-c", std::format("exec {} --norc +m", bash_path).c_str(), NULL);
         
         // If execl returns, there was an error
         perror("execl");
@@ -385,6 +389,10 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         return;
     }
     
+    // Get the configured sudo and bash paths before forking
+    std::string sudo_path = CONFIG_SERVICE()->get_sudo_path();
+    std::string bash_path = CONFIG_SERVICE()->get_bash_path();
+    
     // Fork a child process for sudo
     bash_pid = fork();
     
@@ -423,7 +431,7 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         close(stderr_pipe[1]);
         
         // Execute sudo bash with -S to read password from stdin
-        execl("/usr/bin/sudo", "sudo", "-S", "bash", "--norc", "+m", NULL);
+        execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "+m", NULL);
         
         // If execl returns, there was an error
         perror("execl");

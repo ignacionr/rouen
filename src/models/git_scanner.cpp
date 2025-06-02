@@ -2,6 +2,7 @@
 #include "git.hpp"
 #include "git_process_helper.hpp"
 #include "../helpers/debug.hpp"
+#include "../helpers/config_service.hpp"
 #include <filesystem>
 #include <cstdlib>
 #include <algorithm>
@@ -20,7 +21,8 @@ namespace rouen::models {
                         repos[repo_path] = GitRepoStatus::Unknown; // Set initial status
                         
                         // Query the git status immediately
-                        std::string status_output = GitProcessHelper::executeCommandInDirectory(repo_path, "git status");
+                        std::string git_path = CONFIG_SERVICE()->get_git_path();
+                        std::string status_output = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " status");
                         if (!status_output.empty()) {
                             // Status will be updated by the git class
                         }

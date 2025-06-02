@@ -44,11 +44,6 @@
 			"problemMatcher": [
 				"$gcc"
 			],
-			"dependsOn": [
-				"Install vcpkg dependencies",
-				"Configure with vcpkg"
-			],
-			"dependsOrder": "sequence",
 			"detail": "Build using vcpkg dependencies"
 		},
 		{

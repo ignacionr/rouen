@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "../helpers/debug.hpp"
+#include "../helpers/config_service.hpp"
 #include "git_process_helper.hpp"
 #include "git_scanner.hpp"
 
@@ -44,7 +45,8 @@ namespace rouen::models {
             std::string output = status_output;
             if (output.empty()) {
                 // If no status output provided, get it now
-                output = GitProcessHelper::executeCommandInDirectory(repo_path, "git status");
+                std::string git_path = CONFIG_SERVICE()->get_git_path();
+                output = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " status");
                 if (output.empty()) {
                     return false;
                 }
@@ -81,7 +83,8 @@ namespace rouen::models {
                 return "";
             }
             
-            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, "git status");
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " status");
             if (!status.empty()) {
                 updateRepoStatus(repo_path, status);
             }
@@ -99,7 +102,8 @@ namespace rouen::models {
                 return false;
             }
             
-            std::string command = std::format("code \"{}\"", repo_path);
+            std::string vscode_path = CONFIG_SERVICE()->get_vscode_path();
+            std::string command = std::format("\"{}\" \"{}\"", vscode_path, repo_path);
             system(command.c_str());
             return true;
         }
@@ -115,7 +119,8 @@ namespace rouen::models {
                 return "";
             }
             
-            std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, "git push");
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " push");
             // Update status after push
             if (!result.empty()) {
                 updateRepoStatus(repo_path);
@@ -152,7 +157,8 @@ namespace rouen::models {
             }
             
             // Get git status with porcelain format for easier parsing
-            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, "git status -sb");
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string status = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " status -sb");
             if (status.empty()) {
                 return false;
             }

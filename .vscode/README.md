@@ -28,16 +28,28 @@ Provides multiple build tasks accessible via **Cmd+Shift+P → "Tasks: Run Task"
 
 Multiple debug configurations accessible via **F5** or **Run and Debug**:
 
-#### macOS Configurations
-- **"(lldb) Launch macOS - vcpkg build"** ⭐ - Debug vcpkg build (recommended)
-- **"(lldb) Launch macOS - traditional build"** - Debug traditional build
-- **"(lldb) Launch from Installed macOS"** - Debug installed app
+#### Primary Configurations
+- **"🚀 Debug Rouen (vcpkg)"** ⭐ - Debug vcpkg build with pre-build task (recommended)
+- **"🔧 Debug Rouen (Quick Launch)"** - Debug without building (fastest startup)
+- **"🔧 Debug Rouen (Full Setup)"** - Complete debug setup with dependencies
+- **"📦 Debug Rouen (Traditional Build)"** - Debug traditional build
+- **"🍎 Debug Installed Rouen"** - Debug installed app from /Applications
 
-#### Linux Configurations  
-- **"(gdb) Launch Linux - vcpkg build"** ⭐ - Debug vcpkg build (recommended)
-- **"(gdb) Launch Linux - traditional build"** - Debug traditional build
+All configurations use LLDB debugger and include proper environment setup for macOS.
 
-All configurations automatically build before launching and include proper environment setup.
+#### Debugging Setup
+The debug configurations are set up to work out of the box. If F5 debugging fails:
+
+1. **Quick Fix**: Use "🔧 Debug Rouen (Quick Launch)" which skips pre-build tasks
+2. **Build First**: Run "Build with vcpkg" task manually (Cmd+Shift+P → Tasks: Run Task)
+3. **Verify Executable**: Ensure `build-vcpkg/rouen.app/Contents/MacOS/rouen` exists
+4. **Check Dependencies**: Run "Install vcpkg dependencies" if needed
+
+#### Debug Features
+- **Breakpoints**: Set breakpoints anywhere in source code
+- **Variable Inspection**: Hover over variables or use Debug Console
+- **Call Stack**: View function call hierarchy
+- **Debug Console**: Execute LLDB commands directly
 
 ### `c_cpp_properties.json` - IntelliSense
 

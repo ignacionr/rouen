@@ -26,6 +26,7 @@ namespace rouen::helpers {
             JIRA_PROFILES,     // JIRA organization profiles
             BYBIT_CONFIG,      // Bybit trading configuration
             SYSTEM_PATHS,      // File system paths and directories
+            EXECUTABLE_PATHS,  // Paths to external executables
             DATABASE_CONFIG,   // Database connection settings
             LOGGING_CONFIG,    // Logging and debug settings
             GENERAL           // General application settings
@@ -78,6 +79,20 @@ namespace rouen::helpers {
 
         // System path helpers
         std::string resolve_path_with_env(const std::string& path) const;
+        
+        // Executable path helpers
+        std::string get_mpv_path() const;
+        std::string get_cmake_path() const;
+        std::string get_git_path() const;
+        std::string get_say_path() const;
+        std::string get_bash_path() const;
+        std::string get_sudo_path() const;
+        std::string get_vscode_path() const; // Added for VS Code
+        std::string get_ping_path() const;  // Added for ping
+
+        // Path validation helpers
+        bool validate_executable_path(const std::string& path) const;
+        std::string get_validated_executable_path(const std::string& env_name, const std::string& default_value) const;
 
         // Configuration monitoring and refresh
         void refresh_cache();

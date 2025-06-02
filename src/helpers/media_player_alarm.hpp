@@ -1,6 +1,7 @@
 #pragma once
 #include "media_player_item.hpp"
 #include "platform_utils.hpp"
+#include "config_service.hpp"
 #include <string>
 #include <thread>
 #include <chrono>
@@ -33,11 +34,19 @@ namespace media_player_alarm_helper {
         alarm_item.url = resource_path.string();
         alarm_item.stopMedia();
         std::string socket_path = alarm_item.mpv_socket.create_socket_path();
-        std::string mpv_path;
-        bool mpv_found = rouen::platform::check_mpv_availability(mpv_path);
+        std::string mpv_path = CONFIG_SERVICE()->get_mpv_path();
+        
+        // Validate that MPV is available
+        std::string validated_path;
+        bool mpv_found = rouen::platform::check_mpv_availability(validated_path);
         if (!mpv_found) {
-            try { "notify"_sfn("Cannot play alarm: MPV not found. Please install MPV using 'brew install mpv'."); } catch (...) {}
+            try { "notify"_sfn("Cannot play alarm: MPV not found. Please install MPV or configure MPV_PATH."); } catch (...) {}
             return;
+        }
+        
+        // Use the validated path if detection succeeded, otherwise use configured path
+        if (!validated_path.empty()) {
+            mpv_path = validated_path;
         }
         
 #ifdef _WIN32
