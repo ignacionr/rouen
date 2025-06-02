@@ -283,11 +283,11 @@ public:
     void invalidate_freshness_cache(std::string_view feed_url = "") {
         if (feed_url.empty()) {
             // Invalidate all cache entries by clearing the cache
-            RSS_DEBUG("Invalidating all freshness cache entries");
+            RSS_TRACE("Invalidating all freshness cache entries");
             freshness_cache.clear();
         } else {
             // Invalidate a specific feed's cache entry
-            RSS_DEBUG_FMT("Invalidating freshness cache for feed: {}", feed_url);
+            RSS_TRACE_FMT("Invalidating freshness cache for feed: {}", feed_url);
             freshness_cache.erase(std::string(feed_url));
         }
     }
