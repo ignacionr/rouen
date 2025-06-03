@@ -82,10 +82,6 @@ jobs:
         echo "Installing vcpkg packages (using cache if available)..."
         ./vcpkg install --triplet arm64-osx
         
-        echo ""
-        echo "Forcing curl installation specifically..."
-        ./vcpkg install curl[ssl]:arm64-osx
-        
         echo "Integrating vcpkg..."
         ./vcpkg integrate install
         
