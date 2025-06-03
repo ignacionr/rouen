@@ -680,10 +680,12 @@ std::string ConfigService::get_ping_path() const {
                 if (config.is_required) flags.push_back("REQUIRED");
                 if (config.is_sensitive) flags.push_back("SENSITIVE");
                 if (!flags.empty()) {
-                    env_file << "# " << std::format("({})", std::ranges::fold_left(flags, std::string{}, 
-                        [](std::string acc, const std::string& flag) {
-                            return acc.empty() ? flag : acc + ", " + flag;
-                        })) << "\n";
+                    std::string flags_str;
+                    for (size_t i = 0; i < flags.size(); ++i) {
+                        if (i > 0) flags_str += ", ";
+                        flags_str += flags[i];
+                    }
+                    env_file << "# " << std::format("({})", flags_str) << "\n";
                 }
                 
                 // Write the actual configuration
