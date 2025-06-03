@@ -1,8 +1,9 @@
 # macOS-specific configuration
 
-# Set minimum macOS deployment target to support C++23 std::format (requires macOS 13.3+)
-set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3")
-message(STATUS "Setting macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET} for C++23 std::format support")
+# Set minimum macOS deployment target to support C++23 std::format
+# Updated to 14.0 to match vcpkg library compatibility
+set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
+message(STATUS "Setting macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET} for C++23 std::format support and vcpkg compatibility")
 
 # Ensure we're using the latest C++ standard library with proper std::format support
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -172,10 +173,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 set(RESOURCE_FILES
   "${CMAKE_SOURCE_DIR}/podcasts.txt"
   "${CMAKE_SOURCE_DIR}/presets.txt"
-  "${CMAKE_SOURCE_DIR}/rouen.ini"
   "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/external/fonts/NotoSansSymbols-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/img/alarm.mp3"
+)
+
+# Create Resources directory first
+add_custom_command(
+  TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory 
+          "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources"
+  COMMENT "Creating Resources directory in app bundle"
 )
 
 # Copy resources into the bundle
@@ -183,10 +191,11 @@ foreach(RES_FILE ${RESOURCE_FILES})
   get_filename_component(RES_FILENAME ${RES_FILE} NAME)
   add_custom_command(
     TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${RES_FILE}"
             "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/${RES_FILENAME}"
     COMMENT "Copying ${RES_FILENAME} to app bundle Resources"
+    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources"
   )
 endforeach()
 

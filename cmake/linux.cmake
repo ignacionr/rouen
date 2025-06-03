@@ -45,7 +45,6 @@ endif()
 set(RESOURCE_FILES
   "${CMAKE_SOURCE_DIR}/podcasts.txt"
   "${CMAKE_SOURCE_DIR}/presets.txt"
-  "${CMAKE_SOURCE_DIR}/rouen.ini"
   "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/external/fonts/NotoSansSymbols-Regular.ttf"
 )

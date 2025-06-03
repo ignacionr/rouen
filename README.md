@@ -295,9 +295,9 @@ The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variab
 ### Platform-Specific Requirements
 
 #### macOS
-- **macOS 13.3 (Ventura) or later** - Required for C++23 `std::format` support
+- **macOS 14.0 (Sonoma) or later** - Required for C++23 `std::format` support and vcpkg library compatibility
 - **Apple Silicon (ARM64) or Intel (x64)** - Both architectures supported
-- **Xcode 14.3+** with Command Line Tools for C++23 standard library features
+- **Xcode 15.0+** with Command Line Tools for C++23 standard library features
 
 #### Windows
 - **Windows 10/11** with Visual Studio 2022 or compatible C++23 compiler
