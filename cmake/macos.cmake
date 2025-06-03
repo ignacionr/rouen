@@ -45,17 +45,6 @@ find_library(METAL_LIBRARY Metal REQUIRED)
 find_library(FORCEFEEDBACK_LIBRARY ForceFeedback REQUIRED)
 find_library(CARBON_LIBRARY Carbon REQUIRED)
 
-# Configure GLFW specifically for macOS
-find_package(glfw3 QUIET)
-if(NOT glfw3_FOUND)
-  find_library(GLFW_LIBRARY
-    NAMES glfw glfw3
-    PATHS /opt/homebrew/lib /usr/local/lib
-    REQUIRED
-  )
-  message(STATUS "Found GLFW: ${GLFW_LIBRARY}")
-endif()
-
 # Add GL library path directly for macOS
 find_library(OPENGL_LIBRARY OpenGL REQUIRED)
 
@@ -71,7 +60,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${FORCEFEEDBACK_LIBRARY}
   ${CARBON_LIBRARY}
   "-framework OpenGL"
-  ${GLFW_LIBRARY}
   ${SDL2_LIBRARIES}
   ${SDL2_IMAGE_LIBRARIES}
   ${OPENGL_LIBRARY}
@@ -80,7 +68,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # Remove problematic libraries that are handled differently on macOS
 get_target_property(CURRENT_LINK_LIBRARIES ${PROJECT_NAME} LINK_LIBRARIES)
 if(CURRENT_LINK_LIBRARIES)
-  list(REMOVE_ITEM CURRENT_LINK_LIBRARIES "glfw" "GL")
+  list(REMOVE_ITEM CURRENT_LINK_LIBRARIES "GL")
   set_target_properties(${PROJECT_NAME} PROPERTIES LINK_LIBRARIES "${CURRENT_LINK_LIBRARIES}")
 endif()
 
