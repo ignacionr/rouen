@@ -103,11 +103,9 @@ jobs:
       run: |
         workspace="${{ github.workspace }}"
         vcpkg_dir="$workspace/vcpkg"
-        lib_path="$vcpkg_dir/installed/arm64-osx/lib"
         
         echo "=== COMPREHENSIVE VCPKG VERIFICATION ==="
         echo "vcpkg directory: $vcpkg_dir"
-        echo "Library path: $lib_path"
         
         # List all installed packages
         echo ""
@@ -119,52 +117,91 @@ jobs:
           echo "vcpkg executable not found!"
         fi
         
-        # Check if lib directory exists and list contents
-        if [ -d "$lib_path" ]; then
+        # Check installed directory structure
+        installed_dir="$vcpkg_dir/installed"
+        if [ -d "$installed_dir" ]; then
           echo ""
-          echo "✅ vcpkg lib directory exists"
-          all_files=$(ls -la "$lib_path" | wc -l)
-          echo "Contents of lib directory ($all_files entries):"
-          ls -la "$lib_path" | head -20
+          echo "✅ vcpkg installed directory exists"
+          echo "Installed directory structure:"
+          ls -la "$installed_dir"
           
-          echo ""
-          echo "Dynamic libraries (.dylib files):"
-          find "$lib_path" -name "*.dylib" -exec ls -lh {} \; | head -10
+          # Check arm64-osx subdirectory specifically
+          arm64_dir="$installed_dir/arm64-osx"
+          if [ -d "$arm64_dir" ]; then
+            echo ""
+            echo "✅ arm64-osx directory exists"
+            echo "arm64-osx directory contents:"
+            ls -la "$arm64_dir"
+            
+            # Look for library directories in multiple possible locations
+            potential_lib_dirs=(
+              "$arm64_dir/lib"
+              "$arm64_dir/lib64" 
+              "$arm64_dir/libraries"
+              "$arm64_dir/Library"
+              "$arm64_dir/Frameworks"
+            )
+            
+            found_lib_dir=""
+            for lib_dir in "${potential_lib_dirs[@]}"; do
+              if [ -d "$lib_dir" ]; then
+                found_lib_dir="$lib_dir"
+                echo ""
+                echo "✅ Found library directory: $lib_dir"
+                all_files=$(ls -la "$lib_dir" | wc -l)
+                echo "Contents of lib directory ($all_files entries):"
+                ls -la "$lib_dir" | head -20
+                
+                echo ""
+                echo "Dynamic libraries (.dylib files):"
+                find "$lib_dir" -name "*.dylib" -exec ls -lh {} \; | head -10
+                break
+              fi
+            done
+            
+            if [ -z "$found_lib_dir" ]; then
+              echo ""
+              echo "⚠️ No standard library directory found, searching recursively..."
+              dylib_files=$(find "$arm64_dir" -name "*.dylib" 2>/dev/null)
+              if [ -n "$dylib_files" ]; then
+                echo "Found .dylib files in other locations:"
+                echo "$dylib_files" | head -10
+              else
+                echo "No .dylib files found anywhere in arm64-osx directory"
+              fi
+            fi
+          else
+            echo ""
+            echo "⚠️ arm64-osx directory not found"
+          fi
         else
           echo ""
-          echo "⚠️ vcpkg lib directory not found"
-          
-          # Check if installed directory exists at all
-          installed_dir="$vcpkg_dir/installed"
-          if [ -d "$installed_dir" ]; then
-            echo "Installed directory exists, checking subdirectories:"
-            ls -la "$installed_dir"
-            
-            # Check arm64-osx subdirectory specifically
-            arm64_dir="$installed_dir/arm64-osx"
-            if [ -d "$arm64_dir" ]; then
-              echo "arm64-osx directory contents:"
-              ls -la "$arm64_dir"
-            fi
-          fi
+          echo "❌ vcpkg installed directory not found!"
         fi
         
-        # Check for specific required libraries
+        # Check for specific required libraries across the entire vcpkg installation
         required_libs=("libcurl" "libssl" "libcrypto" "libSDL2")
         echo ""
         echo "=== REQUIRED LIBRARY CHECK ==="
         for lib in "${required_libs[@]}"; do
-          found_libs=$(find "$vcpkg_dir/installed" -name "${lib}*.dylib" 2>/dev/null)
+          found_libs=$(find "$vcpkg_dir/installed" -name "${lib}*.dylib" 2>/dev/null || true)
           if [ -n "$found_libs" ]; then
             echo "✅ Found $lib:"
             echo "$found_libs" | while read -r file; do
-              size=$(ls -lh "$file" | awk '{print $5}')
-              echo "  - $(basename "$file") ($size)"
+              if [ -f "$file" ]; then
+                size=$(ls -lh "$file" | awk '{print $5}')
+                echo "  - $(basename "$file") ($size) at $(dirname "$file")"
+              fi
             done
           else
             echo "⚠️ Missing $lib"
           fi
         done
+        
+        # Always exit successfully to not block the build
+        echo ""
+        echo "Verification completed (non-blocking)"
+        exit 0
 
     - name: Configure CMake
       run: |
@@ -276,12 +313,32 @@ jobs:
       run: |
         workspace="${{ github.workspace }}"
         dist_dir="$workspace/dist"
-        vcpkg_lib_path="$workspace/vcpkg/installed/arm64-osx/lib"
+        vcpkg_base="$workspace/vcpkg/installed/arm64-osx"
         app_path="$dist_dir/rouen.app"
         exe_path="$app_path/Contents/MacOS/rouen"
         frameworks_dir="$app_path/Contents/Frameworks"
         
         echo "=== BUNDLING DEPENDENCIES ==="
+        
+        # Find vcpkg library path dynamically
+        vcpkg_lib_path=""
+        for potential_path in "$vcpkg_base/lib" "$vcpkg_base/lib64" "$vcpkg_base/libraries"; do
+          if [ -d "$potential_path" ]; then
+            vcpkg_lib_path="$potential_path"
+            echo "✅ Found vcpkg libraries at: $vcpkg_lib_path"
+            break
+          fi
+        done
+        
+        if [ -z "$vcpkg_lib_path" ]; then
+          echo "⚠️ vcpkg lib directory not found, checking for libraries in vcpkg installed directory..."
+          vcpkg_lib_path="$vcpkg_base"
+          if [ -d "$vcpkg_lib_path" ]; then
+            echo "Using base directory: $vcpkg_lib_path"
+          else
+            echo "❌ No vcpkg directory found, dependency bundling may fail"
+          fi
+        fi
         
         # Create Frameworks directory
         mkdir -p "$frameworks_dir"
@@ -315,10 +372,23 @@ jobs:
               continue
             fi
             
-            # Try to find the library in vcpkg
-            if [ -f "$vcpkg_lib_path/$dep_name" ]; then
-              echo "    ✅ Found in vcpkg: $dep_name"
-              cp "$vcpkg_lib_path/$dep_name" "$target_path"
+            # Try to find the library in vcpkg (check multiple locations)
+            found_lib=""
+            for search_path in "$vcpkg_lib_path" "$vcpkg_base/lib" "$vcpkg_base/lib64" "$vcpkg_base"; do
+              if [ -f "$search_path/$dep_name" ]; then
+                found_lib="$search_path/$dep_name"
+                break
+              fi
+            done
+            
+            # Also try a broader search if not found
+            if [ -z "$found_lib" ]; then
+              found_lib=$(find "$vcpkg_base" -name "$dep_name" -type f 2>/dev/null | head -1)
+            fi
+            
+            if [ -n "$found_lib" ] && [ -f "$found_lib" ]; then
+              echo "    ✅ Found in vcpkg: $dep_name (at: $found_lib)"
+              cp "$found_lib" "$target_path"
               
               # Fix the library's own dependencies recursively
               fix_dependencies "$target_path" $((depth + 1))
