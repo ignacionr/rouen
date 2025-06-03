@@ -53,13 +53,14 @@ Rouen supports automated builds and releases for both **Windows x64** and **macO
 
 **macOS Features:**
 - **Apple Silicon Support**: Native ARM64 builds optimized for M1, M2, M3+ Macs
+- **C++23 std::format Support**: Requires macOS 13.3 (Ventura) or later for full C++23 compatibility
 - **App Bundle Packaging**: Proper macOS .app bundle structure with all dependencies
 - **Dynamic Library Bundling**: Automatic dependency resolution and bundling using `otool` and `install_name_tool`
 - **DMG Creation**: Professional disk image installer for easy distribution
 - **vcpkg Integration**: Full vcpkg support with `arm64-osx` triplet for dependency management
 - **Code Signing**: Ad-hoc signing support (requires developer certificate for distribution)
 - **Automated Releases**: Complete GitHub Actions workflow matching Windows feature parity
-- **Minimum Requirements**: macOS 11.0 (Big Sur) or later, Apple Silicon Mac required
+- **Minimum Requirements**: macOS 13.3 (Ventura) or later, Apple Silicon Mac recommended
 
 **macOS Release Workflow Features:**
 - Comprehensive dependency manifest generation
@@ -287,9 +288,24 @@ The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variab
 
 ### Prerequisites
 
-- C++23 compatible compiler (GCC 13+, Clang 16+, or MSVC 2022+)
-- CMake 3.30+
-- vcpkg package manager (recommended) or system packages
+- **C++23 compatible compiler** (GCC 13+, Clang 16+, or MSVC 2022+)
+- **CMake 3.30+**
+- **vcpkg package manager** (recommended) or system packages
+
+### Platform-Specific Requirements
+
+#### macOS
+- **macOS 13.3 (Ventura) or later** - Required for C++23 `std::format` support
+- **Apple Silicon (ARM64) or Intel (x64)** - Both architectures supported
+- **Xcode 14.3+** with Command Line Tools for C++23 standard library features
+
+#### Windows
+- **Windows 10/11** with Visual Studio 2022 or compatible C++23 compiler
+- **x64 or ARM64 architecture** supported
+
+#### Linux
+- **Modern Linux distribution** with GCC 13+ or Clang 16+
+- **glibc 2.34+** recommended for full C++23 standard library support
 
 ### Build Instructions
 

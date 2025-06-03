@@ -18,7 +18,7 @@ on:
 
 jobs:
   macos-build:
-    runs-on: macos-latest
+    runs-on: macos-14  # Use macOS 14 (Apple Silicon) with more recent SDK supporting C++23
     
     steps:
     - name: Checkout code
@@ -29,7 +29,7 @@ jobs:
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: latest-stable
+        xcode-version: '15.4'  # Use specific Xcode version with proper C++23 support
 
     - name: Setup vcpkg cache
       uses: actions/cache@v4
@@ -212,7 +212,8 @@ jobs:
           -DVCPKG_INSTALLED_DIR="$workspace/vcpkg/installed" \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_OSX_ARCHITECTURES=arm64 \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+          -DCMAKE_CXX_STANDARD=23
         
         echo ""
         echo "=== CMAKE CONFIGURATION VERIFICATION ==="
@@ -220,7 +221,8 @@ jobs:
         echo "VCPKG_INSTALLED_DIR=$workspace/vcpkg/installed"
         echo "CMAKE_TOOLCHAIN_FILE=$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake"
         echo "CMAKE_OSX_ARCHITECTURES=arm64"
-        echo "CMAKE_OSX_DEPLOYMENT_TARGET=11.0"
+        echo "CMAKE_OSX_DEPLOYMENT_TARGET=13.3"
+        echo "CMAKE_CXX_STANDARD=23"
 
     - name: Build with CMake
       run: |

@@ -16,6 +16,7 @@
       "features": ["libjpeg-turbo"]
     },
     "tinyxml2",
-    "glaze"
+    "glaze",
+    "fmt"
   ]
 }

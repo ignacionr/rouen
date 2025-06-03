@@ -1,5 +1,12 @@
 # macOS-specific configuration
 
+# Set minimum macOS deployment target to support C++23 std::format (requires macOS 13.3+)
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3")
+message(STATUS "Setting macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET} for C++23 std::format support")
+
+# Ensure we're using the latest C++ standard library with proper std::format support
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+
 # Disable problematic warnings as errors for macOS builds
 # Note: -Wno-error=nontrivial-memcall is not supported by Apple Clang, removing it
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion -Wno-error=implicit-fallthrough -Wno-error=implicit-int-float-conversion")
