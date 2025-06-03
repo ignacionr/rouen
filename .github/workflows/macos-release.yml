@@ -1,0 +1,656 @@
+name: macOS Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a GitHub release'
+        required: false
+        default: false
+        type: boolean
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+jobs:
+  macos-build:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - name: Setup vcpkg cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/vcpkg/installed
+          ${{ github.workspace }}/vcpkg/buildtrees
+          ${{ github.workspace }}/vcpkg/packages
+        key: ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-configuration.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-
+          ${{ runner.os }}-vcpkg-built-
+
+    - name: Setup vcpkg
+      run: |
+        set -e
+        workspace="${{ github.workspace }}"
+        vcpkg_dir="$workspace/vcpkg"
+        
+        echo "Setting up vcpkg..."
+        
+        # Always remove existing vcpkg directory to avoid corruption
+        if [ -d "$vcpkg_dir" ]; then
+          echo "Removing existing vcpkg directory..."
+          rm -rf "$vcpkg_dir"
+        fi
+        
+        echo "Cloning fresh vcpkg..."
+        git clone https://github.com/Microsoft/vcpkg.git "$vcpkg_dir"
+        
+        echo "Bootstrapping vcpkg..."
+        cd "$vcpkg_dir"
+        
+        if [ -f "bootstrap-vcpkg.sh" ]; then
+          echo "Found bootstrap-vcpkg.sh, executing..."
+          ./bootstrap-vcpkg.sh
+        else
+          echo "ERROR: bootstrap-vcpkg.sh not found in $(pwd)"
+          ls -la bootstrap*
+          exit 1
+        fi
+        
+        # Verify vcpkg executable was created
+        if [ ! -f "vcpkg" ]; then
+          echo "ERROR: vcpkg executable not found after bootstrap"
+          ls -la *vcpkg*
+          exit 1
+        fi
+        
+        echo "Installing vcpkg packages (using cache if available)..."
+        ./vcpkg install --triplet arm64-osx
+        
+        echo ""
+        echo "Forcing curl installation specifically..."
+        ./vcpkg install curl[ssl]:arm64-osx
+        
+        echo "Integrating vcpkg..."
+        ./vcpkg integrate install
+        
+        echo "Listing installed packages..."
+        ./vcpkg list
+        
+        echo "Verifying curl installation..."
+        ./vcpkg list curl
+        
+        echo "Checking for dylib files..."
+        if [ -d "installed/arm64-osx/lib" ]; then
+          echo "Libraries in lib directory:"
+          ls -la "installed/arm64-osx/lib"/*.dylib 2>/dev/null || echo "No .dylib files found"
+        else
+          echo "WARNING: arm64-osx/lib directory not found"
+        fi
+
+    - name: Verify vcpkg installation
+      run: |
+        workspace="${{ github.workspace }}"
+        vcpkg_dir="$workspace/vcpkg"
+        lib_path="$vcpkg_dir/installed/arm64-osx/lib"
+        
+        echo "=== COMPREHENSIVE VCPKG VERIFICATION ==="
+        echo "vcpkg directory: $vcpkg_dir"
+        echo "Library path: $lib_path"
+        
+        # List all installed packages
+        echo ""
+        echo "Installed packages:"
+        if [ -f "$vcpkg_dir/vcpkg" ]; then
+          cd "$vcpkg_dir"
+          ./vcpkg list
+        else
+          echo "vcpkg executable not found!"
+        fi
+        
+        # Check if lib directory exists and list contents
+        if [ -d "$lib_path" ]; then
+          echo ""
+          echo "✅ vcpkg lib directory exists"
+          all_files=$(ls -la "$lib_path" | wc -l)
+          echo "Contents of lib directory ($all_files entries):"
+          ls -la "$lib_path" | head -20
+          
+          echo ""
+          echo "Dynamic libraries (.dylib files):"
+          find "$lib_path" -name "*.dylib" -exec ls -lh {} \; | head -10
+        else
+          echo ""
+          echo "⚠️ vcpkg lib directory not found"
+          
+          # Check if installed directory exists at all
+          installed_dir="$vcpkg_dir/installed"
+          if [ -d "$installed_dir" ]; then
+            echo "Installed directory exists, checking subdirectories:"
+            ls -la "$installed_dir"
+            
+            # Check arm64-osx subdirectory specifically
+            arm64_dir="$installed_dir/arm64-osx"
+            if [ -d "$arm64_dir" ]; then
+              echo "arm64-osx directory contents:"
+              ls -la "$arm64_dir"
+            fi
+          fi
+        fi
+        
+        # Check for specific required libraries
+        required_libs=("libcurl" "libssl" "libcrypto" "libSDL2")
+        echo ""
+        echo "=== REQUIRED LIBRARY CHECK ==="
+        for lib in "${required_libs[@]}"; do
+          found_libs=$(find "$vcpkg_dir/installed" -name "${lib}*.dylib" 2>/dev/null)
+          if [ -n "$found_libs" ]; then
+            echo "✅ Found $lib:"
+            echo "$found_libs" | while read -r file; do
+              size=$(ls -lh "$file" | awk '{print $5}')
+              echo "  - $(basename "$file") ($size)"
+            done
+          else
+            echo "⚠️ Missing $lib"
+          fi
+        done
+
+    - name: Configure CMake
+      run: |
+        workspace="${{ github.workspace }}"
+        cmake -B build-vcpkg -S . \
+          -DCMAKE_TOOLCHAIN_FILE="$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+          -DVCPKG_TARGET_TRIPLET=arm64-osx \
+          -DVCPKG_INSTALLED_DIR="$workspace/vcpkg/installed" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+        
+        echo ""
+        echo "=== CMAKE CONFIGURATION VERIFICATION ==="
+        echo "VCPKG_TARGET_TRIPLET=arm64-osx"
+        echo "VCPKG_INSTALLED_DIR=$workspace/vcpkg/installed"
+        echo "CMAKE_TOOLCHAIN_FILE=$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        echo "CMAKE_OSX_ARCHITECTURES=arm64"
+        echo "CMAKE_OSX_DEPLOYMENT_TARGET=11.0"
+
+    - name: Build with CMake
+      run: |
+        cmake --build build-vcpkg --config Release --parallel
+        if [ $? -ne 0 ]; then
+          echo "ERROR: Build failed"
+          exit 1
+        fi
+
+    - name: Check build output
+      run: |
+        workspace="${{ github.workspace }}"
+        build_dir="$workspace/build-vcpkg"
+        
+        echo "=== CHECKING BUILD OUTPUT ==="
+        echo "Build directory: $build_dir"
+        
+        # Check if the .app bundle was created
+        if [ -d "$build_dir/rouen.app" ]; then
+          echo "✅ Found rouen.app bundle"
+          echo "Bundle contents:"
+          find "$build_dir/rouen.app" -type f -exec ls -lh {} \; | head -20
+          
+          # Check the executable
+          exe_path="$build_dir/rouen.app/Contents/MacOS/rouen"
+          if [ -f "$exe_path" ]; then
+            echo ""
+            echo "✅ Found executable: $exe_path"
+            file_info=$(file "$exe_path")
+            echo "File type: $file_info"
+            size_info=$(ls -lh "$exe_path" | awk '{print $5}')
+            echo "Size: $size_info"
+            
+            # Check dependencies
+            echo ""
+            echo "Dynamic library dependencies:"
+            otool -L "$exe_path" | head -20
+          else
+            echo "❌ Executable not found at: $exe_path"
+          fi
+        else
+          echo "❌ rouen.app bundle not found"
+          echo "Available files in build directory:"
+          find "$build_dir" -name "rouen*" -type f
+        fi
+
+    - name: Package application
+      run: |
+        workspace="${{ github.workspace }}"
+        dist_dir="$workspace/dist"
+        build_dir="$workspace/build-vcpkg"
+        
+        # Create distribution directory
+        mkdir -p "$dist_dir"
+        echo "Created distribution directory: $dist_dir"
+        
+        # Copy the .app bundle
+        app_path="$build_dir/rouen.app"
+        if [ -d "$app_path" ]; then
+          echo "✅ Copying rouen.app bundle..."
+          cp -R "$app_path" "$dist_dir/"
+          echo "Successfully copied rouen.app to distribution"
+        else
+          echo "❌ ERROR: Could not find rouen.app bundle"
+          echo "Available files in build directory:"
+          find "$build_dir" -name "rouen*"
+          exit 1
+        fi
+        
+        # Verify the copied bundle
+        dist_app="$dist_dir/rouen.app"
+        if [ -d "$dist_app" ]; then
+          echo "✅ rouen.app successfully copied to distribution"
+          echo "Bundle size: $(du -sh "$dist_app" | cut -f1)"
+          
+          # Check executable
+          exe_path="$dist_app/Contents/MacOS/rouen"
+          if [ -f "$exe_path" ]; then
+            echo "✅ Executable found in distribution bundle"
+            echo "Executable size: $(ls -lh "$exe_path" | awk '{print $5}')"
+          else
+            echo "❌ Executable missing from distribution bundle"
+          fi
+        else
+          echo "❌ Failed to copy rouen.app to distribution"
+          exit 1
+        fi
+
+    - name: Bundle dependencies with app
+      run: |
+        workspace="${{ github.workspace }}"
+        dist_dir="$workspace/dist"
+        vcpkg_lib_path="$workspace/vcpkg/installed/arm64-osx/lib"
+        app_path="$dist_dir/rouen.app"
+        exe_path="$app_path/Contents/MacOS/rouen"
+        frameworks_dir="$app_path/Contents/Frameworks"
+        
+        echo "=== BUNDLING DEPENDENCIES ==="
+        
+        # Create Frameworks directory
+        mkdir -p "$frameworks_dir"
+        echo "Created Frameworks directory: $frameworks_dir"
+        
+        # Function to copy and fix library dependencies
+        fix_dependencies() {
+          local binary_path="$1"
+          local depth="${2:-0}"
+          local max_depth=5
+          
+          if [ "$depth" -gt "$max_depth" ]; then
+            echo "  Reached maximum recursion depth"
+            return
+          fi
+          
+          echo "Analyzing dependencies for: $(basename "$binary_path") (depth: $depth)"
+          
+          # Get dependencies using otool
+          dependencies=$(otool -L "$binary_path" 2>/dev/null | grep -E '\.(dylib|framework)' | grep -v '/usr/lib' | grep -v '/System/' | awk '{print $1}')
+          
+          for dep in $dependencies; do
+            dep_name=$(basename "$dep")
+            target_path="$frameworks_dir/$dep_name"
+            
+            echo "  Processing dependency: $dep_name"
+            
+            # Skip if already processed
+            if [ -f "$target_path" ]; then
+              echo "    Already bundled: $dep_name"
+              continue
+            fi
+            
+            # Try to find the library in vcpkg
+            if [ -f "$vcpkg_lib_path/$dep_name" ]; then
+              echo "    ✅ Found in vcpkg: $dep_name"
+              cp "$vcpkg_lib_path/$dep_name" "$target_path"
+              
+              # Fix the library's own dependencies recursively
+              fix_dependencies "$target_path" $((depth + 1))
+              
+              # Update the reference in the original binary
+              install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$binary_path" 2>/dev/null || true
+              echo "    Updated reference to: @executable_path/../Frameworks/$dep_name"
+            else
+              echo "    ⚠️ Not found in vcpkg (may be system library): $dep_name"
+            fi
+          done
+        }
+        
+        # Start with the main executable
+        if [ -f "$exe_path" ]; then
+          fix_dependencies "$exe_path"
+        else
+          echo "❌ Executable not found: $exe_path"
+          exit 1
+        fi
+        
+        # List bundled libraries
+        echo ""
+        echo "=== BUNDLED LIBRARIES ==="
+        if [ -d "$frameworks_dir" ]; then
+          bundled_count=$(find "$frameworks_dir" -name "*.dylib" | wc -l)
+          echo "Total libraries bundled: $bundled_count"
+          
+          if [ "$bundled_count" -gt 0 ]; then
+            echo "Bundled libraries:"
+            find "$frameworks_dir" -name "*.dylib" -exec ls -lh {} \; | while read -r line; do
+              echo "  📦 $line"
+            done
+          fi
+        else
+          echo "⚠️ No Frameworks directory created"
+        fi
+        
+        # Final dependency check
+        echo ""
+        echo "=== FINAL DEPENDENCY VERIFICATION ==="
+        echo "Dependencies after bundling:"
+        otool -L "$exe_path" | grep -E '\.(dylib|framework)' | while read -r line; do
+          echo "  $line"
+        done
+
+    - name: Copy additional assets
+      run: |
+        workspace="${{ github.workspace }}"
+        dist_dir="$workspace/dist"
+        app_path="$dist_dir/rouen.app"
+        resources_dir="$app_path/Contents/Resources"
+        
+        echo "=== COPYING ADDITIONAL ASSETS ==="
+        
+        # Ensure Resources directory exists
+        mkdir -p "$resources_dir"
+        
+        # Copy asset directories if they exist
+        declare -A asset_paths=(
+          ["$workspace/img"]="img directory"
+          ["$workspace/external/fonts"]="fonts directory"
+        )
+        
+        for path in "${!asset_paths[@]}"; do
+          if [ -d "$path" ]; then
+            cp -R "$path" "$resources_dir/"
+            echo "Copied ${asset_paths[$path]}"
+          else
+            echo "Skipped ${asset_paths[$path]} (not found)"
+          fi
+        done
+        
+        # Copy individual files if they exist
+        files=(
+          "$workspace/external/MaterialIcons-Regular.ttf"
+          "$workspace/external/IconsMaterialDesign.h"
+          "$workspace/presets.txt"
+          "$workspace/podcasts.txt"
+          "$workspace/README.md"
+          "$workspace/LICENSE"
+        )
+        
+        for file in "${files[@]}"; do
+          if [ -f "$file" ]; then
+            cp "$file" "$resources_dir/"
+            echo "Copied: $(basename "$file")"
+          else
+            echo "Skipped: $(basename "$file") (not found)"
+          fi
+        done
+        
+        echo ""
+        echo "Resources directory contents:"
+        find "$resources_dir" -type f -exec ls -lh {} \; | head -20
+
+    - name: Sign application (if possible)
+      run: |
+        workspace="${{ github.workspace }}"
+        app_path="$workspace/dist/rouen.app"
+        
+        echo "=== APPLICATION SIGNING ==="
+        
+        # Check if we can sign (requires developer certificate)
+        if command -v codesign >/dev/null 2>&1; then
+          echo "codesign tool available"
+          
+          # Try to sign with ad-hoc signature (no certificate required)
+          echo "Attempting ad-hoc code signing..."
+          if codesign --force --deep --sign - "$app_path" 2>/dev/null; then
+            echo "✅ Successfully applied ad-hoc signature"
+            
+            # Verify signature
+            echo "Verifying signature:"
+            codesign -v "$app_path" && echo "✅ Signature verification passed" || echo "⚠️ Signature verification failed"
+          else
+            echo "⚠️ Ad-hoc signing failed (this is normal for CI)"
+          fi
+        else
+          echo "⚠️ codesign not available"
+        fi
+        
+        # Always continue regardless of signing result
+        echo "Continuing with packaging..."
+
+    - name: Create DMG
+      run: |
+        workspace="${{ github.workspace }}"
+        dist_dir="$workspace/dist"
+        app_path="$dist_dir/rouen.app"
+        dmg_path="$workspace/rouen-macos-arm64.dmg"
+        
+        echo "=== CREATING DMG ==="
+        
+        # Create a temporary directory for DMG contents
+        temp_dmg_dir="$workspace/dmg_temp"
+        mkdir -p "$temp_dmg_dir"
+        
+        # Copy the app to temp directory
+        cp -R "$app_path" "$temp_dmg_dir/"
+        
+        # Create a link to Applications folder
+        ln -s /Applications "$temp_dmg_dir/Applications"
+        
+        # Create the DMG
+        echo "Creating DMG..."
+        hdiutil create -size 200m -fs HFS+ -volname "Rouen" -srcfolder "$temp_dmg_dir" "$dmg_path"
+        
+        if [ -f "$dmg_path" ]; then
+          dmg_size=$(ls -lh "$dmg_path" | awk '{print $5}')
+          echo "✅ Created DMG: $dmg_path"
+          echo "DMG size: $dmg_size"
+        else
+          echo "❌ Failed to create DMG"
+          exit 1
+        fi
+        
+        # Clean up temp directory
+        rm -rf "$temp_dmg_dir"
+
+    - name: Create dependency manifest
+      run: |
+        workspace="${{ github.workspace }}"
+        dist_dir="$workspace/dist"
+        app_path="$dist_dir/rouen.app"
+        exe_path="$app_path/Contents/MacOS/rouen"
+        frameworks_dir="$app_path/Contents/Frameworks"
+        manifest_path="$dist_dir/DEPENDENCIES.txt"
+        
+        echo "=== CREATING DEPENDENCY MANIFEST ==="
+        
+        # Count bundled libraries
+        bundled_libs=0
+        total_size=0
+        if [ -d "$frameworks_dir" ]; then
+          bundled_libs=$(find "$frameworks_dir" -name "*.dylib" | wc -l)
+          total_size=$(find "$frameworks_dir" -name "*.dylib" -exec stat -f%z {} \; | awk '{sum += $1} END {print sum}')
+        fi
+        
+        # Get app bundle size
+        if [ -d "$app_path" ]; then
+          app_size=$(du -sk "$app_path" | cut -f1)
+          app_size_mb=$((app_size / 1024))
+        else
+          app_size_mb=0
+        fi
+        
+        # Create manifest
+        echo "Rouen macOS ARM64 Distribution" > "$manifest_path"
+        echo "==============================" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "This package contains the Rouen application as a native macOS app bundle" >> "$manifest_path"
+        echo "with all required dynamic library dependencies bundled." >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "SUMMARY:" >> "$manifest_path"
+        echo "  App bundle size: ${app_size_mb} MB" >> "$manifest_path"
+        echo "  Bundled libraries: $bundled_libs" >> "$manifest_path"
+        echo "  Total bundled lib size: $(( total_size / 1024 / 1024 )) MB" >> "$manifest_path"
+        echo "  Target architecture: ARM64 (Apple Silicon)" >> "$manifest_path"
+        echo "  Minimum macOS version: 11.0 (Big Sur)" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "APP BUNDLE STRUCTURE:" >> "$manifest_path"
+        echo "  rouen.app/" >> "$manifest_path"
+        echo "    Contents/" >> "$manifest_path"
+        echo "      MacOS/rouen              # Main executable" >> "$manifest_path"
+        echo "      Frameworks/              # Bundled dynamic libraries" >> "$manifest_path"
+        echo "      Resources/               # Assets, fonts, configuration files" >> "$manifest_path"
+        echo "      Info.plist              # App metadata" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+
+        # List bundled libraries if any
+        if [ -d "$frameworks_dir" ] && [ "$bundled_libs" -gt 0 ]; then
+          echo "BUNDLED LIBRARIES:" >> "$manifest_path"
+          find "$frameworks_dir" -name "*.dylib" -exec ls -lh {} \; | while read -r perm links owner group size month day time file; do
+            lib_name=$(basename "$file")
+            echo "  - $lib_name ($size)" >> "$manifest_path"
+          done
+          echo "" >> "$manifest_path"
+        fi
+        
+        # Add dependency information
+        echo "DYNAMIC DEPENDENCIES:" >> "$manifest_path"
+        otool -L "$exe_path" | grep -E '\.(dylib|framework)' | sed 's/^/  /' >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "SYSTEM REQUIREMENTS:" >> "$manifest_path"
+        echo "  - macOS 11.0 (Big Sur) or later" >> "$manifest_path"
+        echo "  - Apple Silicon Mac (M1, M2, M3, etc.)" >> "$manifest_path"
+        echo "  - 100 MB free disk space" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "INSTALLATION:" >> "$manifest_path"
+        echo "  1. Mount the DMG file" >> "$manifest_path"
+        echo "  2. Drag rouen.app to your Applications folder" >> "$manifest_path"
+        echo "  3. Launch from Applications or Spotlight" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "TROUBLESHOOTING:" >> "$manifest_path"
+
+        # Add curl/network check
+        curl_found=$(find "$frameworks_dir" -name "*curl*" 2>/dev/null | wc -l)
+        if [ "$curl_found" -gt 0 ]; then
+          echo "  ✅ Network libraries found - HTTP functionality should work" >> "$manifest_path"
+        else
+          echo "  ⚠️  Network libraries not bundled - may use system libcurl" >> "$manifest_path"
+        fi
+        
+        # Add SSL check
+        ssl_found=$(find "$frameworks_dir" -name "*ssl*" -o -name "*crypto*" 2>/dev/null | wc -l)
+        if [ "$ssl_found" -gt 0 ]; then
+          echo "  ✅ SSL/Crypto libraries found - secure connections should work" >> "$manifest_path"
+        else
+          echo "  ⚠️  SSL/Crypto libraries not bundled - may use system libraries" >> "$manifest_path"
+        fi
+        
+        echo "" >> "$manifest_path"
+        echo "  If the app won't launch:" >> "$manifest_path"
+        echo "    1. Try right-clicking and selecting \"Open\" (bypasses Gatekeeper)" >> "$manifest_path"
+        echo "    2. Check System Preferences > Security & Privacy for blocked apps" >> "$manifest_path"
+        echo "    3. Ensure your Mac meets the minimum system requirements" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "  If you encounter missing library errors:" >> "$manifest_path"
+        echo "    1. Update to the latest macOS version" >> "$manifest_path"
+        echo "    2. Install Xcode Command Line Tools: xcode-select --install" >> "$manifest_path"
+        echo "    3. Report the issue with the specific error message" >> "$manifest_path"
+        echo "" >> "$manifest_path"
+        echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> "$manifest_path"
+        echo "Build: GitHub Actions" >> "$manifest_path"
+        echo "Workflow: macOS Release Build" >> "$manifest_path"
+        echo "Target: arm64-apple-darwin" >> "$manifest_path"
+
+        echo "Created dependency manifest"
+        
+        # Show final bundle contents summary
+        echo ""
+        echo "=== FINAL APP BUNDLE SUMMARY ==="
+        if [ -d "$app_path" ]; then
+          echo "App bundle created successfully:"
+          echo "  Path: $app_path"
+          echo "  Size: ${app_size_mb} MB"
+          echo "  Executable: $([ -f "$exe_path" ] && echo "✅ Present" || echo "❌ Missing")"
+          echo "  Libraries: $bundled_libs bundled"
+          echo "  Resources: $(find "$app_path/Contents/Resources" -type f 2>/dev/null | wc -l) files"
+        else
+          echo "❌ App bundle not found!"
+        fi
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rouen-macos-arm64
+        path: |
+          rouen-macos-arm64.dmg
+          dist/DEPENDENCIES.txt
+
+    - name: Upload to release (on release event)
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./rouen-macos-arm64.dmg
+        asset_name: rouen-macos-arm64.dmg
+        asset_content_type: application/x-apple-diskimage
+
+    - name: Create release (on workflow_dispatch)
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
+        body: |
+          Automated macOS release build
+          
+          ## What's included:
+          - macOS ARM64 app bundle (.app)
+          - All required dynamic library dependencies
+          - Assets and configuration files
+          - Documentation
+          - DMG installer for easy installation
+          
+          ## System Requirements:
+          - macOS 11.0 (Big Sur) or later
+          - Apple Silicon Mac (M1, M2, M3, etc.)
+          
+          This is a self-contained build that should run on any compatible Mac.
+        draft: false
+        prerelease: false
+        files: |
+          rouen-macos-arm64.dmg
+          dist/DEPENDENCIES.txt

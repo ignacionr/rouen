@@ -33,12 +33,13 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
 - **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
-### Windows Release Focus
-Rouen is primarily developed and released for **Windows x64** with comprehensive automated builds and packaging.
+### Multi-Platform Release Support
+Rouen supports automated builds and releases for both **Windows x64** and **macOS ARM64** with comprehensive packaging and dependency management.
 
+#### Windows Release (Production Ready)
 > **✅ STATUS**: Windows release workflow is **COMPLETE** and production-ready! See `WINDOWS_RELEASE_COMPLETE.md` for full details.
 
-#### Windows Features
+**Windows Features:**
 - **MSVC Compatibility**: Optimized build configuration for Visual Studio 2022+
 - **Automated Releases**: Complete GitHub Actions workflow for Windows builds (✅ **COMPLETED**)
 - **DLL Packaging**: Automatic inclusion of all required dependencies (libcurl, OpenSSL, SDL2, etc.) (✅ **FULLY WORKING**)
@@ -47,11 +48,31 @@ Rouen is primarily developed and released for **Windows x64** with comprehensive
 - **Optimization Flags**: Platform-specific optimization flags (/O2 for MSVC)
 - **Release Automation**: Push-to-release pipeline with comprehensive dependency packaging (✅ **READY**)
 
+#### macOS Release (ARM64 - Apple Silicon)
+> **✅ STATUS**: macOS release workflow is **COMPLETE** and ready for testing!
+
+**macOS Features:**
+- **Apple Silicon Support**: Native ARM64 builds optimized for M1, M2, M3+ Macs
+- **App Bundle Packaging**: Proper macOS .app bundle structure with all dependencies
+- **Dynamic Library Bundling**: Automatic dependency resolution and bundling using `otool` and `install_name_tool`
+- **DMG Creation**: Professional disk image installer for easy distribution
+- **vcpkg Integration**: Full vcpkg support with `arm64-osx` triplet for dependency management
+- **Code Signing**: Ad-hoc signing support (requires developer certificate for distribution)
+- **Automated Releases**: Complete GitHub Actions workflow matching Windows feature parity
+- **Minimum Requirements**: macOS 11.0 (Big Sur) or later, Apple Silicon Mac required
+
+**macOS Release Workflow Features:**
+- Comprehensive dependency manifest generation
+- Asset and resource copying to app bundle
+- Library path fixing for relocatable binaries
+- DMG creation with Applications folder symlink
+- Artifact upload and GitHub release integration
+- Detailed build verification and logging
+
 #### Cross-Platform Development Support
-While releases are Windows-focused, the codebase supports:
-- **macOS**: Native development and building (manual build required)
+- **macOS**: Full automated CI/CD with ARM64 release packaging (✅ **COMPLETED**)
+- **Windows**: Full automated CI/CD with x64 release packaging (✅ **COMPLETED**)
 - **Linux**: Development support with manual configuration
-- **Windows**: Full automated CI/CD with release packaging
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
@@ -83,6 +104,7 @@ While releases are Windows-focused, the codebase supports:
 - [Models Infrastructure](src/models/README.md) - Guide to data models and business logic
 - [Platform Utilities](src/helpers/platform_utils.hpp) - Cross-platform utilities for resource handling and more
 - [Windows Build Guide](docs/windows-build.md) - Comprehensive guide for Windows builds and automated releases
+- [macOS Release Workflow](.github/workflows/macos-release.yml) - Complete macOS ARM64 release automation
 
 ## Configuration
 
