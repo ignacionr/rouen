@@ -79,6 +79,7 @@ private:
             {helpers::ConfigService::Category::JIRA_PROFILES, "JIRA Profiles"},
             {helpers::ConfigService::Category::BYBIT_CONFIG, "Bybit Configuration"},
             {helpers::ConfigService::Category::SYSTEM_PATHS, "System Paths"},
+            {helpers::ConfigService::Category::EXECUTABLE_PATHS, "Executable Paths"},
             {helpers::ConfigService::Category::LOGGING_CONFIG, "Logging Configuration"},
             {helpers::ConfigService::Category::GENERAL, "General"}
         };
@@ -154,7 +155,7 @@ private:
         ImGui::Text("Category:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150);
-        const char* category_items[] = {"All", "API Credentials", "JIRA Profiles", "Bybit Config", "System Paths", "Logging", "General"};
+        const char* category_items[] = {"All", "API Credentials", "JIRA Profiles", "Bybit Config", "System Paths", "Executable Paths", "Logging", "General"};
         ImGui::Combo("##category", &selected_category_, category_items, IM_ARRAYSIZE(category_items));
     }
     
