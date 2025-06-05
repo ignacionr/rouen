@@ -33,6 +33,65 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **AI Assistant**: Interact with Grok AI for help and information with highly optimized chat interface, cached rendering for responsive input, proper message bubbles, and smooth scrolling
 - **Bybit Assets**: View your cryptocurrency assets and account balance on Bybit exchange using API integration
 
+## Installation
+
+Rouen provides convenient installation options for Windows and macOS platforms with automated releases and dependency management.
+
+### Windows Installation
+
+#### Option 1: MSI Installer (Recommended)
+> **✅ NEW**: User-mode MSI installer with automatic dependency management
+
+1. **Download** the latest `.msi` file from the [Releases page](https://github.com/ignaciorodriguez/rouen/releases)
+2. **Run** the MSI installer (no administrator privileges required)
+3. **Install** in user mode - the application will be installed to your local AppData folder
+4. **Launch** from Start Menu or Desktop shortcut
+
+**MSI Installer Features:**
+- **User-mode Installation**: No administrator privileges required
+- **Automatic Dependencies**: All required DLLs and runtime libraries included
+- **Start Menu Integration**: Creates Start Menu and Desktop shortcuts
+- **Clean Uninstall**: Proper Windows uninstall support via Control Panel
+- **Version Management**: Automatic updates and version tracking
+
+#### Option 2: Portable ZIP Package
+1. **Download** the `rouen-windows-x64.zip` file from the [Releases page](https://github.com/ignaciorodriguez/rouen/releases)
+2. **Extract** to any folder on your computer
+3. **Run** `rouen.exe` directly (no installation required)
+
+**ZIP Package Features:**
+- **Portable**: Run from any location without installation
+- **Self-contained**: All dependencies included in the package
+- **No Registry Changes**: Leaves no traces on the system
+- **Multiple Versions**: Run different versions side-by-side
+
+### macOS Installation
+
+#### DMG Package (Apple Silicon)
+1. **Download** the latest `.dmg` file from the [Releases page](https://github.com/ignaciorodriguez/rouen/releases)
+2. **Mount** the DMG by double-clicking
+3. **Drag** Rouen.app to your Applications folder
+4. **Launch** from Applications or Spotlight
+
+**macOS Requirements:**
+- **Apple Silicon Mac** (M1, M2, M3+) - ARM64 native
+- **macOS 13.3 (Ventura)** or later for full C++23 support
+- **Automatic Dependencies**: All required libraries bundled in the app package
+
+### System Requirements
+
+#### Windows
+- **Windows 10** version 1903 or later (64-bit)
+- **DirectX 11** compatible graphics card
+- **4 GB RAM** minimum, 8 GB recommended
+- **100 MB** disk space for installation
+
+#### macOS
+- **Apple Silicon Mac** (M1/M2/M3+ processors)
+- **macOS 13.3 (Ventura)** or later
+- **4 GB RAM** minimum, 8 GB recommended
+- **100 MB** disk space for installation
+
 ### Multi-Platform Release Support
 Rouen supports automated builds and releases for both **Windows x64** and **macOS ARM64** with comprehensive packaging and dependency management.
 
@@ -43,6 +102,7 @@ Rouen supports automated builds and releases for both **Windows x64** and **macO
 - **MSVC Compatibility**: Optimized build configuration for Visual Studio 2022+
 - **Automated Releases**: Complete GitHub Actions workflow for Windows builds (✅ **COMPLETED**)
 - **DLL Packaging**: Automatic inclusion of all required dependencies (libcurl, OpenSSL, SDL2, etc.) (✅ **FULLY WORKING**)
+- **MSI Installer**: User-mode Windows installer (.msi) with automatic dependency management (✅ **NEW**)
 - **Application Icon**: Multi-resolution Windows icon (.ico) with taskbar and Explorer integration (✅ **NEW**)
 - **Debug Console**: Development builds include dedicated console window for real-time debug output (✅ **NEW**)
 - **Windows Resources**: Embedded version information and application metadata (✅ **NEW**)

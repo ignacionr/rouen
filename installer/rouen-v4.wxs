@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Rouen" Version="$(var.Version)" Manufacturer="Rouen Development Team" UpgradeCode="12345678-1234-1234-1234-123456789012">
+    
+    <!-- Define the product properties -->
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ignaciorodriguez/rouen" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    
+    <!-- Define installation scope as per-user -->
+    <Property Id="MSIINSTALLPERUSER" Value="1" />
+    <Property Id="ALLUSERS" Value="" />
+    
+    <!-- Define the media and directory structure -->
+    <Media Id="1" Cabinet="rouen.cab" EmbedCab="yes" />
+    
+    <!-- Directory structure -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="APPLICATIONFOLDER" Name="Rouen">
+        <Directory Id="INSTALLFOLDER" Name="Rouen" />
+      </Directory>
+    </StandardDirectory>
+    
+    <!-- Program Files reference for shortcuts -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Rouen" />
+    </StandardDirectory>
+    
+    <StandardDirectory Id="DesktopFolder" />
+    
+    <!-- Feature definition -->
+    <Feature Id="MainApplication" Title="Rouen Application" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="Dependencies" />
+      <ComponentRef Id="Assets" />
+    </Feature>
+    
+    <!-- Main executable component -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="12345678-1234-1234-1234-123456789013">
+        <File Id="RouenExe" Source="$(var.SourceDir)\rouen.exe" KeyPath="yes">
+          <Shortcut Id="ApplicationStartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Rouen" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" IconIndex="0" />
+          <Shortcut Id="ApplicationDesktopShortcut" Directory="DesktopFolder" Name="Rouen" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" IconIndex="0" />
+        </File>
+      </Component>
+      
+      <!-- Dependencies component - includes all DLLs found in source directory -->
+      <Component Id="Dependencies" Guid="12345678-1234-1234-1234-123456789014">
+        <!-- Core DLL dependencies - copy all .dll files -->
+        <File Id="DllFiles" Source="$(var.SourceDir)\*.dll" />
+      </Component>
+      
+      <!-- Assets component -->
+      <Component Id="Assets" Guid="12345678-1234-1234-1234-123456789015">
+        <File Id="DependenciesManifest" Source="$(var.SourceDir)\DEPENDENCIES.txt" />
+        <File Id="License" Source="$(var.SourceDir)\LICENSE" />
+        <File Id="ReadMe" Source="$(var.SourceDir)\README.md" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Application shortcuts component -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcuts" Guid="12345678-1234-1234-1234-123456789016">
+        <Shortcut Id="UninstallProduct" Name="Uninstall Rouen" Target="[SystemFolder]msiexec.exe" Arguments="/x [ProductCode]" />
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\Rouen\Installed" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Desktop shortcut component -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="12345678-1234-1234-1234-123456789017">
+        <RegistryValue Root="HKCU" Key="Software\Rouen\Desktop" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Define the application icon -->
+    <Icon Id="ProductIcon" SourceFile="$(var.SourceDir)\..\resources\rouen.ico" />
+    
+    <!-- UI definition for user-mode installer -->
+    <UI Id="WixUI_InstallDir">
+      <UIRef Id="WixUI_Common" />
+      
+      <!-- Welcome dialog -->
+      <DialogRef Id="WixUI_WelcomeDlg" />
+      <DialogRef Id="WixUI_LicenseAgreementDlg" />
+      <DialogRef Id="WixUI_InstallDirDlg" />
+      <DialogRef Id="WixUI_ProgressDlg" />
+      <DialogRef Id="WixUI_ExitDlg" />
+      
+      <!-- Dialog sequence -->
+      <Publish Dialog="WixUI_WelcomeDlg" Control="Next" Event="NewDialog" Value="WixUI_LicenseAgreementDlg">1</Publish>
+      <Publish Dialog="WixUI_LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WixUI_WelcomeDlg">1</Publish>
+      <Publish Dialog="WixUI_LicenseAgreementDlg" Control="Next" Event="NewDialog" Value="WixUI_InstallDirDlg">LicenseAccepted = "1"</Publish>
+      <Publish Dialog="WixUI_InstallDirDlg" Control="Back" Event="NewDialog" Value="WixUI_LicenseAgreementDlg">1</Publish>
+      <Publish Dialog="WixUI_InstallDirDlg" Control="Next" Event="SetTargetPath" Value="[WIXUI_INSTALLDIR]" Order="1">1</Publish>
+      <Publish Dialog="WixUI_InstallDirDlg" Control="Next" Event="NewDialog" Value="WixUI_VerifyReadyDlg" Order="2">1</Publish>
+      <Publish Dialog="WixUI_VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WixUI_InstallDirDlg" Order="1">NOT Installed</Publish>
+      <Publish Dialog="WixUI_VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WixUI_MaintenanceTypeDlg" Order="2">Installed</Publish>
+      
+      <!-- Set install directory property -->
+      <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    </UI>
+    
+    <!-- License file -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\..\installer\license.rtf" />
+    
+    <!-- Upgrade logic -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Rouen is already installed." />
+    
+  </Package>
+</Wix>

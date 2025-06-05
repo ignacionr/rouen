@@ -772,15 +772,166 @@ jobs:
         
         $zipInfo = Get-Item $zipPath
         Write-Host "Created ZIP archive: $zipPath"
-        Write-Host "Archive size: $([math]::Round($zipInfo.Length / 1MB, 2)) MB"
+        Write-Host "        Archive size: $([math]::Round($zipInfo.Length / 1MB, 2)) MB"
+
+    - name: Install WiX Toolset
+      shell: pwsh
+      run: |
+        Write-Host "=== Installing WiX Toolset ==="
+        
+        # Download and install WiX Toolset v3.11
+        $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311.exe"
+        $wixInstaller = "$env:TEMP\wix311.exe"
+        
+        Write-Host "Downloading WiX Toolset..."
+        Invoke-WebRequest -Uri $wixUrl -OutFile $wixInstaller
+        
+        Write-Host "Installing WiX Toolset..."
+        Start-Process -FilePath $wixInstaller -ArgumentList "/S" -Wait -NoNewWindow
+        
+        # Verify installation
+        $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+        if (Test-Path "$wixPath\candle.exe") {
+          Write-Host "✅ WiX Toolset installed successfully at: $wixPath"
+          
+          # Add to PATH for this session
+          $env:PATH = "$wixPath;$env:PATH"
+          Write-Host "WiX tools added to PATH"
+          
+          # Test candle and light
+          & "$wixPath\candle.exe" -? | Select-Object -First 3
+          & "$wixPath\light.exe" -? | Select-Object -First 3
+        } else {
+          Write-Error "WiX Toolset installation failed"
+          exit 1
+        }
+
+    - name: Create MSI Installer
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $installerDir = "$workspace\installer"
+        $version = "1.0.${{ github.run_number }}.0"
+        
+        Write-Host "=== Creating MSI Installer ==="
+        Write-Host "Workspace: $workspace"
+        Write-Host "Distribution: $distDir" 
+        Write-Host "Installer config: $installerDir"
+        Write-Host "Version: $version"
+        
+        # Ensure installer directory exists
+        if (-not (Test-Path $installerDir)) {
+          Write-Error "Installer directory not found: $installerDir"
+          exit 1
+        }
+        
+        # Check for WiX source file
+        $wxsFile = "$installerDir\rouen.wxs"
+        if (-not (Test-Path $wxsFile)) {
+          Write-Error "WiX source file not found: $wxsFile"
+          exit 1
+        }
+        
+        # Check for icon file
+        $iconFile = "$workspace\resources\rouen.ico"
+        if (-not (Test-Path $iconFile)) {
+          Write-Warning "Icon file not found: $iconFile"
+        } else {
+          Write-Host "✅ Found icon file: $iconFile"
+        }
+        
+        # Find WiX tools
+        $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+        $candleExe = "$wixPath\candle.exe"
+        $lightExe = "$wixPath\light.exe"
+        
+        if (-not (Test-Path $candleExe)) {
+          Write-Error "Candle.exe not found at: $candleExe"
+          exit 1
+        }
+        
+        if (-not (Test-Path $lightExe)) {
+          Write-Error "Light.exe not found at: $lightExe"
+          exit 1
+        }
+        
+        Write-Host "✅ Found WiX tools at: $wixPath"
+        
+        # Set up output paths
+        $wixobjFile = "$workspace\rouen.wixobj"
+        $msiFile = "$workspace\Rouen-$version-x64.msi"
+        
+        # Compile WiX source
+        Write-Host "`n=== Compiling WiX Source ==="
+        $candleArgs = @(
+          "-out", $wixobjFile,
+          "-dSourceDir=$distDir",
+          "-dVersion=$version",
+          $wxsFile
+        )
+        
+        Write-Host "Running: candle.exe $($candleArgs -join ' ')"
+        $candleProcess = Start-Process -FilePath $candleExe -ArgumentList $candleArgs -Wait -PassThru -NoNewWindow
+        
+        if ($candleProcess.ExitCode -ne 0) {
+          Write-Error "WiX compilation failed with exit code: $($candleProcess.ExitCode)"
+          exit 1
+        }
+        
+        Write-Host "✅ WiX source compiled successfully"
+        
+        # Link to create MSI
+        Write-Host "`n=== Creating MSI Package ==="
+        $lightArgs = @(
+          "-out", $msiFile,
+          "-ext", "WixUIExtension",
+          $wixobjFile
+        )
+        
+        Write-Host "Running: light.exe $($lightArgs -join ' ')"
+        $lightProcess = Start-Process -FilePath $lightExe -ArgumentList $lightArgs -Wait -PassThru -NoNewWindow
+        
+        if ($lightProcess.ExitCode -ne 0) {
+          Write-Error "MSI creation failed with exit code: $($lightProcess.ExitCode)"
+          exit 1
+        }
+        
+        # Verify MSI was created
+        if (Test-Path $msiFile) {
+          $msiInfo = Get-Item $msiFile
+          $sizeMB = [math]::Round($msiInfo.Length / 1MB, 2)
+          
+          Write-Host "`n✅ MSI Package Created Successfully!"
+          Write-Host "File: $($msiInfo.Name)"
+          Write-Host "Size: $sizeMB MB"
+          Write-Host "Path: $($msiInfo.FullName)"
+          Write-Host "Created: $($msiInfo.CreationTime)"
+          
+          # Set output for later steps
+          echo "MSI_FILE=$msiFile" >> $env:GITHUB_ENV
+          echo "MSI_NAME=Rouen-$version-x64.msi" >> $env:GITHUB_ENV
+          
+        } else {
+          Write-Error "MSI file was not created: $msiFile"
+          exit 1
+        }
+        
+        # Clean up intermediate files
+        if (Test-Path $wixobjFile) {
+          Remove-Item $wixobjFile -Force
+          Write-Host "Cleaned up intermediate files"
+        }
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: rouen-windows-x64
-        path: rouen-windows-x64.zip
+        name: rouen-windows-x64-complete
+        path: |
+          rouen-windows-x64.zip
+          Rouen-*.msi
 
-    - name: Upload to release (on release event)
+    - name: Upload ZIP to release (on release event)
       if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
       env:
@@ -790,6 +941,17 @@ jobs:
         asset_path: ./rouen-windows-x64.zip
         asset_name: rouen-windows-x64.zip
         asset_content_type: application/zip
+
+    - name: Upload MSI to release (on release event)
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./Rouen-1.0.${{ github.run_number }}.0-x64.msi
+        asset_name: Rouen-1.0.${{ github.run_number }}.0-x64.msi
+        asset_content_type: application/x-msi
 
     - name: Create release (on workflow_dispatch)
       if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
@@ -811,4 +973,6 @@ jobs:
           This is a self-contained build that should run on any Windows 10+ system.
         draft: false
         prerelease: false
-        files: rouen-windows-x64.zip
+        files: |
+          rouen-windows-x64.zip
+          Rouen-*.msi
