@@ -8,6 +8,14 @@ if(WIN32)
         WIN32_EXECUTABLE TRUE
     )
     
+    # Add Windows resource file for icon and version info
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/rouen.rc")
+        target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/resources/rouen.rc")
+        message(STATUS "Windows resource file added: ${CMAKE_SOURCE_DIR}/resources/rouen.rc")
+    else()
+        message(WARNING "Windows resource file not found: ${CMAKE_SOURCE_DIR}/resources/rouen.rc")
+    endif()
+    
     # Windows-specific compile definitions
     target_compile_definitions(${PROJECT_NAME} PRIVATE
         _CRT_SECURE_NO_WARNINGS

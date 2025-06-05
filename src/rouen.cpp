@@ -11,6 +11,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
+#include <fcntl.h>
+#include <iostream>
 // Windows doesn't have POSIX process status macros, so we define simple alternatives
 #define WIFEXITED(status) (true)
 #define WEXITSTATUS(status) (status)
@@ -18,6 +20,37 @@
 #define WTERMSIG(status) (0)
 #define popen _popen
 #define pclose _pclose
+
+// Windows debug console functionality
+void setup_windows_debug_console() {
+#ifdef _DEBUG
+    // Allocate a console for this GUI application
+    if (AllocConsole()) {
+        // Redirect stdout, stdin, stderr to console
+        freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
+        freopen_s((FILE**)stderr, "CONOUT$", "w", stderr);
+        freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
+        
+        // Set the console title
+        SetConsoleTitle(L"Rouen Debug Console");
+        
+        // Make cout, wcout, cin, wcin, wcerr, cerr, wclog and clog
+        // point to console as well
+        std::ios::sync_with_stdio(true);
+        
+        // Optional: Set console text attributes for better visibility
+        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (hConsole != INVALID_HANDLE_VALUE) {
+            // Set console colors: white text on black background
+            SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+        }
+        
+        std::cout << "=== Rouen Debug Console Initialized ===" << std::endl;
+        std::cout << "Debug build - Console output enabled" << std::endl;
+        std::cout << "=========================================" << std::endl;
+    }
+#endif // _DEBUG
+}
 #else
 #include <sys/wait.h>
 #endif
@@ -37,6 +70,9 @@
 int SDL_main(int argc, char* argv[]) {
     (void)argc; // Suppress unused parameter warning
     (void)argv; // Suppress unused parameter warning
+    
+    // Initialize Windows debug console for development builds
+    setup_windows_debug_console();
 #else
 int main() {
 #endif

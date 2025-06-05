@@ -121,5 +121,78 @@
         "environment": [],
         "externalConsole": false,
         "MIMode": "lldb"
+    },
+    {
+        "name": "🚀 Debug Rouen (vcpkg - Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Build with vcpkg",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🔧 Debug Rouen (Quick Launch - Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "console": "integratedTerminal",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🔧 Debug Rouen (Full Setup - Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Quick Debug Setup",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "📦 Debug Rouen (System Dependencies - Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/rouen.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "console": "integratedTerminal",
+        "preLaunchTask": "CMake: build"
+    },
+    {
+        "name": "🖥️ Debug Installed Rouen (Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${env:ProgramFiles}/Rouen/rouen.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${env:ProgramFiles}/Rouen",
+        "environment": [],
+        "console": "integratedTerminal"
     }    ]
 }

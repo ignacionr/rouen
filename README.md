@@ -43,6 +43,9 @@ Rouen supports automated builds and releases for both **Windows x64** and **macO
 - **MSVC Compatibility**: Optimized build configuration for Visual Studio 2022+
 - **Automated Releases**: Complete GitHub Actions workflow for Windows builds (✅ **COMPLETED**)
 - **DLL Packaging**: Automatic inclusion of all required dependencies (libcurl, OpenSSL, SDL2, etc.) (✅ **FULLY WORKING**)
+- **Application Icon**: Multi-resolution Windows icon (.ico) with taskbar and Explorer integration (✅ **NEW**)
+- **Debug Console**: Development builds include dedicated console window for real-time debug output (✅ **NEW**)
+- **Windows Resources**: Embedded version information and application metadata (✅ **NEW**)
 - **Type Safety**: Enhanced type conversion handling for size_t/int compatibility
 - **Warning Suppression**: Targeted warning suppression for third-party libraries
 - **Optimization Flags**: Platform-specific optimization flags (/O2 for MSVC)
@@ -619,6 +622,32 @@ When contributing to Rouen:
 4. **Test with Warnings Enabled**: Always test your changes with all warning flags enabled.
 
 These strict settings help catch potential bugs early, ensure consistent code quality, and maintain the project's long-term stability and maintainability.
+
+## 🛠️ Development Documentation
+
+### Platform-Specific Setup Guides
+
+- **[Windows Development Setup](WINDOWS_DEBUG_SETUP.md)** - Complete VS Code debugging guide for Windows
+  - Debug console configuration
+  - Application icon integration  
+  - MSVC compiler optimization
+  - vcpkg dependency management
+  - Windows-specific troubleshooting
+
+- **[macOS Development Setup](MACOS_DEBUG_SETUP.md)** - Complete VS Code debugging guide for macOS
+  - LLDB debugging configuration
+  - Apple Silicon optimization
+  - Xcode integration
+  - Homebrew dependency management
+  - macOS-specific troubleshooting
+
+### Key Development Features
+
+- **Multi-Platform Debug Support**: Dedicated debug consoles and logging for each platform
+- **Integrated Icon Systems**: Platform-native icon integration (ICO for Windows, ICNS for macOS)
+- **Resource Management**: Embedded version information and application metadata
+- **Strict Code Quality**: Warning-free compilation with enhanced error detection
+- **Modern C++23**: Latest standard features with cross-platform compatibility
 
 ## License
 
