@@ -22,7 +22,7 @@ namespace rouen::models {
 // Helper struct for JIRA server information
 struct jira_server_info {
     std::string version;
-    std::string build_number;
+    double build_number;
     std::string base_url;
     std::string server_title;
 };
@@ -185,11 +185,28 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
     jira_server_info info;
     
     try {
+        // Validate profile data first
+        if (profile.server_url.empty()) {
+            throw std::runtime_error("Server URL is empty");
+        }
+        if (profile.username.empty()) {
+            throw std::runtime_error("Username is empty");
+        }
+        if (profile.api_token.empty()) {
+            throw std::runtime_error("API token is empty");
+        }
+        
         // Don't append /rest/api/X since it's already in the base URL from environment variables
         std::string url = strip_trailing_slash(profile.server_url) + "/serverInfo";
         
-        // Log the URL being requested (for debugging)
-        DB_INFO_FMT("JIRA serverInfo Request: {}", url);
+        // Log connection attempt details
+        DB_INFO("JIRA Connection Attempt:");
+        DB_INFO_FMT("  Profile: {}", profile.name);
+        DB_INFO_FMT("  Server URL: {}", profile.server_url);
+        DB_INFO_FMT("  Username: {}", profile.username);
+        DB_INFO_FMT("  Full serverInfo URL: {}", url);
+        DB_INFO_FMT("  Is Cloud: {}", profile.is_cloud ? "true" : "false");
+        DB_INFO_FMT("  From Environment: {}", profile.is_environment ? "true" : "false");
         
         // Create authentication string for Basic Auth
         std::string auth_string = profile.username + ":" + profile.api_token;
@@ -205,24 +222,61 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
             set_header("Accept: application/json");
         };
         
+        DB_INFO_FMT("Making HTTP request to: {}", url);
+        
         // Make the request
         std::string response = fetcher(url, headers);
         
+        DB_INFO_FMT("HTTP request completed. Response length: {} bytes", response.length());
+        
+        if (response.empty()) {
+            throw std::runtime_error("Empty response from server");
+        }
+        
+        // Log first 200 characters of response for debugging
+        std::string response_preview = response.length() > 200 ? response.substr(0, 200) + "..." : response;
+        DB_INFO_FMT("Response preview: {}", response_preview);
+        
         // Parse JSON response
         auto json_result = glz::read_json<glz::json_t>(response);
-        if (json_result.has_value()) {
-            glz::json_t& json = json_result.value();
-            
-            // Extract server info
+        if (!json_result.has_value()) {
+            throw std::runtime_error("Failed to parse JSON response. Response: " + response);
+        }
+        
+        glz::json_t& json = json_result.value();
+        
+        // Check if response contains error information
+        if (json.contains("errorMessages") || json.contains("errors")) {
+            std::string error_msg = "JIRA API returned error: ";
+            if (json.contains("errorMessages")) {
+                error_msg += "Messages: " + json["errorMessages"].dump().value_or("[]");
+            }
+            if (json.contains("errors")) {
+                error_msg += " Errors: " + json["errors"].dump().value_or("{}");
+            }
+            throw std::runtime_error(error_msg);
+        }
+        
+        // Extract server info
+        try {
             info.version = json["version"].get<std::string>();
-            info.build_number = json["buildNumber"].get<std::string>();
+            info.build_number = json["buildNumber"].get<double>();
             info.base_url = json["baseUrl"].get<std::string>();
             info.server_title = json["serverTitle"].get<std::string>();
             
-            DB_INFO("JIRA serverInfo request successful");
+            DB_INFO("JIRA serverInfo parsed successfully:");
+            DB_INFO_FMT("  Version: {}", info.version);
+            DB_INFO_FMT("  Build: {}", info.build_number);
+            DB_INFO_FMT("  Base URL: {}", info.base_url);
+            DB_INFO_FMT("  Title: {}", info.server_title);
+        } catch (const std::exception& e) {
+            throw std::runtime_error("Failed to extract server info from JSON: " + std::string(e.what()) + ". JSON: " + json.dump().value_or("{}"));
         }
+        
     } catch (const std::exception& e) {
-        DB_ERROR_FMT("JIRA serverInfo request failed: {}", e.what());
+        DB_ERROR_FMT("JIRA serverInfo request failed - Profile: '{}', URL: '{}', Username: '{}', Error: {}", 
+                     profile.name, profile.server_url, profile.username, e.what());
+        throw; // Re-throw to preserve the detailed error
     }
     
     return info;
@@ -234,27 +288,72 @@ bool jira_model::connect(const jira_connection_profile& profile) {
     current_profile_ = profile;
     connected_ = false;
     
+    DB_INFO_FMT("Attempting to connect to JIRA with profile: {}", profile.name);
+    
     try {
+        // Validate profile before attempting connection
+        if (profile.name.empty()) {
+            throw std::runtime_error("Profile name is empty");
+        }
+        if (profile.server_url.empty()) {
+            throw std::runtime_error("Server URL is empty for profile '" + profile.name + "'");
+        }
+        if (profile.username.empty()) {
+            throw std::runtime_error("Username is empty for profile '" + profile.name + "'");
+        }
+        if (profile.api_token.empty()) {
+            throw std::runtime_error("API token is empty for profile '" + profile.name + "'");
+        }
+        
         // Test connection by getting the server info
         auto server_info = get_server_info(profile);
-        if (!server_info.version.empty()) {
-            connected_ = true;
-            DB_INFO_FMT("Successfully connected to JIRA server: {}", profile.server_url);
-            
-            // Check if we need to save this profile
-            if (!profile.is_environment && 
-                std::find_if(saved_profiles.begin(), saved_profiles.end(),
-                           [&profile](const auto& p) { return p.name == profile.name; }) == saved_profiles.end()) {
-                // Add to saved profiles
-                std::lock_guard<std::mutex> lock(profiles_mutex);
-                saved_profiles.push_back(profile);
-                profiles_modified = true;
-            }
-            
-            return true;
+        
+        if (server_info.version.empty()) {
+            throw std::runtime_error("Server info request succeeded but version is empty - this may indicate an authentication or URL issue");
         }
+        
+        connected_ = true;
+        DB_INFO("Successfully connected to JIRA server:");
+        DB_INFO_FMT("  Profile: {}", profile.name);
+        DB_INFO_FMT("  Server: {}", profile.server_url);
+        DB_INFO_FMT("  Version: {}", server_info.version);
+        DB_INFO_FMT("  Title: {}", server_info.server_title);
+        
+        // Check if we need to save this profile
+        if (!profile.is_environment && 
+            std::find_if(saved_profiles.begin(), saved_profiles.end(),
+                       [&profile](const auto& p) { return p.name == profile.name; }) == saved_profiles.end()) {
+            // Add to saved profiles
+            std::lock_guard<std::mutex> lock(profiles_mutex);
+            saved_profiles.push_back(profile);
+            profiles_modified = true;
+            DB_INFO_FMT("Saved profile '{}' to disk", profile.name);
+        }
+        
+        return true;
+        
     } catch (const std::exception& e) {
-        DB_ERROR_FMT("Failed to connect to JIRA: {}", e.what());
+        connected_ = false;
+        std::string detailed_error = std::format(
+            "Failed to connect to JIRA server.\n"
+            "Profile: '{}'\n"
+            "Server URL: '{}'\n"
+            "Username: '{}'\n"
+            "Error: {}\n"
+            "\nTroubleshooting tips:\n"
+            "1. Verify the server URL is correct and includes the API version (e.g., /rest/api/2 or /rest/api/3)\n"
+            "2. Check that your username and API token are valid\n"
+            "3. Ensure the JIRA server is accessible from your network\n"
+            "4. For Atlassian Cloud, use your email as username\n"
+            "5. For self-hosted JIRA, verify the API endpoint is available",
+            profile.name, profile.server_url, profile.username, e.what()
+        );
+        
+        DB_ERROR_FMT("{}", detailed_error);
+        JIRA_ERROR_FMT("Connection failed: {}", detailed_error);
+        
+        // Throw the detailed error so the UI can display it
+        throw std::runtime_error(detailed_error);
     }
     
     return false;

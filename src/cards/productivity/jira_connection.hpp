@@ -41,7 +41,9 @@ public:
         
         // Error message if login failed
         if (!error_message_.empty()) {
-            ImGui::TextColored(get_color(2), "%s", error_message_.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, get_color(2)); // Error color
+            ImGui::TextWrapped("%s", error_message_.c_str());
+            ImGui::PopStyleColor();
             ImGui::Separator();
         }
         
