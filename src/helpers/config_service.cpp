@@ -242,6 +242,16 @@ namespace rouen::helpers {
         register_config("PING_PATH", Category::EXECUTABLE_PATHS, false, false,
                        "Path to the ping executable (e.g., ping)", "ping");
 
+        // Database configuration (includes KPI database settings)
+        register_config("KPI_DATABASE_PATH", Category::DATABASE_CONFIG, false, false,
+                       "Path to KPI database file");
+        register_config("KPI_AUTO_BACKUP", Category::DATABASE_CONFIG, false, false,
+                       "Enable automatic KPI database backups", "true");
+        register_config("KPI_BACKUP_INTERVAL", Category::DATABASE_CONFIG, false, false,
+                       "KPI database backup interval in hours", "24");
+        register_config("KPI_HISTORY_RETENTION", Category::DATABASE_CONFIG, false, false,
+                       "Number of days to retain KPI historical data", "365");
+
         CONFIG_INFO("Default configurations registered");
     }
 

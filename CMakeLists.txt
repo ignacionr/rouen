@@ -97,8 +97,12 @@ add_executable(${PROJECT_NAME}
   src/helpers/config_service.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
+  src/cards/productivity/kpi_registrar.cpp
   src/cards/information/bybit_registrar.cpp
   src/models/jira_model.cpp
+  # KPI model additions
+  src/models/kpi_model.cpp
+  src/models/kpi_repository.cpp
   src/cards/media/chess_com_integration.cpp
   # RSS model refactor additions
   src/models/rss/feed_item.cpp

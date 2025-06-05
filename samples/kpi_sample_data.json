@@ -1,0 +1,254 @@
+{
+  "categories": [
+    {
+      "id": "dev-productivity",
+      "name": "Development Productivity",
+      "description": "KPIs related to software development team productivity",
+      "color": "#4A90E2",
+      "icon": "code",
+      "sort_order": 1
+    },
+    {
+      "id": "project-health",
+      "name": "Project Health",
+      "description": "Overall project status and quality metrics",
+      "color": "#50C878",
+      "icon": "health",
+      "sort_order": 2
+    },
+    {
+      "id": "business-metrics",
+      "name": "Business Metrics",
+      "description": "Business performance and growth indicators",
+      "color": "#FFD700",
+      "icon": "trending-up",
+      "sort_order": 3
+    },
+    {
+      "id": "team-performance",
+      "name": "Team Performance",
+      "description": "Team collaboration and individual performance metrics",
+      "color": "#FF6B6B",
+      "icon": "users",
+      "sort_order": 4
+    }
+  ],
+  "kpis": [
+    {
+      "name": "Code Commits per Day",
+      "description": "Average number of code commits made per day by the development team",
+      "category_id": "dev-productivity",
+      "value_type": "INTEGER",
+      "unit": "commits",
+      "current_value": 12.5,
+      "aggregation_method": "AVERAGE",
+      "target": {
+        "target_type": "MINIMUM",
+        "target_value": 10.0,
+        "description": "Maintain at least 10 commits per day for healthy development pace"
+      },
+      "is_active": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Bug Resolution Time",
+      "description": "Average time taken to resolve reported bugs in hours",
+      "category_id": "project-health",
+      "value_type": "DURATION",
+      "unit": "hours",
+      "current_value": 8.5,
+      "aggregation_method": "AVERAGE",
+      "target": {
+        "target_type": "MAXIMUM",
+        "target_value": 12.0,
+        "description": "Resolve bugs within 12 hours on average"
+      },
+      "is_active": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Code Coverage",
+      "description": "Percentage of codebase covered by automated tests",
+      "category_id": "project-health",
+      "value_type": "PERCENTAGE",
+      "unit": "%",
+      "current_value": 85.3,
+      "aggregation_method": "LATEST",
+      "target": {
+        "target_type": "MINIMUM",
+        "target_value": 80.0,
+        "description": "Maintain at least 80% code coverage for quality assurance"
+      },
+      "is_active": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Story Points Completed",
+      "description": "Total story points completed in the current sprint",
+      "category_id": "dev-productivity",
+      "value_type": "INTEGER",
+      "unit": "points",
+      "current_value": 45.0,
+      "aggregation_method": "SUM",
+      "target": {
+        "target_type": "MINIMUM",
+        "target_value": 40.0,
+        "description": "Complete at least 40 story points per sprint"
+      },
+      "is_active": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Customer Satisfaction Score",
+      "description": "Average customer satisfaction rating based on surveys",
+      "category_id": "business-metrics",
+      "value_type": "DECIMAL",
+      "unit": "rating",
+      "current_value": 4.2,
+      "aggregation_method": "AVERAGE",
+      "target": {
+        "target_type": "MINIMUM",
+        "target_value": 4.0,
+        "description": "Maintain customer satisfaction above 4.0/5.0"
+      },
+      "is_active": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Monthly Active Users",
+      "description": "Number of unique users active in the application per month",
+      "category_id": "business-metrics",
+      "value_type": "INTEGER",
+      "unit": "users",
+      "current_value": 15420.0,
+      "aggregation_method": "LATEST",
+      "target": {
+        "target_type": "MINIMUM",
+        "target_value": 15000.0,
+        "description": "Maintain at least 15,000 monthly active users"
+      },
+      "is_active": true,
+      "sort_order": 2
+    },
+    {
+      "name": "Team Velocity",
+      "description": "Average story points completed per sprint over the last 3 sprints",
+      "category_id": "team-performance",
+      "value_type": "DECIMAL",
+      "unit": "points/sprint",
+      "current_value": 42.7,
+      "aggregation_method": "AVERAGE",
+      "target": {
+        "target_type": "RANGE",
+        "target_value": 40.0,
+        "description": "Maintain consistent velocity between 38-45 points per sprint"
+      },
+      "is_active": true,
+      "sort_order": 1
+    },
+    {
+      "name": "Pull Request Review Time",
+      "description": "Average time from PR creation to approval in hours",
+      "category_id": "dev-productivity",
+      "value_type": "DURATION",
+      "unit": "hours",
+      "current_value": 4.2,
+      "aggregation_method": "AVERAGE",
+      "target": {
+        "target_type": "MAXIMUM",
+        "target_value": 6.0,
+        "description": "Review pull requests within 6 hours on average"
+      },
+      "is_active": true,
+      "sort_order": 3
+    }
+  ],
+  "dashboards": [
+    {
+      "id": "main-dashboard",
+      "name": "Main KPI Dashboard",
+      "description": "Primary dashboard showing key performance indicators across all categories",
+      "kpi_ids": ["1", "2", "3", "4", "5", "6", "7", "8"],
+      "layout": {
+        "rows": 2,
+        "columns": 4
+      },
+      "is_default": true,
+      "sort_order": 1
+    },
+    {
+      "id": "dev-dashboard",
+      "name": "Development Team Dashboard",
+      "description": "Focused view of development productivity and code quality metrics",
+      "kpi_ids": ["1", "4", "8", "3"],
+      "layout": {
+        "rows": 2,
+        "columns": 2
+      },
+      "is_default": false,
+      "sort_order": 2
+    },
+    {
+      "id": "business-dashboard",
+      "name": "Business Performance Dashboard",
+      "description": "High-level business metrics for executive reporting",
+      "kpi_ids": ["5", "6", "7"],
+      "layout": {
+        "rows": 1,
+        "columns": 3
+      },
+      "is_default": false,
+      "sort_order": 3
+    }
+  ],
+  "sample_history": [
+    {
+      "kpi_id": "1",
+      "timestamp": "2025-05-01T00:00:00Z",
+      "value": 11.2,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "1",
+      "timestamp": "2025-05-02T00:00:00Z",
+      "value": 13.8,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "1",
+      "timestamp": "2025-05-03T00:00:00Z",
+      "value": 9.5,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "2",
+      "timestamp": "2025-05-01T00:00:00Z",
+      "value": 10.2,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "2",
+      "timestamp": "2025-05-02T00:00:00Z",
+      "value": 7.8,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "3",
+      "timestamp": "2025-05-01T00:00:00Z",
+      "value": 83.1,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "3",
+      "timestamp": "2025-05-02T00:00:00Z",
+      "value": 84.7,
+      "period": "DAILY"
+    },
+    {
+      "kpi_id": "3",
+      "timestamp": "2025-05-03T00:00:00Z",
+      "value": 85.3,
+      "period": "DAILY"
+    }
+  ]
+}

@@ -61,6 +61,10 @@ namespace rouen::cards {
                         {"Jira", []() { "create_card"_sfn("jira"); }},
                         {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
                         {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
+                        {"KPI Dashboard", []() { "create_card"_sfn("kpi-dashboard"); }},
+                        {"KPI Management", []() { "create_card"_sfn("kpi-management"); }},
+                        {"KPI Hierarchy", []() { "create_card"_sfn("kpi-hierarchy"); }},
+                        {"KPI Reports", []() { "create_card"_sfn("kpi-reports"); }},
                     }},
                     { "Information", {
                         {"Calendar", []() { "create_card"_sfn("calendar"); }},
