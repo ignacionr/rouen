@@ -283,7 +283,7 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
 }
 
 // Connect to JIRA with the specified profile
-bool jira_model::connect(const jira_connection_profile& profile) {
+void jira_model::connect(const jira_connection_profile& profile) {
     // Store connection details
     current_profile_ = profile;
     connected_ = false;
@@ -330,8 +330,6 @@ bool jira_model::connect(const jira_connection_profile& profile) {
             DB_INFO_FMT("Saved profile '{}' to disk", profile.name);
         }
         
-        return true;
-        
     } catch (const std::exception& e) {
         connected_ = false;
         std::string detailed_error = std::format(
@@ -355,8 +353,6 @@ bool jira_model::connect(const jira_connection_profile& profile) {
         // Throw the detailed error so the UI can display it
         throw std::runtime_error(detailed_error);
     }
-    
-    return false;
 }
 
 // Implementation of disconnect method

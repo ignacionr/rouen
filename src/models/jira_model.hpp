@@ -328,7 +328,7 @@ public:
     ~jira_model();
     
     // Connection management
-    bool connect(const jira_connection_profile& profile);
+    void connect(const jira_connection_profile& profile);
     bool disconnect();
     bool is_connected() const;
     std::string get_server_url() const;

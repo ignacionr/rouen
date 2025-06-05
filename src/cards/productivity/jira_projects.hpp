@@ -41,12 +41,17 @@ public:
         // If we have environment variables, try to connect to the first profile automatically
         if (!connection_profiles_.empty()) {
             std::thread([this]() {
-                bool success = jira_model_->connect(connection_profiles_[0]);
-                if (success) {
+                try {
+                    jira_model_->connect(connection_profiles_[0]);
+
                     status_message_ = std::format("Connected to {} automatically", connection_profiles_[0].name);
                     
                     // Fetch projects after connection
                     projects_future_ = jira_model_->get_projects();
+                }
+                catch (const std::exception& e) {
+                    status_message_ = std::format("Failed to connect: {}", e.what());
+                    JIRA_ERROR_FMT("Connection error: {}", e.what());
                 }
             }).detach();
         }

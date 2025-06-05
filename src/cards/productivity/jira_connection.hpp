@@ -142,13 +142,9 @@ private:
         error_message_.clear();
         
         try {
-            if (jira_host_->connect(profile)) {
-                // Connection successful
-                JIRA_INFO_FMT("Connected to JIRA server: {}", profile.server_url);
-            } else {
-                error_message_ = "Failed to connect to JIRA server";
-                JIRA_ERROR_FMT("Failed to connect to JIRA server: {}", profile.server_url);
-            }
+            jira_host_->connect(profile);
+            // Connection successful
+            JIRA_INFO_FMT("Connected to JIRA server: {}", profile.server_url);
         } catch (const std::exception& e) {
             error_message_ = std::format("Connection error: {}", e.what());
             JIRA_ERROR_FMT("JIRA connection error: {}", e.what());
