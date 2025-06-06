@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Rouen" Language="1033" Version="$(var.Version)" Manufacturer="Rouen Development Team" UpgradeCode="12345678-1234-1234-1234-123456789012">
+    
+    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" Description="Rouen - Modern Productivity Dashboard" />
+    
+    <!-- Define the product properties -->
+    <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/ignaciorodriguez/rouen" />
+    
+    <!-- Define the media and directory structure -->
+    <MediaTemplate EmbedCab="yes" />
+    
+    <!-- Directory structure -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="APPLICATIONFOLDER" Name="Rouen">
+          <Directory Id="INSTALLFOLDER" Name="Rouen" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="Rouen" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+    </Directory>
+    
+    <!-- Feature definition -->
+    <Feature Id="MainApplication" Title="Rouen Application" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="Dependencies" />
+      <ComponentRef Id="OptionalDependencies" />
+      <ComponentRef Id="Assets" />
+      <ComponentRef Id="RegistryCleanup" />
+    </Feature>
+    
+    <!-- Main executable component -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="12345678-1234-1234-1234-123456789013">
+        <!-- Use registry key as KeyPath for user-mode installation -->
+        <RegistryValue Root="HKCU" Key="Software\Rouen\MainApp" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <File Id="RouenExe" Source="$(var.SourceDir)\rouen.exe" />
+        <!-- Ensure proper cleanup of installation directory -->
+        <RemoveFolder Id="RemoveINSTALLFOLDER" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveAPPLICATIONFOLDER" Directory="APPLICATIONFOLDER" On="uninstall" />
+      </Component>
+      
+      <!-- Dependencies component for DLLs -->
+      <Component Id="Dependencies" Guid="12345678-1234-1234-1234-123456789014">
+        <!-- Use registry key as KeyPath for user-mode installation -->
+        <RegistryValue Root="HKCU" Key="Software\Rouen\Dependencies" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        
+        <!-- Network libraries (required for network functionality) -->
+        <File Id="LibCurl" Source="$(var.SourceDir)\libcurl.dll" />
+        <File Id="LibSSL" Source="$(var.SourceDir)\libssl-3-x64.dll" />
+        <File Id="LibCrypto" Source="$(var.SourceDir)\libcrypto-3-x64.dll" />
+        
+        <!-- SDL2 and graphics libraries -->
+        <File Id="SDL2" Source="$(var.SourceDir)\SDL2.dll" />
+        <File Id="SDL2Image" Source="$(var.SourceDir)\SDL2_image.dll" />
+        <File Id="LibPNG16" Source="$(var.SourceDir)\libpng16.dll" />
+        <File Id="LibJPEG" Source="$(var.SourceDir)\jpeg62.dll" />
+        
+        <!-- Database libraries -->
+        <File Id="SQLite3" Source="$(var.SourceDir)\sqlite3.dll" />
+        
+        <!-- XML and compression libraries -->
+        <File Id="TinyXML2" Source="$(var.SourceDir)\tinyxml2.dll" />
+        <File Id="ZLib" Source="$(var.SourceDir)\zlib1.dll" />
+        
+        <!-- Visual C++ Runtime (essential) -->
+        <File Id="VCRuntime140" Source="$(var.SourceDir)\vcruntime140.dll" />
+        <File Id="VCRuntime140_1" Source="$(var.SourceDir)\vcruntime140_1.dll" />
+        <File Id="MSVCP140" Source="$(var.SourceDir)\msvcp140.dll" />
+        <File Id="ConcRT140" Source="$(var.SourceDir)\concrt140.dll" />
+        <File Id="MSVCP140_1" Source="$(var.SourceDir)\msvcp140_1.dll" />
+        <File Id="MSVCP140_2" Source="$(var.SourceDir)\msvcp140_2.dll" />
+      </Component>
+      
+      <!-- Optional DLLs component -->
+      <Component Id="OptionalDependencies" Guid="12345678-1234-1234-1234-123456789018">
+        <!-- Use registry key as KeyPath since this component may have no files -->
+        <RegistryValue Root="HKCU" Key="Software\Rouen\OptionalDeps" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <!-- Optional DLLs that may not be present in all builds -->
+        <!-- These will be included if they exist in the source directory -->
+      </Component>
+      
+      <!-- Assets component -->
+      <Component Id="Assets" Guid="12345678-1234-1234-1234-123456789015">
+        <!-- Use registry key as KeyPath for user-mode installation -->
+        <RegistryValue Root="HKCU" Key="Software\Rouen\Assets" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <File Id="DependenciesManifest" Source="$(var.SourceDir)\DEPENDENCIES.txt" />
+        <File Id="License" Source="$(var.SourceDir)\LICENSE" />
+        <File Id="ReadMe" Source="$(var.SourceDir)\README.md" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Application shortcuts component -->
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="ApplicationShortcuts" Guid="12345678-1234-1234-1234-123456789016">
+        <Shortcut Id="ApplicationStartMenuShortcut" Name="Rouen" Target="[#RouenExe]" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" IconIndex="0" />
+        <Shortcut Id="UninstallProduct" Name="Uninstall Rouen" Target="[SystemFolder]msiexec.exe" Arguments="/x [ProductCode]" />
+        <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\Rouen\StartMenu" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Desktop shortcut component -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="12345678-1234-1234-1234-123456789017">
+        <Shortcut Id="ApplicationDesktopShortcut" Name="Rouen" Target="[#RouenExe]" WorkingDirectory="INSTALLFOLDER" Icon="ProductIcon" IconIndex="0" />
+        <RegistryValue Root="HKCU" Key="Software\Rouen\Desktop" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    
+    <!-- Define the application icon -->
+    <Icon Id="ProductIcon" SourceFile="$(var.SourceDir)\..\resources\rouen.ico" />
+    
+    <!-- UI definition for user-mode installer -->
+    <UIRef Id="WixUI_InstallDir" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    
+    <!-- License file -->
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.SourceDir)\..\installer\license.rtf" />
+    
+    <!-- Upgrade logic -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Rouen is already installed." />
+    
+    <!-- Component cleanup on uninstall -->
+    <Component Id="RegistryCleanup" Guid="12345678-1234-1234-1234-123456789020" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKCU" Key="Software\Rouen" Name="version" Type="string" Value="$(var.Version)" KeyPath="yes" />
+      <RemoveRegistryKey Root="HKCU" Key="Software\Rouen" Action="removeOnUninstall" />
+    </Component>
+    
+  </Product>
+</Wix>
