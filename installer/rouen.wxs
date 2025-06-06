@@ -8,8 +8,6 @@
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/ignaciorodriguez/rouen" />
-    <Property Id="ARPNOREPAIR" Value="1" />
-    <Property Id="ARPNOMODIFY" Value="1" />
     
     <!-- Define the media and directory structure -->
     <MediaTemplate EmbedCab="yes" />
