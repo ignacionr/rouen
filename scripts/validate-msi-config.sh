@@ -85,6 +85,20 @@ else
     echo "❌ Source directory placeholder missing"
 fi
 
+# Check for registry keys as KeyPath (required for user-mode installation)
+if grep -q 'KeyPath="yes".*RegistryValue' "$wix_file"; then
+    echo "✅ Registry-based KeyPath found (required for user-mode)"
+else
+    echo "⚠️  Registry-based KeyPath not found - may cause ICE38 errors"
+fi
+
+# Check for RemoveFolder elements (required for proper cleanup)
+if grep -q 'RemoveFolder' "$wix_file"; then
+    echo "✅ RemoveFolder elements found (required for cleanup)"
+else
+    echo "⚠️  RemoveFolder elements missing - may cause ICE64 errors"
+fi
+
 # Check for required components
 components=(
     "MainExecutable"
@@ -93,6 +107,7 @@ components=(
     "Assets"
     "ApplicationShortcuts"
     "DesktopShortcut"
+    "RegistryCleanup"
 )
 
 echo ""
