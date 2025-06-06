@@ -37,6 +37,9 @@ public:
 
     void setup_dark_theme();
 
+    // Window resizing functionality
+    void resize_window(int width, int height);
+
 private:
     bool process_events();
     void process_deferred_operations();
