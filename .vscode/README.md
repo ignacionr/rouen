@@ -69,7 +69,7 @@ Features:
 
 ### `settings.json` - Workspace Settings
 
-Optimized settings for C++ development:
+Optimized settings for C++ development and testing:
 
 #### Key Configurations
 - **Default build directory**: `build-vcpkg`
@@ -77,6 +77,153 @@ Optimized settings for C++ development:
 - **Include paths**: Prioritizes vcpkg dependencies
 - **File associations**: Comprehensive C++ file type mappings
 - **IntelliSense**: Enhanced C++ language support
+- **Test Explorer**: Native VS Code test discovery and execution
+- **CTest Integration**: Parallel test execution with verbose output
+- **Search Settings**: Include test build directories for comprehensive search
+
+## 🧪 Testing Integration
+
+The VS Code configuration includes comprehensive testing support with Google Test integration, individual test debugging, and automated test execution.
+
+### Test Tasks
+
+Access via **Cmd+Shift+P → "Tasks: Run Task"**:
+
+#### Test Build and Configuration
+- **"Configure Tests"** - Set up test build environment with vcpkg
+- **"Build Tests"** ⭐ - Build all test executables (default test task)
+- **"Clean Test Build"** - Remove test build artifacts
+
+#### Test Execution
+- **"Run All Tests"** - Complete test suite (Google Test + Legacy tests)
+- **"Run Google Tests Only"** - Google Test framework tests only
+- **"Run Legacy Tests Only"** - Original console-based tests
+- **"Run CTest"** - CTest framework execution with verbose output
+
+#### Individual Test Suites
+- **"Run HTTP/SSL Tests"** - Execute HTTP/SSL configuration tests
+- **"Run Math Operations Tests"** - Execute advanced math operations tests
+- **"Run Bybit Currency Tests"** - Execute Bybit currency conversion tests
+
+### Test Debug Configurations
+
+Access via **F5** or **Run and Debug panel**:
+
+#### Google Test Debugging (macOS)
+- **"🧪 Debug HTTP/SSL Tests"** - Debug SSL configuration and HTTP tests
+- **"🧮 Debug Math Operations Tests"** - Debug advanced math operations with Google Mock
+- **"💰 Debug Bybit Currency Tests"** - Debug currency conversion functionality
+- **"📊 Debug Example Math Tests"** - Debug basic math operations
+
+#### Windows Test Debugging
+- All test configurations have Windows equivalents using `cppvsdbg` debugger
+- Automatic environment setup for Windows testing
+
+#### Test Debug Features
+- **Environment Variables**: `ROUEN_LOG_LEVEL=DEBUG` for verbose test logging
+- **Library Paths**: Proper library path configuration for test dependencies
+- **Pretty Printing**: LLDB/MSVC pretty-printing enabled for test objects
+- **Pre-launch Tasks**: Automatic test building before debugging
+- **Breakpoint Support**: Full breakpoint support in test code and source code
+
+### Testing Workflow
+
+#### 1. Quick Test Execution
+```bash
+# Build and run all tests
+Cmd+Shift+P → "Tasks: Run Task" → "Run All Tests"
+
+# Or build tests first, then run
+Cmd+Shift+P → "Tasks: Run Task" → "Build Tests"
+Cmd+Shift+P → "Tasks: Run Task" → "Run Google Tests Only"
+```
+
+#### 2. Test Debugging
+1. **Set breakpoints** in test files or source code
+2. **Select debug configuration**: `🧪 Debug HTTP/SSL Tests`
+3. **Start debugging**: Press `F5`
+4. **Step through code**: Use `F10`, `F11`, `F5` for debugging
+
+#### 3. Individual Test Execution
+```bash
+# Run specific test suite
+Cmd+Shift+P → "Tasks: Run Task" → "Run Math Operations Tests"
+
+# Or use terminal in build-tests directory
+cd build-tests
+./test_fetch_ssl --gtest_filter="*SSLMode*"
+```
+
+### Test Configuration Features
+
+#### Environment Variables
+Available in all test debug configurations:
+- `ROUEN_LOG_LEVEL=DEBUG` - Enhanced logging for test diagnosis
+- `ROUEN_SSL_MODE=relaxed` - SSL configuration for testing
+- `ROUEN_SSL_VERIFY_PEER=true` - SSL peer verification control
+
+#### Google Test Integration
+- **Test Discovery**: Automatic test detection and listing
+- **Parameterized Tests**: Support for data-driven testing
+- **Mock Objects**: Google Mock integration for unit testing
+- **Death Tests**: Testing expected crashes and exceptions
+- **Performance Tests**: Timing validation for performance-critical code
+
+#### CTest Integration
+- **Parallel Execution**: Multi-threaded test execution
+- **XML Output**: Test results in standardized format
+- **Failure Reporting**: Detailed failure information with file/line numbers
+- **Test Filtering**: Run specific test suites or individual tests
+
+### Adding New Tests
+
+#### 1. Create Test File
+```cpp
+// tests/test_new_feature.cpp
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+#include "your_module.hpp"
+
+TEST(NewFeatureTest, BasicFunctionality) {
+    EXPECT_EQ(expected_value, actual_value);
+}
+```
+
+#### 2. Add to CMakeLists.txt
+```cmake
+# For tests with HTTP dependencies
+add_gtest_http_executable(test_new_feature test_new_feature.cpp)
+
+# For tests without HTTP dependencies  
+add_gtest_executable(test_new_feature test_new_feature.cpp)
+```
+
+#### 3. Add VS Code Task (Optional)
+```json
+{
+    "type": "shell",
+    "label": "Run New Feature Tests",
+    "command": "./test_new_feature",
+    "options": { "cwd": "${workspaceFolder}/build-tests" },
+    "group": "test",
+    "dependsOn": "Build Tests"
+}
+```
+
+#### 4. Add Debug Configuration (Optional)
+```json
+{
+    "name": "🆕 Debug New Feature Tests",
+    "type": "cppdbg",
+    "request": "launch",
+    "program": "${workspaceFolder}/build-tests/test_new_feature",
+    "environment": [
+        { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+    ],
+    "MIMode": "lldb",
+    "preLaunchTask": "Build Tests"
+}
+```
 
 ## Quick Start Guide
 
