@@ -183,8 +183,7 @@ public:
             
             // Check for errors
             if (res != CURLE_OK) {
-                HTTP_ERROR_FMT("CURL request failed: {}", curl_easy_strerror(res));
-                throw std::runtime_error(std::string("CURL request failed: ") + curl_easy_strerror(res));
+                handle_curl_error(res, url);
             }
             
             // Check HTTP status code
@@ -275,8 +274,7 @@ public:
             
             // Check for errors
             if (res != CURLE_OK) {
-                HTTP_ERROR_FMT("CURL request failed: {}", curl_easy_strerror(res));
-                throw std::runtime_error(std::string("CURL request failed: ") + curl_easy_strerror(res));
+                handle_curl_error(res, url);
             }
             
             // Check HTTP status code
@@ -368,8 +366,7 @@ public:
             
             // Check for errors
             if (res != CURLE_OK) {
-                HTTP_ERROR_FMT("CURL POST request failed: {}", curl_easy_strerror(res));
-                throw std::runtime_error(std::string("CURL POST request failed: ") + curl_easy_strerror(res));
+                handle_curl_error(res, url);
             }
             
             // Check HTTP status code
@@ -466,8 +463,7 @@ public:
             
             // Check for errors
             if (res != CURLE_OK) {
-                HTTP_ERROR_FMT("CURL POST request failed: {}", curl_easy_strerror(res));
-                throw std::runtime_error(std::string("CURL POST request failed: ") + curl_easy_strerror(res));
+                handle_curl_error(res, url);
             }
             
             // Check HTTP status code
@@ -525,9 +521,37 @@ private:
             #endif
         }
         
+        // Additional SSL options for better compatibility
+        // Use system's CA bundle for certificate verification
+        curl_easy_setopt(handle, CURLOPT_CAINFO, NULL);  // Use system default
+        curl_easy_setopt(handle, CURLOPT_CAPATH, NULL);  // Use system default
+        
+        // Set SSL/TLS version - use TLS 1.2 as minimum for security
+        curl_easy_setopt(handle, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
+        
+        // Enable ALPN (Application-Layer Protocol Negotiation) for HTTP/2 support
+        // Note: NPN is deprecated since curl 7.86.0, ALPN is the modern replacement
+        #ifdef CURLOPT_SSL_ENABLE_ALPN
+        curl_easy_setopt(handle, CURLOPT_SSL_ENABLE_ALPN, 1L);
+        #endif
+        
+        // Set cipher list for better compatibility
+        curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA");
+        
+        // Additional options for corporate environments
+        curl_easy_setopt(handle, CURLOPT_SSL_SESSIONID_CACHE, 1L);  // Enable SSL session reuse
+        
+        // Enable SSL false start for performance (if supported)
+        #ifdef CURLOPT_SSL_FALSESTART
+        curl_easy_setopt(handle, CURLOPT_SSL_FALSESTART, 1L);
+        #endif
+        
         // Log SSL configuration for debugging
         HTTP_DEBUG_FMT("SSL Config - Verify Peer: {}, Verify Host: {}, Check Revocation: {}", 
                       ssl_options_.verify_peer, ssl_options_.verify_host, ssl_options_.check_revocation);
+        
+        // Log SSL version and cipher info
+        HTTP_DEBUG("SSL using TLS 1.2+, SNI enabled, system CA bundle");
     }
     
     // Get SSL options from environment variables
@@ -577,6 +601,39 @@ private:
                      ssl_options_.verify_peer ? "enabled" : "disabled",
                      ssl_options_.verify_host ? "enabled" : "disabled", 
                      ssl_options_.check_revocation ? "enabled" : "disabled");
+    }
+    
+    // Handle CURL errors with detailed SSL troubleshooting
+    void handle_curl_error(CURLcode res, const std::string& url) const {
+        std::string error_msg = curl_easy_strerror(res);
+        
+        // Provide more detailed error information for SSL issues
+        if (res == CURLE_SSL_CONNECT_ERROR) {
+            HTTP_ERROR_FMT("SSL connection failed to {}: {}", url, error_msg);
+            HTTP_ERROR("Troubleshooting suggestions:");
+            HTTP_ERROR("1. Try setting ROUEN_SSL_MODE=relaxed for corporate environments");
+            HTTP_ERROR("2. Try setting ROUEN_SSL_MODE=insecure for testing (not secure!)");
+            HTTP_ERROR("3. Check if the server requires specific SSL/TLS versions");
+            HTTP_ERROR("4. Verify system time is correct (SSL certificates are time-sensitive)");
+            HTTP_ERROR("5. Check if corporate firewall/proxy is interfering");
+            
+            throw std::runtime_error("SSL connection failed: " + error_msg + 
+                                   " (Try setting ROUEN_SSL_MODE=relaxed for corporate networks)");
+        } else if (res == CURLE_SSL_PEER_CERTIFICATE || res == CURLE_SSL_CACERT) {
+            HTTP_ERROR_FMT("SSL certificate verification failed for {}: {}", url, error_msg);
+            HTTP_ERROR("Certificate validation failed. Try ROUEN_SSL_MODE=relaxed to bypass certificate revocation checks");
+            
+            throw std::runtime_error("SSL certificate error: " + error_msg + 
+                                   " (Try ROUEN_SSL_MODE=relaxed)");
+        } else if (res == CURLE_SSL_CIPHER) {
+            HTTP_ERROR_FMT("SSL cipher negotiation failed for {}: {}", url, error_msg);
+            HTTP_ERROR("Server and client couldn't agree on SSL cipher. Try ROUEN_SSL_MODE=relaxed");
+            
+            throw std::runtime_error("SSL cipher error: " + error_msg);
+        } else {
+            HTTP_ERROR_FMT("CURL request failed for {}: {}", url, error_msg);
+            throw std::runtime_error("CURL request failed: " + error_msg);
+        }
     }
 };
 
