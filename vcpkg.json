@@ -17,6 +17,6 @@
     },
     "tinyxml2",
     "glaze",
-    "fmt"
+    "gtest"
   ]
 }
