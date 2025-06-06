@@ -92,7 +92,13 @@
         "__hash_table": "cpp",
         "__locale": "cpp",
         "*.inc": "cpp",
-        "locale": "cpp"
+        "locale": "cpp",
+        // Test-specific file associations
+        "**/tests/**/*.cpp": "cpp",
+        "**/tests/**/*.hpp": "cpp",
+        "test_*.cpp": "cpp",
+        "*_test.cpp": "cpp",
+        "*.gtest": "cpp"
     },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",
@@ -139,5 +145,49 @@
     "C_Cpp.errorSquiggles": "enabled",
     "C_Cpp.autocompleteAddParentheses": true,
     "C_Cpp.formatting": "clangFormat",
-    "C_Cpp.clang_format_style": "{ BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never }"
+    "C_Cpp.clang_format_style": "{ BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never }",
+    
+    // Testing-specific settings
+    "cmake.testDirectory": "${workspaceFolder}/tests",
+    "cmake.testArgs": [
+        "--output-on-failure",
+        "--verbose"
+    ],
+    "testExplorer.useNativeTesting": true,
+    "testExplorer.mergeSuites": true,
+    "testExplorer.sort": "location",
+    "testExplorer.onStart": "reset",
+    "testExplorer.onReload": "reset",
+    "testExplorer.showCollapseButton": true,
+    "testExplorer.showExpandButton": true,
+    "testExplorer.showOnRun": true,
+    "testExplorer.hideEmptyLog": false,
+    "testExplorer.hideWhen": "never",
+    
+    // C++ Test settings for Google Test integration
+    "C_Cpp.dimInactiveRegions": false,
+    "C_Cpp.enhancedColorization": "enabled",
+    "C_Cpp.inteltiSenseUpdateDelay": 500,
+    
+    // Terminal settings for test output
+    "terminal.integrated.scrollback": 10000,
+    "terminal.integrated.fontSize": 12,
+    "terminal.integrated.fontFamily": "SF Mono, Monaco, 'Courier New', monospace",
+    
+    // Search settings to include test results
+    "search.exclude": {
+        "**/build*": false,
+        "**/build-tests": false,
+        "**/Testing": false
+    },
+    
+    // CTest integration
+    "cmake.ctest.parallelJobs": 0,
+    "cmake.ctest.allowParallelJobs": true,
+    "cmake.options.statusBarVisibility": "visible",
+    "cmake.options.advanced": {
+        "test": {
+            "statusBarVisibility": "visible"
+        }
+    }
 }

@@ -676,6 +676,216 @@ sudo cmake --install .
 
 This will copy the Rouen.app bundle to your /Applications folder, making it available in Launchpad and Spotlight.
 
+## Testing
+
+Rouen includes a comprehensive testing framework built on Google Test (gtest) with advanced testing features including fixtures, parameterized tests, mocking, and CI/CD integration.
+
+### Test Framework Features
+
+- **Google Test Integration**: Modern C++ testing framework with rich assertion macros
+- **Test Fixtures**: Reusable test environments with setup and teardown
+- **Parameterized Tests**: Data-driven testing with multiple input scenarios
+- **Google Mock**: Object mocking for unit testing with dependencies
+- **Death Tests**: Validation of expected crashes and exceptions
+- **Performance Tests**: Timing validation for performance-critical code
+- **CTest Integration**: Automated test running for CI/CD pipelines
+
+### Running Tests
+
+#### Quick Test Execution
+
+```bash
+# Build and run all tests (from project root)
+cd build-tests
+cmake --build . --parallel
+ctest --output-on-failure
+
+# Or use the comprehensive test target
+make run-all-tests
+```
+
+#### Individual Test Suites
+
+```bash
+# Run specific test executables
+./test_fetch_ssl          # HTTP/SSL configuration tests
+./test_math_operations     # Advanced math operations with mocking
+./legacy_tests             # Original console-based tests
+```
+
+#### Test Target Options
+
+The build system provides several test execution targets:
+
+- `run-gtest-only`: Execute only Google Test suites
+- `run-legacy-tests`: Execute original console-based tests
+- `run-all-tests`: Execute comprehensive test suite (gtest + legacy)
+- Individual test executables can be run directly
+
+### Test Organization
+
+#### Current Test Suites
+
+1. **HTTP/SSL Configuration Tests** (`test_fetch_ssl.cpp`)
+   - Environment variable handling and validation
+   - SSL option factory method testing
+   - Boolean value parsing verification
+   - Test fixtures with proper setup/teardown
+
+2. **Math Operations Tests** (`test_math_operations.cpp`)
+   - Parameterized prime number validation
+   - Exception testing with EXPECT_THROW
+   - Google Mock integration examples
+   - Performance testing with timing validation
+   - Death test demonstrations
+
+3. **Legacy Tests** (`tests.cpp`)
+   - Original console-based tests for backward compatibility
+   - Basic functionality validation
+
+### Adding New Tests
+
+#### Creating a New Test Suite
+
+1. **Create the test file** in the `tests/` directory:
+
+```cpp
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+#include "your_module.hpp"
+
+// Test fixture for shared setup
+class YourModuleTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Setup code
+    }
+    
+    void TearDown() override {
+        // Cleanup code
+    }
+};
+
+// Basic test
+TEST_F(YourModuleTest, BasicFunctionality) {
+    EXPECT_EQ(expected_value, actual_value);
+    ASSERT_TRUE(condition);
+}
+
+// Parameterized test
+class ParameterizedTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(ParameterizedTest, TestWithParameters) {
+    int param = GetParam();
+    EXPECT_GT(param, 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ParameterValues,
+    ParameterizedTest,
+    ::testing::Values(1, 2, 3, 5, 8, 13)
+);
+```
+
+2. **Add to CMakeLists.txt**:
+
+```cmake
+# For tests with HTTP dependencies
+add_gtest_http_executable(test_your_module test_your_module.cpp)
+
+# For tests without HTTP dependencies  
+add_gtest_executable(test_your_module test_your_module.cpp)
+```
+
+#### Test Types and Patterns
+
+- **Unit Tests**: Test individual functions and classes in isolation
+- **Integration Tests**: Test interactions between components
+- **Fixture Tests**: Use `TEST_F` for tests requiring shared setup
+- **Parameterized Tests**: Use `TEST_P` for data-driven testing
+- **Mock Tests**: Use Google Mock for testing with dependencies
+- **Death Tests**: Use `EXPECT_DEATH` for testing expected failures
+
+### Test Configuration
+
+#### Environment Variables for Testing
+
+Tests can be configured using environment variables:
+
+```bash
+# SSL testing configuration
+export ROUEN_SSL_MODE=relaxed
+export ROUEN_SSL_VERIFY_PEER=true
+export ROUEN_SSL_VERIFY_HOST=true
+
+# Logging level for test output
+export ROUEN_LOG_LEVEL=DEBUG
+
+# Run tests with configuration
+ctest --output-on-failure
+```
+
+#### Test Build Configuration
+
+The test build system uses a separate build directory (`build-tests`) to:
+
+- Isolate test builds from main application builds
+- Prevent pollution of the main build directory
+- Enable parallel development and testing workflows
+- Support different compiler flags and optimization levels
+
+### CI/CD Integration
+
+Tests are designed for automated execution in CI/CD pipelines:
+
+- **CTest Integration**: Tests can be executed via `ctest` for automated reporting
+- **Exit Code Handling**: Proper exit codes for CI/CD success/failure detection
+- **Parallel Execution**: Tests can run in parallel for faster CI/CD builds
+- **Detailed Output**: Comprehensive test output for debugging failed builds
+
+### Dependencies
+
+The testing framework requires:
+
+- **Google Test (gtest)**: Managed via vcpkg
+- **Google Mock (gmock)**: Included with Google Test
+- **CURL with SSL**: For HTTP/SSL configuration tests
+- **C++23 Compiler**: Same requirements as the main application
+
+### Best Practices
+
+- **Test Isolation**: Each test should be independent and repeatable
+- **Clear Naming**: Use descriptive test names that explain what is being tested
+- **Fixtures for Setup**: Use test fixtures for complex setup/teardown
+- **Mock External Dependencies**: Use Google Mock to isolate units under test
+- **Test Edge Cases**: Include boundary conditions and error scenarios
+- **Performance Awareness**: Use performance tests for time-critical code
+- **Documentation**: Comment complex test logic and parameterized test data
+
+### Troubleshooting
+
+#### Common Issues
+
+1. **Build Failures**: Ensure all dependencies are installed via vcpkg
+2. **Test Failures**: Check environment variable configuration
+3. **SSL Test Issues**: Verify network connectivity and SSL configuration
+4. **Performance Test Flakiness**: Adjust timing thresholds for slower systems
+
+#### Debug Options
+
+```bash
+# Run tests with verbose output
+ctest --verbose
+
+# Run specific test with gtest options
+./test_fetch_ssl --gtest_filter="*SSLMode*" --gtest_repeat=3
+
+# Run tests with debug information
+ROUEN_LOG_LEVEL=DEBUG ./test_math_operations
+```
+
+For detailed testing documentation and examples, see [tests/README_GTEST.md](tests/README_GTEST.md).
+
 ## Compiler Warning Flags
 
 Rouen is developed with strict compiler warning settings to ensure high-quality, robust code. We use a two-tiered approach to warnings:

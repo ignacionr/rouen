@@ -296,6 +296,210 @@
 			},
 			"dependsOn": "Build with vcpkg",
 			"detail": "Run the Rouen application built with vcpkg"
+		},
+		{
+			"type": "shell",
+			"label": "Configure Tests",
+			"command": "sh",
+			"args": [
+				"-c",
+				"mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [],
+			"detail": "Configure test build with vcpkg dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Build Tests",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build-tests",
+				"--parallel"
+			],
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"dependsOn": "Configure Tests",
+			"detail": "Build all test executables"
+		},
+		{
+			"type": "shell",
+			"label": "Run All Tests",
+			"command": "sh",
+			"args": [
+				"-c",
+				"cd build-tests && make run_all_tests"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run complete test suite (Google Test + Legacy tests)"
+		},
+		{
+			"type": "shell",
+			"label": "Run Google Tests Only",
+			"command": "sh",
+			"args": [
+				"-c",
+				"cd build-tests && make run_gtest_only"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run Google Test suite only"
+		},
+		{
+			"type": "shell",
+			"label": "Run Legacy Tests Only",
+			"command": "sh",
+			"args": [
+				"-c",
+				"cd build-tests && make run_legacy_tests"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run legacy console tests only"
+		},
+		{
+			"type": "shell",
+			"label": "Run CTest",
+			"command": "sh",
+			"args": [
+				"-c",
+				"cd build-tests && ctest --output-on-failure --verbose"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run tests through CTest framework"
+		},
+		{
+			"type": "shell",
+			"label": "Run HTTP/SSL Tests",
+			"command": "./test_fetch_ssl",
+			"args": [],
+			"options": {
+				"cwd": "${workspaceFolder}/build-tests"
+			},
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run HTTP/SSL configuration tests"
+		},
+		{
+			"type": "shell",
+			"label": "Run Math Operations Tests",
+			"command": "./test_math_operations",
+			"args": [],
+			"options": {
+				"cwd": "${workspaceFolder}/build-tests"
+			},
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run advanced math operations tests with Google Test"
+		},
+		{
+			"type": "shell",
+			"label": "Run Bybit Currency Tests",
+			"command": "./test_bybit_currency_fix",
+			"args": [],
+			"options": {
+				"cwd": "${workspaceFolder}/build-tests"
+			},
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests",
+			"detail": "Run Bybit currency conversion tests"
+		},
+		{
+			"type": "shell",
+			"label": "Clean Test Build",
+			"command": "rm",
+			"args": [
+				"-rf",
+				"build-tests"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"detail": "Clean test build directory"
 		}
 	]
 }

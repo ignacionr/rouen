@@ -183,8 +183,7 @@
         "environment": [],
         "console": "integratedTerminal",
         "preLaunchTask": "CMake: build"
-    },
-    {
+    },        {
         "name": "🖥️ Debug Installed Rouen (Windows)",
         "type": "cppvsdbg",
         "request": "launch",
@@ -194,5 +193,197 @@
         "cwd": "${env:ProgramFiles}/Rouen",
         "environment": [],
         "console": "integratedTerminal"
+    },
+    {
+        "name": "🧪 Debug HTTP/SSL Tests",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_fetch_ssl",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Build Tests",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🧮 Debug Math Operations Tests",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_math_operations",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Build Tests",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "💰 Debug Bybit Currency Tests",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_bybit_currency_fix",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Build Tests",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "📊 Debug Example Math Tests",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_example_math",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "externalConsole": false,
+        "MIMode": "lldb",
+        "preLaunchTask": "Build Tests",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for LLDB",
+                "text": "settings set target.inline-breakpoint-strategy always",
+                "ignoreFailures": true
+            }
+        ],
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🧪 Debug HTTP/SSL Tests (Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_fetch_ssl.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Build Tests",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "🧮 Debug Math Operations Tests (Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_math_operations.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Build Tests",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "💰 Debug Bybit Currency Tests (Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_bybit_currency_fix.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Build Tests",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
+    },
+    {
+        "name": "📊 Debug Example Math Tests (Windows)",
+        "type": "cppvsdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build-tests/test_example_math.exe",
+        "args": [],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [
+            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+        ],
+        "console": "integratedTerminal",
+        "preLaunchTask": "Build Tests",
+        "logging": {
+            "moduleLoad": false,
+            "programOutput": true,
+            "trace": false
+        }
     }    ]
 }
