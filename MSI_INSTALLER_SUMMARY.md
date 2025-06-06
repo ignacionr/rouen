@@ -85,8 +85,15 @@ If the workflow fails:
 
 - **WiX Installation Issues**: Check the multiple fallback methods in the install step
 - **Compilation Errors**: Review WiX source file for syntax issues
+- **Duplicate Symbol Errors**: Ensure no property conflicts with WiX UI extensions (ARPNOREPAIR, ARPNOMODIFY are handled by WixUI_InstallDir)
 - **Missing Dependencies**: Verify DLL collection in the packaging steps
 - **Path Issues**: Ensure icon and license files are found correctly
+
+### Recent Fixes
+
+- **✅ Fixed LGHT0091 Error**: Removed duplicate `ARPNOREPAIR` and `ARPNOMODIFY` properties that conflicted with WixUI_InstallDir extension
+- **✅ Enhanced WiX Installation**: Multiple fallback methods for reliable WiX Toolset installation
+- **✅ Improved Error Handling**: Better diagnostics and validation throughout the MSI creation process
 
 ## Next Steps
 
