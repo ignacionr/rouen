@@ -48,6 +48,28 @@ std::string response = fetcher.post(
 );
 ```
 
+### SSL/TLS Configuration
+
+The fetch helper supports flexible SSL/TLS configuration for HTTPS connections:
+
+```cpp
+// Configure SSL options programmatically
+http::fetch fetcher;
+
+// Use predefined SSL configurations
+auto relaxed_options = http::fetch::SSLOptions::relaxed();    // For corporate environments
+auto strict_options = http::fetch::SSLOptions::strict();      // Full validation (default)
+auto insecure_options = http::fetch::SSLOptions::insecure();  // Testing only
+
+// SSL options are automatically loaded from environment variables:
+// ROUEN_SSL_MODE=relaxed|strict|insecure
+// ROUEN_SSL_VERIFY_PEER=true|false
+// ROUEN_SSL_VERIFY_HOST=true|false
+// ROUEN_SSL_CHECK_REVOCATION=true|false
+```
+
+The `relaxed` SSL mode is particularly useful for corporate environments where certificate revocation servers may not be accessible, while still maintaining security through certificate chain and hostname verification.
+
 ## Using the ConfigService Helper
 
 The `config_service` helper provides centralized configuration management with automatic .env file support:

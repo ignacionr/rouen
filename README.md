@@ -266,6 +266,40 @@ This ensures the application continues to function even if custom executable pat
 - `ROUEN_LOG_LEVEL`: Override default logging level (ERROR, WARN, INFO, DEBUG, TRACE)
 - `ROUEN_DEBUG`: Enable debug mode (true/false)
 
+#### SSL/TLS Configuration
+
+Rouen provides flexible SSL/TLS configuration for HTTPS connections (including JIRA integration) to work in various network environments:
+
+- `ROUEN_SSL_MODE`: Set SSL verification mode
+  - `strict`: Full certificate validation including revocation checking (default)
+  - `relaxed`: Suitable for corporate environments - disables certificate revocation checking but maintains certificate chain and hostname verification
+  - `insecure`: Disables all certificate validation (use with caution, only for testing)
+- `ROUEN_SSL_VERIFY_PEER`: Enable/disable peer certificate verification (true/false)
+- `ROUEN_SSL_VERIFY_HOST`: Enable/disable hostname verification (true/false)
+- `ROUEN_SSL_CHECK_REVOCATION`: Enable/disable certificate revocation checking (true/false)
+
+**Example configurations:**
+
+Corporate environment with restricted certificate revocation access:
+```bash
+ROUEN_SSL_MODE=relaxed
+```
+
+Development/testing environment:
+```bash
+ROUEN_SSL_MODE=insecure
+# Warning: Only use this for testing purposes
+```
+
+Custom SSL configuration:
+```bash
+ROUEN_SSL_VERIFY_PEER=true
+ROUEN_SSL_VERIFY_HOST=true
+ROUEN_SSL_CHECK_REVOCATION=false
+```
+
+**Note**: The `relaxed` mode is recommended for corporate environments where certificate revocation servers (OCSP/CRL) may not be accessible, while still maintaining reasonable security by verifying the certificate chain and hostname.
+
 Access the Settings card through **System → Settings** in the application menu.
 
 ## Logging System

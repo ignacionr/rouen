@@ -64,28 +64,63 @@ public:
     // Function type for header setup (used by existing code)
     using HeaderSetter = std::function<void(const std::string&)>;
     
-    // Constructor with default timeout
-    fetch() : timeout_(30), connect_timeout_(10) {
-        // Initialize CURL globally if not already initialized
-        static bool curl_initialized = false;
-        if (!curl_initialized) {
-            curl_global_init(CURL_GLOBAL_DEFAULT);
-            curl_initialized = true;
-            HTTP_INFO("CURL globally initialized");
+    // SSL verification options for corporate environments
+    struct SSLOptions {
+        bool verify_peer = true;        // Verify peer certificate
+        bool verify_host = true;        // Verify hostname in certificate
+        bool check_revocation = true;   // Check certificate revocation (CRL/OCSP)
+        
+        // Factory method for relaxed SSL settings (useful for corporate environments)
+        static SSLOptions relaxed() {
+            SSLOptions opts;
+            opts.verify_peer = true;      // Still verify the certificate chain
+            opts.verify_host = true;      // Still verify hostname matches
+            opts.check_revocation = false; // Skip revocation checks that often fail in corporate environments
+            return opts;
         }
+        
+        // Factory method for strict SSL settings (default)
+        static SSLOptions strict() {
+            return SSLOptions{}; // Uses default values
+        }
+        
+        // Factory method for completely insecure settings (use with caution)
+        static SSLOptions insecure() {
+            SSLOptions opts;
+            opts.verify_peer = false;
+            opts.verify_host = false;
+            opts.check_revocation = false;
+            return opts;
+        }
+    };
+    
+    // Constructor with default timeout
+    fetch() : timeout_(30), connect_timeout_(10), ssl_options_(get_ssl_options_from_env()) {
+        initialize_curl();
     }
     
     // Constructor with custom timeout
-    explicit fetch(long timeout) : timeout_(timeout), connect_timeout_(timeout > 10 ? 10 : timeout) {
-        // Initialize CURL globally if not already initialized
-        static bool curl_initialized = false;
-        if (!curl_initialized) {
-            curl_global_init(CURL_GLOBAL_DEFAULT);
-            curl_initialized = true;
-            HTTP_INFO("CURL globally initialized");
-        }
-        
+    explicit fetch(long timeout) : timeout_(timeout), connect_timeout_(timeout > 10 ? 10 : timeout), ssl_options_(get_ssl_options_from_env()) {
+        initialize_curl();
         HTTP_INFO_FMT("Created fetch client with timeout: {}s", timeout);
+    }
+    
+    // Constructor with custom timeout and SSL options
+    fetch(long timeout, const SSLOptions& ssl_opts) : timeout_(timeout), connect_timeout_(timeout > 10 ? 10 : timeout), ssl_options_(ssl_opts) {
+        initialize_curl();
+        HTTP_INFO_FMT("Created fetch client with timeout: {}s and custom SSL options", timeout);
+        log_ssl_options();
+    }
+    
+    // Set SSL options after construction
+    void set_ssl_options(const SSLOptions& opts) {
+        ssl_options_ = opts;
+        log_ssl_options();
+    }
+    
+    // Get current SSL options
+    const SSLOptions& get_ssl_options() const {
+        return ssl_options_;
     }
     
     // Basic GET request with vector of headers
@@ -124,6 +159,9 @@ public:
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
+            
+            // Configure SSL/TLS options
+            configure_ssl_options(handle.get());
             
             // Add custom headers if provided
             struct curl_slist* curl_headers = nullptr;
@@ -209,6 +247,9 @@ public:
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
+            
+            // Configure SSL/TLS options
+            configure_ssl_options(handle.get());
             
             // Setup headers using the provided setter
             struct curl_slist* curl_headers = nullptr;
@@ -304,6 +345,9 @@ public:
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
             
+            // Configure SSL/TLS options
+            configure_ssl_options(handle.get());
+            
             // Add custom headers if provided
             struct curl_slist* curl_headers = nullptr;
             if (!headers.empty()) {
@@ -395,6 +439,9 @@ public:
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
             
+            // Configure SSL/TLS options
+            configure_ssl_options(handle.get());
+            
             // Setup headers using the provided setter
             struct curl_slist* curl_headers = nullptr;
             auto header_appender = [&curl_headers](const std::string& header) {
@@ -449,6 +496,88 @@ public:
 private:
     long timeout_;        // Request timeout in seconds
     long connect_timeout_; // Connection timeout in seconds
+    SSLOptions ssl_options_; // SSL/TLS configuration options
+    
+    // Initialize CURL globally
+    void initialize_curl() {
+        static bool curl_initialized = false;
+        if (!curl_initialized) {
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+            curl_initialized = true;
+            HTTP_INFO("CURL globally initialized");
+        }
+    }
+    
+    // Configure SSL/TLS options for a CURL handle
+    void configure_ssl_options(CURL* handle) const {
+        // Configure peer certificate verification
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, ssl_options_.verify_peer ? 1L : 0L);
+        
+        // Configure hostname verification
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, ssl_options_.verify_host ? 2L : 0L);
+        
+        // Configure certificate revocation checking
+        if (!ssl_options_.check_revocation) {
+            // Disable certificate revocation checks (CRL/OCSP)
+            // This helps in corporate environments where revocation servers are not accessible
+            #ifdef CURLOPT_SSL_OPTIONS
+            curl_easy_setopt(handle, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);
+            #endif
+        }
+        
+        // Log SSL configuration for debugging
+        HTTP_DEBUG_FMT("SSL Config - Verify Peer: {}, Verify Host: {}, Check Revocation: {}", 
+                      ssl_options_.verify_peer, ssl_options_.verify_host, ssl_options_.check_revocation);
+    }
+    
+    // Get SSL options from environment variables
+    SSLOptions get_ssl_options_from_env() const {
+        SSLOptions opts;
+        
+        // Check for environment variables that control SSL behavior
+        const char* ssl_verify_peer = std::getenv("ROUEN_SSL_VERIFY_PEER");
+        const char* ssl_verify_host = std::getenv("ROUEN_SSL_VERIFY_HOST");
+        const char* ssl_check_revocation = std::getenv("ROUEN_SSL_CHECK_REVOCATION");
+        const char* ssl_mode = std::getenv("ROUEN_SSL_MODE");
+        
+        // Handle SSL mode presets
+        if (ssl_mode) {
+            std::string mode(ssl_mode);
+            if (mode == "relaxed") {
+                opts = SSLOptions::relaxed();
+                HTTP_INFO("Using relaxed SSL mode - suitable for corporate environments");
+            } else if (mode == "strict") {
+                opts = SSLOptions::strict();
+                HTTP_INFO("Using strict SSL mode - full certificate validation");
+            } else if (mode == "insecure") {
+                opts = SSLOptions::insecure();
+                HTTP_WARN("Using insecure SSL mode - certificate validation disabled");
+            }
+        }
+        
+        // Override with specific environment variables if set
+        if (ssl_verify_peer) {
+            opts.verify_peer = (std::string(ssl_verify_peer) == "1" || std::string(ssl_verify_peer) == "true");
+        }
+        
+        if (ssl_verify_host) {
+            opts.verify_host = (std::string(ssl_verify_host) == "1" || std::string(ssl_verify_host) == "true");
+        }
+        
+        if (ssl_check_revocation) {
+            opts.check_revocation = (std::string(ssl_check_revocation) == "1" || std::string(ssl_check_revocation) == "true");
+        }
+        
+        return opts;
+    }
+    
+    // Log current SSL options for debugging
+    void log_ssl_options() const {
+        HTTP_INFO_FMT("SSL Options - Peer Verification: {}, Host Verification: {}, Revocation Checking: {}",
+                     ssl_options_.verify_peer ? "enabled" : "disabled",
+                     ssl_options_.verify_host ? "enabled" : "disabled", 
+                     ssl_options_.check_revocation ? "enabled" : "disabled");
+    }
 };
 
 } // namespace http
