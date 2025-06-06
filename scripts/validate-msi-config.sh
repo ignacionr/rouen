@@ -86,7 +86,7 @@ else
 fi
 
 # Check for registry keys as KeyPath (required for user-mode installation)
-if grep -q 'KeyPath="yes".*RegistryValue' "$wix_file"; then
+if grep -q 'KeyPath="yes"' "$wix_file" && grep -q 'RegistryValue' "$wix_file"; then
     echo "✅ Registry-based KeyPath found (required for user-mode)"
 else
     echo "⚠️  Registry-based KeyPath not found - may cause ICE38 errors"
@@ -98,6 +98,24 @@ if grep -q 'RemoveFolder' "$wix_file"; then
 else
     echo "⚠️  RemoveFolder elements missing - may cause ICE64 errors"
 fi
+
+# Check for specific required DLLs
+echo ""
+echo "=== Required DLL References Check ==="
+required_dlls=(
+    "sqlite3.dll"
+    "libpng16.dll"
+    "SDL2.dll"
+    "libcurl.dll"
+)
+
+for dll in "${required_dlls[@]}"; do
+    if grep -q "$dll" "$wix_file"; then
+        echo "✅ Found reference: $dll"
+    else
+        echo "❌ Missing reference: $dll"
+    fi
+done
 
 # Check for required components
 components=(

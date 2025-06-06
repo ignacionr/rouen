@@ -60,6 +60,11 @@
         <!-- SDL2 and graphics libraries -->
         <File Id="SDL2" Source="$(var.SourceDir)\SDL2.dll" />
         <File Id="SDL2Image" Source="$(var.SourceDir)\SDL2_image.dll" />
+        <File Id="LibPNG16" Source="$(var.SourceDir)\libpng16.dll" />
+        <File Id="LibJPEG" Source="$(var.SourceDir)\jpeg62.dll" />
+        
+        <!-- Database libraries -->
+        <File Id="SQLite3" Source="$(var.SourceDir)\sqlite3.dll" />
         
         <!-- XML and compression libraries -->
         <File Id="TinyXML2" Source="$(var.SourceDir)\tinyxml2.dll" />
