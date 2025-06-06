@@ -204,6 +204,10 @@ registrar::add<std::function<void(std::string)>>(
 
 Cards can be captured as images using the Ctrl+Shift+S shortcut. This saves the current card as a PNG file.
 
+### Window Fit to Width
+
+The main window can be resized to fit the total width of all cards using the Ctrl+Shift+F shortcut. This feature only works when the window is not maximized or in fullscreen mode, and automatically centers the window after resizing.
+
 ## Chess Replay Card with AI Analysis
 
 The chess replay card (`chess_replay`) provides advanced game analysis capabilities powered by AI:

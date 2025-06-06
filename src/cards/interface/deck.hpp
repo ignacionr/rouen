@@ -175,6 +175,39 @@ struct deck {
                         create_card("menu", true);
                     }
                 }
+                else if (ImGui::IsKeyPressed(ImGuiKey_F)) {
+                    // Handle Ctrl+Shift+F shortcut - Fit to width
+                    float total_width = calculate_total_cards_width();
+                    if (total_width > 0) {
+                        // Use the resize_window service to adjust the main window width
+                        auto resize_service = registrar::get<std::function<void(int, int)>>("resize_window");
+                        if (resize_service) {
+                            // Get current window height to maintain it
+                            SDL_Window* window = nullptr;
+                            auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
+                            if (get_window_service) {
+                                window = (*get_window_service)();
+                            }
+                            
+                            int current_height = 600; // default fallback
+                            if (window) {
+                                int current_width;
+                                SDL_GetWindowSize(window, &current_width, &current_height);
+                                
+                                // Check if window is maximized and skip if so
+                                Uint32 flags = SDL_GetWindowFlags(window);
+                                if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
+                                    // Don't resize if maximized or fullscreen
+                                    return;
+                                }
+                            }
+                            
+                            // Add some padding to the total width for window decorations and margins
+                            int target_width = static_cast<int>(total_width + 0.0f); // 2px padding
+                            (*resize_service)(target_width, current_height);
+                        }
+                    }
+                }
                 else if (ImGui::IsKeyPressed(ImGuiKey_S)) {
                     // Find the first card that is focused
                     auto focused_card = std::find_if(cards_.begin(), cards_.end(),
@@ -491,6 +524,19 @@ struct deck {
 
         ImGui::PopStyleColor(3);
         return result;
+    }
+
+    // Calculate total width needed for all cards
+    float calculate_total_cards_width() const {
+        float total_width = 0.0f;
+        for (const auto& card : cards_) {
+            total_width += card->width + 2.0f; // Add spacing between cards
+        }
+        // Remove the extra spacing from the last card
+        if (!cards_.empty()) {
+            total_width -= 2.0f;
+        }
+        return total_width;
     }
 
     // Public accessor for all cards (needed for registrar iteration)

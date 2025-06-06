@@ -53,6 +53,10 @@ main_wnd::~main_wnd() {
     // Remove renderer from registrar before destroying it
     registrar::remove<SDL_Renderer*>("main_renderer");
 
+    // Remove window services
+    registrar::remove<std::function<void(int, int)>>("resize_window");
+    registrar::remove<std::function<SDL_Window*()>>("get_window");
+
     // Remove the keystrokes extractor
     registrar::remove<std::function<std::string()>>("keystrokes");
 
@@ -134,6 +138,23 @@ bool main_wnd::initialize() {
         
         // Register the deferred operations service
         registrar::add<deferred_operations>("deferred_ops", m_deferred_ops);
+
+        // Register window services for fit-to-width feature
+        registrar::add<std::function<void(int, int)>>("resize_window", 
+            std::make_shared<std::function<void(int, int)>>(
+                [this](int width, int height) {
+                    resize_window(width, height);
+                }
+            )
+        );
+        
+        registrar::add<std::function<SDL_Window*()>>("get_window", 
+            std::make_shared<std::function<SDL_Window*()>>(
+                [this]() {
+                    return m_window;
+                }
+            )
+        );
 
         // Register exit function
         registrar::add<std::function<bool()>>("exit", std::make_shared<std::function<bool()>>(
@@ -513,4 +534,23 @@ void rouen::MainWindow::render_font_check() {
         }
     }
     ImGui::End();
+}
+
+void main_wnd::resize_window(int width, int height) {
+    if (!m_window) {
+        return;
+    }
+    
+    // Check if window is maximized or fullscreen
+    Uint32 window_flags = SDL_GetWindowFlags(m_window);
+    if (window_flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
+        // Don't resize if window is maximized or fullscreen
+        return;
+    }
+    
+    // Set the new window size
+    SDL_SetWindowSize(m_window, width, height);
+    
+    // Optionally center the window after resizing
+    SDL_SetWindowPosition(m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
