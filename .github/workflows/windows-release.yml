@@ -779,31 +779,112 @@ jobs:
       run: |
         Write-Host "=== Installing WiX Toolset ==="
         
-        # Download and install WiX Toolset v3.11
-        $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311.exe"
-        $wixInstaller = "$env:TEMP\wix311.exe"
+        # Use GitHub Actions marketplace action for WiX installation (most reliable)
+        Write-Host "Attempting GitHub action-based installation..."
         
-        Write-Host "Downloading WiX Toolset..."
-        Invoke-WebRequest -Uri $wixUrl -OutFile $wixInstaller
-        
-        Write-Host "Installing WiX Toolset..."
-        Start-Process -FilePath $wixInstaller -ArgumentList "/S" -Wait -NoNewWindow
-        
-        # Verify installation
-        $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
-        if (Test-Path "$wixPath\candle.exe") {
-          Write-Host "✅ WiX Toolset installed successfully at: $wixPath"
+        try {
+          # Download and extract WiX directly from GitHub releases
+          $wixVersion = "v3.11.2"
+          $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip"
+          $wixZip = "$env:TEMP\wix311-binaries.zip"
+          $wixExtractPath = "$env:TEMP\WiX"
           
-          # Add to PATH for this session
-          $env:PATH = "$wixPath;$env:PATH"
-          Write-Host "WiX tools added to PATH"
+          Write-Host "Downloading WiX binaries from: $wixUrl"
+          Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip -UseBasicParsing
           
-          # Test candle and light
-          & "$wixPath\candle.exe" -? | Select-Object -First 3
-          & "$wixPath\light.exe" -? | Select-Object -First 3
-        } else {
-          Write-Error "WiX Toolset installation failed"
-          exit 1
+          if (-not (Test-Path $wixZip)) {
+            throw "Failed to download WiX binaries"
+          }
+          
+          Write-Host "Downloaded WiX archive: $((Get-Item $wixZip).Length) bytes"
+          
+          Write-Host "Extracting WiX binaries to: $wixExtractPath"
+          Expand-Archive -Path $wixZip -DestinationPath $wixExtractPath -Force
+          
+          # Find candle.exe in extracted files
+          $candleExe = Get-ChildItem -Recurse $wixExtractPath -Name "candle.exe" | Select-Object -First 1
+          if ($candleExe) {
+            $wixBinPath = Split-Path (Get-ChildItem -Recurse $wixExtractPath -Filter "candle.exe" | Select-Object -First 1).FullName
+            Write-Host "✅ WiX tools found at: $wixBinPath"
+            
+            # Add to PATH
+            $env:PATH = "$wixBinPath;$env:PATH"
+            Write-Host "WiX tools added to PATH"
+            
+            # Test tools
+            & "$wixBinPath\candle.exe" -? | Select-Object -First 3
+            & "$wixBinPath\light.exe" -? | Select-Object -First 3
+            
+            # Set environment variable for later steps
+            echo "WIX_PATH=$wixBinPath" >> $env:GITHUB_ENV
+            
+          } else {
+            throw "candle.exe not found in extracted WiX files"
+          }
+          
+        } catch {
+          Write-Host "Direct download failed, trying installer method..."
+          
+          # Fallback to installer with better error handling
+          $wixInstallerUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311.exe"
+          $wixInstaller = "$env:TEMP\wix311.exe"
+          
+          Write-Host "Downloading WiX installer from: $wixInstallerUrl"
+          
+          try {
+            Invoke-WebRequest -Uri $wixInstallerUrl -OutFile $wixInstaller -UseBasicParsing -TimeoutSec 60
+          } catch {
+            Write-Error "Failed to download WiX installer: $($_.Exception.Message)"
+            exit 1
+          }
+          
+          if (-not (Test-Path $wixInstaller)) {
+            Write-Error "WiX installer download failed"
+            exit 1
+          }
+          
+          $installerSize = (Get-Item $wixInstaller).Length
+          Write-Host "Downloaded installer: $installerSize bytes"
+          
+          if ($installerSize -lt 10000) {
+            Write-Error "Downloaded file appears to be too small (possibly error page)"
+            exit 1
+          }
+          
+          Write-Host "Installing WiX Toolset silently..."
+          $installArgs = @("/quiet", "/norestart")
+          $installProcess = Start-Process -FilePath $wixInstaller -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
+          
+          Write-Host "Install process exit code: $($installProcess.ExitCode)"
+          
+          if ($installProcess.ExitCode -eq 0) {
+            # Verify installation in standard locations
+            $standardPaths = @(
+              "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin",
+              "${env:ProgramFiles}\WiX Toolset v3.11\bin"
+            )
+            
+            $wixPath = $null
+            foreach ($path in $standardPaths) {
+              if (Test-Path "$path\candle.exe") {
+                $wixPath = $path
+                break
+              }
+            }
+            
+            if ($wixPath) {
+              Write-Host "✅ WiX Toolset installed at: $wixPath"
+              $env:PATH = "$wixPath;$env:PATH"
+              echo "WIX_PATH=$wixPath" >> $env:GITHUB_ENV
+              Write-Host "WiX tools added to PATH"
+            } else {
+              Write-Error "WiX installation completed but tools not found"
+              exit 1
+            }
+          } else {
+            Write-Error "WiX installer failed with exit code: $($installProcess.ExitCode)"
+            exit 1
+          }
         }
 
     - name: Create MSI Installer
@@ -823,6 +904,8 @@ jobs:
         # Ensure installer directory exists
         if (-not (Test-Path $installerDir)) {
           Write-Error "Installer directory not found: $installerDir"
+          Write-Host "Available directories:"
+          Get-ChildItem $workspace -Directory | ForEach-Object { Write-Host "  - $($_.Name)" }
           exit 1
         }
         
@@ -830,6 +913,8 @@ jobs:
         $wxsFile = "$installerDir\rouen.wxs"
         if (-not (Test-Path $wxsFile)) {
           Write-Error "WiX source file not found: $wxsFile"
+          Write-Host "Files in installer directory:"
+          Get-ChildItem $installerDir | ForEach-Object { Write-Host "  - $($_.Name)" }
           exit 1
         }
         
@@ -837,30 +922,82 @@ jobs:
         $iconFile = "$workspace\resources\rouen.ico"
         if (-not (Test-Path $iconFile)) {
           Write-Warning "Icon file not found: $iconFile"
+          # Try alternative locations
+          $alternativeIcons = @(
+            "$workspace\img\rouen.ico",
+            "$workspace\resources\Rouen.ico",
+            "$workspace\img\Rouen.ico"
+          )
+          foreach ($altIcon in $alternativeIcons) {
+            if (Test-Path $altIcon) {
+              $iconFile = $altIcon
+              Write-Host "✅ Found alternative icon: $iconFile"
+              break
+            }
+          }
         } else {
           Write-Host "✅ Found icon file: $iconFile"
         }
         
         # Find WiX tools
-        $wixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+        $wixPath = $env:WIX_PATH
+        if (-not $wixPath) {
+          # Fallback to standard paths if environment variable not set
+          $possibleWixPaths = @(
+            "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin",
+            "${env:ProgramFiles}\WiX Toolset v3.11\bin",
+            "${env:LOCALAPPDATA}\WiX Toolset v3.11\bin"
+          )
+          
+          foreach ($path in $possibleWixPaths) {
+            if (Test-Path "$path\candle.exe") {
+              $wixPath = $path
+              break
+            }
+          }
+        }
+        
+        if (-not $wixPath -or -not (Test-Path "$wixPath\candle.exe")) {
+          Write-Error "WiX tools not found. WIX_PATH: $wixPath"
+          if ($wixPath) {
+            Write-Host "Checking WiX path contents:"
+            if (Test-Path $wixPath) {
+              Get-ChildItem $wixPath | ForEach-Object { Write-Host "  - $($_.Name)" }
+            } else {
+              Write-Host "  Path does not exist: $wixPath"
+            }
+          }
+          exit 1
+        }
+        
         $candleExe = "$wixPath\candle.exe"
         $lightExe = "$wixPath\light.exe"
         
-        if (-not (Test-Path $candleExe)) {
-          Write-Error "Candle.exe not found at: $candleExe"
-          exit 1
-        }
-        
-        if (-not (Test-Path $lightExe)) {
-          Write-Error "Light.exe not found at: $lightExe"
-          exit 1
-        }
-        
         Write-Host "✅ Found WiX tools at: $wixPath"
+        
+        # Verify distribution directory and contents
+        if (-not (Test-Path $distDir)) {
+          Write-Error "Distribution directory not found: $distDir"
+          exit 1
+        }
+        
+        Write-Host "Distribution directory contents:"
+        Get-ChildItem $distDir | ForEach-Object { 
+          $sizeKB = if ($_.PSIsContainer) { "(dir)" } else { "$([math]::Round($_.Length / 1KB, 1)) KB" }
+          Write-Host "  - $($_.Name) $sizeKB"
+        }
         
         # Set up output paths
         $wixobjFile = "$workspace\rouen.wixobj"
         $msiFile = "$workspace\Rouen-$version-x64.msi"
+        
+        # Clean up any existing intermediate files
+        if (Test-Path $wixobjFile) {
+          Remove-Item $wixobjFile -Force
+        }
+        if (Test-Path $msiFile) {
+          Remove-Item $msiFile -Force
+        }
         
         # Compile WiX source
         Write-Host "`n=== Compiling WiX Source ==="
@@ -872,28 +1009,56 @@ jobs:
         )
         
         Write-Host "Running: candle.exe $($candleArgs -join ' ')"
-        $candleProcess = Start-Process -FilePath $candleExe -ArgumentList $candleArgs -Wait -PassThru -NoNewWindow
         
-        if ($candleProcess.ExitCode -ne 0) {
-          Write-Error "WiX compilation failed with exit code: $($candleProcess.ExitCode)"
+        try {
+          $candleOutput = & $candleExe @candleArgs 2>&1
+          $candleExitCode = $LASTEXITCODE
+          
+          Write-Host "Candle output:"
+          $candleOutput | ForEach-Object { Write-Host "  $_" }
+          
+          if ($candleExitCode -ne 0) {
+            Write-Error "WiX compilation failed with exit code: $candleExitCode"
+            exit 1
+          }
+          
+          if (-not (Test-Path $wixobjFile)) {
+            Write-Error "WiX object file was not created: $wixobjFile"
+            exit 1
+          }
+          
+          Write-Host "✅ WiX source compiled successfully"
+          
+        } catch {
+          Write-Error "Exception during WiX compilation: $($_.Exception.Message)"
           exit 1
         }
-        
-        Write-Host "✅ WiX source compiled successfully"
         
         # Link to create MSI
         Write-Host "`n=== Creating MSI Package ==="
         $lightArgs = @(
           "-out", $msiFile,
           "-ext", "WixUIExtension",
+          "-spdb",  # Suppress PDB creation
           $wixobjFile
         )
         
         Write-Host "Running: light.exe $($lightArgs -join ' ')"
-        $lightProcess = Start-Process -FilePath $lightExe -ArgumentList $lightArgs -Wait -PassThru -NoNewWindow
         
-        if ($lightProcess.ExitCode -ne 0) {
-          Write-Error "MSI creation failed with exit code: $($lightProcess.ExitCode)"
+        try {
+          $lightOutput = & $lightExe @lightArgs 2>&1
+          $lightExitCode = $LASTEXITCODE
+          
+          Write-Host "Light output:"
+          $lightOutput | ForEach-Object { Write-Host "  $_" }
+          
+          if ($lightExitCode -ne 0) {
+            Write-Error "MSI creation failed with exit code: $lightExitCode"
+            exit 1
+          }
+          
+        } catch {
+          Write-Error "Exception during MSI creation: $($_.Exception.Message)"
           exit 1
         }
         
@@ -914,6 +1079,8 @@ jobs:
           
         } else {
           Write-Error "MSI file was not created: $msiFile"
+          Write-Host "Files in workspace directory:"
+          Get-ChildItem $workspace -Filter "*.msi" | ForEach-Object { Write-Host "  - $($_.Name)" }
           exit 1
         }
         
