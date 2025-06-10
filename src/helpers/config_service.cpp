@@ -209,6 +209,16 @@ namespace rouen::helpers {
                        "Bybit trading API secret");
         register_config("BYBIT_HOST", Category::BYBIT_CONFIG, false, false,
                        "Bybit API host endpoint", "https://api.bybit.com");
+                       
+        // HTTP/SSL Configuration
+        register_config("ROUEN_SSL_MODE", Category::HTTP_SSL_CONFIG, false, false,
+                       "SSL mode: strict (default), relaxed, compatible, atlassian, insecure", "strict");
+        register_config("ROUEN_SSL_VERIFY_PEER", Category::HTTP_SSL_CONFIG, false, false,
+                       "Verify peer certificate (1=true, 0=false)", "1");
+        register_config("ROUEN_SSL_VERIFY_HOST", Category::HTTP_SSL_CONFIG, false, false,
+                       "Verify host in certificate (1=true, 0=false)", "1");
+        register_config("ROUEN_SSL_CHECK_REVOCATION", Category::HTTP_SSL_CONFIG, false, false,
+                       "Check certificate revocation (1=true, 0=false)", "1");
 
         // System paths
         register_config("HOME", Category::SYSTEM_PATHS, false, false,

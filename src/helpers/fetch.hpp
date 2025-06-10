@@ -69,19 +69,46 @@ public:
         bool verify_peer = true;        // Verify peer certificate
         bool verify_host = true;        // Verify hostname in certificate
         bool check_revocation = true;   // Check certificate revocation (CRL/OCSP)
+        std::string cipher_list = "ECDHE+AESGCM:ECDHE+CHACHA20:ECDHE+AES256:ECDHE+AES128:RSA+AESGCM:RSA+AES:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP"; // Default secure but compatible cipher list
         
-        // Factory method for relaxed SSL settings (useful for corporate environments)
+        // Factory method for relaxed SSL settings (useful for corporate environments and Atlassian Cloud)
         static SSLOptions relaxed() {
             SSLOptions opts;
             opts.verify_peer = true;      // Still verify the certificate chain
             opts.verify_host = true;      // Still verify hostname matches
             opts.check_revocation = false; // Skip revocation checks that often fail in corporate environments
+            // Use a very permissive cipher list optimized for Atlassian Cloud and corporate environments
+            opts.cipher_list = "ECDHE+AESGCM:ECDHE+CHACHA20:ECDHE+AES256:ECDHE+AES128:DHE+AESGCM:DHE+AES256:DHE+AES128:RSA+AESGCM:RSA+AES256:RSA+AES128:AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256:AES256-SHA:AES128-SHA:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP";
+            return opts;
+        }
+        
+        // Factory method for maximum compatibility (for problematic servers)
+        static SSLOptions compatible() {
+            SSLOptions opts;
+            opts.verify_peer = true;      // Still verify the certificate chain
+            opts.verify_host = true;      // Still verify hostname matches
+            opts.check_revocation = false; // Skip revocation checks
+            // Maximum compatibility cipher list - includes older but still secure ciphers
+            // This list is designed to work with services like Atlassian Cloud
+            opts.cipher_list = "ALL:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!LOW";
+            return opts;
+        }
+        
+        // Factory method for Atlassian Cloud specific compatibility
+        static SSLOptions atlassian() {
+            SSLOptions opts;
+            opts.verify_peer = true;      // Still verify the certificate chain
+            opts.verify_host = true;      // Still verify hostname matches
+            opts.check_revocation = false; // Skip revocation checks
+            // Ultra-permissive cipher list specifically for Atlassian Cloud
+            // Allows most modern ciphers including those used by Atlassian's CDN
+            opts.cipher_list = "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA:ECDHE-RSA-AES128-SHA:AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256:AES256-SHA:AES128-SHA:HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP";
             return opts;
         }
         
         // Factory method for strict SSL settings (default)
         static SSLOptions strict() {
-            return SSLOptions{}; // Uses default values
+            return SSLOptions{}; // Uses default values with secure cipher list
         }
         
         // Factory method for completely insecure settings (use with caution)
@@ -90,6 +117,8 @@ public:
             opts.verify_peer = false;
             opts.verify_host = false;
             opts.check_revocation = false;
+            // Use very permissive cipher list for maximum compatibility
+            opts.cipher_list = "ALL:!aNULL:!eNULL:!LOW:!EXPORT:!SSLv2";
             return opts;
         }
     };
@@ -535,8 +564,9 @@ private:
         curl_easy_setopt(handle, CURLOPT_SSL_ENABLE_ALPN, 1L);
         #endif
         
-        // Set cipher list for better compatibility
-        curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA");
+        // Set cipher list for broad compatibility while maintaining security
+        // Use the cipher list from SSL options which varies based on the SSL mode
+        curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, ssl_options_.cipher_list.c_str());
         
         // Additional options for corporate environments
         curl_easy_setopt(handle, CURLOPT_SSL_SESSIONID_CACHE, 1L);  // Enable SSL session reuse
@@ -564,20 +594,26 @@ private:
         const char* ssl_check_revocation = std::getenv("ROUEN_SSL_CHECK_REVOCATION");
         const char* ssl_mode = std::getenv("ROUEN_SSL_MODE");
         
-        // Handle SSL mode presets
-        if (ssl_mode) {
-            std::string mode(ssl_mode);
-            if (mode == "relaxed") {
-                opts = SSLOptions::relaxed();
-                HTTP_INFO("Using relaxed SSL mode - suitable for corporate environments");
-            } else if (mode == "strict") {
-                opts = SSLOptions::strict();
-                HTTP_INFO("Using strict SSL mode - full certificate validation");
-            } else if (mode == "insecure") {
-                opts = SSLOptions::insecure();
-                HTTP_WARN("Using insecure SSL mode - certificate validation disabled");
-            }
+    // Handle SSL mode presets
+    if (ssl_mode) {
+        std::string mode(ssl_mode);
+        if (mode == "relaxed") {
+            opts = SSLOptions::relaxed();
+            HTTP_INFO("Using relaxed SSL mode - suitable for corporate environments");
+        } else if (mode == "compatible") {
+            opts = SSLOptions::compatible();
+            HTTP_INFO("Using compatible SSL mode - maximum cipher compatibility");
+        } else if (mode == "atlassian") {
+            opts = SSLOptions::atlassian();
+            HTTP_INFO("Using Atlassian SSL mode - optimized for Atlassian Cloud services");
+        } else if (mode == "strict") {
+            opts = SSLOptions::strict();
+            HTTP_INFO("Using strict SSL mode - full certificate validation");
+        } else if (mode == "insecure") {
+            opts = SSLOptions::insecure();
+            HTTP_WARN("Using insecure SSL mode - certificate validation disabled");
         }
+    }
         
         // Override with specific environment variables if set
         if (ssl_verify_peer) {

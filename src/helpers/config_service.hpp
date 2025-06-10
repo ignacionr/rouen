@@ -29,6 +29,7 @@ namespace rouen::helpers {
             EXECUTABLE_PATHS,  // Paths to external executables
             DATABASE_CONFIG,   // Database connection settings
             LOGGING_CONFIG,    // Logging and debug settings
+            HTTP_SSL_CONFIG,   // HTTP/SSL connection settings
             GENERAL           // General application settings
         };
 

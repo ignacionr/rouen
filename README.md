@@ -268,11 +268,27 @@ This ensures the application continues to function even if custom executable pat
 
 #### SSL/TLS Configuration
 
-Rouen provides flexible SSL/TLS configuration for HTTPS connections (including JIRA integration) to work in various network environments:
+Rouen provides flexible SSL/TLS configuration for HTTPS connections (including JIRA integration) to work in various network environments. These settings can be configured either through the Settings UI or environment variables.
+
+##### Using the Settings UI (Recommended)
+
+Access the Settings card through **System → Settings** in the application menu, then select the **HTTP SSL Configuration** category. From there, you can:
+
+1. Choose your SSL mode from a dropdown menu
+2. See detailed descriptions of each mode
+3. View which settings will be affected
+
+This is particularly helpful for Windows users who may not be comfortable setting environment variables.
+
+##### Using Environment Variables
+
+The following environment variables can be used to configure SSL:
 
 - `ROUEN_SSL_MODE`: Set SSL verification mode
   - `strict`: Full certificate validation including revocation checking (default)
   - `relaxed`: Suitable for corporate environments - disables certificate revocation checking but maintains certificate chain and hostname verification
+  - `compatible`: Maximum cipher compatibility for problematic servers
+  - `atlassian`: Optimized for Atlassian Cloud services (*.atlassian.net)
   - `insecure`: Disables all certificate validation (use with caution, only for testing)
 - `ROUEN_SSL_VERIFY_PEER`: Enable/disable peer certificate verification (true/false)
 - `ROUEN_SSL_VERIFY_HOST`: Enable/disable hostname verification (true/false)
@@ -280,9 +296,19 @@ Rouen provides flexible SSL/TLS configuration for HTTPS connections (including J
 
 **Example configurations:**
 
+Atlassian Cloud (recommended for *.atlassian.net):
+```bash
+ROUEN_SSL_MODE=atlassian
+```
+
 Corporate environment with restricted certificate revocation access:
 ```bash
 ROUEN_SSL_MODE=relaxed
+```
+
+Maximum compatibility for problematic servers:
+```bash
+ROUEN_SSL_MODE=compatible
 ```
 
 Development/testing environment:
@@ -300,7 +326,7 @@ ROUEN_SSL_CHECK_REVOCATION=false
 
 **Note**: The `relaxed` mode is recommended for corporate environments where certificate revocation servers (OCSP/CRL) may not be accessible, while still maintaining reasonable security by verifying the certificate chain and hostname.
 
-Access the Settings card through **System → Settings** in the application menu.
+**Important**: SSL configuration changes are applied immediately when changed through the Settings UI or when environment variables are set before launching the application.
 
 ## Logging System
 
@@ -709,6 +735,7 @@ make run-all-tests
 ```bash
 # Run specific test executables
 ./test_fetch_ssl          # HTTP/SSL configuration tests
+./test_ssl_modes_simple   # SSL UI mode configuration tests
 ./test_math_operations     # Advanced math operations with mocking
 ./legacy_tests             # Original console-based tests
 ```
@@ -732,7 +759,13 @@ The build system provides several test execution targets:
    - Boolean value parsing verification
    - Test fixtures with proper setup/teardown
 
-2. **Math Operations Tests** (`test_math_operations.cpp`)
+2. **SSL UI Mode Tests** (`test_ssl_modes_simple.cpp`)
+   - UI-based SSL configuration mode testing
+   - Direct settings verification without ConfigService dependencies
+   - Cross-platform environment variable testing
+   - Certificate verification option testing
+
+3. **Math Operations Tests** (`test_math_operations.cpp`)
    - Parameterized prime number validation
    - Exception testing with EXPECT_THROW
    - Google Mock integration examples

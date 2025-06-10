@@ -41,6 +41,22 @@ endfunction()
 # Helper function to create GTest-based tests with HTTP dependencies
 function(add_gtest_http_executable test_name source_file)
     add_executable(${test_name} ${source_file})
+    
+    # Add sources needed from the main project
+    target_sources(${test_name} PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/helpers/config_service.cpp
+    )
+
+    # Include directories needed for the test
+    target_include_directories(${test_name} PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+    )
+    
+    # Additional compiler definitions needed for the test
+    target_compile_definitions(${test_name} PRIVATE
+        TEST_CONFIG_SERVICE
+    )
+    
     target_link_libraries(${test_name} 
         PRIVATE 
         GTest::gtest 
@@ -59,6 +75,8 @@ endfunction()
 
 # Create Google Test-based tests
 add_gtest_http_executable(test_fetch_ssl test_fetch_ssl.cpp)
+add_gtest_http_executable(test_ssl_ui test_ssl_ui.cpp)
+add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
 
 # Legacy tests (keeping for compatibility)
@@ -86,13 +104,14 @@ add_custom_target(run_all_tests
     COMMAND echo "Google Test Suite:"
     COMMAND echo "-------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_fetch_ssl
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     COMMAND echo ""
     COMMAND echo "Legacy Console Tests:"
     COMMAND echo "---------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
-    DEPENDS test_fetch_ssl test_math_operations test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_bybit_currency_fix test_example_math
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -101,8 +120,9 @@ add_custom_target(run_gtest_only
     COMMAND echo "Running Google Test Suite Only..."
     COMMAND echo "=================================="
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_fetch_ssl
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
-    DEPENDS test_fetch_ssl test_math_operations
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations
     COMMENT "Running Google Test suite only"
 )
 
@@ -136,6 +156,12 @@ add_custom_target(run_fetch_ssl_test
     COMMENT "Running HTTP Fetch SSL configuration tests"
 )
 
+add_custom_target(run_ssl_ui_test
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
+    DEPENDS test_ssl_ui
+    COMMENT "Running SSL UI configuration tests"
+)
+
 add_custom_target(run_math_operations_test
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     DEPENDS test_math_operations
@@ -145,7 +171,7 @@ add_custom_target(run_math_operations_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_math_operations test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_bybit_currency_fix test_example_math
     COMMENT "Running tests through CTest framework"
 )
 

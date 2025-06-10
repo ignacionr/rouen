@@ -5,9 +5,28 @@
 #include <vector>
 #include <algorithm>
 #include <optional>
+#include <cstdlib> // For setenv on Unix platforms
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/config_service.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
+
+// Cross-platform environment variable helper
+namespace {
+    inline int set_environment_variable(const char* name, const char* value, int overwrite) {
+#if defined(_WIN32)
+        // Windows doesn't have setenv, use _putenv_s instead
+        if (!overwrite && std::getenv(name) != nullptr) {
+            return 0;  // Environment variable exists and overwrite is not specified
+        }
+        std::string envstr = std::string(name) + "=" + std::string(value);
+        return _putenv(envstr.c_str());
+#else
+        // Unix platforms
+        return ::setenv(name, value, overwrite);
+#endif
+    }
+}
 
 namespace rouen::cards {
 
@@ -81,6 +100,7 @@ private:
             {helpers::ConfigService::Category::SYSTEM_PATHS, "System Paths"},
             {helpers::ConfigService::Category::EXECUTABLE_PATHS, "Executable Paths"},
             {helpers::ConfigService::Category::LOGGING_CONFIG, "Logging Configuration"},
+            {helpers::ConfigService::Category::HTTP_SSL_CONFIG, "HTTP SSL Configuration"},
             {helpers::ConfigService::Category::GENERAL, "General"}
         };
         
@@ -155,7 +175,7 @@ private:
         ImGui::Text("Category:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150);
-        const char* category_items[] = {"All", "API Credentials", "JIRA Profiles", "Bybit Config", "System Paths", "Executable Paths", "Logging", "General"};
+        const char* category_items[] = {"All", "API Credentials", "JIRA Profiles", "Bybit Config", "System Paths", "Executable Paths", "Logging", "HTTP SSL", "General"};
         ImGui::Combo("##category", &selected_category_, category_items, IM_ARRAYSIZE(category_items));
     }
     
@@ -200,6 +220,12 @@ private:
             if (data.configs.empty()) {
                 ImGui::Text("  No configurations registered in this category");
                 return;
+            }
+            
+            // Special handling for SSL mode if this is the HTTP SSL category
+            if (category == helpers::ConfigService::Category::HTTP_SSL_CONFIG) {
+                render_ssl_mode_selector();
+                ImGui::Separator();
             }
             
             // Table for configuration entries
@@ -337,6 +363,86 @@ private:
             }
             ImGui::EndPopup();
         }
+    }
+    
+    void render_ssl_mode_selector() {
+        auto config_service = helpers::ConfigService::instance();
+        std::string current_ssl_mode = config_service->get_env_optional("ROUEN_SSL_MODE").value_or("strict");
+        
+        ImGui::Text("Select SSL Mode:");
+        ImGui::SameLine();
+        
+        // Structure to hold the SSL mode options
+        struct SSLModeInfo {
+            const char* name;
+            const char* value;
+            const char* description;
+        };
+        
+        // Define the available modes
+        SSLModeInfo ssl_modes[] = {
+            {"Strict (Default)", "strict", "Full certificate validation with secure cipher list"},
+            {"Relaxed", "relaxed", "Suitable for corporate environments, skips revocation checks"},
+            {"Compatible", "compatible", "Maximum compatibility for problematic servers"},
+            {"Atlassian", "atlassian", "Optimized specifically for Atlassian Cloud services"},
+            {"Insecure", "insecure", "Disables certificate validation (use with caution!)"}
+        };
+        
+        // Find current mode index
+        int current_mode_idx = 0;
+        for (int i = 0; i < static_cast<int>(IM_ARRAYSIZE(ssl_modes)); i++) {
+            if (current_ssl_mode == ssl_modes[i].value) {
+                current_mode_idx = i;
+                break;
+            }
+        }
+        
+        static int selected_mode = current_mode_idx;
+        
+        // Create dropdown with mode names only
+        const char* mode_names[IM_ARRAYSIZE(ssl_modes)];
+        for (int i = 0; i < IM_ARRAYSIZE(ssl_modes); i++) {
+            mode_names[i] = ssl_modes[i].name;
+        }
+        
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::Combo("##ssl_mode", &selected_mode, mode_names, IM_ARRAYSIZE(mode_names))) {
+            // Store the setting in the ConfigService
+            std::string new_value = ssl_modes[selected_mode].value;
+            
+            // This will internally update the cached value used by the HTTP client
+            set_environment_variable("ROUEN_SSL_MODE", new_value.c_str(), 1);
+            
+            // Force refresh of config cache
+            config_service->refresh_cache();
+            
+            // Log the change
+            CONFIG_INFO_FMT("SSL mode changed to: {}", new_value);
+        }
+        
+        // Display description of current selection
+        ImGui::Spacing();
+        ImGui::Text("Mode Description:");
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f)); // Light gray
+        ImGui::TextWrapped("%s", ssl_modes[selected_mode].description);
+        ImGui::PopStyleColor();
+        
+        // Display warning for insecure mode
+        if (selected_mode == 4) { // Insecure mode
+            ImGui::Spacing();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.2f, 0.2f, 1.0f)); // Red warning
+            ImGui::TextWrapped("Warning: Insecure mode disables certificate validation and should only be used for testing or in controlled environments!");
+            ImGui::PopStyleColor();
+        }
+        
+        // Show which settings are affected
+        ImGui::Spacing();
+        ImGui::Text("This setting configures:");
+        
+        ImGui::Bullet(); ImGui::Text("Certificate validation");
+        ImGui::Bullet(); ImGui::Text("SSL cipher compatibility");
+        ImGui::Bullet(); ImGui::Text("Revocation checking");
     }
 };
 

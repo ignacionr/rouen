@@ -332,20 +332,49 @@ void jira_model::connect(const jira_connection_profile& profile) {
         
     } catch (const std::exception& e) {
         connected_ = false;
-        std::string detailed_error = std::format(
-            "Failed to connect to JIRA server.\n"
-            "Profile: '{}'\n"
-            "Server URL: '{}'\n"
-            "Username: '{}'\n"
-            "Error: {}\n"
-            "\nTroubleshooting tips:\n"
-            "1. Verify the server URL is correct and includes the API version (e.g., /rest/api/2 or /rest/api/3)\n"
-            "2. Check that your username and API token are valid\n"
-            "3. Ensure the JIRA server is accessible from your network\n"
-            "4. For Atlassian Cloud, use your email as username\n"
-            "5. For self-hosted JIRA, verify the API endpoint is available",
-            profile.name, profile.server_url, profile.username, e.what()
-        );
+        std::string error_msg = e.what();
+        std::string detailed_error;
+        
+        // Check for specific SSL cipher errors and provide targeted guidance
+        if (error_msg.find("Could not use specified SSL cipher") != std::string::npos || 
+            error_msg.find("no ciphers available") != std::string::npos ||
+            error_msg.find("cipher") != std::string::npos) {
+            detailed_error = std::format(
+                "SSL Cipher Error - Failed to connect to JIRA server.\n"
+                "Profile: '{}'\n"
+                "Server URL: '{}'\n"
+                "Username: '{}'\n"
+                "Error: {}\n"
+                "\nSSL Cipher Troubleshooting:\n"
+                "1. For Atlassian Cloud (*.atlassian.net), try setting:\n"
+                "   export ROUEN_SSL_MODE=atlassian\n"
+                "2. For maximum compatibility, try:\n"
+                "   export ROUEN_SSL_MODE=compatible\n"
+                "3. For corporate environments, try:\n"
+                "   export ROUEN_SSL_MODE=relaxed\n"
+                "4. Only for testing/debugging (insecure):\n"
+                "   export ROUEN_SSL_MODE=insecure\n"
+                "5. Current SSL mode can be checked in application logs\n"
+                "6. Restart the application after changing SSL mode",
+                profile.name, profile.server_url, profile.username, e.what()
+            );
+        } else {
+            detailed_error = std::format(
+                "Failed to connect to JIRA server.\n"
+                "Profile: '{}'\n"
+                "Server URL: '{}'\n"
+                "Username: '{}'\n"
+                "Error: {}\n"
+                "\nTroubleshooting tips:\n"
+                "1. Verify the server URL is correct and includes the API version (e.g., /rest/api/2 or /rest/api/3)\n"
+                "2. Check that your username and API token are valid\n"
+                "3. Ensure the JIRA server is accessible from your network\n"
+                "4. For Atlassian Cloud, use your email as username\n"
+                "5. For self-hosted JIRA, verify the API endpoint is available\n"
+                "6. If encountering SSL errors, try: export ROUEN_SSL_MODE=atlassian",
+                profile.name, profile.server_url, profile.username, e.what()
+            );
+        }
         
         DB_ERROR_FMT("{}", detailed_error);
         JIRA_ERROR_FMT("Connection failed: {}", detailed_error);

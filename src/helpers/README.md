@@ -57,18 +57,27 @@ The fetch helper supports flexible SSL/TLS configuration for HTTPS connections:
 http::fetch fetcher;
 
 // Use predefined SSL configurations
-auto relaxed_options = http::fetch::SSLOptions::relaxed();    // For corporate environments
 auto strict_options = http::fetch::SSLOptions::strict();      // Full validation (default)
+auto relaxed_options = http::fetch::SSLOptions::relaxed();    // For corporate environments
+auto compatible_options = http::fetch::SSLOptions::compatible(); // Maximum compatibility
+auto atlassian_options = http::fetch::SSLOptions::atlassian(); // Atlassian Cloud services
 auto insecure_options = http::fetch::SSLOptions::insecure();  // Testing only
 
 // SSL options are automatically loaded from environment variables:
-// ROUEN_SSL_MODE=relaxed|strict|insecure
+// ROUEN_SSL_MODE=strict|relaxed|compatible|atlassian|insecure
 // ROUEN_SSL_VERIFY_PEER=true|false
 // ROUEN_SSL_VERIFY_HOST=true|false
 // ROUEN_SSL_CHECK_REVOCATION=true|false
 ```
 
-The `relaxed` SSL mode is particularly useful for corporate environments where certificate revocation servers may not be accessible, while still maintaining security through certificate chain and hostname verification.
+The various SSL modes serve different purposes:
+- `strict`: Full validation for highest security (default)
+- `relaxed`: For corporate environments where revocation servers may not be accessible
+- `compatible`: Maximum compatibility for problematic servers
+- `atlassian`: Optimized specifically for Atlassian Cloud services (JIRA, etc.)
+- `insecure`: Disables certificate validation for testing (use with caution)
+
+These modes can be selected through the Settings UI (System → Settings → HTTP SSL Configuration) or via environment variables.
 
 ## Using the ConfigService Helper
 

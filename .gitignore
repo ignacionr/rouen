@@ -12,3 +12,32 @@ vcpkg_installed
 vcpkg/
 **.o
 **.obj
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+
+# Build artifacts
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.app/
+
+# IDE files
+.vscode/settings.json
+.idea/
+
+# Log files
+*.log
+vcpkg-manifest-install.log
+
+# Temporary files
+*.tmp
+*.temp
+*~
