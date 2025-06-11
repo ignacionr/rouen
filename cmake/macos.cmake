@@ -195,7 +195,6 @@ foreach(RES_FILE ${RESOURCE_FILES})
             "${RES_FILE}"
             "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources/${RES_FILENAME}"
     COMMENT "Copying ${RES_FILENAME} to app bundle Resources"
-    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources"
   )
 endforeach()
 

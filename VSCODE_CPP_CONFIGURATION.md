@@ -104,6 +104,25 @@ The configuration is set up for C++23 standard with:
 
 ## Troubleshooting False Positive Errors
 
+### Problem: CMake Configuration Warnings
+
+**Symptoms:**
+- CMake policy warnings about deprecated features
+- `add_custom_command(TARGET): DEPENDS` warnings
+- CMP0175 policy warnings
+
+**Solutions:**
+
+1. **Update CMake configuration files:**
+   - Remove `DEPENDS` from `add_custom_command(TARGET ...)` calls
+   - The build order is already handled by `POST_BUILD` execution
+
+2. **Regenerate build configuration:**
+   ```bash
+   rm -rf build-vcpkg
+   cmake -B build-vcpkg -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+   ```
+
 ### Problem: Include Errors
 
 **Symptoms:**
