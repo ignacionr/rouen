@@ -84,6 +84,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Enable export of compile commands for VS Code IntelliSense
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
 include(cmake/dependencies.cmake)

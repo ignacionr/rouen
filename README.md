@@ -962,6 +962,33 @@ These strict settings help catch potential bugs early, ensure consistent code qu
 
 ## 🛠️ Development Documentation
 
+### IDE Configuration
+
+#### VS Code C++ Setup
+
+Rouen includes a comprehensive VS Code configuration for optimal C++ development experience:
+
+- **[VS Code C++ Configuration Guide](VSCODE_CPP_CONFIGURATION.md)** - Complete setup and troubleshooting guide
+  - IntelliSense configuration for C++23
+  - vcpkg integration with proper include paths
+  - Compile commands generation and usage
+  - False positive error elimination
+  - CMake Tools integration
+  - Debugging configuration
+
+**Quick Setup for VS Code:**
+1. Install the C++ Extension Pack
+2. Open the project in VS Code
+3. Select "macOS-vcpkg" configuration (bottom-right status bar)
+4. Run the "Configure Debug with vcpkg" task
+5. IntelliSense should work without false positive errors
+
+**Supported Configurations:**
+- **macOS-vcpkg**: Primary development configuration with all dependencies
+- **macOS-traditional**: Fallback using system libraries
+- **Linux-vcpkg**: Cross-platform development support
+- **Linux-traditional**: Linux system library configuration
+
 ### Platform-Specific Setup Guides
 
 - **[Windows Development Setup](WINDOWS_DEBUG_SETUP.md)** - Complete VS Code debugging guide for Windows
@@ -978,6 +1005,45 @@ These strict settings help catch potential bugs early, ensure consistent code qu
   - Homebrew dependency management
   - macOS-specific troubleshooting
 
+### Build System
+
+#### CMake Configuration
+
+The project uses CMake with vcpkg for dependency management:
+
+```bash
+# Configure with vcpkg (recommended)
+cmake -B build-vcpkg \
+  -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# Build
+cmake --build build-vcpkg --parallel
+```
+
+#### Dependencies
+
+All dependencies are managed through vcpkg:
+- **Core Libraries**: SDL2, OpenGL, OpenSSL, cURL
+- **UI Framework**: Dear ImGui with custom extensions
+- **Data Formats**: TinyXML2, SQLite3
+- **Serialization**: Glaze (header-only JSON library)
+- **Testing**: Google Test and Google Mock
+
+#### C++23 Features
+
+The project uses modern C++23 features:
+- `std::format` for string formatting
+- Concepts and constraints
+- Range-based algorithms
+- Modern standard library features
+
+**Minimum Requirements:**
+- **macOS**: 13.3 (Ventura) or later for full C++23 support
+- **Windows**: Visual Studio 2022 17.8 or later
+- **Linux**: GCC 13+ or Clang 17+
+
 ### Key Development Features
 
 - **Multi-Platform Debug Support**: Dedicated debug consoles and logging for each platform
@@ -985,6 +1051,7 @@ These strict settings help catch potential bugs early, ensure consistent code qu
 - **Resource Management**: Embedded version information and application metadata
 - **Strict Code Quality**: Warning-free compilation with enhanced error detection
 - **Modern C++23**: Latest standard features with cross-platform compatibility
+- **IntelliSense Integration**: Pre-configured VS Code setup eliminates false positive errors
 
 ## License
 
