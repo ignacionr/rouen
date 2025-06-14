@@ -1,0 +1,31 @@
+{
+  "name": "rouen",
+  "version": "1.0.0",
+  "description": "A modern, card-based productivity dashboard",
+  "homepage": "https://github.com/ignaciorodriguez/rouen",
+  "dependencies": [
+    {
+      "name": "curl",
+      "features": [
+        "ssl"
+      ]
+    },
+    "sqlite3",
+    "sdl2",
+    {
+      "name": "sdl2-image",
+      "features": [
+        "libjpeg-turbo"
+      ]
+    },
+    "tinyxml2",
+    "glaze",
+    "gtest"
+  ],
+  "overrides": [
+    {
+      "name": "openssl",
+      "version": "system"
+    }
+  ]
+}

@@ -45,59 +45,9 @@ jobs:
 
     - name: Setup vcpkg
       run: |
-        set -e
-        workspace="${{ github.workspace }}"
-        vcpkg_dir="$workspace/vcpkg"
-        
-        echo "Setting up vcpkg..."
-        
-        # Always remove existing vcpkg directory to avoid corruption
-        if [ -d "$vcpkg_dir" ]; then
-          echo "Removing existing vcpkg directory..."
-          rm -rf "$vcpkg_dir"
-        fi
-        
-        echo "Cloning fresh vcpkg..."
-        git clone https://github.com/Microsoft/vcpkg.git "$vcpkg_dir"
-        
-        echo "Bootstrapping vcpkg..."
-        cd "$vcpkg_dir"
-        
-        if [ -f "bootstrap-vcpkg.sh" ]; then
-          echo "Found bootstrap-vcpkg.sh, executing..."
-          ./bootstrap-vcpkg.sh
-        else
-          echo "ERROR: bootstrap-vcpkg.sh not found in $(pwd)"
-          ls -la bootstrap*
-          exit 1
-        fi
-        
-        # Verify vcpkg executable was created
-        if [ ! -f "vcpkg" ]; then
-          echo "ERROR: vcpkg executable not found after bootstrap"
-          ls -la *vcpkg*
-          exit 1
-        fi
-        
-        echo "Installing vcpkg packages (using cache if available)..."
-        ./vcpkg install --triplet arm64-osx
-        
-        echo "Integrating vcpkg..."
-        ./vcpkg integrate install
-        
-        echo "Listing installed packages..."
-        ./vcpkg list
-        
-        echo "Verifying curl installation..."
-        ./vcpkg list curl
-        
-        echo "Checking for dylib files..."
-        if [ -d "installed/arm64-osx/lib" ]; then
-          echo "Libraries in lib directory:"
-          ls -la "installed/arm64-osx/lib"/*.dylib 2>/dev/null || echo "No .dylib files found"
-        else
-          echo "WARNING: arm64-osx/lib directory not found"
-        fi
+        echo "Using macOS build setup script..."
+        chmod +x ./scripts/setup-macos-build.sh
+        ./scripts/setup-macos-build.sh
 
     - name: Verify vcpkg installation
       run: |
@@ -114,11 +64,11 @@ jobs:
           cd "$vcpkg_dir"
           ./vcpkg list
         else
-          echo "vcpkg executable not found!"
+          echo "vcpkg executable not found - may be using system dependencies"
         fi
         
         # Check installed directory structure
-        installed_dir="$vcpkg_dir/installed"
+        installed_dir="$workspace/vcpkg_installed"
         if [ -d "$installed_dir" ]; then
           echo ""
           echo "✅ vcpkg installed directory exists"
@@ -176,15 +126,43 @@ jobs:
           fi
         else
           echo ""
-          echo "❌ vcpkg installed directory not found!"
+          echo "⚠️ vcpkg installed directory not found - using system dependencies"
         fi
         
-        # Check for specific required libraries across the entire vcpkg installation
-        required_libs=("libcurl" "libssl" "libcrypto" "libSDL2")
+        # Check for system dependencies (Homebrew)
+        echo ""
+        echo "=== SYSTEM DEPENDENCIES CHECK ==="
+        if command -v brew >/dev/null 2>&1; then
+          echo "Homebrew available, checking system dependencies:"
+          for dep in openssl curl sqlite sdl2 sdl2_image; do
+            if brew list "$dep" >/dev/null 2>&1; then
+              version=$(brew list --versions "$dep" | head -1)
+              echo "✅ $version"
+            else
+              echo "⚠️ $dep not installed via Homebrew"
+            fi
+          done
+        else
+          echo "Homebrew not available"
+        fi
+        
+        # Check for specific required libraries across both vcpkg and system
+        required_libs=("libcurl" "libssl" "libcrypto" "libSDL2" "libsqlite")
         echo ""
         echo "=== REQUIRED LIBRARY CHECK ==="
         for lib in "${required_libs[@]}"; do
-          found_libs=$(find "$vcpkg_dir/installed" -name "${lib}*.dylib" 2>/dev/null || true)
+          found_libs=""
+          
+          # Check vcpkg first
+          if [ -d "$workspace/vcpkg_installed" ]; then
+            found_libs=$(find "$workspace/vcpkg_installed" -name "${lib}*.dylib" 2>/dev/null || true)
+          fi
+          
+          # Check system locations
+          if [ -z "$found_libs" ]; then
+            found_libs=$(find /opt/homebrew/lib /usr/local/lib -name "${lib}*.dylib" 2>/dev/null | head -5 || true)
+          fi
+          
           if [ -n "$found_libs" ]; then
             echo "✅ Found $lib:"
             echo "$found_libs" | while read -r file; do
@@ -194,7 +172,7 @@ jobs:
               fi
             done
           else
-            echo "⚠️ Missing $lib"
+            echo "⚠️ Missing $lib (may be available as framework)"
           fi
         done
         
@@ -206,23 +184,58 @@ jobs:
     - name: Configure CMake
       run: |
         workspace="${{ github.workspace }}"
-        cmake -B build-vcpkg -S . \
-          -DCMAKE_TOOLCHAIN_FILE="$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-          -DVCPKG_TARGET_TRIPLET=arm64-osx \
-          -DVCPKG_INSTALLED_DIR="$workspace/vcpkg/installed" \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_OSX_ARCHITECTURES=arm64 \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=15.4 \
-          -DCMAKE_CXX_STANDARD=23
+        
+        # Set up environment variables for ARM64 build
+        export MACOSX_DEPLOYMENT_TARGET=11.0
+        export CMAKE_OSX_ARCHITECTURES=arm64
+        
+        # Check if we have vcpkg or need to use system dependencies
+        if [ -f "$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake" ] && [ -d "$workspace/vcpkg_installed/arm64-osx" ]; then
+          echo "=== CONFIGURING WITH VCPKG ==="
+          cmake -B build-vcpkg -S . \
+            -DCMAKE_TOOLCHAIN_FILE="$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DVCPKG_INSTALLED_DIR="$workspace/vcpkg_installed" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DCMAKE_FIND_FRAMEWORK=LAST \
+            -DCMAKE_FIND_APPBUNDLE=LAST
+        else
+          echo "=== CONFIGURING WITH SYSTEM DEPENDENCIES ==="
+          # Set up paths for Homebrew dependencies
+          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig:$PKG_CONFIG_PATH"
+          export CMAKE_PREFIX_PATH="/opt/homebrew:/opt/homebrew/opt/openssl:$CMAKE_PREFIX_PATH"
+          
+          cmake -B build-vcpkg -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DCMAKE_FIND_FRAMEWORK=LAST \
+            -DCMAKE_FIND_APPBUNDLE=LAST \
+            -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl" \
+            -DCURL_ROOT="/opt/homebrew" \
+            -DSDL2_DIR="/opt/homebrew/lib/cmake/SDL2"
+        fi
         
         echo ""
         echo "=== CMAKE CONFIGURATION VERIFICATION ==="
-        echo "VCPKG_TARGET_TRIPLET=arm64-osx"
-        echo "VCPKG_INSTALLED_DIR=$workspace/vcpkg/installed"
-        echo "CMAKE_TOOLCHAIN_FILE=$workspace/vcpkg/scripts/buildsystems/vcpkg.cmake"
         echo "CMAKE_OSX_ARCHITECTURES=arm64"
-        echo "CMAKE_OSX_DEPLOYMENT_TARGET=15.4"
+        echo "CMAKE_OSX_DEPLOYMENT_TARGET=11.0"
         echo "CMAKE_CXX_STANDARD=23"
+        
+        # Verify configuration was successful
+        if [ -f "build-vcpkg/CMakeCache.txt" ]; then
+          echo "✅ CMake configuration successful"
+          echo ""
+          echo "Key configuration variables:"
+          grep -E "(CMAKE_OSX_|CMAKE_CXX_|VCPKG_|OpenSSL_|CURL_)" build-vcpkg/CMakeCache.txt | head -20 || echo "No matching variables found"
+        else
+          echo "❌ CMake configuration failed"
+          exit 1
+        fi
 
     - name: Build with CMake
       run: |
@@ -315,32 +328,28 @@ jobs:
       run: |
         workspace="${{ github.workspace }}"
         dist_dir="$workspace/dist"
-        vcpkg_base="$workspace/vcpkg/installed/arm64-osx"
         app_path="$dist_dir/rouen.app"
         exe_path="$app_path/Contents/MacOS/rouen"
         frameworks_dir="$app_path/Contents/Frameworks"
         
         echo "=== BUNDLING DEPENDENCIES ==="
         
-        # Find vcpkg library path dynamically
-        vcpkg_lib_path=""
-        for potential_path in "$vcpkg_base/lib" "$vcpkg_base/lib64" "$vcpkg_base/libraries"; do
-          if [ -d "$potential_path" ]; then
-            vcpkg_lib_path="$potential_path"
-            echo "✅ Found vcpkg libraries at: $vcpkg_lib_path"
-            break
+        # Find library paths (vcpkg and system)
+        lib_search_paths=()
+        
+        # Add vcpkg paths if they exist
+        if [ -d "$workspace/vcpkg_installed/arm64-osx/lib" ]; then
+          lib_search_paths+=("$workspace/vcpkg_installed/arm64-osx/lib")
+          echo "✅ Found vcpkg libraries at: $workspace/vcpkg_installed/arm64-osx/lib"
+        fi
+        
+        # Add system library paths
+        for sys_path in "/opt/homebrew/lib" "/usr/local/lib"; do
+          if [ -d "$sys_path" ]; then
+            lib_search_paths+=("$sys_path")
+            echo "✅ Found system libraries at: $sys_path"
           fi
         done
-        
-        if [ -z "$vcpkg_lib_path" ]; then
-          echo "⚠️ vcpkg lib directory not found, checking for libraries in vcpkg installed directory..."
-          vcpkg_lib_path="$vcpkg_base"
-          if [ -d "$vcpkg_lib_path" ]; then
-            echo "Using base directory: $vcpkg_lib_path"
-          else
-            echo "❌ No vcpkg directory found, dependency bundling may fail"
-          fi
-        fi
         
         # Create Frameworks directory
         mkdir -p "$frameworks_dir"
@@ -374,9 +383,9 @@ jobs:
               continue
             fi
             
-            # Try to find the library in vcpkg (check multiple locations)
+            # Try to find the library in all search paths
             found_lib=""
-            for search_path in "$vcpkg_lib_path" "$vcpkg_base/lib" "$vcpkg_base/lib64" "$vcpkg_base"; do
+            for search_path in "${lib_search_paths[@]}"; do
               if [ -f "$search_path/$dep_name" ]; then
                 found_lib="$search_path/$dep_name"
                 break
@@ -385,11 +394,16 @@ jobs:
             
             # Also try a broader search if not found
             if [ -z "$found_lib" ]; then
-              found_lib=$(find "$vcpkg_base" -name "$dep_name" -type f 2>/dev/null | head -1)
+              for search_path in "${lib_search_paths[@]}"; do
+                found_lib=$(find "$(dirname "$search_path")" -name "$dep_name" -type f 2>/dev/null | head -1)
+                if [ -n "$found_lib" ]; then
+                  break
+                fi
+              done
             fi
             
             if [ -n "$found_lib" ] && [ -f "$found_lib" ]; then
-              echo "    ✅ Found in vcpkg: $dep_name (at: $found_lib)"
+              echo "    ✅ Found library: $dep_name (at: $found_lib)"
               cp "$found_lib" "$target_path"
               
               # Fix the library's own dependencies recursively
@@ -399,7 +413,7 @@ jobs:
               install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$binary_path" 2>/dev/null || true
               echo "    Updated reference to: @executable_path/../Frameworks/$dep_name"
             else
-              echo "    ⚠️ Not found in vcpkg (may be system library): $dep_name"
+              echo "    ⚠️ Not found (may be system library): $dep_name"
             fi
           done
         }

@@ -75,8 +75,9 @@ Rouen provides convenient installation options for Windows and macOS platforms w
 
 **macOS Requirements:**
 - **Apple Silicon Mac** (M1, M2, M3+) - ARM64 native
-- **macOS 13.3 (Ventura)** or later for full C++23 support
+- **macOS 11.0 (Big Sur)** or later - optimized for modern macOS
 - **Automatic Dependencies**: All required libraries bundled in the app package
+- **Enhanced Build System**: Robust dependency management with vcpkg and system fallback support
 
 ### Linux Installation
 
@@ -748,6 +749,38 @@ cmake --build . --config Release
 - **Process Management**: Windows-specific process enumeration and management
 - **Memory & Disk Monitoring**: Native Windows APIs for system resource monitoring
 - **Path Handling**: Robust Windows path handling with proper drive letter support
+
+#### Build Configuration Files
+
+Rouen includes specialized build configuration files for enhanced cross-platform compatibility and optimized dependency management:
+
+**vcpkg Configuration Files:**
+
+- **`vcpkg.json`**: Primary dependency manifest defining all required packages with features
+- **`vcpkg-macos.json`**: macOS-specific manifest using system OpenSSL to avoid ARM64 build conflicts
+- **`vcpkg-configuration.json`**: Platform settings with updated baseline for latest bug fixes
+- **`arm64-osx-custom.cmake`**: Custom triplet for macOS ARM64 with optimized compiler flags
+
+**Build Scripts:**
+
+- **`scripts/setup-macos-build.sh`**: Automated macOS build setup with vcpkg fallback to system dependencies
+- **`scripts/update_vcpkg_baseline.sh`**: Utility to update vcpkg baseline for latest compatibility fixes
+
+**Platform-Specific CMake Modules:**
+
+- **`cmake/macos.cmake`**: macOS-specific build configuration and app bundle setup
+- **`cmake/windows.cmake`**: Windows-specific DLL handling and MSI installer configuration
+- **`cmake/linux.cmake`**: Linux-specific library paths and packaging setup
+- **`cmake/dependencies.cmake`**: Cross-platform dependency finding with vcpkg integration
+
+**Configuration Features:**
+
+- **Smart Dependency Resolution**: Automatic fallback from vcpkg to system packages when builds fail
+- **Compiler Optimization**: Platform-specific compiler flags for optimal performance and compatibility
+- **Library Bundling**: Automated library discovery and bundling for self-contained distributions
+- **Error Recovery**: Multiple retry mechanisms and detailed logging for troubleshooting build issues
+
+These configuration files ensure reliable builds across all supported platforms while providing flexibility for different development environments and CI/CD systems.
 - **POSIX Compatibility**: Cross-platform process status handling with Windows-specific implementations
 - **Type Safety**: Full C++23 compatibility with MSVC compiler and proper type conversions
 
@@ -815,6 +848,46 @@ You can trigger a manual build by running the "Windows Release Build" workflow f
 - Build artifacts are always available even if release upload fails
 - Verbose logging helps diagnose any build issues
 - All required dependencies are cached for faster subsequent builds
+
+**Enhanced macOS ARM64 Build System:**
+
+macOS releases are automatically built for Apple Silicon (ARM64) via GitHub Actions with robust dependency management and comprehensive error handling.
+
+**Advanced Build Features:**
+- **Smart vcpkg Setup**: Fresh vcpkg clone with ARM64-specific optimizations and compiler flags
+- **Fallback Strategy**: Automatic system dependency installation via Homebrew if vcpkg fails
+- **Enhanced OpenSSL Handling**: Custom triplet configuration and system OpenSSL fallback for ARM64 compatibility
+- **Retry Logic**: Multiple installation attempts with intelligent cleanup between retries
+- **Comprehensive Library Bundling**: Dynamic library discovery across vcpkg and system paths
+
+**Build Process Improvements:**
+- **Environment Setup**: Proper ARM64 compiler flags (`MACOSX_DEPLOYMENT_TARGET=11.0`, `CMAKE_OSX_ARCHITECTURES=arm64`)
+- **Custom Triplet**: Optimized `arm64-osx-custom.cmake` triplet for better OpenSSL compilation
+- **Dependency Manifest**: Separate `vcpkg-macos.json` using system OpenSSL to avoid build conflicts
+- **Library Search**: Multi-path dependency discovery in vcpkg, Homebrew, and system locations
+- **App Bundle Creation**: Complete `.app` bundle with proper framework structure and code signing
+
+**Automated Dependencies Included:**
+- **Network Libraries**: libcurl with SSL support, OpenSSL (system or bundled)
+- **Graphics**: SDL2, SDL2_image for cross-platform multimedia
+- **Data Processing**: SQLite3, TinyXML2, Glaze JSON library
+- **Development**: Google Test framework for comprehensive testing
+- **Assets**: Fonts, icons, configuration files bundled in Resources
+
+**Release Artifacts:**
+- **DMG Installer**: Convenient drag-and-drop installation with Applications folder link
+- **App Bundle**: Self-contained .app with all dependencies in Frameworks directory
+- **Dependency Manifest**: Detailed DEPENDENCIES.txt with library information and troubleshooting
+- **System Requirements**: Compatible with macOS 11.0+ on Apple Silicon Macs
+
+**Enhanced Error Handling:**
+- **OpenSSL Build Fixes**: Comprehensive handling of ARM64 OpenSSL compilation issues
+- **Baseline Updates**: Updated vcpkg baseline to resolve known macOS ARM64 issues
+- **Multi-Attempt Installation**: Graceful fallback from vcpkg to system dependencies
+- **Detailed Logging**: Extensive verification and debugging output for troubleshooting
+
+**Manual Workflow Trigger:**
+The macOS release workflow can be manually triggered from GitHub Actions with optional release creation, providing flexibility for testing and deployment.
 
 ### Installation (macOS)
 

@@ -520,6 +520,45 @@
 			},
 			"dependsOn": "Build Tests",
 			"detail": "Run SSL UI mode configuration tests"
+		},
+		{
+			"type": "shell",
+			"label": "Setup macOS Build Environment",
+			"command": "${workspaceFolder}/scripts/setup-macos-build.sh",
+			"args": [],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"problemMatcher": [],
+			"detail": "Set up macOS ARM64 build environment with vcpkg and system dependency fallback",
+			"options": {
+				"env": {
+					"GITHUB_WORKSPACE": "${workspaceFolder}"
+				}
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Verify macOS Build System",
+			"command": "${workspaceFolder}/scripts/verify-macos-build.sh",
+			"args": [],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"problemMatcher": [],
+			"detail": "Verify macOS build system configuration and dependencies"
 		}
 	]
 }
