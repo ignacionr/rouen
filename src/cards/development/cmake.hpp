@@ -369,7 +369,7 @@ namespace rouen::cards
                     auto now = std::chrono::steady_clock::now();
                     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start_time_).count();
                     
-                    ImGui::TextColored(colors[4], "Running: %s (%lld seconds)", last_action_.c_str(), elapsed);
+                    ImGui::TextColored(colors[4], "Running: %s (%ld seconds)", last_action_.c_str(), elapsed);
                     
                     // Add a spinner animation to indicate ongoing work
                     static int spinner_counter = 0;

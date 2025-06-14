@@ -27,8 +27,6 @@ function(add_gtest_executable test_name source_file)
         PRIVATE 
         GTest::gtest 
         GTest::gtest_main
-        GTest::gmock
-        GTest::gmock_main
     )
     # Add test to CTest
     add_test(NAME ${test_name} COMMAND ${test_name})
@@ -61,8 +59,6 @@ function(add_gtest_http_executable test_name source_file)
         PRIVATE 
         GTest::gtest 
         GTest::gtest_main
-        GTest::gmock
-        GTest::gmock_main
         CURL::libcurl
     )
     # Add test to CTest

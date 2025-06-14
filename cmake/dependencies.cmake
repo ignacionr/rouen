@@ -1,263 +1,97 @@
-# External dependencies configuration
+# dependencies.cmake - vcpkg-only dependency management for cross-platform builds
+# This file handles all dependency discovery using vcpkg exclusively
 
-# Check if we're using vcpkg
-if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
-  message(STATUS "Using vcpkg for dependency management")
-  
-  # Add vcpkg installed directory (relative to build) to CMAKE_PREFIX_PATH for sqlite3 config
-  list(APPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/vcpkg_installed/arm64-osx")
-  
-  # Find dependencies via vcpkg
-  find_package(OpenGL REQUIRED)
-  find_package(CURL REQUIRED)
-  find_package(unofficial-sqlite3 CONFIG REQUIRED)  # Reverted to unofficial-sqlite3
-  find_package(OpenSSL REQUIRED)
-  find_package(SDL2 CONFIG REQUIRED)
-  find_package(SDL2_image CONFIG REQUIRED)
-  find_package(tinyxml2 CONFIG REQUIRED)
-  find_package(glaze CONFIG REQUIRED)
-  
-  # Set variables for compatibility with existing code
-  set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)  # Kept as unofficial::sqlite3::sqlite3
-  set(TINYXML2_LIBRARIES tinyxml2::tinyxml2)
-  set(SDL2_LIBRARIES $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
-  set(SDL2_IMAGE_LIBRARIES $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>)
-  
-else()
-  # Traditional package finding for non-vcpkg builds
-  if(NOT WIN32)
-    find_package(OpenGL REQUIRED)
-    find_package(CURL REQUIRED)
-    find_package(SQLite3 REQUIRED)
-    find_package(OpenSSL REQUIRED)
-  else()
-    # Windows without vcpkg - should not happen in modern setup
-    message(FATAL_ERROR "Windows builds require vcpkg")
-  endif()
-  
-  # Platform-specific dependencies for non-vcpkg builds
-  if(UNIX AND NOT APPLE)
-    # Additional dependencies for Linux
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GTK3 IMPORTED_TARGET gtk+-3.0)
-    
-    # Try pkg-config for SDL2 first (more reliable on Linux)
-    pkg_check_modules(SDL2 IMPORTED_TARGET sdl2)
-    pkg_check_modules(SDL2_IMAGE IMPORTED_TARGET SDL2_image)
-  endif()
-  
-  # TinyXML2 handling for non-vcpkg builds
-  find_package(PkgConfig QUIET)
-  if(PKG_CONFIG_FOUND)
-    pkg_check_modules(TINYXML2 QUIET tinyxml2)
-  endif()
+message(STATUS "Loading dependencies.cmake - vcpkg-only configuration")
 
-  if(NOT TINYXML2_FOUND)
-    find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
-      PATH_SUFFIXES include
-      PATHS
-      /usr/local/include
-      /usr/include
-      /opt/local/include
-      /opt/homebrew/include  # Important for M1/M2 Macs with Homebrew
-      /opt/homebrew/Cellar/tinyxml2/*/include  # Path to Homebrew Cellar
-    )
-
-    find_library(TINYXML2_LIBRARIES
-      NAMES tinyxml2
-      PATHS
-      /usr/local/lib
-      /usr/lib
-      /usr/lib/x86_64-linux-gnu  # Common path on Debian/Ubuntu
-      /opt/local/lib
-      /opt/homebrew/lib  # Important for M1/M2 Macs with Homebrew
-      /opt/homebrew/Cellar/tinyxml2/*/lib  # Path to Homebrew Cellar
-    )
-
-    if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)
-      set(TINYXML2_FOUND TRUE)
-    endif()
-  endif()
-
-  if(NOT TINYXML2_FOUND)
-    message(FATAL_ERROR "TinyXML2 not found. Please install it using your system package manager (apt-get install libtinyxml2-dev on Debian/Ubuntu, brew install tinyxml2 on macOS)")
-  else()
-    message(STATUS "Found TinyXML2: ${TINYXML2_LIBRARIES}")
-    message(STATUS "TinyXML2 include directories: ${TINYXML2_INCLUDE_DIRS}")
-  endif()
-
-  # SDL2 handling for non-vcpkg builds
-  if(NOT SDL2_FOUND)
-    find_path(SDL2_INCLUDE_DIRS SDL.h
-      PATH_SUFFIXES SDL2 include/SDL2 include
-      PATHS
-      ~/Library/Frameworks
-      /Library/Frameworks
-      /usr/local/include/SDL2
-      /usr/include/SDL2
-      /usr/local/include
-      /usr/include
-      /opt/local/include/SDL2
-      /opt/homebrew/include/SDL2
-    )
-
-    find_library(SDL2_LIBRARIES
-      NAMES SDL2
-      PATHS
-      ~/Library/Frameworks
-      /Library/Frameworks
-      /usr/local/lib
-      /usr/lib
-      /usr/lib/x86_64-linux-gnu
-      /opt/local/lib
-      /opt/homebrew/lib
-    )
-
-    if(SDL2_INCLUDE_DIRS AND SDL2_LIBRARIES)
-      set(SDL2_FOUND TRUE)
-    endif()
-  endif()
-
-  if(NOT SDL2_FOUND)
-    message(FATAL_ERROR "SDL2 not found. Please install it using your system package manager.")
-  else()
-    message(STATUS "Found SDL2: ${SDL2_LIBRARIES}")
-    message(STATUS "SDL2 include directories: ${SDL2_INCLUDE_DIRS}")
-  endif()
-
-  # SDL2_image handling for non-vcpkg builds
-  if(NOT SDL2_IMAGE_FOUND)
-    find_path(SDL2_IMAGE_INCLUDE_DIRS SDL_image.h
-      PATH_SUFFIXES SDL2 include/SDL2 include
-      PATHS
-      ~/Library/Frameworks
-      /Library/Frameworks
-      /usr/local/include/SDL2
-      /usr/include/SDL2
-      /usr/local/include
-      /usr/include
-      /opt/local/include/SDL2
-      /opt/homebrew/include/SDL2
-    )
-
-    find_library(SDL2_IMAGE_LIBRARIES
-      NAMES SDL2_image
-      PATHS
-      ~/Library/Frameworks
-      /Library/Frameworks
-      /usr/local/lib
-      /usr/lib
-      /usr/lib/x86_64-linux-gnu
-      /opt/local/lib
-      /opt/homebrew/lib
-    )
-
-    if(SDL2_IMAGE_INCLUDE_DIRS AND SDL2_IMAGE_LIBRARIES)
-      set(SDL2_IMAGE_FOUND TRUE)
-    endif()
-  endif()
-
-  if(NOT SDL2_IMAGE_FOUND)
-    message(FATAL_ERROR "SDL2_image not found. Please install it using your system package manager.")
-  else()
-    message(STATUS "Found SDL2_image: ${SDL2_IMAGE_LIBRARIES}")
-    message(STATUS "SDL2_image include directories: ${SDL2_IMAGE_INCLUDE_DIRS}")
-  endif()
+# Ensure we're using vcpkg
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE OR NOT CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+    message(FATAL_ERROR "This project requires vcpkg. Please configure with -DCMAKE_TOOLCHAIN_FILE=path/to/vcpkg.cmake")
 endif()
 
-# Fetch dependencies
+# Set minimum required versions
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+
+# Core vcpkg dependencies - find them all
+message(STATUS "Finding vcpkg dependencies...")
+
+# HTTP/SSL libraries
+find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
+
+# Database
+find_package(unofficial-sqlite3 REQUIRED)
+
+# Graphics and UI
+find_package(SDL2 REQUIRED)
+find_package(OpenGL REQUIRED)
+
+# JSON processing
+find_package(glaze REQUIRED)
+
+# Testing framework
+find_package(GTest REQUIRED)
+
+# Platform-specific system dependencies that vcpkg doesn't provide
+if(UNIX AND NOT APPLE)
+    # Linux-specific
+    find_package(X11 REQUIRED)
+    find_package(Threads REQUIRED)
+elseif(APPLE)
+    # macOS-specific
+    find_package(Threads REQUIRED)
+elseif(WIN32)
+    # Windows-specific - most handled by vcpkg
+    find_package(Threads REQUIRED)
+endif()
+
+# ImGui setup via FetchContent (since vcpkg version may not include all backends we need)
 include(FetchContent)
 
+message(STATUS "Setting up ImGui via FetchContent...")
 FetchContent_Declare(
-  imgui
-  GIT_REPOSITORY https://github.com/ocornut/imgui.git
-  GIT_TAG v1.89.9  # Using a specific tag instead of master for stability
-  GIT_SHALLOW TRUE
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG v1.89.9
+    GIT_SHALLOW TRUE
 )
 
 FetchContent_MakeAvailable(imgui)
 
-# Create ImGui library
+# Create ImGui library target
 add_library(imgui STATIC
-  ${imgui_SOURCE_DIR}/imgui.cpp
-  ${imgui_SOURCE_DIR}/imgui_demo.cpp
-  ${imgui_SOURCE_DIR}/imgui_draw.cpp
-  ${imgui_SOURCE_DIR}/imgui_tables.cpp
-  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp  # Add SDL2 renderer implementation
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
 )
 
-target_include_directories(imgui PUBLIC 
-  ${imgui_SOURCE_DIR}
-  ${imgui_SOURCE_DIR}/backends
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
 )
 
-# Configure ImGui linking based on build type
-if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
-  target_link_libraries(imgui PUBLIC 
-    ${SDL2_LIBRARIES}
-    ${OPENGL_LIBRARIES}
-  )
-else()
-  target_include_directories(imgui PUBLIC 
-    ${SDL2_INCLUDE_DIRS}
-    ${OPENGL_INCLUDE_DIR}
-  )
-  target_link_libraries(imgui PUBLIC 
-    ${SDL2_LIBRARIES}
-    ${OPENGL_LIBRARIES}
-  )
-endif()
-
-# Disable specific warnings for ImGui to prevent warnings
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-  # Only apply for non-Apple Clang that supports the nontrivial-memcall flag
-  target_compile_options(imgui PRIVATE -Wno-nontrivial-memcall)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  # GCC equivalent if needed
-  target_compile_options(imgui PRIVATE -Wno-class-memaccess)
-elseif(MSVC)
-  # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
-  target_compile_options(imgui PRIVATE /O2)
-  # Remove any -O3 flags that might have been set globally
-  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-  # Set target-specific compile flags to ensure no -O3 flags are inherited
-  set_target_properties(imgui PROPERTIES COMPILE_FLAGS "")
-endif()
-
-# Set up ImColorTextEdit library using local files
-add_library(imcolortextedit 
-  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
-)
-target_include_directories(imcolortextedit PUBLIC 
-  ${imgui_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
-  ${CMAKE_SOURCE_DIR}/src/helpers
+target_link_libraries(imgui PUBLIC
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2-static>
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2>
+    OpenGL::GL
 )
 
-# Link imcolortextedit to imgui
+# ImColorTextEdit setup
+message(STATUS "Setting up ImColorTextEdit...")
+add_library(imcolortextedit STATIC
+    ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
+)
+
+target_include_directories(imcolortextedit PUBLIC
+    ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+    ${imgui_SOURCE_DIR}
+)
+
 target_link_libraries(imcolortextedit PUBLIC imgui)
 
-# Disable sign comparison warnings only for the imcolortextedit library
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare -Wno-conversion -Wno-double-promotion)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(imcolortextedit PRIVATE -Wno-sign-compare)
-elseif(MSVC)
-  # For MSVC, avoid the unknown -O3 option by setting proper optimization flags
-  target_compile_options(imcolortextedit PRIVATE /O2)
-  # Remove any -O3 flags that might have been set globally
-  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-  string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-  # Set target-specific compile flags to ensure no -O3 flags are inherited
-  set_target_properties(imcolortextedit PROPERTIES COMPILE_FLAGS "")
-  # Add Windows-specific warning suppressions
-  target_compile_options(imcolortextedit PRIVATE
-    /wd4267  # Suppress 'conversion from size_t to int' warnings
-    /wd4244  # Suppress 'conversion from double to float' warnings
-    /wd4101  # Suppress 'unreferenced local variable' warnings
-  )
-endif()
+message(STATUS "All dependencies configured successfully")

@@ -48,15 +48,14 @@ if(MSVC)
   string(REPLACE "-g" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
+# Project name and version
+project(rouen VERSION 1.0 LANGUAGES CXX)
+
 # Platform-specific compiler settings
 if(APPLE)
-  # Use system clang for better compatibility with macOS headers
-  # set(CMAKE_C_COMPILER "/opt/homebrew/opt/llvm/bin/clang")
-  # set(CMAKE_CXX_COMPILER "/opt/homebrew/opt/llvm/bin/clang++")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-  # set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++")
 elseif(UNIX AND NOT APPLE)
-  # Use clang on Linux if available
+  # Use clang on Linux if available for better C++23 support
   find_program(CLANG_EXECUTABLE clang)
   find_program(CLANGPP_EXECUTABLE clang++)
   
@@ -67,17 +66,7 @@ elseif(UNIX AND NOT APPLE)
   else()
     message(STATUS "Clang not found, using default system compiler")
   endif()
-  
-  # Configure the generator to use Ninja if available
-  find_program(NINJA_EXECUTABLE ninja)
-  if(NINJA_EXECUTABLE)
-    set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "")
-    message(STATUS "Using Ninja build system")
-  endif()
 endif()
-
-# Project name and version
-project(rouen VERSION 1.0 LANGUAGES CXX)
 
 # Set C++ standard to C++23
 set(CMAKE_CXX_STANDARD 23)
@@ -87,9 +76,69 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Enable export of compile commands for VS Code IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Find vcpkg dependencies
+find_package(OpenGL REQUIRED)
+find_package(CURL REQUIRED)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2_image CONFIG REQUIRED)
+find_package(tinyxml2 CONFIG REQUIRED)
+find_package(glaze CONFIG REQUIRED)
+
+# Fetch ImGui using FetchContent
+include(FetchContent)
+message(STATUS "About to fetch ImGui...")
+
+FetchContent_Declare(
+  imgui
+  GIT_REPOSITORY https://github.com/ocornut/imgui.git
+  GIT_TAG v1.89.9
+  GIT_SHALLOW TRUE
+)
+
+message(STATUS "ImGui declared, making available...")
+FetchContent_MakeAvailable(imgui)
+message(STATUS "ImGui available! Source dir: ${imgui_SOURCE_DIR}")
+
+# Create ImGui library
+add_library(imgui STATIC
+  ${imgui_SOURCE_DIR}/imgui.cpp
+  ${imgui_SOURCE_DIR}/imgui_demo.cpp
+  ${imgui_SOURCE_DIR}/imgui_draw.cpp
+  ${imgui_SOURCE_DIR}/imgui_tables.cpp
+  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+)
+
+target_include_directories(imgui PUBLIC 
+  ${imgui_SOURCE_DIR}
+  ${imgui_SOURCE_DIR}/backends
+)
+
+# Link ImGui with vcpkg-provided SDL2 and OpenGL
+target_link_libraries(imgui PUBLIC 
+  $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+  ${OPENGL_LIBRARIES}
+)
+
+# Set up ImColorTextEdit library using local files
+add_library(imcolortextedit 
+  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
+)
+target_include_directories(imcolortextedit PUBLIC 
+  ${imgui_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+  ${CMAKE_SOURCE_DIR}/src/helpers
+)
+
+# Link imcolortextedit to imgui
+target_link_libraries(imcolortextedit PUBLIC imgui)
+
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
-include(cmake/dependencies.cmake)
 
 # Add the executable
 add_executable(${PROJECT_NAME} 
@@ -127,19 +176,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Platform-specific include directories
-if(WIN32)
-  target_include_directories(${PROJECT_NAME} PRIVATE
-    # Windows paths will be handled by vcpkg automatically
-  )
-elseif(UNIX)
-  target_include_directories(${PROJECT_NAME} PRIVATE
-    /usr/include/stb
-    ${CURL_INCLUDE_DIRS}
-    ${SQLite3_INCLUDE_DIRS}
-    ${TINYXML2_INCLUDE_DIRS}
-  )
-endif()
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CURL_INCLUDE_DIRS}
+  ${SQLite3_INCLUDE_DIRS}
+  ${TINYXML2_INCLUDE_DIRS}
+)
 
+# Link with vcpkg-provided dependencies
 target_link_libraries(${PROJECT_NAME} PRIVATE 
   imgui
   imcolortextedit
@@ -147,36 +190,12 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   CURL::libcurl
   OpenSSL::SSL
   OpenSSL::Crypto
+  $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+  $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+  $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
+  tinyxml2::tinyxml2
+  unofficial::sqlite3::sqlite3
 )
-
-# Platform-specific library linking
-if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
-  # Using vcpkg - use modern CMake targets
-  target_link_libraries(${PROJECT_NAME} PRIVATE
-    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-    $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
-    tinyxml2::tinyxml2
-    unofficial::sqlite3::sqlite3
-  )
-elseif(WIN32)
-  # Windows without vcpkg
-  message(FATAL_ERROR "Windows builds require vcpkg")
-elseif(APPLE)
-  target_link_libraries(${PROJECT_NAME} PRIVATE
-    ${SDL2_LIBRARIES}
-    ${SDL2_IMAGE_LIBRARIES}
-    ${TINYXML2_LIBRARIES}
-    ${SQLite3_LIBRARIES}
-  )
-else()
-  target_link_libraries(${PROJECT_NAME} PRIVATE
-    ${SDL2_LIBRARIES}
-    ${SDL2_IMAGE_LIBRARIES}
-    ${TINYXML2_LIBRARIES}
-    ${SQLite3_LIBRARIES}
-  )
-endif()
 
 # Apply stricter warnings only to our code, not third-party libraries
 # We use -Werror for our code but not for third-party libraries
@@ -194,6 +213,11 @@ elseif(WIN32)
   include(cmake/windows.cmake)
 endif()
 
-# Enable CTest
-enable_testing()
-add_subdirectory(tests)
+# Enable CTest only if tests are requested
+option(BUILD_TESTS "Build tests" OFF)
+if(BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+else()
+  message(STATUS "Tests disabled. Use -DBUILD_TESTS=ON to enable tests.")
+endif()

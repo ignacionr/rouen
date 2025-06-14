@@ -5,10 +5,7 @@
 
 #ifdef __clang__
 #pragma clang diagnostic push
-// Only suppress nontrivial-memcall for LLVM Clang, not Apple Clang
-#if !defined(__apple_build_version__)
-#pragma clang diagnostic ignored "-Wnontrivial-memcall"
-#endif
+// Note: Removed -Wnontrivial-memcall suppression due to version compatibility issues
 #endif
 
 #if defined(__GNUC__) && !defined(__clang__)

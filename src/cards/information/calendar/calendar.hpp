@@ -125,7 +125,7 @@ namespace rouen::cards
             auto minutes = elapsed_seconds / 60;
             auto seconds = elapsed_seconds % 60;
             
-            ImGui::Text("Last refresh: %lld:%02lld ago", minutes, seconds);
+            ImGui::Text("Last refresh: %ld:%02ld ago", minutes, seconds);
             ImGui::SameLine();
             
             if (ImGui::Button("Refresh Now")) {

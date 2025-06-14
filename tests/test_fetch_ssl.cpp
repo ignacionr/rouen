@@ -5,7 +5,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <gmock/gmock.h>
+// #include <gmock/gmock.h>  // Temporarily disabled
 #include <cstdlib>
 #include "../src/helpers/fetch.hpp"
 

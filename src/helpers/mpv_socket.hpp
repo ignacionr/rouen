@@ -4,6 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <thread>
+#include <cstring>
 
 // Platform-specific socket headers
 #ifdef _WIN32
@@ -199,7 +200,7 @@ public:
         // Create socket
         socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (socket_fd == -1) {
-            MPV_ERROR_FMT("Socket creation failed: {}", std::strerror(errno));
+            MPV_ERROR_FMT("Socket creation failed: {}", strerror(errno));
             return false;
         }
         
@@ -268,7 +269,7 @@ public:
         
         // Connect to socket
         if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-            MPV_ERROR_FMT("Connection failed: {}", std::strerror(errno));
+            MPV_ERROR_FMT("Connection failed: {}", strerror(errno));
             close(socket_fd);
             socket_fd = -1;
             return false;
@@ -364,7 +365,7 @@ public:
                     continue;
                 } else {
                     // Other socket error
-                    MPV_ERROR_FMT("Socket send error: {}", std::strerror(errno));
+                    MPV_ERROR_FMT("Socket send error: {}", strerror(errno));
                     close(socket_fd);
                     socket_fd = -1;
                     return false;
@@ -452,14 +453,14 @@ public:
                         break;
                     } else {
                         // Socket error
-                        MPV_ERROR_FMT("Socket receive error: {}", std::strerror(errno));
+                        MPV_ERROR_FMT("Socket receive error: {}", strerror(errno));
                         close(socket_fd);
                         socket_fd = -1;
                         return false;
                     }
                 }
             } else if (select_result < 0) {
-                MPV_ERROR_FMT("Socket select error: {}", std::strerror(errno));
+                MPV_ERROR_FMT("Socket select error: {}", strerror(errno));
                 return false;
             } else {
                 // Timeout occurred
