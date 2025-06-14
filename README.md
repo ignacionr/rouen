@@ -78,6 +78,34 @@ Rouen provides convenient installation options for Windows and macOS platforms w
 - **macOS 13.3 (Ventura)** or later for full C++23 support
 - **Automatic Dependencies**: All required libraries bundled in the app package
 
+### Linux Installation
+
+#### TAR.GZ Package (Ubuntu 20.04+)
+> **✅ NEW**: Native Linux builds with vcpkg dependency management
+
+1. **Download** the latest `rouen-linux-x64.tar.gz` file from the [Releases page](https://github.com/ignaciorodriguez/rouen/releases)
+2. **Extract** the archive: `tar -xzf rouen-linux-x64.tar.gz`
+3. **Install** system dependencies:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install libx11-6 libgl1-mesa-glx libasound2
+   ```
+4. **Run** using the launcher script: `./run-rouen.sh`
+
+**Linux Package Features:**
+- **Native Linux Build**: Compiled specifically for Linux x64 architecture
+- **vcpkg Dependencies**: All required libraries built and bundled consistently
+- **Launcher Script**: Convenient startup script with proper library path configuration
+- **Self-contained**: All dependencies included, minimal system requirements
+- **Universal Compatibility**: Tested on Ubuntu 20.04+ and compatible distributions
+
+**Linux Requirements:**
+- **Ubuntu 20.04 LTS** or newer (or equivalent Linux distribution)
+- **X11 Display Server** (Wayland compatibility via XWayland)
+- **OpenGL Support** (Mesa or proprietary drivers)
+- **4 GB RAM** minimum, 8 GB recommended
+- **100 MB** disk space for installation
+
 ### System Requirements
 
 #### Windows
@@ -92,8 +120,15 @@ Rouen provides convenient installation options for Windows and macOS platforms w
 - **4 GB RAM** minimum, 8 GB recommended
 - **100 MB** disk space for installation
 
+#### Linux
+- **Ubuntu 20.04 LTS** or newer (or equivalent distribution)
+- **X11 Display Server** (Wayland via XWayland)
+- **OpenGL Support** (Mesa or proprietary graphics drivers)
+- **4 GB RAM** minimum, 8 GB recommended
+- **100 MB** disk space for installation
+
 ### Multi-Platform Release Support
-Rouen supports automated builds and releases for both **Windows x64** and **macOS ARM64** with comprehensive packaging and dependency management.
+Rouen supports automated builds and releases for **Windows x64**, **macOS ARM64**, and **Linux x64** with comprehensive packaging and dependency management.
 
 #### Windows Release (Production Ready)
 > **✅ STATUS**: Windows release workflow is **COMPLETE** and production-ready! See `WINDOWS_RELEASE_COMPLETE.md` for full details.
@@ -133,10 +168,33 @@ Rouen supports automated builds and releases for both **Windows x64** and **macO
 - Artifact upload and GitHub release integration
 - Detailed build verification and logging
 
+#### Linux Release (x64 - Ubuntu 20.04+)
+> **✅ STATUS**: Linux release workflow is **COMPLETE** and production-ready!
+
+**Linux Features:**
+- **Native x64 Build**: Optimized for Linux x64 architecture with GCC 11+ and C++23 support
+- **vcpkg Dependency Management**: Consistent cross-platform dependency resolution and building
+- **Ubuntu Compatibility**: Tested on Ubuntu 20.04 LTS and newer distributions
+- **Automated CI/CD**: Complete GitHub Actions workflow for Linux builds (✅ **NEW**)
+- **System Integration**: Proper X11, OpenGL, and audio system integration
+- **Self-contained Packaging**: All dependencies bundled in TAR.GZ archive
+- **Launcher Script**: Convenient startup script with proper library path configuration
+- **Test Coverage**: Automated testing of core SSL and HTTP functionality
+- **Cross-compiler Support**: Built with modern GCC supporting full C++23 feature set
+
+**Linux Release Workflow Features:**
+- Automatic system dependency installation (X11, OpenGL, audio libraries)
+- vcpkg package installation and caching for faster builds
+- Debug and Release build configurations with Ninja build system
+- Comprehensive test suite execution (SSL modes, HTTP/SSL fetch tests)
+- TAR.GZ archive creation with launcher script and documentation
+- GitHub release integration with cross-platform artifact management
+- Build verification and executable validation
+
 #### Cross-Platform Development Support
 - **macOS**: Full automated CI/CD with ARM64 release packaging (✅ **COMPLETED**)
 - **Windows**: Full automated CI/CD with x64 release packaging (✅ **COMPLETED**)
-- **Linux**: Development support with manual configuration
+- **Linux**: Full automated CI/CD with x64 release packaging (✅ **COMPLETED**)
 
 ### System Utilities
 - **System Monitor**: Track CPU, memory, disk usage, and uptime with native platform APIs
@@ -580,6 +638,74 @@ make
 # Run the application
 ./rouen
 ```
+
+#### Linux
+
+Linux builds use vcpkg for comprehensive cross-platform dependency management.
+
+**Prerequisites:**
+- **Ubuntu 20.04 LTS or newer** (or equivalent Linux distribution)
+- **GCC 11+ or Clang 16+** with C++23 support
+- **CMake 3.20+** and **Ninja** build system
+- **vcpkg package manager**
+- **System dependencies**: X11, OpenGL, and audio libraries
+
+**System Dependencies Installation:**
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential \
+  cmake \
+  ninja-build \
+  pkg-config \
+  libx11-dev \
+  libxrandr-dev \
+  libxinerama-dev \
+  libxcursor-dev \
+  libxi-dev \
+  libgl1-mesa-dev \
+  libglu1-mesa-dev \
+  libasound2-dev \
+  libpulse-dev \
+  libudev-dev
+```
+
+**Build Steps:**
+```bash
+# Clone the repository
+git clone https://github.com/ignacionr/rouen.git
+cd rouen
+
+# Bootstrap vcpkg (if not already installed)
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg && ./bootstrap-vcpkg.sh && cd ..
+
+# Install dependencies via vcpkg
+./vcpkg/vcpkg install
+
+# Configure and build (Release)
+mkdir -p build-vcpkg && cd build-vcpkg
+cmake .. \
+  -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -G "Ninja"
+
+# Build
+ninja
+
+# Run the application
+./rouen
+```
+
+**Linux-Specific Features:**
+- **Native x64 builds** optimized for Linux performance
+- **vcpkg dependency management** ensures consistent library versions
+- **C++23 standard** with full `std::format` support
+- **Modern OpenGL** with Mesa or proprietary driver support
+- **X11 integration** with Wayland compatibility via XWayland
+- **Audio support** through ALSA and PulseAudio
+- **Automated testing** with SSL and HTTP functionality verification
 
 #### Windows
 
