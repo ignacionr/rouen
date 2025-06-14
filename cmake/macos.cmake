@@ -1,8 +1,7 @@
 # macOS-specific configuration
 
 # Set minimum macOS deployment target to support C++23 std::format
-# Updated to 15.5 for latest macOS compatibility and vcpkg compatibility
-set(CMAKE_OSX_DEPLOYMENT_TARGET "15.5")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "15.4")
 message(STATUS "Setting macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET} for C++23 std::format support and latest macOS compatibility")
 
 # Ensure we're using the latest C++ standard library with proper std::format support

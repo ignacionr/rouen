@@ -100,7 +100,7 @@ The project uses vcpkg for dependency management. Include paths are configured t
 The configuration is set up for C++23 standard with:
 - `cppStandard`: `"c++23"`
 - Compiler flags: `-std=c++2b` (clang's C++23 flag)
-- macOS deployment target: `15.5` for full C++23 support
+- macOS deployment target: `15.4` for full C++23 support
 
 ## Troubleshooting False Positive Errors
 
@@ -267,8 +267,7 @@ Add platform-specific compiler arguments in `compilerArgs`:
         "-Wall",
         "-Wextra",
         "-arch",
-        "arm64",
-        "-mmacosx-version-min=15.5"
+        "arm64"
     ]
 }
 ```

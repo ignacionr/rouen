@@ -35,8 +35,7 @@
                 "-Wall",
                 "-Wextra",
                 "-arch",
-                "arm64",
-                "-mmacosx-version-min=15.5"
+                "arm64"
             ]
         },
         {
@@ -70,8 +69,7 @@
                 "-Wall",
                 "-Wextra",
                 "-arch",
-                "arm64",
-                "-mmacosx-version-min=15.5"
+                "arm64"
             ]
         },
         {

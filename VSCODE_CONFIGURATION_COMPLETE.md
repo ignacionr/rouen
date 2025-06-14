@@ -81,7 +81,7 @@ The configuration now properly uses `build-vcpkg/compile_commands.json` which co
 Fully configured for modern C++ development:
 - C++23 standard (`-std=c++2b` in clang)
 - Apple Silicon optimization (`-arch arm64`)
-- macOS 15.5 deployment target for std::format support
+- macOS 15.4 deployment target for std::format support
 - libc++ standard library
 
 ### vcpkg Dependency Resolution
