@@ -301,7 +301,7 @@ private:
                 auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, current_data);
                 if (error) {
                     WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
-                                glz::format_error(error));
+                                glz::format_error(error, current_data));
                     current_success = false;
                 } else {
                     current_weather_ = std::move(data);
@@ -319,7 +319,7 @@ private:
                 auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, forecast_data);
                 if (error) {
                     WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
-                                glz::format_error(error));
+                                glz::format_error(error, forecast_data));
                     forecast_success = false;
                 } else {
                     forecast_ = std::move(data);

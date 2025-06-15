@@ -188,6 +188,23 @@
     "terminal.integrated.fontSize": 12,
     "terminal.integrated.fontFamily": "SF Mono, Monaco, 'Courier New', monospace",
     
+    // Build and task settings
+    "task.autoDetect": "on",
+    "task.problemMatchers.autoDetect": "on",
+    "task.showDecorations": true,
+    "task.allowAutomaticTasks": "on",
+    
+    // Problems panel settings
+    "problems.autoReveal": true,
+    "problems.showCurrentInStatus": true,
+    
+    // CMake extension settings
+    "cmake.buildBeforeRun": true,
+    "cmake.clearOutputBeforeBuild": true,
+    "cmake.showSystemKits": false,
+    "cmake.configureOnOpen": false,
+    "cmake.automaticReconfigure": false,
+    
     // Search settings to include test results
     "search.exclude": {
         "**/build*": false,
@@ -203,5 +220,9 @@
         "test": {
             "statusBarVisibility": "visible"
         }
-    }
+    },
+    
+    // Build output settings
+    "output.smartScroll.enabled": true,
+    "terminal.integrated.enablePersistentSessions": false
 }

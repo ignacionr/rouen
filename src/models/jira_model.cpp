@@ -249,10 +249,14 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
         if (json.contains("errorMessages") || json.contains("errors")) {
             std::string error_msg = "JIRA API returned error: ";
             if (json.contains("errorMessages")) {
-                error_msg += "Messages: " + json["errorMessages"].dump().value_or("[]");
+                std::string error_messages_str;
+                glz::write_json(json["errorMessages"], error_messages_str);
+                error_msg += "Messages: " + error_messages_str;
             }
             if (json.contains("errors")) {
-                error_msg += " Errors: " + json["errors"].dump().value_or("{}");
+                std::string errors_str;
+                glz::write_json(json["errors"], errors_str);
+                error_msg += " Errors: " + errors_str;
             }
             throw std::runtime_error(error_msg);
         }
@@ -270,7 +274,9 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
             DB_INFO_FMT("  Base URL: {}", info.base_url);
             DB_INFO_FMT("  Title: {}", info.server_title);
         } catch (const std::exception& e) {
-            throw std::runtime_error("Failed to extract server info from JSON: " + std::string(e.what()) + ". JSON: " + json.dump().value_or("{}"));
+            std::string json_str;
+            glz::write_json(json, json_str);
+            throw std::runtime_error("Failed to extract server info from JSON: " + std::string(e.what()) + ". JSON: " + json_str);
         }
         
     } catch (const std::exception& e) {
@@ -428,8 +434,12 @@ std::future<std::vector<jira_project>> jira_model::get_projects() {
                     project.name = json["name"].get<std::string>();
                     
                     // Description might be null
-                    if (json.contains("description") && !json["description"].is_null()) {
-                        project.description = json["description"].get<std::string>();
+                    if (json.contains("description")) {
+                        try {
+                            project.description = json["description"].get<std::string>();
+                        } catch (const std::exception&) {
+                            // Handle null or invalid description
+                        }
                     }
                     
                     projects.push_back(project);
@@ -462,8 +472,12 @@ std::future<jira_project> jira_model::get_project(const std::string& project_key
                 project.name = json["name"].get<std::string>();
                 
                 // Description might be null
-                if (json.contains("description") && !json["description"].is_null()) {
-                    project.description = json["description"].get<std::string>();
+                if (json.contains("description")) {
+                    try {
+                        project.description = json["description"].get<std::string>();
+                    } catch (const std::exception&) {
+                        // Handle null or invalid description
+                    }
                 }
                 
                 // Process issue types if available
@@ -473,8 +487,12 @@ std::future<jira_project> jira_model::get_project(const std::string& project_key
                         type.id = type_json["id"].get<std::string>();
                         type.name = type_json["name"].get<std::string>();
                         
-                        if (type_json.contains("description") && !type_json["description"].is_null()) {
-                            type.description = type_json["description"].get<std::string>();
+                        if (type_json.contains("description")) {
+                            try {
+                                type.description = type_json["description"].get<std::string>();
+                            } catch (const std::exception&) {
+                                // Handle null or invalid description
+                            }
                         }
                         
                         if (type_json.contains("iconUrl")) {
@@ -550,11 +568,11 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                 issue.summary = fields["summary"].get<std::string>();
                 
                 // Description might be null
-                if (fields.contains("description") && !fields["description"].is_null()) {
-                    if (fields["description"].is_string()) {
+                if (fields.contains("description")) {
+                    try {
                         issue.description = fields["description"].get<std::string>();
-                    } else {
-                        // Handle Atlassian Document Format
+                    } catch (const std::exception&) {
+                        // Handle Atlassian Document Format or other formats
                         issue.description = "ADF document - view in browser";
                     }
                 }
@@ -582,42 +600,58 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                 if (issue_type.contains("subtask")) {
                     issue.issue_type.is_subtask = issue_type["subtask"].get<bool>();
                 }
-                if (issue_type.contains("description") && !issue_type["description"].is_null()) {
-                    issue.issue_type.description = issue_type["description"].get<std::string>();
+                if (issue_type.contains("description")) {
+                    try {
+                        issue.issue_type.description = issue_type["description"].get<std::string>();
+                    } catch (const std::exception&) {
+                        // Handle null or invalid description
+                    }
                 }
                 
                 // Assignee (might be null)
-                if (fields.contains("assignee") && !fields["assignee"].is_null()) {
-                    auto& assignee = fields["assignee"];
-                    issue.assignee.account_id = assignee["accountId"].get<std::string>();
-                    issue.assignee.display_name = assignee["displayName"].get<std::string>();
-                    if (assignee.contains("emailAddress")) {
-                        issue.assignee.email = assignee["emailAddress"].get<std::string>();
-                    }
-                    if (assignee.contains("avatarUrls") && 
-                        assignee["avatarUrls"].contains("48x48")) {
-                        issue.assignee.avatar_url = assignee["avatarUrls"]["48x48"].get<std::string>();
+                if (fields.contains("assignee")) {
+                    try {
+                        auto& assignee = fields["assignee"];
+                        issue.assignee.account_id = assignee["accountId"].get<std::string>();
+                        issue.assignee.display_name = assignee["displayName"].get<std::string>();
+                        if (assignee.contains("emailAddress")) {
+                            issue.assignee.email = assignee["emailAddress"].get<std::string>();
+                        }
+                        if (assignee.contains("avatarUrls") && 
+                            assignee["avatarUrls"].contains("48x48")) {
+                            issue.assignee.avatar_url = assignee["avatarUrls"]["48x48"].get<std::string>();
+                        }
+                    } catch (const std::exception&) {
+                        // Handle null or invalid assignee
                     }
                 }
                 
                 // Reporter (might be null)
-                if (fields.contains("reporter") && !fields["reporter"].is_null()) {
-                    auto& reporter = fields["reporter"];
-                    issue.reporter.account_id = reporter["accountId"].get<std::string>();
-                    issue.reporter.display_name = reporter["displayName"].get<std::string>();
-                    if (reporter.contains("emailAddress")) {
-                        issue.reporter.email = reporter["emailAddress"].get<std::string>();
-                    }
-                    if (reporter.contains("avatarUrls") && 
-                        reporter["avatarUrls"].contains("48x48")) {
-                        issue.reporter.avatar_url = reporter["avatarUrls"]["48x48"].get<std::string>();
+                if (fields.contains("reporter")) {
+                    try {
+                        auto& reporter = fields["reporter"];
+                        issue.reporter.account_id = reporter["accountId"].get<std::string>();
+                        issue.reporter.display_name = reporter["displayName"].get<std::string>();
+                        if (reporter.contains("emailAddress")) {
+                            issue.reporter.email = reporter["emailAddress"].get<std::string>();
+                        }
+                        if (reporter.contains("avatarUrls") && 
+                            reporter["avatarUrls"].contains("48x48")) {
+                            issue.reporter.avatar_url = reporter["avatarUrls"]["48x48"].get<std::string>();
+                        }
+                    } catch (const std::exception&) {
+                        // Handle null or invalid reporter
                     }
                 }
                 
                 // Labels
-                if (fields.contains("labels") && !fields["labels"].is_null()) {
-                    for (const auto& label : fields["labels"].get<std::vector<glz::json_t>>()) {
-                        issue.labels.push_back(label.get<std::string>());
+                if (fields.contains("labels")) {
+                    try {
+                        for (const auto& label : fields["labels"].get<std::vector<glz::json_t>>()) {
+                            issue.labels.push_back(label.get<std::string>());
+                        }
+                    } catch (const std::exception&) {
+                        // Handle null or invalid labels
                     }
                 }
             }
@@ -668,10 +702,7 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
             payload["fields"] = fields;
             
             std::string json_payload;
-            auto result = glz::write_json(payload, json_payload);
-            if (!result) {
-                throw std::runtime_error("Failed to serialize JSON payload");
-            }
+            glz::write_json(payload, json_payload);
             
             // Make API request
             std::string response = make_request("issue", "POST", json_payload);
@@ -750,10 +781,7 @@ bool jira_model::transition_issue(const std::string& issue_key, const std::strin
         payload["transition"] = transition_obj;
         
         std::string json_payload;
-        auto result = glz::write_json(payload, json_payload);
-        if (!result) {
-            throw std::runtime_error("Failed to serialize JSON payload");
-        }
+        glz::write_json(payload, json_payload);
         
         // Make API request
         make_request(std::format("issue/{}/transitions", issue_key), "POST", json_payload);
@@ -792,10 +820,7 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             payload["fields"] = fields_array;
             
             std::string json_payload;
-            auto write_error = glz::write_json(payload, json_payload);
-            if (write_error) {
-                throw std::runtime_error(std::format("Failed to serialize JSON payload: {}", glz::format_error(write_error)));
-            }
+            glz::write_json(payload, json_payload);
             
             // Make API request
             std::string response = make_request("search", "POST", json_payload);
@@ -804,7 +829,7 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             auto result_error = glz::read<glz::opts{.error_on_unknown_keys = false}>(result, response);
 
             if (result_error) {
-                std::cerr << "Failed to parse search result JSON: " << glz::format_error(result_error) << std::endl;
+                std::cerr << "Failed to parse search result JSON: " << glz::format_error(result_error, response) << std::endl;
                 throw std::runtime_error("Failed to parse search result JSON");
             }
         } catch (const std::exception& e) {
@@ -956,10 +981,7 @@ static bool save_profiles(const std::vector<jira_connection_profile>& profiles) 
         
         // Convert to JSON
         std::string json_str;
-        auto result = glz::write_json(filtered_profiles, json_str);
-        if (!result) {
-            throw std::runtime_error("Failed to serialize JSON profiles");
-        }
+        glz::write_json(filtered_profiles, json_str);
         
         // Write to file
         std::ofstream file(profiles_path);
@@ -1057,10 +1079,7 @@ std::future<bool> jira_model::add_comment(const std::string& issue_key, const st
             payload["body"] = comment_text;
             
             std::string json_payload;
-            auto result = glz::write_json(payload, json_payload);
-            if (!result) {
-                throw std::runtime_error("Failed to serialize JSON payload");
-            }
+            glz::write_json(payload, json_payload);
             
             // Make API request
             make_request(std::format("issue/{}/comment", issue_key), "POST", json_payload);

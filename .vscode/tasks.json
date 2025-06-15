@@ -22,12 +22,11 @@
 		},
 		{
 			"type": "shell",
-			"label": "Build with vcpkg",
-			"command": "cmake",
+			"label": "Smart Build (Default)",
+			"command": "bash",
 			"args": [
-				"--build",
-				"build-vcpkg",
-				"--parallel"
+				"-c",
+				"echo \"Smart Build: Checking available build configurations...\" && if [ -d \"build-vcpkg\" ] && [ -f \"build-vcpkg/CMakeCache.txt\" ] && [ -f \"build-vcpkg/Makefile\" ]; then echo \"Found vcpkg build - building...\" && cmake --build build-vcpkg --parallel; elif [ -d \"build\" ] && [ -f \"build/CMakeCache.txt\" ] && [ -f \"build/Makefile\" ]; then echo \"Found system build - building...\" && cmake --build build --parallel; else echo \"No valid build found. Configuring with system dependencies...\" && cmake -B build -DCMAKE_BUILD_TYPE=Debug && echo \"Building...\" && cmake --build build --parallel; fi"
 			],
 			"group": {
 				"kind": "build",
@@ -44,6 +43,30 @@
 			"problemMatcher": [
 				"$gcc"
 			],
+			"detail": "Smart build: detects existing builds and provides clear guidance"
+		},
+		{
+			"type": "shell",
+			"label": "Build with vcpkg",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"build-vcpkg",
+				"--parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"dependsOn": "Configure with vcpkg",
 			"detail": "Build using vcpkg dependencies"
 		},
 		{
@@ -559,6 +582,65 @@
 			},
 			"problemMatcher": [],
 			"detail": "Verify macOS build system configuration and dependencies"
+		},
+		{
+			"type": "shell",
+			"label": "Clean and Rebuild",
+			"command": "bash",
+			"args": [
+				"-c",
+				"echo \"Cleaning build directories...\" && rm -rf build build-vcpkg && echo \"Configuring with system dependencies...\" && timeout 300 cmake -B build -DCMAKE_BUILD_TYPE=Debug && echo \"Building...\" && cmake --build build --parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Clean all build directories and rebuild from scratch"
+		},
+		{
+			"type": "shell",
+			"label": "Quick System Build",
+			"command": "bash",
+			"args": [
+				"-c",
+				"if [ ! -d \"build\" ] || [ ! -f \"build/Makefile\" ]; then echo \"Configuring...\" && timeout 300 cmake -B build -DCMAKE_BUILD_TYPE=Debug; fi && echo \"Building...\" && cmake --build build --parallel"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Fast system build with configuration if needed"
+		},
+		{
+			"type": "shell",
+			"label": "Run Rouen (System Build)",
+			"command": "./build/rouen",
+			"args": [],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "new"
+			},
+			"dependsOn": "Quick System Build",
+			"detail": "Build and run Rouen using system dependencies"
 		}
 	]
 }

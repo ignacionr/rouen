@@ -179,7 +179,7 @@ namespace mail {
                 
                 if (result) {
                     // Error handling
-                    summary_ = "Error parsing metadata: " + std::string(glz::format_error(result));
+                    summary_ = "Error parsing metadata: " + std::string(glz::format_error(result, metadata_json));
                     return;
                 }
                 

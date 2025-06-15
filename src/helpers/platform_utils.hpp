@@ -122,7 +122,7 @@ namespace rouen::platform
             char result[PATH_MAX];
             ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
             if (count > 0) {
-                exec_path = std::filesystem::path(std::string(result, count)).parent_path();
+                exec_path = std::filesystem::path(std::string(result, static_cast<std::string::size_type>(count))).parent_path();
             } else {
                 // Fallback to current path if readlink fails
                 exec_path = current_path;

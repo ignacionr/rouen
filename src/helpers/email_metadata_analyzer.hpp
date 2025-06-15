@@ -33,10 +33,7 @@ namespace mail {
                 if (existing) {
                     // We already have metadata for this email, return it
                     std::string json_result;
-                    auto write_res = glz::write_json(*existing, json_result);
-                    if (write_res) {
-                        "notify"_sfn(std::format("JSON serialization error: {}", glz::format_error(write_res)));
-                    }
+                    glz::write_json(*existing, json_result);
                     return json_result;
                 }
                 
@@ -54,10 +51,7 @@ namespace mail {
                     repository_.store(metadata);
                     
                     std::string json_result;
-                    auto write_res = glz::write_json(metadata, json_result);
-                    if (write_res) {
-                        "notify"_sfn(std::format("JSON serialization error: {}", glz::format_error(write_res)));
-                    }
+                    glz::write_json(metadata, json_result);
                     return json_result;
                 }
                 
@@ -122,10 +116,7 @@ namespace mail {
                     repository_.store(fallback);
                     
                     std::string json_result;
-                    auto write_res = glz::write_json(fallback, json_result);
-                    if (write_res) {
-                        "notify"_sfn(std::format("JSON serialization error: {}", glz::format_error(write_res)));
-                    }
+                    glz::write_json(fallback, json_result);
                     return json_result;
                 }
                 
@@ -137,10 +128,7 @@ namespace mail {
                 
                 // Serialize the metadata back to JSON using Glaze
                 std::string json_result;
-                auto write_res = glz::write_json(metadata, json_result);
-                if (write_res) {
-                    "notify"_sfn(std::format("JSON serialization error: {}", glz::format_error(write_res)));
-                }
+                glz::write_json(metadata, json_result);
                 return json_result;
             }
             catch (const std::exception& e) {
@@ -163,10 +151,7 @@ namespace mail {
                 repository_.store(error_metadata);
                 
                 std::string json_result;
-                auto write_res = glz::write_json(error_metadata, json_result);
-                if (write_res) {
-                    "notify"_sfn(std::format("JSON serialization error: {}", glz::format_error(write_res)));
-                }
+                glz::write_json(error_metadata, json_result);
                 return json_result;
             }
         }

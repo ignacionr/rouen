@@ -495,6 +495,8 @@ The default log level is controlled by the `ROUEN_LOG_LEVEL` preprocessor variab
 
 vcpkg provides the most reliable cross-platform dependency management. This is the preferred method for building Rouen.
 
+> **🛡️ Infinite Loop Protection**: The build system includes robust timeout protection and target existence checks to prevent CMake configuration from hanging during dependency resolution.
+
 **Setup vcpkg:**
 
 ```bash
@@ -522,11 +524,11 @@ cd rouen
 # Create build directory
 mkdir -p build-vcpkg && cd build-vcpkg
 
-# Configure with vcpkg toolchain
-cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+# Configure with vcpkg toolchain (includes timeout protection)
+timeout 300 cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
 
-# Build
-cmake --build . --parallel
+# Build with timeout protection
+timeout 900 cmake --build . --parallel
 
 # Run the application
 ./rouen.app/Contents/MacOS/rouen  # macOS
@@ -534,6 +536,26 @@ cmake --build . --parallel
 ./rouen  # Linux
 # OR
 .\rouen.exe  # Windows
+```
+
+#### Build System Enhancements
+
+**⚡ Performance & Reliability Features:**
+- **Infinite Loop Prevention**: Robust target existence checks prevent CMake from hanging during dependency resolution
+- **Timeout Protection**: All CMake operations include timeout limits (5min configure, 15min build)
+- **Smart Dependency Caching**: FetchContent results are cached and reused across builds
+- **Cross-Platform Compatibility**: Handles vcpkg and system dependencies seamlessly
+
+**If Build Hangs or Loops:**
+```bash
+# Use timeout protection (recommended)
+timeout 300 cmake -B build-vcpkg -DCMAKE_TOOLCHAIN_FILE=./vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# For system dependencies (Linux/macOS)
+timeout 300 cmake -B build-system -DCMAKE_BUILD_TYPE=Debug
+
+# Check for specific dependency issues
+cmake --debug-output -B build-test 2>&1 | head -50
 ```
 
 #### Windows Build Notes
@@ -1242,6 +1264,17 @@ The project uses modern C++23 features:
 - **macOS**: 13.3 (Ventura) or later for full C++23 support
 - **Windows**: Visual Studio 2022 17.8 or later
 - **Linux**: GCC 13+ or Clang 17+
+
+#### Library Compatibility
+
+**Glaze JSON Library:** The project has been updated to be compatible with modern versions of the Glaze JSON library (v1.9.3+). Key API compatibility changes include:
+
+- **Error Handling**: Updated `glz::format_error` calls to use the new 2-parameter format
+- **JSON Writing**: Removed error checking from `glz::write_json` calls (now returns void)
+- **JSON Access**: Replaced deprecated `.get_string()`, `.get_number()`, `.is_null()`, and other type-checking methods with try-catch patterns
+- **Simplified Patterns**: Streamlined JSON display and manipulation to use modern Glaze API patterns
+
+These changes ensure compatibility with current Glaze releases while maintaining all JSON processing functionality.
 
 ### Key Development Features
 

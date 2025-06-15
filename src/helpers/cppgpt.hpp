@@ -197,10 +197,7 @@ namespace ignacionr
             // Send the API request
             auto url = std::format("{}/chat/completions", base_url_);
             std::string body;
-            auto error = glz::write_json(payload, body);
-            if (error) {
-                throw std::runtime_error("Failed to serialize payload: " + glz::format_error(error));
-            }
+            glz::write_json(payload, body);
             
             auto r = do_post(url, body, [this](auto header_setter){
                 header_setter("Authorization: Bearer " + api_key_);
@@ -211,9 +208,9 @@ namespace ignacionr
             ChatCompletion response;
             auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(response, r);
             if (read_error) {
-                std::cerr << "Error reading response: " << glz::format_error(read_error) << std::endl;
+                std::cerr << "Error reading response: " << glz::format_error(read_error, r) << std::endl;
                 std::cerr << "Response: " << r << std::endl;
-                throw std::runtime_error("Failed to parse response: " + glz::format_error(read_error));
+                throw std::runtime_error("Failed to parse response: " + glz::format_error(read_error, r));
             }
             
             std::string gpt_reply = response.choices[0].message.content;

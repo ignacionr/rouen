@@ -37,6 +37,20 @@ else()
   message(STATUS "Release build enabled with optimizations")
 endif()
 
+# Set compiler before project() call on Linux for better C++23 support
+if(UNIX AND NOT APPLE)
+  find_program(CLANG_EXECUTABLE clang)
+  find_program(CLANGPP_EXECUTABLE clang++)
+  
+  if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
+    set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
+    set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
+    message(STATUS "Using Clang/Clang++ for Linux build")
+  else()
+    message(STATUS "Clang not found, using default system compiler")
+  endif()
+endif()
+
 # For MSVC, ensure no GCC/Clang flags leak in
 if(MSVC)
   # Remove any GCC/Clang-specific flags that might be set by dependencies
@@ -55,17 +69,8 @@ project(rouen VERSION 1.0 LANGUAGES CXX)
 if(APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 elseif(UNIX AND NOT APPLE)
-  # Use clang on Linux if available for better C++23 support
-  find_program(CLANG_EXECUTABLE clang)
-  find_program(CLANGPP_EXECUTABLE clang++)
-  
-  if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
-    set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
-    set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
-    message(STATUS "Using Clang/Clang++ for Linux build")
-  else()
-    message(STATUS "Clang not found, using default system compiler")
-  endif()
+  # Linux-specific settings (compiler already set before project() call)
+  message(STATUS "Linux configuration will be applied after dependencies")
 endif()
 
 # Set C++ standard to C++23
@@ -76,53 +81,161 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Enable export of compile commands for VS Code IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Find vcpkg dependencies
-find_package(OpenGL REQUIRED)
-find_package(CURL REQUIRED)
-find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(SDL2 CONFIG REQUIRED)
-find_package(SDL2_image CONFIG REQUIRED)
-find_package(tinyxml2 CONFIG REQUIRED)
-find_package(glaze CONFIG REQUIRED)
-
-# Fetch ImGui using FetchContent
+# Include FetchContent module
 include(FetchContent)
-message(STATUS "About to fetch ImGui...")
 
-FetchContent_Declare(
-  imgui
-  GIT_REPOSITORY https://github.com/ocornut/imgui.git
-  GIT_TAG v1.89.9
-  GIT_SHALLOW TRUE
-)
+# Check if we're using vcpkg or system dependencies
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  message(STATUS "Using vcpkg dependencies")
+  
+  # Find vcpkg dependencies with specific package names
+  find_package(OpenGL REQUIRED)
+  find_package(CURL REQUIRED)
+  find_package(unofficial-sqlite3 CONFIG REQUIRED)
+  find_package(OpenSSL REQUIRED)
+  find_package(SDL2 CONFIG REQUIRED)
+  find_package(SDL2_image CONFIG REQUIRED)
+  find_package(tinyxml2 CONFIG REQUIRED)
+  find_package(glaze CONFIG REQUIRED)
+  
+  # Set variables for compatibility
+  set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)
+  
+else()
+  message(STATUS "Using system dependencies")
+  
+  # Find system dependencies with standard package names
+  find_package(OpenGL REQUIRED)
+  find_package(CURL REQUIRED)
+  find_package(SQLite3 REQUIRED)
+  find_package(OpenSSL REQUIRED)
+  find_package(PkgConfig REQUIRED)
+  
+  # Use pkg-config for SDL2 on system builds
+  pkg_check_modules(SDL2 REQUIRED sdl2)
+  pkg_check_modules(SDL2_IMAGE REQUIRED SDL2_image)
+  
+  # Create imported targets for SDL2 if they don't exist
+  if(SDL2_FOUND AND NOT TARGET SDL2::SDL2)
+    add_library(SDL2::SDL2 INTERFACE IMPORTED)
+    set_target_properties(SDL2::SDL2 PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
+      INTERFACE_LINK_LIBRARIES "${SDL2_LIBRARIES}"
+      INTERFACE_COMPILE_OPTIONS "${SDL2_CFLAGS_OTHER}"
+    )
+  endif()
+  
+  if(SDL2_IMAGE_FOUND AND NOT TARGET SDL2_image::SDL2_image)
+    add_library(SDL2_image::SDL2_image INTERFACE IMPORTED)
+    set_target_properties(SDL2_image::SDL2_image PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${SDL2_IMAGE_INCLUDE_DIRS}"
+      INTERFACE_LINK_LIBRARIES "${SDL2_IMAGE_LIBRARIES}"
+      INTERFACE_COMPILE_OPTIONS "${SDL2_IMAGE_CFLAGS_OTHER}"
+    )
+  endif()
+  
+  # Try to find tinyxml2 via pkg-config first, then standard find
+  pkg_check_modules(TINYXML2 tinyxml2)
+  if(NOT TINYXML2_FOUND)
+    find_package(PkgConfig QUIET)
+    find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
+      PATHS /opt/homebrew/include /usr/local/include /usr/include)
+    find_library(TINYXML2_LIBRARIES tinyxml2
+      PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+    if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)
+      set(TINYXML2_FOUND TRUE)
+    endif()
+  endif()
+  
+  if(NOT TINYXML2_FOUND)
+    message(FATAL_ERROR "TinyXML2 not found. Please install with: brew install tinyxml2")
+  endif()
+  
+  # For glaze, try to find it first, then fall back to FetchContent
+  find_package(glaze CONFIG QUIET)
+  if(NOT glaze_FOUND AND NOT TARGET glaze AND NOT TARGET glaze::glaze)
+    message(STATUS "Glaze not found via system packages. Using FetchContent as fallback...")
+    
+    # Use FetchContent to get Glaze - using an older compatible version
+    FetchContent_Declare(
+      glaze
+      GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+      GIT_TAG v1.9.3
+      GIT_SHALLOW TRUE
+    )
+    
+    FetchContent_MakeAvailable(glaze)
+    
+    # Create glaze::glaze alias if it doesn't exist
+    if(NOT TARGET glaze::glaze AND TARGET glaze)
+      add_library(glaze::glaze ALIAS glaze)
+      message(STATUS "Created glaze::glaze alias")
+    endif()
+  endif()
+  
+  # Set variables for compatibility with vcpkg naming
+  set(SQLite3_LIBRARIES SQLite::SQLite3)
+endif()
 
-message(STATUS "ImGui declared, making available...")
-FetchContent_MakeAvailable(imgui)
-message(STATUS "ImGui available! Source dir: ${imgui_SOURCE_DIR}")
+# Handle ImGui - always use FetchContent since we need specific backends
+# Use a simple target check to prevent infinite loops
+if(NOT TARGET imgui)
+  message(STATUS "Setting up ImGui via FetchContent...")
+  
+  # Check if already declared to prevent redeclaration
+  get_property(imgui_declared GLOBAL PROPERTY EP_STEPS_imgui)
+  if(NOT imgui_declared)
+    FetchContent_Declare(
+      imgui
+      GIT_REPOSITORY https://github.com/ocornut/imgui.git
+      GIT_TAG v1.89.9
+      GIT_SHALLOW TRUE
+    )
+    
+    # Use modern FetchContent_MakeAvailable instead of deprecated Populate
+    FetchContent_MakeAvailable(imgui)
+  endif()
+  
+  message(STATUS "ImGui source dir: ${imgui_SOURCE_DIR}")
 
-# Create ImGui library
-add_library(imgui STATIC
-  ${imgui_SOURCE_DIR}/imgui.cpp
-  ${imgui_SOURCE_DIR}/imgui_demo.cpp
-  ${imgui_SOURCE_DIR}/imgui_draw.cpp
-  ${imgui_SOURCE_DIR}/imgui_tables.cpp
-  ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-  ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
-)
+  # Create ImGui library 
+  add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+  )
 
-target_include_directories(imgui PUBLIC 
-  ${imgui_SOURCE_DIR}
-  ${imgui_SOURCE_DIR}/backends
-)
+  target_include_directories(imgui PUBLIC 
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+  )
+  
+  message(STATUS "ImGui target created successfully")
+else()
+  message(STATUS "ImGui target already exists, skipping setup")
+endif()
 
-# Link ImGui with vcpkg-provided SDL2 and OpenGL
-target_link_libraries(imgui PUBLIC 
-  $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-  ${OPENGL_LIBRARIES}
-)
+# Link ImGui with dependencies (conditional based on vcpkg vs system)
+if(TARGET imgui)
+  if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+    # vcpkg SDL2 targets
+    target_link_libraries(imgui PUBLIC 
+      $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+      ${OPENGL_LIBRARIES}
+    )
+  else()
+    # System SDL2 libraries using created targets
+    target_link_libraries(imgui PUBLIC 
+      SDL2::SDL2
+      ${OPENGL_LIBRARIES}
+    )
+  endif()
+endif()
 
 # Set up ImColorTextEdit library using local files
 add_library(imcolortextedit 
@@ -175,27 +288,52 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
 )
 
-# Platform-specific include directories
-target_include_directories(${PROJECT_NAME} PRIVATE
-  ${CURL_INCLUDE_DIRS}
-  ${SQLite3_INCLUDE_DIRS}
-  ${TINYXML2_INCLUDE_DIRS}
-)
+# Platform-specific include directories (conditional based on vcpkg vs system)
+if(NOT (DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg"))
+  # Only add these for system builds - vcpkg handles includes automatically
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CURL_INCLUDE_DIRS}
+    ${SQLite3_INCLUDE_DIRS}
+    ${TINYXML2_INCLUDE_DIRS}
+  )
+endif()
 
-# Link with vcpkg-provided dependencies
-target_link_libraries(${PROJECT_NAME} PRIVATE 
-  imgui
-  imcolortextedit
-  glaze::glaze 
-  CURL::libcurl
-  OpenSSL::SSL
-  OpenSSL::Crypto
-  $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-  $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-  $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
-  tinyxml2::tinyxml2
-  unofficial::sqlite3::sqlite3
-)
+# Link with dependencies (conditional based on vcpkg vs system)
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  # vcpkg dependencies with specific target names
+  target_link_libraries(${PROJECT_NAME} PRIVATE 
+    imgui
+    imcolortextedit
+    glaze::glaze 
+    CURL::libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+    $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
+    tinyxml2::tinyxml2
+    unofficial::sqlite3::sqlite3
+  )
+else()
+  # System dependencies with standard target names
+  target_link_libraries(${PROJECT_NAME} PRIVATE 
+    imgui
+    imcolortextedit
+    glaze::glaze 
+    CURL::libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    ${SQLite3_LIBRARIES}
+    SDL2::SDL2
+    SDL2_image::SDL2_image
+  )
+  
+  # Handle TinyXML2 system dependencies
+  if(TINYXML2_FOUND)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${TINYXML2_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${TINYXML2_LIBRARIES})
+  endif()
+endif()
 
 # Apply stricter warnings only to our code, not third-party libraries
 # We use -Werror for our code but not for third-party libraries

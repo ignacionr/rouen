@@ -119,7 +119,7 @@ public:
             ChessComArchives archives_obj;
             auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(archives_obj, response);
             if (read_error) {
-                CHESS_API_ERROR_FMT("Error parsing archives response: {}", glz::format_error(read_error));
+                CHESS_API_ERROR_FMT("Error parsing archives response: {}", glz::format_error(read_error, response));
                 return false;
             }
             
@@ -137,7 +137,7 @@ public:
             ChessComGamesResponse games_response;
             auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(games_response, response);
             if (read_error) {
-                CHESS_API_ERROR_FMT("Error parsing games response: {}", glz::format_error(read_error));
+                CHESS_API_ERROR_FMT("Error parsing games response: {}", glz::format_error(read_error, response));
                 return false;
             }
             
@@ -304,9 +304,10 @@ public:
         
         try {
             // Properly unescape the PGN string using the JSON library
-            auto read_result = glz::read_json(clean_pgn, "\"" + pgn + "\"");
-            if (!read_result) {
-                CHESS_API_ERROR_FMT("Error unescaping PGN: {}", glz::format_error(read_result));
+            std::string json_string = "\"" + pgn + "\"";
+            auto read_result = glz::read_json(clean_pgn, json_string);
+            if (read_result) {
+                CHESS_API_ERROR_FMT("Error unescaping PGN: {}", glz::format_error(read_result, json_string));
                 // Fallback to direct PGN if Glaze unescaping fails
                 clean_pgn = pgn;
             } else {

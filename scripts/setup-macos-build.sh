@@ -31,7 +31,7 @@ install_system_deps() {
     fi
     
     brew update
-    brew install openssl curl sqlite sdl2 sdl2_image
+    brew install openssl curl sqlite sdl2 sdl2_image tinyxml2 pkg-config
     
     # Set up environment for system dependencies
     export OPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"

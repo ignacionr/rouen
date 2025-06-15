@@ -259,7 +259,7 @@ namespace mail {
                         auto result = glz::read_json(metadata, metadata_json);
                         
                         if (result) {
-                            "notify"_sfn("Error parsing metadata JSON: " + std::string(glz::format_error(result)));
+                            "notify"_sfn("Error parsing metadata JSON: " + std::string(glz::format_error(result, metadata_json)));
                             return;
                         }
                         
