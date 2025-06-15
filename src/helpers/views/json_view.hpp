@@ -25,10 +25,13 @@ namespace rouen::helpers::views {
             // For the new Glaze API, we need to use different methods
             try {
                 std::string json_str;
-                glz::write_json(node, json_str);
-                
-                // Simple JSON string display for now
-                ImGui::Text("JSON: %s", json_str.c_str());
+                auto result = glz::write_json(node, json_str);
+                if (result) {
+                    ImGui::Text("Error serializing JSON");
+                } else {
+                    // Simple JSON string display for now
+                    ImGui::Text("JSON: %s", json_str.c_str());
+                }
             } catch (const std::exception& e) {
                 ImGui::Text("Error displaying JSON: %s", e.what());
             }
@@ -38,8 +41,12 @@ namespace rouen::helpers::views {
             // For the new Glaze API, we'll just display the JSON as a string for now
             try {
                 std::string json_str;
-                glz::write_json(value, json_str);
-                ImGui::Text("%s", json_str.c_str());
+                auto result = glz::write_json(value, json_str);
+                if (result) {
+                    ImGui::Text("Error serializing value");
+                } else {
+                    ImGui::Text("%s", json_str.c_str());
+                }
             } catch (const std::exception& e) {
                 ImGui::Text("Error: %s", e.what());
             }

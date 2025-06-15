@@ -197,7 +197,10 @@ namespace ignacionr
             // Send the API request
             auto url = std::format("{}/chat/completions", base_url_);
             std::string body;
-            glz::write_json(payload, body);
+            auto result = glz::write_json(payload, body);
+            if (result) {
+                throw std::runtime_error("Failed to serialize ChatGPT request payload");
+            }
             
             auto r = do_post(url, body, [this](auto header_setter){
                 header_setter("Authorization: Bearer " + api_key_);

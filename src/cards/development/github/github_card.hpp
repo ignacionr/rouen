@@ -75,8 +75,10 @@ namespace rouen::cards {
                     std::ofstream file(filename);
                     if (file.is_open()) {
                         std::string json_str;
-                        glz::write_json(config, json_str);
-                        file << json_str;
+                        auto result = glz::write_json(config, json_str);
+                        if (!result) {
+                            file << json_str;
+                        }
                         file.close();
                     }
                 } catch (std::exception const &) {

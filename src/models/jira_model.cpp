@@ -250,13 +250,17 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
             std::string error_msg = "JIRA API returned error: ";
             if (json.contains("errorMessages")) {
                 std::string error_messages_str;
-                glz::write_json(json["errorMessages"], error_messages_str);
-                error_msg += "Messages: " + error_messages_str;
+                auto result = glz::write_json(json["errorMessages"], error_messages_str);
+                if (!result) {
+                    error_msg += "Messages: " + error_messages_str;
+                }
             }
             if (json.contains("errors")) {
                 std::string errors_str;
-                glz::write_json(json["errors"], errors_str);
-                error_msg += " Errors: " + errors_str;
+                auto result = glz::write_json(json["errors"], errors_str);
+                if (!result) {
+                    error_msg += " Errors: " + errors_str;
+                }
             }
             throw std::runtime_error(error_msg);
         }
@@ -275,7 +279,10 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
             DB_INFO_FMT("  Title: {}", info.server_title);
         } catch (const std::exception& e) {
             std::string json_str;
-            glz::write_json(json, json_str);
+            auto result = glz::write_json(json, json_str);
+            if (result) {
+                json_str = "<error serializing JSON>";
+            }
             throw std::runtime_error("Failed to extract server info from JSON: " + std::string(e.what()) + ". JSON: " + json_str);
         }
         
@@ -702,7 +709,10 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
             payload["fields"] = fields;
             
             std::string json_payload;
-            glz::write_json(payload, json_payload);
+            auto write_result = glz::write_json(payload, json_payload);
+            if (write_result) {
+                throw std::runtime_error("Failed to serialize issue creation payload");
+            }
             
             // Make API request
             std::string response = make_request("issue", "POST", json_payload);
@@ -781,7 +791,10 @@ bool jira_model::transition_issue(const std::string& issue_key, const std::strin
         payload["transition"] = transition_obj;
         
         std::string json_payload;
-        glz::write_json(payload, json_payload);
+        auto result = glz::write_json(payload, json_payload);
+        if (result) {
+            throw std::runtime_error("Failed to serialize transition payload");
+        }
         
         // Make API request
         make_request(std::format("issue/{}/transitions", issue_key), "POST", json_payload);
@@ -820,7 +833,10 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             payload["fields"] = fields_array;
             
             std::string json_payload;
-            glz::write_json(payload, json_payload);
+            auto write_result = glz::write_json(payload, json_payload);
+            if (write_result) {
+                throw std::runtime_error("Failed to serialize search payload");
+            }
             
             // Make API request
             std::string response = make_request("search", "POST", json_payload);
@@ -981,7 +997,10 @@ static bool save_profiles(const std::vector<jira_connection_profile>& profiles) 
         
         // Convert to JSON
         std::string json_str;
-        glz::write_json(filtered_profiles, json_str);
+        auto result = glz::write_json(filtered_profiles, json_str);
+        if (result) {
+            throw std::runtime_error("Failed to serialize profiles to JSON");
+        }
         
         // Write to file
         std::ofstream file(profiles_path);
@@ -1079,7 +1098,10 @@ std::future<bool> jira_model::add_comment(const std::string& issue_key, const st
             payload["body"] = comment_text;
             
             std::string json_payload;
-            glz::write_json(payload, json_payload);
+            auto result = glz::write_json(payload, json_payload);
+            if (result) {
+                throw std::runtime_error("Failed to serialize comment payload");
+            }
             
             // Make API request
             make_request(std::format("issue/{}/comment", issue_key), "POST", json_payload);

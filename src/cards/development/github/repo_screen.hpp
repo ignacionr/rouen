@@ -15,8 +15,12 @@ namespace rouen::cards::github {
     namespace detail {
         inline void print_json(const glz::json_t& obj) {
             std::string out;
-            glz::write_json(obj, out);
-            std::cerr << "[repo_screen] Offending object: " << out << '\n';
+            auto result = glz::write_json(obj, out);
+            if (!result) {
+                std::cerr << "[repo_screen] Offending object: " << out << '\n';
+            } else {
+                std::cerr << "[repo_screen] Error serializing JSON object\n";
+            }
         }
         inline std::string safe_get_string(const glz::json_t& obj, std::string_view key, std::string_view fallback = "<missing>") {
             try {
@@ -111,8 +115,12 @@ namespace rouen::cards::github {
                         // For the new Glaze API, we'll attempt to iterate through workflows
                         // This is a simplified approach since the array methods have changed
                         std::string workflows_str;
-                        glz::write_json(workflows_["workflows"], workflows_str);
-                        ImGui::Text("Workflows: %s", workflows_str.c_str());
+                        auto result = glz::write_json(workflows_["workflows"], workflows_str);
+                        if (!result) {
+                            ImGui::Text("Workflows: %s", workflows_str.c_str());
+                        } else {
+                            ImGui::Text("Error serializing workflows");
+                        }
                     } catch (const std::exception& e) {
                         ImGui::Text("Error displaying workflows: %s", e.what());
                     }
