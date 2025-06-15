@@ -41,7 +41,12 @@ jobs:
           zip \
           unzip \
           tar \
-          git
+          git \
+          autoconf \
+          automake \
+          libtool \
+          autopoint \
+          gettext
         
         # Install Linux-specific dependencies that vcpkg doesn't provide
         sudo apt-get install -y \
