@@ -36,7 +36,8 @@ public:
                         TerminalOutput& output, const std::string& cwd,
                         std::vector<std::string>& history, size_t& history_index,
                         bool& is_command_running, bool use_interactive_bash,
-                        bool& show_sudo_prompt, std::string& sudo_command);
+                        bool& show_sudo_prompt, std::string& sudo_command,
+                        std::string* out_actual_command = nullptr);
 
     // Check command output and update status
     void check_command_output(bool use_interactive_bash, bool& is_command_running, 

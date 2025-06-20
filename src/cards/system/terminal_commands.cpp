@@ -7,7 +7,8 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
                                      TerminalOutput& output, const std::string& cwd,
                                      std::vector<std::string>& history, size_t& history_index,
                                      bool& is_command_running, bool use_interactive_bash,
-                                     bool& show_sudo_prompt, std::string& sudo_command) {
+                                     bool& show_sudo_prompt, std::string& sudo_command,
+                                     std::string* out_actual_command) {
     // If use_llm is true, generate a shell command using Grok
     std::string cmd_to_execute = command;
     
@@ -20,7 +21,9 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
             output.add_to_output("Failed to generate command with Grok. Using original command.", OutputType::StdErr);
         }
     }
-    
+    if (out_actual_command) {
+        *out_actual_command = cmd_to_execute;
+    }
     // Check if command needs sudo privileges
     if (cmd_to_execute.starts_with("sudo ")) {
         // Remember the command without sudo for later execution

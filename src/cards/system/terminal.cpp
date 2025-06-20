@@ -191,13 +191,14 @@ void terminal::render_command_input(float window_width) {
     // Process the command if enter was pressed
     if (enter_pressed && input_buffer[0] != '\0') {
         bool use_llm = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+        std::string actual_command;
         commands.execute_command(input_buffer, use_llm, output, current_working_dir, 
                              command_history, history_index, is_command_running, 
-                             bash.is_interactive(), show_sudo_prompt, sudo_command);
-                             
-        if (bash.is_interactive() && !show_sudo_prompt) {
-            // Send command to bash
-            bash.send_to_bash(input_buffer);
+                             bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
+        
+        if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
+            // Send the actual command (Grok or user) to bash
+            bash.send_to_bash(actual_command);
         }
         
         input_buffer[0] = '\0';  // Clear the input
