@@ -1,4 +1,5 @@
 #include "terminal.hpp"
+#include "../../registrar.hpp"
 
 namespace rouen::cards {
 
@@ -154,12 +155,8 @@ void terminal::render_command_input(float window_width) {
         focus_input = false;
     }
     
-    // Process keyboard shortcuts for history navigation
-    bool enter_pressed = false;
-    
     // Input field - Using standard char array
     static char input_buffer[1024] = "";
-    
     // Copy current input_text to input_buffer if not empty
     if (!input_text.empty() && input_buffer[0] == '\0') {
         strncpy(input_buffer, input_text.c_str(), sizeof(input_buffer) - 1);
@@ -167,40 +164,66 @@ void terminal::render_command_input(float window_width) {
         input_text.clear();
     }
     
-    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
-        if (navigate_history(true, input_buffer, sizeof(input_buffer))) {
-            // History navigation updated the input buffer
-            focus_input = true;
-        }
-    } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
-        if (navigate_history(false, input_buffer, sizeof(input_buffer))) {
-            // History navigation updated the input buffer
-            focus_input = true;
-        }
-    } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-        enter_pressed = true;
-    }
-    
+    bool enter_pressed = false;
     ImGui::SetNextItemWidth(window_width);
+    bool input_active = false;
     if (ImGui::InputText("##CommandInput", input_buffer, IM_ARRAYSIZE(input_buffer), 
                       ImGuiInputTextFlags_EnterReturnsTrue,
                       nullptr, nullptr)) {
         enter_pressed = true;
     }
+    input_active = ImGui::IsItemActive();
+
+    // Only process shortcuts if the input field is focused
+    if (input_active) {
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+            if (navigate_history(true, input_buffer, sizeof(input_buffer))) {
+                // History navigation updated the input buffer
+                focus_input = true;
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+            if (navigate_history(false, input_buffer, sizeof(input_buffer))) {
+                // History navigation updated the input buffer
+                focus_input = true;
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            enter_pressed = true;
+        }
+    }
     
     // Process the command if enter was pressed
     if (enter_pressed && input_buffer[0] != '\0') {
-        bool use_llm = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
-        std::string actual_command;
-        commands.execute_command(input_buffer, use_llm, output, current_working_dir, 
-                             command_history, history_index, is_command_running, 
-                             bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
-        
-        if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
-            // Send the actual command (Grok or user) to bash
-            bash.send_to_bash(actual_command);
+        bool ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+        std::string user_cmd = input_buffer;
+        // Always update current_working_dir from bash before handling shortcuts
+        if (bash.is_interactive()) {
+            std::string new_cwd = bash.update_cwd_from_bash();
+            if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
-        
+        // Check for 'ed <filename>' shortcut with Ctrl+Enter
+        if (ctrl_down && user_cmd.starts_with("ed ") && user_cmd.size() > 3) {
+            // Extract filename (relative to current_working_dir)
+            std::string filename = user_cmd.substr(3);
+            std::filesystem::path file_path = std::filesystem::path(current_working_dir) / filename;
+            // Call the edit connector slot
+            "edit"_sfn(file_path.string());
+            // Add to history for convenience
+            command_history.push_back(user_cmd);
+            if (command_history.size() > 50) command_history.erase(command_history.begin());
+            history_index = command_history.size();
+            // Output to terminal for feedback
+            output.add_to_output(std::format("Editing file: {}", file_path.string()), OutputType::System);
+        } else {
+            bool use_llm = ctrl_down;
+            std::string actual_command;
+            commands.execute_command(input_buffer, use_llm, output, current_working_dir, 
+                                 command_history, history_index, is_command_running, 
+                                 bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
+            if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
+                // Send the actual command (Grok or user) to bash
+                bash.send_to_bash(actual_command);
+            }
+        }
         input_buffer[0] = '\0';  // Clear the input
         focus_input = true;
     }
