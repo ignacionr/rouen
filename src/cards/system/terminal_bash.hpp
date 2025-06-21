@@ -59,6 +59,9 @@ public:
     // Check if interactive bash is being used
     bool is_interactive() const { return use_interactive_bash; }
 
+    // Send SIGINT (Ctrl+C) to the running bash process
+    void send_sigint();
+
 private:
     // Reader thread for bash output stream (stdout or stderr)
     void read_bash_stream(int pipe_fd, OutputType output_type, 

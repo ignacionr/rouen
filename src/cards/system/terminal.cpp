@@ -85,13 +85,6 @@ bool terminal::render() {
             // Regular command input area (at the bottom)
             render_command_input(window_width);
         }
-        
-        // Status indicator for running processes
-        if (is_command_running) {
-            ImGui::SameLine();
-            ImGui::TextColored(colors[3], "%c", spinner_chars[(spinner_counter/5) % 4]);
-            spinner_counter++;
-        }
     });
 }
 
@@ -163,16 +156,33 @@ void terminal::render_command_input(float window_width) {
         input_buffer[sizeof(input_buffer) - 1] = '\0';
         input_text.clear();
     }
-    
+
     bool enter_pressed = false;
-    ImGui::SetNextItemWidth(window_width);
     bool input_active = false;
+    float input_width = window_width;
+    // If Ctrl+C button is visible, make room for it
+    if (is_command_running) {
+        input_width -= 80.0f; // Reserve space for spinner + button + spacing
+    }
+    ImGui::SetNextItemWidth(input_width);
     if (ImGui::InputText("##CommandInput", input_buffer, IM_ARRAYSIZE(input_buffer), 
                       ImGuiInputTextFlags_EnterReturnsTrue,
                       nullptr, nullptr)) {
         enter_pressed = true;
     }
     input_active = ImGui::IsItemActive();
+
+    // If Ctrl+C button is visible, show it to the right of the input
+    if (is_command_running) {
+        ImGui::SameLine();
+        ImGui::TextColored(colors[3], "%c", spinner_chars[(spinner_counter/5) % 4]);
+        spinner_counter++;
+        ImGui::SameLine();
+        if (ImGui::SmallButton("\u23CE Ctrl+C")) {
+            bash.send_sigint();
+            output.add_to_output("Sent Ctrl+C (SIGINT) to running process.", OutputType::System);
+        }
+    }
 
     // Only process shortcuts if the input field is focused
     if (input_active) {

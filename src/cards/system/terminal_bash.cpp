@@ -69,6 +69,9 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         close(stderr_pipe[0]);
         close(stderr_pipe[1]);
         
+        // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
+        setpgid(0, 0);
+        
         // Execute bash with interactive but non-login options
         execl(bash_path.c_str(), "bash", "--noediting", "--noprofile", "--norc", "+m", 
               "-c", std::format("exec {} --norc +m", bash_path).c_str(), NULL);
@@ -430,6 +433,9 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         close(stderr_pipe[0]);
         close(stderr_pipe[1]);
         
+        // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
+        setpgid(0, 0);
+        
         // Execute sudo bash with -S to read password from stdin
         execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "+m", NULL);
         
@@ -512,6 +518,16 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
     // Add a blank line and prompt
     output.add_to_output("", OutputType::Blank);
     output.add_prompt(prev_cwd);
+#endif
+}
+
+void TerminalBash::send_sigint() {
+#ifndef _WIN32
+    if (bash_pid > 0) {
+        // Send SIGINT to the process group so foreground jobs (like 'top') receive it
+        kill(-bash_pid, SIGINT);
+        TERM_INFO("Sent SIGINT (Ctrl+C) to bash process group");
+    }
 #endif
 }
 
