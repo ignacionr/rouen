@@ -2,32 +2,9 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cmake",
-			"label": "CMake: build",
-			"command": "build",
-			"targets": [
-				"all"
-			],
-			"group": "build",
-			"problemMatcher": [],
-			"detail": "CMake template build task"
-		},
-		{
-			"type": "cmake",
-			"label": "CMake: configure",
-			"command": "configure",
-			"group": "build",
-			"problemMatcher": [],
-			"detail": "CMake template configure task"
-		},
-		{
 			"type": "shell",
-			"label": "Smart Build (Default)",
-			"command": "bash",
-			"args": [
-				"-c",
-				"echo \"Smart Build: Checking available build configurations...\" && if [ -d \"build-vcpkg\" ] && [ -f \"build-vcpkg/CMakeCache.txt\" ] && [ -f \"build-vcpkg/Makefile\" ]; then echo \"Found vcpkg build - building...\" && cmake --build build-vcpkg --parallel; elif [ -d \"build\" ] && [ -f \"build/CMakeCache.txt\" ] && [ -f \"build/Makefile\" ]; then echo \"Found system build - building...\" && cmake --build build --parallel; else echo \"No valid build found. Configuring with system dependencies...\" && cmake -B build -DCMAKE_BUILD_TYPE=Debug && echo \"Building...\" && cmake --build build --parallel; fi"
-			],
+			"label": "Nix Build (Debug)",
+			"command": "nix-shell --run 'cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake && cmake --build build-nix --parallel'",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -43,291 +20,12 @@
 			"problemMatcher": [
 				"$gcc"
 			],
-			"detail": "Smart build: detects existing builds and provides clear guidance"
+			"detail": "Build using Nix shell and Nix toolchain for full isolation"
 		},
 		{
 			"type": "shell",
-			"label": "Build with vcpkg",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"build-vcpkg",
-				"--parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"dependsOn": "Configure with vcpkg",
-			"detail": "Build using vcpkg dependencies"
-		},
-		{
-			"type": "shell",
-			"label": "Build Debug with vcpkg",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"build-vcpkg",
-				"--config",
-				"Debug",
-				"--parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"dependsOn": [
-				"Install vcpkg dependencies",
-				"Configure Debug with vcpkg"
-			],
-			"dependsOrder": "sequence",
-			"detail": "Build debug version with optimal debugging flags"
-		},
-		{
-			"type": "shell",
-			"label": "Configure with vcpkg",
-			"command": "sh",
-			"args": [
-				"-c",
-				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [],
-			"detail": "Configure CMake with vcpkg toolchain"
-		},
-		{
-			"type": "shell",
-			"label": "Configure Debug with vcpkg",
-			"command": "sh",
-			"args": [
-				"-c",
-				"mkdir -p build-vcpkg && cd build-vcpkg && cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS_DEBUG='-g -O0 -DDEBUG' -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [],
-			"detail": "Configure CMake with vcpkg toolchain for optimal debugging"
-		},
-		{
-			"type": "shell",
-			"label": "Quick Debug Setup",
-			"command": "echo",
-			"args": [
-				"Setting up debug environment..."
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"dependsOn": [
-				"Install vcpkg dependencies",
-				"Configure Debug with vcpkg",
-				"Build Debug with vcpkg"
-			],
-			"dependsOrder": "sequence",
-			"detail": "Complete debug setup: install dependencies, configure, and build"
-		},
-		{
-			"type": "shell",
-			"label": "Configure with vcpkg (Release)",
-			"command": "cmake",
-			"args": [
-				"-B",
-				"build-vcpkg",
-				"-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-				"-DCMAKE_BUILD_TYPE=Release",
-				"-DVCPKG_INSTALLED_DIR=${workspaceFolder}/vcpkg_installed"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [],
-			"detail": "Configure CMake with vcpkg toolchain for Release build"
-		},
-		{
-			"type": "shell",
-			"label": "Build with vcpkg (Release)",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"build-vcpkg",
-				"--config",
-				"Release",
-				"--parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"detail": "Build Release version using vcpkg dependencies"
-		},
-		{
-			"type": "shell",
-			"label": "Clean vcpkg build",
-			"command": "rm",
-			"args": [
-				"-rf",
-				"build-vcpkg"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared"
-			},
-			"detail": "Clean vcpkg build directory"
-		},
-		{
-			"type": "shell",
-			"label": "Install vcpkg dependencies",
-			"command": "${workspaceFolder}/vcpkg/vcpkg",
-			"args": [
-				"install"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared"
-			},
-			"problemMatcher": [],
-			"detail": "Install vcpkg dependencies from manifest"
-		},
-		{
-			"type": "shell",
-			"label": "Update vcpkg baseline",
-			"command": "${workspaceFolder}/scripts/update_vcpkg_baseline.sh",
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared"
-			},
-			"problemMatcher": [],
-			"detail": "Update vcpkg baseline to latest version"
-		},
-		{
-			"type": "shell",
-			"label": "Configure traditional build",
-			"command": "cmake",
-			"args": [
-				"-B",
-				"build",
-				"-DCMAKE_BUILD_TYPE=Debug"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [],
-			"detail": "Configure CMake with system dependencies"
-		},
-		{
-			"type": "shell",
-			"label": "Build traditional",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"build",
-				"--parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"detail": "Build using system dependencies"
-		},
-		{
-			"type": "shell",
-			"label": "Run Rouen (vcpkg)",
-			"command": "open",
-			"args": [
-				"build-vcpkg/rouen.app"
-			],
-			"group": "test",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared"
-			},
-			"dependsOn": "Build with vcpkg",
-			"detail": "Run the Rouen application built with vcpkg"
-		},
-		{
-			"type": "shell",
-			"label": "Configure Tests",
-			"command": "sh",
-			"args": [
-				"-c",
-				"mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Debug -DVCPKG_INSTALLED_DIR=../vcpkg_installed"
-			],
+			"label": "Configure Tests (Nix)",
+			"command": "nix-shell --run 'mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -338,17 +36,12 @@
 				"clear": false
 			},
 			"problemMatcher": [],
-			"detail": "Configure test build with vcpkg dependencies"
+			"detail": "Configure test build with Nix dependencies"
 		},
 		{
 			"type": "shell",
-			"label": "Build Tests",
-			"command": "cmake",
-			"args": [
-				"--build",
-				"build-tests",
-				"--parallel"
-			],
+			"label": "Build Tests (Nix)",
+			"command": "nix-shell --run 'cmake --build build-tests --parallel'",
 			"group": {
 				"kind": "test",
 				"isDefault": true
@@ -364,17 +57,13 @@
 			"problemMatcher": [
 				"$gcc"
 			],
-			"dependsOn": "Configure Tests",
-			"detail": "Build all test executables"
+			"dependsOn": "Configure Tests (Nix)",
+			"detail": "Build all test executables using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run All Tests",
-			"command": "sh",
-			"args": [
-				"-c",
-				"cd build-tests && make run_all_tests"
-			],
+			"label": "Run All Tests (Nix)",
+			"command": "nix-shell --run 'cd build-tests && make run_all_tests'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -384,17 +73,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run complete test suite (Google Test + Legacy tests)"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run complete test suite (Google Test + Legacy tests) using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run Google Tests Only",
-			"command": "sh",
-			"args": [
-				"-c",
-				"cd build-tests && make run_gtest_only"
-			],
+			"label": "Run Google Tests Only (Nix)",
+			"command": "nix-shell --run 'cd build-tests && make run_gtest_only'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -404,17 +89,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run Google Test suite only"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run Google Test suite only using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run Legacy Tests Only",
-			"command": "sh",
-			"args": [
-				"-c",
-				"cd build-tests && make run_legacy_tests"
-			],
+			"label": "Run Legacy Tests Only (Nix)",
+			"command": "nix-shell --run 'cd build-tests && make run_legacy_tests'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -424,17 +105,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run legacy console tests only"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run legacy console tests only using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run CTest",
-			"command": "sh",
-			"args": [
-				"-c",
-				"cd build-tests && ctest --output-on-failure --verbose"
-			],
+			"label": "Run CTest (Nix)",
+			"command": "nix-shell --run 'cd build-tests && ctest --output-on-failure --verbose'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -444,17 +121,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run tests through CTest framework"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run tests through CTest framework using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run HTTP/SSL Tests",
-			"command": "./test_fetch_ssl",
-			"args": [],
-			"options": {
-				"cwd": "${workspaceFolder}/build-tests"
-			},
+			"label": "Run HTTP/SSL Tests (Nix)",
+			"command": "nix-shell --run 'cd build-tests && ./test_fetch_ssl'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -464,17 +137,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run HTTP/SSL configuration tests"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run HTTP/SSL configuration tests using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run Math Operations Tests",
-			"command": "./test_math_operations",
-			"args": [],
-			"options": {
-				"cwd": "${workspaceFolder}/build-tests"
-			},
+			"label": "Run Math Operations Tests (Nix)",
+			"command": "nix-shell --run 'cd build-tests && ./test_math_operations'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -484,17 +153,13 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run advanced math operations tests with Google Test"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run advanced math operations tests with Google Test using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Run Bybit Currency Tests",
-			"command": "./test_bybit_currency_fix",
-			"args": [],
-			"options": {
-				"cwd": "${workspaceFolder}/build-tests"
-			},
+			"label": "Run Bybit Currency Tests (Nix)",
+			"command": "nix-shell --run 'cd build-tests && ./test_bybit_currency_fix'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -504,17 +169,29 @@
 				"showReuseMessage": true,
 				"clear": true
 			},
-			"dependsOn": "Build Tests",
-			"detail": "Run Bybit currency conversion tests"
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run Bybit currency conversion tests using Nix"
 		},
 		{
 			"type": "shell",
-			"label": "Clean Test Build",
-			"command": "rm",
-			"args": [
-				"-rf",
-				"build-tests"
-			],
+			"label": "Run SSL UI Mode Tests (Nix)",
+			"command": "nix-shell --run 'cd build-tests && ./test_ssl_modes_simple'",
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": true
+			},
+			"dependsOn": "Build Tests (Nix)",
+			"detail": "Run SSL UI mode configuration tests using Nix"
+		},
+		{
+			"type": "shell",
+			"label": "Clean Test Build (Nix)",
+			"command": "nix-shell --run 'rm -rf build-tests'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -522,125 +199,7 @@
 				"focus": false,
 				"panel": "shared"
 			},
-			"detail": "Clean test build directory"
-		},
-		{
-			"type": "shell",
-			"label": "Run SSL UI Mode Tests",
-			"command": "./test_ssl_modes_simple",
-			"args": [],
-			"options": {
-				"cwd": "${workspaceFolder}/build-tests"
-			},
-			"group": "test",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": true,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": true
-			},
-			"dependsOn": "Build Tests",
-			"detail": "Run SSL UI mode configuration tests"
-		},
-		{
-			"type": "shell",
-			"label": "Setup macOS Build Environment",
-			"command": "${workspaceFolder}/scripts/setup-macos-build.sh",
-			"args": [],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": true,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": true
-			},
-			"problemMatcher": [],
-			"detail": "Set up macOS ARM64 build environment with vcpkg and system dependency fallback",
-			"options": {
-				"env": {
-					"GITHUB_WORKSPACE": "${workspaceFolder}"
-				}
-			}
-		},
-		{
-			"type": "shell",
-			"label": "Verify macOS Build System",
-			"command": "${workspaceFolder}/scripts/verify-macos-build.sh",
-			"args": [],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": true,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": true
-			},
-			"problemMatcher": [],
-			"detail": "Verify macOS build system configuration and dependencies"
-		},
-		{
-			"type": "shell",
-			"label": "Clean and Rebuild",
-			"command": "bash",
-			"args": [
-				"-c",
-				"echo \"Cleaning build directories...\" && rm -rf build build-vcpkg && echo \"Configuring with system dependencies...\" && timeout 300 cmake -B build -DCMAKE_BUILD_TYPE=Debug && echo \"Building...\" && cmake --build build --parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": true
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"detail": "Clean all build directories and rebuild from scratch"
-		},
-		{
-			"type": "shell",
-			"label": "Quick System Build",
-			"command": "bash",
-			"args": [
-				"-c",
-				"if [ ! -d \"build\" ] || [ ! -f \"build/Makefile\" ]; then echo \"Configuring...\" && timeout 300 cmake -B build -DCMAKE_BUILD_TYPE=Debug; fi && echo \"Building...\" && cmake --build build --parallel"
-			],
-			"group": "build",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": true,
-				"clear": false
-			},
-			"problemMatcher": [
-				"$gcc"
-			],
-			"detail": "Fast system build with configuration if needed"
-		},
-		{
-			"type": "shell",
-			"label": "Run Rouen (System Build)",
-			"command": "./build/rouen",
-			"args": [],
-			"group": "test",
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "new"
-			},
-			"dependsOn": "Quick System Build",
-			"detail": "Build and run Rouen using system dependencies"
+			"detail": "Clean test build directory (Nix)"
 		}
 	]
 }
