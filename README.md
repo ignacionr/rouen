@@ -911,17 +911,29 @@ macOS releases are automatically built for Apple Silicon (ARM64) via GitHub Acti
 **Manual Workflow Trigger:**
 The macOS release workflow can be manually triggered from GitHub Actions with optional release creation, providing flexibility for testing and deployment.
 
-### Installation (macOS)
+---
 
-To install Rouen.app to your Applications folder:
+## Development Environment with Nix (Experimental)
 
-```bash
-# After building the application
-cd build
-sudo cmake --install .
-```
+You can use [Nix](https://nixos.org/) to create a reproducible development environment for Rouen. This is optional, but can help standardize dependencies and simplify onboarding.
 
-This will copy the Rouen.app bundle to your /Applications folder, making it available in Launchpad and Spotlight.
+### Getting Started with Nix
+
+1. **Install Nix** (if you don't have it):
+   See the [Nix installation guide](https://nixos.org/download.html).
+
+2. **Enter the Nix shell**:
+   ```sh
+   nix-shell
+   ```
+   This will drop you into a shell with CMake, GCC, vcpkg, and pkg-config available.
+
+3. **Build as usual**:
+   Use your normal build commands (e.g., `cmake`, `make`, or VS Code tasks).
+
+You can customize the environment by editing `shell.nix` to add more tools as needed.
+
+---
 
 ## Testing
 
