@@ -1,0 +1,3 @@
+#!/bin/bash
+
+...existing code from test_ssl_modes.sh...
