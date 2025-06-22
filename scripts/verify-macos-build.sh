@@ -49,7 +49,7 @@ config_files=(
     "vcpkg.json"
     "vcpkg-macos.json"
     "vcpkg-configuration.json"
-    "arm64-osx-custom.cmake"
+    "cmake/arm64-osx-custom.cmake"
     "scripts/setup-macos-build.sh"
 )
 

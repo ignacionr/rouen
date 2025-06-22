@@ -884,7 +884,7 @@ macOS releases are automatically built for Apple Silicon (ARM64) via GitHub Acti
 
 **Build Process Improvements:**
 - **Environment Setup**: Proper ARM64 compiler flags (`MACOSX_DEPLOYMENT_TARGET=11.0`, `CMAKE_OSX_ARCHITECTURES=arm64`)
-- **Custom Triplet**: Optimized `arm64-osx-custom.cmake` triplet for better OpenSSL compilation
+- **Custom Triplet**: Optimized `cmake/arm64-osx-custom.cmake` triplet for better OpenSSL compilation
 - **Dependency Manifest**: Separate `vcpkg-macos.json` using system OpenSSL to avoid build conflicts
 - **Library Search**: Multi-path dependency discovery in vcpkg, Homebrew, and system locations
 - **App Bundle Creation**: Complete `.app` bundle with proper framework structure and code signing

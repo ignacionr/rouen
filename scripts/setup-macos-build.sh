@@ -71,8 +71,8 @@ install_vcpkg_packages() {
     
     # Use custom triplet if available
     triplet_arg="arm64-osx"
-    if [ -f "$WORKSPACE/arm64-osx-custom.cmake" ]; then
-        cp "$WORKSPACE/arm64-osx-custom.cmake" "$VCPKG_DIR/triplets/community/"
+    if [ -f "$WORKSPACE/cmake/arm64-osx-custom.cmake" ]; then
+        cp "$WORKSPACE/cmake/arm64-osx-custom.cmake" "$VCPKG_DIR/triplets/community/"
         triplet_arg="arm64-osx-custom"
     fi
     
