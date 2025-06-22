@@ -27,6 +27,7 @@ jobs:
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
+          nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Cache Nix store
         uses: actions/cache@v4
@@ -44,27 +45,9 @@ jobs:
         run: nix flake check --print-build-logs
         if: hashFiles('flake.nix') != ''
 
-      # Fallback to legacy shell if no flake.nix is present
-      - name: Build (Nix legacy)
-        run: nix-shell --run "cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake && cmake --build build-nix --parallel"
-        if: hashFiles('flake.nix') == ''
-
-      - name: Configure Tests (Nix legacy)
-        run: nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
-        if: hashFiles('flake.nix') == ''
-
-      - name: Build Tests (Nix legacy)
-        run: nix-shell --run "cmake --build build-tests --parallel"
-        if: hashFiles('flake.nix') == ''
-
-      - name: Run All Tests (Nix legacy)
-        run: nix-shell --run "cd build-tests && make run_all_tests"
-        if: hashFiles('flake.nix') == ''
-
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rouen-${{ matrix.os }}-nix
           path: |
-            build-nix/
-            build-tests/
+            result/
