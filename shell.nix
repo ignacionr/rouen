@@ -27,6 +27,7 @@ pkgs.mkShell {
     pkgs.tinyxml2
     pkgs.gtest
     pkgs.glaze
+    pkgs.nlohmann_json
     # Add macOS SDK frameworks for proper header isolation
   ] ++ (if isDarwin then [
     pkgs.darwin.apple_sdk.frameworks.Cocoa

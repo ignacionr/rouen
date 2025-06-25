@@ -24,6 +24,7 @@
 #include "mpv_socket.hpp"
 #include "platform_utils.hpp"
 #include "../../external/IconsMaterialDesign.h"
+#include <nlohmann/json.hpp>
 
 struct media_player_item {
     std::string url;
@@ -71,21 +72,13 @@ inline bool media_player_item::checkMediaStatus() {
     return isRunning;
 #else
     if (player_pid <= 0) return false;
-    std::string command = "ps -p " + std::to_string(player_pid) + " > /dev/null 2>&1 && echo 1 || echo 0";
-    FILE* pipe = popen(command.c_str(), "r");
-    std::string result = "";
-    if (pipe) {
-        char buffer[128];
-        while (!feof(pipe)) {
-            if (fgets(buffer, 128, pipe) != nullptr)
-                result += buffer;
-        }
-        pclose(pipe);
+    // check process is running
+    int status;
+    if (waitpid(player_pid, &status, WNOHANG) == player_pid) {
+        is_playing = false;
+        return false;
     }
-    result.erase(0, result.find_first_not_of(" \n\r\t"));
-    result.erase(result.find_last_not_of(" \n\r\t") + 1);
-    is_playing = (result == "1");
-    return is_playing;
+    return true;
 #endif
 }
 
@@ -125,8 +118,41 @@ inline void media_player_item::startPositionTracking() {
     thread_running = true;
     position_thread = std::thread([this]() {
         while (thread_running) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            // Optionally, update position from mpv if needed, but do not call set_property here.
+            if (!mpv_socket.is_connected()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            // Request multiple properties in one command
+            const char* cmd = "{\"command\":[\"get_property\",\"playback-time\"], \"request_id\":1}\n{\"command\":[\"get_property\",\"duration\"], \"request_id\":2}\n{\"command\":[\"get_property\",\"pause\"], \"request_id\":3}\n";
+            mpv_socket.send_command(cmd);
+
+            char buffer[1024];
+            if (mpv_socket.receive_response(buffer, sizeof(buffer))) {
+                std::string response(buffer);
+                std::stringstream ss(response);
+                std::string line;
+                while (std::getline(ss, line)) {
+                    try {
+                        nlohmann::json j = nlohmann::json::parse(line);
+                        if (j.contains("request_id")) {
+                            int request_id = j["request_id"].get<int>();
+                            if (j.contains("data")) {
+                                if (request_id == 1) { // playback-time
+                                    position = j["data"].get<double>();
+                                } else if (request_id == 2) { // duration
+                                    duration = j["data"].get<double>();
+                                } else if (request_id == 3) { // pause
+                                    is_playing = !j["data"].get<bool>();
+                                }
+                            }
+                        }
+                    } catch (const nlohmann::json::parse_error& e) {
+                        // Ignore parse errors, as we might get incomplete responses
+                    }
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     });
 }
