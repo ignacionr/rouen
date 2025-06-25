@@ -1,0 +1,53 @@
+# Unified CI for Linux and macOS using Nix
+
+name: CI (Nix Linux & macOS)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Nix
+        uses: cachix/install-nix-action@v31.4.0
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Cache Nix store
+        uses: actions/cache@v4
+        with:
+          path: /nix/store
+          key: ${{ runner.os }}-nix-store-${{ hashFiles('flake.nix') }}
+          restore-keys: |
+            ${{ runner.os }}-nix-store-
+
+      - name: Build (Nix Flake)
+        run: nix build .#default --print-build-logs
+        if: hashFiles('flake.nix') != ''
+
+      - name: Run flake checks
+        run: nix flake check --print-build-logs
+        if: hashFiles('flake.nix') != ''
+
+      - name: Archive build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rouen-${{ matrix.os }}-nix
+          path: |
+            result/

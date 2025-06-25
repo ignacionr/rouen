@@ -4,386 +4,145 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-    {
-        "name": "🚀 Debug Rouen (vcpkg)",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Build with vcpkg",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
+        {
+            "name": "🚀 Debug Rouen (Nix)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-nix/rouen.app/Contents/MacOS/rouen",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-nix" },
+                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Nix Build (Debug)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for LLDB",
+                    "text": "settings set target.inline-breakpoint-strategy always",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false
             }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🔧 Debug Rouen (Quick Launch)",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
+        },
+        {
+            "name": "🧪 Debug HTTP/SSL Tests (Nix)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-tests/test_fetch_ssl",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Tests (Nix)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for LLDB",
+                    "text": "settings set target.inline-breakpoint-strategy always",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false
             }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🔧 Debug Rouen (Full Setup)",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.app/Contents/MacOS/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-vcpkg" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Quick Debug Setup",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
+        },
+        {
+            "name": "🧮 Debug Math Operations Tests (Nix)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-tests/test_math_operations",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Tests (Nix)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for LLDB",
+                    "text": "settings set target.inline-breakpoint-strategy always",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false
             }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "📦 Debug Rouen (Traditional Build)",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build/rouen.app/Contents/MacOS/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "CMake: build",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
+        },
+        {
+            "name": "💰 Debug Bybit Currency Tests (Nix)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-tests/test_bybit_currency_fix",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Tests (Nix)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for LLDB",
+                    "text": "settings set target.inline-breakpoint-strategy always",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false
             }
-        ]
-    },    
-    {
-        "name": "🍎 Debug Installed Rouen",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "/Applications/rouen.app/Contents/MacOS/rouen",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "/Applications/rouen.app/Contents/MacOS",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "lldb"
-    },
-    {
-        "name": "🚀 Debug Rouen (vcpkg - Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Build with vcpkg",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🔧 Debug Rouen (Quick Launch - Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [],
-        "console": "integratedTerminal",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🔧 Debug Rouen (Full Setup - Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-vcpkg/rouen.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Quick Debug Setup",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "📦 Debug Rouen (System Dependencies - Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build/rouen.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [],
-        "console": "integratedTerminal",
-        "preLaunchTask": "CMake: build"
-    },        {
-        "name": "🖥️ Debug Installed Rouen (Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${env:ProgramFiles}/Rouen/rouen.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${env:ProgramFiles}/Rouen",
-        "environment": [],
-        "console": "integratedTerminal"
-    },
-    {
-        "name": "🧪 Debug HTTP/SSL Tests",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_fetch_ssl",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Build Tests",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
+        },
+        {
+            "name": "📊 Debug Example Math Tests (Nix)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-tests/test_example_math",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
+                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "Build Tests (Nix)",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for LLDB",
+                    "text": "settings set target.inline-breakpoint-strategy always",
+                    "ignoreFailures": true
+                }
+            ],
+            "logging": {
+                "moduleLoad": false,
+                "programOutput": true,
+                "trace": false
             }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
         }
-    },
-    {
-        "name": "🧮 Debug Math Operations Tests",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_math_operations",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Build Tests",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
-            }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "💰 Debug Bybit Currency Tests",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_bybit_currency_fix",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Build Tests",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
-            }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "📊 Debug Example Math Tests",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_example_math",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-tests" },
-            { "name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "/usr/local/lib:/opt/homebrew/lib" },
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "externalConsole": false,
-        "MIMode": "lldb",
-        "preLaunchTask": "Build Tests",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for LLDB",
-                "text": "settings set target.inline-breakpoint-strategy always",
-                "ignoreFailures": true
-            }
-        ],
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🧪 Debug HTTP/SSL Tests (Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_fetch_ssl.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Build Tests",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "🧮 Debug Math Operations Tests (Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_math_operations.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Build Tests",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "💰 Debug Bybit Currency Tests (Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_bybit_currency_fix.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Build Tests",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    },
-    {
-        "name": "📊 Debug Example Math Tests (Windows)",
-        "type": "cppvsdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/build-tests/test_example_math.exe",
-        "args": [],
-        "stopAtEntry": false,
-        "cwd": "${workspaceFolder}",
-        "environment": [
-            { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
-        ],
-        "console": "integratedTerminal",
-        "preLaunchTask": "Build Tests",
-        "logging": {
-            "moduleLoad": false,
-            "programOutput": true,
-            "trace": false
-        }
-    }    ]
+    ]
 }
