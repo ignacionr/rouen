@@ -70,6 +70,15 @@ struct media_player {
                 } else {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
+                // --- Video support ---
+                if (item.has_video) {
+                    ImGui::Spacing();
+                    if (ImGui::Button("Show Video Window")) {
+                        // Send MPV command to show video window (if hidden)
+                        std::string show_cmd = "{\"command\":[\"set_property\",\"vid\",1]}\n";
+                        item.mpv_socket.send_command(show_cmd);
+                    }
+                }
             } else {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
                 if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(-1, 0))) {
