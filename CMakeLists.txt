@@ -154,23 +154,39 @@ else()
   # For glaze, try to find it first, then fall back to FetchContent
   find_package(glaze CONFIG QUIET)
   if(NOT glaze_FOUND AND NOT TARGET glaze AND NOT TARGET glaze::glaze)
-    message(STATUS "Glaze not found via system packages. Using FetchContent as fallback...")
-    
-    # Use FetchContent to get Glaze - using an older compatible version
-    FetchContent_Declare(
-      glaze
-      GIT_REPOSITORY https://github.com/stephenberry/glaze.git
-      GIT_TAG v1.9.3
-      GIT_SHALLOW TRUE
-    )
-    
-    FetchContent_MakeAvailable(glaze)
-    
-    # Create glaze::glaze alias if it doesn't exist
-    if(NOT TARGET glaze::glaze AND TARGET glaze)
-      add_library(glaze::glaze ALIAS glaze)
-      message(STATUS "Created glaze::glaze alias")
+    # Try with different case (some systems use different naming)
+    find_package(Glaze CONFIG QUIET)
+    if(Glaze_FOUND OR TARGET glaze::glaze OR TARGET Glaze::Glaze)
+      if(TARGET Glaze::Glaze AND NOT TARGET glaze::glaze)
+        add_library(glaze::glaze ALIAS Glaze::Glaze)
+        message(STATUS "Found Glaze via config and created glaze::glaze alias")
+      endif()
+    else()
+      # If still not found, check if FETCHCONTENT_FULLY_DISCONNECTED is set (Nix build)
+      if(FETCHCONTENT_FULLY_DISCONNECTED)
+        message(FATAL_ERROR "Glaze not found via system packages and FetchContent is disabled (FETCHCONTENT_FULLY_DISCONNECTED=ON). Please ensure glaze is available in your build environment.")
+      else()
+        message(STATUS "Glaze not found via system packages. Using FetchContent as fallback...")
+        
+        # Use FetchContent to get Glaze - using an older compatible version
+        FetchContent_Declare(
+          glaze
+          GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+          GIT_TAG v1.9.3
+          GIT_SHALLOW TRUE
+        )
+        
+        FetchContent_MakeAvailable(glaze)
+        
+        # Create glaze::glaze alias if it doesn't exist
+        if(NOT TARGET glaze::glaze AND TARGET glaze)
+          add_library(glaze::glaze ALIAS glaze)
+          message(STATUS "Created glaze::glaze alias")
+        endif()
+      endif()
     endif()
+  else()
+    message(STATUS "Found glaze via find_package")
   endif()
   
   # Set variables for compatibility with vcpkg naming

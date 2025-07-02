@@ -70,6 +70,12 @@ jobs:
         echo "Checking flake configuration..."
         nix flake check --show-trace
         
+        echo "Testing Nix shell environment..."
+        nix-shell --run "echo 'Nix shell works'; env | grep -E '(CMAKE_PREFIX_PATH|PKG_CONFIG_PATH)' || echo 'Env vars not set'"
+        
+        echo "Checking for glaze package..."
+        nix-shell --run "find /nix/store -name '*glaze*' -type d | head -5" || echo "No glaze packages found"
+        
         echo "Nix environment verified successfully"
 
     - name: Configure CMake (Debug)
@@ -77,7 +83,7 @@ jobs:
         set -e
         echo "Configuring CMake for Debug build with Nix..."
         
-        nix-shell --run "cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON"
+        nix-shell --run "cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
         
         echo "CMake Debug configuration completed successfully"
 
@@ -95,7 +101,7 @@ jobs:
         set -e
         echo "Configuring CMake for Release build with Nix..."
         
-        nix-shell --run "cmake -B build-release -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON"
+        nix-shell --run "cmake -B build-release -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
         
         echo "Release configuration completed successfully"
 

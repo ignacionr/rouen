@@ -44,9 +44,11 @@ pkgs.mkShell {
     export CC=${envVars.CC}
     export CXX=${envVars.CXX}
     export PKG_CONFIG_PATH="${pkgs.tinyxml2}/lib/pkgconfig:${pkgs.openssl}/lib/pkgconfig:${pkgs.sqlite}/lib/pkgconfig:${pkgs.SDL2}/lib/pkgconfig:${pkgs.SDL2_image}/lib/pkgconfig:${pkgs.curl}/lib/pkgconfig:${pkgs.gtest}/lib/pkgconfig:${pkgs.glaze}/lib/pkgconfig"
-    export CMAKE_PREFIX_PATH=$(IFS=:; echo ${pkgs.cmake}/lib/cmake:${pkgs.tinyxml2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.SDL2}:${pkgs.SDL2_image}:${pkgs.curl}:${pkgs.gtest}:${pkgs.glaze})
+    export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.SDL2}:${pkgs.SDL2_image}:${pkgs.curl}:${pkgs.gtest}:${pkgs.glaze}:${pkgs.glaze}/share"
     # Remove Homebrew from PATH for full Nix isolation
     export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | grep -v '/usr/local' | paste -sd ':' -)
     echo "[Nix] Using compiler: $CC ($($CC --version | head -1))"
+    echo "[Nix] CMAKE_PREFIX_PATH: $CMAKE_PREFIX_PATH"
+    echo "[Nix] PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
   '';
 }
