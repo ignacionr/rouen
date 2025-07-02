@@ -24,7 +24,7 @@
 #include "mpv_socket.hpp"
 #include "platform_utils.hpp"
 #include "../../external/IconsMaterialDesign.h"
-#include <nlohmann/json.hpp>
+#include "../../src/helpers/glaze_include.hpp"
 
 struct media_player_item {
     std::string url;
@@ -41,6 +41,7 @@ struct media_player_item {
     std::atomic<bool> thread_running{false};
     std::mutex data_mutex;
     std::atomic<int> volume{100};
+    bool has_video{false}; // New: track if current media has video
 
     media_player_item() = default;
     ~media_player_item() { stopMedia(); }
@@ -122,34 +123,60 @@ inline void media_player_item::startPositionTracking() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
-
-            // Request multiple properties in one command
-            const char* cmd = "{\"command\":[\"get_property\",\"playback-time\"], \"request_id\":1}\n{\"command\":[\"get_property\",\"duration\"], \"request_id\":2}\n{\"command\":[\"get_property\",\"pause\"], \"request_id\":3}\n";
+            // Request multiple properties in one command, including video tracks
+            const char* cmd = "{\"command\":[\"get_property\",\"playback-time\"], \"request_id\":1}\n"
+                                "{\"command\":[\"get_property\",\"duration\"], \"request_id\":2}\n"
+                                "{\"command\":[\"get_property\",\"pause\"], \"request_id\":3}\n"
+                                "{\"command\":[\"get_property\",\"track-list\"], \"request_id\":10}\n";
             mpv_socket.send_command(cmd);
-
-            char buffer[1024];
+            char buffer[4096];
             if (mpv_socket.receive_response(buffer, sizeof(buffer))) {
                 std::string response(buffer);
                 std::stringstream ss(response);
                 std::string line;
                 while (std::getline(ss, line)) {
                     try {
-                        nlohmann::json j = nlohmann::json::parse(line);
-                        if (j.contains("request_id")) {
-                            int request_id = j["request_id"].get<int>();
-                            if (j.contains("data")) {
-                                if (request_id == 1) { // playback-time
-                                    position = j["data"].get<double>();
-                                } else if (request_id == 2) { // duration
-                                    duration = j["data"].get<double>();
-                                } else if (request_id == 3) { // pause
-                                    is_playing = !j["data"].get<bool>();
-                                }
-                            }
+                        glz::json_t resp;
+                        auto ec = glz::read_json(resp, line);
+                        if (ec) continue;
+                        int request_id = 0;
+                        if (resp.contains("request_id") && resp["request_id"].is_number()) {
+                            request_id = static_cast<int>(resp["request_id"].get<double>());
+                        } else {
+                            continue;
                         }
-                    } catch (const nlohmann::json::parse_error& e) {
-                        // Ignore parse errors, as we might get incomplete responses
-                    }
+                        if (!resp.contains("data")) continue;
+                        auto& data = resp["data"];
+                        switch (request_id) {
+                            case 1:
+                                if (data.is_number())
+                                    position = data.get<double>();
+                                break;
+                            case 2:
+                                if (data.is_number())
+                                    duration = data.get<double>();
+                                break;
+                            case 3:
+                                if (data.is_boolean())
+                                    is_playing = !data.get<bool>();
+                                break;
+                            case 10:
+                                has_video = false;
+                                if (data.is_array()) {
+                                    const auto& arr = data.get_array();
+                                    for (const auto& track : arr) {
+                                        if (track.is_object()) {
+                                            const auto& obj = track.get_object();
+                                            if (obj.contains("type") && obj.at("type").is_string() && obj.at("type").get<std::string>() == "video") {
+                                                has_video = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                break;
+                        }
+                    } catch (...) { /* Ignore parse errors */ }
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -190,7 +217,7 @@ inline std::string media_player_item::sanitizeURL(const std::string& input_url) 
 
 inline bool media_player_item::playMedia() {
     stopMedia(); // Ensure any previous media is stopped
-    
+    has_video = false;
 #ifdef _WIN32
     // Windows implementation using named pipes instead of Unix sockets
     std::string pipe_name = "\\\\.\\pipe\\mpvsocket";
@@ -221,6 +248,7 @@ inline bool media_player_item::playMedia() {
     player_pid = fork();
     if (player_pid == 0) {
         // Child process
+        // By default, allow video window; if you want to force audio-only, add --no-video
         std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " \"" + url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), (char*)NULL);
         perror("execlp failed");

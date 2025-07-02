@@ -219,7 +219,7 @@ This uses the same MPV-based infrastructure as the main media player, ensuring D
 
 ## Media Player Implementation
 
-The `media_player.hpp` provides a robust interface for playing audio content through MPV:
+The `media_player.hpp` provides a robust interface for playing audio (and now video) content through MPV:
 
 ```cpp
 // Create a media player instance and play a URL
@@ -232,7 +232,10 @@ if (media.is_playing) {
     // Get current position and duration
     double position = media.position;
     double duration = media.duration;
-    
+    // Check if the media has video
+    if (media.has_video) {
+        // You can show the video window via the UI or programmatically
+    }
     // Stop media when done
     media.stopMedia();
 }
@@ -245,6 +248,8 @@ if (media.is_playing) {
 - **Socket Communication**: Exchanges commands and status information with MPV via Unix sockets
 - **Playback Position Tracking**: Continuously monitors playback position and duration
 - **Volume Control**: Set and adjust playback volume in real time via MPV socket (ImGui slider in UI, or programmatically)
+- **Video Detection and Playback**: Detects if the current media has video tracks and allows showing the video window if present
+- **Glaze-based JSON Parsing**: Uses Glaze for all JSON parsing and serialization (replacing nlohmann)
 - **Error Recovery**: Includes automatic reconnection and fault tolerance mechanisms
 - **Timeouts and Watchdogs**: Prevents hangs with timeout management and watchdog processes
 - **Network Optimization**: Configures MPV with optimal network streaming settings
@@ -261,6 +266,10 @@ media.setVolume(75); // Set volume to 75%
 ```
 
 In the UI, a volume slider is available when media is playing.
+
+### Video Playback
+
+If the loaded media contains video tracks, a "Show Video Window" button will appear in the player UI. Clicking it will instruct MPV to present the video window. For audio-only content, the video window is not shown.
 
 ### Streaming Media Guidelines
 
