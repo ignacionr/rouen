@@ -74,7 +74,10 @@ jobs:
         nix-shell --run "echo 'Nix shell works'; env | grep -E '(CMAKE_PREFIX_PATH|PKG_CONFIG_PATH)' || echo 'Env vars not set'"
         
         echo "Checking for glaze package..."
-        nix-shell --run "find /nix/store -name '*glaze*' -type d | head -5" || echo "No glaze packages found"
+        nix-shell --run "find /nix/store -name '*glaze*' -type d | head -3" || echo "No glaze packages found"
+        
+        echo "Checking for imgui package..."
+        nix-shell --run "find /nix/store -name '*imgui*' -type d | head -3" || echo "No imgui packages found"
         
         echo "Nix environment verified successfully"
 

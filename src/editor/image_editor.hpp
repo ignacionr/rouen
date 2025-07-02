@@ -2,6 +2,7 @@
 
 #include <string>
 #include "../helpers/imgui_include.hpp"
+#include "../helpers/texture_utils.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 
@@ -125,7 +126,7 @@ public:
             ImGui::SetCursorPos(pos);
             
             // Draw the image
-            ImGui::Image((ImTextureID)(intptr_t)image_texture_, display_size);
+            ImGui::Image(rouen::helpers::texture_id_cast(reinterpret_cast<void*>(image_texture_)), display_size);
         }
     }
 

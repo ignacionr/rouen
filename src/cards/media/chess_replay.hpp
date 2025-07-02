@@ -15,6 +15,7 @@
 #include "../../helpers/glaze_include.hpp"
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/texture_utils.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 
@@ -340,7 +341,7 @@ public:
                         
                         // Draw the texture
                         draw_list->AddImage(
-                            (ImTextureID)(intptr_t)texture,
+                            rouen::helpers::texture_id_cast(reinterpret_cast<void*>(texture)),
                             piece_pos,
                             ImVec2(piece_pos.x + piece_width, piece_pos.y + piece_height)
                         );

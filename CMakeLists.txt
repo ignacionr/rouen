@@ -193,45 +193,91 @@ else()
   set(SQLite3_LIBRARIES SQLite::SQLite3)
 endif()
 
-# Handle ImGui - always use FetchContent since we need specific backends
+# Handle ImGui - prefer system package, fallback to FetchContent
 # Use a simple target check to prevent infinite loops
 if(NOT TARGET imgui)
-  message(STATUS "Setting up ImGui via FetchContent...")
+  # First try to find ImGui via system package manager (Nix)
+  find_package(imgui CONFIG QUIET)
   
-  # Check if already declared to prevent redeclaration
-  get_property(imgui_declared GLOBAL PROPERTY EP_STEPS_imgui)
-  if(NOT imgui_declared)
-    FetchContent_Declare(
-      imgui
-      GIT_REPOSITORY https://github.com/ocornut/imgui.git
-      GIT_TAG v1.89.9
-      GIT_SHALLOW TRUE
+  if(imgui_FOUND OR TARGET imgui)
+    message(STATUS "Found ImGui via find_package")
+    
+    # Check if system ImGui provides SDL2 backends
+    # Most system packages only provide core ImGui, not platform-specific backends
+    find_path(IMGUI_SDL2_BACKEND_PATH imgui_impl_sdl2.h 
+      PATHS 
+        /nix/store/*/include/
+        /usr/include/
+        /usr/local/include/
+        /opt/homebrew/include/
+      NO_DEFAULT_PATH
     )
     
-    # Use modern FetchContent_MakeAvailable instead of deprecated Populate
-    FetchContent_MakeAvailable(imgui)
+    if(IMGUI_SDL2_BACKEND_PATH)
+      message(STATUS "System ImGui has SDL2 backend support at ${IMGUI_SDL2_BACKEND_PATH}")
+      # Use system ImGui with system backends
+      set(USING_SYSTEM_IMGUI TRUE)
+    else()
+      message(STATUS "System ImGui found but lacks SDL2 backends, falling back to FetchContent")
+      # Unset the found target to force FetchContent
+      unset(imgui_FOUND)
+      if(TARGET imgui)
+        get_target_property(IMGUI_TYPE imgui TYPE)
+        if(IMGUI_TYPE STREQUAL "INTERFACE_LIBRARY")
+          # Remove the interface target to allow FetchContent
+          set_target_properties(imgui PROPERTIES IMPORTED FALSE)
+        endif()
+      endif()
+    endif()
   endif()
   
-  message(STATUS "ImGui source dir: ${imgui_SOURCE_DIR}")
+  # If system ImGui is not available or lacks backends, use FetchContent
+  if(NOT imgui_FOUND OR NOT IMGUI_SDL2_BACKEND_PATH)
+    # Check if FETCHCONTENT_FULLY_DISCONNECTED is set (Nix build)
+    if(FETCHCONTENT_FULLY_DISCONNECTED)
+      message(FATAL_ERROR "ImGui not found via system packages (or lacks SDL2 backends) and FetchContent is disabled (FETCHCONTENT_FULLY_DISCONNECTED=ON). Please ensure imgui with SDL2 backends is available in your build environment.")
+    else()
+      message(STATUS "Using FetchContent for ImGui with full backend support")
+      
+      # Check if already declared to prevent redeclaration
+      get_property(imgui_declared GLOBAL PROPERTY EP_STEPS_imgui)
+      if(NOT imgui_declared)
+        FetchContent_Declare(
+          imgui
+          GIT_REPOSITORY https://github.com/ocornut/imgui.git
+          GIT_TAG v1.89.9
+          GIT_SHALLOW TRUE
+        )
+        
+        # Use modern FetchContent_MakeAvailable instead of deprecated Populate
+        FetchContent_MakeAvailable(imgui)
+      endif()
+      
+      message(STATUS "ImGui source dir: ${imgui_SOURCE_DIR}")
 
-  # Create ImGui library 
-  add_library(imgui STATIC
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_demo.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
-  )
+      # Create ImGui library using FetchContent with backends
+      add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+      )
 
-  target_include_directories(imgui PUBLIC 
-    ${imgui_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}/backends
-  )
-  
-  message(STATUS "ImGui target created successfully")
+      target_include_directories(imgui PUBLIC 
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+      )
+      
+      # Set flag to indicate we're using FetchContent ImGui
+      set(USING_SYSTEM_IMGUI FALSE)
+      
+      message(STATUS "ImGui target created successfully via FetchContent")
+    endif()
+  endif()
 else()
   message(STATUS "ImGui target already exists, skipping setup")
 endif()
@@ -245,7 +291,7 @@ if(TARGET imgui)
       ${OPENGL_LIBRARIES}
     )
   else()
-    # System SDL2 libraries using created targets
+    # System SDL2 libraries - always link to imgui target (no separate backends)
     target_link_libraries(imgui PUBLIC 
       SDL2::SDL2
       ${OPENGL_LIBRARIES}
@@ -257,13 +303,12 @@ endif()
 add_library(imcolortextedit 
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
 )
+
+# Always use the main imgui target (whether system or FetchContent)
 target_include_directories(imcolortextedit PUBLIC 
-  ${imgui_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CMAKE_SOURCE_DIR}/src/helpers
 )
-
-# Link imcolortextedit to imgui
 target_link_libraries(imcolortextedit PUBLIC imgui)
 
 # Include modular cmake configuration files
@@ -333,7 +378,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
 else()
   # System dependencies with standard target names
   target_link_libraries(${PROJECT_NAME} PRIVATE 
-    imgui
+    $<IF:$<TARGET_EXISTS:imgui_complete>,imgui_complete,imgui>
     imcolortextedit
     glaze::glaze 
     CURL::libcurl

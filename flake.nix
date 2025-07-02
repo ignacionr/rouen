@@ -35,6 +35,7 @@
             unstable.curl
             unstable.openssl
             unstable.glaze
+            unstable.imgui
           ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.gcc ]);
         };
@@ -44,7 +45,7 @@
           version = "0.1.0";
           src = ./.;
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
-          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.lerc unstable.tinyxml-2 unstable.glaze ]
+          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.lerc unstable.tinyxml-2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
           cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ]
@@ -61,7 +62,7 @@
           version = "0.1.0";
           src = ./.;
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
-          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.tinyxml2 unstable.glaze ]
+          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.tinyxml2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
           cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Debug" ]
