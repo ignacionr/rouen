@@ -188,6 +188,36 @@ Rouen provides pre-configured VS Code tasks and launch configurations for Nix-ba
 - The Nix shell removes Homebrew and `/usr/local` from `PATH` for full isolation on macOS
 - macOS SDK frameworks are provided by Nix for proper header/library isolation
 
+### Network Isolation and ImGui
+
+Rouen uses a hybrid approach for ImGui dependency management:
+
+- **Local Development**: ImGui is fetched via CMake FetchContent during build
+- **CI/Release Builds**: Network isolation is enforced (`FETCHCONTENT_FULLY_DISCONNECTED=ON`) to prevent network dependencies during build
+
+The build system will fail fast with a clear error if network isolation is enabled but ImGui is not available:
+```
+ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON. 
+For Nix builds, ImGui should be provided via system packages or local sources.
+```
+
+#### For Fully Offline Builds
+
+If you need to build without network access, you can vendor ImGui locally:
+
+1. **Clone ImGui to the expected location**:
+   ```sh
+   git clone https://github.com/ocornut/imgui.git external/imgui
+   cd external/imgui && git checkout v1.91.1 && cd ../..
+   ```
+
+2. **Build with local ImGui**:
+   ```sh
+   cmake -B build-offline -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+   ```
+
+This approach ensures reproducible builds in CI while maintaining developer convenience.
+
 ---
 
 ## Building from Source
