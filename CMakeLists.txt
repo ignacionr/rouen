@@ -193,58 +193,93 @@ else()
   set(SQLite3_LIBRARIES SQLite::SQLite3)
 endif()
 
-# Handle ImGui - always use FetchContent with proper disconnected mode check
+# Handle ImGui - try system package first, then FetchContent
 if(NOT TARGET imgui)
   # Debug: Check FETCHCONTENT_FULLY_DISCONNECTED early
   message(STATUS "FETCHCONTENT_FULLY_DISCONNECTED is: ${FETCHCONTENT_FULLY_DISCONNECTED}")
   
-  # Check if FETCHCONTENT_FULLY_DISCONNECTED is set (Nix build)
-  if(FETCHCONTENT_FULLY_DISCONNECTED)
-    message(FATAL_ERROR "ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON. For Nix builds, ImGui should be provided via system packages or local sources.")
-  else()
-    message(STATUS "Using FetchContent for ImGui with full backend support")
+  # Try to find ImGui via system packages first (for Nix builds)
+  find_package(imgui CONFIG QUIET)
+  
+  if(TARGET imgui::imgui OR TARGET imgui)
+    message(STATUS "Found ImGui via find_package, using system package with local backends")
     
-    # Check if already declared to prevent redeclaration
-    get_property(imgui_declared GLOBAL PROPERTY EP_STEPS_imgui)
-    if(NOT imgui_declared)
-      FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG v1.89.9
-        GIT_SHALLOW TRUE
-      )
-      
-      # Use modern FetchContent_MakeAvailable instead of deprecated Populate
-      FetchContent_MakeAvailable(imgui)
+    # If found via find_package, create alias if needed
+    if(TARGET imgui::imgui AND NOT TARGET imgui)
+      add_library(imgui ALIAS imgui::imgui)
     endif()
     
-    message(STATUS "ImGui source dir: ${imgui_SOURCE_DIR}")
+    message(STATUS "ImGui system package with local backends configured successfully")
+  else()
+    # System ImGui not found, try FetchContent
+    if(FETCHCONTENT_FULLY_DISCONNECTED)
+      message(FATAL_ERROR "ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON. For Nix builds, ImGui should be provided via system packages or local sources.")
+    else()
+      message(STATUS "Using FetchContent for ImGui with full backend support")
+      
+      # Check if already declared to prevent redeclaration
+      get_property(imgui_declared GLOBAL PROPERTY EP_STEPS_imgui)
+      if(NOT imgui_declared)
+        FetchContent_Declare(
+          imgui
+          GIT_REPOSITORY https://github.com/ocornut/imgui.git
+          GIT_TAG v1.89.9
+          GIT_SHALLOW TRUE
+        )
+        
+        # Use modern FetchContent_MakeAvailable instead of deprecated Populate
+        FetchContent_MakeAvailable(imgui)
+      endif()
+      
+      message(STATUS "ImGui source dir: ${imgui_SOURCE_DIR}")
 
-    # Create ImGui library using FetchContent with backends
-    add_library(imgui STATIC
-      ${imgui_SOURCE_DIR}/imgui.cpp
-      ${imgui_SOURCE_DIR}/imgui_demo.cpp
-      ${imgui_SOURCE_DIR}/imgui_draw.cpp
-      ${imgui_SOURCE_DIR}/imgui_tables.cpp
-      ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-      ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
-    )
+      # Create ImGui library using FetchContent with backends
+      add_library(imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp
+        ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/imgui_draw.cpp
+        ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+      )
 
-    target_include_directories(imgui PUBLIC 
-      ${imgui_SOURCE_DIR}
-      ${imgui_SOURCE_DIR}/backends
-    )
-    
-    message(STATUS "ImGui target created successfully via FetchContent")
+      target_include_directories(imgui PUBLIC 
+        ${imgui_SOURCE_DIR}
+        ${imgui_SOURCE_DIR}/backends
+      )
+      
+      message(STATUS "ImGui target created successfully via FetchContent")
+    endif()
   endif()
 else()
   message(STATUS "ImGui target already exists, skipping setup")
 endif()
 
-# Link ImGui with dependencies (conditional based on vcpkg vs system)
-if(TARGET imgui)
+# Create backend library for system ImGui (when using Nix packages)
+if(TARGET imgui::imgui AND NOT TARGET imgui_backends)
+  add_library(imgui_backends STATIC
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdl2.cpp
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_opengl3.cpp
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdlrenderer2.cpp
+  )
+  
+  target_include_directories(imgui_backends PUBLIC 
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends
+  )
+  
+  target_link_libraries(imgui_backends PUBLIC 
+    imgui::imgui
+    SDL2::SDL2
+    ${OPENGL_LIBRARIES}
+  )
+  message(STATUS "Created local backends library for system ImGui")
+endif()
+
+# Link ImGui with dependencies (only if it's our FetchContent target)
+if(TARGET imgui AND NOT TARGET imgui::imgui)
+  # This is our FetchContent imgui target, we can link to it
   if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     # vcpkg SDL2 targets
     target_link_libraries(imgui PUBLIC 
@@ -252,7 +287,7 @@ if(TARGET imgui)
       ${OPENGL_LIBRARIES}
     )
   else()
-    # System SDL2 libraries - always FetchContent ImGui with built-in backends
+    # System SDL2 libraries
     target_link_libraries(imgui PUBLIC 
       SDL2::SDL2
       ${OPENGL_LIBRARIES}
@@ -260,18 +295,35 @@ if(TARGET imgui)
   endif()
 endif()
 
+# Also link system ImGui if using that target (but don't link to ALIAS targets)
+if(TARGET imgui::imgui)
+  # ImGui::imgui is likely an INTERFACE library, we don't need to link to it directly
+  # as it will be linked transitively through the backends library
+  message(STATUS "System ImGui found, using transitive linking")
+endif()
+
 # Set up ImColorTextEdit library using local files
 add_library(imcolortextedit 
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit/TextEditor.cpp
 )
 
-# Always use FetchContent ImGui
-target_include_directories(imcolortextedit PUBLIC 
-  ${imgui_SOURCE_DIR}
-  ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
-  ${CMAKE_SOURCE_DIR}/src/helpers
-)
-target_link_libraries(imcolortextedit PUBLIC imgui)
+# Link with appropriate ImGui target
+if(TARGET imgui)
+  # FetchContent ImGui
+  target_include_directories(imcolortextedit PUBLIC 
+    ${imgui_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+    ${CMAKE_SOURCE_DIR}/src/helpers
+  )
+  target_link_libraries(imcolortextedit PUBLIC imgui)
+elseif(TARGET imgui::imgui)
+  # System ImGui
+  target_include_directories(imcolortextedit PUBLIC 
+    ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+    ${CMAKE_SOURCE_DIR}/src/helpers
+  )
+  target_link_libraries(imcolortextedit PUBLIC imgui::imgui)
+endif()
 
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
@@ -306,10 +358,23 @@ add_executable(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
-  ${imgui_SOURCE_DIR}
-  ${imgui_SOURCE_DIR}/backends
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+  ${CMAKE_SOURCE_DIR}/src/helpers
 )
+
+# Add ImGui include directories based on which target is available
+if(TARGET imgui)
+  # FetchContent ImGui
+  target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+  )
+elseif(TARGET imgui::imgui)
+  # System ImGui - use local backends
+  target_include_directories(${PROJECT_NAME} PRIVATE 
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends
+  )
+endif()
 
 # Platform-specific include directories (conditional based on vcpkg vs system)
 if(NOT (DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg"))
@@ -339,8 +404,15 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   )
 else()
   # System dependencies with standard target names
+  # Choose appropriate ImGui target and backends
+  if(TARGET imgui)
+    set(IMGUI_TARGET imgui)
+  elseif(TARGET imgui::imgui)
+    set(IMGUI_TARGET imgui::imgui)
+  endif()
+  
   target_link_libraries(${PROJECT_NAME} PRIVATE 
-    $<IF:$<TARGET_EXISTS:imgui_complete>,imgui_complete,imgui>
+    ${IMGUI_TARGET}
     imcolortextedit
     glaze::glaze 
     CURL::libcurl
@@ -350,6 +422,11 @@ else()
     SDL2::SDL2
     SDL2_image::SDL2_image
   )
+  
+  # Always link with imgui_backends when using system ImGui
+  if(TARGET imgui_backends)
+    target_link_libraries(${PROJECT_NAME} PRIVATE imgui_backends)
+  endif()
   
   # Handle TinyXML2 system dependencies
   if(TINYXML2_FOUND)

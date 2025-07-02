@@ -44,11 +44,13 @@
           version = "0.1.0";
           src = ./.;
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
-          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.lerc unstable.tinyxml-2 unstable.glaze ]
+          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.lerc unstable.tinyxml-2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
-          cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ]
-            ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) darwinCmakeFlags);
+          cmakeFlags = [ 
+            "-DCMAKE_BUILD_TYPE=Release" 
+            "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+          ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) darwinCmakeFlags);
           env = unstable.lib.optionalAttrs (unstable.stdenv.isDarwin) darwinEnv;
           installPhase = ''
             mkdir -p $out/bin
@@ -61,16 +63,18 @@
           version = "0.1.0";
           src = ./.;
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
-          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.tinyxml2 unstable.glaze ]
+          buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.tinyxml2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
-          cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Debug" ]
-            ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) darwinCmakeFlags);
+          cmakeFlags = [ 
+            "-DCMAKE_BUILD_TYPE=Debug"
+            "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+          ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) darwinCmakeFlags);
           env = unstable.lib.optionalAttrs (unstable.stdenv.isDarwin) darwinEnv;
           buildPhase = ''
             mkdir -p build-tests
             cd build-tests
-            cmake ../tests -DCMAKE_BUILD_TYPE=Debug
+            cmake ../tests -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON
             cmake --build . --parallel
           '';
           checkPhase = ''
