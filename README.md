@@ -190,33 +190,29 @@ Rouen provides pre-configured VS Code tasks and launch configurations for Nix-ba
 
 ### Network Isolation and ImGui
 
-Rouen uses a hybrid approach for ImGui dependency management:
+Rouen now uses **system ImGui packages from Nix**, eliminating network dependencies during build:
 
-- **Local Development**: ImGui is fetched via CMake FetchContent during build
-- **CI/Release Builds**: Network isolation is enforced (`FETCHCONTENT_FULLY_DISCONNECTED=ON`) to prevent network dependencies during build
+- **All Builds**: ImGui is provided via Nix system packages (`imgui` in `flake.nix`)
+- **CI/Release Builds**: Network isolation is fully supported (`FETCHCONTENT_FULLY_DISCONNECTED=ON`)
+- **Texture Compatibility**: Enhanced `texture_utils.hpp` provides robust ImTextureID casting using C++23 `decltype` and type traits
 
-The build system will fail fast with a clear error if network isolation is enabled but ImGui is not available:
+#### C++23 Texture Utilities
+
+The migration includes a sophisticated texture ID conversion system that handles different ImTextureID definitions:
+
+```cpp
+// Automatic type-safe conversion using decltype and constexpr
+auto texture_id = rouen::helpers::texture_id_cast(gl_texture_handle);
+auto sdl_texture_id = rouen::helpers::sdl_texture_cast(sdl_texture_ptr);
 ```
-ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON. 
-For Nix builds, ImGui should be provided via system packages or local sources.
-```
 
-#### For Fully Offline Builds
+**Key Features:**
+- **Compile-time type inference** using `decltype(ImTextureID{})`
+- **Universal conversion** between pointer and integral types via `uint64_t` bridge
+- **Zero runtime overhead** with `constexpr` functions and template metaprogramming
+- **Type safety** with SFINAE and C++23 concepts
 
-If you need to build without network access, you can vendor ImGui locally:
-
-1. **Clone ImGui to the expected location**:
-   ```sh
-   git clone https://github.com/ocornut/imgui.git external/imgui
-   cd external/imgui && git checkout v1.91.1 && cd ../..
-   ```
-
-2. **Build with local ImGui**:
-   ```sh
-   cmake -B build-offline -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-   ```
-
-This approach ensures reproducible builds in CI while maintaining developer convenience.
+This ensures compatibility across different ImGui builds (system packages vs FetchContent) without runtime type checking.
 
 ---
 

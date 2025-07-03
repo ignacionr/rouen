@@ -40,7 +40,16 @@ pkgs.mkShell {
     pkgs.darwin.apple_sdk.frameworks.ForceFeedback
     pkgs.darwin.apple_sdk.frameworks.Carbon
     pkgs.darwin.apple_sdk.frameworks.OpenGL
-  ] else []);
+  ] else [
+    # Linux X11 dependencies for SDL2
+    pkgs.xorg.libX11
+    pkgs.xorg.libXext
+    pkgs.xorg.libXrandr
+    pkgs.xorg.libXinerama
+    pkgs.xorg.libXcursor
+    pkgs.xorg.libXi
+    pkgs.xorg.libXScrnSaver
+  ]);
   shellHook = ''
     export CC=${envVars.CC}
     export CXX=${envVars.CXX}

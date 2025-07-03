@@ -46,7 +46,7 @@
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
           buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.lerc unstable.tinyxml-2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
-            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
+            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL unstable.xorg.libX11 unstable.xorg.libXext unstable.xorg.libXrandr unstable.xorg.libXinerama unstable.xorg.libXcursor unstable.xorg.libXi unstable.xorg.libXScrnSaver ]);
           cmakeFlags = [ 
             "-DCMAKE_BUILD_TYPE=Release" 
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
@@ -65,7 +65,7 @@
           nativeBuildInputs = [ unstable.cmake unstable.ninja unstable.pkg-config unstable.git unstable.cacert ];
           buildInputs = [ unstable.SDL2 unstable.curl unstable.openssl unstable.sqlite unstable.SDL2_image unstable.libtiff unstable.tinyxml2 unstable.glaze unstable.imgui ]
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) (darwinFrameworks ++ [ unstable.libcxx ]))
-            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL ]);
+            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.libGL unstable.xorg.libX11 unstable.xorg.libXext unstable.xorg.libXrandr unstable.xorg.libXinerama unstable.xorg.libXcursor unstable.xorg.libXi unstable.xorg.libXScrnSaver ]);
           cmakeFlags = [ 
             "-DCMAKE_BUILD_TYPE=Debug"
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
