@@ -274,35 +274,52 @@ Open source - see LICENSE file for details.
 
 Contributions welcome. Fork the repository, make your changes, and submit a pull request.
 
-### Strict Warnings Configuration
+### Strict Warnings Configuration ✅ COMPLETED
 
-Rouen uses **strict compiler warnings** to ensure code quality and catch errors early during development. Local builds now use the **same warning levels as CI** to prevent surprises.
+Rouen now uses **extremely strict compiler warnings** with the same configuration as CI builds. The migration to strict warnings is **complete** and all builds are clean with no warnings.
 
 #### Enabled Warnings
 
-All local builds automatically enable:
+All builds (local and CI) use these strict warning flags:
 
-- **`-Werror`**: Treat warnings as errors (fail fast on issues)
+- **`-Werror`**: Treat all warnings as errors (fail fast on issues)
+- **`-Weverything`** (Clang): Enable all available warnings for maximum safety
 - **`-Wunused-result`**: Catch unused `system()` calls and similar issues
-- **`-Wshadow`**: Detect variable shadowing problems
+- **`-Wshadow-all`**: Detect all variable shadowing problems
 - **`-Wconversion`**: Catch implicit type conversions that may lose data
+- **`-Wold-style-cast`**: Enforce modern C++ casting (static_cast, etc.)
+- **`-Wnull-dereference`**: Detect potential null pointer dereferences
+- **`-Wfloat-equal`**: Prevent unsafe floating-point equality comparisons
+- **`-Wcast-align`**: Detect alignment issues in pointer casts
 - **`-Wformat=2`**: Strict printf/format string validation
 - **`-Wpedantic`**: Enforce strict ISO C++23 compliance
 
+#### Completed Fixes
+
+The strict warning migration addressed:
+
+1. **Old-style Casts**: Replaced all C-style casts with modern C++ `static_cast`/`reinterpret_cast`
+2. **Variable Shadowing**: Fixed all parameter and variable name conflicts
+3. **Float Comparisons**: Use epsilon-based comparisons for floating-point values
+4. **Unused Results**: Proper handling of `system()` calls with `[[maybe_unused]]`
+5. **ImGuiColorTextEdit Modernization**: Updated "abandonware" code to modern C++23
+6. **Macro Semicolons**: Removed inappropriate semicolons from macro invocations
+7. **Exhaustive Enum Switches**: Ensured all enum values are handled
+
 #### Warning Configuration Files
 
-- **`cmake/warnings.cmake`**: Defines all warning flags and severity levels
-- **Clang**: Full strict warnings with advanced static analysis
-- **GCC**: Equivalent warnings for cross-platform compatibility
-- **MSVC**: Windows-specific warning configurations
+- **`cmake/warnings.cmake`**: Defines all warning flags with compiler-specific handling
+- **Clang 19.1.7**: Full `-Weverything` with carefully chosen exclusions
+- **GCC 14.3.0**: Equivalent warnings for cross-platform compatibility
+- **Selective Disabling**: Only specific warnings disabled (e.g., `-Wno-padded`, `-Wno-unsafe-buffer-usage`)
 
-#### Why Strict Warnings Matter
+#### Local-CI Parity
 
-The strict warning configuration ensures:
+✅ **Achievement**: Local builds now catch **exactly the same warnings as CI**, eliminating surprises:
 
-1. **Early Error Detection**: Catch bugs during development, not in CI
-2. **Consistent Code Quality**: Same standards across all platforms
-3. **Maintainable Codebase**: Prevent common programming mistakes
-4. **CI/Local Parity**: No surprises when pushing to CI
+1. **Early Error Detection**: All issues caught during development, not in CI
+2. **Consistent Code Quality**: Same ultra-strict standards across all platforms
+3. **Maintainable Codebase**: Prevents common programming mistakes at compile time
+4. **Future-Proof**: Ready for compiler updates and new warning flags
 
-> **Note**: If you encounter warnings during development, they must be fixed before code can compile. This is intentional and helps maintain code quality.
+> **Success**: The codebase is now 100% warning-free with the strictest possible compiler settings. All builds pass with `-Werror` and comprehensive warning detection.

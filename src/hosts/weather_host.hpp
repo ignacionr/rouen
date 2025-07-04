@@ -367,7 +367,7 @@ private:
 template <>
 struct glz::meta<rouen::hosts::weather::Location> {
     using T = rouen::hosts::weather::Location;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "name", &T::name,
         "country", &T::country,
         "lat", &T::lat,
@@ -381,7 +381,7 @@ struct glz::meta<rouen::hosts::weather::Location> {
 template <>
 struct glz::meta<rouen::hosts::weather::Weather> {
     using T = rouen::hosts::weather::Weather;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "id", &T::id,
         "main", &T::main,
         "description", &T::description,
@@ -395,7 +395,7 @@ struct glz::meta<rouen::hosts::weather::Weather> {
 template <>
 struct glz::meta<rouen::hosts::weather::Main> {
     using T = rouen::hosts::weather::Main;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "temp", &T::temp,
         "feels_like", &T::feels_like,
         "temp_min", &T::temp_min,
@@ -411,7 +411,7 @@ struct glz::meta<rouen::hosts::weather::Main> {
 template <>
 struct glz::meta<rouen::hosts::weather::Wind> {
     using T = rouen::hosts::weather::Wind;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "speed", &T::speed,
         "deg", &T::deg,
         "gust", &T::gust
@@ -424,7 +424,7 @@ struct glz::meta<rouen::hosts::weather::Wind> {
 template <>
 struct glz::meta<rouen::hosts::weather::Clouds> {
     using T = rouen::hosts::weather::Clouds;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "all", &T::all
     );
     static constexpr auto options = glz::opts{
@@ -435,7 +435,7 @@ struct glz::meta<rouen::hosts::weather::Clouds> {
 template <>
 struct glz::meta<rouen::hosts::weather::Rain> {
     using T = rouen::hosts::weather::Rain;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "1h", &T::one_h,
         "3h", &T::three_h
     );
@@ -447,7 +447,7 @@ struct glz::meta<rouen::hosts::weather::Rain> {
 template <>
 struct glz::meta<rouen::hosts::weather::Snow> {
     using T = rouen::hosts::weather::Snow;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "1h", &T::one_h,
         "3h", &T::three_h
     );
@@ -459,7 +459,7 @@ struct glz::meta<rouen::hosts::weather::Snow> {
 template <>
 struct glz::meta<rouen::hosts::weather::Sys> {
     using T = rouen::hosts::weather::Sys;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "type", &T::type,
         "id", &T::id,
         "country", &T::country,
@@ -474,7 +474,7 @@ struct glz::meta<rouen::hosts::weather::Sys> {
 template <>
 struct glz::meta<rouen::hosts::weather::CurrentWeather> {
     using T = rouen::hosts::weather::CurrentWeather;
-    static constexpr auto value = glz::object(
+    static constexpr auto values = glz::object(
         "coord", &T::coord,
         "weather", &T::weather,
         "base", &T::base,
@@ -498,13 +498,12 @@ struct glz::meta<rouen::hosts::weather::CurrentWeather> {
 
 template <>
 struct glz::meta<rouen::hosts::weather::Forecast> {
-    using T = rouen::hosts::weather::Forecast;
-    static constexpr auto value = glz::object(
-        "cod", &T::cod,
-        "message", &T::message,
-        "cnt", &T::cnt,
-        "list", &T::list,
-        "city", &T::city
+    static constexpr auto values = glz::object(
+        "cod", &rouen::hosts::weather::Forecast::cod,
+        "message", &rouen::hosts::weather::Forecast::message,
+        "cnt", &rouen::hosts::weather::Forecast::cnt,
+        "list", &rouen::hosts::weather::Forecast::list,
+        "city", &rouen::hosts::weather::Forecast::city
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
@@ -513,18 +512,17 @@ struct glz::meta<rouen::hosts::weather::Forecast> {
 
 template <>
 struct glz::meta<rouen::hosts::weather::ForecastItem> {
-    using T = rouen::hosts::weather::ForecastItem;
-    static constexpr auto value = glz::object(
-        "dt", &T::dt,
-        "main", &T::main,
-        "weather", &T::weather,
-        "clouds", &T::clouds,
-        "wind", &T::wind,
-        "visibility", &T::visibility,
-        "pop", &T::pop,
-        "rain", &T::rain,
-        "snow", &T::snow,
-        "dt_txt", &T::dt_txt
+    static constexpr auto values = glz::object(
+        "dt", &rouen::hosts::weather::ForecastItem::dt,
+        "main", &rouen::hosts::weather::ForecastItem::main,
+        "weather", &rouen::hosts::weather::ForecastItem::weather,
+        "clouds", &rouen::hosts::weather::ForecastItem::clouds,
+        "wind", &rouen::hosts::weather::ForecastItem::wind,
+        "visibility", &rouen::hosts::weather::ForecastItem::visibility,
+        "pop", &rouen::hosts::weather::ForecastItem::pop,
+        "rain", &rouen::hosts::weather::ForecastItem::rain,
+        "snow", &rouen::hosts::weather::ForecastItem::snow,
+        "dt_txt", &rouen::hosts::weather::ForecastItem::dt_txt
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
