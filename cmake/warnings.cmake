@@ -25,18 +25,63 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
       # Shadow warnings  
       -Wshadow
+      -Wshadow-all         # Even more aggressive shadowing detection
 
       # Important structural warnings
       -Wunreachable-code
       -Wself-assign
       -Woverloaded-virtual 
 
-      # More advanced warnings to implement gradually
+      # More advanced warnings to catch issues
       -Wrange-loop-analysis # Range-based for loop issues
       -Wredundant-move     # Unnecessary move operations
       -Wundef              # Undefined macro use in #if
       -Wdeprecated         # Deprecated feature usage
       -Wno-missing-field-initializers # Allow designated initializers (C++23 feature)
+      
+      # Additional strict warnings available in Clang
+      -Wdangling-else            # Ambiguous dangling else
+      -Wempty-body               # Empty bodies in if/else/for
+      -Wparentheses              # Missing parentheses
+      -Wreturn-type              # Missing return statements
+      -Wuninitialized            # Uninitialized variables
+      -Wconditional-uninitialized # Clang-specific uninitialized variable detection
+      
+      # Memory and pointer warnings (Clang-specific)
+      -Warray-bounds             # Array bounds checking
+      -Warray-bounds-pointer-arithmetic # Pointer arithmetic bounds
+      
+      # C++ specific strict warnings
+      -Wnon-virtual-dtor         # Missing virtual destructors
+      -Wold-style-cast           # C-style casts in C++
+      -Wextra-semi               # Extra semicolons
+      -Wno-extra-semi-stmt       # Temporarily disable for macro issues
+      -Winconsistent-missing-override # Missing override keywords
+      -Wloop-analysis            # Loop analysis warnings
+      -Wmove                     # Move semantic issues
+      -Wthread-safety            # Thread safety analysis
+      -Wthread-safety-analysis   # More thread safety checks
+      
+      # String and format warnings
+      -Wformat-pedantic          # Pedantic format checking
+      -Wformat-type-confusion    # Format type mismatches
+      
+      # Enable everything and then disable specific ones we don't want
+      -Weverything
+      # Disable warnings we don't want from -Weverything
+      -Wno-c++98-compat          # We use modern C++
+      -Wno-c++98-compat-pedantic
+      -Wno-padded                # Struct padding is usually fine
+      -Wno-weak-vtables          # Header-only classes are ok
+      -Wno-exit-time-destructors # Static destructors are sometimes needed
+      -Wno-global-constructors   # Global constructors sometimes needed
+      -Wno-missing-prototypes    # C++ doesn't need this
+      -Wno-missing-variable-declarations # C++ doesn't need this
+      -Wno-missing-include-dirs  # Temporarily disable to debug include issues
+      -Wno-disabled-macro-expansion # curl and other system macros
+      -Wno-covered-switch-default   # Conflicts with -Wswitch-default for exhaustive enums
+      -Wno-switch-default           # Allow exhaustive enum switches without default
+      -Wno-unsafe-buffer-usage      # Legacy C-style buffer usage (would require major refactoring)
     )
   endfunction()
 

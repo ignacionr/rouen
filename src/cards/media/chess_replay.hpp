@@ -401,6 +401,8 @@ public:
             case Piece::WhitePawn:
             case Piece::BlackPawn:
                 return is_white ? 'P' : 'p';
+            case Piece::None:
+                return ' ';
             default:
                 return ' ';
         }

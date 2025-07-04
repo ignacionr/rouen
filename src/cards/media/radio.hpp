@@ -111,7 +111,10 @@ namespace rouen::cards {
                         //     radio_model->playStation(station_name);
                         // }
 
-                        media_player::player(radio_model->getStation(station_name)->url, colors[0], station_name);
+                        const auto* station = radio_model ? radio_model->getStation(station_name) : nullptr;
+                        if (station) {
+                            media_player::player(station->url, colors[0], station_name);
+                        }
                         
                         if (is_current) {
                             ImGui::PopStyleColor();
@@ -119,7 +122,7 @@ namespace rouen::cards {
                     }
                     
                     // If no stations match the search, show a message
-                    if (ImGui::GetScrollMaxY() == 0 && search_text.length() > 0) {
+                    if (ImGui::GetScrollMaxY() < 0.1f && search_text.length() > 0) {
                         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No stations match your search");
                     }
                 }

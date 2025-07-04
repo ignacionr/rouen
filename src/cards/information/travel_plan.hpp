@@ -60,7 +60,7 @@ public:
             } else {
                 name("Travel Plan (Not Found)");
             }
-        } catch (const std::exception& e) {
+        } catch (const std::exception& /* e */) {
             name("Travel Plan (Invalid ID)");
         }
     }

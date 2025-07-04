@@ -35,7 +35,7 @@ namespace rouen::models {
                     repo_paths.push_back(path);
                 }
                 std::sort(repo_paths.begin(), repo_paths.end());
-            } catch (const std::exception& e) {
+            } catch (const std::exception& /* e */) {
                 // Error scanning repositories
             }
         }

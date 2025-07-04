@@ -54,7 +54,7 @@
         mach_msg_type_number_t count = sizeof(vm_stats) / sizeof(natural_t);
         
         if (host_page_size(mach_port, &page_size) == KERN_SUCCESS &&
-            host_statistics64(mach_port, HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) == KERN_SUCCESS) {
+            host_statistics64(mach_port, HOST_VM_INFO64, reinterpret_cast<host_info64_t>(&vm_stats), &count) == KERN_SUCCESS) {
             
             // Get total physical memory
             int mib_total[2] = { CTL_HW, HW_MEMSIZE };

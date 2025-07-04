@@ -18,14 +18,14 @@ namespace TextureHelper {
     // Function to load a texture from a file path
     inline SDL_Texture* loadTextureFromFile(SDL_Renderer* renderer, const char* filepath, int& width, int& height) {
         if (!renderer) {
-            TEXTURE_ERROR("Cannot load texture: renderer is null");
+            TEXTURE_ERROR("Cannot load texture: renderer is null")
             return nullptr;
         }
 
         // Load image using SDL_image
         SDL_Surface* surface = IMG_Load(filepath);
         if (!surface) {
-            TEXTURE_ERROR_FMT("Failed to load image {}: {}", filepath, IMG_GetError());
+            TEXTURE_ERROR_FMT("Failed to load image {}: {}", filepath, IMG_GetError())
             return nullptr;
         }
 
@@ -36,7 +36,7 @@ namespace TextureHelper {
         // Create texture from surface
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
         if (!texture) {
-            TEXTURE_ERROR_FMT("Failed to create texture from {}: {}", filepath, SDL_GetError());
+            TEXTURE_ERROR_FMT("Failed to create texture from {}: {}", filepath, SDL_GetError())
             SDL_FreeSurface(surface);
             return nullptr;
         }
@@ -44,14 +44,14 @@ namespace TextureHelper {
         // Free the surface as it's no longer needed
         SDL_FreeSurface(surface);
         
-        TEXTURE_INFO_FMT("Successfully loaded texture from {} ({}x{})", filepath, width, height);
+        TEXTURE_INFO_FMT("Successfully loaded texture from {} ({}x{})", filepath, width, height)
         return texture;
     }
 
     // Function to create a solid color texture
     inline SDL_Texture* createSolidColorTexture(SDL_Renderer* renderer, int width, int height, Uint8 r, Uint8 g, Uint8 b, Uint8 a) {
         if (!renderer) {
-            TEXTURE_ERROR("Cannot create texture: renderer is null");
+            TEXTURE_ERROR("Cannot create texture: renderer is null")
             return nullptr;
         }
 
@@ -65,7 +65,7 @@ namespace TextureHelper {
         );
 
         if (!texture) {
-            TEXTURE_ERROR_FMT("Failed to create texture: {}", SDL_GetError());
+            TEXTURE_ERROR_FMT("Failed to create texture: {}", SDL_GetError())
             return nullptr;
         }
 

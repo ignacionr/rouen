@@ -268,7 +268,7 @@ public:
         }
         
         // Connect to socket
-        if (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        if (connect(socket_fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == -1) {
             MPV_ERROR_FMT("Connection failed: {}", strerror(errno));
             close(socket_fd);
             socket_fd = -1;

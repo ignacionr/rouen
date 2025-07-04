@@ -189,7 +189,6 @@ public:
             case Piece::BlackRook: return "Black Rook";
             case Piece::BlackQueen: return "Black Queen";
             case Piece::BlackKing: return "Black King";
-            default: return "Unknown";
         }
     }
     
@@ -663,6 +662,9 @@ private:
                         case Piece::WhiteKing:
                         case Piece::BlackKing:
                             if (abs(df) <= 1 && abs(dr) <= 1 && (df != 0 || dr != 0)) can_move = true;
+                            break;
+                        case Piece::None:
+                            // Empty square, can't move
                             break;
                         default: break;
                     }

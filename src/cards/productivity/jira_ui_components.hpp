@@ -152,14 +152,14 @@ void execute_async(
     bool* is_loading_flag = nullptr
 ) {
     std::thread([
-        future = std::move(future),
+        future_obj = std::move(future),
         on_success,
         on_error,
         on_complete,
         is_loading_flag
     ]() mutable {
         try {
-            auto result = future.get();
+            auto result = future_obj.get();
             on_success(result);
         } catch (const std::exception& e) {
             on_error(e.what());

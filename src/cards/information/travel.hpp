@@ -466,7 +466,7 @@ public:
             auto b = ((t + 0.25) * M_PI * 2.0) / NUM_SEGMENTS;
             
             // Calculate alpha based on time
-            float alpha = 0.1f + 0.9f * (1.0f - (float)i / (float)NUM_SEGMENTS);
+            float alpha = 0.1f + 0.9f * (1.0f - static_cast<float>(i) / static_cast<float>(NUM_SEGMENTS));
             ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(colors[0].x, colors[0].y, colors[0].z, alpha));
             
             draw_list->PathArcTo(center, RADIUS, static_cast<float>(a), static_cast<float>(b), 12);
@@ -599,8 +599,6 @@ public:
                                     case media::travel::plan::status::cancelled:
                                         status_color = ImVec4(0.8f, 0.4f, 0.4f, 1.0f); // Red
                                         break;
-                                    default:
-                                        status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
                                 }
                                 
                                 ImGui::SameLine(ImGui::GetWindowWidth() - 100);

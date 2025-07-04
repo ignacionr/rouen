@@ -28,13 +28,13 @@ public:
         try {
             // Get the SDL renderer from the registrar
             renderer_ = *registrar::get<SDL_Renderer*>("main_renderer");
-        } catch (const std::exception& e) {
+        } catch (const std::exception& /* e */) {
             // No renderer available
             renderer_ = nullptr;
         }
     }
     
-    virtual ~ImageEditor() {
+    ~ImageEditor() override {
         if (image_texture_) {
             SDL_DestroyTexture(image_texture_);
             image_texture_ = nullptr;

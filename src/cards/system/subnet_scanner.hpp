@@ -444,8 +444,8 @@ private:
             
             // Only consider IPv4 interfaces
             if (ifa->ifa_addr->sa_family == AF_INET) {
-                struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
-                struct sockaddr_in *netmask = (struct sockaddr_in *)ifa->ifa_netmask;
+                auto *addr = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
+                auto *netmask = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_netmask);
                 
                 char ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
@@ -652,7 +652,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)
-        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        int result = connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
         
         // Handle the non-blocking connect
         if (result == SOCKET_ERROR) {
@@ -716,7 +716,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)
-        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        int result = connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
         
         // Handle the non-blocking connect
         if (result < 0) {
@@ -795,7 +795,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         char host[NI_MAXHOST];
-        int result = getnameinfo((struct sockaddr*)&addr, sizeof(addr),
+        int result = getnameinfo(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr),
                                 host, sizeof(host), NULL, 0, NI_NAMEREQD);
         
         if (result == 0) {

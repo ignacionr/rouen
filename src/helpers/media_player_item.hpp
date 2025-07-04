@@ -251,7 +251,7 @@ inline bool media_player_item::playMedia() {
         // Child process
         // By default, allow video window; if you want to force audio-only, add --no-video
         std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " \"" + url + "\"";
-        execlp("sh", "sh", "-c", cmd.c_str(), (char*)NULL);
+        execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);
     }
