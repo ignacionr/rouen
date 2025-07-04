@@ -150,11 +150,17 @@ public:
                     throw std::runtime_error("Could not open file: " + uri);
                 }
                 
-                // Read the entire file into buffer_
-                buffer_ = std::string(
-                    std::istreambuf_iterator<char>(input),
-                    std::istreambuf_iterator<char>()
-                );
+                // Read the entire file into buffer_ using a safer method to avoid GCC null pointer warnings
+                input.seekg(0, std::ios::end);
+                const auto file_size = input.tellg();
+                input.seekg(0, std::ios::beg);
+                
+                if (file_size > 0) {
+                    buffer_.resize(static_cast<size_t>(file_size));
+                    input.read(buffer_.data(), file_size);
+                } else {
+                    buffer_.clear();
+                }
                 
                 // Set text in the TextEditor widget
                 text_editor_.SetText(buffer_);
