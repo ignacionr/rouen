@@ -482,7 +482,7 @@ namespace rouen::cards
                 if (ImGui::Button("Open in Google Calendar")) {
                     // Open link using platform-specific command
                     std::string cmd = rouen::platform::open_file(selected_event_.htmlLink, true);
-                    system(cmd.c_str());
+                    [[maybe_unused]] int system_result = system(cmd.c_str());
                 }
             }
         }

@@ -268,7 +268,7 @@ namespace mail {
                             // Format the URL and open it
                             std::string url = std::format("https://mail.google.com/mail/u/0/#search/rfc822msgid:{}", metadata.id);
                             std::string cmd = rouen::platform::open_file(url);
-                            system(cmd.c_str());
+                            [[maybe_unused]] int system_result = system(cmd.c_str());
                         } else {
                             "notify"_sfn("Could not find message ID in metadata");
                         }

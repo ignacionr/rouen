@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #else
 #include <windows.h>
@@ -187,7 +188,7 @@ inline void media_player_item::startPositionTracking() {
 inline std::string media_player_item::urlDecode(const std::string& encoded) {
     std::string decoded;
     char ch;
-    int j;
+    unsigned int j;
     for (size_t i = 0; i < encoded.length(); i++) {
         if (encoded[i] == '%') {
             sscanf(encoded.substr(i + 1, 2).c_str(), "%x", &j);
