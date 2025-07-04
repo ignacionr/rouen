@@ -707,7 +707,7 @@ private:
         
         // Set the socket to non-blocking mode
         int flags = fcntl(sock, F_GETFL, 0);
-        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result = fcntl(sock, F_SETFL, flags | O_NONBLOCK);
         
         // Prepare the address
         struct sockaddr_in addr;
@@ -811,7 +811,7 @@ private:
 #ifdef _WIN32
         cmd = std::format("{} -n 1 -w 1000 {}", ping_path, host); // Windows-specific command
 #endif
-        int ping_result = system(cmd.c_str());
+        [[maybe_unused]] int ping_result = system(cmd.c_str());
         if (ping_result == 0) {
             // Host is reachable
             return true;

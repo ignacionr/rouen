@@ -94,13 +94,13 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         
         // Set pipes to non-blocking mode
         int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
-        fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result1 = fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
         
         flags = fcntl(bash_stdout_fd, F_GETFL, 0);
-        fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result2 = fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
         
         flags = fcntl(bash_stderr_fd, F_GETFL, 0);
-        fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result3 = fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
         
         // Reset stop flag before starting threads
         should_stop_threads = false;
@@ -148,7 +148,7 @@ void TerminalBash::terminate_bash_session() {
         // Send exit command to bash
         if (bash_stdin_fd >= 0) {
             // Send the exit command to bash
-            write(bash_stdin_fd, "exit\n", 5);
+            [[maybe_unused]] auto write_result = write(bash_stdin_fd, "exit\n", 5);
             close(bash_stdin_fd);
             bash_stdin_fd = -1;
         }
@@ -196,12 +196,12 @@ void TerminalBash::send_to_bash(const std::string& command) {
         std::string cmd_with_nl = command + "\n";
         
         // Write command to bash's stdin
-        write(bash_stdin_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
+        [[maybe_unused]] auto write_result1 = write(bash_stdin_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
         
         // Send a separate echo command to mark the end of output
         // Use a unique string that's unlikely to appear in normal output
         std::string end_marker = "echo ROUEN_CMD_DONE\n";
-        write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
+        [[maybe_unused]] auto write_result2 = write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
     }
 #else
     // Windows doesn't support interactive bash sessions
@@ -457,17 +457,17 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         
         // Set pipes to non-blocking mode
         int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
-        fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result1 = fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
         
         flags = fcntl(bash_stdout_fd, F_GETFL, 0);
-        fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result2 = fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
         
         flags = fcntl(bash_stderr_fd, F_GETFL, 0);
-        fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result3 = fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
         
         // Write password to sudo's stdin
         std::string pass_str = std::string(password) + "\n";
-        write(bash_stdin_fd, pass_str.c_str(), pass_str.length());
+        [[maybe_unused]] auto write_result = write(bash_stdin_fd, pass_str.c_str(), pass_str.length());
         
         // Reset stop flag before starting threads
         should_stop_threads = false;

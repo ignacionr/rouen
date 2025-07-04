@@ -89,7 +89,7 @@ namespace rouen::models::github {
 
         void open_url(const std::string &url) const {
             // Use platform-specific function to open the URL
-            system(rouen::platform::open_file(url).c_str());
+            [[maybe_unused]] int system_result = system(rouen::platform::open_file(url).c_str());
         }
         
     private:
