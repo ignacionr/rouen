@@ -298,10 +298,10 @@ private:
         if (current_success) {
             try {
                 weather::CurrentWeather data;
-                auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, current_data);
+                auto error = ::glz::read_json(data, current_data);
                 if (error) {
                     WEATHER_ERROR_FMT("WeatherHost: Error parsing current weather data: {}", 
-                                glz::format_error(error, current_data));
+                                ::glz::format_error(error, current_data));
                     current_success = false;
                 } else {
                     current_weather_ = std::move(data);
@@ -316,10 +316,10 @@ private:
         if (forecast_success) {
             try {
                 weather::Forecast data;
-                auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(data, forecast_data);
+                auto error = ::glz::read_json(data, forecast_data);
                 if (error) {
                     WEATHER_ERROR_FMT("WeatherHost: Error parsing forecast data: {}", 
-                                glz::format_error(error, forecast_data));
+                                ::glz::format_error(error, forecast_data));
                     forecast_success = false;
                 } else {
                     forecast_ = std::move(data);
@@ -497,6 +497,21 @@ struct glz::meta<rouen::hosts::weather::CurrentWeather> {
 };
 
 template <>
+struct glz::meta<rouen::hosts::weather::Forecast> {
+    using T = rouen::hosts::weather::Forecast;
+    static constexpr auto value = glz::object(
+        "cod", &T::cod,
+        "message", &T::message,
+        "cnt", &T::cnt,
+        "list", &T::list,
+        "city", &T::city
+    );
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
 struct glz::meta<rouen::hosts::weather::ForecastItem> {
     using T = rouen::hosts::weather::ForecastItem;
     static constexpr auto value = glz::object(
@@ -510,21 +525,6 @@ struct glz::meta<rouen::hosts::weather::ForecastItem> {
         "rain", &T::rain,
         "snow", &T::snow,
         "dt_txt", &T::dt_txt
-    );
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::weather::Forecast> {
-    using T = rouen::hosts::weather::Forecast;
-    static constexpr auto value = glz::object(
-        "cod", &T::cod,
-        "message", &T::message,
-        "cnt", &T::cnt,
-        "list", &T::list,
-        "city", &T::city
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false

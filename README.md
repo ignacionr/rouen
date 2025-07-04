@@ -222,28 +222,47 @@ This ensures compatibility across different ImGui builds (system packages vs Fet
 
 - **C++23 compatible compiler** (GCC 13+, Clang 16+, or MSVC 2022+)
 - **CMake 3.30+**
-- **Nix** (recommended for all platforms)
+- **Nix** (for all platforms)
 
-### Build Instructions (Nix Workflow)
+### Nix-Based Build (Recommended)
+
+The project has been **fully migrated to Nix** for dependency management, ensuring reproducible builds across all platforms and network isolation.
+
+#### Dependencies Managed by Nix:
+- ImGui (system package with local backends)
+- Glaze (JSON serialization)
+- SDL2, OpenSSL, SQLite, curl
+- All required development tools and compilers
+
+#### Build Instructions:
 
 1. **Enter the Nix shell**:
    ```sh
-   nix-shell
+   nix-shell  # Loads all dependencies automatically
    ```
+
 2. **Configure and build**:
    ```sh
    cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake
    cmake --build build-nix --parallel
    ```
+
 3. **Run the application**:
    ```sh
    ./build-nix/rouen.app/Contents/MacOS/rouen  # macOS
    ./build-nix/rouen  # Linux
    ```
 
-### Build Instructions (Legacy vcpkg Workflow)
+#### Benefits of Nix Migration:
+- ✅ **Network isolation**: No FetchContent downloads at build time
+- ✅ **Reproducible builds**: Exact same dependencies across environments
+- ✅ **CI/CD efficiency**: Faster builds with dependency caching
+- ✅ **Developer experience**: Single command setup (`nix-shell`)
+- ✅ **Robust ImGui handling**: Seamless system package integration with custom backends
 
-> **Note:** vcpkg-based builds are deprecated and will be removed in a future release. Use Nix for new development.
+### Legacy vcpkg Workflow (Deprecated)
+
+> **⚠️ Deprecated**: vcpkg-based builds are deprecated and will be removed in a future release. Use Nix for all new development.
 
 ---
 
