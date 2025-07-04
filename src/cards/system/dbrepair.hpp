@@ -278,8 +278,8 @@ public:
                             
                             // Get the last inserted ID
                             long long plan_id = 0;
-                            new_db.exec("SELECT last_insert_rowid()", [&plan_id](sqlite3_stmt* stmt) {
-                                plan_id = sqlite3_column_int64(stmt, 0);
+                            new_db.exec("SELECT last_insert_rowid()", [&plan_id](sqlite3_stmt* row) {
+                                plan_id = sqlite3_column_int64(row, 0);
                             });
                             
                             // Add sample destinations

@@ -72,8 +72,8 @@ struct Move {
     std::string algebraic; // The move in algebraic notation (e.g., "e4", "Nf3")
     
     // Constructor for standard moves
-    Move(Position from, Position to, bool capture = false, bool check = false, bool checkmate = false)
-        : from(from), to(to), is_capture(capture), is_check(check), is_checkmate(checkmate) {}
+    Move(Position from_pos, Position to_pos, bool capture = false, bool check = false, bool checkmate = false)
+        : from(from_pos), to(to_pos), is_capture(capture), is_check(check), is_checkmate(checkmate) {}
     
     // Constructor for moves from algebraic notation
     Move(const std::string& alg) : algebraic(alg) {}

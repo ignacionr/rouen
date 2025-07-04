@@ -273,3 +273,36 @@ Open source - see LICENSE file for details.
 ## Contributing
 
 Contributions welcome. Fork the repository, make your changes, and submit a pull request.
+
+### Strict Warnings Configuration
+
+Rouen uses **strict compiler warnings** to ensure code quality and catch errors early during development. Local builds now use the **same warning levels as CI** to prevent surprises.
+
+#### Enabled Warnings
+
+All local builds automatically enable:
+
+- **`-Werror`**: Treat warnings as errors (fail fast on issues)
+- **`-Wunused-result`**: Catch unused `system()` calls and similar issues
+- **`-Wshadow`**: Detect variable shadowing problems
+- **`-Wconversion`**: Catch implicit type conversions that may lose data
+- **`-Wformat=2`**: Strict printf/format string validation
+- **`-Wpedantic`**: Enforce strict ISO C++23 compliance
+
+#### Warning Configuration Files
+
+- **`cmake/warnings.cmake`**: Defines all warning flags and severity levels
+- **Clang**: Full strict warnings with advanced static analysis
+- **GCC**: Equivalent warnings for cross-platform compatibility
+- **MSVC**: Windows-specific warning configurations
+
+#### Why Strict Warnings Matter
+
+The strict warning configuration ensures:
+
+1. **Early Error Detection**: Catch bugs during development, not in CI
+2. **Consistent Code Quality**: Same standards across all platforms
+3. **Maintainable Codebase**: Prevent common programming mistakes
+4. **CI/Local Parity**: No surprises when pushing to CI
+
+> **Note**: If you encounter warnings during development, they must be fixed before code can compile. This is intentional and helps maintain code quality.

@@ -468,7 +468,7 @@ private:
                 // Count netmask bits
                 int cidr = 0;
                 for (unsigned int temp = mask_int; temp; temp >>= 1) {
-                    cidr += temp & 1;
+                    cidr += static_cast<int>(temp & 1U);
                 }
                 
                 std::string subnet = std::format("{}/{}", network, cidr);

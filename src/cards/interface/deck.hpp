@@ -25,7 +25,7 @@
 #include "factory.hpp"
 
 struct deck {
-    deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
+    deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer), editor_() {
         // Initialize colors
         background_color = {0.0, 0.0f, 0.0f, 0.70f};
         editor_background_color = {0.76f, 0.76f, 0.66f, 0.40f};
@@ -461,7 +461,7 @@ struct deck {
                     x += c->width;
                 }
             }
-            float const row_height { std::max(size.y / rows.size(), card::min_card_height) };
+            float const row_height { std::max(size.y / static_cast<float>(rows.size()), card::min_card_height) };
             float y = 0.0f;
             std::set<card::ptr> cards_to_remove;
             for (auto& row : rows) {

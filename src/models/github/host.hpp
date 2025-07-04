@@ -15,8 +15,8 @@
 namespace rouen::models::github {
     struct host {
         // Renamed from login_host to set_login_host to avoid conflict with type name
-        void set_login_host(std::shared_ptr<login_host> host) {
-            login_host_ = host;
+        void set_login_host(std::shared_ptr<login_host> login) {
+            login_host_ = login;
         }
 
         glz::json_t const& user() const {
