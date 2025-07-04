@@ -73,7 +73,7 @@ namespace mail {
                             if (ImGui::SmallButton(action.c_str())) {
                                 // Open the URL using the system's default browser
                                 std::string cmd = rouen::platform::open_file(link);
-                                system(cmd.c_str());
+                                [[maybe_unused]] int system_result = system(cmd.c_str());
                             }
                         }
                         ImGui::NewLine();
@@ -291,8 +291,8 @@ namespace mail {
                         if (action_item.removes_from_list) {   
                             // Remove the message from the list
                             messages_.erase(std::remove_if(messages_.begin(), messages_.end(), 
-                                [removed_uid = msg->uid()](auto const& msg) {
-                                    return msg->uid() == removed_uid;
+                                [removed_uid = msg->uid()](auto const& message) {
+                                    return message->uid() == removed_uid;
                                 }), messages_.end());
                             
                             return true; // Exit early as the message is now deleted

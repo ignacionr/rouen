@@ -27,6 +27,8 @@ function(add_gtest_executable test_name source_file)
         PRIVATE 
         GTest::gtest 
         GTest::gtest_main
+        GTest::gmock
+        GTest::gmock_main
     )
     # Add test to CTest
     add_test(NAME ${test_name} COMMAND ${test_name})
@@ -42,12 +44,12 @@ function(add_gtest_http_executable test_name source_file)
     
     # Add sources needed from the main project
     target_sources(${test_name} PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/helpers/config_service.cpp
+        ../src/helpers/config_service.cpp
     )
 
     # Include directories needed for the test
     target_include_directories(${test_name} PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
+        ../src
     )
     
     # Additional compiler definitions needed for the test
@@ -59,6 +61,8 @@ function(add_gtest_http_executable test_name source_file)
         PRIVATE 
         GTest::gtest 
         GTest::gtest_main
+        GTest::gmock
+        GTest::gmock_main
         CURL::libcurl
     )
     # Add test to CTest

@@ -5,7 +5,7 @@
  */
 
 #include <gtest/gtest.h>
-// #include <gmock/gmock.h>  // Temporarily disabled
+#include <gmock/gmock.h>
 #include <cmath>
 #include <limits>
 #include <chrono>
@@ -185,8 +185,8 @@ TEST_F(MathOperationsTest, LargeNumberPerformance) {
 // Test with Google Mock (demonstrating advanced features)
 class MockCalculator {
 public:
-    MOCK_METHOD(double, calculate, (double a, double b), ());
-    MOCK_METHOD(void, log_operation, (const std::string& operation), ());
+    MOCK_METHOD(double, calculate, (double a, double b));
+    MOCK_METHOD(void, log_operation, (const std::string& operation));
 };
 
 TEST(MockCalculatorTest, MockExample) {
@@ -194,7 +194,7 @@ TEST(MockCalculatorTest, MockExample) {
     
     // Set expectations
     EXPECT_CALL(mock_calc, calculate(2.0, 3.0))
-        .WillOnce(::testing::Return(5.0));
+        .WillOnce(testing::Return(5.0));
     
     EXPECT_CALL(mock_calc, log_operation("add"))
         .Times(1);

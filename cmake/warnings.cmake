@@ -16,6 +16,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wformat=2           # Warn about printf format issues
       -Wimplicit-fallthrough # Warn about fallthrough in switch statements
       -Wunused             # Warn about unused variables/functions
+      -Wunused-result      # Warn about unused return values (catches system() calls)
 
       # Conversion warnings (more aggressive)
       -Wconversion
@@ -35,6 +36,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wredundant-move     # Unnecessary move operations
       -Wundef              # Undefined macro use in #if
       -Wdeprecated         # Deprecated feature usage
+      -Wno-missing-field-initializers # Allow designated initializers (C++23 feature)
     )
   endfunction()
 
@@ -45,6 +47,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wextra 
     -Wpedantic 
     -Wunused
+    -Wunused-result      # Warn about unused return values
     -Wnull-dereference 
     -Wformat=2 
     -Wimplicit-fallthrough
