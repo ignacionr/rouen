@@ -135,7 +135,12 @@ else()
   endif()
   
   # Try to find tinyxml2 via pkg-config first, then standard find
-  pkg_check_modules(TINYXML2 tinyxml2)
+  # Try tinyxml-2 first (modern TinyXML2 in Nix), then fallback to tinyxml2
+  pkg_check_modules(TINYXML2 tinyxml-2)
+  if(NOT TINYXML2_FOUND)
+    pkg_check_modules(TINYXML2 tinyxml2)
+  endif()
+  
   if(NOT TINYXML2_FOUND)
     find_package(PkgConfig QUIET)
     find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
@@ -148,7 +153,13 @@ else()
   endif()
   
   if(NOT TINYXML2_FOUND)
-    message(FATAL_ERROR "TinyXML2 not found. Please install with: brew install tinyxml2")
+    if(APPLE)
+      message(FATAL_ERROR "TinyXML2 not found. Please install with: brew install tinyxml2")
+    elseif(UNIX)
+      message(FATAL_ERROR "TinyXML2 not found. Please install with your package manager (e.g., apt install libtinyxml2-dev, yum install tinyxml2-devel, or use Nix)")
+    else()
+      message(FATAL_ERROR "TinyXML2 not found. Please install TinyXML2 development package")
+    endif()
   endif()
   
   # For glaze, try to find it first, then fall back to FetchContent

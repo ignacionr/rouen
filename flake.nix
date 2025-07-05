@@ -39,10 +39,16 @@
             unstable.cmake
             unstable.ninja
             unstable.SDL2
+            unstable.SDL2_image
             unstable.pkg-config
             unstable.curl
             unstable.openssl
+            unstable.sqlite
+            unstable.libtiff
+            unstable.lerc
+            unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze
+            unstable.imgui
           ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.gcc ]);
         };
@@ -66,7 +72,7 @@
             unstable.SDL2_image 
             unstable.libtiff 
             unstable.lerc 
-            unstable.tinyxml-2 
+            unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze 
             unstable.imgui 
           ] ++ darwinFrameworks
