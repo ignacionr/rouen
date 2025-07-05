@@ -98,54 +98,15 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 # Set application bundle resources directory
 set(MACOSX_BUNDLE_RESOURCES_DIR "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Resources")
 
-# Create application icon from PNG (if PNG exists)
-if(EXISTS "${CMAKE_SOURCE_DIR}/img/Rouen.png")
-  message(STATUS "Found application icon PNG, creating .icns file")
+# Create application icon from PNG (if PNG exists and not skipped via environment)
+if(EXISTS "${CMAKE_SOURCE_DIR}/resources/icons/Rouen.icns")
+  message(STATUS "Using pre-generated Rouen.icns icon")
   
-  # Create Resources directory in the build dir for icon creation
-  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset")
-  
-  # Convert PNG to ICNS using sips and iconutil
-  # This creates multiple resolution icon files from the original PNG
-  set(ICON_SIZES "16;32;64;128;256;512;1024")
-  foreach(SIZE IN LISTS ICON_SIZES)
-    # Calculate double resolution for retina
-    math(EXPR SIZE2X "${SIZE} * 2")
-    
-    # Create standard and retina (2x) versions
-    add_custom_command(
-      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}.png"
-      COMMAND /usr/bin/sips -z ${SIZE} ${SIZE} "${CMAKE_SOURCE_DIR}/img/Rouen.png" 
-              --out "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}.png"
-      DEPENDS "${CMAKE_SOURCE_DIR}/img/Rouen.png"
-      COMMENT "Creating ${SIZE}x${SIZE} icon for app bundle"
-    )
-    
-    # Create 2x versions (for retina)
-    if(NOT SIZE EQUAL 1024)
-      add_custom_command(
-        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}@2x.png"
-        COMMAND /usr/bin/sips -z ${SIZE2X} ${SIZE2X} "${CMAKE_SOURCE_DIR}/img/Rouen.png" 
-                --out "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_${SIZE}x${SIZE}@2x.png"
-        DEPENDS "${CMAKE_SOURCE_DIR}/img/Rouen.png"
-        COMMENT "Creating ${SIZE}x${SIZE}@2x icon for app bundle"
-      )
-    endif()
-  endforeach()
-  
-  # Convert the iconset to ICNS
-  add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
-    COMMAND /usr/bin/iconutil -c icns "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset" 
-            -o "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
-    DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_16x16.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_32x32.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_64x64.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_128x128.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_256x256.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_512x512.png"
-            "${CMAKE_CURRENT_BINARY_DIR}/icon.iconset/icon_1024x1024.png"
-    COMMENT "Generating Rouen.icns from iconset"
+  # Copy the pre-generated ICNS file to build directory
+  configure_file(
+    "${CMAKE_SOURCE_DIR}/resources/icons/Rouen.icns"
+    "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns"
+    COPYONLY
   )
   
   # Add the icon to the resources
@@ -156,6 +117,8 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/img/Rouen.png")
   
   # Add the icon file to the target sources
   target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/Rouen.icns")
+else()
+  message(WARNING "No pre-generated application icon found at resources/icons/Rouen.icns")
 endif()
 
 # Create custom Info.plist file

@@ -181,6 +181,15 @@ Rouen provides pre-configured VS Code tasks and launch configurations for Nix-ba
 
 > **Note:** All previous vcpkg/system build tasks and launch configs have been removed in favor of Nix-only workflows. See `.vscode/tasks.json` and `.vscode/launch.json` for details.
 
+### Nix Build Status
+
+✅ **Fully Working**: The Nix build system is now fully operational for both local development and CI:
+- **Local builds**: All compilation warnings/errors are caught with strict GCC 14.3.0/Clang 19 flags
+- **Nix flake builds**: `nix build` produces working binaries for both Linux and macOS
+- **CI integration**: GitHub Actions use the same Nix environment as local development
+- **Icon handling**: Pre-generated application icons are used for reproducible builds across platforms
+- **Test suite**: All tests pass with the strict warning configuration
+
 ### Customizing the Nix Environment
 
 - Edit `shell.nix` to add or update dependencies
