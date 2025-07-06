@@ -24,7 +24,9 @@ pkgs.mkShell {
     pkgs.sqlite
     pkgs.SDL2
     pkgs.SDL2_image
-    pkgs.tinyxml2
+    pkgs.tinyxml-2
+    pkgs.libtiff
+    pkgs.lerc
     pkgs.gtest
     pkgs.glaze
     pkgs.imgui
@@ -53,8 +55,8 @@ pkgs.mkShell {
   shellHook = ''
     export CC=${envVars.CC}
     export CXX=${envVars.CXX}
-    export PKG_CONFIG_PATH="${pkgs.tinyxml2}/lib/pkgconfig:${pkgs.openssl}/lib/pkgconfig:${pkgs.sqlite}/lib/pkgconfig:${pkgs.SDL2}/lib/pkgconfig:${pkgs.SDL2_image}/lib/pkgconfig:${pkgs.curl}/lib/pkgconfig:${pkgs.gtest}/lib/pkgconfig:${pkgs.glaze}/lib/pkgconfig:${pkgs.imgui}/lib/pkgconfig"
-    export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.SDL2}:${pkgs.SDL2_image}:${pkgs.curl}:${pkgs.gtest}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share"
+    export PKG_CONFIG_PATH="${pkgs.tinyxml-2}/lib/pkgconfig:${pkgs.openssl}/lib/pkgconfig:${pkgs.sqlite}/lib/pkgconfig:${pkgs.SDL2}/lib/pkgconfig:${pkgs.SDL2_image}/lib/pkgconfig:${pkgs.curl}/lib/pkgconfig:${pkgs.gtest}/lib/pkgconfig:${pkgs.glaze}/lib/pkgconfig:${pkgs.imgui}/lib/pkgconfig"
+    export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml-2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.SDL2}:${pkgs.SDL2_image}:${pkgs.curl}:${pkgs.gtest}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share"
     # Remove Homebrew from PATH for full Nix isolation
     export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | grep -v '/usr/local' | paste -sd ':' -)
     echo "[Nix] Using compiler: $CC ($($CC --version | head -1))"
