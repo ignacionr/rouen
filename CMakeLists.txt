@@ -134,21 +134,33 @@ else()
     )
   endif()
   
-  # Try to find tinyxml2 via pkg-config first, then standard find
-  # Try tinyxml-2 first (modern TinyXML2 in Nix), then fallback to tinyxml2
-  pkg_check_modules(TINYXML2 tinyxml-2)
-  if(NOT TINYXML2_FOUND)
-    pkg_check_modules(TINYXML2 tinyxml2)
-  endif()
-  
-  if(NOT TINYXML2_FOUND)
-    find_package(PkgConfig QUIET)
-    find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
-      PATHS /opt/homebrew/include /usr/local/include /usr/include)
-    find_library(TINYXML2_LIBRARIES tinyxml2
-      PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
-    if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)
-      set(TINYXML2_FOUND TRUE)
+  # Try to find tinyxml2 via multiple methods
+  # 1. Try CMake find_package first (most reliable)
+  find_package(tinyxml2 QUIET)
+  if(tinyxml2_FOUND OR TARGET tinyxml2::tinyxml2)
+    set(TINYXML2_FOUND TRUE)
+    message(STATUS "Found TinyXML2 via find_package")
+  else()
+    # 2. Try pkg-config with different names
+    # Try tinyxml-2 first (modern TinyXML2 in Nix), then fallback to tinyxml2
+    pkg_check_modules(TINYXML2 tinyxml-2)
+    if(NOT TINYXML2_FOUND)
+      pkg_check_modules(TINYXML2 tinyxml2)
+    endif()
+    
+    if(NOT TINYXML2_FOUND)
+      # 3. Manual search as last resort
+      find_package(PkgConfig QUIET)
+      find_path(TINYXML2_INCLUDE_DIRS tinyxml2.h
+        PATHS /opt/homebrew/include /usr/local/include /usr/include)
+      find_library(TINYXML2_LIBRARIES tinyxml2
+        PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+      if(TINYXML2_INCLUDE_DIRS AND TINYXML2_LIBRARIES)
+        set(TINYXML2_FOUND TRUE)
+        message(STATUS "Found TinyXML2 via manual search")
+      endif()
+    else()
+      message(STATUS "Found TinyXML2 via pkg-config")
     endif()
   endif()
   

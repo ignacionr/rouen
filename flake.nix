@@ -151,7 +151,8 @@
             unstable.sqlite 
             unstable.SDL2_image 
             unstable.libtiff 
-            unstable.tinyxml2 
+            unstable.lerc 
+            unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze 
             unstable.imgui 
           ] ++ darwinFrameworks
