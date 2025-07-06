@@ -181,12 +181,47 @@ Rouen provides pre-configured VS Code tasks and launch configurations for Nix-ba
 
 > **Note:** All previous vcpkg/system build tasks and launch configs have been removed in favor of Nix-only workflows. See `.vscode/tasks.json` and `.vscode/launch.json` for details.
 
+### Nix Build Status
+
+✅ **Fully Working**: The Nix build system is now fully operational for both local development and CI:
+- **Local builds**: All compilation warnings/errors are caught with strict GCC 14.3.0/Clang 19 flags
+- **Nix flake builds**: `nix build` produces working binaries for both Linux and macOS
+- **CI integration**: GitHub Actions use the same Nix environment as local development
+- **Icon handling**: Pre-generated application icons are used for reproducible builds across platforms
+- **Test suite**: All tests pass with the strict warning configuration
+
 ### Customizing the Nix Environment
 
 - Edit `shell.nix` to add or update dependencies
 - The CMake toolchain file is at `cmake/nix-toolchain.cmake`
 - The Nix shell removes Homebrew and `/usr/local` from `PATH` for full isolation on macOS
 - macOS SDK frameworks are provided by Nix for proper header/library isolation
+
+### Network Isolation and ImGui
+
+Rouen now uses **system ImGui packages from Nix**, eliminating network dependencies during build:
+
+- **All Builds**: ImGui is provided via Nix system packages (`imgui` in `flake.nix`)
+- **CI/Release Builds**: Network isolation is fully supported (`FETCHCONTENT_FULLY_DISCONNECTED=ON`)
+- **Texture Compatibility**: Enhanced `texture_utils.hpp` provides robust ImTextureID casting using C++23 `decltype` and type traits
+
+#### C++23 Texture Utilities
+
+The migration includes a sophisticated texture ID conversion system that handles different ImTextureID definitions:
+
+```cpp
+// Automatic type-safe conversion using decltype and constexpr
+auto texture_id = rouen::helpers::texture_id_cast(gl_texture_handle);
+auto sdl_texture_id = rouen::helpers::sdl_texture_cast(sdl_texture_ptr);
+```
+
+**Key Features:**
+- **Compile-time type inference** using `decltype(ImTextureID{})`
+- **Universal conversion** between pointer and integral types via `uint64_t` bridge
+- **Zero runtime overhead** with `constexpr` functions and template metaprogramming
+- **Type safety** with SFINAE and C++23 concepts
+
+This ensures compatibility across different ImGui builds (system packages vs FetchContent) without runtime type checking.
 
 ---
 
@@ -196,28 +231,47 @@ Rouen provides pre-configured VS Code tasks and launch configurations for Nix-ba
 
 - **C++23 compatible compiler** (GCC 13+, Clang 16+, or MSVC 2022+)
 - **CMake 3.30+**
-- **Nix** (recommended for all platforms)
+- **Nix** (for all platforms)
 
-### Build Instructions (Nix Workflow)
+### Nix-Based Build (Recommended)
+
+The project has been **fully migrated to Nix** for dependency management, ensuring reproducible builds across all platforms and network isolation.
+
+#### Dependencies Managed by Nix:
+- ImGui (system package with local backends)
+- Glaze (JSON serialization)
+- SDL2, OpenSSL, SQLite, curl
+- All required development tools and compilers
+
+#### Build Instructions:
 
 1. **Enter the Nix shell**:
    ```sh
-   nix-shell
+   nix-shell  # Loads all dependencies automatically
    ```
+
 2. **Configure and build**:
    ```sh
    cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake
    cmake --build build-nix --parallel
    ```
+
 3. **Run the application**:
    ```sh
    ./build-nix/rouen.app/Contents/MacOS/rouen  # macOS
    ./build-nix/rouen  # Linux
    ```
 
-### Build Instructions (Legacy vcpkg Workflow)
+#### Benefits of Nix Migration:
+- ✅ **Network isolation**: No FetchContent downloads at build time
+- ✅ **Reproducible builds**: Exact same dependencies across environments
+- ✅ **CI/CD efficiency**: Faster builds with dependency caching
+- ✅ **Developer experience**: Single command setup (`nix-shell`)
+- ✅ **Robust ImGui handling**: Seamless system package integration with custom backends
 
-> **Note:** vcpkg-based builds are deprecated and will be removed in a future release. Use Nix for new development.
+### Legacy vcpkg Workflow (Deprecated)
+
+> **⚠️ Deprecated**: vcpkg-based builds are deprecated and will be removed in a future release. Use Nix for all new development.
 
 ---
 
@@ -228,3 +282,53 @@ Open source - see LICENSE file for details.
 ## Contributing
 
 Contributions welcome. Fork the repository, make your changes, and submit a pull request.
+
+### Strict Warnings Configuration ✅ COMPLETED
+
+Rouen now uses **extremely strict compiler warnings** with the same configuration as CI builds. The migration to strict warnings is **complete** and all builds are clean with no warnings.
+
+#### Enabled Warnings
+
+All builds (local and CI) use these strict warning flags:
+
+- **`-Werror`**: Treat all warnings as errors (fail fast on issues)
+- **`-Weverything`** (Clang): Enable all available warnings for maximum safety
+- **`-Wunused-result`**: Catch unused `system()` calls and similar issues
+- **`-Wshadow-all`**: Detect all variable shadowing problems
+- **`-Wconversion`**: Catch implicit type conversions that may lose data
+- **`-Wold-style-cast`**: Enforce modern C++ casting (static_cast, etc.)
+- **`-Wnull-dereference`**: Detect potential null pointer dereferences
+- **`-Wfloat-equal`**: Prevent unsafe floating-point equality comparisons
+- **`-Wcast-align`**: Detect alignment issues in pointer casts
+- **`-Wformat=2`**: Strict printf/format string validation
+- **`-Wpedantic`**: Enforce strict ISO C++23 compliance
+
+#### Completed Fixes
+
+The strict warning migration addressed:
+
+1. **Old-style Casts**: Replaced all C-style casts with modern C++ `static_cast`/`reinterpret_cast`
+2. **Variable Shadowing**: Fixed all parameter and variable name conflicts
+3. **Float Comparisons**: Use epsilon-based comparisons for floating-point values
+4. **Unused Results**: Proper handling of `system()` calls with `[[maybe_unused]]`
+5. **ImGuiColorTextEdit Modernization**: Updated "abandonware" code to modern C++23
+6. **Macro Semicolons**: Removed inappropriate semicolons from macro invocations
+7. **Exhaustive Enum Switches**: Ensured all enum values are handled
+
+#### Warning Configuration Files
+
+- **`cmake/warnings.cmake`**: Defines all warning flags with compiler-specific handling
+- **Clang 19.1.7**: Full `-Weverything` with carefully chosen exclusions
+- **GCC 14.3.0**: Equivalent warnings for cross-platform compatibility
+- **Selective Disabling**: Only specific warnings disabled (e.g., `-Wno-padded`, `-Wno-unsafe-buffer-usage`)
+
+#### Local-CI Parity
+
+✅ **Achievement**: Local builds now catch **exactly the same warnings as CI**, eliminating surprises:
+
+1. **Early Error Detection**: All issues caught during development, not in CI
+2. **Consistent Code Quality**: Same ultra-strict standards across all platforms
+3. **Maintainable Codebase**: Prevents common programming mistakes at compile time
+4. **Future-Proof**: Ready for compiler updates and new warning flags
+
+> **Success**: The codebase is now 100% warning-free with the strictest possible compiler settings. All builds pass with `-Werror` and comprehensive warning detection.

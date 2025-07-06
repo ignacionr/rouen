@@ -1,6 +1,7 @@
-# Linux-specific configuration for vcpkg builds
+# Linux-specific configuration for system dependencies
 
-# Find Linux-specific dependencies that vcpkg might not provide
+# Find Linux-specific dependencies 
+# X11 is required for SDL2 on Linux systems
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)

@@ -104,7 +104,7 @@ namespace rouen::models {
             
             std::string vscode_path = CONFIG_SERVICE()->get_vscode_path();
             std::string command = std::format("\"{}\" \"{}\"", vscode_path, repo_path);
-            system(command.c_str());
+            [[maybe_unused]] int system_result = system(command.c_str());
             return true;
         }
 

@@ -5,11 +5,11 @@
 #include <functional>
 
 namespace media::rss {
-    feed_item::feed_item(std::string_view title, std::string_view link, std::string_view description,
-                 std::string_view enclosure, std::string_view image_url,
-                 std::chrono::system_clock::time_point updated)
-        : title(title), link(link), description(description),
-          enclosure(enclosure), image_url(image_url), updated(updated) {}
+    feed_item::feed_item(std::string_view title_param, std::string_view link_param, std::string_view description_param,
+                 std::string_view enclosure_param, std::string_view image_url_param,
+                 std::chrono::system_clock::time_point updated_param)
+        : title(title_param), link(link_param), description(description_param),
+          enclosure(enclosure_param), image_url(image_url_param), updated(updated_param) {}
 
     void feed_item::refresh_summary() noexcept {
         try {

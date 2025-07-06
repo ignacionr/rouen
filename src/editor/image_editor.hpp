@@ -2,6 +2,7 @@
 
 #include <string>
 #include "../helpers/imgui_include.hpp"
+#include "../helpers/texture_utils.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 
@@ -27,13 +28,13 @@ public:
         try {
             // Get the SDL renderer from the registrar
             renderer_ = *registrar::get<SDL_Renderer*>("main_renderer");
-        } catch (const std::exception& e) {
+        } catch (const std::exception& /* e */) {
             // No renderer available
             renderer_ = nullptr;
         }
     }
     
-    virtual ~ImageEditor() {
+    ~ImageEditor() override {
         if (image_texture_) {
             SDL_DestroyTexture(image_texture_);
             image_texture_ = nullptr;
@@ -125,7 +126,7 @@ public:
             ImGui::SetCursorPos(pos);
             
             // Draw the image
-            ImGui::Image((ImTextureID)(intptr_t)image_texture_, display_size);
+            ImGui::Image(rouen::helpers::texture_id_cast(reinterpret_cast<void*>(image_texture_)), display_size);
         }
     }
 

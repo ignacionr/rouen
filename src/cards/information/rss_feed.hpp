@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/texture_utils.hpp"
 #include "../../external/IconsMaterialDesign.h" // Added icon header
 
 #include "../interface/card.hpp"
@@ -182,7 +183,7 @@ namespace rouen::cards
                         
                         // Create ImGui image from SDL texture
                         ImGui::Image(
-                            reinterpret_cast<void*>(feed_image_texture),
+                            rouen::helpers::texture_id_cast(feed_image_texture),
                             ImVec2(display_width, fixed_height)
                         );
                     }

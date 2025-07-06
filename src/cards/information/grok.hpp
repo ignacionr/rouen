@@ -175,7 +175,7 @@ namespace rouen::cards {
                     };
                     
                     float time = static_cast<float>(ImGui::GetTime());
-                    int dots = ((int)(time * 2) % 4);
+                    int dots = (static_cast<int>(time * 2) % 4);
                     ImGui::Text("%s", thinking_frames[static_cast<size_t>(dots)]);
                     
                     ImGui::PopStyleColor();

@@ -40,11 +40,11 @@ namespace rouen::cards {
                 if (ImGui::SmallButton("Reset")) {
                     reset();
                 }
-                auto const current_time = std::chrono::system_clock::now();
-                if (is_done(current_time)) {
+                auto const now = std::chrono::system_clock::now();
+                if (is_done(now)) {
                     ImGui::TextUnformatted("Pomodoro done!");
                 } else {
-                    auto percentage = percentaged_done(current_time);
+                    auto percentage = percentaged_done(now);
                     auto dd = ImGui::GetWindowDrawList();
                     // make a circle
                     auto const pos {ImGui::GetWindowPos()};

@@ -337,11 +337,10 @@ public:
 // Define glaze schema for Chess.com API structures
 template <>
 struct glz::meta<rouen::chess::ChessComGame::Players::Player> {
-    using T = rouen::chess::ChessComGame::Players::Player;
-    static constexpr auto value = glz::object(
-        "username", &T::username,
-        "result", &T::result,
-        "rating", &T::rating
+    static constexpr auto values = glz::object(
+        "username", &rouen::chess::ChessComGame::Players::Player::username,
+        "result", &rouen::chess::ChessComGame::Players::Player::result,
+        "rating", &rouen::chess::ChessComGame::Players::Player::rating
     );
     
     static constexpr auto options = glz::opts{
@@ -351,10 +350,9 @@ struct glz::meta<rouen::chess::ChessComGame::Players::Player> {
 
 template <>
 struct glz::meta<rouen::chess::ChessComGame::Players> {
-    using T = rouen::chess::ChessComGame::Players;
-    static constexpr auto value = glz::object(
-        "white", &T::white,
-        "black", &T::black
+    static constexpr auto values = glz::object(
+        "white", &rouen::chess::ChessComGame::Players::white,
+        "black", &rouen::chess::ChessComGame::Players::black
     );
     
     static constexpr auto options = glz::opts{
@@ -364,14 +362,13 @@ struct glz::meta<rouen::chess::ChessComGame::Players> {
 
 template <>
 struct glz::meta<rouen::chess::ChessComGame> {
-    using T = rouen::chess::ChessComGame;
-    static constexpr auto value = glz::object(
-        "url", &T::url,
-        "pgn", &T::pgn,
-        "time_class", &T::time_class,
-        "end_time", &T::end_time,
-        "players", &T::players,
-        "result", &T::result
+    static constexpr auto values = glz::object(
+        "url", &rouen::chess::ChessComGame::url,
+        "pgn", &rouen::chess::ChessComGame::pgn,
+        "time_class", &rouen::chess::ChessComGame::time_class,
+        "end_time", &rouen::chess::ChessComGame::end_time,
+        "players", &rouen::chess::ChessComGame::players,
+        "result", &rouen::chess::ChessComGame::result
     );
     
     static constexpr auto options = glz::opts{
@@ -379,11 +376,11 @@ struct glz::meta<rouen::chess::ChessComGame> {
     };
 };
 
+// Glaze reflection definitions for Chess.com API structures
 template <>
 struct glz::meta<rouen::chess::ChessComArchives> {
-    using T = rouen::chess::ChessComArchives;
-    static constexpr auto value = glz::object(
-        "archives", &T::archives
+    static constexpr auto values = glz::object(
+        "archives", &rouen::chess::ChessComArchives::archives
     );
     
     static constexpr auto options = glz::opts{
@@ -393,9 +390,8 @@ struct glz::meta<rouen::chess::ChessComArchives> {
 
 template <>
 struct glz::meta<rouen::chess::ChessComGamesResponse> {
-    using T = rouen::chess::ChessComGamesResponse;
-    static constexpr auto value = glz::object(
-        "games", &T::games
+    static constexpr auto values = glz::object(
+        "games", &rouen::chess::ChessComGamesResponse::games
     );
     
     static constexpr auto options = glz::opts{

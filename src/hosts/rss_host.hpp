@@ -407,7 +407,7 @@ private:
         // Define how many feeds to process in parallel
         const int BATCH_SIZE = 15;
         
-        fetch_thread_ = std::jthread([this, urls = std::move(urls)] (std::stop_token stoken) {
+        fetch_thread_ = std::jthread([this, url_list = std::move(urls)] (std::stop_token stoken) {
             auto quit_job = [stoken]() -> bool {
                 return "quitting"_fnb() || stoken.stop_requested();
             };
@@ -417,19 +417,19 @@ private:
             int error_count = 0;
             
             // Process feeds in batches to balance performance
-            for (size_t i = 0; i < urls.size(); i += BATCH_SIZE) {
+            for (size_t i = 0; i < url_list.size(); i += BATCH_SIZE) {
                 // Create a batch of worker threads
                 std::vector<std::jthread> workers;
                 std::mutex results_mutex;
                 std::vector<std::shared_ptr<media::rss::feed>> batch_results;
                 
                 // Process up to BATCH_SIZE feeds in parallel
-                size_t end = std::min(i + BATCH_SIZE, urls.size());
+                size_t end = std::min(i + BATCH_SIZE, url_list.size());
                 
                 for (size_t j = i; j < end; ++j) {
                     if (quit_job()) break;
                     
-                    workers.emplace_back([this, &urls, j, &results_mutex, &batch_results, &success_count, 
+                    workers.emplace_back([this, &url_list, j, &results_mutex, &batch_results, &success_count, 
                                          &error_count, &quit_job](std::stop_token worker_stoken) {
                         // Create a composite quit check that includes the worker thread's stop token
                         auto worker_quit = [worker_stoken, &quit_job]() -> bool {
@@ -439,11 +439,11 @@ private:
                         try {
                             // Only attempt to add the feed if we're not quitting
                             if (!worker_quit()) {
-                                RSS_INFO_FMT("Starting to process feed: {}", urls[j]);
-                                auto feed_ptr = addFeedSync(urls[j], worker_quit);
+                                RSS_INFO_FMT("Starting to process feed: {}", url_list[j]);
+                                auto feed_ptr = addFeedSync(url_list[j], worker_quit);
                                 
                                 if (feed_ptr) {
-                                    RSS_INFO_FMT("Successfully fetched and processed feed: {}", urls[j]);
+                                    RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
                                     std::lock_guard<std::mutex> lock(results_mutex);
                                     batch_results.push_back(feed_ptr);
                                     ++success_count;
@@ -455,13 +455,13 @@ private:
                                 }
                             }
                         } catch (const std::exception& e) {
-                            RSS_ERROR_FMT("Failed to add feed {}: {}", urls[j], e.what());
-                            "notify"_sfn(std::format("Failed to add feed {}", urls[j]));
+                            RSS_ERROR_FMT("Failed to add feed {}: {}", url_list[j], e.what());
+                            "notify"_sfn(std::format("Failed to add feed {}", url_list[j]));
                             
                             std::lock_guard<std::mutex> lock(results_mutex);
                             ++error_count;
                         } catch (...) {
-                            RSS_ERROR_FMT("Failed to add feed {} with unknown error", urls[j]);
+                            RSS_ERROR_FMT("Failed to add feed {} with unknown error", url_list[j]);
                             
                             std::lock_guard<std::mutex> lock(results_mutex);
                             ++error_count;

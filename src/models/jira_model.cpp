@@ -871,9 +871,22 @@ std::vector<jira_connection_profile> jira_model::load_profiles() {
     // Check if file exists
     if (fs::exists(profiles_path)) {
         try {
-            // Read file content
+            // Read file content using a safer method to avoid GCC null pointer warnings
             std::ifstream file(profiles_path);
-            std::string json_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            if (!file) {
+                DB_ERROR_FMT("Failed to open JIRA profiles file: {}", profiles_path.string());
+                return saved_profiles;
+            }
+            
+            file.seekg(0, std::ios::end);
+            const auto file_size = file.tellg();
+            file.seekg(0, std::ios::beg);
+            
+            std::string json_str;
+            if (file_size > 0) {
+                json_str.resize(static_cast<size_t>(file_size));
+                file.read(json_str.data(), file_size);
+            }
             file.close();
             
             // Parse JSON

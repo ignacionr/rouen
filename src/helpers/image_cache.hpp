@@ -97,7 +97,7 @@ public:
             
             // Set up callback to write to file
             auto write_callback = [](void* ptr, size_t size, size_t nmemb, void* stream) -> size_t {
-                return fwrite(ptr, size, nmemb, (FILE*)stream);
+                return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
             };
             
             // Download the image

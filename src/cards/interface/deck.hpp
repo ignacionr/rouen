@@ -3,10 +3,12 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm> // Added for std::find_if
 #include <chrono>    // Added for timestamp
+#include <cmath>     // Added for std::abs
 #include <fstream>   // Added for file I/O
 #include <functional>
 #include <iomanip>   // Added for std::put_time
 #include <iostream>  // Added for console output
+#include <limits>    // Added for std::numeric_limits
 #include <sstream>   // Added for string stream
 #include <string>
 #include <utility>
@@ -25,7 +27,7 @@
 #include "factory.hpp"
 
 struct deck {
-    deck(SDL_Renderer* renderer): renderer(renderer), editor_() {
+    deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer), editor_() {
         // Initialize colors
         background_color = {0.0, 0.0f, 0.0f, 0.70f};
         editor_background_color = {0.76f, 0.76f, 0.66f, 0.40f};
@@ -54,8 +56,8 @@ struct deck {
     void create_card(std::string_view uri, bool move_first = false) {
         // this needs to be deferred
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        deferred_ops->queue([this, uri = std::string{uri}, move_first] {
-            create_card_impl(uri, move_first);
+        deferred_ops->queue([this, uri_str = std::string{uri}, move_first] {
+            create_card_impl(uri_str, move_first);
         });
     }
 
@@ -461,7 +463,7 @@ struct deck {
                     x += c->width;
                 }
             }
-            float const row_height { std::max(size.y / rows.size(), card::min_card_height) };
+            float const row_height { std::max(size.y / static_cast<float>(rows.size()), card::min_card_height) };
             float y = 0.0f;
             std::set<card::ptr> cards_to_remove;
             for (auto& row : rows) {
@@ -491,7 +493,7 @@ struct deck {
                 }
             }
             static float last_viewport_width = size.x;
-            if (last_viewport_width != size.x) {
+            if (std::abs(last_viewport_width - size.x) > std::numeric_limits<float>::epsilon()) {
                 start_x = 0.0f;
                 last_viewport_width = size.x;
             }

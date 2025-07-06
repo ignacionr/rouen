@@ -59,11 +59,11 @@ namespace rouen::cards {
             } else {
                 schema = uri;
             }
-            auto factory = dictionary().find(std::string(schema));
-            if (factory == dictionary().end()) {
+            auto factory_it = dictionary().find(std::string(schema));
+            if (factory_it == dictionary().end()) {
                 throw std::runtime_error("Unknown card type: " + std::string(schema));
             }
-            auto card_ptr = factory->second(std::string(locator), renderer);
+            auto card_ptr = factory_it->second(std::string(locator), renderer);
             if (!card_ptr) {
                 throw std::runtime_error("Failed to create card: " + std::string(schema));
             }

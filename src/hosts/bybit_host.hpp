@@ -110,7 +110,7 @@ namespace bybit {
         long long retCode;
         std::string retMsg;
         std::optional<AccountInfo> result;  // Make result optional to handle error cases
-        glz::json_t retExtInfo;
+        ::glz::json_t retExtInfo;
         long long time;
     };
 
@@ -148,7 +148,7 @@ namespace bybit {
         long long retCode;
         std::string retMsg;
         std::optional<AssetAccountInfo> result;
-        glz::json_t retExtInfo;
+        ::glz::json_t retExtInfo;
         long long time;
     };
 
@@ -353,10 +353,10 @@ private:
 
             // Try to parse the structured response directly
             bybit::BybitResponse bybit_response;
-            auto parse_result = glz::read<glz::opts{.error_on_unknown_keys=false}>(bybit_response, response);
+            auto parse_result = ::glz::read_json(bybit_response, response);
             
             if (parse_result) {
-                last_error_ = "Failed to parse account info structure: " + std::string(glz::format_error(parse_result, response));
+                last_error_ = "Failed to parse account info structure: " + std::string(::glz::format_error(parse_result, response));
                 BYBIT_ERROR_FMT("Failed to parse account info: {}", last_error_);
                 return std::nullopt;
             }
@@ -444,10 +444,10 @@ private:
 
             // Try to parse the structured response directly
             bybit::AssetResponse asset_response;
-            auto parse_result = glz::read<glz::opts{.error_on_unknown_keys=false}>(asset_response, response);
+            auto parse_result = ::glz::read_json(asset_response, response);
             
             if (parse_result) {
-                last_error_ = "Failed to parse asset info structure: " + std::string(glz::format_error(parse_result, response));
+                last_error_ = "Failed to parse asset info structure: " + std::string(::glz::format_error(parse_result, response));
                 BYBIT_ERROR_FMT("Failed to parse asset info: {}", last_error_);
                 return std::nullopt;
             }

@@ -6,8 +6,6 @@
 #include <memory>
 #include <SDL.h>
 #include "./imgui_include.hpp"
-#include "backends/imgui_impl_sdl2.h"
-#include "backends/imgui_impl_sdlrenderer2.h"
 
 // A service that queues operations to be executed after the ImGui frame is completed
 class deferred_operations {

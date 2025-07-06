@@ -100,7 +100,7 @@ public:
                     if (ImGui::SmallButton("Open in Browser")) {
                         // Open URL in browser using platform-specific command
                         auto command = rouen::platform::open_file(item_link, true);
-                        std::system(command.c_str());
+                        [[maybe_unused]] int system_result = std::system(command.c_str());
                     }
                     
                     // Date and time

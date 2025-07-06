@@ -444,8 +444,8 @@ private:
             
             // Only consider IPv4 interfaces
             if (ifa->ifa_addr->sa_family == AF_INET) {
-                struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
-                struct sockaddr_in *netmask = (struct sockaddr_in *)ifa->ifa_netmask;
+                auto *addr = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_addr);
+                auto *netmask = reinterpret_cast<struct sockaddr_in *>(ifa->ifa_netmask);
                 
                 char ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
@@ -468,7 +468,7 @@ private:
                 // Count netmask bits
                 int cidr = 0;
                 for (unsigned int temp = mask_int; temp; temp >>= 1) {
-                    cidr += temp & 1;
+                    cidr += static_cast<int>(temp & 1U);
                 }
                 
                 std::string subnet = std::format("{}/{}", network, cidr);
@@ -652,7 +652,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)
-        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        int result = connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
         
         // Handle the non-blocking connect
         if (result == SOCKET_ERROR) {
@@ -707,7 +707,7 @@ private:
         
         // Set the socket to non-blocking mode
         int flags = fcntl(sock, F_GETFL, 0);
-        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        [[maybe_unused]] int fcntl_result = fcntl(sock, F_SETFL, flags | O_NONBLOCK);
         
         // Prepare the address
         struct sockaddr_in addr;
@@ -716,7 +716,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         // Attempt to connect (non-blocking)
-        int result = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+        int result = connect(sock, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
         
         // Handle the non-blocking connect
         if (result < 0) {
@@ -795,7 +795,7 @@ private:
         inet_pton(AF_INET, ip_str, &addr.sin_addr);
         
         char host[NI_MAXHOST];
-        int result = getnameinfo((struct sockaddr*)&addr, sizeof(addr),
+        int result = getnameinfo(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr),
                                 host, sizeof(host), NULL, 0, NI_NAMEREQD);
         
         if (result == 0) {
@@ -811,7 +811,7 @@ private:
 #ifdef _WIN32
         cmd = std::format("{} -n 1 -w 1000 {}", ping_path, host); // Windows-specific command
 #endif
-        int ping_result = system(cmd.c_str());
+        [[maybe_unused]] int ping_result = system(cmd.c_str());
         if (ping_result == 0) {
             // Host is reachable
             return true;

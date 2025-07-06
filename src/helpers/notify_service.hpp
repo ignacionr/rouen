@@ -15,7 +15,7 @@ struct notify_service {
             std::make_shared<std::function<void(std::string const&)>>(
                 [](std::string const &message) {
                     std::string say_path = CONFIG_SERVICE()->get_say_path();
-                    system(std::format("{} \"{}\"", say_path, message).c_str());
+                    [[maybe_unused]] int system_result = system(std::format("{} \"{}\"", say_path, message).c_str());
                     NOTIFY_INFO(message);
                 }
             )

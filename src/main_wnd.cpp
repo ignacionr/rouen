@@ -5,10 +5,6 @@
 // Include ImGui wrapper first which handles all ImGui related headers
 #include "helpers/imgui_include.hpp"
 
-// Add STB implementation defines
-#define STB_RECT_PACK_IMPLEMENTATION
-#define STB_TRUETYPE_IMPLEMENTATION
-
 // 3. All other includes
 #include "cards/interface/deck.hpp"
 #include "fonts.hpp"
@@ -106,7 +102,7 @@ bool main_wnd::initialize() {
 
         // Create window with SDL
         std::cout << "DEBUG: Creating SDL window..." << std::endl;
-        SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
         m_window = SDL_CreateWindow(
             "Rouen",
             SDL_WINDOWPOS_CENTERED,
@@ -496,7 +492,7 @@ void rouen::MainWindow::render_font_check() {
             // Handle UTF-8 encoding
             if ((test_char[0] & 0x80) == 0) {
                 // 1-byte character
-                codepoint = (unsigned int)test_char[0];
+                codepoint = static_cast<unsigned int>(test_char[0]);
             } else if ((test_char[0] & 0xE0) == 0xC0 && test_char[1] != 0) {
                 // 2-byte character
                 codepoint = (static_cast<unsigned int>(test_char[0] & 0x1F) << 6) | static_cast<unsigned int>(test_char[1] & 0x3F);

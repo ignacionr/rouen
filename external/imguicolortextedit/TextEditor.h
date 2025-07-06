@@ -130,7 +130,7 @@ public:
 	typedef std::unordered_set<std::string> Keywords;
 	typedef std::map<int, std::string> ErrorMarkers;
 	typedef std::unordered_set<int> Breakpoints;
-	typedef std::array<ImU32, (unsigned)PaletteIndex::Max> Palette;
+	typedef std::array<ImU32, static_cast<unsigned>(PaletteIndex::Max)> Palette;
 	typedef uint8_t Char;
 
 	struct Glyph
@@ -204,7 +204,7 @@ public:
 	std::string GetSelectedText() const;
 	std::string GetCurrentLineText()const;
 
-	int GetTotalLines() const { return (int)mLines.size(); }
+	int GetTotalLines() const { return static_cast<int>(mLines.size()); }
 	bool IsOverwrite() const { return mOverwrite; }
 
 	void SetReadOnly(bool aValue);

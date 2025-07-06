@@ -68,10 +68,10 @@ struct jira_user {
             "accountId", &T::account_id,
             "emailAddress", &T::email,
             "displayName", &T::display_name,
-            "avatarUrls", [](auto& self, auto& value) {
+            "avatarUrls", [](auto& self, auto& val) {
                 // Handle nested avatar URLs if present
-                if (value.contains("48x48")) {
-                    self.avatar_url = value["48x48"].template get<std::string>();
+                if (val.contains("48x48")) {
+                    self.avatar_url = val["48x48"].template get<std::string>();
                 }
                 return true;
             }
@@ -115,12 +115,12 @@ struct jira_status {
             "id", &T::id,
             "name", &T::name,
             "description", &T::description,
-            "statusCategory", [](auto& self, auto& value) {
-                if (value.contains("name")) {
-                    self.category = value["name"].template get<std::string>();
+            "statusCategory", [](auto& self, auto& val) {
+                if (val.contains("name")) {
+                    self.category = val["name"].template get<std::string>();
                 }
-                if (value.contains("colorName")) {
-                    self.color = value["colorName"].template get<std::string>();
+                if (val.contains("colorName")) {
+                    self.color = val["colorName"].template get<std::string>();
                 }
                 return true;
             }
@@ -147,16 +147,16 @@ struct jira_project {
             "key", &T::key,
             "name", &T::name,
             "description", &T::description,
-            "lead", [](auto& self, auto& value) {
-                if (value.contains("displayName")) {
-                    self.lead = value["displayName"].template get<std::string>();
+            "lead", [](auto& self, auto& val) {
+                if (val.contains("displayName")) {
+                    self.lead = val["displayName"].template get<std::string>();
                 }
                 return true;
             },
             "self", &T::url,
-            "avatarUrls", [](auto& self, auto& value) {
-                if (value.contains("48x48")) {
-                    self.avatar_url = value["48x48"].template get<std::string>();
+            "avatarUrls", [](auto& self, auto& val) {
+                if (val.contains("48x48")) {
+                    self.avatar_url = val["48x48"].template get<std::string>();
                 }
                 return true;
             },
@@ -207,12 +207,12 @@ struct jira_issue {
         static constexpr auto value = glz::object(
             "id", &T::id,
             "key", &T::key,
-            "fields", [](auto& self, auto& value) {
+            "fields", [](auto& self, auto& val) {
                 // Replace glz::is_input with direct property access
-                if (auto it = value.find("summary"); it != value.end()) {
+                if (auto it = val.find("summary"); it != val.end()) {
                     self.summary = it->second.template get<std::string>();
                 }
-                if (auto it = value.find("description"); it != value.end()) {
+                if (auto it = val.find("description"); it != val.end()) {
                     if (!it->second.is_null()) {
                         // Handle various description formats (plain text, Atlassian Document Format)
                         if (it->second.is_string()) {
@@ -223,29 +223,29 @@ struct jira_issue {
                         }
                     }
                 }
-                if (auto it = value.find("issuetype"); it != value.end()) {
+                if (auto it = val.find("issuetype"); it != val.end()) {
                     glz::read_json(self.issue_type, it->second);
                 }
-                if (auto it = value.find("status"); it != value.end()) {
+                if (auto it = val.find("status"); it != val.end()) {
                     glz::read_json(self.status, it->second);
                 }
-                if (auto it = value.find("assignee"); it != value.end()) {
+                if (auto it = val.find("assignee"); it != val.end()) {
                     if (!it->second.is_null()) {
                         glz::read_json(self.assignee, it->second);
                     }
                 }
-                if (auto it = value.find("reporter"); it != value.end()) {
+                if (auto it = val.find("reporter"); it != val.end()) {
                     if (!it->second.is_null()) {
                         glz::read_json(self.reporter, it->second);
                     }
                 }
-                if (auto it = value.find("created"); it != value.end()) {
+                if (auto it = val.find("created"); it != val.end()) {
                     self.created = it->second.template get<std::string>();
                 }
-                if (auto it = value.find("updated"); it != value.end()) {
+                if (auto it = val.find("updated"); it != val.end()) {
                     self.updated = it->second.template get<std::string>();
                 }
-                if (auto it = value.find("labels"); it != value.end()) {
+                if (auto it = val.find("labels"); it != val.end()) {
                     self.labels.clear();
                     for (const auto& label : it->second) {
                         self.labels.push_back(label.template get<std::string>());

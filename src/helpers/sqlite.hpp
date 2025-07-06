@@ -92,7 +92,7 @@ namespace hosting::db
             
             // Retry logic for busy database (5 retries with increasing backoff)
             int retries = 0;
-            int rc;
+            int rc = SQLITE_OK;
             while (retries < 5) {
                 rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
                 if (rc != SQLITE_BUSY && rc != SQLITE_LOCKED) break;

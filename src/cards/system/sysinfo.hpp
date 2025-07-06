@@ -162,7 +162,7 @@ struct sysinfo_card : public card {
         mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
         
         kern_return_t error = host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, 
-                                            (host_info_t)&cpu_load, &count);
+                                            reinterpret_cast<host_info_t>(&cpu_load), &count);
         if (error != KERN_SUCCESS) {
             return 0.0;
         }

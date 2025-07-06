@@ -640,7 +640,7 @@ private:
     }
     
     // Handle CURL errors with detailed SSL troubleshooting
-    void handle_curl_error(CURLcode res, const std::string& url) const {
+    [[noreturn]] void handle_curl_error(CURLcode res, const std::string& url) const {
         std::string error_msg = curl_easy_strerror(res);
         
         // Provide more detailed error information for SSL issues

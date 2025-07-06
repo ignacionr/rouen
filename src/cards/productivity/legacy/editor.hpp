@@ -6,6 +6,7 @@
 #include <cctype>
 
 #include "../../../helpers/imgui_include.hpp"
+#include "../../../helpers/texture_utils.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 
@@ -149,11 +150,17 @@ public:
                     throw std::runtime_error("Could not open file: " + uri);
                 }
                 
-                // Read the entire file into buffer_
-                buffer_ = std::string(
-                    std::istreambuf_iterator<char>(input),
-                    std::istreambuf_iterator<char>()
-                );
+                // Read the entire file into buffer_ using a safer method to avoid GCC null pointer warnings
+                input.seekg(0, std::ios::end);
+                const auto file_size = input.tellg();
+                input.seekg(0, std::ios::beg);
+                
+                if (file_size > 0) {
+                    buffer_.resize(static_cast<size_t>(file_size));
+                    input.read(buffer_.data(), file_size);
+                } else {
+                    buffer_.clear();
+                }
                 
                 // Set text in the TextEditor widget
                 text_editor_.SetText(buffer_);
@@ -344,7 +351,7 @@ public:
                 ImGui::SetCursorPos(pos);
                 
                 // Draw the image
-                ImGui::Image((ImTextureID)(intptr_t)image_texture_, display_size);
+                ImGui::Image(rouen::helpers::texture_id_cast(reinterpret_cast<void*>(image_texture_)), display_size);
             }
             else if (!source_file_.empty()) {
                 rouen::fonts::with_font fnt{rouen::fonts::FontType::Mono};

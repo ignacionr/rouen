@@ -330,7 +330,7 @@ namespace mail {
         }
         
         // Helper to handle CURL errors with detailed information
-        void handle_curl_error(const std::string& operation, CURLcode res) {
+        [[noreturn]] void handle_curl_error(const std::string& operation, CURLcode res) {
             std::string error_msg = std::format("{}: {} ({})", 
                 operation, 
                 curl_easy_strerror(res), 
