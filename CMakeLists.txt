@@ -452,7 +452,11 @@ else()
   endif()
   
   # Handle TinyXML2 system dependencies
-  if(TINYXML2_FOUND)
+  if(TARGET tinyxml2::tinyxml2)
+    # Modern cmake target from find_package
+    target_link_libraries(${PROJECT_NAME} PRIVATE tinyxml2::tinyxml2)
+  elseif(TINYXML2_FOUND)
+    # pkg-config or manual detection
     target_include_directories(${PROJECT_NAME} PRIVATE ${TINYXML2_INCLUDE_DIRS})
     target_link_libraries(${PROJECT_NAME} PRIVATE ${TINYXML2_LIBRARIES})
   endif()
