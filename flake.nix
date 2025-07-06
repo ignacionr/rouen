@@ -49,6 +49,9 @@
             unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze
             unstable.imgui
+            unstable.gtest.dev  # Google Test development headers and CMake files
+            unstable.gtest.dev  # Google Test development headers and CMake files
+            unstable.gtest.dev  # Google Test development headers and CMake files
           ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.gcc ]);
         };
@@ -139,7 +142,6 @@
           src = ./.;
           nativeBuildInputs = [ 
             unstable.cmake 
-            unstable.ninja 
             unstable.pkg-config 
             unstable.git 
             unstable.cacert 
@@ -153,6 +155,7 @@
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)
+            unstable.gtest.dev
             unstable.glaze 
             unstable.imgui 
           ] ++ darwinFrameworks
@@ -171,15 +174,25 @@
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
           ] ++ darwinCmakeFlags;
           env = darwinEnv;
-          buildPhase = ''
+          configurePhase = ''
+            runHook preConfigure
             mkdir -p build-tests
             cd build-tests
-            cmake ../tests -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+            cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+            runHook postConfigure
+          '';
+          buildPhase = ''
+            runHook preBuild
             cmake --build . --parallel
+            runHook postBuild
           '';
           checkPhase = ''
-            cd build-tests
             ctest --output-on-failure
+          '';
+          installPhase = ''
+            # Tests don't need installation, but Nix expects an output directory
+            mkdir -p $out
+            echo "Tests built successfully" > $out/test-results.txt
           '';
         };
       });
