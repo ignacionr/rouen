@@ -1,15 +1,8 @@
-name: Windows Release Build
+name: Windows Build & Test
 
 on:
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: 'Create a GitHub release'
-        required: false
-        default: false
-        type: boolean
-  release:
-    types: [published]
+  workflow_call:
   push:
     branches: [main]
     paths-ignore:
@@ -1095,51 +1088,5 @@ jobs:
       with:
         name: rouen-windows-x64-complete
         path: |
-          rouen-windows-x64.zip
-          Rouen-*.msi
-
-    - name: Upload ZIP to release (on release event)
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./rouen-windows-x64.zip
-        asset_name: rouen-windows-x64.zip
-        asset_content_type: application/zip
-
-    - name: Upload MSI to release (on release event)
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./Rouen-1.0.${{ github.run_number }}.0-x64.msi
-        asset_name: Rouen-1.0.${{ github.run_number }}.0-x64.msi
-        asset_content_type: application/x-msi
-
-    - name: Create release (on workflow_dispatch)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
-        body: |
-          Automated Windows release build
-          
-          ## What's included:
-          - Windows x64 executable
-          - All required DLLs and runtime dependencies
-          - Assets and configuration files
-          - Documentation
-          
-          This is a self-contained build that should run on any Windows 10+ system.
-        draft: false
-        prerelease: false
-        files: |
           rouen-windows-x64.zip
           Rouen-*.msi

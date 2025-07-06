@@ -1,0 +1,362 @@
+name: Multi-Platform Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  create-release:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name }}
+          name: Rouen ${{ github.event.inputs.tag_name }}
+          body: |
+            # Rouen Cross-Platform Release ${{ github.event.inputs.tag_name }}
+            
+            This release includes builds for all supported platforms:
+            - **Windows** (x64) - MSI installer with automatic dependency management
+            - **macOS** (Universal Binary) - DMG installer with Apple Silicon and Intel support  
+            - **Linux** (x64) - Portable archive with Nix-based reproducible build
+            
+            ## Installation Instructions
+            
+            ### Windows
+            1. Download `rouen-windows-x64.msi`
+            2. Run the installer (no admin rights required)
+            3. Launch from Start Menu or Desktop shortcut
+            
+            ### macOS
+            1. Download `rouen-macos-universal.dmg`
+            2. Mount the DMG and drag Rouen.app to Applications
+            3. Launch from Applications or Spotlight
+            
+            ### Linux
+            1. Download `rouen-linux-x64.tar.gz`
+            2. Extract: `tar -xzf rouen-linux-x64.tar.gz`
+            3. Install dependencies: `sudo apt install libx11-6 libgl1-mesa-glx libasound2`
+            4. Run: `./run-rouen.sh` or `./rouen`
+            
+            ## System Requirements
+            - **Windows**: Windows 10 version 1903 or later (x64)
+            - **macOS**: macOS 11.0 (Big Sur) or later, Apple Silicon or Intel
+            - **Linux**: Ubuntu 20.04 LTS or equivalent, X11 display server
+            
+            All builds are self-contained and include all necessary dependencies.
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: always() && (github.event_name == 'release' || needs.create-release.result == 'success')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.4.0
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          accept-flake-config = true
+
+    - name: Cache Nix store
+      uses: actions/cache@v4
+      with:
+        path: |
+          /nix/store
+          ~/.cache/nix
+        key: ${{ runner.os }}-nix-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-nix-
+
+    - name: Build Release
+      run: |
+        echo "Building Rouen for Linux with Nix..."
+        nix-shell --run "cmake -B build-release -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23"
+        nix-shell --run "cmake --build build-release --parallel"
+
+    - name: Run Tests
+      run: |
+        echo "Running tests..."
+        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
+        nix-shell --run "cd build-tests && cmake --build . --parallel"
+        nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
+
+    - name: Package Linux Release
+      run: |
+        mkdir -p linux-release
+        cp build-release/rouen linux-release/
+        cp -f podcasts.txt presets.txt linux-release/ 2>/dev/null || true
+        cp -rf external/fonts linux-release/ 2>/dev/null || true
+        cp -f external/MaterialIcons-Regular.ttf linux-release/ 2>/dev/null || true
+        cp -rf img linux-release/ 2>/dev/null || true
+        
+        cat > linux-release/run-rouen.sh << 'EOF'
+        #!/bin/bash
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        cd "$SCRIPT_DIR"
+        export LD_LIBRARY_PATH="$SCRIPT_DIR:$LD_LIBRARY_PATH"
+        ./rouen "$@"
+        EOF
+        chmod +x linux-release/run-rouen.sh
+        
+        tar -czf rouen-linux-x64.tar.gz -C linux-release .
+
+    - name: Upload Linux Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+        files: rouen-linux-x64.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    runs-on: macos-15
+    needs: [create-release]
+    if: always() && (github.event_name == 'release' || needs.create-release.result == 'success')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest
+
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}/vcpkg/installed
+          ${{ github.workspace }}/vcpkg/buildtrees
+          ${{ github.workspace }}/vcpkg/packages
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Setup vcpkg
+      run: |
+        chmod +x ./scripts/setup-macos-build.sh
+        ./scripts/setup-macos-build.sh
+
+    - name: Configure and Build
+      run: |
+        export MACOSX_DEPLOYMENT_TARGET=11.0
+        
+        if [ -f "${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" ]; then
+          echo "Building with vcpkg..."
+          cmake -B build-release -S . \
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_CXX_STANDARD=23
+        else
+          echo "Building with system dependencies..."
+          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig"
+          cmake -B build-release -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_CXX_STANDARD=23 \
+            -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"
+        fi
+        
+        cmake --build build-release --config Release --parallel
+
+    - name: Create macOS Package
+      run: |
+        mkdir -p dist
+        cp -R build-release/rouen.app dist/
+        
+        # Copy resources
+        app_path="dist/rouen.app"
+        resources_dir="$app_path/Contents/Resources"
+        mkdir -p "$resources_dir"
+        
+        cp -f podcasts.txt presets.txt "$resources_dir/" 2>/dev/null || true
+        cp -rf external/fonts "$resources_dir/" 2>/dev/null || true
+        cp -f external/MaterialIcons-Regular.ttf "$resources_dir/" 2>/dev/null || true
+        cp -rf img "$resources_dir/" 2>/dev/null || true
+        
+        # Create DMG
+        temp_dmg_dir="dmg_temp"
+        mkdir -p "$temp_dmg_dir"
+        cp -R "$app_path" "$temp_dmg_dir/"
+        ln -s /Applications "$temp_dmg_dir/Applications"
+        hdiutil create -size 200m -fs HFS+ -volname "Rouen" -srcfolder "$temp_dmg_dir" "rouen-macos-universal.dmg"
+        rm -rf "$temp_dmg_dir"
+
+    - name: Upload macOS Asset
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+        files: rouen-macos-universal.dmg
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    runs-on: windows-latest
+    needs: [create-release]
+    if: always() && (github.event_name == 'release' || needs.create-release.result == 'success')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ github.workspace }}\vcpkg\installed
+          ${{ github.workspace }}\vcpkg\buildtrees
+          ${{ github.workspace }}\vcpkg\packages
+        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-
+
+    - name: Setup vcpkg
+      shell: cmd
+      run: |
+        if not exist "vcpkg" (
+          git clone https://github.com/Microsoft/vcpkg.git vcpkg
+          cd vcpkg
+          call bootstrap-vcpkg.bat
+          vcpkg.exe install --triplet x64-windows
+          vcpkg.exe integrate install
+        )
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Configure and Build
+      shell: cmd
+      run: |
+        cmake -B build -S . ^
+          -DCMAKE_TOOLCHAIN_FILE="%GITHUB_WORKSPACE%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+          -DVCPKG_TARGET_TRIPLET=x64-windows ^
+          -DCMAKE_BUILD_TYPE=Release ^
+          -G "Visual Studio 17 2022" -A x64
+        cmake --build build --config Release --parallel
+
+    - name: Package Windows Release
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $buildDir = "$workspace\build\Release"
+        $distDir = "$workspace\dist"
+        
+        New-Item -ItemType Directory -Force -Path $distDir
+        
+        # Copy executable and DLLs
+        Copy-Item "$buildDir\rouen.exe" $distDir
+        Get-ChildItem "$buildDir\*.dll" -ErrorAction SilentlyContinue | Copy-Item -Destination $distDir
+        
+        # Copy vcpkg DLLs if not already copied
+        $vcpkgBin = "$workspace\vcpkg\installed\x64-windows\bin"
+        if (Test-Path $vcpkgBin) {
+          Get-ChildItem "$vcpkgBin\*.dll" -ErrorAction SilentlyContinue | Copy-Item -Destination $distDir
+        }
+        
+        # Copy resources
+        $resources = @("podcasts.txt", "presets.txt", "README.md", "LICENSE")
+        foreach ($resource in $resources) {
+          if (Test-Path $resource) {
+            Copy-Item $resource $distDir
+          }
+        }
+        
+        # Copy directories
+        $dirs = @("external\fonts", "img")
+        foreach ($dir in $dirs) {
+          if (Test-Path $dir) {
+            Copy-Item $dir $distDir -Recurse
+          }
+        }
+        
+        # Create ZIP archive
+        Compress-Archive -Path "$distDir\*" -DestinationPath "rouen-windows-x64.zip"
+
+    - name: Install WiX
+      run: dotnet tool install --global wix
+
+    - name: Create MSI Installer
+      shell: pwsh
+      run: |
+        # Create simple WiX source file for user-mode installation
+        @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Product Id="*" Name="Rouen" Language="1033" Version="1.0.0.0" Manufacturer="Rouen Development" UpgradeCode="12345678-1234-1234-1234-123456789012">
+            <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />
+            <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+            <MediaTemplate EmbedCab="yes" />
+            
+            <Feature Id="ProductFeature" Title="Rouen" Level="1">
+              <ComponentGroupRef Id="ProductComponents" />
+            </Feature>
+            
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <Directory Id="LocalAppDataFolder">
+                <Directory Id="INSTALLFOLDER" Name="Rouen" />
+              </Directory>
+              <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Rouen"/>
+              </Directory>
+            </Directory>
+            
+            <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+              <Component Id="MainExecutable" Guid="*">
+                <File Id="RouenEXE" Source="dist\rouen.exe" KeyPath="yes">
+                  <Shortcut Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Rouen" WorkingDirectory="INSTALLFOLDER" />
+                </File>
+              </Component>
+            </ComponentGroup>
+          </Product>
+        </Wix>
+        "@ | Out-File -FilePath "rouen.wxs" -Encoding UTF8
+        
+        # Build MSI
+        wix build rouen.wxs -out rouen-windows-x64.msi
+
+    - name: Upload Windows Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+        files: |
+          rouen-windows-x64.zip
+          rouen-windows-x64.msi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

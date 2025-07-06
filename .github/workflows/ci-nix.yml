@@ -1,4 +1,4 @@
-# Unified CI for Linux and macOS using Nix
+# CI for Linux and macOS using Nix
 
 name: CI (Nix Linux & macOS)
 
@@ -39,15 +39,9 @@ jobs:
 
       - name: Build (Nix Flake)
         run: nix build .#default --print-build-logs
-        if: hashFiles('flake.nix') != ''
 
-      - name: Run flake checks
-        run: nix flake check --print-build-logs
-        if: hashFiles('flake.nix') != ''
-
-      - name: Archive build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rouen-${{ matrix.os }}-nix
-          path: |
-            result/
+      - name: Run tests
+        run: |
+          nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
+          nix-shell --run "cd build-tests && cmake --build . --parallel"
+          nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"

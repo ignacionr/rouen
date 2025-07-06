@@ -1,15 +1,8 @@
-name: macOS Release Build
+name: macOS Build & Test
 
 on:
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: 'Create a GitHub release'
-        required: false
-        default: false
-        type: boolean
-  release:
-    types: [published]
+  workflow_call:
   push:
     branches: [main]
     paths-ignore:
@@ -18,7 +11,7 @@ on:
 
 jobs:
   macos-build:
-    runs-on: macos-15  # Use macOS 15 (Apple Silicon) with more recent SDK supporting C++23
+    runs-on: macos-15
     
     steps:
     - name: Checkout code
@@ -695,45 +688,5 @@ jobs:
       with:
         name: rouen-macos-arm64
         path: |
-          rouen-macos-arm64.dmg
-          dist/DEPENDENCIES.txt
-
-    - name: Upload to release (on release event)
-      if: github.event_name == 'release'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./rouen-macos-arm64.dmg
-        asset_name: rouen-macos-arm64.dmg
-        asset_content_type: application/x-apple-diskimage
-
-    - name: Create release (on workflow_dispatch)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-      uses: softprops/action-gh-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v${{ github.run_number }}
-        name: Release v${{ github.run_number }}
-        body: |
-          Automated macOS release build
-          
-          ## What's included:
-          - macOS ARM64 app bundle (.app)
-          - All required dynamic library dependencies
-          - Assets and configuration files
-          - Documentation
-          - DMG installer for easy installation
-          
-          ## System Requirements:
-          - macOS 11.0 (Big Sur) or later
-          - Apple Silicon Mac (M1, M2, M3, etc.)
-          
-          This is a self-contained build that should run on any compatible Mac.
-        draft: false
-        prerelease: false
-        files: |
           rouen-macos-arm64.dmg
           dist/DEPENDENCIES.txt

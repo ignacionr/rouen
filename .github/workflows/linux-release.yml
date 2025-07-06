@@ -1,15 +1,8 @@
-name: Linux Release Build
+name: Linux Build & Test
 
 on:
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: 'Create a GitHub release'
-        required: false
-        default: false
-        type: boolean
-  release:
-    types: [published]
+  workflow_call:
   push:
     branches: [main]
     paths-ignore:
@@ -246,44 +239,6 @@ jobs:
           linux-release/
         retention-days: 30
 
-    - name: Create or update release
-      if: ${{ inputs.create_release == true || github.event_name == 'release' }}
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.ref_name || 'latest' }}
-        name: Rouen ${{ github.ref_name || 'Latest' }} - Cross-Platform Release
-        body: |
-          # Rouen Cross-Platform Release
-          
-          This release includes builds for all supported platforms:
-          - **Windows** (x64) - Full MSI installer with automatic dependency management
-          - **macOS** (Universal Binary) - Apple Silicon and Intel support
-          - **Linux** (x64) - Ubuntu 20.04+ compatible with Nix package manager
-          
-          ## Linux Release Notes
-          - Built with Nix package manager for reproducible and isolated builds
-          - Includes SSL/TLS support with multiple security modes
-          - Full ImGui-based modern interface with SDL2 backend
-          - Comprehensive HTTP client with configurable SSL settings
-          - Tested on Ubuntu with GCC/Clang and C++23 standard
-          
-          ## Installation
-          
-          ### Linux
-          1. Download `rouen-linux-x64.tar.gz`
-          2. Extract: `tar -xzf rouen-linux-x64.tar.gz`
-          3. Install dependencies: `sudo apt-get install libx11-6 libgl1-mesa-glx libasound2`
-          4. Run: `./run-rouen.sh` or `./rouen`
-          
-          ### Cross-Platform Compatibility
-          All builds share the same configuration format and feature set, ensuring consistent behavior across platforms.
-        files: |
-          rouen-linux-x64.tar.gz
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Build summary
       run: |
         echo "=== Linux Build Summary ==="
@@ -293,7 +248,7 @@ jobs:
         echo "✓ Release build completed successfully"
         echo "✓ Core tests passed (SSL modes and HTTP/SSL fetch)"
         echo "✓ Executable verified and packaged"
-        echo "✓ Release artifacts created"
+        echo "✓ Build artifacts created"
         echo ""
         echo "Build artifacts:"
         ls -la "${{ github.workspace }}/rouen-linux-x64.tar.gz" 2>/dev/null || echo "Archive not found"
