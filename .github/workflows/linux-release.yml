@@ -85,20 +85,22 @@ jobs:
         
         # Copy the result to expected locations for compatibility with later steps
         mkdir -p build-release build-nix
+        chmod 755 build-release build-nix
+        
         if [ -L result ]; then
           echo "Found Nix build result, copying executable..."
           
           # Find the executable in the result
           if [ -f result/bin/rouen ]; then
             echo "Found executable at result/bin/rouen"
-            chmod +w build-release 2>/dev/null || true
             cp result/bin/rouen build-release/rouen
             cp result/bin/rouen build-nix/rouen  # Also for debug location compatibility
+            chmod +x build-release/rouen build-nix/rouen
           elif [ -f result/rouen ]; then
             echo "Found executable at result/rouen"
-            chmod +w build-release 2>/dev/null || true
             cp result/rouen build-release/rouen
             cp result/rouen build-nix/rouen
+            chmod +x build-release/rouen build-nix/rouen
           else
             echo "Searching for rouen executable in result..."
             find result -name "rouen" -type f -executable | head -1 | while read exe; do
@@ -106,6 +108,7 @@ jobs:
                 echo "Found executable at $exe"
                 cp "$exe" build-release/rouen
                 cp "$exe" build-nix/rouen
+                chmod +x build-release/rouen build-nix/rouen
               fi
             done
           fi
@@ -125,28 +128,6 @@ jobs:
           exit 1
         fi
         
-        echo "Release build completed successfully"
-
-    - name: Build project (Release) using Nix flake
-      run: |
-        set -e
-        echo "Building Rouen for Linux (Release) with Nix flake..."
-        
-        # Use the proven working approach from CI workflow  
-        nix build .#default --print-build-logs
-        
-        # Copy the result to expected location for compatibility with later steps
-        mkdir -p build-release
-        if [ -L result ]; then
-          cp -rL result/* build-release/ || echo "No direct copy possible, will use result symlink"
-          # For executable location compatibility
-          if [ -f result/bin/rouen ]; then
-            cp result/bin/rouen build-release/rouen
-          fi
-        fi
-        
-        echo "Release build completed successfully"
-
     - name: Run tests using Nix (CI approach)
       run: |
         set -e
@@ -167,6 +148,7 @@ jobs:
         echo "Verifying Rouen executable..."
         if [ -f "./rouen" ]; then
           echo "✓ Rouen executable found"
+          chmod +x ./rouen
           ls -la ./rouen
           
           # Check if it can start (timeout after 5 seconds since it's a GUI app)
@@ -187,9 +169,11 @@ jobs:
         
         # Create release directory
         mkdir -p linux-release
+        chmod 755 linux-release
         
         # Copy main executable
         cp build-release/rouen linux-release/
+        chmod +x linux-release/rouen
         
         # Copy required resources
         cp podcasts.txt linux-release/ 2>/dev/null || echo "podcasts.txt not found, skipping"
