@@ -265,13 +265,13 @@ private:
             // Quick actions for GitHub integration
             if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " Open on GitHub")) {
                 std::string github_url = std::format("https://github.com/{}", repo_name);
-                static_cast<void>(system(("open " + github_url).c_str())); // macOS specific - should use platform utils
+                [[maybe_unused]] int system_result = system(("open " + github_url).c_str()); // macOS specific - should use platform utils
             }
             
             ImGui::SameLine();
             if (ImGui::SmallButton(ICON_MD_BUILD " CI/CD Status")) {
                 std::string actions_url = std::format("https://github.com/{}/actions", repo_name);
-                static_cast<void>(system(("open " + actions_url).c_str())); // macOS specific - should use platform utils
+                [[maybe_unused]] int system_result = system(("open " + actions_url).c_str()); // macOS specific - should use platform utils
             }
             
             // Status indicators (placeholder - would need GitHub API integration)
