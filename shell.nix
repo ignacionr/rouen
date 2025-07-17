@@ -50,7 +50,7 @@ pkgs.mkShell {
     pkgs.xorg.libXinerama.dev
     pkgs.xorg.libXcursor.dev
     pkgs.xorg.libXi.dev
-    pkgs.xorg.libXScrnSaver.dev
+    pkgs.xorg.libXScrnSaver
     # Additional X11 dependencies
     pkgs.xorg.libXdmcp
   ]);

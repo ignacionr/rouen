@@ -62,7 +62,7 @@
               unstable.xorg.libXinerama.dev
               unstable.xorg.libXcursor.dev
               unstable.xorg.libXi.dev
-              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXScrnSaver
               unstable.xorg.libXdmcp
             ]);
         };
@@ -98,7 +98,7 @@
               unstable.xorg.libXinerama.dev
               unstable.xorg.libXcursor.dev
               unstable.xorg.libXi.dev
-              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXScrnSaver
               unstable.xorg.libXdmcp
             ]);
           cmakeFlags = [ 
@@ -179,7 +179,7 @@
               unstable.xorg.libXinerama.dev
               unstable.xorg.libXcursor.dev
               unstable.xorg.libXi.dev
-              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXScrnSaver
               unstable.xorg.libXdmcp
             ]);
           cmakeFlags = [ 
