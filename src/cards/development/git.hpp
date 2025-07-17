@@ -12,6 +12,7 @@
 #include "../../helpers/texture_helper.hpp"
 #include "../../models/git.hpp" // Include the git model
 #include "../../registrar.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 struct git: public card {
     std::string repo_status; // Store the git status result
@@ -100,7 +101,7 @@ struct git: public card {
                     
         // Display the git status
         ImGui::Separator();
-        ImGui::BeginChild("GitStatus", ImVec2(0, ImGui::GetWindowHeight() - 130.0f), true);
+        ImGui::BeginChild("GitStatus", ImVec2(0, ImGui::GetWindowHeight() - 180.0f), true);
         ImGui::TextWrapped("%s", repo_status.c_str());
         ImGui::EndChild();
 
@@ -114,6 +115,21 @@ struct git: public card {
         ImGui::SameLine();
         if (ImGui::SmallButton("VS Code")) {
             git_model->openInVSCode(selected_repo);
+        }
+        
+        // Add GitHub integration button
+        ImGui::SameLine();
+        if (ImGui::SmallButton("GitHub CI")) {
+            // Try to determine if this is a GitHub repository
+            std::string git_remote = git_model->getGitRemote(selected_repo);
+            if (git_remote.find("github.com") != std::string::npos) {
+                // Extract repo name from remote URL
+                std::string repo_name = extract_github_repo_name(git_remote);
+                if (!repo_name.empty()) {
+                    // This could create a GitHub CI card or switch to existing one
+                    "create_card"_sfn(std::format("github-ci:{}", repo_name));
+                }
+            }
         }
         
         // Add "Push" button only when the branch is ahead
@@ -131,6 +147,9 @@ struct git: public card {
                 }
             }
         }
+        
+        // GitHub status indicator (if this is a GitHub repo)
+        render_github_status_indicator();
     }
 
     bool render() override {
@@ -193,5 +212,73 @@ struct git: public card {
         }
     }
 
-    std::string selected_repo; 
+    std::string selected_repo;
+    
+private:
+    // Helper to extract GitHub repository name from remote URL
+    std::string extract_github_repo_name(const std::string& remote_url) {
+        // Handle various GitHub URL formats:
+        // https://github.com/user/repo.git
+        // git@github.com:user/repo.git
+        // https://github.com/user/repo
+        
+        std::string repo_name;
+        size_t github_pos = remote_url.find("github.com");
+        if (github_pos == std::string::npos) {
+            return "";
+        }
+        
+        // Find the start of the repository path
+        size_t path_start = remote_url.find('/', github_pos);
+        if (path_start == std::string::npos) {
+            path_start = remote_url.find(':', github_pos);
+        }
+        if (path_start == std::string::npos) {
+            return "";
+        }
+        
+        path_start++; // Skip the separator
+        
+        // Find the end (remove .git if present)
+        std::string path = remote_url.substr(path_start);
+        if (path.ends_with(".git")) {
+            path = path.substr(0, path.length() - 4);
+        }
+        
+        return path;
+    }
+    
+    void render_github_status_indicator() {
+        // Check if this repository has a GitHub remote
+        std::string git_remote = git_model->getGitRemote(selected_repo);
+        if (git_remote.find("github.com") == std::string::npos) {
+            return; // Not a GitHub repository
+        }
+        
+        ImGui::Separator();
+        ImGui::TextColored(colors[0], ICON_MD_CLOUD " GitHub Integration");
+        
+        std::string repo_name = extract_github_repo_name(git_remote);
+        if (!repo_name.empty()) {
+            ImGui::Text("Repository: %s", repo_name.c_str());
+            
+            // Quick actions for GitHub integration
+            if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " Open on GitHub")) {
+                std::string github_url = std::format("https://github.com/{}", repo_name);
+                [[maybe_unused]] int system_result = system(("open " + github_url).c_str()); // macOS specific - should use platform utils
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_MD_BUILD " CI/CD Status")) {
+                std::string actions_url = std::format("https://github.com/{}/actions", repo_name);
+                [[maybe_unused]] int system_result = system(("open " + actions_url).c_str()); // macOS specific - should use platform utils
+            }
+            
+            // Status indicators (placeholder - would need GitHub API integration)
+            ImGui::Text("CI Status: %s", "Click CI/CD Status to view");
+            
+        } else {
+            ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Could not parse repository name");
+        }
+    } 
 };

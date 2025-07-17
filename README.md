@@ -332,3 +332,77 @@ The strict warning migration addressed:
 4. **Future-Proof**: Ready for compiler updates and new warning flags
 
 > **Success**: The codebase is now 100% warning-free with the strictest possible compiler settings. All builds pass with `-Werror` and comprehensive warning detection.
+
+## Development
+
+### Build System and CI/CD
+
+Rouen uses a modern multi-platform CI/CD pipeline with automated builds and releases for all supported platforms.
+
+#### Workflow Structure
+
+**CI Testing (`ci-nix.yml`)**
+- Triggered on push/PR to `main` branch
+- Tests Linux and macOS builds using Nix
+- Runs comprehensive test suite
+- Fast feedback for development
+
+**Platform-Specific Builds**
+- `linux-release.yml`: Linux build testing with Nix
+- `macos-release.yml`: macOS ARM64 build testing with vcpkg/Homebrew  
+- `windows-release.yml`: Windows x64 build testing with vcpkg
+
+**Unified Release (`release.yml`)**
+- Triggered manually with `workflow_dispatch` or on release publication
+- Coordinates all three platforms to create unified releases
+- Produces release-ready assets:
+  - `rouen-linux-x64.tar.gz` - Portable Linux archive
+  - `rouen-macos-universal.dmg` - macOS disk image installer
+  - `rouen-windows-x64.zip` - Windows portable archive
+  - `rouen-windows-x64.msi` - Windows MSI installer
+
+#### Creating a Release
+
+1. **Manual Release Creation**:
+   ```bash
+   # Go to GitHub Actions -> Multi-Platform Release
+   # Click "Run workflow"
+   # Enter tag name (e.g., "v1.2.0")
+   # Optionally mark as pre-release
+   ```
+
+2. **Automatic Process**:
+   - Creates GitHub release with specified tag
+   - Builds all three platforms in parallel
+   - Uploads all release assets automatically
+   - Generates comprehensive release notes
+
+#### Local Development
+
+**Linux/macOS (with Nix)**:
+```bash
+nix-shell --run "cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake"
+nix-shell --run "cmake --build build --parallel"
+```
+
+**macOS (with vcpkg)**:
+```bash
+./scripts/setup-macos-build.sh
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --parallel
+```
+
+**Windows (with vcpkg)**:
+```cmd
+git clone https://github.com/Microsoft/vcpkg.git vcpkg
+cd vcpkg && bootstrap-vcpkg.bat && vcpkg install --triplet x64-windows
+cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build --parallel
+```
+
+#### Quality Assurance
+
+All builds enforce C++23 standards with strict compiler warnings:
+- `-Werror` (warnings as errors)
+- Full warning sets for GCC 14+ and Clang 19+
+- Comprehensive test suite covering HTTP/SSL, math operations, and UI components

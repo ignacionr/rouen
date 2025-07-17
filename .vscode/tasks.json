@@ -24,6 +24,42 @@
 		},
 		{
 			"type": "shell",
+			"label": "Nix Build (CI Strictness)",
+			"command": "nix-shell --run 'cmake -B build-ci-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CI_STRICTNESS=ON && cmake --build build-ci-strict --parallel'",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build with CI-level strictness (Release mode + extra error flags) to catch issues before CI"
+		},
+		{
+			"type": "shell",
+			"label": "Nix Build (GCC Linux-like)",
+			"command": "nix-shell --run 'CC=gcc CXX=g++ cmake -B build-gcc-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=\"-Wall -Wextra -Werror=unused-result\" && cmake --build build-gcc-strict --parallel'",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build with GCC and strict unused-result checking to mirror Linux CI environment"
+		},
+		{
+			"type": "shell",
 			"label": "Configure Tests (Nix)",
 			"command": "nix-shell --run 'mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug'",
 			"group": "test",

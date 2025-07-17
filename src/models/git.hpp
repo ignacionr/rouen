@@ -168,6 +168,28 @@ namespace rouen::models {
             std::string firstLine = newline != std::string::npos ? status.substr(0, newline) : status;
             return firstLine.find("[ahead") != std::string::npos;
         }
+        
+        /**
+         * Get the remote URL for the repository
+         * 
+         * @param repo_path Repository path
+         * @return Remote URL as string
+         */
+        std::string getGitRemote(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return "";
+            }
+            
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string remote_output = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " remote get-url origin");
+            
+            // Remove trailing newline if present
+            if (!remote_output.empty() && remote_output.back() == '\n') {
+                remote_output.pop_back();
+            }
+            
+            return remote_output;
+        }
 
     private:
         std::map<std::string, GitRepoStatus> repos;
