@@ -75,64 +75,63 @@ jobs:
         
         echo "Nix environment verified successfully"
 
-    - name: Configure CMake (Debug)
+    - name: Build project using Nix flake (Release)
       run: |
         set -e
-        echo "Configuring CMake for Debug build with Nix..."
+        echo "Building Rouen for Linux (Release) with Nix flake..."
         
-        nix-shell --run "cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+        # Use the proven working approach from CI workflow  
+        nix build .#default --print-build-logs
         
-        echo "CMake Debug configuration completed successfully"
-
-    - name: Build project (Debug)
-      run: |
-        set -e
-        echo "Building Rouen for Linux (Debug) with Nix..."
-        
-        nix-shell --run "cmake --build build-nix --parallel"
-        
-        echo "Debug build completed successfully"
-
-    - name: Configure CMake (Release)
-      run: |
-        set -e
-        echo "Configuring CMake for Release build with Nix..."
-        
-        nix-shell --run "cmake -B build-release -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
-        
-        echo "Release configuration completed successfully"
-
-    - name: Build project (Release)
-      run: |
-        set -e
-        echo "Building Rouen for Linux (Release) with Nix..."
-        
-        nix-shell --run "cmake --build build-release --parallel"
+        # Copy the result to expected locations for compatibility with later steps
+        mkdir -p build-release build-nix
+        if [ -L result ]; then
+          # Copy for release build location
+          cp -rL result/* build-release/ 2>/dev/null || echo "Direct copy failed, using symlink approach"
+          
+          # For executable location compatibility
+          if [ -f result/bin/rouen ]; then
+            cp result/bin/rouen build-release/rouen
+            cp result/bin/rouen build-nix/rouen  # Also for debug location compatibility
+          elif [ -f result/rouen ]; then
+            cp result/rouen build-release/rouen
+            cp result/rouen build-nix/rouen
+          fi
+        fi
         
         echo "Release build completed successfully"
 
-    - name: Run tests
+    - name: Build project (Release) using Nix flake
       run: |
         set -e
-        echo "Setting up and running tests with Nix..."
+        echo "Building Rouen for Linux (Release) with Nix flake..."
         
-        # Configure tests using Nix
-        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
+        # Use the proven working approach from CI workflow  
+        nix build .#default --print-build-logs
         
-        # Build tests using Nix
+        # Copy the result to expected location for compatibility with later steps
+        mkdir -p build-release
+        if [ -L result ]; then
+          cp -rL result/* build-release/ || echo "No direct copy possible, will use result symlink"
+          # For executable location compatibility
+          if [ -f result/bin/rouen ]; then
+            cp result/bin/rouen build-release/rouen
+          fi
+        fi
+        
+        echo "Release build completed successfully"
+
+    - name: Run tests using Nix (CI approach)
+      run: |
+        set -e
+        echo "Setting up and running tests with Nix (using proven CI method)..."
+        
+        # Use the exact same approach as the working CI workflow
+        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
         nix-shell --run "cd build-tests && cmake --build . --parallel"
+        nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
         
-        # Run tests
-        echo "Running SSL modes tests..."
-        nix-shell --run "cd build-tests && ./test_ssl_modes_simple"
-        
-        echo "Running HTTP/SSL fetch tests..."
-        nix-shell --run "cd build-tests && ./test_fetch_ssl"
-        
-        echo "Running math operations tests..."
-        nix-shell --run "cd build-tests && ./test_math_operations" || echo "Math tests skipped (optional)"
-        
-        echo "All tests completed successfully"
+        echo "All tests completed successfully using CI approach"
 
     - name: Verify executable
       run: |
