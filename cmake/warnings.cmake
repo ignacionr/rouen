@@ -1,5 +1,8 @@
 # Compiler warnings configuration
 
+# Add option to enable CI-level strictness for local development
+option(ENABLE_CI_STRICTNESS "Enable CI-level warning strictness for local development" OFF)
+
 # Core warnings that should be enabled immediately
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(
@@ -17,6 +20,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wimplicit-fallthrough # Warn about fallthrough in switch statements
       -Wunused             # Warn about unused variables/functions
       -Wunused-result      # Warn about unused return values (catches system() calls)
+
+      # CI Strictness: Make unused-result specifically an error in all builds
+      $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
 
       # Conversion warnings (more aggressive)
       -Wconversion
@@ -102,6 +108,10 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   function(target_add_strict_warnings target)
     target_compile_options(${target} PRIVATE
       -Werror              # Treat warnings as errors
+      
+      # CI Strictness: Make unused-result specifically an error in all builds
+      $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
+      
       -Wconversion
       -Wsign-conversion
       -Wshadow

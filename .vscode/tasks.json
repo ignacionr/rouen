@@ -24,6 +24,24 @@
 		},
 		{
 			"type": "shell",
+			"label": "Nix Build (CI Strictness)",
+			"command": "nix-shell --run 'cmake -B build-ci-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CI_STRICTNESS=ON && cmake --build build-ci-strict --parallel'",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": true,
+				"clear": false
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"detail": "Build with CI-level strictness (Release mode + extra error flags) to catch issues before CI"
+		},
+		{
+			"type": "shell",
 			"label": "Configure Tests (Nix)",
 			"command": "nix-shell --run 'mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug'",
 			"group": "test",
