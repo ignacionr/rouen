@@ -86,17 +86,43 @@ jobs:
         # Copy the result to expected locations for compatibility with later steps
         mkdir -p build-release build-nix
         if [ -L result ]; then
-          # Copy for release build location
-          cp -rL result/* build-release/ 2>/dev/null || echo "Direct copy failed, using symlink approach"
+          echo "Found Nix build result, copying executable..."
           
-          # For executable location compatibility
+          # Find the executable in the result
           if [ -f result/bin/rouen ]; then
+            echo "Found executable at result/bin/rouen"
+            chmod +w build-release 2>/dev/null || true
             cp result/bin/rouen build-release/rouen
             cp result/bin/rouen build-nix/rouen  # Also for debug location compatibility
           elif [ -f result/rouen ]; then
+            echo "Found executable at result/rouen"
+            chmod +w build-release 2>/dev/null || true
             cp result/rouen build-release/rouen
             cp result/rouen build-nix/rouen
+          else
+            echo "Searching for rouen executable in result..."
+            find result -name "rouen" -type f -executable | head -1 | while read exe; do
+              if [ -n "$exe" ]; then
+                echo "Found executable at $exe"
+                cp "$exe" build-release/rouen
+                cp "$exe" build-nix/rouen
+              fi
+            done
           fi
+          
+          # Verify we got the executable
+          if [ -f build-release/rouen ]; then
+            echo "✓ Successfully copied rouen executable"
+            ls -la build-release/rouen
+          else
+            echo "✗ Failed to find rouen executable in build result"
+            echo "Contents of result:"
+            find result -type f | head -10
+            exit 1
+          fi
+        else
+          echo "✗ No result symlink found from nix build"
+          exit 1
         fi
         
         echo "Release build completed successfully"
