@@ -44,13 +44,15 @@ pkgs.mkShell {
     pkgs.darwin.apple_sdk.frameworks.OpenGL
   ] else [
     # Linux X11 dependencies for SDL2
-    pkgs.xorg.libX11
-    pkgs.xorg.libXext
-    pkgs.xorg.libXrandr
-    pkgs.xorg.libXinerama
-    pkgs.xorg.libXcursor
-    pkgs.xorg.libXi
-    pkgs.xorg.libXScrnSaver
+    pkgs.xorg.libX11.dev
+    pkgs.xorg.libXext.dev
+    pkgs.xorg.libXrandr.dev
+    pkgs.xorg.libXinerama.dev
+    pkgs.xorg.libXcursor.dev
+    pkgs.xorg.libXi.dev
+    pkgs.xorg.libXScrnSaver.dev
+    # Additional X11 dependencies
+    pkgs.xorg.libXdmcp
   ]);
   shellHook = ''
     export CC=${envVars.CC}

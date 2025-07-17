@@ -53,7 +53,18 @@
             unstable.gtest.dev  # Google Test development headers and CMake files
             unstable.gtest.dev  # Google Test development headers and CMake files
           ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
-            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ unstable.gcc ]);
+            ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
+              unstable.gcc 
+              unstable.libGL 
+              unstable.xorg.libX11.dev
+              unstable.xorg.libXext.dev
+              unstable.xorg.libXrandr.dev
+              unstable.xorg.libXinerama.dev
+              unstable.xorg.libXcursor.dev
+              unstable.xorg.libXi.dev
+              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXdmcp
+            ]);
         };
 
         packages.default = stdenv.mkDerivation {
@@ -81,13 +92,14 @@
           ] ++ darwinFrameworks
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.libGL 
-              unstable.xorg.libX11 
-              unstable.xorg.libXext 
-              unstable.xorg.libXrandr 
-              unstable.xorg.libXinerama 
-              unstable.xorg.libXcursor 
-              unstable.xorg.libXi 
-              unstable.xorg.libXScrnSaver 
+              unstable.xorg.libX11.dev
+              unstable.xorg.libXext.dev
+              unstable.xorg.libXrandr.dev
+              unstable.xorg.libXinerama.dev
+              unstable.xorg.libXcursor.dev
+              unstable.xorg.libXi.dev
+              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXdmcp
             ]);
           cmakeFlags = [ 
             "-DCMAKE_BUILD_TYPE=Release" 
@@ -161,13 +173,14 @@
           ] ++ darwinFrameworks
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.libGL 
-              unstable.xorg.libX11 
-              unstable.xorg.libXext 
-              unstable.xorg.libXrandr 
-              unstable.xorg.libXinerama 
-              unstable.xorg.libXcursor 
-              unstable.xorg.libXi 
-              unstable.xorg.libXScrnSaver 
+              unstable.xorg.libX11.dev
+              unstable.xorg.libXext.dev
+              unstable.xorg.libXrandr.dev
+              unstable.xorg.libXinerama.dev
+              unstable.xorg.libXcursor.dev
+              unstable.xorg.libXi.dev
+              unstable.xorg.libXScrnSaver.dev
+              unstable.xorg.libXdmcp
             ]);
           cmakeFlags = [ 
             "-DCMAKE_BUILD_TYPE=Debug"
