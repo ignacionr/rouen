@@ -97,14 +97,31 @@ jobs:
 
     - name: Build Release
       run: |
-        echo "Building Rouen for Linux with Nix..."
-        nix-shell --run "cmake -B build-release -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23"
-        nix-shell --run "cmake --build build-release --parallel"
+        echo "Building Rouen for Linux with Nix flake (proven approach)..."
+        # Use the same proven approach as the working Linux Build & Test workflow
+        nix build .#default --print-build-logs
+        
+        # Copy the result to expected location
+        mkdir -p build-release
+        if [ -L result ]; then
+          if [ -f result/bin/rouen ]; then
+            cp result/bin/rouen build-release/rouen
+          elif [ -f result/rouen ]; then
+            cp result/rouen build-release/rouen
+          else
+            find result -name "rouen" -type f -executable | head -1 | while read exe; do
+              if [ -n "$exe" ]; then
+                cp "$exe" build-release/rouen
+              fi
+            done
+          fi
+          chmod +x build-release/rouen
+        fi
 
     - name: Run Tests
       run: |
-        echo "Running tests..."
-        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
+        echo "Running tests with proven CI approach..."
+        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
         nix-shell --run "cd build-tests && cmake --build . --parallel"
         nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
 
@@ -180,7 +197,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-            -DCMAKE_CXX_STANDARD=23
+            -DCMAKE_CXX_STANDARD=23 \
+            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast"
         else
           echo "Building with system dependencies..."
           export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig"
@@ -189,6 +207,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_CXX_STANDARD=23 \
+            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast" \
             -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"
         fi
         
@@ -236,6 +255,12 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Setup PowerShell
+      shell: pwsh
+      run: |
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        Write-Host "PowerShell execution policy set to RemoteSigned"
+
     - name: Cache vcpkg
       uses: actions/cache@v4
       with:
@@ -243,23 +268,48 @@ jobs:
           ${{ github.workspace }}\vcpkg\installed
           ${{ github.workspace }}\vcpkg\buildtrees
           ${{ github.workspace }}\vcpkg\packages
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+        key: ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-configuration.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-
+          ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-
+          ${{ runner.os }}-vcpkg-built-
 
     - name: Setup vcpkg
       shell: cmd
       run: |
-        if not exist "vcpkg" (
-          git clone https://github.com/Microsoft/vcpkg.git vcpkg
-          cd vcpkg
-          call bootstrap-vcpkg.bat
-          vcpkg.exe install --triplet x64-windows
-          vcpkg.exe integrate install
+        set "workspace=${{ github.workspace }}"
+        set "vcpkgDir=%workspace%\vcpkg"
+        
+        echo Setting up vcpkg...
+        
+        REM Always remove existing vcpkg directory to avoid corruption
+        if exist "%vcpkgDir%" (
+          echo Removing existing vcpkg directory...
+          rmdir /s /q "%vcpkgDir%"
         )
-
-    - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
+        
+        echo Cloning vcpkg repository...
+        git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+        if %errorlevel% neq 0 (
+          echo Failed to clone vcpkg repository
+          exit /b %errorlevel%
+        )
+        
+        cd "%vcpkgDir%"
+        echo Bootstrapping vcpkg...
+        call bootstrap-vcpkg.bat
+        if %errorlevel% neq 0 (
+          echo Failed to bootstrap vcpkg
+          exit /b %errorlevel%
+        )
+        
+        echo Installing dependencies with vcpkg...
+        vcpkg.exe install --triplet x64-windows
+        if %errorlevel% neq 0 (
+          echo Failed to install vcpkg dependencies
+          exit /b %errorlevel%
+        )
+        
+        echo vcpkg setup completed successfully
 
     - name: Configure and Build
       shell: cmd
