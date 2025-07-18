@@ -367,8 +367,7 @@ jobs:
         @"
         <?xml version="1.0" encoding="UTF-8"?>
         <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-          <Product Id="*" Name="Rouen" Language="1033" Version="1.0.0.0" Manufacturer="Rouen Development" UpgradeCode="12345678-1234-1234-1234-123456789012">
-            <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />
+          <Package Name="Rouen" Manufacturer="Rouen Development" Version="1.0.0.0" UpgradeCode="12345678-1234-1234-1234-123456789012">
             <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
             <MediaTemplate EmbedCab="yes" />
             
@@ -376,23 +375,16 @@ jobs:
               <ComponentGroupRef Id="ProductComponents" />
             </Feature>
             
-            <Directory Id="TARGETDIR" Name="SourceDir">
-              <Directory Id="LocalAppDataFolder">
-                <Directory Id="INSTALLFOLDER" Name="Rouen" />
-              </Directory>
-              <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="Rouen"/>
-              </Directory>
-            </Directory>
+            <StandardDirectory Id="LocalAppDataFolder">
+              <Directory Id="INSTALLFOLDER" Name="Rouen" />
+            </StandardDirectory>
             
             <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
-              <Component Id="MainExecutable" Guid="*">
-                <File Id="RouenEXE" Source="dist\rouen.exe" KeyPath="yes">
-                  <Shortcut Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Name="Rouen" WorkingDirectory="INSTALLFOLDER" />
-                </File>
+              <Component Id="MainExecutable">
+                <File Id="RouenEXE" Source="dist\rouen.exe" KeyPath="yes" />
               </Component>
             </ComponentGroup>
-          </Product>
+          </Package>
         </Wix>
         "@ | Out-File -FilePath "rouen.wxs" -Encoding UTF8
         

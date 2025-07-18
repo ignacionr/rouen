@@ -65,7 +65,7 @@ struct envvars_card : public card {
             // Filter input
             static char filter_buffer[256] = "";
             ImGui::PushItemWidth(-1);
-            if (ImGui::InputText("##filter", filter_buffer, IM_ARRAYSIZE(filter_buffer))) {
+            if (ImGui::InputText("##filter", filter_buffer, static_cast<int>(sizeof(filter_buffer)))) {
                 // Filter is updated
             }
             

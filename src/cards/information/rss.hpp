@@ -121,7 +121,7 @@ public:
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
             ImGui::PushItemWidth(-1);
             
-            ImGui::InputText("##search", search_buffer, IM_ARRAYSIZE(search_buffer));
+            ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
             
             // Show placeholder text when input is empty
             if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {

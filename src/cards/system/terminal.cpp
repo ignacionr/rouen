@@ -101,7 +101,7 @@ void terminal::render_sudo_prompt(float window_width) {
     // Password input (displayed as asterisks)
     static char password_buffer[128] = "";
     ImGui::SetNextItemWidth(window_width - 70);
-    bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, IM_ARRAYSIZE(password_buffer), 
+    bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, static_cast<int>(sizeof(password_buffer)), 
                                         ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                                         nullptr, nullptr);
     
@@ -165,7 +165,7 @@ void terminal::render_command_input(float window_width) {
         input_width -= 80.0f; // Reserve space for spinner + button + spacing
     }
     ImGui::SetNextItemWidth(input_width);
-    if (ImGui::InputText("##CommandInput", input_buffer, IM_ARRAYSIZE(input_buffer), 
+    if (ImGui::InputText("##CommandInput", input_buffer, static_cast<int>(sizeof(input_buffer)), 
                       ImGuiInputTextFlags_EnterReturnsTrue,
                       nullptr, nullptr)) {
         enter_pressed = true;

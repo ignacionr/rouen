@@ -69,7 +69,7 @@ namespace rouen::cards {
                 // Search filter
                 static char search_buffer[256] = "";
                 ImGui::PushItemWidth(-1);
-                ImGui::InputText("##search", search_buffer, IM_ARRAYSIZE(search_buffer));
+                ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
                 
                 // Show placeholder text when search is empty
                 if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {

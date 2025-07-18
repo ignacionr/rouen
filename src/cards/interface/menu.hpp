@@ -117,7 +117,7 @@ namespace rouen::cards {
                 
                 // Input with placeholder text
                 ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
-                if (ImGui::InputText("##search", search_buffer, IM_ARRAYSIZE(search_buffer), input_flags)) {
+                if (ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)), input_flags)) {
                     enter_pressed = true;
                 }
                 
