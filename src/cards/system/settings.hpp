@@ -176,7 +176,7 @@ private:
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150);
         const char* category_items[] = {"All", "API Credentials", "JIRA Profiles", "Bybit Config", "System Paths", "Executable Paths", "Logging", "HTTP SSL", "General"};
-        ImGui::Combo("##category", &selected_category_, category_items, IM_ARRAYSIZE(category_items));
+        ImGui::Combo("##category", &selected_category_, category_items, static_cast<int>(sizeof(category_items) / sizeof(*category_items)));
     }
     
     void render_missing_required_section() {
@@ -390,7 +390,8 @@ private:
         
         // Find current mode index
         int current_mode_idx = 0;
-        for (int i = 0; i < static_cast<int>(IM_ARRAYSIZE(ssl_modes)); i++) {
+        constexpr int ssl_modes_count = static_cast<int>(sizeof(ssl_modes) / sizeof(*ssl_modes));
+        for (int i = 0; i < ssl_modes_count; i++) {
             if (current_ssl_mode == ssl_modes[i].value) {
                 current_mode_idx = i;
                 break;
@@ -400,13 +401,13 @@ private:
         static int selected_mode = current_mode_idx;
         
         // Create dropdown with mode names only
-        const char* mode_names[IM_ARRAYSIZE(ssl_modes)];
-        for (int i = 0; i < IM_ARRAYSIZE(ssl_modes); i++) {
+        const char* mode_names[ssl_modes_count];
+        for (int i = 0; i < ssl_modes_count; i++) {
             mode_names[i] = ssl_modes[i].name;
         }
         
         ImGui::SetNextItemWidth(200);
-        if (ImGui::Combo("##ssl_mode", &selected_mode, mode_names, IM_ARRAYSIZE(mode_names))) {
+        if (ImGui::Combo("##ssl_mode", &selected_mode, mode_names, ssl_modes_count)) {
             // Store the setting in the ConfigService
             std::string new_value = ssl_modes[selected_mode].value;
             

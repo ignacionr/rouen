@@ -146,10 +146,9 @@ jobs:
         tar -czf rouen-linux-x64.tar.gz -C linux-release .
 
     - name: Upload Linux Asset
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-        files: rouen-linux-x64.tar.gz
+      run: |
+        echo "Uploading Linux release asset..."
+        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-linux-x64.tar.gz --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -237,10 +236,9 @@ jobs:
         rm -rf "$temp_dmg_dir"
 
     - name: Upload macOS Asset
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-        files: rouen-macos-universal.dmg
+      run: |
+        echo "Uploading macOS release asset..."
+        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-macos-universal.dmg --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -368,7 +366,7 @@ jobs:
         # Create simple WiX source file for user-mode installation
         @"
         <?xml version="1.0" encoding="UTF-8"?>
-        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+        <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
           <Product Id="*" Name="Rouen" Language="1033" Version="1.0.0.0" Manufacturer="Rouen Development" UpgradeCode="12345678-1234-1234-1234-123456789012">
             <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />
             <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
@@ -402,11 +400,9 @@ jobs:
         wix build rouen.wxs -out rouen-windows-x64.msi
 
     - name: Upload Windows Assets
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-        files: |
-          rouen-windows-x64.zip
-          rouen-windows-x64.msi
+      run: |
+        echo "Uploading Windows release assets..."
+        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-windows-x64.zip --clobber
+        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-windows-x64.msi --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
