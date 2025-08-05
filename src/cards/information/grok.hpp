@@ -10,13 +10,15 @@
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/api_keys.hpp"
+#include "../../helpers/llm_config.hpp"
+#include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
-    class grok : public card {
+    class ai_chat : public card {
     public:
-        grok() {
-            name("Chat with Grok");
+        ai_chat() {
+            name("AI Chat");
             
             // Base colors (already in vector)
             colors[0] = ImVec4(0.15f, 0.25f, 1.0f, 0.7f);       // window background
@@ -37,24 +39,57 @@ namespace rouen::cards {
             
             requested_fps = 10; // Higher FPS for responsive input
             
-            // Read API key from centralized API key manager
-            grok_api_key = helpers::ApiKeys::get_grok_api_key();
-            if (!grok_api_key.empty()) {
-                gpt = std::make_unique<ignacionr::cppgpt>(grok_api_key, ignacionr::cppgpt::grok_base);
-                gpt->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest.");
-            }
+            // Initialize LLM configuration
+            refresh_llm_config();
             width *= 2.0f;
         }
 
         void render_llm_controls() {
-            // whether to allow search
-            ImGui::Checkbox("Allow Search", &allow_search);
+            // Provider information
+            auto settings = helpers::LLMConfig::get_current_config();
+            ImGui::Text("Provider: %s", helpers::LLMConfig::provider_to_string(settings.provider).c_str());
             ImGui::SameLine();
+            if (ImGui::Button("Configure")) {
+                // This would open the settings card or configuration dialog
+                "create_card"_sfn("settings");
+            }
+            
+            // Configuration status
+            ImGui::SameLine();
+            if (settings.is_configured) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green
+                ImGui::Text("✓ Configured");
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red
+                ImGui::Text("✗ Not Configured");
+                ImGui::PopStyleColor();
+            }
+            
+            // Model name
+            if (settings.is_configured) {
+                ImGui::Text("Model: %s", settings.model_name.c_str());
+            }
+            
+            // whether to allow search (only for providers that support it)
+            if (settings.provider == helpers::LLMConfig::Provider::GROK) {
+                ImGui::Checkbox("Allow Search", &allow_search);
+                ImGui::SameLine();
+            }
+            
             // temperature slider
             ImGui::SliderFloat("Temperature", &temperature, 0.0f, 1.0f);
         }
 
         bool render() override {
+            // Periodically refresh LLM configuration
+            static float last_config_refresh = 0.0f;
+            float current_time = static_cast<float>(ImGui::GetTime());
+            if (current_time - last_config_refresh > 2.0f) {
+                refresh_llm_config();
+                last_config_refresh = current_time;
+            }
+            
             return render_window([this]() {
                 render_llm_controls();
                 // Apply custom colors to various UI elements
@@ -125,7 +160,8 @@ namespace rouen::cards {
                         ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
                         
                         // Display sender name
-                        ImGui::Text("%s", is_user ? "You" : "Grok");
+                        std::string sender_name = is_user ? "You" : get_assistant_name();
+                        ImGui::Text("%s", sender_name.c_str());
                         ImGui::Separator();
                         
                         // Display message content with proper text wrapping
@@ -168,10 +204,10 @@ namespace rouen::cards {
                     
                     // Animated thinking dots - pre-computed strings for performance
                     static const std::array<const char*, 4> thinking_frames = {
-                        "Grok is thinking",
-                        "Grok is thinking.",
-                        "Grok is thinking..",
-                        "Grok is thinking..."
+                        "AI is thinking",
+                        "AI is thinking.",
+                        "AI is thinking..",
+                        "AI is thinking..."
                     };
                     
                     float time = static_cast<float>(ImGui::GetTime());
@@ -185,32 +221,24 @@ namespace rouen::cards {
                     ImGui::PopStyleColor();
                 }
                 
-                // API key input if not set
-                if (grok_api_key.empty()) {
+                // API key input if not configured
+                if (!llm_configured) {
+                    ImGui::Separator();
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4]));
-                    ImGui::TextWrapped("Please enter your Grok API key:");
+                    ImGui::TextWrapped("LLM not configured. Please configure your LLM provider in Settings.");
                     ImGui::PopStyleColor();
-                    ImGui::PushItemWidth(-1);
                     
-                    // Copy current api_key_input to buffer
-                    strncpy(api_key_buffer.data(), api_key_input.c_str(), api_key_buffer.size() - 1);
-                    api_key_buffer[api_key_buffer.size() - 1] = '\0';
-                    
-                    if (ImGui::InputText("##apikey", api_key_buffer.data(), api_key_buffer.size(), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                        api_key_input = api_key_buffer.data();
-                        grok_api_key = api_key_input;
-                        gpt = std::make_unique<ignacionr::cppgpt>(grok_api_key, ignacionr::cppgpt::grok_base);
-                        gpt->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest.");
+                    if (ImGui::Button("Open Settings")) {
+                        "create_card"_sfn("settings");
                     }
-                    ImGui::PopItemWidth();
                 }
                 
                 // Input area
                 ImGui::Separator();
                 reclaim_focus = false;
                 
-                // Only allow input if we have an API key and are not waiting for a response
-                ImGui::BeginDisabled(grok_api_key.empty() || waiting_for_response);
+                // Only allow input if LLM is configured and not waiting for a response
+                ImGui::BeginDisabled(!llm_configured || waiting_for_response);
                 
                 // Copy current input to buffer
                 strncpy(input_buffer.data(), input_text.c_str(), input_buffer.size() - 1);
@@ -220,7 +248,7 @@ namespace rouen::cards {
                 const float send_button_width = ImGui::CalcTextSize("Send").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
                 
                 // Focus on the input field initially
-                if (grok_api_key.empty() == false && waiting_for_response == false && ImGui::IsWindowAppearing()) {
+                if (llm_configured && waiting_for_response == false && ImGui::IsWindowAppearing()) {
                     ImGui::SetKeyboardFocusHere();
                 }
                 
@@ -260,7 +288,7 @@ namespace rouen::cards {
         }
         
         std::string get_uri() const override {
-            return "grok";
+            return "ai-chat";
         }
 
     private:
@@ -273,10 +301,9 @@ namespace rouen::cards {
         };
         
         std::unique_ptr<ignacionr::cppgpt> gpt{};
-        std::string grok_api_key{};
-        std::string api_key_input{};
+        helpers::LLMConfig::LLMSettings current_llm_settings{};
+        bool llm_configured{false};
         std::string input_text{};
-        std::array<char, 1024> api_key_buffer{};
         std::array<char, 2048> input_buffer{};
         std::deque<std::pair<std::string, std::string>> chat_history{};
         std::deque<MessageCache> message_cache{};
@@ -290,8 +317,40 @@ namespace rouen::cards {
         bool allow_search{false};
         float temperature{0.45f};
         
+        void refresh_llm_config() {
+            current_llm_settings = helpers::LLMConfig::get_current_config();
+            llm_configured = current_llm_settings.is_configured;
+            
+            if (llm_configured) {
+                gpt = helpers::LLMConfig::create_llm_instance();
+            } else {
+                gpt.reset();
+            }
+            
+            // Update card name based on provider
+            if (llm_configured) {
+                std::string provider_name = helpers::LLMConfig::provider_to_string(current_llm_settings.provider);
+                std::transform(provider_name.begin(), provider_name.end(), provider_name.begin(), ::toupper);
+                name("AI Chat (" + provider_name + ")");
+            } else {
+                name("AI Chat (Not Configured)");
+            }
+        }
+        
+        std::string get_assistant_name() const {
+            if (!llm_configured) return "AI";
+            
+            switch (current_llm_settings.provider) {
+                case helpers::LLMConfig::Provider::GROK: return "Grok";
+                case helpers::LLMConfig::Provider::OPENAI: return "ChatGPT";
+                case helpers::LLMConfig::Provider::GROQ: return "Groq";
+                case helpers::LLMConfig::Provider::CUSTOM: return "AI";
+                default: return "AI";
+            }
+        }
+        
         void send_message(const std::string& message) {
-            if (message.empty() || waiting_for_response) return;
+            if (message.empty() || waiting_for_response || !llm_configured || !gpt) return;
             
             // Add user message to history
             chat_history.emplace_back("user", message);
@@ -306,11 +365,17 @@ namespace rouen::cards {
             // Start async request
             pending_response = std::make_optional(std::async(std::launch::async, [this, message]() {
                 try {
+                    // Determine search mode (only for Grok)
+                    std::string_view search_mode = {};
+                    if (current_llm_settings.provider == helpers::LLMConfig::Provider::GROK && allow_search) {
+                        search_mode = "on";
+                    }
+                    
                     auto response = gpt->sendMessage(message, 
                         [this](const std::string& url, const std::string& data, auto header_client) {
                             return fetcher.post(url, data, header_client);
                         },
-                        "user", "grok-3-latest", allow_search ? "on" : std::string_view{}, temperature);
+                        "user", current_llm_settings.model_name, search_mode, temperature);
                     
                     // Extract message content
                     std::string reply = response.choices[0].message.content;
@@ -388,4 +453,5 @@ namespace rouen::cards {
             }
         }
     };
-}
+
+} // namespace rouen::cards

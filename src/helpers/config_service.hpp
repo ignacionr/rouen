@@ -25,6 +25,7 @@ namespace rouen::helpers {
             API_CREDENTIALS,    // API keys, tokens, secrets
             JIRA_PROFILES,     // JIRA organization profiles
             BYBIT_CONFIG,      // Bybit trading configuration
+            LLM_CONFIG,        // Large Language Model configuration
             SYSTEM_PATHS,      // File system paths and directories
             EXECUTABLE_PATHS,  // Paths to external executables
             DATABASE_CONFIG,   // Database connection settings

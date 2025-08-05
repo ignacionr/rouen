@@ -114,7 +114,11 @@ namespace rouen::cards {
                 });
                 
                 instance.emplace("grok", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<grok>();
+                    return std::make_shared<ai_chat>();
+                });
+                
+                instance.emplace("ai-chat", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<ai_chat>();
                 });
                 
                 instance.emplace("radio", [](std::string_view, SDL_Renderer*) {

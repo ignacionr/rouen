@@ -210,6 +210,20 @@ namespace rouen::helpers {
         register_config("BYBIT_HOST", Category::BYBIT_CONFIG, false, false,
                        "Bybit API host endpoint", "https://api.bybit.com");
                        
+        // LLM Configuration
+        register_config("LLM_PROVIDER", Category::LLM_CONFIG, false, false,
+                       "Default LLM provider (grok, openai, groq, custom)", "grok");
+        register_config("LLM_CUSTOM_URL", Category::LLM_CONFIG, false, false,
+                       "Custom LLM API base URL (when provider is 'custom')");
+        register_config("LLM_CUSTOM_MODEL", Category::LLM_CONFIG, false, false,
+                       "Custom LLM model name (when provider is 'custom')", "gpt-3.5-turbo");
+        register_config("LLM_CUSTOM_API_KEY", Category::LLM_CONFIG, false, true,
+                       "Custom LLM API key (when provider is 'custom')");
+        register_config("OPENAI_API_KEY", Category::API_CREDENTIALS, false, true,
+                       "OpenAI API key for GPT models");
+        register_config("GROQ_API_KEY", Category::API_CREDENTIALS, false, true,
+                       "Groq API key for fast inference");
+                       
         // HTTP/SSL Configuration
         register_config("ROUEN_SSL_MODE", Category::HTTP_SSL_CONFIG, false, false,
                        "SSL mode: strict (default), relaxed, compatible, atlassian, insecure", "strict");

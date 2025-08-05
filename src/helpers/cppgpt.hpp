@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <format>
+#include <iostream>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
