@@ -300,7 +300,7 @@ namespace rouen::cards {
             bool needs_recalc = true;
         };
         
-        std::unique_ptr<ignacionr::cppgpt> gpt{};
+        std::optional<helpers::LLMConfig::LLMInstance> llm_instance{};
         helpers::LLMConfig::LLMSettings current_llm_settings{};
         bool llm_configured{false};
         std::string input_text{};
@@ -322,9 +322,9 @@ namespace rouen::cards {
             llm_configured = current_llm_settings.is_configured;
             
             if (llm_configured) {
-                gpt = helpers::LLMConfig::create_llm_instance();
+                llm_instance = helpers::LLMConfig::create_llm_instance();
             } else {
-                gpt.reset();
+                llm_instance.reset();
             }
             
             // Update card name based on provider
@@ -351,7 +351,7 @@ namespace rouen::cards {
         }
         
         void send_message(const std::string& message) {
-            if (message.empty() || waiting_for_response || !llm_configured || !gpt) return;
+            if (message.empty() || waiting_for_response || !llm_configured || !llm_instance) return;
             
             // Add user message to history
             chat_history.emplace_back("user", message);
@@ -366,19 +366,26 @@ namespace rouen::cards {
             // Start async request
             pending_response = std::make_optional(std::async(std::launch::async, [this, message]() {
                 try {
+                    if (!llm_instance) {
+                        throw std::runtime_error("LLM instance not available");
+                    }
+                    
                     // Determine search mode (only for Grok)
                     std::string_view search_mode = {};
                     if (current_llm_settings.provider == helpers::LLMConfig::Provider::GROK && allow_search) {
                         search_mode = "on";
                     }
                     
-                    auto response = gpt->sendMessage(message, 
-                        [this](const std::string& url, const std::string& data, auto header_client) {
-                            return fetcher.post(url, data, header_client);
-                        },
-                        "user", current_llm_settings.model_name, search_mode, temperature);
+                    // Use template function to call sendMessage on any LLM type
+                    auto response = helpers::LLMConfig::with_llm_instance(*llm_instance, [&](auto& llm) {
+                        return llm.sendMessage(message, 
+                            [this](const std::string& url, const std::string& data, auto header_client) {
+                                return fetcher.post(url, data, header_client);
+                            },
+                            "user", current_llm_settings.model_name, search_mode, temperature);
+                    });
                     
-                    // Extract message content
+                    // Extract message content (works for both cppgpt and GeminiAdapter)
                     std::string reply = response.choices[0].message.content;
                     
                     // Add to chat history

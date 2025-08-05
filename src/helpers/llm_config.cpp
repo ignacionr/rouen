@@ -42,7 +42,10 @@ LLMConfig::LLMSettings LLMConfig::get_current_config() {
             
         case Provider::GEMINI:
             settings.api_key = config_service_->get_env_optional("GEMINI_API_KEY").value_or("");
-            settings.base_url = "https://generativelanguage.googleapis.com/v1beta/";
+            // Note: Direct Google Gemini API is not OpenAI-compatible
+            // For Gemini support, use Custom provider with an OpenAI-compatible proxy
+            // such as: https://api.openai-proxy.org/v1 or similar service
+            settings.base_url = "https://generativelanguage.googleapis.com/v1beta";
             settings.model_name = "gemini-1.5-pro";
             break;
             
@@ -59,15 +62,28 @@ LLMConfig::LLMSettings LLMConfig::get_current_config() {
     return settings;
 }
 
-std::unique_ptr<ignacionr::cppgpt> LLMConfig::create_llm_instance() {
+std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
     auto settings = get_current_config();
     
     if (!settings.is_configured) {
         CONFIG_WARN("LLM configuration is incomplete. Cannot create LLM instance.");
-        return nullptr;
+        return std::nullopt;
     }
     
     try {
+        // For Gemini provider, use the native Gemini adapter
+        if (settings.provider == Provider::GEMINI) {
+            auto adapter = std::make_unique<GeminiAdapter>(settings.api_key);
+            
+            // Add provider-specific instructions
+            adapter->add_instructions("You are a helpful AI assistant powered by Google's Gemini model. "
+                                    "You are knowledgeable, accurate, and provide helpful responses.");
+            
+            CONFIG_INFO("Created Gemini adapter instance");
+            return LLMInstance{std::move(adapter)};
+        }
+        
+        // For all other providers, use cppgpt
         auto llm = std::make_unique<ignacionr::cppgpt>(settings.api_key, settings.base_url);
         
         // Add provider-specific instructions
@@ -82,6 +98,7 @@ std::unique_ptr<ignacionr::cppgpt> LLMConfig::create_llm_instance() {
                 llm->add_instructions("You are a helpful AI assistant powered by Groq's fast inference.");
                 break;
             case Provider::GEMINI:
+                // This case should not be reached as Gemini is handled above
                 llm->add_instructions("You are Gemini, a helpful AI assistant created by Google.");
                 break;
             case Provider::CUSTOM:
@@ -89,12 +106,12 @@ std::unique_ptr<ignacionr::cppgpt> LLMConfig::create_llm_instance() {
                 break;
         }
         
-        CONFIG_INFO_FMT("Created LLM instance for provider: {}", provider_to_string(settings.provider));
-        return llm;
+        CONFIG_INFO_FMT("Created cppgpt LLM instance for provider: {}", provider_to_string(settings.provider));
+        return LLMInstance{std::move(llm)};
         
     } catch (const std::exception& e) {
         CONFIG_ERROR_FMT("Failed to create LLM instance: {}", e.what());
-        return nullptr;
+        return std::nullopt;
     }
 }
 
@@ -142,7 +159,7 @@ std::string LLMConfig::get_base_url(Provider provider) {
         case Provider::GROK: return ignacionr::cppgpt::grok_base;
         case Provider::OPENAI: return ignacionr::cppgpt::open_ai_base;
         case Provider::GROQ: return ignacionr::cppgpt::groq_base;
-        case Provider::GEMINI: return "https://generativelanguage.googleapis.com/v1beta/";
+        case Provider::GEMINI: return "https://generativelanguage.googleapis.com/v1beta";
         case Provider::CUSTOM: 
             ensure_config_service();
             return config_service_->get_env_optional("LLM_CUSTOM_URL").value_or("");

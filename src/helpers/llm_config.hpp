@@ -3,15 +3,17 @@
 #include <string>
 #include <memory>
 #include <optional>
+#include <variant>
 #include "config_service.hpp"
 #include "cppgpt.hpp"
+#include "gemini_adapter.hpp"
 
 namespace rouen::helpers {
 
     /**
      * LLM Configuration Manager
-     * Provides centralized management of LLM backend configurations
-     * Supports multiple providers: Grok, OpenAI, Groq, and custom endpoints
+     * Template-based approach with zero runtime overhead
+     * Supports multiple providers: Grok, OpenAI, Groq, Gemini, and custom endpoints
      */
     class LLMConfig {
     public:
@@ -30,6 +32,12 @@ namespace rouen::helpers {
             std::string model_name;
             bool is_configured;
         };
+
+        // Type alias for LLM instance variant
+        using LLMInstance = std::variant<
+            std::unique_ptr<ignacionr::cppgpt>,
+            std::unique_ptr<GeminiAdapter>
+        >;
         
         /**
          * Get the current LLM configuration
@@ -38,10 +46,45 @@ namespace rouen::helpers {
         static LLMSettings get_current_config();
         
         /**
-         * Get a configured cppgpt instance based on current settings
-         * @return std::unique_ptr to configured cppgpt instance, or nullptr if not configured
+         * Get a configured LLM instance based on current settings
+         * Returns either a cppgpt instance or a GeminiAdapter instance
+         * @return LLMInstance variant containing the appropriate adapter
          */
-        static std::unique_ptr<ignacionr::cppgpt> create_llm_instance();
+        static std::optional<LLMInstance> create_llm_instance();
+        
+        /**
+         * Template function to execute operations on any LLM type
+         * Provides unified interface regardless of underlying implementation
+         * @param instance The LLM instance (cppgpt or GeminiAdapter)
+         * @param operation Function/lambda to execute on the instance
+         * @return Result of the operation
+         */
+        template<typename Func>
+        static auto with_llm_instance(const LLMInstance& instance, Func&& operation) {
+            return std::visit([&operation](auto& llm_ptr) {
+                return operation(*llm_ptr);
+            }, instance);
+        }
+
+        /**
+         * Template helper to create and use an LLM instance in one call
+         * @param operation Function/lambda to execute on the LLM instance
+         * @return Optional result of the operation
+         */
+        template<typename Func>
+        static auto with_configured_llm(Func&& operation) -> std::optional<decltype(operation(std::declval<ignacionr::cppgpt&>()))> {
+            auto instance = create_llm_instance();
+            if (!instance) {
+                return std::nullopt;
+            }
+            
+            return std::visit([&operation](auto& llm_ptr) -> std::optional<decltype(operation(std::declval<ignacionr::cppgpt&>()))> {
+                if (!llm_ptr) {
+                    return std::nullopt;
+                }
+                return operation(*llm_ptr);
+            }, *instance);
+        }
         
         /**
          * Check if the current LLM configuration is valid and complete
