@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <optional>
 #include <format>
 #include <chrono>
 #include <thread>
@@ -9,8 +10,31 @@
 #include <iostream>
 #include "debug.hpp"
 #include "cppgpt.hpp"
+#include "glaze_include.hpp"
 
 namespace rouen::helpers {
+
+    // Gemini API response structures for glaze parsing
+    // Note: Using glz::opts{.error_on_unknown_keys=false} so we only need to define fields we use
+    struct GeminiPart {
+        std::string text;
+    };
+
+    struct GeminiContent {
+        std::vector<GeminiPart> parts;
+        std::string role;
+    };
+
+    struct GeminiCandidate {
+        GeminiContent content;
+        std::string finishReason;
+        int index;
+    };
+
+    struct GeminiResponse {
+        std::vector<GeminiCandidate> candidates;
+        // Don't include optional fields - we'll handle unknown_key errors differently
+    };
 
     /**
      * Gemini API Adapter
@@ -105,58 +129,98 @@ namespace rouen::helpers {
         }
 
         std::string parse_gemini_response(const std::string& response) const {
-            CONFIG_DEBUG_FMT("Parsing Gemini response: {}", response.substr(0, 200) + "...");
+            CONFIG_DEBUG_FMT("Parsing Gemini response: {}", response);
             
-            // Simple JSON parser for Gemini response
-            std::string text_key = "\"text\":\"";
-            auto text_pos = response.find(text_key);
-            if (text_pos == std::string::npos) {
-                CONFIG_ERROR("Failed to find text content in Gemini response");
-                throw std::runtime_error("Invalid Gemini response format");
-            }
-            
-            text_pos += text_key.length();
-            auto end_pos = text_pos;
-            
-            // Find the end of the text content (handling escaped quotes)
-            while (end_pos < response.length()) {
-                if (response[end_pos] == '"' && (end_pos == text_pos || response[end_pos - 1] != '\\')) {
-                    break;
+            try {
+                CONFIG_DEBUG("Creating GeminiResponse object");
+                GeminiResponse gemini_response;
+                
+                // Simple workaround: manually clean JSON to only keep candidates
+                std::string cleaned_response = "{\"candidates\":";
+                
+                // Find the candidates array
+                auto candidates_start = response.find("\"candidates\":");
+                if (candidates_start == std::string::npos) {
+                    throw std::runtime_error("No candidates found in response");
                 }
-                end_pos++;
-            }
-            
-            if (end_pos >= response.length()) {
-                CONFIG_ERROR("Malformed JSON in Gemini response");
-                throw std::runtime_error("Malformed Gemini response");
-            }
-            
-            std::string content = response.substr(text_pos, end_pos - text_pos);
-            
-            // Unescape JSON
-            std::string unescaped;
-            for (size_t i = 0; i < content.length(); ++i) {
-                if (content[i] == '\\' && i + 1 < content.length()) {
-                    switch (content[i + 1]) {
-                        case '"': unescaped += '"'; i++; break;
-                        case '\\': unescaped += '\\'; i++; break;
-                        case 'n': unescaped += '\n'; i++; break;
-                        case 't': unescaped += '\t'; i++; break;
-                        case 'r': unescaped += '\r'; i++; break;
-                        default: unescaped += content[i]; break;
+                
+                // Find the start of the array
+                auto array_start = response.find('[', candidates_start);
+                if (array_start == std::string::npos) {
+                    throw std::runtime_error("Malformed candidates array");
+                }
+                
+                // Find the end of the candidates array
+                auto array_end = array_start + 1;
+                int bracket_count = 1;
+                bool in_string = false;
+                
+                for (size_t i = array_start + 1; i < response.length() && bracket_count > 0; ++i) {
+                    char c = response[i];
+                    if (c == '"' && (i == 0 || response[i-1] != '\\')) {
+                        in_string = !in_string;
+                    } else if (!in_string) {
+                        if (c == '[') {
+                            bracket_count++;
+                        } else if (c == ']') {
+                            bracket_count--;
+                            if (bracket_count == 0) {
+                                array_end = i + 1;
+                                break;
+                            }
+                        }
                     }
-                } else {
-                    unescaped += content[i];
                 }
+                
+                // Extract just the candidates array
+                std::string candidates_array = response.substr(array_start, array_end - array_start);
+                cleaned_response += candidates_array + "}";
+                
+                CONFIG_DEBUG_FMT("Cleaned JSON: {}", cleaned_response);
+                
+                CONFIG_DEBUG("Calling glz::read_json on cleaned response");
+                auto error = glz::read_json(gemini_response, cleaned_response);
+                
+                if (error) {
+                    CONFIG_ERROR_FMT("Failed to parse cleaned Gemini JSON response: {}", glz::format_error(error, cleaned_response));
+                    throw std::runtime_error("Invalid Gemini response JSON format");
+                }
+                
+                CONFIG_DEBUG("Checking candidates");
+                if (gemini_response.candidates.empty()) {
+                    CONFIG_ERROR("No candidates found in Gemini response");
+                    throw std::runtime_error("Gemini response contains no candidates");
+                }
+                
+                CONFIG_DEBUG("Getting candidate reference");
+                const auto& candidate = gemini_response.candidates[0];
+                
+                CONFIG_DEBUG("Checking parts");
+                if (candidate.content.parts.empty()) {
+                    CONFIG_ERROR("No parts found in Gemini candidate content");
+                    throw std::runtime_error("Gemini candidate contains no content parts");
+                }
+                
+                CONFIG_DEBUG("Extracting text");
+                // Make a copy of the text to avoid dangling reference when gemini_response goes out of scope
+                std::string text = candidate.content.parts[0].text;
+                
+                CONFIG_DEBUG_FMT("Successfully extracted text: {}", text.substr(0, 50) + "...");
+                CONFIG_DEBUG_FMT("Text length: {}", text.length());
+                
+                CONFIG_DEBUG("About to return text");
+                return text;
+                
+            } catch (const std::exception& e) {
+                CONFIG_ERROR_FMT("Exception parsing Gemini response: {}", e.what());
+                CONFIG_DEBUG_FMT("Full response for debugging: {}", response);
+                throw;
             }
-            
-            CONFIG_DEBUG_FMT("Extracted Gemini response: {}", unescaped.substr(0, 100) + "...");
-            return unescaped;
         }
 
     public:
         GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "") 
-            : api_key_(api_key), model_("gemini-1.5-pro"), last_request_time_(std::chrono::steady_clock::now()) {
+            : api_key_(api_key), model_("gemini-2.5-flash-lite"), last_request_time_(std::chrono::steady_clock::now()) {
             CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key.substr(0, 8));
         }
 
@@ -174,7 +238,7 @@ namespace rouen::helpers {
             std::string_view message, 
             DoPostFunc do_post, 
             std::string_view role = "user", 
-            std::string_view model = "gemini-1.5-pro", 
+            std::string_view model = "gemini-2.5-flash-lite", 
             [[maybe_unused]] std::string_view search_mode = {},
             float temperature = 0.45f
         ) {
@@ -207,12 +271,51 @@ namespace rouen::helpers {
             conversation_.push_back({"assistant", result});
             
             // Return cppgpt-compatible response structure
-            ChatCompletion chat_completion;
+            ChatCompletion chat_completion{};
             chat_completion.choices.resize(1);
+            chat_completion.choices[0].index = 0;
+            chat_completion.choices[0].message.role = "assistant";
             chat_completion.choices[0].message.content = result;
+            chat_completion.choices[0].finish_reason = "stop";
             
             return chat_completion;
         }
     };
 
 } // namespace rouen::helpers
+
+// Glaze metadata for Gemini API response structures
+template <>
+struct glz::meta<rouen::helpers::GeminiPart> {
+    using T = rouen::helpers::GeminiPart;
+    static constexpr auto value = object(
+        "text", &T::text
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiContent> {
+    using T = rouen::helpers::GeminiContent;
+    static constexpr auto value = object(
+        "parts", &T::parts,
+        "role", &T::role
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiCandidate> {
+    using T = rouen::helpers::GeminiCandidate;
+    static constexpr auto value = object(
+        "content", &T::content,
+        "finishReason", &T::finishReason,
+        "index", &T::index
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiResponse> {
+    using T = rouen::helpers::GeminiResponse;
+    static constexpr auto value = object(
+        "candidates", &T::candidates
+    );
+};

@@ -501,6 +501,16 @@ public:
             
             if (http_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
+                
+                // For specific error codes, log the response body which often contains useful information
+                if (http_code == 429) {
+                    HTTP_ERROR_FMT("Rate limit response body: {}", response.empty() ? "(empty)" : response);
+                } else if (http_code >= 400 && http_code < 500) {
+                    HTTP_DEBUG_FMT("Client error response body: {}", response.empty() ? "(empty)" : response.substr(0, 500));
+                } else if (http_code >= 500) {
+                    HTTP_DEBUG_FMT("Server error response body: {}", response.empty() ? "(empty)" : response.substr(0, 500));
+                }
+                
                 throw std::runtime_error("HTTP error " + std::to_string(http_code));
             }
             

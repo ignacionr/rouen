@@ -46,7 +46,7 @@ LLMConfig::LLMSettings LLMConfig::get_current_config() {
             // For Gemini support, use Custom provider with an OpenAI-compatible proxy
             // such as: https://api.openai-proxy.org/v1 or similar service
             settings.base_url = "https://generativelanguage.googleapis.com/v1beta";
-            settings.model_name = "gemini-1.5-pro";
+            settings.model_name = "gemini-2.5-flash-lite";
             break;
             
         case Provider::CUSTOM:
@@ -148,7 +148,7 @@ std::string LLMConfig::get_default_model(Provider provider) {
         case Provider::GROK: return "grok-3-latest";
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
-        case Provider::GEMINI: return "gemini-1.5-pro";
+        case Provider::GEMINI: return "gemini-2.5-flash-lite";
         case Provider::CUSTOM: return "gpt-3.5-turbo";
         default: return "grok-3-latest";
     }
