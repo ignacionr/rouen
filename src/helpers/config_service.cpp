@@ -212,7 +212,7 @@ namespace rouen::helpers {
                        
         // LLM Configuration
         register_config("LLM_PROVIDER", Category::LLM_CONFIG, false, false,
-                       "Default LLM provider (grok, openai, groq, custom)", "grok");
+                       "Default LLM provider (grok, openai, groq, gemini, custom)", "grok");
         register_config("LLM_CUSTOM_URL", Category::LLM_CONFIG, false, false,
                        "Custom LLM API base URL (when provider is 'custom')");
         register_config("LLM_CUSTOM_MODEL", Category::LLM_CONFIG, false, false,
@@ -223,6 +223,8 @@ namespace rouen::helpers {
                        "OpenAI API key for GPT models");
         register_config("GROQ_API_KEY", Category::API_CREDENTIALS, false, true,
                        "Groq API key for fast inference");
+        register_config("GEMINI_API_KEY", Category::API_CREDENTIALS, false, true,
+                       "Google Gemini API key for Gemini models");
                        
         // HTTP/SSL Configuration
         register_config("ROUEN_SSL_MODE", Category::HTTP_SSL_CONFIG, false, false,

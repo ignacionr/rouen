@@ -475,6 +475,7 @@ private:
             {"Grok (X.AI)", "grok", "X.AI's Grok models with web search capabilities", "grok-3-latest", "GROK_API_KEY"},
             {"OpenAI", "openai", "OpenAI's GPT models including GPT-4", "gpt-4", "OPENAI_API_KEY"},
             {"Groq", "groq", "Fast inference with open-source models", "llama3-8b-8192", "GROQ_API_KEY"},
+            {"Google Gemini", "gemini", "Google's Gemini models with multimodal capabilities", "gemini-1.5-pro", "GEMINI_API_KEY"},
             {"Custom", "custom", "Custom LLM endpoint with configurable URL", "custom-model", "LLM_CUSTOM_API_KEY"}
         };
         
@@ -523,7 +524,7 @@ private:
         // Provider-specific configuration
         const auto& selected_provider_info = providers[selected_provider];
         
-        if (selected_provider == 3) { // Custom provider
+        if (selected_provider == 4) { // Custom provider
             render_custom_llm_config();
         } else {
             // Show API key requirement for standard providers

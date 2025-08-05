@@ -19,6 +19,7 @@ namespace rouen::helpers {
             GROK,
             OPENAI, 
             GROQ,
+            GEMINI,
             CUSTOM
         };
         

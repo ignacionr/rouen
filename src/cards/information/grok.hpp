@@ -344,6 +344,7 @@ namespace rouen::cards {
                 case helpers::LLMConfig::Provider::GROK: return "Grok";
                 case helpers::LLMConfig::Provider::OPENAI: return "ChatGPT";
                 case helpers::LLMConfig::Provider::GROQ: return "Groq";
+                case helpers::LLMConfig::Provider::GEMINI: return "Gemini";
                 case helpers::LLMConfig::Provider::CUSTOM: return "AI";
                 default: return "AI";
             }

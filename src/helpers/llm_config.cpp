@@ -40,6 +40,12 @@ LLMConfig::LLMSettings LLMConfig::get_current_config() {
             settings.model_name = "llama3-8b-8192";
             break;
             
+        case Provider::GEMINI:
+            settings.api_key = config_service_->get_env_optional("GEMINI_API_KEY").value_or("");
+            settings.base_url = "https://generativelanguage.googleapis.com/v1beta/";
+            settings.model_name = "gemini-1.5-pro";
+            break;
+            
         case Provider::CUSTOM:
             settings.api_key = config_service_->get_env_optional("LLM_CUSTOM_API_KEY").value_or("");
             settings.base_url = config_service_->get_env_optional("LLM_CUSTOM_URL").value_or("");
@@ -75,6 +81,9 @@ std::unique_ptr<ignacionr::cppgpt> LLMConfig::create_llm_instance() {
             case Provider::GROQ:
                 llm->add_instructions("You are a helpful AI assistant powered by Groq's fast inference.");
                 break;
+            case Provider::GEMINI:
+                llm->add_instructions("You are Gemini, a helpful AI assistant created by Google.");
+                break;
             case Provider::CUSTOM:
                 llm->add_instructions("You are a helpful AI assistant.");
                 break;
@@ -98,6 +107,7 @@ LLMConfig::Provider LLMConfig::string_to_provider(const std::string& provider_st
     if (provider_str == "grok") return Provider::GROK;
     if (provider_str == "openai") return Provider::OPENAI;
     if (provider_str == "groq") return Provider::GROQ;
+    if (provider_str == "gemini") return Provider::GEMINI;
     if (provider_str == "custom") return Provider::CUSTOM;
     
     // Default to Grok if unknown
@@ -110,6 +120,7 @@ std::string LLMConfig::provider_to_string(Provider provider) {
         case Provider::GROK: return "grok";
         case Provider::OPENAI: return "openai";
         case Provider::GROQ: return "groq";
+        case Provider::GEMINI: return "gemini";
         case Provider::CUSTOM: return "custom";
         default: return "grok";
     }
@@ -120,6 +131,7 @@ std::string LLMConfig::get_default_model(Provider provider) {
         case Provider::GROK: return "grok-3-latest";
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
+        case Provider::GEMINI: return "gemini-1.5-pro";
         case Provider::CUSTOM: return "gpt-3.5-turbo";
         default: return "grok-3-latest";
     }
@@ -130,6 +142,7 @@ std::string LLMConfig::get_base_url(Provider provider) {
         case Provider::GROK: return ignacionr::cppgpt::grok_base;
         case Provider::OPENAI: return ignacionr::cppgpt::open_ai_base;
         case Provider::GROQ: return ignacionr::cppgpt::groq_base;
+        case Provider::GEMINI: return "https://generativelanguage.googleapis.com/v1beta/";
         case Provider::CUSTOM: 
             ensure_config_service();
             return config_service_->get_env_optional("LLM_CUSTOM_URL").value_or("");
@@ -142,6 +155,7 @@ std::string LLMConfig::get_api_key_env_name(Provider provider) {
         case Provider::GROK: return "GROK_API_KEY";
         case Provider::OPENAI: return "OPENAI_API_KEY";
         case Provider::GROQ: return "GROQ_API_KEY";
+        case Provider::GEMINI: return "GEMINI_API_KEY";
         case Provider::CUSTOM: return "LLM_CUSTOM_API_KEY";
         default: return "GROK_API_KEY";
     }
