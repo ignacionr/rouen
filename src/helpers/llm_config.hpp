@@ -55,15 +55,28 @@ namespace rouen::helpers {
         /**
          * Template function to execute operations on any LLM type
          * Provides unified interface regardless of underlying implementation
-         * @param instance The LLM instance (cppgpt or GeminiAdapter)
+         * @param variant The LLM instance variant (cppgpt or GeminiAdapter)
          * @param operation Function/lambda to execute on the instance
          * @return Result of the operation
          */
+        // True compile-time dispatch avoiding std::visit entirely
         template<typename Func>
-        static auto with_llm_instance(const LLMInstance& instance, Func&& operation) {
-            return std::visit([&operation](auto& llm_ptr) {
-                return operation(*llm_ptr);
-            }, instance);
+        static auto with_llm_instance(const LLMInstance& variant, Func&& operation) {
+            if (std::holds_alternative<std::unique_ptr<ignacionr::cppgpt>>(variant)) {
+                const auto& ptr = std::get<std::unique_ptr<ignacionr::cppgpt>>(variant);
+                if (!ptr) {
+                    throw std::runtime_error("cppgpt instance is null");
+                }
+                return operation(*ptr);
+            } else if (std::holds_alternative<std::unique_ptr<GeminiAdapter>>(variant)) {
+                const auto& ptr = std::get<std::unique_ptr<GeminiAdapter>>(variant);
+                if (!ptr) {
+                    throw std::runtime_error("GeminiAdapter instance is null");
+                }
+                return operation(*ptr);
+            } else {
+                throw std::runtime_error("Unknown LLM variant type");
+            }
         }
 
         /**
@@ -72,18 +85,15 @@ namespace rouen::helpers {
          * @return Optional result of the operation
          */
         template<typename Func>
-        static auto with_configured_llm(Func&& operation) -> std::optional<decltype(operation(std::declval<ignacionr::cppgpt&>()))> {
+        static auto with_configured_llm(Func&& operation) {
             auto instance = create_llm_instance();
             if (!instance) {
                 return std::nullopt;
             }
             
-            return std::visit([&operation](auto& llm_ptr) -> std::optional<decltype(operation(std::declval<ignacionr::cppgpt&>()))> {
-                if (!llm_ptr) {
-                    return std::nullopt;
-                }
-                return operation(*llm_ptr);
-            }, *instance);
+            return with_llm_instance(*instance, [&operation](auto& llm) {
+                return std::make_optional(operation(llm));
+            });
         }
         
         /**

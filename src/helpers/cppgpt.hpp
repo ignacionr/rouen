@@ -170,7 +170,10 @@ namespace ignacionr
 
         void add_instructions(std::string_view instructions, std::string_view role = "system")
         {
-            conversation.push_back({std::string(role), std::string(instructions)});
+            Message instruction_message;
+            instruction_message.role = std::string(role);
+            instruction_message.content = std::string(instructions);
+            conversation.push_back(instruction_message);  // copy instead of move
         }
 
         // Function to send a message to GPT and receive the reply
@@ -180,17 +183,33 @@ namespace ignacionr
             std::string_view role = "user", 
             std::string_view model = "grok-3-latest", 
             std::string_view search_mode = {},
-            float temperature = 0.45f
+            float temperature = 0.45f,
+            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr
         )
         {
             wait_min_time();
-            // Append the new message to the conversation history
-            conversation.push_back({std::string(role), std::string(message)});
+            
+            // Build conversation history either from full_conversation or our local history
+            std::vector<Message> current_conversation;
+            
+            if (full_conversation) {
+                // Use the provided full conversation history
+                current_conversation.reserve(full_conversation->size() + 1);
+                for (const auto& [msg_role, msg_content] : *full_conversation) {
+                    current_conversation.emplace_back(msg_role, msg_content);
+                }
+                // Add the new message
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            } else {
+                // Fallback to local conversation history + new message
+                current_conversation = conversation;
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            }
 
             // Prepare the API request payload
             Payload payload{
                 std::string(model),
-                conversation,
+                std::move(current_conversation),
                 search_mode.empty() ? std::optional<SearchParameters>{} : SearchParameters{std::string(search_mode)},
                 temperature
             };
@@ -216,11 +235,16 @@ namespace ignacionr
                 std::cerr << "Response: " << r << std::endl;
                 throw std::runtime_error("Failed to parse response: " + glz::format_error(read_error, r));
             }
-            
-            std::string gpt_reply = response.choices[0].message.content;
 
-            // Append GPT's reply to the conversation history
-            conversation.push_back({"assistant", gpt_reply});
+            // Only maintain local conversation if not using external conversation management
+            if (!full_conversation) {
+                std::string gpt_reply = response.choices[0].message.content;
+                // Append GPT's reply to the local conversation history
+                Message assistant_message;
+                assistant_message.role = std::string("assistant");
+                assistant_message.content = std::string(gpt_reply);
+                conversation.push_back(assistant_message);
+            }
 
             return response;
         }

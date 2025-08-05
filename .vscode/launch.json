@@ -14,7 +14,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [
                 { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-nix" },
-                { "name": "ROUEN_LOG_LEVEL", "value": "DEBUG" }
+                { "name": "ROUEN_LOG_LEVEL", "value": "TRACE" }
             ],
             "externalConsole": false,
             "MIMode": "lldb",

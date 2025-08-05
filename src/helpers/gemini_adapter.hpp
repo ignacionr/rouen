@@ -88,14 +88,14 @@ namespace rouen::helpers {
             return escaped;
         }
 
-        std::string build_gemini_request(float temperature) const {
+        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature) const {
             std::string json = "{\"contents\":[";
             
             // Merge system messages and convert to Gemini format
             std::string system_instructions;
             std::vector<Message> user_assistant_messages;
             
-            for (const auto& msg : conversation_) {
+            for (const auto& msg : conversation) {
                 if (msg.role == "system") {
                     if (!system_instructions.empty()) {
                         system_instructions += "\n\n";
@@ -126,6 +126,11 @@ namespace rouen::helpers {
             json += std::format("],\"generationConfig\":{{\"temperature\":{},\"maxOutputTokens\":4096}}}}", temperature);
             
             return json;
+        }
+
+        // Backward compatibility method that uses local conversation_
+        std::string build_gemini_request(float temperature) const {
+            return build_gemini_request(conversation_, temperature);
         }
 
         std::string parse_gemini_response(const std::string& response) const {
@@ -240,15 +245,30 @@ namespace rouen::helpers {
             std::string_view role = "user", 
             std::string_view model = "gemini-2.5-flash-lite", 
             [[maybe_unused]] std::string_view search_mode = {},
-            float temperature = 0.45f
+            float temperature = 0.45f,
+            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr
         ) {
             wait_min_time();
             
-            // Add the new message to conversation
-            conversation_.push_back({std::string(role), std::string(message)});
+            // Build conversation either from full_conversation or local history
+            std::vector<Message> current_conversation;
+            
+            if (full_conversation) {
+                // Use the provided full conversation history
+                current_conversation.reserve(full_conversation->size() + 1);
+                for (const auto& [msg_role, msg_content] : *full_conversation) {
+                    current_conversation.emplace_back(msg_role, msg_content);
+                }
+                // Add the new message
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            } else {
+                // Fallback to local conversation + new message
+                current_conversation = conversation_;
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            }
 
-            // Build Gemini API request
-            std::string request_body = build_gemini_request(temperature);
+            // Build Gemini API request using current_conversation
+            std::string request_body = build_gemini_request(current_conversation, temperature);
 
             // Use the provided model or default
             std::string model_name = model.empty() ? model_ : std::string(model);
@@ -267,8 +287,10 @@ namespace rouen::helpers {
             // Parse response and extract content
             std::string result = parse_gemini_response(response);
             
-            // Add assistant response to conversation
-            conversation_.push_back({"assistant", result});
+            // Only add to local conversation if not using external conversation management
+            if (!full_conversation) {
+                conversation_.push_back({"assistant", result});
+            }
             
             // Return cppgpt-compatible response structure
             ChatCompletion chat_completion{};

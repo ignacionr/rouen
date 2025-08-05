@@ -6,6 +6,7 @@
 #include <future>
 #include <optional>
 #include <array>
+#include <typeinfo>
 
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
@@ -376,17 +377,25 @@ namespace rouen::cards {
                         search_mode = "on";
                     }
                     
+                    // Convert deque to vector for LLM API compatibility
+                    std::vector<std::pair<std::string, std::string>> conversation_vector(chat_history.begin(), chat_history.end());
+                    
                     // Use template function to call sendMessage on any LLM type
                     auto response = helpers::LLMConfig::with_llm_instance(*llm_instance, [&](auto& llm) {
                         return llm.sendMessage(message, 
                             [this](const std::string& url, const std::string& data, auto header_client) {
                                 return fetcher.post(url, data, header_client);
                             },
-                            "user", current_llm_settings.model_name, search_mode, temperature);
+                            "user", current_llm_settings.model_name, search_mode, temperature, &conversation_vector);
                     });
                     
-                    // Extract message content (works for both cppgpt and GeminiAdapter)
-                    std::string reply = response.choices[0].message.content;
+                    // Extract message content safely with bounds checking
+                    std::string reply;
+                    if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                        reply = std::string(response.choices[0].message.content); // Explicit copy
+                    } else {
+                        reply = "Error: Empty response received";
+                    }
                     
                     // Add to chat history
                     chat_history.emplace_back("assistant", reply);
@@ -394,8 +403,20 @@ namespace rouen::cards {
                     // Add cache entry for the response
                     message_cache.emplace_back();
                     layout_dirty = true;
+                } catch (const std::bad_alloc& e) {
+                    chat_history.emplace_back("assistant", std::string("Memory allocation error: ") + e.what());
+                    message_cache.emplace_back();
+                    layout_dirty = true;
+                } catch (const std::runtime_error& e) {
+                    chat_history.emplace_back("assistant", std::string("Runtime error: ") + e.what());
+                    message_cache.emplace_back();
+                    layout_dirty = true;
                 } catch (const std::exception& e) {
-                    chat_history.emplace_back("assistant", std::string("Error: ") + e.what());
+                    chat_history.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
+                    message_cache.emplace_back();
+                    layout_dirty = true;
+                } catch (...) {
+                    chat_history.emplace_back("assistant", "Unknown error occurred");
                     message_cache.emplace_back();
                     layout_dirty = true;
                 }
