@@ -8,6 +8,8 @@
 #include <array>
 #include <typeinfo>
 #include <format>
+#include <memory>
+#include <mutex>
 
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
@@ -134,9 +136,22 @@ namespace rouen::cards {
                     static const ImU32 assistant_text_color = ImGui::ColorConvertFloat4ToU32(get_color(5));
                     
                     // Display chat history using cached values
-                    for (size_t i = 0; i < chat_history_.size() && i < message_cache_.size(); ++i) {
-                        const auto& message = chat_history_[i];
-                        const auto& cache = message_cache_[i];
+                    // Create a safe snapshot of the chat history for rendering
+                    std::vector<std::pair<std::string, std::string>> chat_snapshot;
+                    std::vector<MessageCache> cache_snapshot;
+                    {
+                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                        chat_snapshot.reserve(chat_history_.size());
+                        cache_snapshot.reserve(message_cache_.size());
+                        
+                        // Copy the data safely
+                        chat_snapshot.assign(chat_history_.begin(), chat_history_.end());
+                        cache_snapshot.assign(message_cache_.begin(), message_cache_.end());
+                    }
+                    
+                    for (size_t i = 0; i < chat_snapshot.size() && i < cache_snapshot.size(); ++i) {
+                        const auto& message = chat_snapshot[i];
+                        const auto& cache = cache_snapshot[i];
                         bool is_user = message.first == "user";
                         
                         // Set background color for message bubbles
@@ -314,6 +329,29 @@ namespace rouen::cards {
         }
 
     private:
+        // Async request context for memory-safe operations
+        struct AsyncRequestContext {
+            std::string user_message;
+            helpers::LLMConfig::LLMSettings llm_settings;
+            std::vector<std::pair<std::string, std::string>> conversation_snapshot;
+            std::shared_ptr<http::fetch> fetcher;
+            helpers::LLMConfig::LLMInstance llm_instance_copy;
+            bool allow_search{false};
+            float temperature{0.45f};
+            
+            // Ensure proper lifetime management
+            AsyncRequestContext() = default;
+            ~AsyncRequestContext() = default;
+            
+            // Non-copyable to avoid accidental copies
+            AsyncRequestContext(const AsyncRequestContext&) = delete;
+            AsyncRequestContext& operator=(const AsyncRequestContext&) = delete;
+            
+            // Movable for efficient transfer
+            AsyncRequestContext(AsyncRequestContext&&) = default;
+            AsyncRequestContext& operator=(AsyncRequestContext&&) = default;
+        };
+        
         struct MessageCache {
             float bubble_height{0.0f};
             float content_width{0.0f};
@@ -344,6 +382,7 @@ namespace rouen::cards {
         // Async operation management
         std::optional<std::future<void>> pending_response_{};
         std::atomic<bool> waiting_for_response_{false};
+        std::mutex chat_history_mutex_; // Protect chat_history_ and message_cache_ from concurrent access
         
         // UI state management
         std::atomic<bool> scroll_to_bottom_{false};
@@ -414,31 +453,55 @@ namespace rouen::cards {
                 scroll_to_bottom_.store(true);
                 waiting_for_response_.store(true);
                 
-                // Start async request with better exception handling
-                pending_response_ = std::make_optional(std::async(std::launch::async, [this, user_message = std::string(message)]() {
+                // Create shared context for the async operation to ensure memory safety
+                auto async_context = std::make_shared<AsyncRequestContext>();
+                async_context->user_message = message; // Copy the message safely
+                async_context->llm_settings = current_llm_settings_; // Copy settings
+                async_context->allow_search = allow_search_;
+                async_context->temperature = temperature_;
+                
+                // Copy conversation history safely for async operation
+                async_context->conversation_snapshot.reserve(chat_history_.size());
+                for (const auto& msg : chat_history_) {
+                    async_context->conversation_snapshot.emplace_back(msg.first, msg.second);
+                }
+                
+                // Create a shared fetcher instance for this request to avoid accessing member fetcher_
+                async_context->fetcher = std::make_shared<http::fetch>();
+                
+                // Create a new LLM instance for this async operation rather than copying the existing one
+                auto async_llm_instance = helpers::LLMConfig::create_llm_instance();
+                if (!async_llm_instance) {
+                    throw std::runtime_error("Failed to create LLM instance for async operation");
+                }
+                async_context->llm_instance_copy = std::move(*async_llm_instance);
+                
+                // Start async request with proper memory management
+                pending_response_ = std::make_optional(std::async(std::launch::async, [this, context = std::move(async_context)]() {
                     try {
-                        if (!llm_instance_) {
-                            throw std::runtime_error("LLM instance not available");
+                        if (!context || !context->fetcher) {
+                            throw std::runtime_error("Invalid async context");
                         }
                         
-                        // Determine search mode (only for Grok)
-                        std::string_view search_mode = {};
-                        if (current_llm_settings_.provider == helpers::LLMConfig::Provider::GROK && allow_search_) {
-                            search_mode = "on";
+                        // Determine search mode (only for Grok) using copied settings
+                        std::string search_mode_str;
+                        if (context->llm_settings.provider == helpers::LLMConfig::Provider::GROK && context->allow_search) {
+                            search_mode_str = "on";
                         }
                         
-                        // Convert deque to vector for LLM API compatibility
-                        // Reserve capacity to avoid reallocations
-                        std::vector<std::pair<std::string, std::string>> conversation_vector;
-                        conversation_vector.reserve(chat_history_.size());
-                        conversation_vector.assign(chat_history_.begin(), chat_history_.end());
-                        
-                        // Use the new memory-safe interface directly
-                        auto response = llm_instance_->sendMessage(user_message, 
-                            [this](const std::string& url, const std::string& data, auto header_client) {
-                                return fetcher_.post(url, data, header_client);
+                        // Use the copied LLM instance and context data
+                        auto response = context->llm_instance_copy.sendMessage(
+                            context->user_message, 
+                            [fetcher = context->fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                // Capture fetcher by value to ensure it stays alive
+                                return fetcher->post(url, data, header_client);
                             },
-                            "user", current_llm_settings_.model_name, search_mode, temperature_, &conversation_vector);
+                            "user", 
+                            context->llm_settings.model_name, 
+                            search_mode_str, 
+                            context->temperature, 
+                            &context->conversation_snapshot
+                        );
                         
                         // Extract message content safely with bounds checking
                         std::string reply;
@@ -448,26 +511,34 @@ namespace rouen::cards {
                             reply = "Error: Empty response received";
                         }
                         
-                        // Add to chat history
-                        chat_history_.emplace_back("assistant", std::move(reply));
-                        
-                        // Add cache entry for the response
-                        message_cache_.emplace_back();
-                        layout_dirty_ = true;
+                        // Safely add to chat history using thread-safe operations
+                        // Note: We need to be careful about concurrent access to chat_history_
+                        // For now, we rely on the fact that only one async operation runs at a time
+                        // due to waiting_for_response_ gate, but we should add proper synchronization
+                        {
+                            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                            chat_history_.emplace_back("assistant", std::move(reply));
+                            message_cache_.emplace_back();
+                            layout_dirty_ = true;
+                        }
                         
                     } catch (const std::bad_alloc&) {
+                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", "Memory allocation error");
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
                     } catch (const std::runtime_error& e) {
+                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", std::string("Runtime error: ") + e.what());
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
                     } catch (const std::exception& e) {
+                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
                     } catch (...) {
+                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", "Unknown error occurred");
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
@@ -492,6 +563,7 @@ namespace rouen::cards {
                     pending_response_->get(); // This will rethrow any exception from the async task
                 } catch (const std::exception& e) {
                     // Log or handle any unhandled exceptions from the async task
+                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
                     chat_history_.emplace_back("assistant", std::string("Async task error: ") + e.what());
                     message_cache_.emplace_back();
                     layout_dirty_ = true;
@@ -505,6 +577,8 @@ namespace rouen::cards {
         }
         
         void recalculate_layout(float width_for_content) {
+            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+            
             // Ensure cache matches history size with exception safety
             try {
                 while (message_cache_.size() < chat_history_.size()) {
