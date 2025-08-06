@@ -352,8 +352,8 @@ public:
             } else {
                 // Error occurred
                 if (errno == EPIPE) {
-                    // MPV process has likely terminated
-                    MPV_ERROR("Socket send error: broken pipe (MPV process likely terminated)");
+                    // MPV process has likely terminated - this is normal behavior
+                    MPV_DEBUG("Socket connection closed: MPV process terminated");
                     close(socket_fd);
                     socket_fd = -1;
                     return false;
@@ -365,7 +365,7 @@ public:
                     continue;
                 } else {
                     // Other socket error
-                    MPV_ERROR_FMT("Socket send error: {}", strerror(errno));
+                    MPV_WARN_FMT("Socket send error: {}", strerror(errno));
                     close(socket_fd);
                     socket_fd = -1;
                     return false;
@@ -391,7 +391,7 @@ public:
         return false;
 #else
         if (socket_fd < 0) {
-            MPV_ERROR("Attempted to receive from invalid socket");
+            MPV_DEBUG("Attempted to receive from closed socket");
             return false;
         }
         

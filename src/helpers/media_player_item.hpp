@@ -211,18 +211,37 @@ inline bool media_player_item::isUrlEncoded(const std::string& input_str) {
 }
 
 inline std::string media_player_item::sanitizeURL(const std::string& input_url) {
-    std::string sanitized_url = urlDecode(input_url);
-    // Remove unwanted characters, etc.
+    std::string sanitized_url = input_url;
+    
+    // Only URL decode if the URL appears to be encoded
+    if (isUrlEncoded(input_url)) {
+        sanitized_url = urlDecode(input_url);
+    }
+    
+    // For HTTP URLs, ensure they're properly formatted
+    if (sanitized_url.find("http://") == 0 || sanitized_url.find("https://") == 0) {
+        // URL is already properly formatted for HTTP/HTTPS
+        return sanitized_url;
+    }
+    
+    // For other URLs, apply additional sanitization if needed
     return sanitized_url;
 }
 
 inline bool media_player_item::playMedia() {
     stopMedia(); // Ensure any previous media is stopped
     has_video = false;
+    
+    // Sanitize the URL to handle encoding issues
+    std::string sanitized_url = sanitizeURL(url);
+    
 #ifdef _WIN32
     // Windows implementation using named pipes instead of Unix sockets
-    std::string pipe_name = "\\\\.\\pipe\\mpvsocket";
-    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " \"" + url + "\"";
+    // Create a unique pipe name to avoid conflicts
+    auto now = std::chrono::system_clock::now().time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    std::string pipe_name = "\\\\.\\pipe\\mpvsocket_" + std::to_string(millis);
+    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " \"" + sanitized_url + "\"";
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -245,12 +264,14 @@ inline bool media_player_item::playMedia() {
     }
 #else
     // Unix implementation
-    std::string socket_path = "/tmp/mpvsocket";
+    // Create a unique socket path to avoid conflicts between multiple instances
+    std::string socket_path = mpv_socket.create_socket_path();
+    
     player_pid = fork();
     if (player_pid == 0) {
         // Child process
         // By default, allow video window; if you want to force audio-only, add --no-video
-        std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " \"" + url + "\"";
+        std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " \"" + sanitized_url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);
@@ -284,7 +305,10 @@ inline bool media_player_item::setVolume(int new_volume) {
     if (!is_playing || !mpv_socket.is_connected()) {
         return false;
     }
-    new_volume = std::clamp(new_volume, 0, 100);
+    // Clamp volume to valid range
+    if (new_volume < 0) new_volume = 0;
+    if (new_volume > 100) new_volume = 100;
+    
     std::string cmd = std::format("{{\"command\":[\"set_property\",\"volume\",{}],\"request_id\":4}}\n", new_volume);
     bool ok = mpv_socket.send_command(cmd);
     if (ok) volume = new_volume;
