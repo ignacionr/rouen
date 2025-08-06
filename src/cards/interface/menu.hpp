@@ -61,6 +61,7 @@ namespace rouen::cards {
                         {"Jira", []() { "create_card"_sfn("jira"); }},
                         {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
                         {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
+                        {"Trello", []() { "create_card"_sfn("trello"); }},
                     }},
                     { "Information", {
                         {"Calendar", []() { "create_card"_sfn("calendar"); }},

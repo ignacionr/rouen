@@ -1,0 +1,34 @@
+#include "../interface/factory.hpp"
+#include "trello_card.hpp"
+
+// This file provides Trello card registration for Rouen
+// It's compiled separately to avoid circular dependency issues
+
+namespace {
+    // This initializer registers all Trello cards with the factory
+    struct trello_card_registrar {
+        trello_card_registrar() {
+            // Get the dictionary reference
+            auto& dict = const_cast<std::unordered_map<std::string, rouen::cards::factory::factory_t>&>(
+                rouen::cards::factory::dictionary());
+            
+            // Register the main Trello card
+            dict["trello"] = [](std::string_view, SDL_Renderer*) {
+                return std::make_shared<rouen::cards::trello_card>();
+            };
+            
+            // Register Trello board viewer with board ID support
+            dict["trello-board"] = [](std::string_view board_id, SDL_Renderer*) -> card::ptr {
+                auto card_instance = std::make_shared<rouen::cards::trello_card>();
+                // TODO: Set up board_id parameter when trello_card supports it
+                if (!board_id.empty()) {
+                    // In the future, set up the board_id parameter here
+                }
+                return card_instance;
+            };
+        }
+    };
+
+    // Create a static instance to register the Trello cards during initialization
+    static trello_card_registrar registrar;
+}

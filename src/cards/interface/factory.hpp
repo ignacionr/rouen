@@ -32,6 +32,7 @@
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
+#include "../productivity/trello_card.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
 #include "../system/settings.hpp"
@@ -220,6 +221,11 @@ namespace rouen::cards {
                 instance.emplace("jira-search", [](std::string_view, SDL_Renderer*) {
                     auto card = std::make_shared<jira_card>();
                     return card;
+                });
+                
+                // Register Trello cards
+                instance.emplace("trello", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<trello_card>();
                 });
                 
                 // Register the chess replay card

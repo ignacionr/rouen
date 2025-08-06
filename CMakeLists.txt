@@ -361,8 +361,12 @@ add_executable(${PROJECT_NAME}
   src/helpers/llm_config.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
+  src/cards/productivity/trello_registrar.cpp
   src/cards/information/bybit_registrar.cpp
   src/models/jira_model.cpp
+  src/models/trello_model.cpp
+  src/hosts/trello_host.cpp
+  src/cards/productivity/trello_card.cpp
   src/cards/media/chess_com_integration.cpp
   # RSS model refactor additions
   src/models/rss/feed_item.cpp

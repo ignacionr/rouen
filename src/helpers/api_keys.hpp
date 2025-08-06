@@ -49,11 +49,46 @@ namespace rouen::helpers {
         }
         
         /**
+         * Get Trello API key using the centralized configuration service
+         * @return The Trello API key or empty string if not set
+         */
+        static std::string get_trello_api_key() {
+            auto config_service = ConfigService::instance();
+            return config_service->get_api_key("TRELLO");
+        }
+        
+        /**
+         * Get Trello API secret using the centralized configuration service
+         * @return The Trello API secret or empty string if not set
+         */
+        static std::string get_trello_api_secret() {
+            auto config_service = ConfigService::instance();
+            return config_service->get_env("TRELLO_API_SECRET");
+        }
+        
+        /**
+         * Get Trello user token using the centralized configuration service
+         * @return The Trello token or empty string if not set
+         */
+        static std::string get_trello_token() {
+            auto config_service = ConfigService::instance();
+            return config_service->get_env("TRELLO_TOKEN");
+        }
+        
+        /**
          * Checks if Bybit API credentials are available
          * @return true if both API key and secret are set
          */
         static bool has_bybit_credentials() {
             return !get_bybit_api_key().empty() && !get_bybit_secret().empty();
+        }
+        
+        /**
+         * Checks if Trello API credentials are available
+         * @return true if both API key and token are set
+         */
+        static bool has_trello_credentials() {
+            return !get_trello_api_key().empty() && !get_trello_token().empty();
         }
         
         /**

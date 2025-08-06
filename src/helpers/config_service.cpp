@@ -209,6 +209,16 @@ namespace rouen::helpers {
                        "Bybit trading API secret");
         register_config("BYBIT_HOST", Category::BYBIT_CONFIG, false, false,
                        "Bybit API host endpoint", "https://api.bybit.com");
+        
+        // Trello Configuration
+        register_config("TRELLO_API_KEY", Category::API_CREDENTIALS, false, true,
+                       "Trello API key for board access");
+        register_config("TRELLO_API_SECRET", Category::API_CREDENTIALS, false, true,
+                       "Trello API secret for OAuth and webhooks");
+        register_config("TRELLO_TOKEN", Category::API_CREDENTIALS, false, true,
+                       "Trello user token for authentication");
+        register_config("TRELLO_HOST", Category::API_CREDENTIALS, false, false,
+                       "Trello API host endpoint", "https://api.trello.com");
                        
         // LLM Configuration
         register_config("LLM_PROVIDER", Category::LLM_CONFIG, false, false,
