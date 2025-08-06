@@ -228,6 +228,10 @@ namespace rouen::cards {
                     return std::make_shared<trello_card>();
                 });
                 
+                instance.emplace("trello-board", [](std::string_view board_id, SDL_Renderer*) {
+                    return std::make_shared<trello_card>(std::string(board_id));
+                });
+                
                 // Register the chess replay card
                 instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
                     return std::make_shared<chess_replay>(pgn_path);

@@ -19,12 +19,7 @@ namespace {
             
             // Register Trello board viewer with board ID support
             dict["trello-board"] = [](std::string_view board_id, SDL_Renderer*) -> card::ptr {
-                auto card_instance = std::make_shared<rouen::cards::trello_card>();
-                // TODO: Set up board_id parameter when trello_card supports it
-                if (!board_id.empty()) {
-                    // In the future, set up the board_id parameter here
-                }
-                return card_instance;
+                return std::make_shared<rouen::cards::trello_card>(std::string(board_id));
             };
         }
     };

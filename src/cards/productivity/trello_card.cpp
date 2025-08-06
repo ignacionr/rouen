@@ -30,6 +30,12 @@ trello_card::trello_card() : trello_host_(hosts::get_trello_host()) {
     }
 }
 
+trello_card::trello_card(const std::string& board_id) : trello_card() {
+    initial_board_id_ = board_id;
+    selected_board_id_ = board_id;  // Pre-select the board
+    name("Trello - Board");
+}
+
 bool trello_card::render() {
     return render_window([this]() {
         if (!trello_host_->is_connected()) {
@@ -69,13 +75,20 @@ void trello_card::render_connection_screen() {
 }
 
 void trello_card::render_main_interface() {
+    bool is_board_selected = !selected_board_id_.empty();
     if (!initialized_) {
-        fetch_boards();
+        fetch_boards();  // Need this for the board selector to work
+        if (is_board_selected) {
+            // If we have a specific board ID, fetch both boards list and board details
+            fetch_board_details();
+            // use the board as a name
+            name(std::format("Trello - Board: {}", current_board_.name));
+        }
         initialized_ = true;
     }
     
     if (ImGui::BeginTabBar("TrelloTabs")) {
-        if (ImGui::BeginTabItem(ICON_MD_DASHBOARD " Boards")) {
+        if ((!is_board_selected) && ImGui::BeginTabItem(ICON_MD_DASHBOARD " Boards")) {
             active_tab_ = 0;
             render_boards_tab();
             ImGui::EndTabItem();
@@ -250,7 +263,15 @@ void trello_card::render_boards_list() {
             
             // Name column
             ImGui::TableNextColumn();
-            ImGui::TextColored(colors[0], "%s", board.name.c_str());
+            
+            // Make board name clickable to open in new card
+            ImGui::PushID(("board_name_" + board.id).c_str());
+            if (ImGui::Selectable(board.name.c_str(), false, ImGuiSelectableFlags_DontClosePopups)) {
+                // Create new Trello card with this board ID
+                "create_card"_sfn("trello-board:" + board.id);
+            }
+            ImGui::PopID();
+            
             if (!board.desc.empty()) {
                 ImGui::TextColored(colors[5], "%s", board.desc.c_str());
             }
@@ -598,6 +619,15 @@ void trello_card::check_async_operations() {
         boards_ = boards_future_->get();
         boards_future_.reset();
         loading_boards_ = false;
+        
+        // If we have a selected_board_id_ but no name yet (from initial_board_id_), find and set the name
+        if (!selected_board_id_.empty() && selected_board_name_.empty()) {
+            auto it = std::find_if(boards_.begin(), boards_.end(), 
+                                   [this](const auto& board) { return board.id == selected_board_id_; });
+            if (it != boards_.end()) {
+                selected_board_name_ = it->name;
+            }
+        }
     }
     
     // Check board details fetch
@@ -606,6 +636,11 @@ void trello_card::check_async_operations() {
         current_board_ = board_details_future_->get();
         board_details_future_.reset();
         loading_board_details_ = false;
+        
+        // If this was a direct board fetch (like for a specific board card), set the board name
+        if (!current_board_.id.empty() && selected_board_name_.empty()) {
+            selected_board_name_ = current_board_.name;
+        }
     }
     
     // Check card creation

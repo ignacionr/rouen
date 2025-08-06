@@ -22,10 +22,13 @@ namespace rouen::cards {
 class trello_card : public card {
 public:
     trello_card();
+    explicit trello_card(const std::string& board_id);  // Constructor for opening specific board
     ~trello_card() override = default;
 
     bool render() override;
-    std::string get_uri() const override { return "trello"; }
+    std::string get_uri() const override { 
+        return initial_board_id_.empty() ? "trello" : "trello-board:" + initial_board_id_; 
+    }
 
 private:
     // Core components
@@ -34,6 +37,7 @@ private:
     // UI state
     bool initialized_ = false;
     int active_tab_ = 0;  // 0=Boards, 1=Cards, 2=Create, 3=Settings
+    std::string initial_board_id_;  // Board ID to open automatically if specified
     
     // Connection state
     char api_key_buffer_[256] = {0};
