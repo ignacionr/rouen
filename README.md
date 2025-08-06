@@ -8,6 +8,7 @@ A modern, card-based productivi### Information & Communication
   - **AI Feed Discovery**: Use Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) to search for RSS feeds by topic using AI
   - Supports multiple AI providers (Grok, OpenAI, Groq, Gemini) with internet search capabilities
   - Smart feed suggestions with descriptions and one-click addition
+  - **Right-click Context Menu**: Right-click on any feed to copy feed URL or title to clipboard
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
 - **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
 
@@ -50,7 +51,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 ### Information & Communication
 - **Email Client**: Connect to IMAP/SMTP servers to read and compose emails with secure SSL/TLS support
 - **Weather Info**: Check current conditions and forecasts for any location
-- **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader
+- **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader and right-click clipboard functionality
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
 - **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video support
 
@@ -768,7 +769,7 @@ Access centralized configuration management:
 - **Calendar Integration**: Google Calendar sync with event management
 
 #### Information Management
-- **RSS Reader**: Follow blogs, news, and podcasts with feed management
+- **RSS Reader**: Follow blogs, news, and podcasts with feed management and right-click clipboard functionality
 - **Email Client**: IMAP/SMTP integration with SSL/TLS security
 - **Weather Tracking**: Location-based weather forecasts and conditions
 - **Travel Planning**: Destination management with budget tracking

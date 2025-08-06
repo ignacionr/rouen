@@ -295,6 +295,24 @@ public:
                     "create_card"_sfn(feed_uri);
                 }
                 
+                // Add right-click context menu for copying feed URL
+                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
+                    ImGui::OpenPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str());
+                }
+                
+                // Context menu for feed
+                if (ImGui::BeginPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str())) {
+                    if (ImGui::MenuItem("Copy Feed URL")) {
+                        ImGui::SetClipboardText(feed->source_link.c_str());
+                    }
+                    
+                    if (ImGui::MenuItem("Copy Feed Title")) {
+                        ImGui::SetClipboardText(title.c_str());
+                    }
+                    
+                    ImGui::EndPopup();
+                }
+                
                 ImGui::PopStyleColor(); // Restore normal text color
 
                 // Item count
