@@ -26,18 +26,89 @@ namespace rouen::helpers {
         };
         
         struct LLMSettings {
-            Provider provider;
-            std::string api_key;
-            std::string base_url;
-            std::string model_name;
-            bool is_configured;
+            Provider provider{Provider::GROK};
+            std::string api_key{};
+            std::string base_url{};
+            std::string model_name{};
+            bool is_configured{false};
+            
+            // Constructor for aggregate initialization with defaults
+            LLMSettings() = default;
+            LLMSettings(Provider p, std::string key, std::string url, std::string model, bool configured)
+                : provider(p), api_key(std::move(key)), base_url(std::move(url)), 
+                  model_name(std::move(model)), is_configured(configured) {}
         };
 
-        // Type alias for LLM instance variant
-        using LLMInstance = std::variant<
-            std::unique_ptr<ignacionr::cppgpt>,
-            std::unique_ptr<GeminiAdapter>
-        >;
+        // Forward declaration for the base class
+        class LLMInstanceBase {
+        public:
+            virtual ~LLMInstanceBase() = default;
+            virtual void add_instructions(std::string_view instructions, std::string_view role = "system") = 0;
+            virtual void clear() = 0;
+        };
+
+        // Memory-safe wrapper for LLM instances using variant
+        class LLMInstance {
+        public:
+            // Use variant to store different wrapper types safely
+            std::variant<
+                std::unique_ptr<ignacionr::cppgpt>,
+                std::unique_ptr<GeminiAdapter>
+            > instance_;
+            
+            LLMInstance() = default;
+            
+            // Constructors for different types
+            explicit LLMInstance(std::unique_ptr<ignacionr::cppgpt> ptr) 
+                : instance_(std::move(ptr)) {}
+            
+            explicit LLMInstance(std::unique_ptr<GeminiAdapter> ptr) 
+                : instance_(std::move(ptr)) {}
+            
+            // Non-copyable but movable
+            LLMInstance(const LLMInstance&) = delete;
+            LLMInstance& operator=(const LLMInstance&) = delete;
+            LLMInstance(LLMInstance&&) = default;
+            LLMInstance& operator=(LLMInstance&&) = default;
+            
+            explicit operator bool() const noexcept { 
+                return std::visit([](const auto& ptr) { return static_cast<bool>(ptr); }, instance_);
+            }
+            
+            void add_instructions(std::string_view instructions, std::string_view role = "system") {
+                std::visit([&](auto& ptr) {
+                    if (!ptr) throw std::runtime_error("Null LLM instance access");
+                    ptr->add_instructions(instructions, role);
+                }, instance_);
+            }
+            
+            void clear() {
+                std::visit([](auto& ptr) {
+                    if (!ptr) throw std::runtime_error("Null LLM instance access");
+                    ptr->clear();
+                }, instance_);
+            }
+            
+            template<typename DoPostFunc>
+            ignacionr::ChatCompletion sendMessage(
+                std::string_view message,
+                DoPostFunc&& do_post,
+                std::string_view role = "user",
+                std::string_view model = "",
+                std::string_view search_mode = {},
+                float temperature = 0.45f,
+                const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr
+            ) {
+                return std::visit([&](auto& ptr) -> ignacionr::ChatCompletion {
+                    if (!ptr) throw std::runtime_error("Null LLM instance access");
+                    return ptr->sendMessage(message, std::forward<DoPostFunc>(do_post), role, model, search_mode, temperature, full_conversation);
+                }, instance_);
+            }
+            
+            void reset() { 
+                std::visit([](auto& ptr) { ptr.reset(); }, instance_);
+            }
+        };
         
         /**
          * Get the current LLM configuration
@@ -47,53 +118,56 @@ namespace rouen::helpers {
         
         /**
          * Get a configured LLM instance based on current settings
-         * Returns either a cppgpt instance or a GeminiAdapter instance
-         * @return LLMInstance variant containing the appropriate adapter
+         * Returns a memory-safe wrapped LLM instance
+         * @return LLMInstance containing the appropriate adapter
          */
         static std::optional<LLMInstance> create_llm_instance();
         
         /**
          * Template function to execute operations on any LLM type
-         * Provides unified interface regardless of underlying implementation
-         * @param variant The LLM instance variant (cppgpt or GeminiAdapter)
-         * @param operation Function/lambda to execute on the instance
+         * Provides unified interface with strong exception safety
+         * @param instance The LLM instance wrapper
+         * @param func Function/lambda to execute on the instance
          * @return Result of the operation
          */
-        // True compile-time dispatch avoiding std::visit entirely
-        template<typename Func>
-        static auto with_llm_instance(const LLMInstance& variant, Func&& operation) {
-            if (std::holds_alternative<std::unique_ptr<ignacionr::cppgpt>>(variant)) {
-                const auto& ptr = std::get<std::unique_ptr<ignacionr::cppgpt>>(variant);
-                if (!ptr) {
-                    throw std::runtime_error("cppgpt instance is null");
-                }
-                return operation(*ptr);
-            } else if (std::holds_alternative<std::unique_ptr<GeminiAdapter>>(variant)) {
-                const auto& ptr = std::get<std::unique_ptr<GeminiAdapter>>(variant);
-                if (!ptr) {
-                    throw std::runtime_error("GeminiAdapter instance is null");
-                }
-                return operation(*ptr);
-            } else {
-                throw std::runtime_error("Unknown LLM variant type");
+        template<typename T, typename Func>
+        static auto with_llm_instance(const LLMInstance& instance, Func&& func) -> decltype(func(std::declval<T&>())) {
+            if (!instance) {
+                throw std::runtime_error("LLM instance not initialized");
             }
+            
+            return std::visit([&](const auto& ptr) -> decltype(func(std::declval<T&>())) {
+                if (!ptr) {
+                    throw std::runtime_error("Null LLM instance");
+                }
+                
+                // Check if the stored type matches the requested type
+                if constexpr (std::is_same_v<T, std::decay_t<decltype(*ptr)>>) {
+                    return func(*ptr);
+                } else {
+                    throw std::runtime_error("Invalid LLM instance type cast");
+                }
+            }, instance.instance_);
         }
 
         /**
          * Template helper to create and use an LLM instance in one call
-         * @param operation Function/lambda to execute on the LLM instance
+         * @param func Function/lambda to execute on the LLM instance
          * @return Optional result of the operation
          */
         template<typename Func>
-        static auto with_configured_llm(Func&& operation) {
+        static auto with_configured_llm(Func&& func) {
             auto instance = create_llm_instance();
             if (!instance) {
                 return std::nullopt;
             }
             
-            return with_llm_instance(*instance, [&operation](auto& llm) {
-                return std::make_optional(operation(llm));
-            });
+            return std::visit([&](const auto& ptr) {
+                if (!ptr) {
+                    return std::nullopt;
+                }
+                return std::make_optional(func(*ptr));
+            }, instance->instance_);
         }
         
         /**

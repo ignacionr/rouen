@@ -24,19 +24,19 @@ LLMConfig::LLMSettings LLMConfig::get_current_config() {
     switch (settings.provider) {
         case Provider::GROK:
             settings.api_key = config_service_->get_env_optional("GROK_API_KEY").value_or("");
-            settings.base_url = ignacionr::cppgpt::grok_base;
+            settings.base_url = "https://api.x.ai/v1";  // Direct hardcoded URL
             settings.model_name = "grok-3-latest";
             break;
             
         case Provider::OPENAI:
             settings.api_key = config_service_->get_env_optional("OPENAI_API_KEY").value_or("");
-            settings.base_url = ignacionr::cppgpt::open_ai_base;
+            settings.base_url = "https://api.openai.com/v1";  // Direct hardcoded URL  
             settings.model_name = "gpt-4";
             break;
             
         case Provider::GROQ:
             settings.api_key = config_service_->get_env_optional("GROQ_API_KEY").value_or("");
-            settings.base_url = ignacionr::cppgpt::groq_base;
+            settings.base_url = "https://api.groq.com/openai/v1";  // Direct hardcoded URL
             settings.model_name = "llama3-8b-8192";
             break;
             
@@ -85,6 +85,10 @@ std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
         
         // For all other providers, use cppgpt
         auto llm = std::make_unique<ignacionr::cppgpt>(settings.api_key, settings.base_url);
+        
+        // Debug logging to verify the configuration values
+        CONFIG_INFO_FMT("Creating cppgpt instance with API key: {} chars, base URL: '{}'", 
+                       settings.api_key.length(), settings.base_url);
         
         // Add provider-specific instructions
         switch (settings.provider) {

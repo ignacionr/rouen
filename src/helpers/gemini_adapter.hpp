@@ -236,6 +236,10 @@ namespace rouen::helpers {
         void add_instructions(std::string_view instructions, std::string_view role = "system") {
             conversation_.push_back({std::string(role), std::string(instructions)});
         }
+        
+        void clear() {
+            conversation_.clear();
+        }
 
         // Template-compatible sendMessage method that returns a cppgpt-compatible response structure
         template<typename DoPostFunc>

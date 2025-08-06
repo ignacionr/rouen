@@ -216,6 +216,13 @@ namespace ignacionr
 
             // Send the API request
             auto url = std::format("{}/chat/completions", base_url_);
+            
+            // Debug logging to check URL construction - need to include debug.hpp first
+            // For now, let's ensure we have a valid base URL
+            if (base_url_.empty()) {
+                throw std::runtime_error("Base URL is empty in cppgpt instance");
+            }
+            
             std::string body;
             auto result = glz::write_json(payload, body);
             if (result) {

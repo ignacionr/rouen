@@ -74,12 +74,12 @@ namespace rouen::cards {
             
             // whether to allow search (only for providers that support it)
             if (settings.provider == helpers::LLMConfig::Provider::GROK) {
-                ImGui::Checkbox("Allow Search", &allow_search);
+                ImGui::Checkbox("Allow Search", &allow_search_);
                 ImGui::SameLine();
             }
             
             // temperature slider
-            ImGui::SliderFloat("Temperature", &temperature, 0.0f, 1.0f);
+            ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
         }
 
         bool render() override {
@@ -104,7 +104,7 @@ namespace rouen::cards {
                 ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.4f, 0.6f, 0.5f))); // Text selection color
                 
                 // Calculate required space for the footer area
-                const float thinking_indicator_height = waiting_for_response ? ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y : 0.0f;
+                const float thinking_indicator_height = waiting_for_response_.load() ? ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y : 0.0f;
                 const float input_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
                 const float footer_height_to_reserve = thinking_indicator_height + input_height + ImGui::GetStyle().ItemSpacing.y;
                 
@@ -116,10 +116,10 @@ namespace rouen::cards {
                     
                     // Check if layout needs to be recalculated
                     float current_width = ImGui::GetContentRegionAvail().x;
-                    if (layout_dirty || std::abs(last_width - current_width) > 1.0f) {
+                    if (layout_dirty_ || std::abs(last_width_ - current_width) > 1.0f) {
                         recalculate_layout(current_width);
-                        last_width = current_width;
-                        layout_dirty = false;
+                        last_width_ = current_width;
+                        layout_dirty_ = false;
                     }
                     
                     // Pre-calculate common values
@@ -133,9 +133,9 @@ namespace rouen::cards {
                     static const ImU32 assistant_text_color = ImGui::ColorConvertFloat4ToU32(get_color(5));
                     
                     // Display chat history using cached values
-                    for (size_t i = 0; i < chat_history.size(); ++i) {
-                        const auto& message = chat_history[i];
-                        const auto& cache = message_cache[i];
+                    for (size_t i = 0; i < chat_history_.size() && i < message_cache_.size(); ++i) {
+                        const auto& message = chat_history_[i];
+                        const auto& cache = message_cache_[i];
                         bool is_user = message.first == "user";
                         
                         // Set background color for message bubbles
@@ -182,16 +182,16 @@ namespace rouen::cards {
                         ImGui::Spacing();
                     }
                     
-                    if (scroll_to_bottom) {
+                    if (scroll_to_bottom_.load()) {
                         ImGui::SetScrollHereY(1.0f);
-                        scroll_to_bottom = false;
+                        scroll_to_bottom_.store(false);
                     }
                 }
                 ImGui::EndChild();
                 
                 // Show a loading indicator if waiting for response
                 // Place the indicator outside the scrolling region
-                if (waiting_for_response) {
+                if (waiting_for_response_.load()) {
                     ImGui::Separator();
                     ImGui::Spacing();
                     
@@ -223,7 +223,7 @@ namespace rouen::cards {
                 }
                 
                 // API key input if not configured
-                if (!llm_configured) {
+                if (!llm_configured_) {
                     ImGui::Separator();
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4]));
                     ImGui::TextWrapped("LLM not configured. Please configure your LLM provider in Settings.");
@@ -236,52 +236,53 @@ namespace rouen::cards {
                 
                 // Input area
                 ImGui::Separator();
-                reclaim_focus = false;
+                reclaim_focus_ = false;
                 
                 // Only allow input if LLM is configured and not waiting for a response
-                ImGui::BeginDisabled(!llm_configured || waiting_for_response);
+                ImGui::BeginDisabled(!llm_configured_ || waiting_for_response_.load());
                 
-                // Copy current input to buffer
-                strncpy(input_buffer.data(), input_text.c_str(), input_buffer.size() - 1);
-                input_buffer[input_buffer.size() - 1] = '\0';
+                // Copy current input to buffer with bounds checking
+                const size_t copy_len = std::min(input_text_.length(), input_buffer_.size() - 1);
+                std::strncpy(input_buffer_.data(), input_text_.c_str(), copy_len);
+                input_buffer_[copy_len] = '\0';
                 
                 // Calculate space for the Send button to avoid it being cut off
                 const float send_button_width = ImGui::CalcTextSize("Send").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
                 
                 // Focus on the input field initially
-                if (llm_configured && waiting_for_response == false && ImGui::IsWindowAppearing()) {
+                if (llm_configured_ && !waiting_for_response_.load() && ImGui::IsWindowAppearing()) {
                     ImGui::SetKeyboardFocusHere();
                 }
                 
                 ImGui::PushItemWidth(-send_button_width - ImGui::GetStyle().ItemSpacing.x);
-                if (reclaim_focus) {
+                if (reclaim_focus_) {
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetItemDefaultFocus();
-                    reclaim_focus = false;
-                    input_buffer.fill('\0'); // Clear the buffer
+                    reclaim_focus_ = false;
+                    input_buffer_.fill('\0'); // Clear the buffer
                 }
-                if (ImGui::InputText("##input", input_buffer.data(), input_buffer.size(), 
+                if (ImGui::InputText("##input", input_buffer_.data(), input_buffer_.size(), 
                     ImGuiInputTextFlags_EnterReturnsTrue|ImGuiInputTextFlags_NoHorizontalScroll)) {
-                    input_text = input_buffer.data();
-                    send_message(input_text);
-                    input_text.clear();
-                    reclaim_focus = true;
+                    input_text_ = input_buffer_.data();
+                    send_message(input_text_);
+                    input_text_.clear();
+                    reclaim_focus_ = true;
                 }
                 ImGui::PopItemWidth();
                 
                 ImGui::SameLine();
-                if (ImGui::Button("Send", ImVec2(send_button_width, 0)) && !input_text.empty()) {
-                    send_message(input_text);
-                    input_text.clear();
-                    reclaim_focus = true;
+                if (ImGui::Button("Send", ImVec2(send_button_width, 0)) && !input_text_.empty()) {
+                    send_message(input_text_);
+                    input_text_.clear();
+                    reclaim_focus_ = true;
                 }
                 
                 ImGui::EndDisabled();
                 
                 // Update input_text from buffer if it changed
-                std::string new_input_text = input_buffer.data();
-                if (new_input_text != input_text) {
-                    input_text = new_input_text;
+                std::string new_input_text = input_buffer_.data();
+                if (new_input_text != input_text_) {
+                    input_text_ = std::move(new_input_text);
                 }
                 
                 ImGui::PopStyleColor(8); // Pop all the colors we pushed at the beginning
@@ -294,43 +295,62 @@ namespace rouen::cards {
 
     private:
         struct MessageCache {
-            float bubble_height;
-            float content_width;
-            float text_width;
-            std::string child_id;
-            bool needs_recalc = true;
+            float bubble_height{0.0f};
+            float content_width{0.0f};
+            float text_width{0.0f};
+            std::string child_id{};
+            bool needs_recalc{true};
+            
+            // Constructor for better initialization
+            MessageCache() = default;
+            MessageCache(float h, float cw, float tw, std::string id)
+                : bubble_height(h), content_width(cw), text_width(tw), 
+                  child_id(std::move(id)), needs_recalc(false) {}
         };
         
-        std::optional<helpers::LLMConfig::LLMInstance> llm_instance{};
-        helpers::LLMConfig::LLMSettings current_llm_settings{};
-        bool llm_configured{false};
-        std::string input_text{};
-        std::array<char, 2048> input_buffer{};
-        std::deque<std::pair<std::string, std::string>> chat_history{};
-        std::deque<MessageCache> message_cache{};
-        std::optional<std::future<void>> pending_response{};
-        bool waiting_for_response{false};
-        bool scroll_to_bottom{false};
-        bool reclaim_focus{false};
-        bool layout_dirty{true};
-        float last_width{0.0f};
-        http::fetch fetcher{};
-        bool allow_search{false};
-        float temperature{0.45f};
+        // Use the new memory-safe LLM instance wrapper
+        std::optional<helpers::LLMConfig::LLMInstance> llm_instance_{};
+        helpers::LLMConfig::LLMSettings current_llm_settings_{};
+        bool llm_configured_{false};
+        
+        // String management with better memory safety
+        std::string input_text_{};
+        std::array<char, 2048> input_buffer_{};
+        
+        // Conversation management with reserve capacity
+        std::deque<std::pair<std::string, std::string>> chat_history_{};
+        std::deque<MessageCache> message_cache_{};
+        
+        // Async operation management
+        std::optional<std::future<void>> pending_response_{};
+        std::atomic<bool> waiting_for_response_{false};
+        
+        // UI state management
+        std::atomic<bool> scroll_to_bottom_{false};
+        bool reclaim_focus_{false};
+        bool layout_dirty_{true};
+        float last_width_{0.0f};
+        
+        // Network client - initialized once
+        http::fetch fetcher_{};
+        
+        // Configuration settings
+        bool allow_search_{false};
+        float temperature_{0.45f};
         
         void refresh_llm_config() {
-            current_llm_settings = helpers::LLMConfig::get_current_config();
-            llm_configured = current_llm_settings.is_configured;
+            current_llm_settings_ = helpers::LLMConfig::get_current_config();
+            llm_configured_ = current_llm_settings_.is_configured;
             
-            if (llm_configured) {
-                llm_instance = helpers::LLMConfig::create_llm_instance();
+            if (llm_configured_) {
+                llm_instance_ = helpers::LLMConfig::create_llm_instance();
             } else {
-                llm_instance.reset();
+                llm_instance_.reset();
             }
             
             // Update card name based on provider
-            if (llm_configured) {
-                std::string provider_name = helpers::LLMConfig::provider_to_string(current_llm_settings.provider);
+            if (llm_configured_) {
+                std::string provider_name = helpers::LLMConfig::provider_to_string(current_llm_settings_.provider);
                 std::transform(provider_name.begin(), provider_name.end(), provider_name.begin(), ::toupper);
                 name("AI Chat (" + provider_name + ")");
             } else {
@@ -339,9 +359,9 @@ namespace rouen::cards {
         }
         
         std::string get_assistant_name() const {
-            if (!llm_configured) return "AI";
+            if (!llm_configured_) return "AI";
             
-            switch (current_llm_settings.provider) {
+            switch (current_llm_settings_.provider) {
                 case helpers::LLMConfig::Provider::GROK: return "Grok";
                 case helpers::LLMConfig::Provider::OPENAI: return "ChatGPT";
                 case helpers::LLMConfig::Provider::GROQ: return "Groq";
@@ -352,92 +372,127 @@ namespace rouen::cards {
         }
         
         void send_message(const std::string& message) {
-            if (message.empty() || waiting_for_response || !llm_configured || !llm_instance) return;
+            if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
+                return;
+            }
             
-            // Add user message to history
-            chat_history.emplace_back("user", message);
+            // Pre-allocate space to avoid reallocations during conversation growth
+            if (chat_history_.size() == chat_history_.max_size() - 2) {
+                // Remove oldest messages if we're approaching container limits
+                chat_history_.pop_front();
+                message_cache_.pop_front();
+            }
             
-            // Add cache entry for the new message
-            message_cache.emplace_back();
-            layout_dirty = true;
-            
-            scroll_to_bottom = true;
-            waiting_for_response = true;
-            
-            // Start async request
-            pending_response = std::make_optional(std::async(std::launch::async, [this, message]() {
-                try {
-                    if (!llm_instance) {
-                        throw std::runtime_error("LLM instance not available");
-                    }
-                    
-                    // Determine search mode (only for Grok)
-                    std::string_view search_mode = {};
-                    if (current_llm_settings.provider == helpers::LLMConfig::Provider::GROK && allow_search) {
-                        search_mode = "on";
-                    }
-                    
-                    // Convert deque to vector for LLM API compatibility
-                    std::vector<std::pair<std::string, std::string>> conversation_vector(chat_history.begin(), chat_history.end());
-                    
-                    // Use template function to call sendMessage on any LLM type
-                    auto response = helpers::LLMConfig::with_llm_instance(*llm_instance, [&](auto& llm) {
-                        return llm.sendMessage(message, 
+            try {
+                // Add user message to history with move semantics
+                chat_history_.emplace_back("user", message);
+                
+                // Add cache entry for the new message
+                message_cache_.emplace_back();
+                layout_dirty_ = true;
+                
+                scroll_to_bottom_.store(true);
+                waiting_for_response_.store(true);
+                
+                // Start async request with better exception handling
+                pending_response_ = std::make_optional(std::async(std::launch::async, [this, user_message = std::string(message)]() {
+                    try {
+                        if (!llm_instance_) {
+                            throw std::runtime_error("LLM instance not available");
+                        }
+                        
+                        // Determine search mode (only for Grok)
+                        std::string_view search_mode = {};
+                        if (current_llm_settings_.provider == helpers::LLMConfig::Provider::GROK && allow_search_) {
+                            search_mode = "on";
+                        }
+                        
+                        // Convert deque to vector for LLM API compatibility
+                        // Reserve capacity to avoid reallocations
+                        std::vector<std::pair<std::string, std::string>> conversation_vector;
+                        conversation_vector.reserve(chat_history_.size());
+                        conversation_vector.assign(chat_history_.begin(), chat_history_.end());
+                        
+                        // Use the new memory-safe interface directly
+                        auto response = llm_instance_->sendMessage(user_message, 
                             [this](const std::string& url, const std::string& data, auto header_client) {
-                                return fetcher.post(url, data, header_client);
+                                return fetcher_.post(url, data, header_client);
                             },
-                            "user", current_llm_settings.model_name, search_mode, temperature, &conversation_vector);
-                    });
-                    
-                    // Extract message content safely with bounds checking
-                    std::string reply;
-                    if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
-                        reply = std::string(response.choices[0].message.content); // Explicit copy
-                    } else {
-                        reply = "Error: Empty response received";
+                            "user", current_llm_settings_.model_name, search_mode, temperature_, &conversation_vector);
+                        
+                        // Extract message content safely with bounds checking
+                        std::string reply;
+                        if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                            reply = response.choices[0].message.content; // Copy construct
+                        } else {
+                            reply = "Error: Empty response received";
+                        }
+                        
+                        // Add to chat history
+                        chat_history_.emplace_back("assistant", std::move(reply));
+                        
+                        // Add cache entry for the response
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                        
+                    } catch (const std::bad_alloc&) {
+                        chat_history_.emplace_back("assistant", "Memory allocation error");
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                    } catch (const std::runtime_error& e) {
+                        chat_history_.emplace_back("assistant", std::string("Runtime error: ") + e.what());
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                    } catch (const std::exception& e) {
+                        chat_history_.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
+                    } catch (...) {
+                        chat_history_.emplace_back("assistant", "Unknown error occurred");
+                        message_cache_.emplace_back();
+                        layout_dirty_ = true;
                     }
                     
-                    // Add to chat history
-                    chat_history.emplace_back("assistant", reply);
-                    
-                    // Add cache entry for the response
-                    message_cache.emplace_back();
-                    layout_dirty = true;
-                } catch (const std::bad_alloc& e) {
-                    chat_history.emplace_back("assistant", std::string("Memory allocation error: ") + e.what());
-                    message_cache.emplace_back();
-                    layout_dirty = true;
-                } catch (const std::runtime_error& e) {
-                    chat_history.emplace_back("assistant", std::string("Runtime error: ") + e.what());
-                    message_cache.emplace_back();
-                    layout_dirty = true;
-                } catch (const std::exception& e) {
-                    chat_history.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
-                    message_cache.emplace_back();
-                    layout_dirty = true;
-                } catch (...) {
-                    chat_history.emplace_back("assistant", "Unknown error occurred");
-                    message_cache.emplace_back();
-                    layout_dirty = true;
-                }
-                waiting_for_response = false;
-                scroll_to_bottom = true;
-            }));
+                    waiting_for_response_.store(false);
+                    scroll_to_bottom_.store(true);
+                }));
+                
+            } catch (const std::exception& e) {
+                // Handle synchronous errors
+                chat_history_.emplace_back("assistant", std::string("Error starting request: ") + e.what());
+                message_cache_.emplace_back();
+                layout_dirty_ = true;
+                waiting_for_response_.store(false);
+            }
         }
         
         void process_pending_response() {
-            if (pending_response && pending_response->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                pending_response.reset();
+            if (pending_response_ && pending_response_->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                try {
+                    pending_response_->get(); // This will rethrow any exception from the async task
+                } catch (const std::exception& e) {
+                    // Log or handle any unhandled exceptions from the async task
+                    chat_history_.emplace_back("assistant", std::string("Async task error: ") + e.what());
+                    message_cache_.emplace_back();
+                    layout_dirty_ = true;
+                }
+                
+                pending_response_.reset();
                 // Clear input text and set focus flag after a response is received
-                input_text.clear();
-                reclaim_focus = true;
+                input_text_.clear();
+                reclaim_focus_ = true;
             }
         }
         
         void recalculate_layout(float width_for_content) {
-            // Ensure cache matches history size
-            while (message_cache.size() < chat_history.size()) {
-                message_cache.emplace_back();
+            // Ensure cache matches history size with exception safety
+            try {
+                while (message_cache_.size() < chat_history_.size()) {
+                    message_cache_.emplace_back();
+                }
+            } catch (const std::bad_alloc&) {
+                // If we can't allocate cache entries, skip layout recalculation
+                return;
             }
             
             // Get the actual available width within the child window
@@ -454,9 +509,9 @@ namespace rouen::cards {
             const float line_height = ImGui::GetTextLineHeightWithSpacing();
             const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
             
-            for (size_t i = 0; i < chat_history.size(); ++i) {
-                const auto& message = chat_history[i];
-                auto& cache = message_cache[i];
+            for (size_t i = 0; i < chat_history_.size() && i < message_cache_.size(); ++i) {
+                const auto& message = chat_history_[i];
+                auto& cache = message_cache_[i];
                 
                 if (!cache.needs_recalc) continue;
                 
@@ -475,8 +530,8 @@ namespace rouen::cards {
                 cache.bubble_height = line_height + separator_height + message_height + 
                                     padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y;
                 
-                // Generate unique child ID
-                cache.child_id = std::to_string(reinterpret_cast<uintptr_t>(&message)) + "_bubble";
+                // Generate unique child ID using message index for better stability
+                cache.child_id = "msg_bubble_" + std::to_string(i);
                 
                 cache.needs_recalc = false;
             }
