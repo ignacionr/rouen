@@ -55,27 +55,27 @@ namespace media::rss {
                 auto channel = root->FirstChildElement("channel");
                 if (channel) {
                     auto title = channel->FirstChildElement("title");
-                    if (title) {
+                    if (title && title->GetText()) {
                         feed_title = title->GetText();
                     }
                     auto link = channel->FirstChildElement("link");
-                    if (link) {
+                    if (link && link->GetText()) {
                         feed_link = link->GetText();
                     }
                     auto description = channel->FirstChildElement("description");
-                    if (description) {
+                    if (description && description->GetText()) {
                         feed_description = description->GetText();
                     }
                     auto image = channel->FirstChildElement("image");
                     if (image) {
                         auto url = image->FirstChildElement("url");
-                        if (url) {
+                        if (url && url->GetText()) {
                             set_image(url->GetText());
                         }
                     }
                     else {
                         auto itunes_image = channel->FirstChildElement("itunes:image");
-                        if (itunes_image) {
+                        if (itunes_image && itunes_image->Attribute("href")) {
                             set_image(itunes_image->Attribute("href"));
                         }
                     }
@@ -86,19 +86,19 @@ namespace media::rss {
                     {
                         feed_item new_item;
                         title = xml_item->FirstChildElement("title");
-                        if (title) {
+                        if (title && title->GetText()) {
                             new_item.title = title->GetText();
                         }
                         link = xml_item->FirstChildElement("link");
-                        if (link) {
+                        if (link && link->GetText()) {
                             new_item.link = link->GetText();
                         }
                         description = xml_item->FirstChildElement("description");
-                        if (description && !description->NoChildren()) {
+                        if (description && !description->NoChildren() && description->GetText()) {
                             new_item.description = description->GetText();
                         }
                         auto enclosure = xml_item->FirstChildElement("enclosure");
-                        if (enclosure) {
+                        if (enclosure && enclosure->Attribute("url")) {
                             new_item.enclosure = enclosure->Attribute("url");
                         }
                         // if there is no direct enclosure, we can try to get one if the link is to youtube
@@ -107,7 +107,7 @@ namespace media::rss {
                         }
                         // look for an itunes:image tag
                         auto itunes_image = xml_item->FirstChildElement("itunes:image");
-                        if (itunes_image) {
+                        if (itunes_image && itunes_image->Attribute("href")) {
                             new_item.image_url = itunes_image->Attribute("href");
                         }
                         
@@ -139,31 +139,31 @@ namespace media::rss {
             }
             else if (auto root_feed = doc.FirstChildElement("feed"); root_feed) {
                 auto title = root_feed->FirstChildElement("title");
-                if (title) {
+                if (title && title->GetText()) {
                     feed_title = title->GetText();
                 }
                 auto link = root_feed->FirstChildElement("link");
-                if (link) {
+                if (link && link->Attribute("href")) {
                     feed_link = link->Attribute("href");
                 }
                 auto description = root_feed->FirstChildElement("description");
-                if (description) {
+                if (description && description->GetText()) {
                     feed_description = description->GetText();
                 }
                 auto image = root_feed->FirstChildElement("image");
                 if (image) {
                     auto url = image->FirstChildElement("url");
-                    if (url) {
+                    if (url && url->GetText()) {
                         set_image(url->GetText());
                     }
                 }
-                else if (auto itunes_image = root_feed->FirstChildElement("itunes:image"); itunes_image) {
+                else if (auto itunes_image = root_feed->FirstChildElement("itunes:image"); itunes_image && itunes_image->Attribute("href")) {
                     set_image(itunes_image->Attribute("href"));
                 }
-                else if (auto image_el = root_feed->FirstChildElement("media:thumbnail"); image_el) {
+                else if (auto image_el = root_feed->FirstChildElement("media:thumbnail"); image_el && image_el->Attribute("url")) {
                     set_image(image_el->Attribute("url"));
                 }
-                else if (auto icon_el = root_feed->FirstChildElement("icon"); icon_el) {
+                else if (auto icon_el = root_feed->FirstChildElement("icon"); icon_el && icon_el->GetText()) {
                     set_image(icon_el->GetText());
                 }
                 
@@ -174,27 +174,27 @@ namespace media::rss {
                 {
                     feed_item new_item;
                     title = xml_item->FirstChildElement("title");
-                    if (title) {
+                    if (title && title->GetText()) {
                         new_item.title = title->GetText();
                     }
                     link = xml_item->FirstChildElement("link");
-                    if (link) {
+                    if (link && link->Attribute("href")) {
                         new_item.link = link->Attribute("href");
                     }
                     description = xml_item->FirstChildElement("summary");
-                    if (description) {
+                    if (description && description->GetText()) {
                         new_item.description = description->GetText();
                     }
-                    else if (description = xml_item->FirstChildElement("content"); description) {
+                    else if (description = xml_item->FirstChildElement("content"); description && description->GetText()) {
                         new_item.description = description->GetText();
                     }
                     // look for a media:group tag
                     if (auto media_group = xml_item->FirstChildElement("media:group"); media_group) {
-                        if (auto media_content = media_group->FirstChildElement("media:content"); media_content) {
+                        if (auto media_content = media_group->FirstChildElement("media:content"); media_content && media_content->Attribute("url")) {
                             new_item.enclosure = media_content->Attribute("url");
                         }
                         // look for a media:thumbnail tag
-                        if (auto media_thumbnail = media_group->FirstChildElement("media:thumbnail"); media_thumbnail) {
+                        if (auto media_thumbnail = media_group->FirstChildElement("media:thumbnail"); media_thumbnail && media_thumbnail->Attribute("url")) {
                             new_item.image_url = media_thumbnail->Attribute("url");
                             // if the feed doesn't have an image, asign the first thumbnail found
                             if (feed_image_url.empty()) {
@@ -204,19 +204,19 @@ namespace media::rss {
                     }
                     // Try various date formats in priority order
                     const char* date_text = nullptr;
-                    if (auto updated = xml_item->FirstChildElement("updated"); updated) {
+                    if (auto updated = xml_item->FirstChildElement("updated"); updated && updated->GetText()) {
                         date_text = updated->GetText();
                     }
-                    else if (auto published = xml_item->FirstChildElement("published"); published) {
+                    else if (auto published = xml_item->FirstChildElement("published"); published && published->GetText()) {
                         date_text = published->GetText();
                     }
-                    else if (auto created = xml_item->FirstChildElement("created"); created) {
+                    else if (auto created = xml_item->FirstChildElement("created"); created && created->GetText()) {
                         date_text = created->GetText();
                     }
-                    else if (auto issued = xml_item->FirstChildElement("issued"); issued) {
+                    else if (auto issued = xml_item->FirstChildElement("issued"); issued && issued->GetText()) {
                         date_text = issued->GetText();
                     }
-                    else if (auto modified = xml_item->FirstChildElement("modified"); modified) {
+                    else if (auto modified = xml_item->FirstChildElement("modified"); modified && modified->GetText()) {
                         date_text = modified->GetText();
                     }
                     

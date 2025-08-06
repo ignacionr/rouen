@@ -10,11 +10,14 @@
 #include <vector>
 #include <mutex>
 #include <iostream>
+#include <future>
+#include <regex>
 
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/string_helper.hpp"
+#include "../../helpers/llm_config.hpp"
 #include "../../hosts/rss_host.hpp"
 #include "../../models/rss/feed.hpp"
 #include "../../registrar.hpp"
@@ -75,13 +78,22 @@ public:
         bool url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
             ImGuiInputTextFlags_EnterReturnsTrue);
         
+        // Check for Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) to trigger AI search
+        bool ai_search_requested = false;
+        if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            ImGuiIO& io = ImGui::GetIO();
+            if ((io.KeySuper && !io.KeyCtrl) || (!io.KeySuper && io.KeyCtrl)) { // Cmd on Mac, Ctrl on others
+                ai_search_requested = true;
+            }
+        }
+        
         // Show placeholder text when input is empty
         if (url_buffer[0] == '\0' && !ImGui::IsItemActive()) {
             auto pos = ImGui::GetItemRectMin();
             ImGui::GetWindowDrawList()->AddText(
                 ImVec2(pos.x + 5, pos.y + 2),
                 ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                "Enter RSS feed URL..."
+                "Enter RSS feed URL or topic (Cmd/Ctrl+Enter for AI search)..."
             );
         }
         ImGui::PopItemWidth();
@@ -89,16 +101,79 @@ public:
         ImGui::SameLine();
         bool add_clicked = ImGui::Button("Add");
         
-        if ((url_entered || add_clicked) && url_buffer[0] != '\0') {
-            // Add the feed
-            if (addFeed(url_buffer)) {
-                // Clear the input field on success
-                url_buffer[0] = '\0';
+        ImGui::SameLine();
+        bool ai_search_clicked = ImGui::Button("AI Search");
+        
+        // Show AI search status
+        if (ai_search_in_progress_) {
+            ImGui::SameLine();
+            ImGui::TextColored(colors[4], "Searching...");
+        }
+        
+        // Handle AI search trigger
+        if ((ai_search_requested || ai_search_clicked) && url_buffer[0] != '\0' && !ai_search_in_progress_) {
+            triggerAIFeedSearch(std::string(url_buffer));
+        }
+        
+        // Handle regular URL entry
+        if ((url_entered || add_clicked) && url_buffer[0] != '\0' && !ai_search_in_progress_) {
+            // Only proceed if this doesn't look like an AI search request
+            if (!ai_search_requested) {
+                // Add the feed
+                if (addFeed(url_buffer)) {
+                    // Clear the input field on success
+                    url_buffer[0] = '\0';
+                }
+            }
+        }
+        
+        // Display AI search results if available
+        if (!ai_search_results_.empty()) {
+            ImGui::Separator();
+            ImGui::TextColored(colors[2], "AI Found Feeds:");
+            
+            for (size_t i = 0; i < ai_search_results_.size(); ++i) {
+                const auto& result = ai_search_results_[i];
+                ImGui::PushID(static_cast<int>(i));
+                
+                if (ImGui::Button("Add")) {
+                    if (addFeed(result.url)) {
+                        // Remove this result after successful addition
+                        ai_search_results_.erase(ai_search_results_.begin() + static_cast<ptrdiff_t>(i));
+                        ImGui::PopID();
+                        break;
+                    }
+                }
+                
+                ImGui::SameLine();
+                ImGui::TextWrapped("%s - %s", result.title.c_str(), result.url.c_str());
+                
+                if (!result.description.empty()) {
+                    ImGui::Indent();
+                    ImGui::TextColored(colors[5], "%s", result.description.c_str());
+                    ImGui::Unindent();
+                }
+                
+                ImGui::PopID();
+            }
+            
+            if (ImGui::Button("Clear Results")) {
+                ai_search_results_.clear();
             }
         }
     }
 
     bool render() override {
+        // Check if AI search is complete
+        if (ai_search_in_progress_ && ai_search_future_.valid()) {
+            if (ai_search_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                // AI search completed, get results
+                ai_search_results_ = ai_search_future_.get();
+                ai_search_in_progress_ = false;
+                RSS_INFO_FMT("AI search completed with {} results", ai_search_results_.size());
+            }
+        }
+        
         // Periodically invalidate the cache to ensure freshness colors update
         // We do this based on frame count to avoid doing it every single frame
         static int frame_counter = 0;
@@ -292,7 +367,170 @@ public:
         }
     }
 
+    // Structure to hold AI search results
+    struct AISearchResult {
+        std::string title;
+        std::string url;
+        std::string description;
+    };
+
+    // Trigger AI search for RSS feeds based on a topic
+    void triggerAIFeedSearch(const std::string& topic) {
+        if (ai_search_in_progress_) {
+            return; // Already searching
+        }
+        
+        ai_search_in_progress_ = true;
+        ai_search_results_.clear();
+        
+        // Start async AI search
+        ai_search_future_ = std::async(std::launch::async, [this, topic]() {
+            try {
+                return performAIFeedSearch(topic);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("AI feed search failed: {}", e.what());
+                return std::vector<AISearchResult>{};
+            }
+        });
+    }
+    
+    // Perform the actual AI search
+    std::vector<AISearchResult> performAIFeedSearch(const std::string& topic) {
+        std::vector<AISearchResult> results;
+        
+        // Check if LLM is configured
+        if (!helpers::LLMConfig::is_configured()) {
+            RSS_ERROR("LLM not configured for AI feed search");
+            return results;
+        }
+        
+        // Create LLM instance
+        auto llm_instance = helpers::LLMConfig::create_llm_instance();
+        if (!llm_instance) {
+            RSS_ERROR("Failed to create LLM instance for AI feed search");
+            return results;
+        }
+        
+        // Prepare the search prompt
+        std::string search_prompt = std::format(
+            "Find RSS feeds related to the topic: {}\n\n"
+            "Please search the internet and provide a list of RSS feed URLs related to this topic. "
+            "Include podcasts, news feeds, blogs, and other relevant RSS sources. "
+            "For each feed, provide:\n"
+            "1. The RSS feed URL\n"
+            "2. A brief title/name\n"
+            "3. A short description\n\n"
+            "Format your response as a list where each entry is on a new line in this exact format:\n"
+            "URL: [feed_url]\n"
+            "TITLE: [feed_title]\n"
+            "DESCRIPTION: [feed_description]\n"
+            "---\n\n"
+            "Only include feeds that are currently active and publicly accessible. "
+            "Focus on high-quality, well-maintained feeds.", 
+            topic
+        );
+        
+        // Get current LLM settings
+        auto settings = helpers::LLMConfig::get_current_config();
+        
+        try {
+            // Create a fetcher instance for AI search
+            auto fetcher = std::make_shared<http::fetch>();
+            if (!fetcher) {
+                RSS_ERROR("Failed to create fetcher for AI search");
+                return results;
+            }
+            
+            // Determine search mode (only for Grok)
+            std::string search_mode_str;
+            if (settings.provider == helpers::LLMConfig::Provider::GROK) {
+                search_mode_str = "on"; // Enable internet search for Grok
+            }
+            
+            // Send message to LLM
+            auto response = llm_instance->sendMessage(
+                search_prompt,
+                [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                    return fetcher->post(url, data, header_client);
+                },
+                "user",
+                settings.model_name,
+                search_mode_str,
+                0.7f // Use higher temperature for more creative search
+            );
+            
+            // Parse the response
+            if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                results = parseAIFeedResponse(response.choices[0].message.content);
+            }
+            
+        } catch (const std::exception& e) {
+            RSS_ERROR_FMT("Error during AI feed search: {}", e.what());
+        }
+        
+        return results;
+    }
+    
+    // Parse AI response to extract feed information
+    std::vector<AISearchResult> parseAIFeedResponse(const std::string& response) {
+        std::vector<AISearchResult> results;
+        
+        // Split response into entries separated by "---"
+        std::regex entry_separator(R"(---\s*)");
+        std::sregex_token_iterator iter(response.begin(), response.end(), entry_separator, -1);
+        std::sregex_token_iterator end;
+        
+        for (; iter != end; ++iter) {
+            std::string entry = iter->str();
+            if (entry.empty()) continue;
+            
+            AISearchResult result;
+            
+            // Extract URL
+            std::regex url_regex(R"(URL:\s*(.+))");
+            std::smatch url_match;
+            if (std::regex_search(entry, url_match, url_regex)) {
+                result.url = url_match[1].str();
+                // Trim whitespace
+                result.url.erase(0, result.url.find_first_not_of(" \t\r\n"));
+                result.url.erase(result.url.find_last_not_of(" \t\r\n") + 1);
+            }
+            
+            // Extract title
+            std::regex title_regex(R"(TITLE:\s*(.+))");
+            std::smatch title_match;
+            if (std::regex_search(entry, title_match, title_regex)) {
+                result.title = title_match[1].str();
+                // Trim whitespace
+                result.title.erase(0, result.title.find_first_not_of(" \t\r\n"));
+                result.title.erase(result.title.find_last_not_of(" \t\r\n") + 1);
+            }
+            
+            // Extract description
+            std::regex desc_regex(R"(DESCRIPTION:\s*(.+))");
+            std::smatch desc_match;
+            if (std::regex_search(entry, desc_match, desc_regex)) {
+                result.description = desc_match[1].str();
+                // Trim whitespace
+                result.description.erase(0, result.description.find_first_not_of(" \t\r\n"));
+                result.description.erase(result.description.find_last_not_of(" \t\r\n") + 1);
+            }
+            
+            // Only add if we have at least a URL
+            if (!result.url.empty()) {
+                results.push_back(result);
+            }
+        }
+        
+        return results;
+    }
+
 private:
+    // AI search state
+    bool ai_search_in_progress_ = false;
+    std::vector<AISearchResult> ai_search_results_;
+    std::future<std::vector<AISearchResult>> ai_search_future_;
+    
     // Cache for feed freshness colors to avoid recalculating every frame
     mutable std::unordered_map<std::string, std::pair<ImVec4, std::chrono::system_clock::time_point>> freshness_cache;
     static constexpr size_t MAX_CACHE_SIZE = 1000; // Limit cache size to prevent unbounded growth

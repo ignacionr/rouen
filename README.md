@@ -1,6 +1,15 @@
 # Rouen
 
-A modern, card-based productivity dashboard with a clean, dark interface built on ImGui and SDL2.
+A modern, card-based productivi### Information & Communication
+- **Email Client**: Connect to IMAP/SMTP servers to read and compose emails with secure SSL/TLS support
+- **Weather Info**: Check current conditions and forecasts for any location
+- **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader and AI-powered feed discovery
+  - Add RSS feeds manually by URL
+  - **AI Feed Discovery**: Use Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) to search for RSS feeds by topic using AI
+  - Supports multiple AI providers (Grok, OpenAI, Groq, Gemini) with internet search capabilities
+  - Smart feed suggestions with descriptions and one-click addition
+- **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
+- **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
 
 ![Rouen Dashboard](img/screenshot.png)
 
