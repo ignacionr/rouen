@@ -7,6 +7,7 @@
 #include <optional>
 #include <array>
 #include <typeinfo>
+#include <format>
 
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
@@ -169,6 +170,25 @@ namespace rouen::cards {
                         ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + cache.text_width);
                         ImGui::TextWrapped("%s", message.second.c_str());
                         ImGui::PopTextWrapPos();
+                        
+                        // Add right-click context menu for copying message
+                        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
+                            ImGui::OpenPopup(std::format("MessageContextMenu_{}", i).c_str());
+                        }
+                        
+                        // Context menu for message
+                        if (ImGui::BeginPopup(std::format("MessageContextMenu_{}", i).c_str())) {
+                            if (ImGui::MenuItem("Copy Message")) {
+                                ImGui::SetClipboardText(message.second.c_str());
+                            }
+                            
+                            if (ImGui::MenuItem("Copy with Sender")) {
+                                std::string full_message = std::format("{}: {}", sender_name, message.second);
+                                ImGui::SetClipboardText(full_message.c_str());
+                            }
+                            
+                            ImGui::EndPopup();
+                        }
                         
                         // End styling
                         ImGui::PopStyleColor(); // Text color
