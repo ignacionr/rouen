@@ -1,5 +1,7 @@
 {
     "recommendations": [
-        "github.vscode-github-actions"
+        "github.vscode-github-actions",
+        "brobeson.ctest-lab",
+        "ms-vscode.cmake-tools"
     ]
 }

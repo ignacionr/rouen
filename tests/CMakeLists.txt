@@ -17,6 +17,9 @@ find_package(GTest CONFIG REQUIRED)
 # Find required dependencies for tests
 find_package(CURL REQUIRED)
 
+# Find TinyXML2 for RSS parsing tests
+find_package(tinyxml2 CONFIG REQUIRED)
+
 # Include parent directories for access to source files
 include_directories(..)
 
@@ -73,11 +76,44 @@ function(add_gtest_http_executable test_name source_file)
     )
 endfunction()
 
+# Helper function to create GTest-based tests with RSS dependencies
+function(add_gtest_rss_executable test_name source_file)
+    add_executable(${test_name} ${source_file})
+    
+    # Add RSS-related sources needed from the main project
+    target_sources(${test_name} PRIVATE
+        ../src/models/rss/rss_date_parser.cpp
+    )
+
+    # Include directories needed for the test
+    target_include_directories(${test_name} PRIVATE
+        ../src
+    )
+    
+    target_link_libraries(${test_name} 
+        PRIVATE 
+        GTest::gtest 
+        GTest::gtest_main
+        GTest::gmock
+        GTest::gmock_main
+        tinyxml2::tinyxml2
+    )
+    # Add test to CTest
+    add_test(NAME ${test_name} COMMAND ${test_name})
+    # Set properties for better output
+    set_target_properties(${test_name} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endfunction()
+
 # Create Google Test-based tests
 add_gtest_http_executable(test_fetch_ssl test_fetch_ssl.cpp)
 add_gtest_http_executable(test_ssl_ui test_ssl_ui.cpp)
 add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
+
+# RSS Media Extraction Test - tests HTML media extraction and RSS parsing
+add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
 
 # Legacy tests (keeping for compatibility)
 # Test for Bybit currency conversion fix
@@ -168,10 +204,16 @@ add_custom_target(run_math_operations_test
     COMMENT "Running advanced math operations tests"
 )
 
+add_custom_target(run_rss_media_extraction_test
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
+    DEPENDS test_rss_media_extraction
+    COMMENT "Running RSS media extraction and HTML parsing tests"
+)
+
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_bybit_currency_fix test_example_math
     COMMENT "Running tests through CTest framework"
 )
 

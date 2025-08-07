@@ -31,4 +31,55 @@ namespace media::rss {
         }
         return summary_;
     }
+    
+    std::string feed_item::get_best_media_url() const {
+        // Priority order:
+        // 1. Direct enclosure URL (highest priority)
+        // 2. Video content from extracted media
+        // 3. Audio content from extracted media
+        // 4. Any other media content
+        // 5. YouTube/Vimeo links as fallback
+        
+        if (!enclosure.empty()) {
+            return enclosure;
+        }
+        
+        // Look for video content first
+        for (const auto& media : extracted_media_urls) {
+            if (media.type == "video" && 
+                (media.format == "mp4" || media.format == "webm" || media.format == "youtube" || media.format == "vimeo")) {
+                return media.url;
+            }
+        }
+        
+        // Then audio content
+        for (const auto& media : extracted_media_urls) {
+            if (media.type == "audio" && 
+                (media.format == "mp3" || media.format == "wav" || media.format == "ogg" || media.format == "aac")) {
+                return media.url;
+            }
+        }
+        
+        // Any other media
+        for (const auto& media : extracted_media_urls) {
+            if (!media.url.empty()) {
+                return media.url;
+            }
+        }
+        
+        // If this is a YouTube link, return it directly
+        if (link.find("youtube.com") != std::string::npos || link.find("youtu.be") != std::string::npos) {
+            return link;
+        }
+        
+        return "";
+    }
+    
+    bool feed_item::has_media() const {
+        return !enclosure.empty() || 
+               !extracted_media_urls.empty() || 
+               link.find("youtube.com") != std::string::npos ||
+               link.find("youtu.be") != std::string::npos ||
+               link.find("vimeo.com") != std::string::npos;
+    }
 }

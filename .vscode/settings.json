@@ -100,7 +100,7 @@
         "*_test.cpp": "cpp",
         "*.gtest": "cpp"
     },
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build-cmake-tools/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",
     "C_Cpp.default.includePath": [
         "${workspaceFolder}/**",
@@ -108,6 +108,8 @@
         "${workspaceFolder}/build-vcpkg/_deps/imgui-src/backends",
         "${workspaceFolder}/external/imguicolortextedit",
         "${workspaceFolder}/src/helpers",
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/tests",
         "${workspaceFolder}/vcpkg_installed/arm64-osx/include",
         "${workspaceFolder}/vcpkg_installed/arm64-osx/include/SDL2"
     ],
@@ -124,9 +126,9 @@
     "C_Cpp.default.intelliSenseMode": "macos-clang-arm64",
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "C_Cpp.intelliSenseEngine": "default",
-    "cmake.buildDirectory": "${workspaceFolder}/build-vcpkg",
+    "cmake.buildDirectory": "${workspaceFolder}/build-cmake-tools",
     "cmake.configureSettings": {
-        "CMAKE_TOOLCHAIN_FILE": "${workspaceFolder}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_TOOLCHAIN_FILE": "${workspaceFolder}/cmake/nix-toolchain.cmake",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
     },
@@ -162,7 +164,7 @@
     "C_Cpp.clang_format_style": "{ BasedOnStyle: LLVM, IndentWidth: 4, TabWidth: 4, UseTab: Never }",
     
     // Testing-specific settings
-    "cmake.testDirectory": "${workspaceFolder}/tests",
+    "cmake.testDirectory": "${workspaceFolder}/build-tests",
     "cmake.testArgs": [
         "--output-on-failure",
         "--verbose"
@@ -204,6 +206,7 @@
     "cmake.showSystemKits": false,
     "cmake.configureOnOpen": false,
     "cmake.automaticReconfigure": false,
+    "cmake.useCMakePresets": "never",
     
     // Search settings to include test results
     "search.exclude": {
@@ -214,15 +217,34 @@
     
     // CTest integration
     "cmake.ctest.parallelJobs": 0,
-    "cmake.ctest.allowParallelJobs": true,
+    "cmake.ctest.allowParallelJobs": false,
     "cmake.options.statusBarVisibility": "visible",
     "cmake.options.advanced": {
         "test": {
-            "statusBarVisibility": "visible"
+            "statusBarVisibility": "hidden"
         }
     },
     
+    // Enhanced test discovery settings
+    "cmake.automaticallyConfigureSubprojects": false,
+    "cmake.testEnvironment": {},
+    "cmake.ctest.testArgs": ["--output-on-failure", "--verbose"],
+    
+    // Test workspace folder for multi-root support
+    "cmake.testWorkspaceFolder": "${workspaceFolder}",
+    
     // Build output settings
     "output.smartScroll.enabled": true,
-    "terminal.integrated.enablePersistentSessions": false
+    "terminal.integrated.enablePersistentSessions": false,
+    
+    // CTest Lab extension settings
+    "ctestlab.buildDirectory": "${workspaceFolder}/build-tests",
+    "ctestlab.sourceDirectory": "${workspaceFolder}/tests",
+    "ctestlab.cmakeOptions": [
+        "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/cmake/nix-toolchain.cmake",
+        "-DCMAKE_BUILD_TYPE=Debug"
+    ],
+    "ctestlab.testArgs": ["--output-on-failure", "--verbose"],
+    "ctestlab.autoRefresh": true,
+    "ctestlab.showOnlyFailedTests": false
 }

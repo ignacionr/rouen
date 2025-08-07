@@ -238,6 +238,32 @@ namespace rouen::cards
                                             if (!item.enclosure.empty()) {
                                                 media_player::player(item.enclosure, colors[4], "Play Audio");
                                             }
+                                            // Enhanced: Check for extracted media URLs if no direct enclosure
+                                            else if (!item.extracted_media_urls.empty()) {
+                                                // Use the best available media URL
+                                                std::string best_media_url = item.get_best_media_url();
+                                                if (!best_media_url.empty()) {
+                                                    // Determine appropriate title based on media type
+                                                    std::string media_title = "Play Media";
+                                                    for (const auto& extracted_media : item.extracted_media_urls) {
+                                                        if (extracted_media.url == best_media_url) {
+                                                            if (extracted_media.type == "video") {
+                                                                media_title = "Play Video";
+                                                            } else if (extracted_media.type == "audio") {
+                                                                media_title = "Play Audio";
+                                                            }
+                                                            break;
+                                                        }
+                                                    }
+                                                    media_player::player(best_media_url, colors[4], media_title);
+                                                }
+                                            }
+                                            // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
+                                            else if (item.link.find("youtube.com") != std::string::npos || 
+                                                     item.link.find("youtu.be") != std::string::npos ||
+                                                     item.link.find("vimeo.com") != std::string::npos) {
+                                                media_player::player(item.link, colors[4], "Play Video");
+                                            }
                                         }
                                         catch (const std::exception& e) {
                                             RSS_ERROR_FMT("Exception in RSS feed item rendering: {}", e.what());

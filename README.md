@@ -327,14 +327,45 @@ Rouen now supports fully isolated, reproducible development and build environmen
    ```
    Or use the VS Code test tasks (all labeled with "(Nix)").
 
+   **VS Code Test Integration**: Tests are integrated through VSCode tasks and can be run in multiple ways:
+   
+   **Method 1: VSCode Tasks (Recommended)**
+   - Use Command Palette (`Ctrl+Shift+P`) → "Tasks: Run Task"
+   - Select from available test tasks:
+     - `Configure Tests (Nix)` - Set up test build environment
+     - `Build Tests (Nix)` - Compile all test executables  
+     - `Run All Tests (Nix)` - Execute complete test suite
+     - `Run Google Tests Only (Nix)` - Execute only Google Test based tests
+     - `Run Legacy Tests Only (Nix)` - Execute only console-based tests
+   
+   **Method 2: Manual CTest Execution**
+   - After building tests, open terminal in `build-tests` directory
+   - Run specific tests: `./test_math_operations`, `./test_fetch_ssl`, etc.
+   - Run via CTest: `ctest --output-on-failure --verbose`
+   
+   **Method 3: Debugging Tests**
+   - Use VSCode debugger with pre-configured launch configurations:
+     - `🧪 Debug HTTP/SSL Tests (Nix)`
+     - `📊 Debug Example Math Tests (Nix)`
+   - Set breakpoints in test files and debug interactively
+
 ### VS Code Integration
 
 Rouen provides pre-configured VS Code tasks and launch configurations for Nix-based development:
 - **Build**: `Nix Build (Debug)` (default build task)
 - **Test**: All test tasks use Nix builds and are labeled with "(Nix)"
+- **Test Integration**: Task-based test execution with debugging support
 - **Debug**: Launch configs use Nix-built binaries and set up the correct environment
 
 > **Note:** All previous vcpkg/system build tasks and launch configs have been removed in favor of Nix-only workflows. See `.vscode/tasks.json` and `.vscode/launch.json` for details.
+
+**VSCode Test Integration Features**:
+- Comprehensive task-based test execution with pre-configured commands
+- Individual and batch test running capabilities  
+- Integrated debugging support with breakpoints in test code
+- Multiple test frameworks: Google Test for modern unit tests, legacy console tests
+- Nix-based reproducible test environment matching CI/CD pipeline
+- Detailed test output with failure diagnostics and verbose logging
 
 ### Nix Build Status
 

@@ -13,6 +13,7 @@
 
 #include "tinyxml2.h"
 #include "../../helpers/fetch.hpp"
+#include "../../helpers/html_media_extractor.hpp"
 #include "../../registrar.hpp"
 #include "feed_item.hpp"
 #include "rss_date_parser.hpp"
@@ -97,9 +98,35 @@ namespace media::rss {
                         if (description && !description->NoChildren() && description->GetText()) {
                             new_item.description = description->GetText();
                         }
+                        
+                        // Also check for content:encoded (used by many RSS feeds like RT.com for rich content)
+                        auto content_encoded = xml_item->FirstChildElement("content:encoded");
+                        if (content_encoded && content_encoded->GetText()) {
+                            // If we have content:encoded, prefer it over description for media extraction
+                            // as it often contains the actual embedded media (videos, iframes, etc.)
+                            if (new_item.description.empty()) {
+                                new_item.description = content_encoded->GetText();
+                            } else {
+                                // Append content:encoded to description for comprehensive media extraction
+                                new_item.description += "\n" + std::string(content_encoded->GetText());
+                            }
+                        }
+                        
                         auto enclosure = xml_item->FirstChildElement("enclosure");
                         if (enclosure && enclosure->Attribute("url")) {
-                            new_item.enclosure = enclosure->Attribute("url");
+                            std::string enclosure_url = enclosure->Attribute("url");
+                            // Filter out image URLs that are incorrectly used as enclosures (like RT.com thumbnails)
+                            if (media::html::is_media_url(enclosure_url)) {
+                                new_item.enclosure = enclosure_url;
+                            }
+                            // If it's an image URL, put it in image_url instead
+                            else if (enclosure_url.find(".jpg") != std::string::npos || 
+                                     enclosure_url.find(".jpeg") != std::string::npos ||
+                                     enclosure_url.find(".png") != std::string::npos ||
+                                     enclosure_url.find(".gif") != std::string::npos ||
+                                     enclosure_url.find("thumbnail") != std::string::npos) {
+                                new_item.image_url = enclosure_url;
+                            }
                         }
                         // if there is no direct enclosure, we can try to get one if the link is to youtube
                         else if (new_item.link.find("youtube.com") != std::string::npos) {
@@ -109,6 +136,11 @@ namespace media::rss {
                         auto itunes_image = xml_item->FirstChildElement("itunes:image");
                         if (itunes_image && itunes_image->Attribute("href")) {
                             new_item.image_url = itunes_image->Attribute("href");
+                        }
+                        
+                        // Enhanced: Extract media URLs from description content
+                        if (!new_item.description.empty()) {
+                            new_item.extracted_media_urls = media::html::extract_media_urls(new_item.description);
                         }
                         
                         // Try various date formats in priority order
@@ -191,7 +223,11 @@ namespace media::rss {
                     // look for a media:group tag
                     if (auto media_group = xml_item->FirstChildElement("media:group"); media_group) {
                         if (auto media_content = media_group->FirstChildElement("media:content"); media_content && media_content->Attribute("url")) {
-                            new_item.enclosure = media_content->Attribute("url");
+                            std::string content_url = media_content->Attribute("url");
+                            // Only use as enclosure if it's actually a media file, not an image
+                            if (media::html::is_media_url(content_url)) {
+                                new_item.enclosure = content_url;
+                            }
                         }
                         // look for a media:thumbnail tag
                         if (auto media_thumbnail = media_group->FirstChildElement("media:thumbnail"); media_thumbnail && media_thumbnail->Attribute("url")) {
@@ -202,6 +238,12 @@ namespace media::rss {
                             }
                         }
                     }
+                    
+                    // Enhanced: Extract media URLs from description content
+                    if (!new_item.description.empty()) {
+                        new_item.extracted_media_urls = media::html::extract_media_urls(new_item.description);
+                    }
+                    
                     // Try various date formats in priority order
                     const char* date_text = nullptr;
                     if (auto updated = xml_item->FirstChildElement("updated"); updated && updated->GetText()) {

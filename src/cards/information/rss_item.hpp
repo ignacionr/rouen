@@ -123,6 +123,47 @@ public:
                         
                         ImGui::Separator();
                     }
+                    // Enhanced: Check for extracted media URLs if no direct enclosure
+                    else if (!item.extracted_media_urls.empty()) {
+                        ImGui::Separator();
+                        
+                        // Show all available media options
+                        ImGui::TextColored(colors[2], "Media Content:");
+                        
+                        for (size_t i = 0; i < item.extracted_media_urls.size(); ++i) {
+                            const auto& extracted_media = item.extracted_media_urls[i];
+                            
+                            std::string media_title = std::format("Play {} ({})", 
+                                extracted_media.type == "video" ? "Video" : 
+                                extracted_media.type == "audio" ? "Audio" : "Media",
+                                extracted_media.format);
+                            
+                            try {
+                                media_player::player(extracted_media.url, colors[2], media_title);
+                                if (i < item.extracted_media_urls.size() - 1) {
+                                    ImGui::Spacing();
+                                }
+                            } catch (const std::exception& e) {
+                                RSS_ERROR_FMT("Exception in extracted media player: {}", e.what());
+                            }
+                        }
+                        
+                        ImGui::Separator();
+                    }
+                    // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
+                    else if (item.link.find("youtube.com") != std::string::npos || 
+                             item.link.find("youtu.be") != std::string::npos ||
+                             item.link.find("vimeo.com") != std::string::npos) {
+                        ImGui::Separator();
+                        
+                        try {
+                            media_player::player(item.link, colors[2], "Play Video");
+                        } catch (const std::exception& e) {
+                            RSS_ERROR_FMT("Exception in video link player: {}", e.what());
+                        }
+                        
+                        ImGui::Separator();
+                    }
                     
                     // Content in a scrollable area
                     try {

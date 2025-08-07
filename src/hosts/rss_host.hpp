@@ -18,6 +18,7 @@
 
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
+#include "../helpers/html_media_extractor.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -45,6 +46,60 @@ public:
         std::string enclosure;
         std::string image_url;
         std::chrono::system_clock::time_point publish_date;
+        std::vector<media::html::extracted_media> extracted_media_urls; // Enhanced: extracted media from content
+        
+        // Enhanced: Get the best available media URL for playback
+        std::string get_best_media_url() const {
+            // Priority order:
+            // 1. Direct enclosure URL (highest priority)
+            // 2. Video content from extracted media
+            // 3. Audio content from extracted media
+            // 4. Any other media content
+            // 5. YouTube/Vimeo links as fallback
+            
+            if (!enclosure.empty()) {
+                return enclosure;
+            }
+            
+            // Look for video content first
+            for (const auto& media : extracted_media_urls) {
+                if (media.type == "video" && 
+                    (media.format == "mp4" || media.format == "webm" || media.format == "youtube" || media.format == "vimeo")) {
+                    return media.url;
+                }
+            }
+            
+            // Then audio content
+            for (const auto& media : extracted_media_urls) {
+                if (media.type == "audio" && 
+                    (media.format == "mp3" || media.format == "wav" || media.format == "ogg" || media.format == "aac")) {
+                    return media.url;
+                }
+            }
+            
+            // Any other media
+            for (const auto& media : extracted_media_urls) {
+                if (!media.url.empty()) {
+                    return media.url;
+                }
+            }
+            
+            // If this is a YouTube link, return it directly
+            if (link.find("youtube.com") != std::string::npos || link.find("youtu.be") != std::string::npos) {
+                return link;
+            }
+            
+            return "";
+        }
+        
+        // Enhanced: Check if this item has playable media
+        bool has_media() const {
+            return !enclosure.empty() || 
+                   !extracted_media_urls.empty() || 
+                   link.find("youtube.com") != std::string::npos ||
+                   link.find("youtu.be") != std::string::npos ||
+                   link.find("vimeo.com") != std::string::npos;
+        }
     };
 
     // Feed information structure
@@ -201,6 +256,11 @@ public:
                 .publish_date = publish_date
             };
             
+            // Enhanced: Extract media URLs from description content
+            if (!item.description.empty()) {
+                item.extracted_media_urls = media::html::extract_media_urls(item.description);
+            }
+            
             items.push_back(std::move(item));
         });
         
@@ -239,6 +299,11 @@ public:
                     .image_url = image_url ? image_url : "",
                     .publish_date = publish_date
                 };
+                
+                // Enhanced: Extract media URLs from description content
+                if (!result->description.empty()) {
+                    result->extracted_media_urls = media::html::extract_media_urls(result->description);
+                }
             }
         });
         

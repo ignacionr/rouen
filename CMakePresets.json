@@ -1,0 +1,130 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Rouen Application (Nix)",
+            "description": "Default application configuration using Nix toolchain",
+            "binaryDir": "${sourceDir}/build-cmake-tools",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            }
+        },
+        {
+            "name": "default-tests",
+            "displayName": "Rouen Tests (Nix)",
+            "description": "Test configuration using Nix toolchain",
+            "binaryDir": "${sourceDir}/build-tests",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioCode/CMake/1.0": {
+                    "sourceDir": "${sourceDir}/tests"
+                }
+            }
+        },
+        {
+            "name": "ci-tests",
+            "displayName": "Rouen Tests (CI Strictness)",
+            "description": "Test configuration with CI-level strictness",
+            "binaryDir": "${sourceDir}/build-tests-ci",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "ENABLE_CI_STRICTNESS": "ON"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Darwin"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioCode/CMake/1.0": {
+                    "sourceDir": "${sourceDir}/tests"
+                }
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "default",
+            "displayName": "Build Application (Default)",
+            "configurePreset": "default",
+            "description": "Build the main Rouen application"
+        },
+        {
+            "name": "default-tests",
+            "displayName": "Build Tests (Default)",
+            "configurePreset": "default-tests",
+            "description": "Build all test executables"
+        },
+        {
+            "name": "ci-tests",
+            "displayName": "Build Tests (CI Strictness)",
+            "configurePreset": "ci-tests",
+            "description": "Build test executables with CI strictness"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "default-tests",
+            "displayName": "Run All Tests",
+            "configurePreset": "default-tests",
+            "description": "Run complete test suite with verbose output",
+            "output": {
+                "outputOnFailure": true,
+                "verbosity": "verbose"
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": false
+            }
+        },
+        {
+            "name": "gtest-only",
+            "displayName": "Run Google Tests Only",
+            "configurePreset": "default-tests",
+            "description": "Run only Google Test based tests",
+            "filter": {
+                "include": {
+                    "name": "test_(fetch_ssl|ssl_ui|math_operations|rss_media_extraction)"
+                }
+            },
+            "output": {
+                "outputOnFailure": true,
+                "verbosity": "verbose"
+            }
+        },
+        {
+            "name": "legacy-tests",
+            "displayName": "Run Legacy Tests Only",
+            "configurePreset": "default-tests",
+            "description": "Run only legacy console tests",
+            "filter": {
+                "include": {
+                    "name": "(BybitCurrencyFixTest|ExampleMathTest)"
+                }
+            },
+            "output": {
+                "outputOnFailure": true,
+                "verbosity": "verbose"
+            }
+        }
+    ]
+}

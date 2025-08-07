@@ -241,7 +241,11 @@ inline bool media_player_item::playMedia() {
     auto now = std::chrono::system_clock::now().time_since_epoch();
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
     std::string pipe_name = "\\\\.\\pipe\\mpvsocket_" + std::to_string(millis);
-    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " \"" + sanitized_url + "\"";
+    
+    // Add headers for better compatibility with protected content (like RT.com)
+    std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
+    std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
+    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -270,8 +274,10 @@ inline bool media_player_item::playMedia() {
     player_pid = fork();
     if (player_pid == 0) {
         // Child process
-        // By default, allow video window; if you want to force audio-only, add --no-video
-        std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " \"" + sanitized_url + "\"";
+        // Add headers for better compatibility with protected content (like RT.com)
+        std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
+        std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
+        std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);
