@@ -731,16 +731,36 @@ void trello_card::check_async_operations() {
     // Check board details fetch
     if (board_details_future_.has_value() && 
         board_details_future_->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        current_board_ = board_details_future_->get();
+        auto board_result = board_details_future_->get();
         board_details_future_.reset();
         loading_board_details_ = false;
         
-        // If this was a direct board fetch (like for a specific board card), set the board name
-        if (!current_board_.id.empty() && selected_board_name_.empty()) {
-            selected_board_name_ = current_board_.name;
+        // Handle different contexts
+        if (context_ == card_context::card_specific) {
+            // For card context, store as parent_board_ for move functionality
+            parent_board_ = std::move(board_result);
+            
+            // Find the current list name
+            for (const auto& list : parent_board_.lists) {
+                if (list.id == current_card_.idList) {
+                    parent_list_ = list;
+                    break;
+                }
+            }
+            
+            // Debug: Log successful board loading
+            connection_error_ = std::format("Board loaded: {} lists", parent_board_.lists.size());
+        } else {
+            // For general board context, store as current_board_
+            current_board_ = std::move(board_result);
+            
+            // If this was a direct board fetch (like for a specific board card), set the board name
+            if (!current_board_.id.empty() && selected_board_name_.empty()) {
+                selected_board_name_ = current_board_.name;
+            }
+            name(std::format("Trello - Board: {}", selected_board_name_));
+            colors[0] = ImVec4(0.5f, 0.5f, 1.0f, 1.0f); // Update primary color
         }
-        name(std::format("Trello - Board: {}", selected_board_name_));
-        colors[0] = ImVec4(0.5f, 0.5f, 1.0f, 1.0f); // Update primary color
     }
     
     // Check card creation
@@ -773,7 +793,12 @@ void trello_card::check_async_operations() {
             auto result = card_details_future_->get();
             current_card_ = std::move(result);
             loading_card_details_ = false;
-            // Note: We would need separate API calls to get parent board and list details
+            
+            // Always fetch board details to get all lists for the move functionality
+            if (!current_card_.idBoard.empty()) {
+                loading_board_details_ = true;
+                board_details_future_ = trello_host_->get_board_details(current_card_.idBoard);
+            }
         } catch (const std::exception& e) {
             loading_card_details_ = false;
             connection_error_ = "Error loading card: " + std::string(e.what());
@@ -1033,11 +1058,41 @@ void trello_card::render_card_edit_form() {
     // Move to different list
     if (!parent_board_.lists.empty()) {
         ImGui::Text("Move to List:");
-        if (ImGui::BeginCombo("##target_list", target_list_id_.empty() ? "Select list..." : "List selected")) {
+        
+        // Find current list name for display
+        std::string current_list_name = "Unknown List";
+        std::string combo_preview = "Select list...";
+        
+        for (const auto& list : parent_board_.lists) {
+            if (list.id == current_card_.idList) {
+                current_list_name = list.name;
+                break;
+            }
+        }
+        
+        if (!target_list_id_.empty()) {
+            for (const auto& list : parent_board_.lists) {
+                if (list.id == target_list_id_) {
+                    combo_preview = list.name;
+                    break;
+                }
+            }
+        } else {
+            combo_preview = std::format("Currently in: {}", current_list_name);
+        }
+        
+        if (ImGui::BeginCombo("##target_list", combo_preview.c_str())) {
             for (const auto& list : parent_board_.lists) {
                 if (!list.closed) {
                     bool is_selected = (target_list_id_ == list.id);
-                    if (ImGui::Selectable(list.name.c_str(), is_selected)) {
+                    bool is_current = (list.id == current_card_.idList);
+                    
+                    std::string display_name = list.name;
+                    if (is_current) {
+                        display_name += " (current)";
+                    }
+                    
+                    if (ImGui::Selectable(display_name.c_str(), is_selected)) {
                         target_list_id_ = list.id;
                     }
                     if (is_selected) {
@@ -1101,6 +1156,50 @@ void trello_card::render_card_actions() {
     if (ImGui::Button("Copy Link", ImVec2(100, 0))) {
         ImGui::SetClipboardText(current_card_.url.c_str());
     }
+    
+    // Quick move section
+    if (!parent_board_.lists.empty()) {
+        ImGui::Spacing();
+        ImGui::TextColored(colors[0], "Quick Move");
+        
+        // Find current list name
+        std::string current_list_name = "Unknown List";
+        for (const auto& list : parent_board_.lists) {
+            if (list.id == current_card_.idList) {
+                current_list_name = list.name;
+                break;
+            }
+        }
+        
+        ImGui::Text("Current list: %s", current_list_name.c_str());
+        
+        // Show quick move buttons for other lists
+        int button_count = 0;
+        for (const auto& list : parent_board_.lists) {
+            if (!list.closed && list.id != current_card_.idList) {
+                if (button_count > 0 && button_count % 2 == 0) {
+                    // Start new row after every 2 buttons
+                } else if (button_count > 0) {
+                    ImGui::SameLine();
+                }
+                
+                if (ImGui::Button(std::format("→ {}", list.name).c_str(), ImVec2(140, 0))) {
+                    target_list_id_ = list.id;
+                    move_card_to_list();
+                }
+                button_count++;
+                
+                if (button_count >= 4) break; // Limit to 4 quick move buttons
+            }
+        }
+        
+        if (button_count >= 4) {
+            ImGui::Text("For more lists, use the Edit tab");
+        }
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
     
     if (ImGui::Button("Archive Card", ImVec2(120, 0))) {
         archive_card();

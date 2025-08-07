@@ -305,12 +305,34 @@ std::future<trello_card> trello_model::create_card(const std::string& list_id, c
 std::future<bool> trello_model::move_card(const std::string& card_id, const std::string& list_id, float pos) {
     return std::async(std::launch::async, [this, card_id, list_id, pos]() {
         try {
+            // For Trello API, moving a card requires PUT to /1/cards/{id}
+            // The request body should be form-encoded data
             std::string data = "idList=" + list_id;
             if (pos > 0) {
                 data += "&pos=" + std::to_string(pos);
             }
+            
+            TRELLO_DEBUG_FMT("Moving card {} to list {} with data: {}", card_id, list_id, data);
+            
+            // Use PUT method for updating card properties (will be converted to POST internally)
             std::string response = make_request("cards/" + card_id, "PUT", data);
-            return !response.empty();
+            
+            TRELLO_DEBUG_FMT("Move card response: {}", response);
+            
+            // Check if we got a valid response (should contain updated card data)
+            if (response.empty()) {
+                TRELLO_ERROR_FMT("Empty response when moving card {} to list {}", card_id, list_id);
+                return false;
+            }
+            
+            // Try to parse the response to verify it's valid JSON
+            auto json_result = glz::read_json<glz::json_t>(response);
+            if (!json_result.has_value()) {
+                TRELLO_ERROR_FMT("Invalid JSON response when moving card {} to list {}: {}", card_id, list_id, response);
+                return false;
+            }
+            
+            return true;
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to move card {} to list {}: {}", card_id, list_id, e.what());
             return false;
@@ -361,32 +383,24 @@ std::string trello_model::make_request(const std::string& endpoint, const std::s
     if (!connected_) {
         throw std::runtime_error("Not connected to Trello");
     }
-    
+
     std::string url = build_url(endpoint);
-    
+
     TRELLO_DEBUG_FMT("Trello API Request: {} {}", method.empty() ? "GET" : method, url);
-    
+
     http::fetch fetcher;
-    
+
     std::string response;
     try {
-        if (method == "POST" || method == "PUT") {
-            // For POST/PUT requests, add auth to data
-            std::string full_data = data;
-            if (!full_data.empty()) full_data += "&";
-            full_data += "key=" + current_profile_.api_key + "&token=" + current_profile_.token;
-            
-            if (method == "POST") {
-                response = fetcher.post(url, full_data);
-            } else {
-                // PUT request
-                response = fetcher.post(url, full_data, [](auto /* set_header */) {
-                    // Trello API doesn't actually support PUT via POST override,
-                    // but we'll handle it anyway for completeness
-                });
-            }
+        if (method == "POST") {
+            // POST requests
+            response = fetcher.post(url, data);
+        } else if (method == "PUT") {
+            // PUT requests - now using proper PUT method
+            TRELLO_DEBUG("Using PUT method for PUT request");
+            response = fetcher.put(url, data);
         } else {
-            // GET request - auth in URL
+            // GET request - auth already in URL from build_url()
             response = fetcher(url);
         }
         TRELLO_DEBUG_FMT("Trello API request successful to {}", url);
@@ -395,11 +409,9 @@ std::string trello_model::make_request(const std::string& endpoint, const std::s
                         method.empty() ? "GET" : method, url, e.what());
         throw;
     }
-    
-    return response;
-}
 
-std::string trello_model::test_connection_request(const std::string& endpoint, const std::string& method, const std::string& data) {
+    return response;
+}std::string trello_model::test_connection_request(const std::string& endpoint, const std::string& method, const std::string& data) {
     // This method is similar to make_request but bypasses the connection check
     // Used during initial connection testing
     
