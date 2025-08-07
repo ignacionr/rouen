@@ -179,7 +179,9 @@ Rouen supports automated builds and releases for **Windows x64**, **macOS ARM64*
 
 ## Architecture
 
-Rouen uses a modular, card-based architecture that promotes reusability and maintainability.
+![Rouen Architecture Diagram](rouen_architecture.png)
+
+Rouen uses a modular, card-based architecture that promotes reusability and maintainability. The diagram above provides a comprehensive visual overview of all architectural components and their relationships.
 
 ### Core Components
 
