@@ -554,7 +554,7 @@ std::vector<trello_card> trello_model::parse_cards(const std::string& json_str) 
 
 trello_list trello_model::parse_list(const std::string& json_str) {
     trello_list list;
-    auto error = glz::read_json(list, json_str);
+    auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(list, json_str);
     if (!error) {
         return list;
     }
@@ -564,7 +564,7 @@ trello_list trello_model::parse_list(const std::string& json_str) {
 
 std::vector<trello_list> trello_model::parse_lists(const std::string& json_str) {
     std::vector<trello_list> lists;
-    auto error = glz::read_json(lists, json_str);
+    auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(lists, json_str);
     if (!error) {
         return lists;
     }
@@ -574,7 +574,7 @@ std::vector<trello_list> trello_model::parse_lists(const std::string& json_str) 
 
 std::vector<trello_member> trello_model::parse_members(const std::string& json_str) {
     std::vector<trello_member> members;
-    auto error = glz::read_json(members, json_str);
+    auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(members, json_str);
     if (!error) {
         return members;
     }
@@ -584,7 +584,7 @@ std::vector<trello_member> trello_model::parse_members(const std::string& json_s
 
 std::vector<trello_label> trello_model::parse_labels(const std::string& json_str) {
     std::vector<trello_label> labels;
-    auto error = glz::read_json(labels, json_str);
+    auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(labels, json_str);
     if (!error) {
         return labels;
     }
@@ -703,10 +703,10 @@ std::future<std::vector<trello_card>> trello_model::get_list_cards(const std::st
 std::future<trello_card> trello_model::get_card(const std::string& card_id) {
     return std::async(std::launch::async, [this, card_id]() -> trello_card {
         try {
-            const std::string endpoint = "/1/cards/" + card_id;
+            const std::string endpoint = "cards/" + card_id;
             const std::string response = make_request(endpoint);
             trello_card card;
-            auto error = glz::read_json(card, response);
+            auto error = glz::read<glz::opts{.error_on_unknown_keys=false}>(card, response);
             if (!error) {
                 return card;
             }

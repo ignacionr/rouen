@@ -44,8 +44,20 @@ trello_card::trello_card(const std::string& board_id) : trello_card() {
 }
 
 trello_card::trello_card(const std::string& entity_id, card_context context) 
-    : card(), context_(context) {
+    : card(), trello_host_(hosts::get_trello_host()), context_(context) {
     name("Trello");
+    
+    // Try to load existing credentials into form
+    auto api_key = helpers::ApiKeys::get_trello_api_key();
+    auto token = helpers::ApiKeys::get_trello_token();
+    
+    if (!api_key.empty() && api_key.length() < sizeof(api_key_buffer_)) {
+        std::strcpy(api_key_buffer_, api_key.c_str());
+    }
+    if (!token.empty() && token.length() < sizeof(token_buffer_)) {
+        std::strcpy(token_buffer_, token.c_str());
+    }
+    
     switch (context) {
         case card_context::general:
             // Standard trello: behavior
@@ -61,6 +73,10 @@ trello_card::trello_card(const std::string& entity_id, card_context context)
             break;
     }
     colors[0] = ImVec4(0.0f, 0.7f, 1.0f, 1.0f); // Blue primary color
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Secondary color
+    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
+    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
+    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
 }
 
 std::string trello_card::get_uri() const {
@@ -453,22 +469,22 @@ void trello_card::render_card_item(const models::trello::trello_card& card, cons
     }
     
     // Card badges and info
-    if (card.badges_comments > 0 || card.badges_attachments > 0 || (card.due.has_value() && !card.due->empty())) {
+    if (card.badges_comments() > 0 || card.badges_attachments() > 0 || (card.due.has_value() && !card.due->empty())) {
         ImGui::SameLine();
         ImGui::Text("(");
         
         bool need_separator = false;
         
-        if (card.badges_comments > 0) {
+        if (card.badges_comments() > 0) {
             ImGui::SameLine();
-            ImGui::TextColored(colors[4], "%d" ICON_MD_COMMENT, card.badges_comments);
+            ImGui::TextColored(colors[4], "%d" ICON_MD_COMMENT, card.badges_comments());
             need_separator = true;
         }
         
-        if (card.badges_attachments > 0) {
+        if (card.badges_attachments() > 0) {
             if (need_separator) { ImGui::SameLine(); ImGui::Text("|"); }
             ImGui::SameLine();
-            ImGui::TextColored(colors[4], "%d" ICON_MD_ATTACHMENT, card.badges_attachments);
+            ImGui::TextColored(colors[4], "%d" ICON_MD_ATTACHMENT, card.badges_attachments());
             need_separator = true;
         }
         
@@ -544,7 +560,7 @@ void trello_card::render_search_results() {
             ImGui::TableNextColumn();
             ImGui::PushID(card.id.c_str());
             if (ImGui::Button("Open", ImVec2(70, 0))) {
-                open_in_browser(card.url);
+                create_card_tab(card.id);
             }
             ImGui::PopID();
         }
@@ -988,14 +1004,14 @@ void trello_card::render_card_overview() {
     }
     
     // Badges
-    if (current_card_.badges_comments > 0 || current_card_.badges_attachments > 0) {
+    if (current_card_.badges_comments() > 0 || current_card_.badges_attachments() > 0) {
         ImGui::Spacing();
-        if (current_card_.badges_comments > 0) {
-            ImGui::TextColored(colors[4], "%s %d comments", ICON_MD_COMMENT, current_card_.badges_comments);
+        if (current_card_.badges_comments() > 0) {
+            ImGui::TextColored(colors[4], "%s %d comments", ICON_MD_COMMENT, current_card_.badges_comments());
         }
-        if (current_card_.badges_attachments > 0) {
-            if (current_card_.badges_comments > 0) ImGui::SameLine();
-            ImGui::TextColored(colors[4], "%s %d attachments", ICON_MD_ATTACHMENT, current_card_.badges_attachments);
+        if (current_card_.badges_attachments() > 0) {
+            if (current_card_.badges_comments() > 0) ImGui::SameLine();
+            ImGui::TextColored(colors[4], "%s %d attachments", ICON_MD_ATTACHMENT, current_card_.badges_attachments());
         }
     }
 }
@@ -1168,16 +1184,10 @@ void trello_card::reset_edit_form() {
 }
 
 void trello_card::create_card_tab(const std::string& card_id) {
-    // TODO: Implement card tab creation
-    // This would require integration with the main card factory/manager system
-    // For now, log the request or show a notification
-    
     if (card_id.empty()) return;
     
-    // As a temporary measure, we could open the card in the browser
-    // until the factory integration is implemented
-    std::string card_url = "https://trello.com/c/" + card_id;
-    open_in_browser(card_url);
+    // Create a new Trello card for this specific card
+    "create_card"_sfn("trello-card:" + card_id);
 }
 
 } // namespace rouen::cards

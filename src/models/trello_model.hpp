@@ -67,6 +67,21 @@ struct trello_member {
     bool nonPublicAvailable = true;
 };
 
+// Trello badges structure (nested in cards)
+struct trello_badges {
+    int votes = 0;
+    int comments = 0;
+    int attachments = 0;
+    int checkItems = 0;
+    int checkItemsChecked = 0;
+    std::optional<std::string> checkItemsEarliestDue;  // Can be null
+    bool subscribed = false;
+    std::string fogbugz;  // Empty string when not used
+    std::optional<std::string> due;  // Can be null
+    bool description = false;  // Boolean indicating if description exists
+    bool location = false;  // Boolean indicating if location exists
+};
+
 // Trello list structure
 struct trello_list {
     std::string id;
@@ -95,16 +110,19 @@ struct trello_card {
     std::string shortUrl;  // Actual field name
     std::string shortLink; // Additional field
     std::string nodeId;    // New field
+    std::optional<std::string> lastUpdatedBy;  // Can be null
     float pos = 0.0f;  // Position for ordering
     std::vector<std::string> idLabels;     // Actual field name
     std::vector<std::string> idMembers;    // Actual field name
     std::vector<std::string> idChecklists; // Actual field name
-    // Note: badges are complex nested objects, using simplified approach
-    int badges_votes = 0;
-    int badges_comments = 0;
-    int badges_attachments = 0;
-    int badges_checkitems = 0;
-    int badges_checkitems_checked = 0;
+    trello_badges badges;  // Nested badges structure
+    
+    // Convenience accessors for backward compatibility
+    int badges_votes() const { return badges.votes; }
+    int badges_comments() const { return badges.comments; }
+    int badges_attachments() const { return badges.attachments; }
+    int badges_checkitems() const { return badges.checkItems; }
+    int badges_checkitems_checked() const { return badges.checkItemsChecked; }
 };
 
 // Trello board structure
@@ -276,6 +294,24 @@ struct glz::meta<rouen::models::trello::trello_member> {
 };
 
 template<>
+struct glz::meta<rouen::models::trello::trello_badges> {
+    using T = rouen::models::trello::trello_badges;
+    static constexpr auto value = object(
+        "votes", &T::votes,
+        "comments", &T::comments,
+        "attachments", &T::attachments,
+        "checkItems", &T::checkItems,
+        "checkItemsChecked", &T::checkItemsChecked,
+        "checkItemsEarliestDue", &T::checkItemsEarliestDue,
+        "subscribed", &T::subscribed,
+        "fogbugz", &T::fogbugz,
+        "due", &T::due,
+        "description", &T::description,
+        "location", &T::location
+    );
+};
+
+template<>
 struct glz::meta<rouen::models::trello::trello_list> {
     using T = rouen::models::trello::trello_list;
     static constexpr auto value = object(
@@ -307,10 +343,12 @@ struct glz::meta<rouen::models::trello::trello_card> {
         "shortUrl", &T::shortUrl,
         "shortLink", &T::shortLink,
         "nodeId", &T::nodeId,
+        "lastUpdatedBy", &T::lastUpdatedBy,
         "pos", &T::pos,
         "idLabels", &T::idLabels,
         "idMembers", &T::idMembers,
-        "idChecklists", &T::idChecklists
+        "idChecklists", &T::idChecklists,
+        "badges", &T::badges
     );
 };
 
