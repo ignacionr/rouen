@@ -83,6 +83,7 @@ function(add_gtest_rss_executable test_name source_file)
     # Add RSS-related sources needed from the main project
     target_sources(${test_name} PRIVATE
         ../src/models/rss/rss_date_parser.cpp
+        ../src/models/rss/feed_item.cpp
     )
 
     # Include directories needed for the test
@@ -97,6 +98,7 @@ function(add_gtest_rss_executable test_name source_file)
         GTest::gmock
         GTest::gmock_main
         tinyxml2::tinyxml2
+        CURL::libcurl
     )
     # Add test to CTest
     add_test(NAME ${test_name} COMMAND ${test_name})
@@ -114,6 +116,9 @@ add_gtest_executable(test_math_operations test_math_operations.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
+
+# RT Media Extraction Test - tests RT.com specific RSS media extraction patterns
+add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 
 # Legacy tests (keeping for compatibility)
 # Test for Bybit currency conversion fix
@@ -142,12 +147,14 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_fetch_ssl
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND echo ""
     COMMAND echo "Legacy Console Tests:"
     COMMAND echo "---------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -158,7 +165,9 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_fetch_ssl
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media
     COMMENT "Running Google Test suite only"
 )
 
@@ -210,10 +219,16 @@ add_custom_target(run_rss_media_extraction_test
     COMMENT "Running RSS media extraction and HTML parsing tests"
 )
 
+add_custom_target(run_rt_media_test
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
+    DEPENDS test_rt_media
+    COMMENT "Running RT.com specific RSS media extraction tests"
+)
+
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
     COMMENT "Running tests through CTest framework"
 )
 

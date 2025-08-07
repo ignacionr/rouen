@@ -8,6 +8,8 @@ A modern, card-based productivi### Information & Communication
   - **AI Feed Discovery**: Use Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) to search for RSS feeds by topic using AI
   - Supports multiple AI providers (Grok, OpenAI, Groq, Gemini) with internet search capabilities
   - Smart feed suggestions with descriptions and one-click addition
+  - **Media Extraction**: Automatically detects and extracts video/audio content from RSS feeds (supports MP4, WebM, YouTube, Vimeo)
+  - **Enhanced Content Processing**: Intelligently processes `content:encoded` sections for rich media content (optimized for RT.com and similar feeds)
   - **Right-click Context Menu**: Right-click on any feed to copy feed URL or title to clipboard
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
 - **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
