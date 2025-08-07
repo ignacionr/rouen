@@ -259,6 +259,9 @@ void trello_card::render_boards_list() {
         ImGui::TableHeadersRow();
         
         for (const auto& board : boards_) {
+            // Skip closed boards
+            if (board.closed) continue;
+            
             ImGui::TableNextRow();
             
             // Name column
@@ -306,6 +309,9 @@ void trello_card::render_board_selector() {
     ImGui::Text("Board:");
     if (ImGui::BeginCombo("##board_selector", selected_board_name_.empty() ? "Select a board..." : selected_board_name_.c_str())) {
         for (const auto& board : boards_) {
+            // Skip closed boards
+            if (board.closed) continue;
+            
             bool is_selected = (selected_board_id_ == board.id);
             if (ImGui::Selectable(board.name.c_str(), is_selected)) {
                 select_board(board.id, board.name);

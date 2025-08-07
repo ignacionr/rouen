@@ -48,6 +48,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Pomodoro Timer**: Stay focused with built-in time management techniques and sound notification when a session completes
 - **Alarm Card**: Set alarms with sound notification, snooze and stop controls (uses bundled alarm sound)
 - **Calendar**: Sync and view events with Google Calendar integration
+- **Trello Integration**: Manage boards, lists, and cards with board filtering (closed boards automatically hidden) and comprehensive CRUD operations
 - **Travel Planner**: Create and manage travel plans with destinations and budgets
 
 ### Information & Communication
@@ -207,6 +208,8 @@ The application is built around a card-based UI where each functional component 
 - `jira` - Jira issue management
 - `jira-projects` - Jira project overview and visualization
 - `jira-search` - Advanced Jira search with JQL
+- `trello` - Trello board and card management
+- `trello-board` - Trello board viewer with specific board ID
 - `envvars` - Environment variables viewer
 - `dbrepair` - Database repair tool
 - `alarm` - Alarm with sound notification
