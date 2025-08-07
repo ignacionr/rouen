@@ -93,12 +93,12 @@
         "__locale": "cpp",
         "*.inc": "cpp",
         "locale": "cpp",
-        // Test-specific file associations
         "**/tests/**/*.cpp": "cpp",
         "**/tests/**/*.hpp": "cpp",
         "test_*.cpp": "cpp",
         "*_test.cpp": "cpp",
-        "*.gtest": "cpp"
+        "*.gtest": "cpp",
+        "__verbose_abort": "cpp"
     },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build-cmake-tools/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",

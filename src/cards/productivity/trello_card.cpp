@@ -34,6 +34,12 @@ trello_card::trello_card(const std::string& board_id) : trello_card() {
     initial_board_id_ = board_id;
     selected_board_id_ = board_id;  // Pre-select the board
     name("Trello - Board");
+
+    colors[0] = ImVec4(0.0f, 0.5f, 1.0f, 1.0f); // Primary color
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Secondary color
+    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
+    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
+    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
 }
 
 bool trello_card::render() {
@@ -251,10 +257,8 @@ void trello_card::render_boards_list() {
         return;
     }
     
-    if (ImGui::BeginTable("BoardsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+    if (ImGui::BeginTable("BoardsTable", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Lists", ImGuiTableColumnFlags_WidthFixed, 60);
-        ImGui::TableSetupColumn("Cards", ImGuiTableColumnFlags_WidthFixed, 60);
         ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100);
         ImGui::TableHeadersRow();
         
@@ -268,8 +272,8 @@ void trello_card::render_boards_list() {
             ImGui::TableNextColumn();
             
             // Make board name clickable to open in new card
-            ImGui::PushID(("board_name_" + board.id).c_str());
-            if (ImGui::Selectable(board.name.c_str(), false, ImGuiSelectableFlags_DontClosePopups)) {
+            ImGui::PushID(board.id.c_str());
+            if (ImGui::Selectable(std::format("{} ({} - {})", board.name, board.lists.size(), board.cards.size()).c_str(), false, ImGuiSelectableFlags_DontClosePopups)) {
                 // Create new Trello card with this board ID
                 "create_card"_sfn("trello-board:" + board.id);
             }
@@ -278,15 +282,7 @@ void trello_card::render_boards_list() {
             if (!board.desc.empty()) {
                 ImGui::TextColored(colors[5], "%s", board.desc.c_str());
             }
-            
-            // Lists count
-            ImGui::TableNextColumn();
-            ImGui::Text("%zu", board.lists.size());
-            
-            // Cards count
-            ImGui::TableNextColumn();
-            ImGui::Text("%zu", board.cards.size());
-            
+                        
             // Actions
             ImGui::TableNextColumn();
             ImGui::PushID(board.id.c_str());
@@ -345,6 +341,10 @@ void trello_card::render_lists_and_cards() {
     for (const auto& list : current_board_.lists) {
         if (list.closed) continue;
         
+        auto list_color = get_label_color(list.color.value_or("blue"));
+        ImGui::PushStyleColor(ImGuiCol_Header, list_color);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, list_color);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, list_color);
         if (ImGui::CollapsingHeader(list.name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             auto cards_in_list = current_board_.get_cards_for_list(list.id);
             
@@ -356,6 +356,7 @@ void trello_card::render_lists_and_cards() {
                 }
             }
         }
+        ImGui::PopStyleColor(3);  // Pop colors for header
     }
 }
 
@@ -647,6 +648,8 @@ void trello_card::check_async_operations() {
         if (!current_board_.id.empty() && selected_board_name_.empty()) {
             selected_board_name_ = current_board_.name;
         }
+        name(std::format("Trello - Board: {}", selected_board_name_));
+        colors[0] = ImVec4(0.5f, 0.5f, 1.0f, 1.0f); // Update primary color
     }
     
     // Check card creation
