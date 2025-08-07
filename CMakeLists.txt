@@ -354,7 +354,10 @@ include(cmake/warnings.cmake)
 # Add the executable
 add_executable(${PROJECT_NAME} 
   src/rouen.cpp
-  src/main_wnd.cpp
+  src/main_wnd_core.cpp
+  src/main_wnd_init.cpp
+  src/main_wnd_loop.cpp
+  src/main_wnd_theme.cpp
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
@@ -363,10 +366,20 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp
   src/cards/information/bybit_registrar.cpp
-  src/models/jira_model.cpp
+  src/models/jira_model_core.cpp
+  src/models/jira_model_connection.cpp
+  src/models/jira_model_profiles.cpp
+  src/models/jira_model_projects.cpp
+  src/models/jira_model_issues.cpp
+  src/models/jira_model_api.cpp
   src/models/trello_model.cpp
   src/hosts/trello_host.cpp
-  src/cards/productivity/trello_card.cpp
+  src/cards/productivity/trello_card_core.cpp
+  src/cards/productivity/trello_card_connection.cpp
+  src/cards/productivity/trello_card_boards.cpp
+  src/cards/productivity/trello_card_cards.cpp
+  src/cards/productivity/trello_card_ui.cpp
+  src/cards/productivity/trello_card_async.cpp
   src/cards/media/chess_com_integration.cpp
   # RSS model refactor additions
   src/models/rss/feed_item.cpp
