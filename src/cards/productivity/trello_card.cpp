@@ -37,7 +37,7 @@ trello_card::trello_card(const std::string& board_id) : trello_card() {
     name("Trello - Board");
 
     colors[0] = ImVec4(0.0f, 0.5f, 1.0f, 1.0f); // Primary color
-    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Secondary color
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f); // Secondary color
     colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
     colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
     colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
@@ -73,7 +73,7 @@ trello_card::trello_card(const std::string& entity_id, card_context context)
             break;
     }
     colors[0] = ImVec4(0.0f, 0.7f, 1.0f, 1.0f); // Blue primary color
-    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Secondary color
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f); // Secondary color
     colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
     colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
     colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
@@ -744,6 +744,7 @@ void trello_card::check_async_operations() {
             for (const auto& list : parent_board_.lists) {
                 if (list.id == current_card_.idList) {
                     parent_list_ = list;
+                    colors[0] = get_label_color(list.color.value_or("blue"));
                     break;
                 }
             }
@@ -794,6 +795,10 @@ void trello_card::check_async_operations() {
             current_card_ = std::move(result);
             loading_card_details_ = false;
             
+            // Update window title with card name instead of ID
+            if (!current_card_.name.empty()) {
+                name(std::format("Trello - Card: {}", current_card_.name));
+            }
             // Always fetch board details to get all lists for the move functionality
             if (!current_card_.idBoard.empty()) {
                 loading_board_details_ = true;
@@ -1001,19 +1006,17 @@ void trello_card::render_card_activity_tab() {
 }
 
 void trello_card::render_card_overview() {
-    // Card name
-    ImGui::TextColored(colors[0], "%s", current_card_.name.c_str());
+    // Description (now prominently displayed where card name was)
+    if (!current_card_.desc.empty()) {
+        ImGui::TextColored(colors[0], "%s", current_card_.desc.c_str());
+    } else {
+        ImGui::TextColored(colors[5], "(No description)");
+    }
     
     // Breadcrumb navigation
     if (!parent_board_.name.empty() && !parent_list_.name.empty()) {
         ImGui::TextColored(colors[5], "Board: %s > List: %s", 
                           parent_board_.name.c_str(), parent_list_.name.c_str());
-    }
-    
-    // Description
-    if (!current_card_.desc.empty()) {
-        ImGui::Spacing();
-        ImGui::TextWrapped("%s", current_card_.desc.c_str());
     }
     
     // Due date
@@ -1146,8 +1149,6 @@ void trello_card::render_card_edit_form() {
 }
 
 void trello_card::render_card_actions() {
-    ImGui::TextColored(colors[0], "Quick Actions");
-    
     if (ImGui::Button("Open in Trello", ImVec2(150, 0))) {
         open_in_browser(current_card_.url);
     }
@@ -1160,7 +1161,6 @@ void trello_card::render_card_actions() {
     // Quick move section
     if (!parent_board_.lists.empty()) {
         ImGui::Spacing();
-        ImGui::TextColored(colors[0], "Quick Move");
         
         // Find current list name
         std::string current_list_name = "Unknown List";
@@ -1214,11 +1214,6 @@ void trello_card::render_card_actions() {
 }
 
 void trello_card::render_card_metadata() {
-    ImGui::TextColored(colors[0], "Card Information");
-    
-    ImGui::Text("Card ID: %s", current_card_.id.c_str());
-    ImGui::Text("Position: %.1f", static_cast<double>(current_card_.pos));
-    
     if (!current_card_.idLabels.empty()) {
         ImGui::Text("Labels: %zu", current_card_.idLabels.size());
     }
