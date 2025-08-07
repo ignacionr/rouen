@@ -21,14 +21,15 @@ namespace rouen::cards {
 
 class trello_card : public card {
 public:
+    enum class card_context { general, board_specific, card_specific };
+    
     trello_card();
     explicit trello_card(const std::string& board_id);  // Constructor for opening specific board
+    explicit trello_card(const std::string& entity_id, card_context context);  // Constructor for any context
     ~trello_card() override = default;
 
     bool render() override;
-    std::string get_uri() const override { 
-        return initial_board_id_.empty() ? "trello" : "trello-board:" + initial_board_id_; 
-    }
+    std::string get_uri() const override;
 
 private:
     // Core components
@@ -37,7 +38,9 @@ private:
     // UI state
     bool initialized_ = false;
     int active_tab_ = 0;  // 0=Boards, 1=Cards, 2=Create, 3=Settings
+    card_context context_ = card_context::general;
     std::string initial_board_id_;  // Board ID to open automatically if specified
+    std::string initial_card_id_;   // Card ID to open automatically if specified
     
     // Connection state
     char api_key_buffer_[256] = {0};
@@ -70,6 +73,23 @@ private:
     bool searching_ = false;
     std::optional<std::future<std::vector<models::trello::trello_card>>> search_future_;
     
+    // Card-specific state (for trello-card: context)
+    models::trello::trello_card current_card_;
+    models::trello::trello_board parent_board_;
+    models::trello::trello_list parent_list_;
+    bool loading_card_details_ = false;
+    std::optional<std::future<models::trello::trello_card>> card_details_future_;
+    
+    // Card editing state
+    char edit_card_name_[256] = {0};
+    char edit_card_desc_[2048] = {0};
+    bool editing_card_ = false;
+    bool updating_card_ = false;
+    std::optional<std::future<bool>> update_card_future_;
+    std::string target_list_id_;  // For moving cards
+    bool moving_card_ = false;
+    std::optional<std::future<bool>> move_card_future_;
+    
     // Rendering methods
     void render_connection_screen();
     void render_main_interface();
@@ -77,6 +97,16 @@ private:
     void render_cards_tab();
     void render_create_tab();
     void render_settings_tab();
+    
+    // Card-specific rendering (for trello-card: context)
+    void render_card_interface();
+    void render_card_details_tab();
+    void render_card_edit_tab();
+    void render_card_activity_tab();
+    void render_card_overview();
+    void render_card_edit_form();
+    void render_card_actions();
+    void render_card_metadata();
     
     // Board management
     void render_boards_list();
@@ -90,6 +120,15 @@ private:
     void render_lists_and_cards();
     void render_card_item(const models::trello::trello_card& card, const models::trello::trello_list* list);
     void create_new_card();
+    
+    // Card-specific management (for trello-card: context)
+    void fetch_card_details();
+    void update_card();
+    void move_card_to_list();
+    void archive_card();
+    void delete_card();
+    void populate_edit_form();
+    void reset_edit_form();
     
     // Search functionality
     void render_search_section();
@@ -113,6 +152,9 @@ private:
     // Error handling
     void show_error(const std::string& error);
     void clear_error();
+    
+    // Card tab management
+    void create_card_tab(const std::string& card_id);
 };
 
 } // namespace rouen::cards

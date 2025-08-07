@@ -21,6 +21,12 @@ namespace {
             dict["trello-board"] = [](std::string_view board_id, SDL_Renderer*) -> card::ptr {
                 return std::make_shared<rouen::cards::trello_card>(std::string(board_id));
             };
+            
+            // Register Trello card viewer with card ID support
+            dict["trello-card"] = [](std::string_view card_id, SDL_Renderer*) -> card::ptr {
+                return std::make_shared<rouen::cards::trello_card>(std::string(card_id), 
+                                                                  rouen::cards::trello_card::card_context::card_specific);
+            };
         }
     };
 

@@ -31,6 +31,7 @@ trello_card::trello_card() : trello_host_(hosts::get_trello_host()) {
 }
 
 trello_card::trello_card(const std::string& board_id) : trello_card() {
+    context_ = card_context::board_specific;
     initial_board_id_ = board_id;
     selected_board_id_ = board_id;  // Pre-select the board
     name("Trello - Board");
@@ -40,6 +41,39 @@ trello_card::trello_card(const std::string& board_id) : trello_card() {
     colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
     colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
     colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
+}
+
+trello_card::trello_card(const std::string& entity_id, card_context context) 
+    : card(), context_(context) {
+    name("Trello");
+    switch (context) {
+        case card_context::general:
+            // Standard trello: behavior
+            break;
+        case card_context::board_specific:
+            initial_board_id_ = entity_id;
+            selected_board_id_ = entity_id;  // Pre-select the board
+            name("Trello - Board");
+            break;
+        case card_context::card_specific:
+            initial_card_id_ = entity_id;
+            name(std::format("Trello - Card: {}", entity_id));
+            break;
+    }
+    colors[0] = ImVec4(0.0f, 0.7f, 1.0f, 1.0f); // Blue primary color
+}
+
+std::string trello_card::get_uri() const {
+    switch (context_) {
+        case card_context::general:
+            return "trello";
+        case card_context::board_specific:
+            return "trello-board:" + initial_board_id_;
+        case card_context::card_specific:
+            return "trello-card:" + initial_card_id_;
+    }
+    // This should never be reached, but required for some compilers
+    return "trello";
 }
 
 bool trello_card::render() {
@@ -81,6 +115,27 @@ void trello_card::render_connection_screen() {
 }
 
 void trello_card::render_main_interface() {
+    // Handle different contexts
+    if (context_ == card_context::card_specific) {
+        render_card_interface();
+        return;
+    }
+    
+    // Board specific context - show cards for this board
+    if (context_ == card_context::board_specific) {
+        // Initialize board data if needed
+        if (!initialized_) {
+            fetch_boards();  // Need this for board names
+            if (!initial_board_id_.empty()) {
+                fetch_board_details();
+            }
+            initialized_ = true;
+        }
+        render_cards_tab();
+        return;
+    }
+    
+    // General context - show full interface with tabs
     bool is_board_selected = !selected_board_id_.empty();
     if (!initialized_) {
         fetch_boards();  // Need this for the board selector to work
@@ -89,6 +144,9 @@ void trello_card::render_main_interface() {
             fetch_board_details();
             // use the board as a name
             name(std::format("Trello - Board: {}", current_board_.name));
+        } else if (context_ == card_context::card_specific && !initial_card_id_.empty()) {
+            // If we have a specific card ID, fetch card details
+            fetch_card_details();
         }
         initialized_ = true;
     }
@@ -147,10 +205,15 @@ void trello_card::render_boards_tab() {
 }
 
 void trello_card::render_cards_tab() {
-    render_board_selector();
+    // For board-specific context, skip the board selector
+    if (context_ != card_context::board_specific) {
+        render_board_selector();
+    }
     
     if (!selected_board_id_.empty()) {
-        ImGui::Separator();
+        if (context_ != card_context::board_specific) {
+            ImGui::Separator();
+        }
         
         if (loading_board_details_) {
             ImGui::TextColored(colors[1], "Loading board details...");
@@ -158,9 +221,18 @@ void trello_card::render_cards_tab() {
             render_board_overview();
             ImGui::Separator();
             render_lists_and_cards();
+        } else {
+            ImGui::TextColored(colors[3], "Failed to load board details");
+            if (ImGui::Button("Retry")) {
+                fetch_board_details();
+            }
         }
     } else {
-        ImGui::TextColored(colors[3], "Select a board to view cards");
+        if (context_ == card_context::board_specific) {
+            ImGui::TextColored(colors[2], "Error: No board ID specified for board-specific card");
+        } else {
+            ImGui::TextColored(colors[3], "Select a board to view cards");
+        }
     }
 }
 
@@ -367,6 +439,9 @@ void trello_card::render_card_item(const models::trello::trello_card& card, cons
     if (ImGui::Selectable(card.name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
         if (ImGui::IsMouseDoubleClicked(0)) {
             open_in_browser(card.url);
+        } else {
+            // Single click - open card in new UI card
+            create_card_tab(card.id);
         }
     }
     
@@ -674,6 +749,63 @@ void trello_card::check_async_operations() {
         search_future_.reset();
         searching_ = false;
     }
+    
+    // Check card details future (for card context)
+    if (card_details_future_.has_value() &&
+        card_details_future_->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto result = card_details_future_->get();
+            current_card_ = std::move(result);
+            loading_card_details_ = false;
+            // Note: We would need separate API calls to get parent board and list details
+        } catch (const std::exception& e) {
+            loading_card_details_ = false;
+            connection_error_ = "Error loading card: " + std::string(e.what());
+        }
+        card_details_future_.reset();
+    }
+    
+    // Check update card future
+    if (update_card_future_.has_value() &&
+        update_card_future_->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto result = update_card_future_->get();
+            if (result) {
+                // Refresh card details after successful update
+                fetch_card_details();
+                updating_card_ = false;
+                editing_card_ = false;  // Exit edit mode
+            } else {
+                updating_card_ = false;
+                connection_error_ = "Failed to update card";
+            }
+        } catch (const std::exception& e) {
+            updating_card_ = false;
+            connection_error_ = "Error updating card: " + std::string(e.what());
+        }
+        update_card_future_.reset();
+    }
+    
+    // Check move card future
+    if (move_card_future_.has_value() &&
+        move_card_future_->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto result = move_card_future_->get();
+            if (result) {
+                // Refresh card details after successful move
+                fetch_card_details();
+                moving_card_ = false;
+                target_list_id_.clear();
+            } else {
+                moving_card_ = false;
+                connection_error_ = "Failed to move card";
+            }
+        } catch (const std::exception& e) {
+            moving_card_ = false;
+            connection_error_ = "Error moving card: " + std::string(e.what());
+        }
+        move_card_future_.reset();
+    }
 }
 
 void trello_card::reset_ui_state() {
@@ -685,11 +817,24 @@ void trello_card::reset_ui_state() {
     current_board_ = {};
     search_results_.clear();
     
+    // Reset card-specific state
+    current_card_ = {};
+    parent_board_ = {};
+    parent_list_ = {};
+    editing_card_ = false;
+    loading_card_details_ = false;
+    updating_card_ = false;
+    moving_card_ = false;
+    target_list_id_.clear();
+    
     // Reset async operations
     boards_future_.reset();
     board_details_future_.reset();
     create_card_future_.reset();
     search_future_.reset();
+    card_details_future_.reset();
+    update_card_future_.reset();
+    move_card_future_.reset();
     
     // Reset loading states
     loading_boards_ = false;
@@ -728,6 +873,311 @@ void trello_card::show_error(const std::string& error) {
 
 void trello_card::clear_error() {
     connection_error_.clear();
+}
+
+// Card-specific interface methods (for trello-card: context)
+
+void trello_card::render_card_interface() {
+    if (!initialized_) {
+        if (!initial_card_id_.empty()) {
+            fetch_card_details();
+        }
+        initialized_ = true;
+    }
+    
+    if (ImGui::BeginTabBar("TrelloCardTabs")) {
+        if (ImGui::BeginTabItem(ICON_MD_INFO " Details")) {
+            active_tab_ = 0;
+            render_card_details_tab();
+            ImGui::EndTabItem();
+        }
+        
+        if (ImGui::BeginTabItem(ICON_MD_EDIT " Edit")) {
+            active_tab_ = 1;
+            render_card_edit_tab();
+            ImGui::EndTabItem();
+        }
+        
+        if (ImGui::BeginTabItem(ICON_MD_HISTORY " Activity")) {
+            active_tab_ = 2;
+            render_card_activity_tab();
+            ImGui::EndTabItem();
+        }
+        
+        if (ImGui::BeginTabItem(ICON_MD_SETTINGS " Settings")) {
+            active_tab_ = 3;
+            render_settings_tab();
+            ImGui::EndTabItem();
+        }
+        
+        ImGui::EndTabBar();
+    }
+}
+
+void trello_card::render_card_details_tab() {
+    if (loading_card_details_) {
+        ImGui::TextColored(colors[1], "Loading card details...");
+        return;
+    }
+    
+    if (current_card_.id.empty()) {
+        ImGui::TextColored(colors[2], "Card not found or failed to load");
+        if (ImGui::Button("Retry")) {
+            fetch_card_details();
+        }
+        return;
+    }
+    
+    render_card_overview();
+    ImGui::Separator();
+    render_card_metadata();
+    ImGui::Separator();
+    render_card_actions();
+}
+
+void trello_card::render_card_edit_tab() {
+    if (current_card_.id.empty()) {
+        ImGui::TextColored(colors[3], "Load card details first");
+        return;
+    }
+    
+    ImGui::TextColored(colors[0], "Edit Card");
+    ImGui::Separator();
+    
+    render_card_edit_form();
+}
+
+void trello_card::render_card_activity_tab() {
+    ImGui::TextColored(colors[0], "Card Activity");
+    ImGui::Separator();
+    
+    // Placeholder for activity/comments
+    ImGui::TextColored(colors[5], "Activity history will be displayed here");
+    ImGui::Text("• Comments");
+    ImGui::Text("• Card movements");
+    ImGui::Text("• Label changes");
+    ImGui::Text("• Member assignments");
+}
+
+void trello_card::render_card_overview() {
+    // Card name
+    ImGui::TextColored(colors[0], "%s", current_card_.name.c_str());
+    
+    // Breadcrumb navigation
+    if (!parent_board_.name.empty() && !parent_list_.name.empty()) {
+        ImGui::TextColored(colors[5], "Board: %s > List: %s", 
+                          parent_board_.name.c_str(), parent_list_.name.c_str());
+    }
+    
+    // Description
+    if (!current_card_.desc.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("%s", current_card_.desc.c_str());
+    }
+    
+    // Due date
+    if (current_card_.due.has_value() && !current_card_.due->empty()) {
+        ImGui::Spacing();
+        ImVec4 due_color = current_card_.dueComplete ? colors[3] : colors[2];
+        ImGui::TextColored(due_color, "%s Due: %s", 
+                          ICON_MD_SCHEDULE, format_due_date(*current_card_.due).c_str());
+        if (current_card_.dueComplete) {
+            ImGui::SameLine();
+            ImGui::TextColored(colors[3], "(Completed)");
+        }
+    }
+    
+    // Badges
+    if (current_card_.badges_comments > 0 || current_card_.badges_attachments > 0) {
+        ImGui::Spacing();
+        if (current_card_.badges_comments > 0) {
+            ImGui::TextColored(colors[4], "%s %d comments", ICON_MD_COMMENT, current_card_.badges_comments);
+        }
+        if (current_card_.badges_attachments > 0) {
+            if (current_card_.badges_comments > 0) ImGui::SameLine();
+            ImGui::TextColored(colors[4], "%s %d attachments", ICON_MD_ATTACHMENT, current_card_.badges_attachments);
+        }
+    }
+}
+
+void trello_card::render_card_edit_form() {
+    if (!editing_card_) {
+        populate_edit_form();
+        editing_card_ = true;
+    }
+    
+    // Card name
+    ImGui::Text("Card Name:");
+    ImGui::InputText("##edit_card_name", edit_card_name_, sizeof(edit_card_name_));
+    
+    // Card description
+    ImGui::Text("Description:");
+    ImGui::InputTextMultiline("##edit_card_desc", edit_card_desc_, sizeof(edit_card_desc_), ImVec2(-1, 150));
+    
+    // Move to different list
+    if (!parent_board_.lists.empty()) {
+        ImGui::Text("Move to List:");
+        if (ImGui::BeginCombo("##target_list", target_list_id_.empty() ? "Select list..." : "List selected")) {
+            for (const auto& list : parent_board_.lists) {
+                if (!list.closed) {
+                    bool is_selected = (target_list_id_ == list.id);
+                    if (ImGui::Selectable(list.name.c_str(), is_selected)) {
+                        target_list_id_ = list.id;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
+    
+    ImGui::Separator();
+    
+    // Action buttons
+    bool can_update = strlen(edit_card_name_) > 0 && !updating_card_;
+    
+    if (!can_update) {
+        ImGui::BeginDisabled();
+    }
+    
+    if (ImGui::Button("Update Card", ImVec2(120, 0))) {
+        update_card();
+    }
+    
+    if (!can_update) {
+        ImGui::EndDisabled();
+    }
+    
+    ImGui::SameLine();
+    
+    if (!target_list_id_.empty() && target_list_id_ != current_card_.idList && !moving_card_) {
+        if (ImGui::Button("Move Card", ImVec2(120, 0))) {
+            move_card_to_list();
+        }
+        ImGui::SameLine();
+    }
+    
+    if (ImGui::Button("Reset", ImVec2(80, 0))) {
+        reset_edit_form();
+    }
+    
+    if (updating_card_) {
+        ImGui::SameLine();
+        ImGui::TextColored(colors[1], "Updating...");
+    }
+    
+    if (moving_card_) {
+        ImGui::SameLine();
+        ImGui::TextColored(colors[1], "Moving...");
+    }
+}
+
+void trello_card::render_card_actions() {
+    ImGui::TextColored(colors[0], "Quick Actions");
+    
+    if (ImGui::Button("Open in Trello", ImVec2(150, 0))) {
+        open_in_browser(current_card_.url);
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Copy Link", ImVec2(100, 0))) {
+        ImGui::SetClipboardText(current_card_.url.c_str());
+    }
+    
+    if (ImGui::Button("Archive Card", ImVec2(120, 0))) {
+        archive_card();
+    }
+    
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+    if (ImGui::Button("Delete Card", ImVec2(120, 0))) {
+        delete_card();
+    }
+    ImGui::PopStyleColor();
+}
+
+void trello_card::render_card_metadata() {
+    ImGui::TextColored(colors[0], "Card Information");
+    
+    ImGui::Text("Card ID: %s", current_card_.id.c_str());
+    ImGui::Text("Position: %.1f", static_cast<double>(current_card_.pos));
+    
+    if (!current_card_.idLabels.empty()) {
+        ImGui::Text("Labels: %zu", current_card_.idLabels.size());
+    }
+    
+    if (!current_card_.idMembers.empty()) {
+        ImGui::Text("Members: %zu", current_card_.idMembers.size());
+    }
+    
+    if (!current_card_.idChecklists.empty()) {
+        ImGui::Text("Checklists: %zu", current_card_.idChecklists.size());
+    }
+}
+
+// Card-specific management methods
+
+void trello_card::fetch_card_details() {
+    if (initial_card_id_.empty()) return;
+    
+    loading_card_details_ = true;
+    card_details_future_ = trello_host_->get_card_details(initial_card_id_);
+}
+
+void trello_card::update_card() {
+    if (current_card_.id.empty() || strlen(edit_card_name_) == 0) return;
+    
+    updating_card_ = true;
+    update_card_future_ = trello_host_->update_card(current_card_.id, edit_card_name_, edit_card_desc_);
+}
+
+void trello_card::move_card_to_list() {
+    if (current_card_.id.empty() || target_list_id_.empty()) return;
+    
+    moving_card_ = true;
+    move_card_future_ = trello_host_->move_card(current_card_.id, target_list_id_);
+}
+
+void trello_card::archive_card() {
+    // Implementation for archiving - Trello uses "closed" field
+    // This would require an API method to set closed=true
+    ImGui::OpenPopup("Archive Card?");
+}
+
+void trello_card::delete_card() {
+    // Implementation for deletion
+    ImGui::OpenPopup("Delete Card?");
+}
+
+void trello_card::populate_edit_form() {
+    if (current_card_.id.empty()) return;
+    
+    std::strncpy(edit_card_name_, current_card_.name.c_str(), sizeof(edit_card_name_) - 1);
+    edit_card_name_[sizeof(edit_card_name_) - 1] = '\0';
+    
+    std::strncpy(edit_card_desc_, current_card_.desc.c_str(), sizeof(edit_card_desc_) - 1);
+    edit_card_desc_[sizeof(edit_card_desc_) - 1] = '\0';
+    
+    target_list_id_ = current_card_.idList;  // Default to current list
+}
+
+void trello_card::reset_edit_form() {
+    populate_edit_form();
+}
+
+void trello_card::create_card_tab(const std::string& card_id) {
+    // TODO: Implement card tab creation
+    // This would require integration with the main card factory/manager system
+    // For now, log the request or show a notification
+    
+    if (card_id.empty()) return;
+    
+    // As a temporary measure, we could open the card in the browser
+    // until the factory integration is implemented
+    std::string card_url = "https://trello.com/c/" + card_id;
+    open_in_browser(card_url);
 }
 
 } // namespace rouen::cards
