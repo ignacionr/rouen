@@ -138,6 +138,8 @@ set(RESOURCE_FILES
   "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/external/fonts/NotoSansSymbols-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/img/alarm.mp3"
+  "${CMAKE_SOURCE_DIR}/img/alarm_classic.wav"
+  "${CMAKE_SOURCE_DIR}/img/new_alarm.wav"
 )
 
 # Create Resources directory first

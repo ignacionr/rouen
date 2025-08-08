@@ -55,8 +55,9 @@ foreach(RES_FILE ${RESOURCE_FILES})
   )
 endforeach()
 
-# Create img directory and copy images
+# Create img directory and copy images and audio files
 file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
+file(GLOB AUDIO_FILES "${CMAKE_SOURCE_DIR}/img/*.mp3" "${CMAKE_SOURCE_DIR}/img/*.wav")
 foreach(IMG_FILE ${IMAGE_FILES})
   get_filename_component(IMG_FILENAME ${IMG_FILE} NAME)
   add_custom_command(
@@ -67,6 +68,19 @@ foreach(IMG_FILE ${IMAGE_FILES})
             "${IMG_FILE}"
             "${CMAKE_CURRENT_BINARY_DIR}/img/${IMG_FILENAME}"
     COMMENT "Copying ${IMG_FILENAME} to build directory"
+  )
+endforeach()
+
+foreach(AUDIO_FILE ${AUDIO_FILES})
+  get_filename_component(AUDIO_FILENAME ${AUDIO_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory 
+            "${CMAKE_CURRENT_BINARY_DIR}/img"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${AUDIO_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/img/${AUDIO_FILENAME}"
+    COMMENT "Copying ${AUDIO_FILENAME} to build directory"
   )
 endforeach()
 
