@@ -1,11 +1,13 @@
 #pragma once
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../external/IconsMaterialDesign.h"
 #include <string>
 #include <memory>
 #include <format>
 #include <chrono>
 #include <ctime>
+#include <cmath>
 
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
@@ -92,6 +94,19 @@ private:
         ImGui::TextColored(colors[5], "%s", date_str.c_str());
     }
     
+    // Helper function to get weather icon based on weather condition
+    inline auto get_weather_icon(const std::string& weather_main) -> const char* {
+        if (weather_main == "Clear") return ICON_MD_WB_SUNNY;
+        if (weather_main == "Clouds") return ICON_MD_WB_CLOUDY;
+        if (weather_main == "Rain") return ICON_MD_UMBRELLA;
+        if (weather_main == "Drizzle") return ICON_MD_GRAIN;
+        if (weather_main == "Thunderstorm") return ICON_MD_FLASH_ON;
+        if (weather_main == "Snow") return ICON_MD_AC_UNIT;
+        if (weather_main == "Mist" || weather_main == "Fog") return ICON_MD_VISIBILITY;
+        if (weather_main == "Haze") return ICON_MD_BLUR_ON;
+        return ICON_MD_HELP_OUTLINE; // Default icon for unknown conditions
+    }
+    
     void render_weather() {
         auto current_weather = weather_host->getCurrentWeather();
         
@@ -105,18 +120,33 @@ private:
             ImGui::TextColored(colors[2], "Current Weather in %s", current_weather->name.c_str());
             ImGui::Spacing();
             
-            ImGui::TextColored(colors[0], "%.1f°C", current_weather->main.temp);
+            // Display temperature with color coding based on temperature ranges
+            auto temp_color = colors[0]; // Default blue color
+            if (current_weather->main.temp >= 25.0) {
+                temp_color = ImVec4(1.0f, 0.4f, 0.2f, 1.0f); // Hot - orange/red
+            } else if (current_weather->main.temp >= 15.0) {
+                temp_color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warm - yellow
+            } else if (current_weather->main.temp <= 0.0) {
+                temp_color = ImVec4(0.6f, 0.8f, 1.0f, 1.0f); // Cold - light blue
+            }
+            
+            ImGui::TextColored(temp_color, "%.1f°C", current_weather->main.temp);
             ImGui::SameLine();
             ImGui::TextColored(colors[5], "(Feels like: %.1f°C)", current_weather->main.feels_like);
             
             if (!current_weather->weather.empty()) {
                 std::string description = current_weather->weather[0].description;
+                std::string weather_main = current_weather->weather[0].main;
                 
                 // Capitalize the weather description
                 if (!description.empty()) {
                     description[0] = static_cast<char>(std::toupper(description[0]));
                 }
                 
+                // Display weather icon with description
+                const char* weather_icon = get_weather_icon(weather_main);
+                ImGui::TextColored(colors[3], "%s", weather_icon);
+                ImGui::SameLine();
                 ImGui::Text("%s", description.c_str());
             }
             
@@ -124,14 +154,46 @@ private:
             ImGui::Spacing();
             ImGui::Columns(2, "weather_details", false);
             
-            // Column 1
-            ImGui::Text("Humidity: %d%%", current_weather->main.humidity);
-            ImGui::Text("Pressure: %d hPa", static_cast<int>(current_weather->main.pressure));
+            // Column 1 - Enhanced with color coding
+            // Humidity with color based on level
+            auto humidity_color = colors[0]; // Default blue
+            if (current_weather->main.humidity > 80) {
+                humidity_color = ImVec4(0.2f, 0.8f, 1.0f, 1.0f); // High humidity - cyan
+            } else if (current_weather->main.humidity < 30) {
+                humidity_color = ImVec4(1.0f, 0.6f, 0.2f, 1.0f); // Low humidity - orange
+            } else {
+                humidity_color = ImVec4(0.2f, 1.0f, 0.4f, 1.0f); // Normal humidity - green
+            }
             
-            // Column 2
+            ImGui::TextColored(humidity_color, "Humidity: %d%%", current_weather->main.humidity);
+            ImGui::TextColored(colors[5], "Pressure: %d hPa", static_cast<int>(current_weather->main.pressure));
+            
+            // Column 2 - Enhanced with color coding
             ImGui::NextColumn();
-            ImGui::Text("Wind: %.1f m/s", current_weather->wind.speed);
-            ImGui::Text("Clouds: %d%%", current_weather->clouds.all);
+            
+            // Wind speed with color based on intensity
+            auto wind_color = colors[0]; // Default blue
+            if (current_weather->wind.speed > 10.0) {
+                wind_color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f); // Strong wind - red
+            } else if (current_weather->wind.speed > 5.0) {
+                wind_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f); // Moderate wind - orange
+            } else {
+                wind_color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f); // Light wind - green
+            }
+            
+            ImGui::TextColored(wind_color, "Wind: %.1f m/s", current_weather->wind.speed);
+            
+            // Cloud coverage with color
+            auto cloud_color = colors[5]; // Default gray
+            if (current_weather->clouds.all > 80) {
+                cloud_color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); // Very cloudy - dark gray
+            } else if (current_weather->clouds.all > 50) {
+                cloud_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f); // Partly cloudy - light gray
+            } else {
+                cloud_color = ImVec4(0.7f, 0.9f, 1.0f, 1.0f); // Clear - light blue
+            }
+            
+            ImGui::TextColored(cloud_color, "Clouds: %d%%", current_weather->clouds.all);
             
             ImGui::Columns(1);
             
