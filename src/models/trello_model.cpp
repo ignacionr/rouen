@@ -504,15 +504,11 @@ void trello_model::load_saved_profiles() {
         std::ifstream file(profiles_path);
         if (file.is_open() && file.good()) {
             std::string json_content;
-            if (file.seekg(0, std::ios::end)) {
-                auto size = file.tellg();
-                if (size > 0) {
-                    json_content.reserve(static_cast<std::size_t>(size));
-                    file.seekg(0, std::ios::beg);
-                    json_content.assign((std::istreambuf_iterator<char>(file)), 
-                                      std::istreambuf_iterator<char>());
-                }
-            }
+            
+            // Use stringstream to safely read the entire file
+            std::ostringstream buffer;
+            buffer << file.rdbuf();
+            json_content = buffer.str();
             
             if (!json_content.empty()) {
                 auto profiles_result = glz::read_json<std::vector<trello_connection_profile>>(json_content);
