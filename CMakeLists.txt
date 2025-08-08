@@ -78,6 +78,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Include precompiled header support
+include(cmake/precompiled_headers.cmake)
+
 # Enable export of compile commands for VS Code IntelliSense
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -481,6 +484,18 @@ else()
     target_link_libraries(${PROJECT_NAME} PRIVATE ${TINYXML2_LIBRARIES})
   endif()
 endif()
+
+# ============================================================================
+# PRECOMPILED HEADERS SETUP
+# ============================================================================
+# Apply precompiled headers to improve build performance
+# This should come after all dependencies are linked but before platform config
+
+setup_precompiled_headers(${PROJECT_NAME})
+report_pch_info(${PROJECT_NAME})
+
+# Optional: Disable PCH for files that might have issues
+# Example: disable_pch_for_files(${PROJECT_NAME} src/some_problematic_file.cpp)
 
 # Apply stricter warnings only to our code, not third-party libraries
 # We use -Werror for our code but not for third-party libraries
