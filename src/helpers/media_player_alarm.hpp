@@ -59,7 +59,6 @@ namespace media_player_alarm_helper {
             "--really-quiet",
             "--keep-open=always",
             "--idle=yes",
-            "--input-ipc-timeout=1000",
             socket_arg,
             alarm_item.url
         };
@@ -106,7 +105,6 @@ namespace media_player_alarm_helper {
             args.push_back("--really-quiet");
             args.push_back("--keep-open=always");
             args.push_back("--idle=yes");
-            args.push_back("--input-ipc-timeout=1000");
             args.push_back(socket_arg.c_str());
             args.push_back(alarm_item.url.c_str());
             args.push_back(nullptr);
