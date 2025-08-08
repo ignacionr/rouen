@@ -262,26 +262,26 @@ void trello_card::render_search_results() {
         ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 80);
         ImGui::TableHeadersRow();
         
-        for (const auto& trello_card : search_results_) {
+        for (const auto& search_result : search_results_) {
             ImGui::TableNextRow();
             
             // Card name
             ImGui::TableNextColumn();
-            ImGui::Text("%s", trello_card.name.c_str());
-            if (!trello_card.desc.empty()) {
-                ImGui::TextColored(colors[5], "%.50s%s", trello_card.desc.c_str(), 
-                                 trello_card.desc.length() > 50 ? "..." : "");
+            ImGui::Text("%s", search_result.name.c_str());
+            if (!search_result.desc.empty()) {
+                ImGui::TextColored(colors[5], "%.50s%s", search_result.desc.c_str(), 
+                                 search_result.desc.length() > 50 ? "..." : "");
             }
             
             // Board (we'd need to resolve this from board_id)
             ImGui::TableNextColumn();
-            ImGui::TextColored(colors[3], "ID: %s", trello_card.idBoard.c_str());
+            ImGui::TextColored(colors[3], "ID: %s", search_result.idBoard.c_str());
             
             // Actions
             ImGui::TableNextColumn();
-            ImGui::PushID(trello_card.id.c_str());
+            ImGui::PushID(search_result.id.c_str());
             if (ImGui::Button("Open", ImVec2(70, 0))) {
-                create_card_tab(trello_card.id);
+                create_card_tab(search_result.id);
             }
             ImGui::PopID();
         }
