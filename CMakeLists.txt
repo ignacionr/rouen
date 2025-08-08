@@ -362,6 +362,8 @@ add_executable(${PROJECT_NAME}
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
   src/helpers/llm_config.cpp
+  src/helpers/mcp_service.cpp
+  src/cards/interface/card.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp

@@ -113,6 +113,22 @@ namespace rouen::cards
                     receive_keystrokes();
                 }
                 
+                // Check if current directory is a git repository
+                bool is_git_repo = std::filesystem::exists(path_ / ".git");
+                
+                if (is_git_repo) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.37f, 0.53f, 0.71f, 1.0f)); // Git blue color
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.47f, 0.63f, 0.81f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.27f, 0.43f, 0.61f, 1.0f));
+                    
+                    if (ImGui::Button("🔀 Open as Git Repo")) {
+                        "create_card"_sfn(std::format("git:{}", path_.string()));
+                    }
+                    
+                    ImGui::PopStyleColor(3);
+                    ImGui::Separator();
+                }
+                
                 // List files in the directory
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2])); // Parent directory color
                 if (ImGui::Selectable("..")) {

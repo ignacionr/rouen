@@ -73,6 +73,9 @@ struct deck {
             static auto card_factory {rouen::cards::factory()};
             auto card_ptr = card_factory.create_card(uri, renderer);
             if (card_ptr) {
+                // Register MCP functions for the new card
+                card_ptr->register_mcp_functions();
+                
                 if (move_first) {
                     // Move the card to the front of the vector
                     cards_.insert(cards_.begin(), std::move(card_ptr));
@@ -470,6 +473,12 @@ struct deck {
                 x = 0.0f;
                 for (auto& c : row) {
                     if (!render(*c, x, row_height, result.requested_fps, y)) {
+                        // Unregister MCP functions immediately when card fails to render
+                        try {
+                            c->unregister_mcp_functions();
+                        } catch (...) {
+                            // Ignore exceptions during cleanup - card might already be corrupted
+                        }
                         cards_to_remove.insert(c);
                     }
                 }
@@ -480,6 +489,8 @@ struct deck {
                 [&cards_to_remove] (auto &c) {
                     return cards_to_remove.find(c) != cards_to_remove.end();
                  });
+            
+            // Cards have already been unregistered above, just erase them
             cards_.erase(cards_to_remove_main, cards_.end());
         }
         else {
@@ -507,6 +518,12 @@ struct deck {
             auto y = empty_editor ? 450.0f : 250.0f;
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
                 [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
+            
+            // Unregister MCP functions for cards being removed
+            for (auto it = cards_to_remove; it != cards_.end(); ++it) {
+                (*it)->unregister_mcp_functions();
+            }
+            
             cards_.erase(cards_to_remove, cards_.end());
 
             // Render the editor window
