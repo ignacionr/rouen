@@ -253,7 +253,8 @@ public:
                 .link = link ? link : "",
                 .enclosure = enclosure ? enclosure : "",
                 .image_url = image_url ? image_url : "",
-                .publish_date = publish_date
+                .publish_date = publish_date,
+                .extracted_media_urls = {}
             };
             
             // Enhanced: Extract media URLs from description content
@@ -297,7 +298,8 @@ public:
                     .link = link,
                     .enclosure = enclosure ? enclosure : "",
                     .image_url = image_url ? image_url : "",
-                    .publish_date = publish_date
+                    .publish_date = publish_date,
+                    .extracted_media_urls = {}
                 };
                 
                 // Enhanced: Extract media URLs from description content

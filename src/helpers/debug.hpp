@@ -113,6 +113,20 @@
 #define CHESS_DEBUG(message) LOG_COMPONENT("CHESS", LOG_LEVEL_DEBUG, message)
 #define CHESS_TRACE(message) LOG_COMPONENT("CHESS", LOG_LEVEL_TRACE, message)
 
+// MCP (Model Context Protocol) service logging macros
+#define MCP_ERROR(message) LOG_COMPONENT("MCP", LOG_LEVEL_ERROR, message)
+#define MCP_WARN(message) LOG_COMPONENT("MCP", LOG_LEVEL_WARN, message)
+#define MCP_INFO(message) LOG_COMPONENT("MCP", LOG_LEVEL_INFO, message)
+#define MCP_DEBUG(message) LOG_COMPONENT("MCP", LOG_LEVEL_DEBUG, message)
+#define MCP_TRACE(message) LOG_COMPONENT("MCP", LOG_LEVEL_TRACE, message)
+
+// Legacy macros for backward compatibility
+#define DEBUG_ERROR MCP_ERROR
+#define DEBUG_WARN MCP_WARN
+#define DEBUG_INFO MCP_INFO
+#define DEBUG_DEBUG MCP_DEBUG
+#define DEBUG_TRACE MCP_TRACE
+
 namespace debug {
     // Convert char32_t to a string representation for logging
     inline std::string char32_to_string(char32_t c) {

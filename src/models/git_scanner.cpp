@@ -9,35 +9,37 @@
 
 namespace rouen::models {
     void GitScanner::scanForRepositories(std::map<std::string, GitRepoStatus>& repos, std::vector<std::string>& repo_paths) {
-        const char* home = std::getenv("HOME");
-        if (home) {
-            try {
-                std::filesystem::path homeDir(home);
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(
-                     homeDir, 
+        // For now, just scan the current working directory and immediate subdirectories
+        // to avoid hanging on large directory trees
+        try {
+            std::filesystem::path cwd = std::filesystem::current_path();
+            
+            // Check if current directory is a git repo
+            if (std::filesystem::exists(cwd / ".git")) {
+                repos[cwd.string()] = GitRepoStatus::Unknown;
+            }
+            
+            // Check immediate subdirectories for git repos (depth 1 only)
+            for (const auto& entry : std::filesystem::directory_iterator(
+                     cwd, 
                      std::filesystem::directory_options::skip_permission_denied)) {
-                    if (entry.is_directory() && entry.path().filename() == ".git") {
-                        std::string repo_path = entry.path().parent_path().string();
-                        repos[repo_path] = GitRepoStatus::Unknown; // Set initial status
-                        
-                        // Query the git status immediately
-                        std::string git_path = CONFIG_SERVICE()->get_git_path();
-                        std::string status_output = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " status");
-                        if (!status_output.empty()) {
-                            // Status will be updated by the git class
-                        }
+                if (entry.is_directory()) {
+                    std::filesystem::path git_dir = entry.path() / ".git";
+                    if (std::filesystem::exists(git_dir)) {
+                        repos[entry.path().string()] = GitRepoStatus::Unknown;
                     }
                 }
-                
-                // Create a sorted list of keys for display
-                repo_paths.clear();
-                for (const auto& [path, status] : repos) {
-                    repo_paths.push_back(path);
-                }
-                std::sort(repo_paths.begin(), repo_paths.end());
-            } catch (const std::exception& /* e */) {
-                // Error scanning repositories
             }
+            
+        } catch (const std::exception& /* e */) {
+            // If all else fails, just create an empty repository list
         }
+        
+        // Create a sorted list of keys for display
+        repo_paths.clear();
+        for (const auto& [path, status] : repos) {
+            repo_paths.push_back(path);
+        }
+        std::sort(repo_paths.begin(), repo_paths.end());
     }
 }

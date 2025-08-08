@@ -502,14 +502,20 @@ void trello_model::load_saved_profiles() {
     
     try {
         std::ifstream file(profiles_path);
-        if (file.is_open()) {
-            std::string json_content((std::istreambuf_iterator<char>(file)), 
-                                   std::istreambuf_iterator<char>());
+        if (file.is_open() && file.good()) {
+            std::string json_content;
             
-            auto profiles_result = glz::read_json<std::vector<trello_connection_profile>>(json_content);
-            if (profiles_result.has_value()) {
-                saved_profiles_ = profiles_result.value();
-                TRELLO_INFO_FMT("Loaded {} saved profiles", saved_profiles_.size());
+            // Use stringstream to safely read the entire file
+            std::ostringstream buffer;
+            buffer << file.rdbuf();
+            json_content = buffer.str();
+            
+            if (!json_content.empty()) {
+                auto profiles_result = glz::read_json<std::vector<trello_connection_profile>>(json_content);
+                if (profiles_result.has_value()) {
+                    saved_profiles_ = profiles_result.value();
+                    TRELLO_INFO_FMT("Loaded {} saved profiles", saved_profiles_.size());
+                }
             }
         }
     } catch (const std::exception& e) {

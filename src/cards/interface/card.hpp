@@ -5,12 +5,16 @@
 #include <format>
 #include <functional>
 #include <memory>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 #include "../../helpers/imgui_include.hpp"
 
 // 3. All other includes
-// None in this file
+// Forward declarations to avoid circular dependencies
+namespace rouen::helpers {
+    class mcp_service;
+}
 
 struct card {
     using ptr = std::shared_ptr<card>;
@@ -28,9 +32,36 @@ struct card {
         // The rest will be initialized to {0,0,0,0} by std::array default
     }
     
-    // Virtual destructor - no need to clear colors as it's now a fixed-size array
-    virtual ~card() {}
+    // Virtual destructor - ensure clean destruction
+    virtual ~card() {
+        // Note: MCP cleanup will be handled by deck before destruction
+        // to avoid calling virtual methods during destruction
+    }
     
+    // MCP Function definition structure (forward declare to avoid includes)
+    struct mcp_function {
+        std::string name;
+        std::string description;
+        std::string schema; // JSON schema for parameters
+        std::function<std::string(const std::string& params)> handler;
+        
+        mcp_function(std::string func_name, std::string func_description, std::string func_schema,
+                    std::function<std::string(const std::string&)> func_handler)
+            : name(std::move(func_name)), description(std::move(func_description))
+            , schema(std::move(func_schema)), handler(std::move(func_handler)) {}
+    };
+    
+    // Virtual method for cards to expose MCP functions
+    virtual std::vector<mcp_function> get_mcp_functions() const {
+        return {}; // Default: no functions
+    }
+    
+    // Register this card's MCP functions (called automatically by deck)
+    void register_mcp_functions();
+    
+    // Unregister this card's MCP functions (called automatically by deck)  
+    void unregister_mcp_functions();
+
     virtual bool render() = 0;
 
     virtual std::string get_uri() const = 0;
@@ -84,4 +115,5 @@ struct card {
     bool grab_focus{false};
     std::string window_title;
     int requested_fps{1};
+    bool mcp_functions_registered{false}; // Track MCP registration state
 };

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <filesystem>
+#include <algorithm>
 
 #include "../../helpers/imgui_include.hpp"
 #include <SDL.h>
@@ -13,22 +15,70 @@
 #include "../../models/git.hpp" // Include the git model
 #include "../../registrar.hpp"
 #include "../../../external/IconsMaterialDesign.h"
+#include "../../helpers/glaze_include.hpp"
 
 struct git: public card {
     std::string repo_status; // Store the git status result
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
+    std::string target_repo; // Optional target repository path
     
-    git() {
+    git(std::string_view repo_path = "") : target_repo(repo_path) {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
         
         // Create git model
         git_model = std::make_unique<rouen::models::git>();
-        name("Git Repos");
+        
+        if (!target_repo.empty()) {
+            // If a specific repository is provided, select it immediately
+            name(std::format("Git: {}", std::filesystem::path(target_repo).filename().string()));
+            selected_repo = target_repo;
+            
+            // Ensure the target repository is recognized by the git model
+            // by adding it if it's not already there
+            git_model->addRepository(target_repo);
+        } else {
+            name("Git Repos");
+        }
     }
 
     std::string get_uri() const override {
+        if (!target_repo.empty()) {
+            return std::format("git:{}", target_repo);
+        }
         return "git";
+    }
+    
+    // Override to provide MCP functions
+    std::vector<mcp_function> get_mcp_functions() const override {
+        return {
+            mcp_function(
+                "get_repository_status",
+                "Get status of git repositories. Returns the current state of git repositories. Status values: 'clean' (no changes), 'modified' (uncommitted changes), 'untracked' (contains untracked files), 'staged' (changes ready to commit), 'conflict' (merge conflicts), 'detached' (detached HEAD), 'unknown' (status unclear). If repo_path is provided, returns status for that specific repo, otherwise returns status for all repositories.",
+                R"({
+                    "type": "object",
+                    "properties": {
+                        "repo_path": {
+                            "type": "string",
+                            "description": "Optional: specific repository path to check"
+                        }
+                    }
+                })",
+                [this](const std::string& params) { return get_repository_status_json(params); }
+            ),
+            mcp_function(
+                "get_repositories_needing_push",
+                "Get list of repositories that have commits ahead of their remote branches and need to be pushed.",
+                R"({"type": "object", "properties": {}})",
+                [this](const std::string&) { return get_repositories_needing_push_json(); }
+            ),
+            mcp_function(
+                "get_modified_repositories", 
+                "Get repositories with uncommitted changes (modified, staged, or untracked files).",
+                R"({"type": "object", "properties": {}})",
+                [this](const std::string&) { return get_modified_repositories_json(); }
+            )
+        };
     }
     
     /**
@@ -280,5 +330,135 @@ private:
         } else {
             ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Could not parse repository name");
         }
-    } 
+    }
+
+private:
+    // MCP helper functions for JSON responses
+    std::string get_repository_status_json(const std::string& params) const {
+        try {
+            std::string requested_repo;
+            
+            // Parse params if provided (simple JSON parsing for now)
+            if (!params.empty() && params.find("repo_path") != std::string::npos) {
+                // Simple extraction - this could be improved with proper JSON parsing
+                auto start = params.find("\"repo_path\"");
+                if (start != std::string::npos) {
+                    start = params.find(":", start);
+                    if (start != std::string::npos) {
+                        start = params.find("\"", start);
+                        if (start != std::string::npos) {
+                            start++;
+                            auto end = params.find("\"", start);
+                            if (end != std::string::npos) {
+                                requested_repo = params.substr(start, end - start);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            std::string result = "{\"success\":true,\"repositories\":[";
+            bool first = true;
+            const auto& repos = git_model->getRepos();
+            
+            if (!requested_repo.empty()) {
+                // Return status for specific repository
+                auto repo_it = repos.find(requested_repo);
+                if (repo_it != repos.end()) {
+                    // Refresh the status before returning it
+                    git_model->getGitStatus(requested_repo);
+                    // Get the updated status
+                    auto updated_repos = git_model->getRepos();
+                    auto updated_it = updated_repos.find(requested_repo);
+                    if (updated_it != updated_repos.end()) {
+                        result += "{\"path\":\"" + requested_repo + "\",";
+                        result += "\"status\":\"" + git_status_to_string(updated_it->second) + "\",";
+                        result += "\"ahead\":" + std::string(git_model->isBranchAhead(requested_repo) ? "true" : "false") + "}";
+                    }
+                } else {
+                    return "{\"success\":false,\"error\":\"Repository not found: " + requested_repo + "\"}";
+                }
+            } else {
+                // Return status for all repositories
+                for (const auto& [path, status] : repos) {
+                    // Refresh each repository's status
+                    git_model->getGitStatus(path);
+                }
+                // Get the updated statuses
+                const auto& updated_repos = git_model->getRepos();
+                for (const auto& [path, status] : updated_repos) {
+                    if (!first) result += ",";
+                    result += "{\"path\":\"" + path + "\",";
+                    result += "\"status\":\"" + git_status_to_string(status) + "\",";
+                    result += "\"ahead\":" + std::string(git_model->isBranchAhead(path) ? "true" : "false") + "}";
+                    first = false;
+                }
+            }
+            
+            result += "]}";
+            return result;
+        } catch (const std::exception& e) {
+            return "{\"success\":false,\"error\":\"Error getting repository status: " + std::string(e.what()) + "\"}";
+        }
+    }
+    
+    std::string get_repositories_needing_push_json() const {
+        try {
+            std::string result = "{\"success\":true,\"repositories\":[";
+            bool first = true;
+            const auto& repos = git_model->getRepos();
+            
+            for (const auto& [path, status] : repos) {
+                if (git_model->isBranchAhead(path)) {
+                    if (!first) result += ",";
+                    result += "{\"path\":\"" + path + "\",";
+                    result += "\"status\":\"" + git_status_to_string(status) + "\"}";
+                    first = false;
+                }
+            }
+            
+            result += "]}";
+            return result;
+        } catch (const std::exception& e) {
+            return "{\"success\":false,\"error\":\"Error getting repositories needing push: " + std::string(e.what()) + "\"}";
+        }
+    }
+    
+    std::string get_modified_repositories_json() const {
+        try {
+            std::string result = "{\"success\":true,\"repositories\":[";
+            bool first = true;
+            const auto& repos = git_model->getRepos();
+            
+            for (const auto& [path, status] : repos) {
+                // Include repos with any changes (not clean)
+                if (status != rouen::models::GitRepoStatus::Clean && 
+                    status != rouen::models::GitRepoStatus::Unknown) {
+                    if (!first) result += ",";
+                    result += "{\"path\":\"" + path + "\",";
+                    result += "\"status\":\"" + git_status_to_string(status) + "\",";
+                    result += "\"ahead\":" + std::string(git_model->isBranchAhead(path) ? "true" : "false") + "}";
+                    first = false;
+                }
+            }
+            
+            result += "]}";
+            return result;
+        } catch (const std::exception& e) {
+            return "{\"success\":false,\"error\":\"Error getting modified repositories: " + std::string(e.what()) + "\"}";
+        }
+    }
+    
+    std::string git_status_to_string(rouen::models::GitRepoStatus status) const {
+        switch (status) {
+            case rouen::models::GitRepoStatus::Clean: return "clean";
+            case rouen::models::GitRepoStatus::Modified: return "modified";
+            case rouen::models::GitRepoStatus::Untracked: return "untracked";
+            case rouen::models::GitRepoStatus::Staged: return "staged";
+            case rouen::models::GitRepoStatus::Conflict: return "conflict";
+            case rouen::models::GitRepoStatus::Detached: return "detached";
+            case rouen::models::GitRepoStatus::Unknown: return "unknown";
+            default: return "unknown";
+        }
+    }
 };

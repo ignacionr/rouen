@@ -9,6 +9,7 @@
 #include "cards/interface/deck.hpp"
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
+#include "helpers/mcp_service.hpp"
 #include "main_wnd.hpp"
 
 bool main_wnd::initialize() {
@@ -77,6 +78,10 @@ bool main_wnd::initialize() {
         
         // Register the deferred operations service
         registrar::add<deferred_operations>("deferred_ops", m_deferred_ops);
+        
+        // Register the MCP service for function calling
+        registrar::add<rouen::helpers::mcp_service>("mcp_service", 
+            std::make_shared<rouen::helpers::mcp_service>());
 
         // Register window services for fit-to-width feature
         registrar::add<std::function<void(int, int)>>("resize_window", 

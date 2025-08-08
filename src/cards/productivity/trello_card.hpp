@@ -118,7 +118,7 @@ private:
     // Card management
     void render_board_overview();
     void render_lists_and_cards();
-    void render_card_item(const models::trello::trello_card& card, const models::trello::trello_list* list);
+    void render_card_item(const models::trello::trello_card& trello_card_item, const models::trello::trello_list* list);
     void create_new_card();
     
     // Card-specific management (for trello-card: context)

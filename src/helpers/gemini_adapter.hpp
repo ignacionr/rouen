@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <map>
 #include <format>
 #include <chrono>
 #include <thread>
@@ -16,8 +17,14 @@ namespace rouen::helpers {
 
     // Gemini API response structures for glaze parsing
     // Note: Using glz::opts{.error_on_unknown_keys=false} so we only need to define fields we use
+    struct GeminiFunctionCall {
+        std::string name;
+        std::map<std::string, std::string> args; // Simplified - in reality this could be any JSON
+    };
+
     struct GeminiPart {
         std::string text;
+        std::optional<GeminiFunctionCall> functionCall;
     };
 
     struct GeminiContent {
@@ -89,6 +96,11 @@ namespace rouen::helpers {
         }
 
         std::string build_gemini_request(const std::vector<Message>& conversation, float temperature) const {
+            return build_gemini_request(conversation, temperature, {});
+        }
+
+        // Enhanced method with function calling support
+        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, const std::vector<std::string>& function_schemas) const {
             std::string json = "{\"contents\":[";
             
             // Merge system messages and convert to Gemini format
@@ -123,8 +135,21 @@ namespace rouen::helpers {
                                    gemini_role, escape_json(msg.content));
             }
             
-            json += std::format("],\"generationConfig\":{{\"temperature\":{},\"maxOutputTokens\":4096}}}}", temperature);
+            json += std::format("],\"generationConfig\":{{\"temperature\":{},\"maxOutputTokens\":4096}}", temperature);
             
+            // Add function calling tools if provided
+            if (!function_schemas.empty()) {
+                json += ",\"tools\":[{\"functionDeclarations\":[";
+                for (size_t i = 0; i < function_schemas.size(); ++i) {
+                    if (i > 0) json += ",";
+                    json += function_schemas[i];
+                }
+                json += "]}]";
+            }
+            
+            json += "}";  // Close the main JSON object
+            
+            CONFIG_DEBUG_FMT("Built Gemini JSON request: {}", json);
             return json;
         }
 
@@ -133,7 +158,8 @@ namespace rouen::helpers {
             return build_gemini_request(conversation_, temperature);
         }
 
-        std::string parse_gemini_response(const std::string& response) const {
+        // Parse Gemini response and return the full response structure for function call handling
+        GeminiResponse parse_gemini_response_full(const std::string& response) const {
             CONFIG_DEBUG_FMT("Parsing Gemini response: {}", response);
             
             try {
@@ -197,30 +223,36 @@ namespace rouen::helpers {
                     throw std::runtime_error("Gemini response contains no candidates");
                 }
                 
-                CONFIG_DEBUG("Getting candidate reference");
-                const auto& candidate = gemini_response.candidates[0];
-                
-                CONFIG_DEBUG("Checking parts");
-                if (candidate.content.parts.empty()) {
-                    CONFIG_ERROR("No parts found in Gemini candidate content");
-                    throw std::runtime_error("Gemini candidate contains no content parts");
-                }
-                
-                CONFIG_DEBUG("Extracting text");
-                // Make a copy of the text to avoid dangling reference when gemini_response goes out of scope
-                std::string text = candidate.content.parts[0].text;
-                
-                CONFIG_DEBUG_FMT("Successfully extracted text: {}", text.substr(0, 50) + "...");
-                CONFIG_DEBUG_FMT("Text length: {}", text.length());
-                
-                CONFIG_DEBUG("About to return text");
-                return text;
+                return gemini_response;
                 
             } catch (const std::exception& e) {
                 CONFIG_ERROR_FMT("Exception parsing Gemini response: {}", e.what());
                 CONFIG_DEBUG_FMT("Full response for debugging: {}", response);
                 throw;
             }
+        }
+
+        std::string parse_gemini_response(const std::string& response) const {
+            auto gemini_response = parse_gemini_response_full(response);
+            
+            CONFIG_DEBUG("Getting candidate reference");
+            const auto& candidate = gemini_response.candidates[0];
+            
+            CONFIG_DEBUG("Checking parts");
+            if (candidate.content.parts.empty()) {
+                CONFIG_ERROR("No parts found in Gemini candidate content");
+                throw std::runtime_error("Gemini candidate contains no content parts");
+            }
+            
+            CONFIG_DEBUG("Extracting text");
+            // Make a copy of the text to avoid dangling reference when gemini_response goes out of scope
+            std::string text = candidate.content.parts[0].text;
+            
+            CONFIG_DEBUG_FMT("Successfully extracted text: {}", text.substr(0, 50) + "...");
+            CONFIG_DEBUG_FMT("Text length: {}", text.length());
+            
+            CONFIG_DEBUG("About to return text");
+            return text;
         }
 
     public:
@@ -250,7 +282,8 @@ namespace rouen::helpers {
             std::string_view model = "gemini-2.5-flash-lite", 
             [[maybe_unused]] std::string_view search_mode = {},
             float temperature = 0.45f,
-            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr
+            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
+            const std::vector<std::string>* function_schemas = nullptr
         ) {
             wait_min_time();
             
@@ -271,8 +304,10 @@ namespace rouen::helpers {
                 current_conversation.emplace_back(std::string(role), std::string(message));
             }
 
-            // Build Gemini API request using current_conversation
-            std::string request_body = build_gemini_request(current_conversation, temperature);
+            // Build Gemini API request using current_conversation and function schemas
+            std::string request_body = function_schemas ? 
+                build_gemini_request(current_conversation, temperature, *function_schemas) :
+                build_gemini_request(current_conversation, temperature);
 
             // Use the provided model or default
             std::string model_name = model.empty() ? model_ : std::string(model);
@@ -306,6 +341,134 @@ namespace rouen::helpers {
             
             return chat_completion;
         }
+
+        // Extended sendMessage that handles function calling responses
+        template<typename DoPostFunc>
+        ChatCompletion sendMessageWithFunctionCalling(
+            std::string_view message, 
+            DoPostFunc do_post, 
+            std::function<std::string(const std::string&, const std::map<std::string, std::string>&)> function_executor,
+            std::string_view role = "user", 
+            std::string_view model = "gemini-2.5-flash-lite", 
+            [[maybe_unused]] std::string_view search_mode = {},
+            float temperature = 0.45f,
+            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
+            const std::vector<std::string>* function_schemas = nullptr
+        ) {
+            wait_min_time();
+            
+            // Build conversation either from full_conversation or local history
+            std::vector<Message> current_conversation;
+            
+            if (full_conversation) {
+                // Use the provided full conversation history
+                current_conversation.reserve(full_conversation->size() + 1);
+                for (const auto& [msg_role, msg_content] : *full_conversation) {
+                    current_conversation.emplace_back(msg_role, msg_content);
+                }
+                // Add the new message
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            } else {
+                // Fallback to local conversation + new message
+                current_conversation = conversation_;
+                current_conversation.emplace_back(std::string(role), std::string(message));
+            }
+
+            // Build Gemini API request using current_conversation and function schemas
+            std::string request_body = function_schemas ? 
+                build_gemini_request(current_conversation, temperature, *function_schemas) :
+                build_gemini_request(current_conversation, temperature);
+
+            // Use the provided model or default
+            std::string model_name = model.empty() ? model_ : std::string(model);
+            
+            // Build URL for Gemini API
+            auto url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
+                                 model_name, api_key_);
+
+            CONFIG_DEBUG_FMT("Sending Gemini request to: {}", url);
+
+            // Make the HTTP request
+            auto response = do_post(url, request_body, [](auto header_setter) {
+                header_setter("Content-Type: application/json");
+            });
+
+            // Parse response and check for function calls
+            auto gemini_response = parse_gemini_response_full(response);
+            
+            // Check if response contains function calls
+            std::string final_text;
+            if (!gemini_response.candidates.empty()) {
+                const auto& candidate = gemini_response.candidates[0];
+                
+                // Check for function calls in the parts
+                std::vector<std::string> function_results;
+                bool has_function_calls = false;
+                
+                for (const auto& part : candidate.content.parts) {
+                    if (part.functionCall.has_value()) {
+                        has_function_calls = true;
+                        const auto& func_call = part.functionCall.value();
+                        
+                        CONFIG_DEBUG_FMT("Executing function: {} with args", func_call.name);
+                        
+                        try {
+                            // Execute the function and collect result
+                            std::string result = function_executor(func_call.name, func_call.args);
+                            function_results.push_back(std::format("Function '{}' result: {}", func_call.name, result));
+                        } catch (const std::exception& e) {
+                            function_results.push_back(std::format("Function '{}' error: {}", func_call.name, e.what()));
+                        }
+                    }
+                    
+                    // Also collect any text parts
+                    if (!part.text.empty()) {
+                        final_text += part.text;
+                    }
+                }
+                
+                // If we had function calls, send results back to Gemini for final response
+                if (has_function_calls && !function_results.empty()) {
+                    CONFIG_DEBUG("Sending function results back to Gemini");
+                    
+                    // Build function results message
+                    std::string results_message = "Function execution results:\n";
+                    for (const auto& result : function_results) {
+                        results_message += result + "\n";
+                    }
+                    
+                    // Add function results to conversation and get final response
+                    current_conversation.emplace_back("function", results_message);
+                    
+                    // Make another request to Gemini with function results (without function schemas this time)
+                    std::string follow_up_request = build_gemini_request(current_conversation, temperature);
+                    auto follow_up_response = do_post(url, follow_up_request, [](auto header_setter) {
+                        header_setter("Content-Type: application/json");
+                    });
+                    
+                    // Parse the final response
+                    final_text = parse_gemini_response(follow_up_response);
+                } else if (!has_function_calls) {
+                    // No function calls, just return the text
+                    final_text = parse_gemini_response(response);
+                }
+            }
+            
+            // Only add to local conversation if not using external conversation management
+            if (!full_conversation) {
+                conversation_.push_back({"assistant", final_text});
+            }
+            
+            // Return cppgpt-compatible response structure
+            ChatCompletion chat_completion{};
+            chat_completion.choices.resize(1);
+            chat_completion.choices[0].index = 0;
+            chat_completion.choices[0].message.role = "assistant";
+            chat_completion.choices[0].message.content = final_text;
+            chat_completion.choices[0].finish_reason = "stop";
+            
+            return chat_completion;
+        }
     };
 
 } // namespace rouen::helpers
@@ -315,7 +478,8 @@ template <>
 struct glz::meta<rouen::helpers::GeminiPart> {
     using T = rouen::helpers::GeminiPart;
     static constexpr auto value = object(
-        "text", &T::text
+        "text", &T::text,
+        "functionCall", &T::functionCall
     );
 };
 
@@ -325,6 +489,15 @@ struct glz::meta<rouen::helpers::GeminiContent> {
     static constexpr auto value = object(
         "parts", &T::parts,
         "role", &T::role
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiFunctionCall> {
+    using T = rouen::helpers::GeminiFunctionCall;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "args", &T::args
     );
 };
 

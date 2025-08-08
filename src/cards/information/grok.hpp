@@ -10,11 +10,14 @@
 #include <format>
 #include <memory>
 #include <mutex>
+#include <variant>
 
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/llm_config.hpp"
+#include "../../helpers/mcp_service.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
@@ -40,12 +43,16 @@ namespace rouen::cards {
             get_color(10, ImVec4(0.5f, 0.6f, 0.7f, 1.0f));    // Button active
             get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
             get_color(12, ImVec4(0.2f, 0.3f, 0.4f, 1.0f));   // Chat background
+            get_color(13, ImVec4(0.8f, 0.4f, 0.0f, 1.0f));   // MCP function call indicator
             
             requested_fps = 10; // Higher FPS for responsive input
             
             // Initialize LLM configuration
             refresh_llm_config();
             width *= 2.0f;
+            
+            // Get MCP service instance
+            mcp_service_ = registrar::get<helpers::mcp_service>("mcp_service");
         }
 
         void render_llm_controls() {
@@ -384,6 +391,9 @@ namespace rouen::cards {
         std::atomic<bool> waiting_for_response_{false};
         std::mutex chat_history_mutex_; // Protect chat_history_ and message_cache_ from concurrent access
         
+        // MCP service for function calling
+        std::shared_ptr<helpers::mcp_service> mcp_service_{nullptr};
+        
         // UI state management
         std::atomic<bool> scroll_to_bottom_{false};
         bool reclaim_focus_{false};
@@ -431,6 +441,151 @@ namespace rouen::cards {
         }
         
         void send_message(const std::string& message) {
+            if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
+                return;
+            }
+            
+            // Process message with MCP functions first
+            process_mcp_message(message);
+        }
+        
+    private:
+        void process_mcp_message(const std::string& message) {
+            DEBUG_DEBUG("AI Chat: Processing message: '" + message + "'");
+            
+            // For function calling, we send the message directly to the LLM with function schemas
+            // and let Gemini decide when to call functions
+            send_message_to_llm_with_functions(message);
+        }
+        
+        void send_message_to_llm_with_functions(const std::string& message) {
+            if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
+                return;
+            }
+
+            // Get available MCP functions and convert to Gemini function schemas
+            std::vector<std::string> function_schemas;
+            if (mcp_service_) {
+                try {
+                    auto functions = mcp_service_->get_available_functions();
+                    for (const auto& func : functions) {
+                        // Convert MCP function to Gemini function schema
+                        std::string schema = std::format(
+                            "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
+                            func.name, 
+                            func.description.empty() ? "Repository operation" : func.description,
+                            func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
+                        );
+                        function_schemas.push_back(schema);
+                        DEBUG_DEBUG("AI Chat: Added function schema for: " + func.name);
+                    }
+                } catch (const std::exception& e) {
+                    DEBUG_ERROR("AI Chat: Error getting MCP functions: " + std::string(e.what()));
+                }
+            }
+            
+            DEBUG_DEBUG("AI Chat: Sending message with " + std::to_string(function_schemas.size()) + " function schemas");
+            
+            // Pre-allocate space to avoid reallocations during conversation growth
+            if (chat_history_.size() == chat_history_.max_size() - 2) {
+                // Remove oldest messages if we're approaching container limits
+                chat_history_.pop_front();
+                message_cache_.pop_front();
+            }
+
+            try {
+                // Add user message to history with move semantics
+                chat_history_.emplace_back("user", message);
+                
+                // Add a new cache entry for the user message
+                message_cache_.emplace_back();
+                
+                waiting_for_response_.store(true);
+                scroll_to_bottom_.store(true);
+                
+                // Launch response generation asynchronously to prevent UI blocking
+                std::thread([this, function_schemas, message]() {
+                    try {
+                        // Create conversion from our message format to the format expected by sendMessage
+                        std::vector<std::pair<std::string, std::string>> conversation_for_llm;
+                        for (const auto& chat_msg : chat_history_) {
+                            conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                        }
+                        
+                        // Try to use function calling if we have a Gemini adapter directly
+                        auto fetcher = std::make_shared<http::fetch>();
+                        auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
+                            using T = std::decay_t<decltype(*adapter_ptr)>;
+                            if constexpr (std::is_same_v<T, rouen::helpers::GeminiAdapter>) {
+                                // Use Gemini adapter with function calling support
+                                return adapter_ptr->sendMessageWithFunctionCalling(
+                                    message,
+                                    [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                                        return fetcher->post(url, body, header_setter);
+                                    },
+                                    [this](const std::string& function_name, const std::map<std::string, std::string>& args) -> std::string {
+                                        // Execute MCP function
+                                        if (mcp_service_) {
+                                            try {
+                                                // Convert args map to JSON string
+                                                std::string args_json = "{";
+                                                bool first = true;
+                                                for (const auto& [key, value] : args) {
+                                                    if (!first) args_json += ",";
+                                                    args_json += std::format("\"{}\":\"{}\"", key, value);
+                                                    first = false;
+                                                }
+                                                args_json += "}";
+                                                
+                                                auto result = mcp_service_->execute_function(function_name, args_json);
+                                                return result.success ? result.result : "Error: " + result.error_message;
+                                            } catch (const std::exception& e) {
+                                                return "Error executing function: " + std::string(e.what());
+                                            }
+                                        }
+                                        return "Error: MCP service not available";
+                                    },
+                                    "user", "", "", 0.45f, &conversation_for_llm, &function_schemas
+                                );
+                            } else {
+                                // Fallback to standard call without function schemas for other LLM types
+                                return adapter_ptr->sendMessage(
+                                    message,
+                                    [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                                        return fetcher->post(url, body, header_setter);
+                                    },
+                                    "user", "", "", 0.45f, &conversation_for_llm
+                                );
+                            }
+                        }, llm_instance_->instance_);
+                        
+                        // Process the response
+                        if (!chat_completion.choices.empty()) {
+                            const auto& response = chat_completion.choices[0].message.content;
+                            
+                            // Add AI response to history
+                            chat_history_.emplace_back("assistant", response);
+                            message_cache_.emplace_back();
+                        }
+                        
+                    } catch (const std::exception& e) {
+                        // Add error message to chat history
+                        std::string error_msg = "Error: " + std::string(e.what());
+                        chat_history_.emplace_back("assistant", error_msg);
+                        message_cache_.emplace_back();
+                    }
+                    
+                    waiting_for_response_.store(false);
+                    scroll_to_bottom_.store(true);
+                }).detach();
+                
+            } catch (const std::exception& e) {
+                waiting_for_response_.store(false);
+                std::string error_msg = "Failed to send message: " + std::string(e.what());
+                chat_history_.emplace_back("assistant", error_msg);
+                message_cache_.emplace_back();
+            }
+        }        void send_message_to_llm(const std::string& message) {
             if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
                 return;
             }

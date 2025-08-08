@@ -31,6 +31,37 @@ namespace rouen::models {
         }
 
         /**
+         * Add a repository to the model if it's not already present
+         * 
+         * @param repo_path Repository path string
+         * @return true if repository was added or already exists, false if not a valid git repo
+         */
+        bool addRepository(const std::string& repo_path) {
+            if (repo_path.empty()) {
+                return false;
+            }
+            
+            // Check if it's actually a git repository
+            if (!std::filesystem::exists(std::filesystem::path(repo_path) / ".git")) {
+                return false;
+            }
+            
+            // If not already in the list, add it
+            if (repos.find(repo_path) == repos.end()) {
+                repos[repo_path] = GitRepoStatus::Unknown;
+                
+                // Also add to the sorted repo_paths list
+                auto it = std::lower_bound(repo_paths.begin(), repo_paths.end(), repo_path);
+                if (it == repo_paths.end() || *it != repo_path) {
+                    repo_paths.insert(it, repo_path);
+                }
+            }
+            
+            // Update the status
+            return updateRepoStatus(repo_path);
+        }
+
+        /**
          * Update the repository status
          * 
          * @param repo_path Repository path string
@@ -38,8 +69,24 @@ namespace rouen::models {
          * @return true if successful, false if failed
          */
         bool updateRepoStatus(const std::string& repo_path, const std::string& status_output = "") {
-            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+            if (repo_path.empty()) {
                 return false;
+            }
+            
+            // If repository is not in our list, try to add it first
+            if (repos.find(repo_path) == repos.end()) {
+                // Check if it's a valid git repository
+                if (!std::filesystem::exists(std::filesystem::path(repo_path) / ".git")) {
+                    return false;
+                }
+                // Add it to our repository list
+                repos[repo_path] = GitRepoStatus::Unknown;
+                
+                // Also add to the sorted repo_paths list
+                auto it = std::lower_bound(repo_paths.begin(), repo_paths.end(), repo_path);
+                if (it == repo_paths.end() || *it != repo_path) {
+                    repo_paths.insert(it, repo_path);
+                }
             }
             
             std::string output = status_output;
@@ -52,20 +99,21 @@ namespace rouen::models {
                 }
             }
             
-            // Determine the status based on git status output
+            // Determine the status based on git status output (priority order matters)
             if (output.find("nothing to commit, working tree clean") != std::string::npos) {
                 repos[repo_path] = GitRepoStatus::Clean;
-            } else if (output.find("Changes to be committed") != std::string::npos) {
-                repos[repo_path] = GitRepoStatus::Staged;
-            } else if (output.find("Untracked files") != std::string::npos) {
-                repos[repo_path] = GitRepoStatus::Untracked;
-            } else if (output.find("modified:") != std::string::npos) {
-                repos[repo_path] = GitRepoStatus::Modified;
             } else if (output.find("Unmerged paths") != std::string::npos || 
                     output.find("fix conflicts") != std::string::npos) {
                 repos[repo_path] = GitRepoStatus::Conflict;
             } else if (output.find("HEAD detached") != std::string::npos) {
                 repos[repo_path] = GitRepoStatus::Detached;
+            } else if (output.find("Changes to be committed") != std::string::npos) {
+                repos[repo_path] = GitRepoStatus::Staged;
+            } else if (output.find("modified:") != std::string::npos || 
+                     output.find("Changes not staged") != std::string::npos) {
+                repos[repo_path] = GitRepoStatus::Modified;
+            } else if (output.find("Untracked files") != std::string::npos) {
+                repos[repo_path] = GitRepoStatus::Untracked;
             } else {
                 repos[repo_path] = GitRepoStatus::Unknown;
             }

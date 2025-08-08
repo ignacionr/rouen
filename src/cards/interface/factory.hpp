@@ -78,8 +78,8 @@ namespace rouen::cards {
             static bool initialized = false;
             if (!initialized) {
                 // Add card factories
-                instance.emplace("git", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<git>();
+                instance.emplace("git", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<git>(uri);
                 });
                 
                 instance.emplace("menu", [](std::string_view, SDL_Renderer*) {
