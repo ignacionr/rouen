@@ -514,11 +514,11 @@ namespace rouen::cards {
                         
                         // Try to use function calling if we have a Gemini adapter directly
                         auto fetcher = std::make_shared<http::fetch>();
-                        auto chat_completion = std::visit([&](auto& ptr) -> ignacionr::ChatCompletion {
-                            using T = std::decay_t<decltype(*ptr)>;
+                        auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
+                            using T = std::decay_t<decltype(*adapter_ptr)>;
                             if constexpr (std::is_same_v<T, rouen::helpers::GeminiAdapter>) {
                                 // Use Gemini adapter with function calling support
-                                return ptr->sendMessageWithFunctionCalling(
+                                return adapter_ptr->sendMessageWithFunctionCalling(
                                     message,
                                     [fetcher](const std::string& url, const std::string& body, auto header_setter) {
                                         return fetcher->post(url, body, header_setter);
@@ -549,7 +549,7 @@ namespace rouen::cards {
                                 );
                             } else {
                                 // Fallback to standard call without function schemas for other LLM types
-                                return ptr->sendMessage(
+                                return adapter_ptr->sendMessage(
                                     message,
                                     [fetcher](const std::string& url, const std::string& body, auto header_setter) {
                                         return fetcher->post(url, body, header_setter);

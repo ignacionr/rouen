@@ -117,8 +117,8 @@ void trello_card::render_lists_and_cards() {
             if (cards_in_list.empty()) {
                 ImGui::TextColored(colors[3], "  No cards in this list");
             } else {
-                for (const auto& card : cards_in_list) {
-                    render_card_item(card, &list);
+                for (const auto& trello_card_item : cards_in_list) {
+                    render_card_item(trello_card_item, &list);
                 }
             }
         }
@@ -126,50 +126,50 @@ void trello_card::render_lists_and_cards() {
     }
 }
 
-void trello_card::render_card_item(const models::trello::trello_card& card, const models::trello::trello_list* /* list */) {
-    ImGui::PushID(card.id.c_str());
+void trello_card::render_card_item(const models::trello::trello_card& trello_card_item, const models::trello::trello_list* /* list */) {
+    ImGui::PushID(trello_card_item.id.c_str());
     
     // Card name with clickable link
-    if (ImGui::Selectable(card.name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+    if (ImGui::Selectable(trello_card_item.name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
         if (ImGui::IsMouseDoubleClicked(0)) {
-            open_in_browser(card.url);
+            open_in_browser(trello_card_item.url);
         } else {
             // Single click - open card in new UI card
-            create_card_tab(card.id);
+            create_card_tab(trello_card_item.id);
         }
     }
     
     // Show card details on hover
-    if (ImGui::IsItemHovered() && !card.desc.empty()) {
+    if (ImGui::IsItemHovered() && !trello_card_item.desc.empty()) {
         ImGui::BeginTooltip();
-        ImGui::TextWrapped("%s", card.desc.c_str());
+        ImGui::TextWrapped("%s", trello_card_item.desc.c_str());
         ImGui::EndTooltip();
     }
     
     // Card badges and info
-    if (card.badges_comments() > 0 || card.badges_attachments() > 0 || (card.due.has_value() && !card.due->empty())) {
+    if (trello_card_item.badges_comments() > 0 || trello_card_item.badges_attachments() > 0 || (trello_card_item.due.has_value() && !trello_card_item.due->empty())) {
         ImGui::SameLine();
         ImGui::Text("(");
         
         bool need_separator = false;
         
-        if (card.badges_comments() > 0) {
+        if (trello_card_item.badges_comments() > 0) {
             ImGui::SameLine();
-            ImGui::TextColored(colors[4], "%d" ICON_MD_COMMENT, card.badges_comments());
+            ImGui::TextColored(colors[4], "%d" ICON_MD_COMMENT, trello_card_item.badges_comments());
             need_separator = true;
         }
         
-        if (card.badges_attachments() > 0) {
+        if (trello_card_item.badges_attachments() > 0) {
             if (need_separator) { ImGui::SameLine(); ImGui::Text("|"); }
             ImGui::SameLine();
-            ImGui::TextColored(colors[4], "%d" ICON_MD_ATTACHMENT, card.badges_attachments());
+            ImGui::TextColored(colors[4], "%d" ICON_MD_ATTACHMENT, trello_card_item.badges_attachments());
             need_separator = true;
         }
         
-        if (card.due.has_value() && !card.due->empty()) {
+        if (trello_card_item.due.has_value() && !trello_card_item.due->empty()) {
             if (need_separator) { ImGui::SameLine(); ImGui::Text("|"); }
             ImGui::SameLine();
-            ImGui::TextColored(card.dueComplete ? colors[6] : colors[2], ICON_MD_SCHEDULE);
+            ImGui::TextColored(trello_card_item.dueComplete ? colors[6] : colors[2], ICON_MD_SCHEDULE);
         }
         
         ImGui::SameLine();
