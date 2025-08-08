@@ -137,7 +137,6 @@ set(RESOURCE_FILES
   "${CMAKE_SOURCE_DIR}/presets.txt"
   "${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf"
   "${CMAKE_SOURCE_DIR}/external/fonts/NotoSansSymbols-Regular.ttf"
-  "${CMAKE_SOURCE_DIR}/img/alarm.mp3"
 )
 
 # Create Resources directory first
@@ -160,8 +159,8 @@ foreach(RES_FILE ${RESOURCE_FILES})
   )
 endforeach()
 
-# Create Resources/img directory and copy images
-file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
+# Create Resources/img directory and copy images and audio files
+file(GLOB IMG_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg" "${CMAKE_SOURCE_DIR}/img/*.mp3" "${CMAKE_SOURCE_DIR}/img/*.wav")
 # Create the destination directory first (just once)
 add_custom_command(
   TARGET ${PROJECT_NAME} POST_BUILD
@@ -170,7 +169,7 @@ add_custom_command(
   COMMENT "Creating Resources/img directory in app bundle"
 )
 # Copy each file, but check if it exists first
-foreach(IMG_FILE ${IMAGE_FILES})
+foreach(IMG_FILE ${IMG_FILES})
   get_filename_component(IMG_FILENAME ${IMG_FILE} NAME)
   add_custom_command(
     TARGET ${PROJECT_NAME} POST_BUILD

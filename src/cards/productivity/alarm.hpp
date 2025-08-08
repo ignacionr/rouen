@@ -6,6 +6,8 @@
 #include <iomanip>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/media_player.hpp"
@@ -50,7 +52,7 @@ namespace rouen::cards {
             // Play alarm sound in loop if ringing and not already playing
             if (time_remaining <= std::chrono::seconds(0)) {
                 if (!alarm_playing) {
-                    media_player_alarm_helper::play_sound_loop("img/alarm.mp3");
+                    media_player_alarm_helper::play_sound_loop(alarm_sounds[static_cast<size_t>(selected_alarm_sound)].second);
                     alarm_playing = true;
                 }
             } else {
@@ -176,6 +178,35 @@ namespace rouen::cards {
                 if (ImGui::Button("+30m", ImVec2(button_width, 0))) add_minutes(30);
                 ImGui::SameLine();
                 if (ImGui::Button("+1h", ImVec2(button_width, 0))) add_minutes(60);
+                
+                // Alarm sound selection
+                ImGui::Spacing();
+                ImGui::Text("Alarm Sound:");
+                ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.9f);
+                if (ImGui::Combo("##alarm_sound", &selected_alarm_sound, 
+                                [](void* data, int idx, const char** out_text) -> bool {
+                                    auto& sounds = *static_cast<std::vector<std::pair<std::string, std::string>>*>(data);
+                                    if (idx < 0 || idx >= static_cast<int>(sounds.size())) return false;
+                                    *out_text = sounds[static_cast<size_t>(idx)].first.c_str();
+                                    return true;
+                                }, &alarm_sounds, static_cast<int>(alarm_sounds.size()))) {
+                    // Sound selection changed
+                }
+                ImGui::PopItemWidth();
+                
+                // Test alarm sound button
+                if (ImGui::Button("Test Sound", ImVec2(ImGui::GetWindowWidth() * 0.9f, 0))) {
+                    if (!alarm_playing) {
+                        media_player_alarm_helper::play_sound_loop(alarm_sounds[static_cast<size_t>(selected_alarm_sound)].second);
+                        // Schedule stop after 2 seconds
+                        std::thread([this]() {
+                            std::this_thread::sleep_for(std::chrono::seconds(2));
+                            if (!alarm_playing) { // Only stop if it's still the test sound
+                                media_player_alarm_helper::stop_sound_loop();
+                            }
+                        }).detach();
+                    }
+                }
             }
             
         }
@@ -424,5 +455,13 @@ namespace rouen::cards {
         std::chrono::system_clock::time_point target_time;
         char time_buffer[16] = {0};
         bool alarm_playing = false;
+        
+        // Available alarm sounds
+        std::vector<std::pair<std::string, std::string>> alarm_sounds = {
+            {"Classic Beep", "img/alarm.mp3"},
+            {"Modern Alert", "img/alarm_classic.wav"},
+            {"Simple Tone", "img/new_alarm.wav"}
+        };
+        int selected_alarm_sound = 0;
     };
 }

@@ -46,7 +46,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ### Productivity & Time Management
 - **Pomodoro Timer**: Stay focused with built-in time management techniques and sound notification when a session completes
-- **Alarm Card**: Set alarms with sound notification, snooze and stop controls (uses bundled alarm sound)
+- **Alarm Card**: Set alarms with configurable sound notifications, snooze and stop controls. Choose from multiple alarm sounds (Classic Beep, Modern Alert, Simple Tone) with test sound functionality
 - **Calendar**: Sync and view events with Google Calendar integration
 - **Trello Integration**: Comprehensive Trello API integration with support for:
   - **General Access** (`trello:`): Browse all boards, search cards globally, manage multiple boards
