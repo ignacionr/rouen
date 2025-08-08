@@ -9,6 +9,8 @@
 #include <thread>
 #include <vector>
 #include <optional>
+#include <sstream>
+#include <iomanip>
 #include "../helpers/glaze_include.hpp"
 
 #include "../helpers/fetch.hpp"
@@ -18,11 +20,17 @@ namespace rouen::hosts {
 
 // Forward declarations for the weather data structures
 namespace weather {
-    struct Location {
-        std::string name;
-        std::string country;
+    struct Coord {
         double lat;
         double lon;
+    };
+    // OpenWeather uses 'coord' with lon/lat for current weather, and 'city' with name/country/coord in forecast
+    struct Location {
+        double lat{};
+        double lon{};
+        // Optional city info used in forecast 'city' object
+        std::optional<std::string> name;
+        std::optional<std::string> country;
     };
 
     struct Weather {
@@ -39,6 +47,10 @@ namespace weather {
         double temp_max;
         double pressure;
         int humidity;
+    // New optional fields sometimes provided by the API
+    std::optional<double> sea_level;   // sea_level pressure (hPa)
+    std::optional<double> grnd_level;  // ground level pressure (hPa)
+    std::optional<double> temp_kf;     // forecast temperature adjustment
     };
 
     struct Wind {
@@ -70,7 +82,7 @@ namespace weather {
     };
 
     struct CurrentWeather {
-        Location coord;
+        Coord coord;
         std::vector<Weather> weather;
         std::string base;
         Main main;
@@ -98,6 +110,22 @@ namespace weather {
         std::optional<Rain> rain;
         std::optional<Snow> snow;
         std::string dt_txt;
+        // Some forecast entries include a sys object with 'pod' (part of day)
+        struct ForecastSys {
+            std::string pod; // 'd' or 'n'
+        };
+        std::optional<ForecastSys> sys;
+    };
+
+    struct City {
+        int id;
+        std::string name;
+        Coord coord;
+        std::string country;
+        std::optional<int> population;
+        int timezone;
+        std::optional<int64_t> sunrise;
+        std::optional<int64_t> sunset;
     };
 
     struct Forecast {
@@ -105,7 +133,7 @@ namespace weather {
         int message;
         int cnt;
         std::vector<ForecastItem> list;
-        Location city;
+        City city;
     };
 }
 
@@ -246,13 +274,13 @@ private:
         // Current weather URL
         std::string current_url = std::format(
             "https://api.openweathermap.org/data/2.5/weather?q={}&appid={}&units=metric",
-            location_, api_key_
+            url_encode(location_), api_key_
         );
         
         // Forecast URL
         std::string forecast_url = std::format(
             "https://api.openweathermap.org/data/2.5/forecast?q={}&appid={}&units=metric&cnt=5",
-            location_, api_key_
+            url_encode(location_), api_key_
         );
         
         // Flag to track success of both API calls
@@ -359,6 +387,31 @@ private:
     std::chrono::steady_clock::time_point last_update_time_;
     int consecutive_failures_;
     int backoff_minutes_;
+
+    // Percent-encode a string for use in URL query parameters.
+    // We preserve comma to allow the "City,CountryCode" format.
+    static std::string url_encode(std::string_view s) {
+        std::ostringstream oss;
+        oss.fill('0');
+        oss << std::hex << std::uppercase;
+        for (char ch : s) {
+            const unsigned char c = static_cast<unsigned char>(ch);
+            // Unreserved characters according to RFC 3986 plus comma
+            if ((c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~' || c == ',') {
+                oss << static_cast<char>(c);
+            } else if (c == ' ') {
+                // Encode space as %20 (safer than '+')
+                oss << "%20";
+            } else {
+                oss << '%' << std::setw(2) << int(c);
+                oss << std::setw(0);
+            }
+        }
+        return oss.str();
+    }
 };
 
 } // namespace rouen::hosts
@@ -368,14 +421,24 @@ template <>
 struct glz::meta<rouen::hosts::weather::Location> {
     using T = rouen::hosts::weather::Location;
     static constexpr auto values = glz::object(
-        "name", &T::name,
-        "country", &T::country,
         "lat", &T::lat,
-        "lon", &T::lon
+        "lon", &T::lon,
+        "name", &T::name,
+        "country", &T::country
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
     };
+};
+
+template <>
+struct glz::meta<rouen::hosts::weather::Coord> {
+    using T = rouen::hosts::weather::Coord;
+    static constexpr auto values = glz::object(
+        "lat", &T::lat,
+        "lon", &T::lon
+    );
+    static constexpr auto options = glz::opts{ .error_on_unknown_keys = false };
 };
 
 template <>
@@ -401,7 +464,10 @@ struct glz::meta<rouen::hosts::weather::Main> {
         "temp_min", &T::temp_min,
         "temp_max", &T::temp_max,
         "pressure", &T::pressure,
-        "humidity", &T::humidity
+    "humidity", &T::humidity,
+    "sea_level", &T::sea_level,
+    "grnd_level", &T::grnd_level,
+    "temp_kf", &T::temp_kf
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false
@@ -475,7 +541,7 @@ template <>
 struct glz::meta<rouen::hosts::weather::CurrentWeather> {
     using T = rouen::hosts::weather::CurrentWeather;
     static constexpr auto values = glz::object(
-        "coord", &T::coord,
+    "coord", &T::coord,
         "weather", &T::weather,
         "base", &T::base,
         "main", &T::main,
@@ -511,6 +577,22 @@ struct glz::meta<rouen::hosts::weather::Forecast> {
 };
 
 template <>
+struct glz::meta<rouen::hosts::weather::City> {
+    using T = rouen::hosts::weather::City;
+    static constexpr auto values = glz::object(
+        "id", &T::id,
+        "name", &T::name,
+        "coord", &T::coord,
+        "country", &T::country,
+        "population", &T::population,
+        "timezone", &T::timezone,
+        "sunrise", &T::sunrise,
+        "sunset", &T::sunset
+    );
+    static constexpr auto options = glz::opts{ .error_on_unknown_keys = false };
+};
+
+template <>
 struct glz::meta<rouen::hosts::weather::ForecastItem> {
     static constexpr auto values = glz::object(
         "dt", &rouen::hosts::weather::ForecastItem::dt,
@@ -522,7 +604,19 @@ struct glz::meta<rouen::hosts::weather::ForecastItem> {
         "pop", &rouen::hosts::weather::ForecastItem::pop,
         "rain", &rouen::hosts::weather::ForecastItem::rain,
         "snow", &rouen::hosts::weather::ForecastItem::snow,
-        "dt_txt", &rouen::hosts::weather::ForecastItem::dt_txt
+        "dt_txt", &rouen::hosts::weather::ForecastItem::dt_txt,
+        "sys", &rouen::hosts::weather::ForecastItem::sys
+    );
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::weather::ForecastItem::ForecastSys> {
+    using T = rouen::hosts::weather::ForecastItem::ForecastSys;
+    static constexpr auto values = glz::object(
+        "pod", &T::pod
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false

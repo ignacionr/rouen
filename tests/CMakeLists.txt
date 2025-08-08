@@ -113,6 +113,7 @@ add_gtest_http_executable(test_fetch_ssl test_fetch_ssl.cpp)
 add_gtest_http_executable(test_ssl_ui test_ssl_ui.cpp)
 add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
+add_gtest_executable(test_weather_glaze test_weather_glaze.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
@@ -165,9 +166,10 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_fetch_ssl
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_weather_glaze
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media
     COMMENT "Running Google Test suite only"
 )
 
@@ -228,7 +230,7 @@ add_custom_target(run_rt_media_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
     COMMENT "Running tests through CTest framework"
 )
 
