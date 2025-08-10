@@ -4,9 +4,12 @@
 #include <chrono>
 #include <cmath>
 #include <format>
+#include <thread>
+#include <vector>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/media_player.hpp"
+#include "../../helpers/media_player_alarm.hpp"
 
 #include "../interface/card.hpp"
 
@@ -27,7 +30,7 @@ namespace rouen::cards {
             auto const current_time = std::chrono::system_clock::now();
             if (is_done(current_time)) {
                 if (!pomodoro_playing) {
-                    media_player_alarm_helper::play_sound_loop("img/alarm.mp3");
+                    media_player_alarm_helper::play_sound_loop(sound_files[static_cast<std::size_t>(selected_sound)]);
                     pomodoro_playing = true;
                 }
             } else {
@@ -40,6 +43,37 @@ namespace rouen::cards {
                 if (ImGui::SmallButton("Reset")) {
                     reset();
                 }
+                
+                // Sound selection UI
+                ImGui::Separator();
+                ImGui::Text("Completion Sound:");
+                if (ImGui::Combo("##PomodorSoundSelect", &selected_sound, 
+                    [](void* data, int idx, const char** out_text) {
+                        auto* options = static_cast<std::vector<std::string>*>(data);
+                        if (idx >= 0 && idx < static_cast<int>(options->size())) {
+                            *out_text = (*options)[static_cast<std::size_t>(idx)].c_str();
+                            return true;
+                        }
+                        return false;
+                    }, &sound_options, static_cast<int>(sound_options.size()))) {
+                    // Sound selection changed - optionally stop current sound
+                    if (pomodoro_playing) {
+                        media_player_alarm_helper::stop_sound_loop();
+                        media_player_alarm_helper::play_sound_loop(sound_files[static_cast<std::size_t>(selected_sound)]);
+                    }
+                }
+                
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Test##PomodorSound")) {
+                    media_player_alarm_helper::stop_sound_loop();
+                    media_player_alarm_helper::play_sound_loop(sound_files[static_cast<std::size_t>(selected_sound)]);
+                    std::thread([]() {
+                        std::this_thread::sleep_for(std::chrono::seconds(3));
+                        media_player_alarm_helper::stop_sound_loop();
+                    }).detach();
+                }
+                ImGui::Separator();
+                
                 auto const now = std::chrono::system_clock::now();
                 if (is_done(now)) {
                     ImGui::TextUnformatted("Pomodoro done!");
@@ -129,5 +163,20 @@ namespace rouen::cards {
         std::chrono::system_clock::time_point end_time {start_time + std::chrono::minutes(25)};
         ImVec4 third_color {1.0f, 1.0f, 0.0f, 0.5f};
         bool pomodoro_playing = false;
+        
+        // Sound selection for Pomodoro completion
+        std::vector<std::string> sound_options = {
+            "Default Sound", 
+            "Classic Alert", 
+            "Simple Tone", 
+            "Beeping Pattern"
+        };
+        std::vector<std::string> sound_files = {
+            "img/alarm.mp3", 
+            "img/alarm_classic.wav", 
+            "img/new_alarm.wav", 
+            "img/alarm_beeps.wav"
+        };
+        int selected_sound = 0;
     };
 }
