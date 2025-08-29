@@ -615,7 +615,7 @@ std::vector<trello_label> trello_model::parse_labels(const std::string& json_str
 std::future<bool> trello_model::delete_card(const std::string& card_id) {
     return std::async(std::launch::async, [this, card_id]() -> bool {
         try {
-            const std::string endpoint = "/1/cards/" + card_id;
+            const std::string endpoint = "cards/" + card_id;
             make_request(endpoint, "DELETE");
             TRELLO_INFO_FMT("Deleted card: {}", card_id);
             return true;
@@ -629,7 +629,7 @@ std::future<bool> trello_model::delete_card(const std::string& card_id) {
 std::future<bool> trello_model::update_card(const std::string& card_id, const std::string& name, const std::string& desc) {
     return std::async(std::launch::async, [this, card_id, name, desc]() -> bool {
         try {
-            const std::string endpoint = "/1/cards/" + card_id;
+            const std::string endpoint = "cards/" + card_id;
             std::string params = "name=" + name;
             if (!desc.empty()) {
                 params += "&desc=" + desc;
@@ -647,7 +647,7 @@ std::future<bool> trello_model::update_card(const std::string& card_id, const st
 std::future<bool> trello_model::update_list(const std::string& list_id, const std::string& name) {
     return std::async(std::launch::async, [this, list_id, name]() -> bool {
         try {
-            const std::string endpoint = "/1/lists/" + list_id;
+            const std::string endpoint = "lists/" + list_id;
             const std::string params = "name=" + name;
             make_request(endpoint, "PUT", params);
             TRELLO_INFO_FMT("Updated list: {}", list_id);
@@ -662,7 +662,7 @@ std::future<bool> trello_model::update_list(const std::string& list_id, const st
 std::future<bool> trello_model::archive_list(const std::string& list_id) {
     return std::async(std::launch::async, [this, list_id]() -> bool {
         try {
-            const std::string endpoint = "/1/lists/" + list_id + "/closed";
+            const std::string endpoint = "lists/" + list_id + "/closed";
             make_request(endpoint, "PUT", "value=true");
             TRELLO_INFO_FMT("Archived list: {}", list_id);
             return true;
@@ -676,7 +676,7 @@ std::future<bool> trello_model::archive_list(const std::string& list_id) {
 std::future<bool> trello_model::delete_board(const std::string& board_id) {
     return std::async(std::launch::async, [this, board_id]() -> bool {
         try {
-            const std::string endpoint = "/1/boards/" + board_id;
+            const std::string endpoint = "boards/" + board_id;
             make_request(endpoint, "DELETE");
             TRELLO_INFO_FMT("Deleted board: {}", board_id);
             return true;
@@ -690,7 +690,7 @@ std::future<bool> trello_model::delete_board(const std::string& board_id) {
 std::future<bool> trello_model::update_board(const std::string& board_id, const std::string& name, const std::string& desc) {
     return std::async(std::launch::async, [this, board_id, name, desc]() -> bool {
         try {
-            const std::string endpoint = "/1/boards/" + board_id;
+            const std::string endpoint = "boards/" + board_id;
             std::string params = "name=" + name;
             if (!desc.empty()) {
                 params += "&desc=" + desc;
@@ -708,7 +708,7 @@ std::future<bool> trello_model::update_board(const std::string& board_id, const 
 std::future<std::vector<trello_card>> trello_model::get_list_cards(const std::string& list_id) {
     return std::async(std::launch::async, [this, list_id]() -> std::vector<trello_card> {
         try {
-            const std::string endpoint = "/1/lists/" + list_id + "/cards";
+            const std::string endpoint = "lists/" + list_id + "/cards";
             const std::string response = make_request(endpoint);
             return parse_cards(response);
         } catch (const std::exception& e) {

@@ -6,6 +6,8 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <future>
+#include <thread>
 
 // Platform-specific includes for system information
 #ifdef __APPLE__
@@ -21,6 +23,7 @@
 #endif
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/drive_benchmark.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -35,13 +38,17 @@ struct sysinfo_card : public card {
         colors[2] = {0.2f, 0.7f, 0.2f, 1.0f}; // Green progress bar color
         
         name("System Info");
-        width = 350.0f;
+        width = 400.0f; // Increased width to accommodate benchmark results
         
         // Request higher refresh rate for updating metrics
         requested_fps = 5;  // Update 5 times per second
         
         // Initialize last update time
         last_update = std::chrono::steady_clock::now();
+        
+        // Initialize benchmark state
+        benchmark_running = false;
+        benchmark_progress = 0.0f;
     }
     
     // Add explicit destructor
@@ -50,6 +57,11 @@ struct sysinfo_card : public card {
         memory_info = {0.0, 0.0, 0.0};
         disk_info = {0.0, 0.0, 0.0};
         cpu_usage = 0.0;
+        
+        // Wait for benchmark to complete if running
+        if (benchmark_future.valid()) {
+            benchmark_future.wait();
+        }
     }
     
     // Get memory information (total, used, free)
@@ -330,6 +342,71 @@ struct sysinfo_card : public card {
             // Display number of processes
             int process_count = get_process_count();
             ImGui::Text("Running Processes: %d", process_count);
+            
+            ImGui::Separator();
+            
+            // Drive Benchmark section
+            ImGui::Text("Drive Benchmark:");
+            
+            if (!benchmark_running) {
+                if (ImGui::Button("Run Drive Benchmark", ImVec2(-1, 0))) {
+                    start_drive_benchmark();
+                }
+                
+                // Display previous results if available
+                if (!benchmark_results.empty()) {
+                    ImGui::Spacing();
+                    ImGui::Text("Last Benchmark Results:");
+                    
+                    // Create a table for the results
+                    if (ImGui::BeginTable("BenchmarkTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                        ImGui::TableSetupColumn("Drive", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                        ImGui::TableSetupColumn("Write MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Read MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch);
+                        ImGui::TableHeadersRow();
+                        
+                        for (const auto& result : benchmark_results) {
+                            ImGui::TableNextRow();
+                            
+                            ImGui::TableSetColumnIndex(0);
+                            ImGui::Text("%s", result.display_name.c_str());
+                            
+                            ImGui::TableSetColumnIndex(1);
+                            if (result.success) {
+                                ImGui::Text("%.1f", result.write_speed_mbps);
+                            } else {
+                                ImGui::Text("Error");
+                            }
+                            
+                            ImGui::TableSetColumnIndex(2);
+                            if (result.success) {
+                                ImGui::Text("%.1f", result.read_speed_mbps);
+                            } else {
+                                ImGui::Text("Error");
+                            }
+                            
+                            ImGui::TableSetColumnIndex(3);
+                            ImGui::Text("%s", result.get_drive_type().c_str());
+                        }
+                        
+                        ImGui::EndTable();
+                    }
+                }
+            } else {
+                // Show progress when benchmark is running
+                ImGui::Text("Benchmarking drives...");
+                ImGui::ProgressBar(benchmark_progress, ImVec2(-1, 0), "");
+                ImGui::Text("This may take a few moments...");
+                
+                // Check if benchmark is complete
+                if (benchmark_future.valid() && 
+                    benchmark_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                    benchmark_results = benchmark_future.get();
+                    benchmark_running = false;
+                    benchmark_progress = 0.0f;
+                }
+            }
         });
     }
     
@@ -337,6 +414,34 @@ struct sysinfo_card : public card {
         memory_info = get_memory_info();
         disk_info = get_disk_info();
         cpu_usage = get_cpu_usage();
+    }
+    
+    void start_drive_benchmark() {
+        if (benchmark_running) return;
+        
+        benchmark_running = true;
+        benchmark_progress = 0.0f;
+        
+        // Run benchmark in a separate thread
+        benchmark_future = std::async(std::launch::async, [this]() {
+            rouen::helpers::DriveBenchmark benchmark;
+            auto drive_paths = benchmark.get_common_drive_paths();
+            std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult> results;
+            
+            float progress_step = 1.0f / static_cast<float>(drive_paths.size());
+            
+            for (size_t i = 0; i < drive_paths.size(); ++i) {
+                const auto& [path, display_name] = drive_paths[i];
+                
+                auto result = benchmark.benchmark_path(path, display_name);
+                results.push_back(result);
+                
+                // Update progress
+                benchmark_progress = static_cast<float>(i + 1) * progress_step;
+            }
+            
+            return results;
+        });
     }
 
     std::string get_uri() const override {
@@ -348,6 +453,12 @@ private:
     std::tuple<double, double, double> memory_info {0.0, 0.0, 0.0};
     std::tuple<double, double, double> disk_info {0.0, 0.0, 0.0};
     double cpu_usage = 0.0;
+    
+    // Drive benchmark members
+    bool benchmark_running;
+    float benchmark_progress;
+    std::future<std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult>> benchmark_future;
+    std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult> benchmark_results;
 };
 
 } // namespace rouen::cards
