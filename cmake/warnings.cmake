@@ -88,6 +88,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wno-covered-switch-default   # Conflicts with -Wswitch-default for exhaustive enums
       -Wno-switch-default           # Allow exhaustive enum switches without default
       -Wno-unsafe-buffer-usage      # Legacy C-style buffer usage (would require major refactoring)
+      -Wno-reserved-macro-identifier # Allow mongoose's internal macros
     )
   endfunction()
 

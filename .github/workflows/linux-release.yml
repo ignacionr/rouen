@@ -2,8 +2,14 @@ name: Linux Build & Test
 
 on:
   workflow_dispatch:
-  workflow_call:
-  push:
+  workflow_call        echo "Testing Nix shell environment..."
+        nix develop --command bash -c "echo 'Nix shell works'; env | grep -E '(CMAKE_PREFIX_PATH|PKG_CONFIG_PATH)' || echo 'Env vars not set'"
+        
+        echo "Checking for glaze package..."
+        nix develop --command bash -c "find /nix/store -name '*glaze*' -type d | head -3" || echo "No glaze packages found"
+        
+        echo "Checking for imgui package..."
+        nix develop --command bash -c "find /nix/store -name '*imgui*' -type d | head -3" || echo "No imgui packages found":
     branches: [main]
     paths-ignore:
       - '**.md'
@@ -65,13 +71,13 @@ jobs:
         nix flake check --show-trace
         
         echo "Testing Nix shell environment..."
-        nix-shell --run "echo 'Nix shell works'; env | grep -E '(CMAKE_PREFIX_PATH|PKG_CONFIG_PATH)' || echo 'Env vars not set'"
+        nix develop --command bash -c "echo 'Nix shell works'; env | grep -E '(CMAKE_PREFIX_PATH|PKG_CONFIG_PATH)' || echo 'Env vars not set'"
         
         echo "Checking for glaze package..."
-        nix-shell --run "find /nix/store -name '*glaze*' -type d | head -3" || echo "No glaze packages found"
+        nix develop --command bash -c "find /nix/store -name '*glaze*' -type d | head -3" || echo "No glaze packages found"
         
         echo "Checking for imgui package..."
-        nix-shell --run "find /nix/store -name '*imgui*' -type d | head -3" || echo "No imgui packages found"
+        nix develop --command bash -c "find /nix/store -name '*imgui*' -type d | head -3" || echo "No imgui packages found"
         
         echo "Nix environment verified successfully"
 
@@ -134,9 +140,9 @@ jobs:
         echo "Setting up and running tests with Nix (using proven CI method)..."
         
         # Use the exact same approach as the working CI workflow
-        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-        nix-shell --run "cd build-tests && cmake --build . --parallel"
-        nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
+        nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
+        nix develop --command bash -c "cd build-tests && cmake --build . --parallel"
+        nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
         
         echo "All tests completed successfully using CI approach"
 

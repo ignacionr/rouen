@@ -185,7 +185,7 @@ private:
             size_t total_written = 0;
             while (total_written < TEST_SIZE) {
                 size_t to_write = std::min(BUFFER_SIZE, TEST_SIZE - total_written);
-                file.write(buffer.data(), to_write);
+                file.write(buffer.data(), static_cast<std::streamsize>(to_write));
                 if (!file) return -1;
                 total_written += to_write;
             }
@@ -195,8 +195,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = duration.count() / 1000000.0;
-            double mb_written = TEST_SIZE / (1024.0 * 1024.0);
+            double seconds = static_cast<double>(duration.count()) / 1000000.0;
+            double mb_written = static_cast<double>(TEST_SIZE) / (1024.0 * 1024.0);
             
             return mb_written / seconds;
             
@@ -217,8 +217,8 @@ private:
             
             while (total_read < TEST_SIZE && file) {
                 size_t to_read = std::min(BUFFER_SIZE, TEST_SIZE - total_read);
-                file.read(read_buffer.data(), to_read);
-                total_read += file.gcount();
+                file.read(read_buffer.data(), static_cast<std::streamsize>(to_read));
+                total_read += static_cast<size_t>(file.gcount());
             }
             
             file.close();
@@ -226,8 +226,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = duration.count() / 1000000.0;
-            double mb_read = total_read / (1024.0 * 1024.0);
+            double seconds = static_cast<double>(duration.count()) / 1000000.0;
+            double mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
             
             return mb_read / seconds;
             
@@ -248,8 +248,8 @@ private:
             size_t total_read = 0;
             
             while (file) {
-                file.read(read_buffer.data(), read_buffer.size());
-                total_read += file.gcount();
+                file.read(read_buffer.data(), static_cast<std::streamsize>(read_buffer.size()));
+                total_read += static_cast<size_t>(file.gcount());
                 if (file.gcount() == 0) break;
             }
             
@@ -258,8 +258,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = duration.count() / 1000000.0;
-            double mb_read = total_read / (1024.0 * 1024.0);
+            double seconds = static_cast<double>(duration.count()) / 1000000.0;
+            double mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
             
             return mb_read / seconds;
             

@@ -38,7 +38,7 @@ struct sysinfo_card : public card {
         colors[2] = {0.2f, 0.7f, 0.2f, 1.0f}; // Green progress bar color
         
         name("System Info");
-        width = 400.0f; // Increased width to accommodate benchmark results
+        width = 470.0f; // Increased width to accommodate benchmark results
         
         // Request higher refresh rate for updating metrics
         requested_fps = 5;  // Update 5 times per second
@@ -252,7 +252,7 @@ struct sysinfo_card : public card {
     // Draw a progress bar with text overlay
     void draw_progress_bar(const char* label, float fraction, const char* overlay_text) {
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colors[2]);
-        ImGui::ProgressBar(fraction, ImVec2(-1, 0), overlay_text);
+        ImGui::ProgressBar(fraction, ImVec2(400, 0), overlay_text);
         ImGui::PopStyleColor();
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::Text("%s", label);
@@ -319,7 +319,6 @@ struct sysinfo_card : public card {
             ImGui::Separator();
             
             // Memory section
-            ImGui::Text("Memory Usage:");
             auto [mem_total, mem_used, mem_free] = memory_info;
             std::string mem_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", mem_used, mem_total, (mem_used / mem_total) * 100.0);
             draw_progress_bar("RAM", static_cast<float>(mem_used / mem_total), mem_text.c_str());
@@ -327,7 +326,6 @@ struct sysinfo_card : public card {
             ImGui::Spacing();
             
             // Disk space section
-            ImGui::Text("Disk Usage:");
             auto [disk_total, disk_used, disk_free] = disk_info;
             std::string disk_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", disk_used, disk_total, (disk_used / disk_total) * 100.0);
             draw_progress_bar("Disk", static_cast<float>(disk_used / disk_total), disk_text.c_str());
@@ -335,7 +333,6 @@ struct sysinfo_card : public card {
             ImGui::Spacing();
             
             // CPU usage section
-            ImGui::Text("CPU Usage:");
             std::string cpu_text = std::format("{:.1f}%", cpu_usage);
             draw_progress_bar("CPU", static_cast<float>(cpu_usage / 100.0), cpu_text.c_str());
             
