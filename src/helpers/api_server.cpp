@@ -8,11 +8,15 @@
 #include <thread>
 
 // 2. Libraries used in the project, in alphabetic order
-// Suppress mongoose reserved macro warnings
+// Suppress mongoose reserved macro warnings (Clang only)
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#endif
 #include <mongoose.h>
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 // Glaze for JSON parsing
 #include <glaze/glaze.hpp>
