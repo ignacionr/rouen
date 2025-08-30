@@ -121,9 +121,9 @@ jobs:
     - name: Run Tests
       run: |
         echo "Running tests with proven CI approach..."
-        nix-shell --run "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-        nix-shell --run "cd build-tests && cmake --build . --parallel"
-        nix-shell --run "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
+        nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
+        nix develop --command bash -c "cd build-tests && cmake --build . --parallel"
+        nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
 
     - name: Package Linux Release
       run: |
