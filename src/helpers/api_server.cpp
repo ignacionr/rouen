@@ -33,6 +33,10 @@ struct ai_request {
     std::string model = "default";
 };
 
+struct error_response {
+    std::string error;
+};
+
 namespace rouen::helpers {
 
 api_server::api_server()
@@ -165,7 +169,8 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
         // Get the create_card service from registrar
         auto create_card_func = registrar::get<std::function<void(std::string const&)>>("create_card");
         if (!create_card_func) {
-            return "{\"error\":\"Card creation service not available\"}";
+            error_response response{"Card creation service not available"};
+            return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
         }
 
         // Parse JSON body using glaze with inline reflection
@@ -175,7 +180,8 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
         if (!body.empty()) {
             auto result = glz::read_json(request, body);
             if (!result) {
-                return "{\"error\":\"Invalid JSON format\"}";
+                error_response response{"Invalid JSON format"};
+                return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
             }
         }
 
@@ -184,7 +190,8 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
 
         return "{\"success\":true,\"message\":\"Card created successfully\",\"uri\":\"" + request.uri + "\"}";
     } catch (const std::exception& e) {
-        return "{\"error\":\"" + std::string(e.what()) + "\"}";
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
     }
 }
 
@@ -193,7 +200,8 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
         // Get the MCP service from registrar
         auto mcp_service = registrar::get<std::shared_ptr<rouen::helpers::mcp_service>>("mcp_service");
         if (!mcp_service) {
-            return "{\"error\":\"AI service not available\"}";
+            error_response response{"AI service not available"};
+            return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
         }
 
         // Parse JSON body using glaze with inline reflection
@@ -203,14 +211,16 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
         if (!body.empty()) {
             auto result = glz::read_json(request, body);
             if (!result) {
-                return "{\"error\":\"Invalid JSON format\"}";
+                error_response response{"Invalid JSON format"};
+                return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
             }
         }
 
         // For now, return a simple response
         return "{\"success\":true,\"message\":\"AI request processed\",\"model\":\"" + request.model + "\"}";
     } catch (const std::exception& e) {
-        return "{\"error\":\"" + std::string(e.what()) + "\"}";
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
     }
 }
 
