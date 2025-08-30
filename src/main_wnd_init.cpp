@@ -83,6 +83,14 @@ bool main_wnd::initialize() {
         registrar::add<rouen::helpers::mcp_service>("mcp_service", 
             std::make_shared<rouen::helpers::mcp_service>());
 
+        // Initialize and start the API server
+        if (m_api_server->initialize()) {
+            m_api_server->start("http://127.0.0.1:8081");
+            std::cout << "API server initialized and started on port 8081" << std::endl;
+        } else {
+            std::cerr << "Failed to initialize API server" << std::endl;
+        }
+
         // Register window services for fit-to-width feature
         registrar::add<std::function<void(int, int)>>("resize_window", 
             std::make_shared<std::function<void(int, int)>>(
