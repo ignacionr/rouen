@@ -20,6 +20,14 @@
         darwinFrameworks = unstable.lib.optionals unstable.stdenv.isDarwin [
           unstable.darwin.apple_sdk.frameworks.Foundation
           unstable.darwin.apple_sdk.frameworks.AppKit
+          unstable.darwin.apple_sdk.frameworks.IOKit
+          unstable.darwin.apple_sdk.frameworks.CoreVideo
+          unstable.darwin.apple_sdk.frameworks.AudioToolbox
+          unstable.darwin.apple_sdk.frameworks.CoreHaptics
+          unstable.darwin.apple_sdk.frameworks.GameController
+          unstable.darwin.apple_sdk.frameworks.Metal
+          unstable.darwin.apple_sdk.frameworks.ForceFeedback
+          unstable.darwin.apple_sdk.frameworks.Carbon
           unstable.darwin.apple_sdk.frameworks.OpenGL
           unstable.darwin.apple_sdk.frameworks.Security
           unstable.darwin.apple_sdk.frameworks.CoreFoundation
@@ -50,9 +58,8 @@
             unstable.glaze
             unstable.imgui
             unstable.gtest.dev  # Google Test development headers and CMake files
-            unstable.gtest.dev  # Google Test development headers and CMake files
-            unstable.gtest.dev  # Google Test development headers and CMake files
-          ] ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
+          ] 
+            ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.gcc 
               unstable.libGL 

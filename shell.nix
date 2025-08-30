@@ -32,7 +32,8 @@ pkgs.mkShell {
     pkgs.imgui
     # Add macOS SDK frameworks for proper header isolation
   ] ++ (if isDarwin then [
-    pkgs.darwin.apple_sdk.frameworks.Cocoa
+    pkgs.darwin.apple_sdk.frameworks.Foundation
+    pkgs.darwin.apple_sdk.frameworks.AppKit
     pkgs.darwin.apple_sdk.frameworks.IOKit
     pkgs.darwin.apple_sdk.frameworks.CoreVideo
     pkgs.darwin.apple_sdk.frameworks.AudioToolbox
