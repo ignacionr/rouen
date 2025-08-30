@@ -24,7 +24,7 @@ private:
 public:
     DriveBenchmark() : buffer(BUFFER_SIZE), rng(std::random_device{}()) {
         // Fill buffer with random data
-        std::uniform_int_distribution<unsigned char> dist(0, 255);
+        std::uniform_int_distribution<unsigned int> dist(0, 255);
         for (auto& byte : buffer) {
             byte = static_cast<char>(dist(rng));
         }
