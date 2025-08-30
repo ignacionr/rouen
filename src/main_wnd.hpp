@@ -13,6 +13,7 @@
 
 // 3. All other includes
 #include "helpers/deferred_operations.hpp"
+#include "helpers/api_server.hpp"
 #include "registrar.hpp"
 
 // Define MainWindow class in the rouen namespace for consistency
@@ -56,6 +57,9 @@ private:
     bool m_imgui_sdl_initialized = false;
     bool m_imgui_renderer_initialized = false;
     bool m_imgui_context_created = false;
+    
+    // API server for command and control
+    std::unique_ptr<rouen::helpers::api_server> m_api_server;
     
     // MainWindow is commented out as it's currently unused
     // Uncomment when needed for implementation

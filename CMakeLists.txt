@@ -63,7 +63,7 @@ if(MSVC)
 endif()
 
 # Project name and version
-project(rouen VERSION 1.0 LANGUAGES CXX)
+project(rouen VERSION 1.0 LANGUAGES C CXX)
 
 # Platform-specific compiler settings
 if(APPLE)
@@ -351,6 +351,13 @@ elseif(TARGET imgui::imgui)
   target_link_libraries(imcolortextedit PUBLIC imgui::imgui)
 endif()
 
+# Add mongoose as a static library (compiled as C)
+add_library(mongoose STATIC ${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c)
+set_target_properties(mongoose PROPERTIES LINKER_LANGUAGE C)
+target_include_directories(mongoose PUBLIC ${CMAKE_SOURCE_DIR}/external/mongoose-7.15)
+# Force C compilation for mongoose
+set_source_files_properties(${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c PROPERTIES LANGUAGE C)
+
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
 
@@ -366,6 +373,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/config_service.cpp
   src/helpers/llm_config.cpp
   src/helpers/mcp_service.cpp
+  src/helpers/api_server.cpp
   src/cards/interface/card.cpp
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
@@ -405,6 +413,8 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
+  ${CMAKE_SOURCE_DIR}/external/mongoose-7.15
+  ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/helpers
 )
 
@@ -447,6 +457,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
     tinyxml2::tinyxml2
     unofficial::sqlite3::sqlite3
+    mongoose
   )
 else()
   # System dependencies with standard target names
@@ -467,6 +478,7 @@ else()
     ${SQLite3_LIBRARIES}
     SDL2::SDL2
     SDL2_image::SDL2_image
+    mongoose
   )
   
   # Always link with imgui_backends when using system ImGui

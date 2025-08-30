@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-24.05.tar.gz") {} }:
 
 let
   # Platform detection
@@ -32,7 +32,10 @@ pkgs.mkShell {
     pkgs.imgui
     # Add macOS SDK frameworks for proper header isolation
   ] ++ (if isDarwin then [
-    pkgs.darwin.apple_sdk.frameworks.Cocoa
+    # Use current Darwin frameworks - these should be available in modern nixpkgs
+    # The legacy apple_sdk_11_0 stub has been removed, but frameworks are still accessible
+    pkgs.darwin.apple_sdk.frameworks.Foundation
+    pkgs.darwin.apple_sdk.frameworks.AppKit
     pkgs.darwin.apple_sdk.frameworks.IOKit
     pkgs.darwin.apple_sdk.frameworks.CoreVideo
     pkgs.darwin.apple_sdk.frameworks.AudioToolbox
