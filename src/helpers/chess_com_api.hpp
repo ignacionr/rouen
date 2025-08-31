@@ -38,7 +38,7 @@ struct ChessComGame {
     struct Players {
         struct Player {
             std::string username;
-            int result; // 'win', 'lose', 'draw' encoded as integers
+            std::string result; // Player result: 'win', 'lose', 'checkmated', 'resigned', 'timeout', etc.
             std::string rating;
         };
         
@@ -158,14 +158,28 @@ public:
                     extract_player_info_from_pgn(game_item.pgn, archive_game);
                 }
                 
-                // Use the result field if available, otherwise derive from players' results
-                if (!game_item.result.empty()) {
+                // Always try to extract result from PGN as primary source
+                extract_result_from_pgn(game_item.pgn, archive_game);
+                
+                // Use the result field from API if PGN extraction failed
+                if (archive_game.result.empty() && !game_item.result.empty()) {
                     archive_game.result = game_item.result;
-                } else {
-                    // Determine result based on player results (win/loss/draw)
-                    if (game_item.players.white.result == 1) {
+                }
+                
+                // Final fallback: derive from players' results if still no result
+                if (archive_game.result.empty()) {
+                    // Determine result based on player results (win/loss/draw/checkmate/resigned/timeout)
+                    // Chess.com API returns result as strings like "win", "lose", "checkmated", etc.
+                    const std::string& white_result = game_item.players.white.result;
+                    const std::string& black_result = game_item.players.black.result;
+                    
+                    if (white_result == "win" || white_result == "checkmated" || 
+                        white_result == "timeout" || white_result == "resigned" || 
+                        white_result == "abandoned") {
                         archive_game.result = "1-0";
-                    } else if (game_item.players.black.result == 1) {
+                    } else if (black_result == "win" || black_result == "checkmated" || 
+                               black_result == "timeout" || black_result == "resigned" || 
+                               black_result == "abandoned") {
                         archive_game.result = "0-1";
                     } else {
                         archive_game.result = "1/2-1/2";
@@ -203,7 +217,10 @@ public:
                 game.black_username = pgn.substr(start, end - start);
             }
         }
-        
+    }
+    
+    // Extract result from PGN
+    void extract_result_from_pgn(const std::string& pgn, ChessGameArchive& game) {
         // Extract Result from PGN
         size_t result_pos = pgn.find("[Result \"");
         if (result_pos != std::string::npos) {
@@ -300,25 +317,7 @@ public:
     
     // Properly clean and prepare a PGN from Chess.com for loading
     std::string prepare_pgn_for_loading(const std::string& pgn) {
-        std::string clean_pgn;
-        
-        try {
-            // Properly unescape the PGN string using the JSON library
-            std::string json_string = "\"" + pgn + "\"";
-            auto read_result = glz::read_json(clean_pgn, json_string);
-            if (read_result) {
-                CHESS_API_ERROR_FMT("Error unescaping PGN: {}", glz::format_error(read_result, json_string));
-                // Fallback to direct PGN if Glaze unescaping fails
-                clean_pgn = pgn;
-            } else {
-                CHESS_API_INFO("Successfully unescaped PGN JSON string");
-            }
-        } catch (const std::exception& e) {
-            CHESS_API_ERROR_FMT("Error unescaping PGN: {}", e.what());
-            
-            // Fallback to direct PGN if Glaze unescaping fails
-            clean_pgn = pgn;
-        }
+        std::string clean_pgn = pgn;  // PGN is already unescaped from JSON parsing
         
         // Ensure PGN starts with a valid tag
         if (!clean_pgn.empty() && clean_pgn.front() != '[') {

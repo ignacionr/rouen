@@ -360,31 +360,39 @@ public:
     // Load a game from PGN (Portable Game Notation) string
     bool load_from_pgn(const std::string& pgn) {
         reset();
-        
+
         std::istringstream pgn_stream(pgn);
         std::string line;
-        
-        // Parse header information
+        std::string move_text;
+
+        // Parse header information and collect move text
         bool in_header = true;
         while (std::getline(pgn_stream, line)) {
             // Skip empty lines
             if (line.empty()) continue;
-            
+
             // Check for header tags
             if (in_header && line[0] == '[') {
                 parse_pgn_tag(line);
             } else {
                 in_header = false;
-                
-                // Parse moves
-                std::vector<Move> parsed_moves = parse_pgn_moves(line);
-                add_moves(parsed_moves);
+                // Collect all move text lines
+                if (!line.empty()) {
+                    if (!move_text.empty()) move_text += " ";
+                    move_text += line;
+                }
             }
         }
-        
+
+        // Parse moves from collected move text
+        if (!move_text.empty()) {
+            std::vector<Move> parsed_moves = parse_pgn_moves(move_text);
+            add_moves(parsed_moves);
+        }
+
         // Reset position to the start
         set_position(0);
-        
+
         CHESS_INFO_FMT("Loaded game from PGN with {} moves", moves.size());
         return !moves.empty();
     }
@@ -489,9 +497,10 @@ private:
             if (token.back() == '.' || token == "1/2-1/2" || token == "1-0" || token == "0-1" || token == "*") {
                 continue;
             }
-            // Skip metadata and stray braces
+            // Skip metadata and clock comments (e.g., {[%clk 0:00:59.9]})
             if (token.front() == '{') {
-                for (size_t end_brace = token.find('}'); end_brace == std::string::npos; end_brace = token.find('}')) {
+                // Skip until we find the closing brace
+                while (token.find('}') == std::string::npos) {
                     if (!(stream >> token)) break;
                 }
                 continue;
