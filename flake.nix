@@ -58,6 +58,8 @@
             unstable.glaze
             unstable.imgui
             unstable.gtest.dev  # Google Test development headers and CMake files
+            unstable.mpv         # Media player for voice notes playback
+            unstable.sox         # Audio processing tool for voice notes recording
           ] 
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
@@ -96,6 +98,7 @@
             unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze 
             unstable.imgui 
+            unstable.mpv         # Media player for voice notes playback
           ] ++ darwinFrameworks
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.libGL 

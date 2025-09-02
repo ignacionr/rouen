@@ -20,6 +20,7 @@
 #endif
 
 #include "debug.hpp"
+#include "platform_utils.hpp"
 
 // MPV component logging macros
 #define MPV_ERROR(message) LOG_COMPONENT("MPV", LOG_LEVEL_ERROR, message)

@@ -58,6 +58,7 @@ namespace rouen::cards {
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                         {"Alarm", []() { "create_card"_sfn("alarm"); }},
                         {"Unit Converter", []() { "create_card"_sfn("converter"); }},
+                        {"Voice Notes", []() { "create_card"_sfn("voice-notes"); }},
                         {"Jira", []() { "create_card"_sfn("jira"); }},
                         {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
                         {"Jira Search", []() { "create_card"_sfn("jira-search"); }},

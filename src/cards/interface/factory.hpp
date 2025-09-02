@@ -30,9 +30,10 @@
 #include "../media/radio.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
-#include "../productivity/jira_card.hpp"
-#include "../productivity/pomodoro.hpp"
 #include "../productivity/trello_card.hpp"
+#include "../productivity/pomodoro.hpp"
+#include "../productivity/voice_notes.hpp"
+#include "../productivity/jira_card.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
 #include "../system/settings.hpp"
@@ -210,34 +211,37 @@ namespace rouen::cards {
                 
                 // Explicitly register Jira cards here rather than relying solely on the registrar
                 instance.emplace("jira", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<jira_card>();
+                    return std::make_shared<rouen::cards::jira_card>();
                 });
 
                 instance.emplace("jira-projects", [](std::string_view, SDL_Renderer*) {
-                    auto card = std::make_shared<jira_card>();
+                    auto card = std::make_shared<rouen::cards::jira_card>();
                     return card;
                 });
 
                 instance.emplace("jira-search", [](std::string_view, SDL_Renderer*) {
-                    auto card = std::make_shared<jira_card>();
+                    auto card = std::make_shared<rouen::cards::jira_card>();
                     return card;
                 });
                 
                 // Register Trello cards
                 instance.emplace("trello", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<trello_card>();
+                    return std::make_shared<rouen::cards::trello_card>();
                 });
                 
                 instance.emplace("trello-board", [](std::string_view board_id, SDL_Renderer*) {
-                    return std::make_shared<trello_card>(std::string(board_id));
+                    return std::make_shared<rouen::cards::trello_card>(std::string(board_id));
                 });
                 
                 // Register the chess replay card
                 instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
                     return std::make_shared<chess_replay>(pgn_path);
                 });
-
-                initialized = true;
+                
+                // Register the voice notes card
+                instance.emplace("voice-notes", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<rouen::cards::productivity::voice_notes>();
+                });
             }
             
             return instance;

@@ -1,7 +1,8 @@
 #pragma once
-#include "media_player_item.hpp"
+#include "../registrar.hpp"
 #include "platform_utils.hpp"
 #include "config_service.hpp"
+#include "media_player_item.hpp"
 #include <string>
 #include <thread>
 #include <chrono>
@@ -28,7 +29,7 @@ namespace media_player_alarm_helper {
         return alarm_item;
     }
     
-    static void play_sound_loop(std::string_view file_path) {
+    [[maybe_unused]] static void play_sound_loop(std::string_view file_path) {
         auto& alarm_item = alarm_item_instance();
         auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
         alarm_item.url = resource_path.string();
@@ -125,7 +126,7 @@ namespace media_player_alarm_helper {
 #endif
     }
     
-    static void stop_sound_loop() {
+    [[maybe_unused]] static void stop_sound_loop() {
         auto& alarm_item = alarm_item_instance();
         alarm_item.stopMedia();
     }

@@ -393,6 +393,7 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/trello_card_cards.cpp
   src/cards/productivity/trello_card_ui.cpp
   src/cards/productivity/trello_card_async.cpp
+  src/cards/productivity/voice_notes.cpp
   src/cards/media/chess_com_integration.cpp
   # RSS model refactor additions
   src/models/rss/feed_item.cpp
