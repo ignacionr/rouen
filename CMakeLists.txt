@@ -378,6 +378,7 @@ add_executable(${PROJECT_NAME}
   src/cards/development/github_registrar.cpp
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp
+  src/cards/productivity/converter.cpp
   src/cards/information/bybit_registrar.cpp
   src/models/jira_model_core.cpp
   src/models/jira_model_connection.cpp
