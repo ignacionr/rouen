@@ -69,3 +69,51 @@ void main_wnd::setup_dark_theme() {
     // Text editor and input areas - ensure high contrast for text
     colors[ImGuiCol_TextSelectedBg] = ImVec4(0.37f, 0.53f, 0.71f, 0.50f);  // Blue tint for selected text
 }
+
+void main_wnd::configure_highdpi_settings() {
+    auto& io = ImGui::GetIO();
+    
+    // Get the window size and drawable size to calculate DPI scale
+    int window_w, window_h;
+    int drawable_w, drawable_h;
+    
+    SDL_GetWindowSize(m_window, &window_w, &window_h);
+    SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);
+    
+    float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
+    float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
+    
+    std::cout << "Configuring high-DPI settings:" << std::endl;
+    std::cout << "  Window size: " << window_w << "x" << window_h << std::endl;
+    std::cout << "  Drawable size: " << drawable_w << "x" << drawable_h << std::endl;
+    std::cout << "  Scale factors: " << scale_x << " x " << scale_y << std::endl;
+    
+    // Set the display scale and framebuffer scale
+    io.DisplaySize = ImVec2(static_cast<float>(window_w), static_cast<float>(window_h));
+    io.DisplayFramebufferScale = ImVec2(scale_x, scale_y);
+    
+    std::cout << "  ImGui DisplaySize set to: " << io.DisplaySize.x << "x" << io.DisplaySize.y << std::endl;
+    std::cout << "  ImGui DisplayFramebufferScale set to: " << io.DisplayFramebufferScale.x << "x" << io.DisplayFramebufferScale.y << std::endl;
+}
+
+void main_wnd::update_imgui_display_settings() {
+    auto& io = ImGui::GetIO();
+    
+    // Get current window and drawable sizes
+    int window_w, window_h;
+    int drawable_w, drawable_h;
+    
+    SDL_GetWindowSize(m_window, &window_w, &window_h);
+    SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);
+    
+    // Update display size to logical window size
+    io.DisplaySize.x = static_cast<float>(window_w);
+    io.DisplaySize.y = static_cast<float>(window_h);
+    
+    // Update framebuffer scale
+    float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
+    float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
+    
+    io.DisplayFramebufferScale.x = scale_x;
+    io.DisplayFramebufferScale.y = scale_y;
+}

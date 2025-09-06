@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <SDL.h>
 #include <SDL_syswm.h>
+#include <cmath>
 
 // SDL version requirements
 #if SDL_VERSION_ATLEAST(2,0,4) && !defined(__EMSCRIPTEN__) && !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IOS) && !defined(__amigaos4__)
@@ -153,6 +154,27 @@ bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event)
     case SDL_MOUSEMOTION:
         {
             ImVec2 mouse_pos((float)event->motion.x, (float)event->motion.y);
+#ifdef __APPLE__
+            // Fix for high DPI mac - scale mouse coordinates
+            // Fix from: https://github.com/ocornut/imgui/issues/3757
+            int w, h;
+            int display_w, display_h;
+            SDL_GetWindowSize(bd->Window, &w, &h);
+            if (bd->Renderer != nullptr)
+                SDL_GetRendererOutputSize(bd->Renderer, &display_w, &display_h);
+            else
+                SDL_GL_GetDrawableSize(bd->Window, &display_w, &display_h);
+                
+            if (w > 0 && h > 0 && display_w != w)
+            {
+                float dpi_scale = (float)display_w / w;
+                if (dpi_scale > 1.0f)
+                {
+                    mouse_pos.x *= std::ceil(dpi_scale);
+                    mouse_pos.y *= std::ceil(dpi_scale);
+                }
+            }
+#endif
             io.AddMousePosEvent(mouse_pos.x, mouse_pos.y);
             return true;
         }
@@ -288,6 +310,16 @@ void ImGui_ImplSDL2_NewFrame()
     io.DisplaySize = ImVec2((float)w, (float)h);
     if (w > 0 && h > 0)
         io.DisplayFramebufferScale = ImVec2((float)display_w / w, (float)display_h / h);
+
+#if defined(__APPLE__)
+    // On Apple, the window size is reported in Low DPI, even when running in high DPI mode
+    // Fix from: https://github.com/ocornut/imgui/issues/3757
+    if (display_h != h && (float)display_w / w > 1.0f)
+    {
+        io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
+        io.DisplaySize = ImVec2((float)display_w, (float)display_h);
+    }
+#endif
 
     // Setup time step
     static Uint64 frequency = SDL_GetPerformanceFrequency();

@@ -98,7 +98,8 @@
         "test_*.cpp": "cpp",
         "*_test.cpp": "cpp",
         "*.gtest": "cpp",
-        "__verbose_abort": "cpp"
+        "__verbose_abort": "cpp",
+        "ios": "cpp"
     },
     "C_Cpp.default.compileCommands": "${workspaceFolder}/build-cmake-tools/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",

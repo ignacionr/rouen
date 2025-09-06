@@ -10,8 +10,13 @@
 #include "fonts.hpp"
 #include "helpers/debug.hpp"  // For logging
 #include "helpers/platform_utils.hpp"  // For resource path utilities
+#include "registrar.hpp"  // For accessing registered services
+#include <SDL.h>  // For SDL DPI functions
 
 namespace rouen::fonts {
+    // Static variables to track DPI state
+    static float last_dpi_scale = 1.0f;
+    static bool fonts_need_rebuild = false;
     // Helper function to find font file
     std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
         for (const auto& base_path : search_paths) {
@@ -63,6 +68,31 @@ namespace rouen::fonts {
     
     // Setup fonts
     void setup() {
+        auto & io = ImGui::GetIO();
+        
+        // Get DPI scale from ImGui's already configured display scale
+        float dpi_scale = io.DisplayFramebufferScale.x;
+        
+        std::cout << "Font setup using DPI scale: " << dpi_scale << std::endl;
+        
+        // Scale base font size for high-DPI displays
+        float scaled_base_size = base_size * dpi_scale;
+        
+        // Scale ImGui style for consistent UI scaling
+        ImGuiStyle& style = ImGui::GetStyle();
+        // Only scale if we haven't already scaled before
+        static bool style_scaled = false;
+        if (!style_scaled && dpi_scale > 1.0f) {
+            style.ScaleAllSizes(dpi_scale);
+            style_scaled = true;
+            std::cout << "Scaled ImGui style by factor: " << dpi_scale << std::endl;
+        }
+        
+        std::cout << "Using DPI scale: " << dpi_scale << ", Scaled font size: " << scaled_base_size << std::endl;
+        
+        // Store the current DPI scale for change detection
+        last_dpi_scale = dpi_scale;
+        
         // Load font with Cyrillic support and symbols
         // Add default font with Cyrillic character range and geometric symbols
         static const ImWchar ranges[] = {
@@ -83,8 +113,6 @@ namespace rouen::fonts {
             static_cast<ImWchar>(0xFFFF), // Limit to what ImWchar can hold
             0 
         };
-        
-        auto & io = ImGui::GetIO();
         
         // Get font search paths based on the operating system
         auto font_paths = get_system_font_paths();
@@ -159,7 +187,7 @@ namespace rouen::fonts {
             // This will prevent the assertion failure but won't have all the glyphs
         } else {
             // Load the default font first
-            io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), base_size, NULL, ranges);
+            io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, NULL, ranges);
             
             // Then merge Material Design Icons with the default font
             if (!material_icons_path.empty()) {
@@ -167,12 +195,12 @@ namespace rouen::fonts {
                 icons_config.MergeMode = true;  // Make sure merge mode is true
                 icons_config.PixelSnapH = true;
                 // Add vertical offset for better alignment with text
-                icons_config.GlyphOffset = ImVec2(0, 2.5f);
+                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
                 icons_config.OversampleH = 3;
                 icons_config.OversampleV = 3;
                 strcpy(icons_config.Name, "Material Icons");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with default font" << std::endl;
             } else {
                 std::cerr << "WARNING: Could not find Material Icons font!" << std::endl;
@@ -181,24 +209,84 @@ namespace rouen::fonts {
         
         // Add monospace font if found
         if (!mono_font_path.empty()) {
-            io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), base_size, NULL, ranges);
+            io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, NULL, ranges);
             
             // Also merge Material Design Icons with the monospace font if found
             if (!material_icons_path.empty()) {
                 ImFontConfig icons_config;
                 icons_config.MergeMode = true;
                 icons_config.PixelSnapH = true;
-                icons_config.GlyphOffset = ImVec2(0, 2.5f);  // Match the vertical offset used for default font
+                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);  // Match the vertical offset used for default font
                 icons_config.OversampleH = 3;
                 icons_config.OversampleV = 3;
                 strcpy(icons_config.Name, "Material Icons (Mono)");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with monospace font" << std::endl;
             }
         } else {
             std::cerr << "WARNING: Could not find a suitable monospace font!" << std::endl;
         }
+        
+        // Build the font atlas after loading all fonts
+        io.Fonts->Build();
+        
+        // Clear any pending rebuild flag since we just rebuilt
+        clear_font_rebuild_flag();
+    }
+
+    // Refresh DPI settings (useful when display configuration changes)
+    void refresh_dpi() {
+        auto & io = ImGui::GetIO();
+        
+        // Get the current renderer to query actual DPI information
+        auto renderer_ptr = registrar::get<SDL_Renderer*>("main_renderer");
+        SDL_Renderer* renderer = renderer_ptr ? *renderer_ptr : nullptr;
+        
+        float dpi_scale = 1.0f;
+        
+        if (renderer) {
+            // Get the window from the renderer
+            SDL_Window* window = SDL_RenderGetWindow(renderer);
+            if (window) {
+                // Get the window size in points (logical size)
+                int window_w, window_h;
+                SDL_GetWindowSize(window, &window_w, &window_h);
+                
+                // Get the drawable size in pixels (actual framebuffer size)
+                int drawable_w, drawable_h;
+                SDL_GetRendererOutputSize(renderer, &drawable_w, &drawable_h);
+                
+                // Calculate the actual DPI scale factor
+                if (window_w > 0 && drawable_w > 0) {
+                    dpi_scale = static_cast<float>(drawable_w) / static_cast<float>(window_w);
+                    
+                    // Update ImGui's display scale
+                    io.DisplayFramebufferScale = ImVec2(dpi_scale, dpi_scale);
+                    
+                    std::cout << "Refreshed DPI scale: " << dpi_scale << 
+                                 " (window: " << window_w << "x" << window_h << 
+                                 ", drawable: " << drawable_w << "x" << drawable_h << ")" << std::endl;
+                    
+                    // Check if DPI scale has changed significantly
+                    if (std::abs(dpi_scale - last_dpi_scale) > 0.1f) {
+                        fonts_need_rebuild = true;
+                        std::cout << "DPI scale changed from " << last_dpi_scale << " to " << dpi_scale << 
+                                     ", fonts need rebuild" << std::endl;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if fonts need to be rebuilt due to DPI changes
+    bool needs_font_rebuild() {
+        return fonts_need_rebuild;
+    }
+
+    // Clear the font rebuild flag (called after fonts are rebuilt)
+    void clear_font_rebuild_flag() {
+        fonts_need_rebuild = false;
     }
 
     ImFont* get_font(FontType type) {

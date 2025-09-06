@@ -38,6 +38,12 @@ public:
 
     void setup_dark_theme();
 
+    // Configure high-DPI settings for ImGui
+    void configure_highdpi_settings();
+
+    // Update ImGui display settings each frame
+    void update_imgui_display_settings();
+
     // Window resizing functionality
     void resize_window(int width, int height);
 

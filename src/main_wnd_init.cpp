@@ -44,9 +44,10 @@ bool main_wnd::initialize() {
         
         DB_INFO_FMT("SDL_image initialized successfully with flags: 0x{:X}", img_init_result);
 
-        // Create window with SDL
+        // Create window with SDL - properly configure for high DPI
         std::cout << "DEBUG: Creating SDL window..." << std::endl;
         SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        
         m_window = SDL_CreateWindow(
             "Rouen",
             SDL_WINDOWPOS_CENTERED,
@@ -135,8 +136,6 @@ bool main_wnd::initialize() {
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
-        rouen::fonts::setup();
-
         // Setup ImGui style
         setup_dark_theme();
 
@@ -153,6 +152,13 @@ bool main_wnd::initialize() {
             return false;
         }
         m_imgui_renderer_initialized = true;
+
+        // Configure ImGui for high-DPI display handling BEFORE setting up fonts
+        configure_highdpi_settings();
+
+        // Now that backends are initialized, setup fonts with proper DPI scaling
+        // This must be done after the renderer and backends are fully initialized
+        rouen::fonts::setup();
 
         return true;
     } catch (const std::exception& e) {

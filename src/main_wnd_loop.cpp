@@ -102,10 +102,40 @@ bool main_wnd::process_events() {
                     m_done = true;
                     return false;
                 }
-                else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && 
+                else if (event.type == SDL_WINDOWEVENT) {
+                    if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
                         event.window.windowID == SDL_GetWindowID(m_window)) {
-                    m_done = true;
-                    return false;
+                        m_done = true;
+                        return false;
+                    }
+                    // Handle window resize to refresh DPI settings
+                    else if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                             event.window.event == SDL_WINDOWEVENT_MOVED) {
+                        
+                        std::cout << "Window event detected, updating display settings..." << std::endl;
+                        
+                        // Update ImGui display settings immediately
+                        update_imgui_display_settings();
+                        
+                        // Check if we moved to a different display with different DPI
+                        rouen::fonts::refresh_dpi();
+                        
+                        // Only rebuild fonts if there's a significant DPI change
+                        if (rouen::fonts::needs_font_rebuild()) {
+                            std::cout << "Significant DPI change detected, rebuilding fonts..." << std::endl;
+                            // Clear current fonts and rebuild
+                            ImGui::GetIO().Fonts->Clear();
+                            rouen::fonts::setup();
+                            
+                            // Clear the rebuild flag
+                            rouen::fonts::clear_font_rebuild_flag();
+                            
+                            // Rebuild ImGui font atlas
+                            ImGui_ImplSDLRenderer2_DestroyFontsTexture();
+                            ImGui_ImplSDLRenderer2_CreateFontsTexture();
+                        }
+                    }
                 }
                 // run shortcut key handlers
                 else if (event.type == SDL_KEYDOWN) {

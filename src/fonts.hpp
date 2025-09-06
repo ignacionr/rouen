@@ -22,6 +22,15 @@ namespace rouen::fonts {
     // Setup fonts for the application
     void setup();
 
+    // Refresh DPI settings (useful when display configuration changes)
+    void refresh_dpi();
+
+    // Check if fonts need to be rebuilt due to DPI changes
+    bool needs_font_rebuild();
+
+    // Clear the font rebuild flag (called after fonts are rebuilt)
+    void clear_font_rebuild_flag();
+
     // Get a font by type
     ImFont* get_font(FontType type);
 
