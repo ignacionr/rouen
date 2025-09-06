@@ -12,25 +12,10 @@
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [
-                { "name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build-nix" },
-                { "name": "ROUEN_LOG_LEVEL", "value": "TRACE" }
-            ],
-            "externalConsole": false,
+            "environment": [],
             "MIMode": "lldb",
-            "preLaunchTask": "Nix Build (Debug)",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for LLDB",
-                    "text": "settings set target.inline-breakpoint-strategy always",
-                    "ignoreFailures": true
-                }
-            ],
-            "logging": {
-                "moduleLoad": false,
-                "programOutput": true,
-                "trace": false
-            }
+            "MIDebuggerPath": "/usr/bin/lldb",
+            "preLaunchTask": "Nix Build (Debug)"
         },
         {
             "name": "🧪 Debug HTTP/SSL Tests (Nix)",
@@ -46,6 +31,7 @@
             ],
             "externalConsole": false,
             "MIMode": "lldb",
+            "MIDebuggerPath": "/usr/bin/lldb",
             "preLaunchTask": "Build Tests (Nix)",
             "setupCommands": [
                 {
@@ -74,6 +60,7 @@
             ],
             "externalConsole": false,
             "MIMode": "lldb",
+            "MIDebuggerPath": "/usr/bin/lldb",
             "preLaunchTask": "Build Tests (Nix)",
             "setupCommands": [
                 {
@@ -102,6 +89,7 @@
             ],
             "externalConsole": false,
             "MIMode": "lldb",
+            "MIDebuggerPath": "/usr/bin/lldb",
             "preLaunchTask": "Build Tests (Nix)",
             "setupCommands": [
                 {
@@ -130,6 +118,7 @@
             ],
             "externalConsole": false,
             "MIMode": "lldb",
+            "MIDebuggerPath": "/usr/bin/lldb",
             "preLaunchTask": "Build Tests (Nix)",
             "setupCommands": [
                 {

@@ -28,7 +28,9 @@
             "cStandard": "c17",
             "cppStandard": "c++23",
             "intelliSenseMode": "macos-clang-arm64",
-            "compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
+            "compileCommands": [
+                "${workspaceFolder}/build-vcpkg/compile_commands.json"
+            ],
             "configurationProvider": "ms-vscode.cmake-tools",
             "compilerArgs": [
                 "-stdlib=libc++",
@@ -62,7 +64,9 @@
             "cStandard": "c17",
             "cppStandard": "c++23",
             "intelliSenseMode": "macos-clang-arm64",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ],
             "configurationProvider": "ms-vscode.cmake-tools",
             "compilerArgs": [
                 "-stdlib=libc++",
@@ -96,7 +100,9 @@
             "cStandard": "c17",
             "cppStandard": "c++23",
             "intelliSenseMode": "linux-clang-x64",
-            "compileCommands": "${workspaceFolder}/build-vcpkg/compile_commands.json",
+            "compileCommands": [
+                "${workspaceFolder}/build-vcpkg/compile_commands.json"
+            ],
             "configurationProvider": "ms-vscode.cmake-tools",
             "compilerArgs": [
                 "-Wall",
@@ -126,7 +132,9 @@
             "cStandard": "c17",
             "cppStandard": "c++23",
             "intelliSenseMode": "linux-clang-x64",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ],
             "configurationProvider": "ms-vscode.cmake-tools",
             "compilerArgs": [
                 "-Wall",

@@ -14,6 +14,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(APPLE)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+    
+    # Set rpath for Nix store libraries on macOS
+    set(CMAKE_BUILD_RPATH "/nix/store")
+    set(CMAKE_INSTALL_RPATH "/nix/store")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
 # Avoid picking up system SDK headers/libraries
