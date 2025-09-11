@@ -194,9 +194,26 @@ public:
             // Search functionality
             static char search_buffer[256] = "";
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
-            ImGui::PushItemWidth(-1);
+            
+            // Calculate width for input field to leave space for clear button
+            float clear_button_width = 20.0f;
+            float input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
+            ImGui::PushItemWidth(input_width);
             
             ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
+            
+            // Handle ESC key to clear search while maintaining focus
+            if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                search_buffer[0] = '\0';
+                // Focus will naturally stay on the input field since we're not changing focus
+            }
+            
+            // Clear button (soft X)
+            ImGui::SameLine();
+            if (ImGui::SmallButton("×")) {
+                search_buffer[0] = '\0'; // Clear the search buffer
+                ImGui::SetKeyboardFocusHere(-1); // Focus the previous item (the InputText)
+            }
             
             // Show placeholder text when input is empty
             if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
