@@ -46,7 +46,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        width = 430.0f;
+        width = 580.0f;
         
         // Use the shared host instance instead of creating a new one
         rss_host = getHost();
@@ -93,7 +93,7 @@ public:
             ImGui::GetWindowDrawList()->AddText(
                 ImVec2(pos.x + 5, pos.y + 2),
                 ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                "Enter RSS feed URL or topic (Cmd/Ctrl+Enter for AI search)..."
+                "RSS feed URL or topic (Cmd/Ctrl+Enter for AI search)..."
             );
         }
         ImGui::PopItemWidth();
@@ -207,6 +207,9 @@ public:
                 search_buffer[0] = '\0';
                 // Focus will naturally stay on the input field since we're not changing focus
             }
+
+            // for the placeholder
+            auto pos = ImGui::GetItemRectMin();
             
             // Clear button (soft X)
             ImGui::SameLine();
@@ -217,11 +220,10 @@ public:
             
             // Show placeholder text when input is empty
             if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                auto pos = ImGui::GetItemRectMin();
                 ImGui::GetWindowDrawList()->AddText(
                     ImVec2(pos.x + 5, pos.y + 2),
                     ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                    "Search feeds... (Type to filter)"
+                    "Search feeds..."
                 );
             }
             ImGui::PopItemWidth();
@@ -231,7 +233,7 @@ public:
             
             // Create scrollable area for feeds
             auto available_size = ImGui::GetContentRegionAvail();
-            ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - 53);
+            ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - 110);
             if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
                 auto feeds = rss_host->feeds();
                 if (feeds.empty()) {
