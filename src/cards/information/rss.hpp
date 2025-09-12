@@ -46,7 +46,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        width = 580.0f;
+        width = 540.0f;
         
         // Use the shared host instance instead of creating a new one
         rss_host = getHost();
