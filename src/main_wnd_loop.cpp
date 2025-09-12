@@ -10,17 +10,28 @@
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
 #include "main_wnd.hpp"
+#include "registrar.hpp"
 
 void main_wnd::run() {
     try {
         // Create deck
-        deck main_deck(m_renderer);
+        auto main_deck = std::make_shared<deck>(m_renderer);
+
+        // Register the deck as a service for window close handling
+        registrar::add<deck>("deck", main_deck);
+
+        // Register a service to signal when a card close was handled this frame
+        registrar::add<std::function<void()>>("signal_card_close_handled",
+            std::make_shared<std::function<void()>>(
+                [this]() { m_card_close_handled_this_frame = true; }
+            )
+        );
 
         // Register a service to visit all cards of a given type by pointer
         registrar::add<std::function<void(std::string const&, std::function<void(card*)>)>>("for_each_card_ptr",
             std::make_shared<std::function<void(std::string const&, std::function<void(card*)>)>>(
-                [&main_deck](std::string const& type, std::function<void(card*)> visitor) {
-                    for (const auto& c : main_deck.get_cards()) {
+                [main_deck](std::string const& type, std::function<void(card*)> visitor) {
+                    for (const auto& c : main_deck->get_cards()) {
                         // Compare type prefix (e.g., "rss" for main RSS card)
                         if (c && c->get_uri().rfind(type, 0) == 0) {
                             visitor(c.get());
@@ -42,12 +53,15 @@ void main_wnd::run() {
                 ImGui_ImplSDL2_NewFrame();
                 ImGui::NewFrame();
 
+                // Reset the card close handled flag for this frame
+                m_card_close_handled_this_frame = false;
+
                 // Display the font character checker tool
                 // m_main_window.render_font_check();
 
                 // Render the deck and get requested fps
                 try {
-                    m_requested_fps = main_deck.render().requested_fps;
+                    m_requested_fps = main_deck->render().requested_fps;
                 } catch (const std::exception& e) {
                     DB_ERROR_FMT("Error during deck rendering: {}", e.what());
                     // Continue execution rather than crashing
@@ -74,6 +88,14 @@ void main_wnd::run() {
                 // Continue to next iteration rather than crashing
             }
         }
+        
+        // Cleanup - unregister services
+        try {
+            registrar::remove<deck>("deck");
+            registrar::remove<std::function<void(std::string const&, std::function<void(card*)>)>>("for_each_card_ptr");
+        } catch (const std::exception& e) {
+            DB_WARN_FMT("Error during service cleanup: {}", e.what());
+        }
     } catch (const std::exception& e) {
         DB_ERROR_FMT("Fatal error in run(): {}", e.what());
     } catch (...) {
@@ -99,14 +121,56 @@ bool main_wnd::process_events() {
             try {
                 ImGui_ImplSDL2_ProcessEvent(&event);
                 if (event.type == SDL_QUIT) {
-                    m_done = true;
-                    return false;
+                    bool should_close_app = true; // Default to closing the app
+#ifdef __APPLE__
+                    // On macOS, SDL_QUIT might be sent along with window close for Cmd+W
+                    // First check if a card already handled Cmd+W this frame
+                    if (m_card_close_handled_this_frame) {
+                        // Card close was already handled, don't close the app
+                        should_close_app = false;
+                    } else {
+                        // Check if we have any cards open - if so, try to close a focused card instead
+                        auto deck_service = registrar::get<deck>("deck");
+                        if (deck_service) {
+                            // Try to close a focused card first
+                            if (deck_service->close_focused_card()) {
+                                m_card_close_handled_this_frame = true; // Mark that we handled a card close
+                                should_close_app = false;
+                            }
+                        }
+                    }
+#endif
+                    if (should_close_app) {
+                        m_done = true;
+                        return false;
+                    }
                 }
                 else if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
                         event.window.windowID == SDL_GetWindowID(m_window)) {
-                        m_done = true;
-                        return false;
+                        bool should_close_app = true; // Default to closing the app
+#ifdef __APPLE__
+                        // On macOS, Cmd+W might be sent as a window close event
+                        // First check if a card already handled Cmd+W this frame
+                        if (m_card_close_handled_this_frame) {
+                            // Card close was already handled, don't close the app
+                            should_close_app = false;
+                        } else {
+                            // Check if we have any cards open - if so, try to close a focused card instead
+                            auto deck_service = registrar::get<deck>("deck");
+                            if (deck_service) {
+                                // Try to close a focused card first
+                                if (deck_service->close_focused_card()) {
+                                    m_card_close_handled_this_frame = true; // Mark that we handled a card close
+                                    should_close_app = false;
+                                }
+                            }
+                        }
+#endif
+                        if (should_close_app) {
+                            m_done = true;
+                            return false;
+                        }
                     }
                     // Handle window resize to refresh DPI settings
                     else if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
@@ -148,10 +212,10 @@ bool main_wnd::process_events() {
                             SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                         }
                     }
-                    // ctrl+shift+q exits the application
+                    // ctrl+shift+q (or cmd+shift+q on macOS) exits the application
                     else if (event.key.keysym.sym == SDLK_q && 
-                        (event.key.keysym.mod & KMOD_CTRL) &&
-                        (event.key.keysym.mod & KMOD_SHIFT)) {
+                        event.key.keysym.mod & KMOD_SHIFT &&
+                        (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
                         m_done = true;
                         return false;
                     }

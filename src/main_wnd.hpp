@@ -59,6 +59,9 @@ private:
     int m_requested_fps = 1;
     std::string keystrokes_;
     
+    // Flag to track if Cmd+W was handled at card level this frame
+    bool m_card_close_handled_this_frame = false;
+    
     // ImGui initialization state tracking
     bool m_imgui_sdl_initialized = false;
     bool m_imgui_renderer_initialized = false;

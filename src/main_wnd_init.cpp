@@ -44,6 +44,13 @@ bool main_wnd::initialize() {
         
         DB_INFO_FMT("SDL_image initialized successfully with flags: 0x{:X}", img_init_result);
 
+#ifdef __APPLE__
+        // On macOS, prevent system from intercepting Cmd+W and other shortcuts
+        SDL_SetHint(SDL_HINT_MAC_CTRL_CLICK_EMULATE_RIGHT_CLICK, "0");
+        // This hint prevents macOS from treating Cmd+key combinations as system shortcuts
+        SDL_SetHint("SDL_MAC_NO_SANDBOX", "1");
+#endif
+
         // Create window with SDL - properly configure for high DPI
         std::cout << "DEBUG: Creating SDL window..." << std::endl;
         SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
@@ -135,6 +142,11 @@ bool main_wnd::initialize() {
         // Enable keyboard and mouse controls
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+#ifdef __APPLE__
+        // Enable macOS-specific behavior for shortcuts (Cmd instead of Ctrl)
+        io.ConfigMacOSXBehaviors = true;
+#endif
 
         // Setup ImGui style
         setup_dark_theme();

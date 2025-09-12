@@ -161,8 +161,10 @@ struct deck {
     }
 
     void handle_shortcuts() {
-        if (ImGui::GetIO().KeyCtrl) {
-            if (ImGui::GetIO().KeyShift) {
+        auto& io = ImGui::GetIO();
+        auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+        if (ctrl) {
+            if (io.KeyShift) {
                 if (ImGui::IsKeyPressed(ImGuiKey_P)) {
                     // Handle Ctrl+Shift+P shortcut
                     // Check if a menu card already exists
@@ -560,6 +562,17 @@ struct deck {
 
     // Public accessor for all cards (needed for registrar iteration)
     const std::vector<std::shared_ptr<card>>& get_cards() const { return cards_; }
+
+    // Try to close a focused card, return true if a card was closed
+    bool close_focused_card() {
+        auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+            [](const auto& card) { return card->is_focused; });
+        if (focused_card != cards_.end()) {
+            cards_.erase(focused_card);
+            return true;
+        }
+        return false;
+    }
 
 private:
     SDL_Renderer* renderer;

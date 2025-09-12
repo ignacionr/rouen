@@ -4,6 +4,7 @@
 #include <array>
 #include <format>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "../../helpers/imgui_include.hpp"
 
 // 3. All other includes
+#include "../../registrar.hpp"
 // Forward declarations to avoid circular dependencies
 namespace rouen::helpers {
     class mcp_service;
@@ -69,8 +71,15 @@ struct card {
     bool run_focused_handlers() {
         is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
         if (is_focused) {
-            // check for ctrl+w
-            if (ImGui::IsKeyPressed(ImGuiKey_W) && ImGui::GetIO().KeyCtrl) {
+            // Check for Ctrl+W (Windows/Linux) or Cmd+W (macOS)
+            auto& io = ImGui::GetIO();
+            auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+            if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
+                // Signal that a card close was handled this frame
+                auto signal_service = registrar::get<std::function<void()>>("signal_card_close_handled");
+                if (signal_service) {
+                    (*signal_service)();
+                }
                 return false;
             }
         }

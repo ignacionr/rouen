@@ -227,7 +227,7 @@ The `deck` class (`src/interface/deck.hpp`) manages collections of cards:
 - Card creation using factory pattern
 - Horizontal layout and positioning
 - Persistence of card states in configuration
-- Global keyboard shortcuts (Ctrl+W to close, Ctrl+Shift+S for snapshots)
+- Global keyboard shortcuts (Cmd+W/Ctrl+W to close, Cmd+Shift+S/Ctrl+Shift+S for snapshots)
 
 #### Helper Libraries
 
@@ -341,7 +341,7 @@ Rouen now supports fully isolated, reproducible development and build environmen
    **VS Code Test Integration**: Tests are integrated through VSCode tasks and can be run in multiple ways:
    
    **Method 1: VSCode Tasks (Recommended)**
-   - Use Command Palette (`Ctrl+Shift+P`) → "Tasks: Run Task"
+   - Use Command Palette (`Cmd+Shift+P` on macOS or `Ctrl+Shift+P` on Windows/Linux) → "Tasks: Run Task"
    - Select from available test tasks:
      - `Configure Tests (Nix)` - Set up test build environment
      - `Build Tests (Nix)` - Compile all test executables  
@@ -780,9 +780,9 @@ All builds enforce C++23 standards with strict compiler warnings:
 #### Card Interactions
 - **Focus Management**: Click cards to focus, use Tab to cycle through cards
 - **Resizing**: Drag card borders to resize
-- **Closing**: Use Ctrl+W to close focused card
-- **Snapshots**: Use Ctrl+Shift+S to capture card as PNG image
-- **Window Fitting**: Use Ctrl+Shift+F to fit window to total card width
+- **Closing**: Use Cmd+W (macOS) or Ctrl+W (Windows/Linux) to close focused card
+- **Snapshots**: Use Cmd+Shift+S (macOS) or Ctrl+Shift+S (Windows/Linux) to capture card as PNG image
+- **Window Fitting**: Use Cmd+Shift+F (macOS) or Ctrl+Shift+F (Windows/Linux) to fit window to total card width
 
 ### Configuration Management
 
@@ -906,9 +906,9 @@ Configure and switch between LLM providers:
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+W` | Close focused card |
-| `Ctrl+Shift+S` | Capture card snapshot |
-| `Ctrl+Shift+F` | Fit window to card width |
+| `Ctrl+W` (Windows/Linux) / `Cmd+W` (macOS) | Close focused card |
+| `Ctrl+Shift+S` (Windows/Linux) / `Cmd+Shift+S` (macOS) | Capture card snapshot |
+| `Ctrl+Shift+F` (Windows/Linux) / `Cmd+Shift+F` (macOS) | Fit window to card width |
 | `Tab` | Cycle through cards |
 | `F11` | Toggle fullscreen |
 | `Escape` | Cancel current operation |

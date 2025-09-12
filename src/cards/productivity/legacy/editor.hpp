@@ -215,7 +215,10 @@ public:
     }
 
     void render() {
-        if (ImGui::IsKeyPressed(ImGuiKey_W) && ImGui::GetIO().KeyCtrl) {
+        // Handle Ctrl+W (Windows/Linux) or Cmd+W (macOS) to close the editor
+        auto& io = ImGui::GetIO();
+        auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+        if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
             clear();
         }
 
