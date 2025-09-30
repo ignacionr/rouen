@@ -1,4 +1,5 @@
 // 1. Standard includes in alphabetic order
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <thread>
@@ -76,10 +77,20 @@ int SDL_main(int argc, char* argv[]) {
 #else
 int main() {
 #endif
+    // Debug: Print working directory at startup
+    std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << std::endl;
+    std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << std::endl;
+    std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << std::endl;
+    
     notify_service notify; // Initialize the notify service
     
     // Initialize the configuration service
     rouen::helpers::ConfigServiceInitializer::initialize();
+    
+    // Force reload of .env file now that we have the correct working directory
+    auto config_service = rouen::helpers::ConfigService::instance();
+    config_service->load_env_file();
+    std::cout << "[DEBUG] Forced reload of .env file completed" << std::endl;
     
     // Register the run_command function - non-blocking with incremental output
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(

@@ -617,7 +617,19 @@ std::string ConfigService::get_ping_path() const {
     bool ConfigService::load_env_file(const std::string& file_path) {
         std::lock_guard<std::mutex> lock(mutex_);
         
+        CONFIG_DEBUG_FMT("ConfigService::load_env_file() called with file_path: '{}'", file_path);
+        
         std::string env_file_path = file_path.empty() ? get_env_file_path() : file_path;
+        
+        CONFIG_DEBUG_FMT("ConfigService: Resolved env_file_path to: {}", env_file_path);
+        
+        // Check if .env file exists
+        if (!std::filesystem::exists(env_file_path)) {
+            CONFIG_DEBUG_FMT(".env file not found at: {}", env_file_path);
+            return false;
+        }
+        
+        CONFIG_DEBUG_FMT("ConfigService: .env file exists, attempting to open: {}", env_file_path);
         
         // Check if .env file exists
         if (!std::filesystem::exists(env_file_path)) {
@@ -745,33 +757,59 @@ std::string ConfigService::get_ping_path() const {
     }
 
     std::string ConfigService::get_env_file_path() const {
+        // Debug: Show what directories we're checking
+        CONFIG_DEBUG("ConfigService: Looking for .env file...");
+        CONFIG_DEBUG_FMT("ConfigService: Current working directory: {}", std::filesystem::current_path().string());
+        CONFIG_DEBUG_FMT("ConfigService: Executable directory: {}", get_executable_directory());
+        
         // Try multiple locations for .env file in order of preference:
         
-        // 1. Executable directory (for deployed apps)
-        std::string exec_env = get_executable_directory() + "/.env";
-        if (std::filesystem::exists(exec_env)) {
-            return exec_env;
+        // 1. Current working directory (for development - VS Code sets this correctly)
+        std::string cwd_env = std::filesystem::current_path().string() + "/.env";
+        CONFIG_DEBUG_FMT("ConfigService: Checking current working dir: {}", cwd_env);
+        if (std::filesystem::exists(cwd_env)) {
+            CONFIG_DEBUG("ConfigService: Found .env at current working directory");
+            return cwd_env;
         }
         
-        // 2. Current working directory (for development)
-        std::string cwd_env = std::filesystem::current_path().string() + "/.env";
-        if (std::filesystem::exists(cwd_env)) {
-            return cwd_env;
+        // 2. Executable directory (for deployed apps)
+        std::string exec_env = get_executable_directory() + "/.env";
+        CONFIG_DEBUG_FMT("ConfigService: Checking executable dir: {}", exec_env);
+        if (std::filesystem::exists(exec_env)) {
+            CONFIG_DEBUG("ConfigService: Found .env at executable directory");
+            return exec_env;
         }
         
         // 3. Parent directories up to 3 levels (for build directories)
         std::filesystem::path current = std::filesystem::current_path();
         for (int i = 0; i < 3; ++i) {
             std::string parent_env = current.string() + "/.env";
+            CONFIG_DEBUG_FMT("ConfigService: Checking parent directory {}: {}", i+1, parent_env);
             if (std::filesystem::exists(parent_env)) {
+                CONFIG_DEBUG_FMT("ConfigService: Found .env at parent directory {}", i+1);
                 return parent_env;
             }
             current = current.parent_path();
             if (current == current.parent_path()) break; // Reached root
         }
         
-        // 4. Default to executable directory (even if file doesn't exist)
-        return exec_env;
+        // 4. Try some common project root locations (for VS Code debugging)
+        std::vector<std::string> common_locations = {
+            "/Users/inz/src/rouen/.env",  // Hardcoded project root as fallback
+            std::filesystem::current_path().parent_path().string() + "/.env",
+        };
+        
+        for (const auto& location : common_locations) {
+            CONFIG_DEBUG_FMT("ConfigService: Checking common location: {}", location);
+            if (std::filesystem::exists(location)) {
+                CONFIG_DEBUG_FMT("ConfigService: Found .env at common location: {}", location);
+                return location;
+            }
+        }
+        
+        // 5. Default to current working directory (even if file doesn't exist)
+        CONFIG_DEBUG_FMT("ConfigService: .env file not found, defaulting to: {}", cwd_env);
+        return cwd_env;
     }
 
     // Private helper methods
