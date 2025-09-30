@@ -203,6 +203,8 @@ namespace rouen::helpers {
         // API Credentials
         register_config("GROK_API_KEY", Category::API_CREDENTIALS, false, true, 
                        "Grok AI API key for enhanced features");
+        register_config("OPENWEATHER_KEY", Category::API_CREDENTIALS, false, true,
+                       "OpenWeather API key for weather data (get free key at openweathermap.org/api)");
         register_config("BYBIT_API_KEY", Category::API_CREDENTIALS, false, true,
                        "Bybit trading API key");
         register_config("BYBIT_SECRET", Category::API_CREDENTIALS, false, true,
@@ -743,7 +745,33 @@ std::string ConfigService::get_ping_path() const {
     }
 
     std::string ConfigService::get_env_file_path() const {
-        return get_executable_directory() + "/.env";
+        // Try multiple locations for .env file in order of preference:
+        
+        // 1. Executable directory (for deployed apps)
+        std::string exec_env = get_executable_directory() + "/.env";
+        if (std::filesystem::exists(exec_env)) {
+            return exec_env;
+        }
+        
+        // 2. Current working directory (for development)
+        std::string cwd_env = std::filesystem::current_path().string() + "/.env";
+        if (std::filesystem::exists(cwd_env)) {
+            return cwd_env;
+        }
+        
+        // 3. Parent directories up to 3 levels (for build directories)
+        std::filesystem::path current = std::filesystem::current_path();
+        for (int i = 0; i < 3; ++i) {
+            std::string parent_env = current.string() + "/.env";
+            if (std::filesystem::exists(parent_env)) {
+                return parent_env;
+            }
+            current = current.parent_path();
+            if (current == current.parent_path()) break; // Reached root
+        }
+        
+        // 4. Default to executable directory (even if file doesn't exist)
+        return exec_env;
     }
 
     // Private helper methods

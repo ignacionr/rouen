@@ -12,9 +12,9 @@
 #include <sstream>
 #include <iomanip>
 #include "../helpers/glaze_include.hpp"
-
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
+#include "../helpers/config_service.hpp"
 
 namespace rouen::hosts {
 
@@ -156,13 +156,15 @@ public:
     {
         WEATHER_INFO("WeatherHost: Initializing");
         
-        // Get the API key from the environment variable
-        auto var_api_key = std::getenv("OPENWEATHER_KEY");
-        api_key_ = var_api_key ? var_api_key : std::string();
+        // Get the API key from ConfigService (supports .env files and environment variables)
+        auto config = rouen::helpers::ConfigService::instance();
+        api_key_ = config->get_env("OPENWEATHER_KEY");
+        
         if (api_key_.empty()) {
-            WEATHER_ERROR("WeatherHost: OpenWeather API key not found in environment variables");
+            WEATHER_ERROR("WeatherHost: OpenWeather API key not found. Please set OPENWEATHER_KEY in your environment or .env file");
+            WEATHER_INFO("WeatherHost: You can get a free API key at: https://openweathermap.org/api");
         } else {
-            WEATHER_INFO_FMT("WeatherHost: Using OpenWeather API key: {}", api_key_);
+            WEATHER_INFO_FMT("WeatherHost: OpenWeather API key configured (length: {})", api_key_.length());
         }
         
         // Default location - can be improved with geolocation

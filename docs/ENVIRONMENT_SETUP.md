@@ -116,8 +116,21 @@ nix-shell --run "echo 'OPENWEATHER_KEY:' $OPENWEATHER_KEY"
 The environment variables are automatically available to:
 
 1. **CMake configuration** - Through the config service
-2. **Runtime application** - Via `std::getenv()` calls
+2. **Runtime application** - Via the ConfigService (supports .env files and environment variables)
 3. **Build scripts** - All shell scripts inherit the environment
+
+### Smart .env File Discovery
+
+The application uses intelligent .env file discovery to work in both development and production:
+
+1. **Executable directory** - For deployed applications
+2. **Current working directory** - For development runs
+3. **Parent directories** - For running from build directories (up to 3 levels)
+
+This means the application will find your `.env` file whether you run it from:
+- The project root: `./build/rouen`
+- A build directory: `cd build && ./rouen`
+- As a deployed app bundle: `./rouen.app/Contents/MacOS/rouen`
 
 ## Security Notes
 

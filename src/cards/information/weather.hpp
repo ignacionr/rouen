@@ -31,7 +31,7 @@ public:
         get_color(6, ImVec4(0.9f, 0.7f, 0.3f, 1.0f)); // Orange for warnings/alerts
         
         name("Weather & Time");
-        width = 320.0f;
+        width = 520.0f;
         requested_fps = 1;  // Update once per second for the clock
         
         // Get the weather host
@@ -276,16 +276,21 @@ private:
         ImGui::Separator();
         ImGui::TextColored(colors[2], "Location:");
         
-        ImGui::PushItemWidth(-1);
-        if (ImGui::InputText("##location", location_buffer_, sizeof(location_buffer_), 
-                              ImGuiInputTextFlags_EnterReturnsTrue)) {
+        // Use a table to align input and button within the available width
+        if (ImGui::BeginTable("location_input_table", 2, ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableNextColumn();
+            ImGui::PushItemWidth(-FLT_MIN); // Use all available width in the cell
+            if (ImGui::InputText("##location", location_buffer_, sizeof(location_buffer_),
+                     ImGuiInputTextFlags_EnterReturnsTrue)) {
             setLocation(location_buffer_);
-        }
-        ImGui::PopItemWidth();
-        
-        ImGui::SameLine();
-        if (ImGui::Button("Update")) {
+            }
+            ImGui::PopItemWidth();
+
+            ImGui::TableNextColumn();
+            if (ImGui::Button("Update")) {
             setLocation(location_buffer_);
+            }
+            ImGui::EndTable();
         }
         
         ImGui::TextColored(colors[5], "Format: City,CountryCode (e.g., London,uk)");
