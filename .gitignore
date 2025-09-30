@@ -49,3 +49,12 @@ vcpkg-manifest-install.log
 *.tmp
 *.temp
 *~
+
+# Environment files containing secrets
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+.secrets

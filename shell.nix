@@ -64,6 +64,15 @@ pkgs.mkShell {
     export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml-2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.SDL2}:${pkgs.SDL2_image}:${pkgs.curl}:${pkgs.gtest.dev}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share"
     # Remove Homebrew from PATH for full Nix isolation
     export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | grep -v '/usr/local' | paste -sd ':' -)
+    
+    # Load secrets and environment variables
+    if [ -f scripts/nix-setup-secrets.sh ]; then
+      echo "[Nix] Loading secrets and environment..."
+      source scripts/nix-setup-secrets.sh
+    else
+      echo "[Nix] Warning: secrets setup script not found"
+    fi
+    
     echo "[Nix] Using compiler: $CC ($($CC --version | head -1))"
     echo "[Nix] CMAKE_PREFIX_PATH: $CMAKE_PREFIX_PATH"
     echo "[Nix] PKG_CONFIG_PATH: $PKG_CONFIG_PATH"

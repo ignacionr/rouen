@@ -299,6 +299,53 @@ Platform-specific resource path management (`src/helpers/platform_utils.hpp`) ha
 
 ---
 
+## Environment Setup
+
+Rouen requires certain environment variables for full functionality, particularly for API integrations like weather services. The project supports multiple ways to configure your environment.
+
+### Required Environment Variables
+
+- `OPENWEATHER_KEY`: API key for OpenWeather services (required for weather functionality)
+- `GIT_PATH`: Path to Git executable (optional, defaults to system Git)
+
+### Configuration Methods
+
+1. **Global Secrets File** (Recommended for development):
+   Create `~/.secrets` with your sensitive configuration:
+   ```bash
+   OPENWEATHER_KEY=your_api_key_here
+   ```
+
+2. **Project Environment File**:
+   Copy the template and configure your local environment:
+   ```bash
+   cp .env.template .env
+   # Edit .env with your actual API keys
+   ```
+   Note: The `.env` file is gitignored and contains your secrets.
+
+3. **System Environment Variables**:
+   Set variables directly in your shell profile.
+
+### Setup and Validation
+
+Use the provided scripts to set up and validate your environment:
+
+```bash
+# Load environment (from project root)
+source scripts/source-secrets.sh
+
+# Validate complete environment setup
+./scripts/validate-environment.sh
+
+# Nix users - environment is loaded automatically
+nix develop  # or nix-shell
+```
+
+For detailed setup instructions, see [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md).
+
+---
+
 ## Development Environment with Nix (Recommended)
 
 Rouen now supports fully isolated, reproducible development and build environments using [Nix](https://nixos.org/). This replaces vcpkg and system/Homebrew dependencies for all supported platforms.

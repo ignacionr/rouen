@@ -72,6 +72,20 @@
               unstable.xorg.libXScrnSaver
               unstable.xorg.libXdmcp
             ]);
+          
+          shellHook = ''
+            echo "[Nix Flake] Entering Rouen development environment..."
+            
+            # Load secrets and environment variables
+            if [ -f scripts/nix-setup-secrets.sh ]; then
+              echo "[Nix Flake] Loading secrets and environment..."
+              source scripts/nix-setup-secrets.sh
+            else
+              echo "[Nix Flake] Warning: secrets setup script not found"
+            fi
+            
+            echo "[Nix Flake] Development environment ready!"
+          '';
         };
 
         packages.default = stdenv.mkDerivation {

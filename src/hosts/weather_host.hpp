@@ -157,7 +157,8 @@ public:
         WEATHER_INFO("WeatherHost: Initializing");
         
         // Get the API key from the environment variable
-        api_key_ = std::getenv("OPENWEATHER_KEY");
+        auto var_api_key = std::getenv("OPENWEATHER_KEY");
+        api_key_ = var_api_key ? var_api_key : std::string();
         if (api_key_.empty()) {
             WEATHER_ERROR("WeatherHost: OpenWeather API key not found in environment variables");
         } else {
@@ -165,7 +166,7 @@ public:
         }
         
         // Default location - can be improved with geolocation
-        location_ = "Paris,fr";
+        location_ = "Montevideo,UY";
     }
 
     /**
