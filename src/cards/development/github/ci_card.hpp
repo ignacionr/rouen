@@ -92,10 +92,17 @@ namespace rouen::cards::github {
         void render_timeline_view();
         void render_logs_preview(const WorkflowRun& run);
         
+        // Toast notification
+        std::string toast_message_;
+        std::chrono::steady_clock::time_point toast_time_;
+        bool toast_is_error_{false};
+        void show_toast(const std::string& message, bool is_error = false);
+        
         void fetch_repositories();
         void fetch_workflows_for_repo(const std::string& repo_full_name);
         void fetch_workflow_runs(const std::string& workflow_id);
         void fetch_workflow_jobs(const std::string& run_id);
+        void trigger_workflow_run(const std::string& workflow_id);
         
         void auto_refresh_if_needed();
         bool should_auto_refresh() const;

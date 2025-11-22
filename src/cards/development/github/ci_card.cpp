@@ -187,6 +187,37 @@ namespace rouen::cards::github {
         return workflow;
     }
 
+    // Helper to show temporary toast message
+    void github_ci_card::show_toast(const std::string& message, bool is_error) {
+        toast_message_ = message;
+        toast_time_ = std::chrono::steady_clock::now();
+        toast_is_error_ = is_error;
+    }
+
+    void github_ci_card::trigger_workflow_run(const std::string& workflow_id) {
+        if (selected_repo_full_name_.empty()) return;
+        
+        // Use default branch (usually main/master) or try to find it from recent runs
+        // Ideally we should let user select branch, but for now we'll use "main" as default fallback
+        std::string branch = "main";
+        
+        // Try to find branch from recent runs of this workflow
+        auto workflow_it = std::find_if(workflows_.begin(), workflows_.end(),
+            [&workflow_id](const Workflow& w) { return w.id == workflow_id; });
+            
+        if (workflow_it != workflows_.end() && !workflow_it->recent_runs.empty()) {
+            branch = workflow_it->recent_runs[0].branch;
+        }
+        
+        if (host_->dispatch_workflow(selected_repo_full_name_, workflow_id, branch)) {
+            show_toast(std::format("Triggered workflow on branch '{}'", branch), false);
+            // Schedule a refresh
+            last_refresh_ = std::chrono::steady_clock::now() - refresh_interval_ + std::chrono::seconds(2);
+        } else {
+            show_toast("Failed to trigger workflow", true);
+        }
+    }
+
     github_ci_card::github_ci_card(std::string_view config_name) 
         : config_name_(config_name) {
         
@@ -271,6 +302,20 @@ namespace rouen::cards::github {
                     ImGui::TextColored(colors[2], ICON_MD_ERROR " %s", last_error_.c_str());
                 } else {
                     last_error_.clear();
+                }
+            }
+
+            // Toast display
+            if (!toast_message_.empty()) {
+                auto now = std::chrono::steady_clock::now();
+                auto toast_age = std::chrono::duration_cast<std::chrono::seconds>(now - toast_time_).count();
+                if (toast_age < 5) { // Show toast for 5 seconds
+                    ImGui::SetCursorPos(ImVec2(20, ImGui::GetWindowHeight() - 40));
+                    ImGui::PushStyleColor(ImGuiCol_Text, toast_is_error_ ? colors[2] : colors[1]);
+                    ImGui::Text("%s %s", toast_is_error_ ? ICON_MD_ERROR : ICON_MD_CHECK_CIRCLE, toast_message_.c_str());
+                    ImGui::PopStyleColor();
+                } else {
+                    toast_message_.clear();
                 }
             }
         });
@@ -380,6 +425,11 @@ namespace rouen::cards::github {
                     selected_workflow_id_ = workflow.id;
                 }
                 
+                ImGui::SameLine();
+                if (ImGui::SmallButton(ICON_MD_PLAY_CIRCLE_FILLED " Run##workflow_trigger")) {
+                    trigger_workflow_run(workflow.id);
+                }
+
                 ImGui::SameLine();
                 if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " View##workflow_view")) {
                     host_->open_url(workflow.html_url);

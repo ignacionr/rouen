@@ -56,6 +56,23 @@ namespace rouen::models::github {
             return fetch(url_str + "/runs");
         }
 
+        bool dispatch_workflow(std::string_view repo_full_name, std::string_view workflow_id, std::string_view ref) const {
+            std::string url = std::format("https://api.github.com/repos/{}/actions/workflows/{}/dispatches", 
+                                        repo_full_name, workflow_id);
+            
+            // Create JSON body
+            std::string body = std::format(R"({{"ref":"{}"}})", ref);
+            
+            try {
+                http::fetch fetcher;
+                fetcher.post(url, body, header_client());
+                return true;
+            } catch (const std::exception& e) {
+                LOG_COMPONENT("GITHUB", LOG_LEVEL_ERROR, debug::format_log("Failed to dispatch workflow: {}", e.what()));
+                return false;
+            }
+        }
+
         // Updated to match the type used in the fetch.hpp implementation
         auto header_client() const {
             // Fix: store the bearer header in a variable before capturing it
