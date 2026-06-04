@@ -193,19 +193,29 @@ namespace calendar {
     class calendar_fetcher {
     public:
         calendar_fetcher(const std::string& calendar_url = {}) {
-            // Get calendar delegate URL from environment if not provided
-            calendar_delegate_url_ = calendar_url.empty() ? 
-                std::getenv("CALENDAR_DELEGATE_URL") : calendar_url;
+            // Get calendar delegate URL from parameter or environment
+            if (!calendar_url.empty()) {
+                calendar_delegate_url_ = calendar_url;
+            } else {
+                const char* env_url = std::getenv("CALENDAR_DELEGATE_URL");
+                calendar_delegate_url_ = env_url ? env_url : "";
+            }
             
+            // Set error if the URL is empty (don't throw, let fetch_events handle it)
             if (calendar_delegate_url_.empty()) {
-                throw std::runtime_error("Calendar delegate URL not provided and CALENDAR_DELEGATE_URL environment variable not set");
+                last_error_ = "Calendar URL not provided. Please configure CALENDAR_DELEGATE_URL.";
             }
         }
 
         // Fetch calendar events from the Google Calendar script
         std::vector<event> fetch_events() {
+            if (calendar_delegate_url_.empty()) {
+                last_error_ = "Calendar URL not provided. Please configure CALENDAR_DELEGATE_URL.";
+                return {};
+            }
             std::lock_guard<std::mutex> lock(mutex_);
             try {
+                last_error_.clear();
                 http::fetch fetcher;
                 std::string response = fetcher(calendar_delegate_url_);
                 
