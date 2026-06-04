@@ -5,6 +5,7 @@
 #include <format>
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
@@ -303,23 +304,102 @@ namespace rouen::platform
         return user_data_dir;
     }
 
-    // Add function to check if mpv is available in the system
-    inline bool check_mpv_availability(std::string& mpv_path) {
-        // Common installation paths
-        std::vector<std::string> common_paths = {
-            "/usr/local/bin/mpv",   // Homebrew on Intel Mac
-            "/opt/homebrew/bin/mpv" // Homebrew on Apple Silicon
-        };
-        
-        // Check common paths first
-        for (const auto& path : common_paths) {
-            if (std::filesystem::exists(path)) {
-                mpv_path = path;
-                return true;
+    /**
+     * Finds an executable on the system by searching the PATH environment variable
+     * and common installation directories for Homebrew and Nix profiles.
+     */
+    inline std::string find_executable(const std::string& name) {
+        // If it's already an absolute or relative path, check if it exists
+        if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+            if (std::filesystem::exists(name)) {
+                return name;
             }
         }
         
-        // Check if available in PATH
+        // Define directories to search
+        std::vector<std::filesystem::path> search_dirs;
+        
+        // 1. Check directories in system PATH environment variable
+        std::string path_env = get_env("PATH");
+        if (!path_env.empty()) {
+            std::string item;
+            std::stringstream ss(path_env);
+#ifdef _WIN32
+            char delim = ';';
+#else
+            char delim = ':';
+#endif
+            while (std::getline(ss, item, delim)) {
+                if (!item.empty()) {
+                    search_dirs.push_back(item);
+                }
+            }
+        }
+        
+        // 2. Add common search paths for Homebrew, Nix, and standard directories
+#ifdef _WIN32
+        // Windows common paths can be added here if needed
+#else
+        // macOS / Linux common paths
+        search_dirs.push_back("/usr/bin");
+        search_dirs.push_back("/bin");
+        search_dirs.push_back("/usr/sbin");
+        search_dirs.push_back("/sbin");
+        search_dirs.push_back("/usr/local/bin");
+        search_dirs.push_back("/opt/homebrew/bin");
+        
+        // Nix profile paths
+        std::string home_dir = get_env("HOME");
+        if (!home_dir.empty()) {
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
+        }
+        search_dirs.push_back("/nix/var/nix/profiles/default/bin");
+        
+        std::string user_env = get_env("USER");
+        if (!user_env.empty()) {
+            search_dirs.push_back(std::filesystem::path("/nix/var/nix/profiles/per-user") / user_env / "profile" / "bin");
+        }
+#endif
+        
+        // Search each directory for the executable
+        for (const auto& dir : search_dirs) {
+#ifdef _WIN32
+            std::filesystem::path full_path = dir / (name.ends_with(".exe") ? name : name + ".exe");
+#else
+            std::filesystem::path full_path = dir / name;
+#endif
+            if (std::filesystem::exists(full_path)) {
+                // Verify it's a regular file and has execute permissions
+                try {
+                    if (std::filesystem::is_regular_file(full_path)) {
+#ifndef _WIN32
+                        auto p = std::filesystem::status(full_path).permissions();
+                        if ((p & std::filesystem::perms::owner_exec) != std::filesystem::perms::none ||
+                            (p & std::filesystem::perms::group_exec) != std::filesystem::perms::none ||
+                            (p & std::filesystem::perms::others_exec) != std::filesystem::perms::none) {
+                            return full_path.string();
+                        }
+#else
+                        return full_path.string();
+#endif
+                    }
+                } catch (...) {}
+            }
+        }
+        
+        // Fall back to original name if not found
+        return name;
+    }
+
+    // Add function to check if mpv is available in the system
+    inline bool check_mpv_availability(std::string& mpv_path) {
+        std::string found = find_executable("mpv");
+        if (found != "mpv") {
+            mpv_path = found;
+            return true;
+        }
+        
+        // Check if available in PATH via popen fallback
 #ifdef _WIN32
         std::string command = "where mpv.exe 2>nul";
 #else

@@ -24,6 +24,8 @@
 #include "./imgui_include.hpp"
 #include "mpv_socket.hpp"
 #include "platform_utils.hpp"
+#include "config_service.hpp"
+#include "../registrar.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include "../../src/helpers/glaze_include.hpp"
 
@@ -232,6 +234,18 @@ inline bool media_player_item::playMedia() {
     stopMedia(); // Ensure any previous media is stopped
     has_video = false;
     
+    // Validate that MPV is available
+    std::string mpv_path = CONFIG_SERVICE()->get_mpv_path();
+    std::string validated_path;
+    bool mpv_found = rouen::platform::check_mpv_availability(validated_path);
+    if (!mpv_found) {
+        try { "notify"_sfn("Cannot play media: MPV not found. Please install MPV or configure MPV_PATH."); } catch (...) {}
+        return false;
+    }
+    if (!validated_path.empty()) {
+        mpv_path = validated_path;
+    }
+
     // Sanitize the URL to handle encoding issues
     std::string sanitized_url = sanitizeURL(url);
     
@@ -245,7 +259,7 @@ inline bool media_player_item::playMedia() {
     // Add headers for better compatibility with protected content (like RT.com)
     std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
     std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
-    std::string cmd = "mpv --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
+    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -264,6 +278,7 @@ inline bool media_player_item::playMedia() {
         is_playing = true;
         return true;
     } else {
+        try { "notify"_sfn("Failed to start MPV process."); } catch (...) {}
         return false;
     }
 #else
@@ -277,13 +292,17 @@ inline bool media_player_item::playMedia() {
         // Add headers for better compatibility with protected content (like RT.com)
         std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
         std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
-        std::string cmd = "mpv --no-terminal --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
+        std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);
     }
     // Parent process
-    mpv_socket.init_socket(socket_path);
+    if (!mpv_socket.init_socket(socket_path)) {
+        try { "notify"_sfn("Failed to connect to MPV player socket."); } catch (...) {}
+        stopMedia();
+        return false;
+    }
     startPositionTracking();
     is_playing = true;
     return player_pid > 0;

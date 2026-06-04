@@ -493,8 +493,15 @@ std::string ConfigService::get_validated_executable_path(const std::string& env_
         path = default_value;
     }
     
+    // Check if the path is valid as is
     if (validate_executable_path(path)) {
         return path;
+    }
+    
+    // Try to resolve the executable (handles Nix/Homebrew and system PATH paths)
+    std::string resolved_path = rouen::platform::find_executable(path);
+    if (validate_executable_path(resolved_path)) {
+        return resolved_path;
     }
     
     // Log a warning that we're using the default

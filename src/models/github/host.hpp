@@ -56,6 +56,15 @@ namespace rouen::models::github {
             return fetch(url_str + "/runs");
         }
 
+        // Updated to match the type used in the fetch.hpp implementation
+        auto header_client() const {
+            // Fix: store the bearer header in a variable before capturing it
+            std::string bearer = std::format("Authorization: Bearer {}", login_host_->personal_token());
+            return [bearer](auto setheader) {
+                setheader(bearer);
+            };
+        }
+
         bool dispatch_workflow(std::string_view repo_full_name, std::string_view workflow_id, std::string_view ref) const {
             std::string url = std::format("https://api.github.com/repos/{}/actions/workflows/{}/dispatches", 
                                         repo_full_name, workflow_id);
@@ -71,15 +80,6 @@ namespace rouen::models::github {
                 LOG_COMPONENT("GITHUB", LOG_LEVEL_ERROR, debug::format_log("Failed to dispatch workflow: {}", e.what()));
                 return false;
             }
-        }
-
-        // Updated to match the type used in the fetch.hpp implementation
-        auto header_client() const {
-            // Fix: store the bearer header in a variable before capturing it
-            std::string bearer = std::format("Authorization: Bearer {}", login_host_->personal_token());
-            return [bearer](auto setheader) {
-                setheader(bearer);
-            };
         }
 
         std::string fetch_string(const std::string &url) const {
