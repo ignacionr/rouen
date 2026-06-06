@@ -361,9 +361,16 @@ set_source_files_properties(${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
 
+set(MAC_SOURCES)
+if(APPLE)
+  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm)
+  set_source_files_properties(src/helpers/mac_menu_helper.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+endif()
+
 # Add the executable
 add_executable(${PROJECT_NAME} 
   src/rouen.cpp
+  ${MAC_SOURCES}
   src/main_wnd_core.cpp
   src/main_wnd_init.cpp
   src/main_wnd_loop.cpp

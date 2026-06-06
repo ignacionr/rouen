@@ -12,6 +12,10 @@
 #include "helpers/mcp_service.hpp"
 #include "main_wnd.hpp"
 
+#ifdef __APPLE__
+#include "helpers/mac_menu_helper.hpp"
+#endif
+
 bool main_wnd::initialize() {
     try {
         std::cout << "DEBUG: Starting main_wnd::initialize()" << std::endl;
@@ -68,6 +72,10 @@ bool main_wnd::initialize() {
             return false;
         }
         std::cout << "DEBUG: SDL window created successfully" << std::endl;
+
+#ifdef __APPLE__
+        rouen::platform::disable_mac_cmd_w_menu_item();
+#endif
 
         // Create renderer
         std::cout << "DEBUG: Creating SDL renderer..." << std::endl;

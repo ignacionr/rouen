@@ -12,6 +12,10 @@
 #include "main_wnd.hpp"
 #include "registrar.hpp"
 
+#ifdef __APPLE__
+#include "helpers/mac_menu_helper.hpp"
+#endif
+
 void main_wnd::run() {
     try {
         // Create deck
@@ -104,6 +108,10 @@ void main_wnd::run() {
 }
 
 bool main_wnd::process_events() {
+#ifdef __APPLE__
+    rouen::platform::disable_mac_cmd_w_menu_item();
+#endif
+
     try {
         // clear the keyboard buffer
         keystrokes_.clear();
@@ -193,6 +201,18 @@ bool main_wnd::process_events() {
                         (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
                         m_done = true;
                         return false;
+                    }
+                    // ctrl+w (or cmd+w on macOS) clears/closes the editor
+                    else if (event.key.keysym.sym == SDLK_w && 
+                        (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+                        try {
+                            auto clear_editor_func = registrar::get<std::function<void()>>("clear_editor");
+                            if (clear_editor_func) {
+                                (*clear_editor_func)();
+                            }
+                        } catch (...) {
+                            // Ignore if service is not registered
+                        }
                     }
                     else {
                         // Store keystrokes
