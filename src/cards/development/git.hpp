@@ -26,6 +26,9 @@ struct git: public card {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
         
+        // Set card width
+        width = 600.0f;
+        
         // Create git model
         git_model = std::make_unique<rouen::models::git>();
         
@@ -244,8 +247,8 @@ struct git: public card {
             
             // Display repository path
             const char *repo_path_cstr = repo_path.c_str();
-            if (repo_path.size() > 38) {
-                repo_path_cstr += repo_path.size() - 38;
+            if (repo_path.size() > 80) {
+                repo_path_cstr += repo_path.size() - 80;
             }
             if (ImGui::Selectable(repo_path_cstr, false, 0, ImVec2(0, 0))) {
                 // if the ctrl key is pressed, open the repository as a file system card
