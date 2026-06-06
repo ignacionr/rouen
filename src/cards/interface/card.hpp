@@ -71,10 +71,7 @@ struct card {
     bool run_focused_handlers() {
         is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
         if (is_focused) {
-            // Check for Ctrl+W (Windows/Linux) or Cmd+W (macOS)
-            auto& io = ImGui::GetIO();
-            auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
-            if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 // Signal that a card close was handled this frame
                 auto signal_service = registrar::get<std::function<void()>>("signal_card_close_handled");
                 if (signal_service) {

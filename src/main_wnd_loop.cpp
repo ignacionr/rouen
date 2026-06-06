@@ -121,56 +121,14 @@ bool main_wnd::process_events() {
             try {
                 ImGui_ImplSDL2_ProcessEvent(&event);
                 if (event.type == SDL_QUIT) {
-                    bool should_close_app = true; // Default to closing the app
-#ifdef __APPLE__
-                    // On macOS, SDL_QUIT might be sent along with window close for Cmd+W
-                    // First check if a card already handled Cmd+W this frame
-                    if (m_card_close_handled_this_frame) {
-                        // Card close was already handled, don't close the app
-                        should_close_app = false;
-                    } else {
-                        // Check if we have any cards open - if so, try to close a focused card instead
-                        auto deck_service = registrar::get<deck>("deck");
-                        if (deck_service) {
-                            // Try to close a focused card first
-                            if (deck_service->close_focused_card()) {
-                                m_card_close_handled_this_frame = true; // Mark that we handled a card close
-                                should_close_app = false;
-                            }
-                        }
-                    }
-#endif
-                    if (should_close_app) {
-                        m_done = true;
-                        return false;
-                    }
+                    m_done = true;
+                    return false;
                 }
                 else if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
                         event.window.windowID == SDL_GetWindowID(m_window)) {
-                        bool should_close_app = true; // Default to closing the app
-#ifdef __APPLE__
-                        // On macOS, Cmd+W might be sent as a window close event
-                        // First check if a card already handled Cmd+W this frame
-                        if (m_card_close_handled_this_frame) {
-                            // Card close was already handled, don't close the app
-                            should_close_app = false;
-                        } else {
-                            // Check if we have any cards open - if so, try to close a focused card instead
-                            auto deck_service = registrar::get<deck>("deck");
-                            if (deck_service) {
-                                // Try to close a focused card first
-                                if (deck_service->close_focused_card()) {
-                                    m_card_close_handled_this_frame = true; // Mark that we handled a card close
-                                    should_close_app = false;
-                                }
-                            }
-                        }
-#endif
-                        if (should_close_app) {
-                            m_done = true;
-                            return false;
-                        }
+                        m_done = true;
+                        return false;
                     }
                     // Handle window resize to refresh DPI settings
                     else if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
