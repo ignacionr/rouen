@@ -30,9 +30,29 @@ public:
                 [this](std::string const &uri) { select(uri); }
             )
         );
+
+        registrar::add<std::function<void()>>(
+            "clear_editor",
+            std::make_shared<std::function<void()>>(
+                [this]() { clear(); }
+            )
+        );
+
+        registrar::add<std::function<bool()>>(
+            "is_editor_empty",
+            std::make_shared<std::function<bool()>>(
+                [this]() { return empty(); }
+            )
+        );
     }
     
-    virtual ~Editor() = default;
+    virtual ~Editor() {
+        try {
+            registrar::remove<std::function<void(std::string const &)>>("edit");
+            registrar::remove<std::function<void()>>("clear_editor");
+            registrar::remove<std::function<bool()>>("is_editor_empty");
+        } catch (...) {}
+    }
 
     bool empty() const {
         return active_editor_ == nullptr || active_editor_->empty();

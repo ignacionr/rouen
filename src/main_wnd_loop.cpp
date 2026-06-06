@@ -127,6 +127,23 @@ bool main_wnd::process_events() {
                 else if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
                         event.window.windowID == SDL_GetWindowID(m_window)) {
+                        // Check if this close event was triggered by Cmd+W or Ctrl+W shortcut
+                        SDL_Keymod mod = SDL_GetModState();
+                        bool modifier_down = (mod & (KMOD_CTRL | KMOD_GUI));
+                        
+                        if (modifier_down) {
+                            // Do not close the app; clear the editor instead
+                            try {
+                                auto clear_editor_func = registrar::get<std::function<void()>>("clear_editor");
+                                if (clear_editor_func) {
+                                    (*clear_editor_func)();
+                                }
+                            } catch (...) {
+                                // Ignore if service is not registered
+                            }
+                            continue;
+                        }
+                        
                         m_done = true;
                         return false;
                     }
