@@ -248,7 +248,7 @@ namespace rouen::cards {
                     // Repository filter
                     ImGui::SetNextItemWidth(300.0f);
                     ImGui::InputTextWithHint("##repo_filter", "Filter repositories...", 
-                                            repo_filter_.data(), repo_filter_.capacity());
+                                            repo_filter_, sizeof(repo_filter_));
                     
                     ImGui::SameLine();
                     if (ImGui::Button(ICON_MD_REFRESH " Refresh")) {
@@ -287,7 +287,7 @@ namespace rouen::cards {
                                 std::string repo_name = repo.name();
                                 
                                 // Apply filter
-                                if (!repo_filter_.empty() && 
+                                if (repo_filter_[0] != '\0' && 
                                     repo_name.find(repo_filter_) == std::string::npos) {
                                     continue;
                                 }
@@ -494,7 +494,7 @@ namespace rouen::cards {
             std::string selected_org_login_;
             std::vector<github::repo_screen> repos_;
             std::string repo_name_;
-            std::string repo_filter_;
+            char repo_filter_[256] = {0};
             std::string latest_error_;
             glz::json_t organizations_{};
             glz::json_t user_info_{};

@@ -99,9 +99,39 @@ namespace rouen::models::github {
             return result;
         }
 
+        std::vector<glz::json_t> fetch_page_vector(const std::string &url) const {
+            std::string json_str = fetch_string(url);
+            std::vector<glz::json_t> result;
+            auto ec = glz::read_json(result, json_str);
+            if (ec) {
+                return {};
+            }
+            return result;
+        }
+
         glz::json_t fetch_all(const std::string &url) const {
-            // Simplified for new Glaze API - just return single page for now
-            return fetch(std::format("{}?per_page=100", url));
+            std::vector<glz::json_t> all_items;
+            int page = 1;
+            char separator = (url.find('?') != std::string::npos) ? '&' : '?';
+            
+            while (true) {
+                std::string page_url = std::format("{}{}per_page=100&page={}", url, separator, page);
+                std::vector<glz::json_t> page_items = fetch_page_vector(page_url);
+                
+                if (page_items.empty()) {
+                    break;
+                }
+                
+                all_items.insert(all_items.end(), page_items.begin(), page_items.end());
+                
+                if (page_items.size() < 100) {
+                    break;
+                }
+                
+                page++;
+            }
+            
+            return all_items;
         }
 
         void open_url(const std::string &url) const {
