@@ -98,6 +98,7 @@ namespace rouen::cards
 
             // Load feed items
             items = rss_host->getFeedItems(feed_id);
+            items_limit = 20; // Reset display limit
 
             // Load the feed image if available
             loadFeedImage();
@@ -146,27 +147,52 @@ namespace rouen::cards
                 return render_window([this]()
                                      {
                 try {
-                    auto currenty_y { ImGui::GetCursorPosY() };
-                    // Add refresh button at the top of the card
+                    // Search and refresh section
+                    ImGui::BeginGroup();
+                    
+                    float available_width = ImGui::GetContentRegionAvail().x;
+                    float refresh_button_width = 30.0f;
+                    float clear_button_width = 20.0f;
+                    float search_input_width = available_width - refresh_button_width - clear_button_width - ImGui::GetStyle().ItemSpacing.x * 2;
+                    
+                    ImGui::PushItemWidth(search_input_width);
+                    if (ImGui::InputText("##item_search", search_buffer, sizeof(search_buffer))) {
+                        items_limit = 20; // Reset limit when search query changes
+                    }
+                    
+                    // Search placeholder
+                    if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+                        auto pos = ImGui::GetItemRectMin();
+                        ImGui::GetWindowDrawList()->AddText(
+                            ImVec2(pos.x + 5, pos.y + 2),
+                            ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                            "Search items..."
+                        );
+                    }
+                    ImGui::PopItemWidth();
+                    
+                    // Clear button
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("×")) {
+                        search_buffer[0] = '\0';
+                        items_limit = 20; // Reset limit
+                    }
+                    
+                    // Refresh button
+                    ImGui::SameLine();
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.7f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.9f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 1.0f));
-                    
-                    // Right-align the refresh button
-                    float window_width = ImGui::GetContentRegionAvail().x;
-                    ImGui::SetCursorPosX(window_width - 30.0f); // 30 is the button width
-                    
                     if (ImGui::Button(ICON_MD_REFRESH)) {
                         refreshFeed();
                     }
-                    
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Refresh feed");
                     }
-                    
                     ImGui::PopStyleColor(3);
                     
-                    ImGui::SetCursorPosY(currenty_y);
+                    ImGui::EndGroup();
+                    
                     // Display the feed image if we have one
                     if (feed_image_texture && feed_image_width > 0 && feed_image_height > 0) {
                         // Set fixed height of 140.0f and scale width to maintain aspect ratio
@@ -175,7 +201,6 @@ namespace rouen::cards
                         float display_width = fixed_height * aspect_ratio;
                         
                         // Center the image horizontally
-                        float available_width = ImGui::GetContentRegionAvail().x;
                         float offset = (available_width - display_width) * 0.5f;
                         if (offset > 0.0f) {
                             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
@@ -190,12 +215,33 @@ namespace rouen::cards
                                 
                     ImGui::Separator();
                     
+                    // Filter items
+                    std::vector<rouen::hosts::RSSHost::FeedItem> filtered_items;
+                    std::string search_text = search_buffer;
+                    if (search_text.empty()) {
+                        filtered_items = items;
+                    } else {
+                        for (const auto& item : items) {
+                            if (::helpers::StringHelper::contains_case_insensitive(item.title, search_text) ||
+                                ::helpers::StringHelper::contains_case_insensitive(item.description, search_text)) {
+                                filtered_items.push_back(item);
+                            }
+                        }
+                    }
+
+                    if (!search_text.empty()) {
+                        ImGui::TextColored(colors[3], "%zu items found", filtered_items.size());
+                    }
+
                     // Items in a scrollable area
                     try {
-                            if (items.empty()) {
-                                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items in this feed");
-                            } else {
-                                for (const auto& item : items) {
+                        if (filtered_items.empty()) {
+                            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items found");
+                        } else {
+                            if (ImGui::BeginChild("FeedItemsScroll", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
+                                for (size_t i = 0; i < count; ++i) {
+                                    const auto& item = filtered_items[i];
                                     // Using scope guard pattern for ImGui pairs
                                     ImGui::PushID(item.link.c_str());
                                     
@@ -283,12 +329,22 @@ namespace rouen::cards
                                     // Always pop the ID
                                     ImGui::PopID();
                                 }
+                                
+                                // Scroll check for lazy loading
+                                float scroll_y = ImGui::GetScrollY();
+                                float max_scroll_y = ImGui::GetScrollMaxY();
+                                if (max_scroll_y > 0.0f && scroll_y >= max_scroll_y - 50.0f) {
+                                    if (items_limit < static_cast<int>(filtered_items.size())) {
+                                        items_limit = std::min(items_limit + 20, static_cast<int>(filtered_items.size()));
+                                    }
+                                }
+                                
+                                ImGui::EndChild();
+                            }
                         }
                     }
                     catch (const std::exception& e) {
                         RSS_ERROR_FMT("Exception in RSS feed items area: {}", e.what());
-                        // Always ensure EndChild is called to match the BeginChild
-                        ImGui::EndChild();
                     }
                 }
                 catch (const std::exception& e) {
@@ -343,6 +399,8 @@ namespace rouen::cards
 
     private:
         long long feed_id = -1;
+        int items_limit = 20;
+        char search_buffer[256] = "";
         std::string feed_title;
         std::string feed_url;
         std::string feed_image_url;
