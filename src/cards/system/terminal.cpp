@@ -205,8 +205,8 @@ void terminal::render_command_input(float window_width) {
     if (enter_pressed && input_buffer[0] != '\0') {
         bool ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
         std::string user_cmd = input_buffer;
-        // Always update current_working_dir from bash before handling shortcuts
-        if (bash.is_interactive()) {
+        // Always update current_working_dir from bash before handling shortcuts, but only if no command is running
+        if (bash.is_interactive() && !is_command_running) {
             std::string new_cwd = bash.update_cwd_from_bash();
             if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
@@ -226,6 +226,12 @@ void terminal::render_command_input(float window_width) {
             history_index = command_history.size();
             // Output to terminal for feedback
             output.add_to_output(std::format("Editing file: {}", file_path.string()), OutputType::System);
+        } else if (is_command_running) {
+            // A process is running in the foreground. Send the raw input to its stdin.
+            output.add_to_output(user_cmd, OutputType::Command);
+            if (bash.is_interactive()) {
+                bash.send_to_bash(user_cmd, true); // raw = true
+            }
         } else {
             bool use_llm = ctrl_down;
             std::string actual_command;

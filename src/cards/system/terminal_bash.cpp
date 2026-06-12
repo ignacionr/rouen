@@ -189,7 +189,7 @@ void TerminalBash::terminate_bash_session() {
 #endif
 }
 
-void TerminalBash::send_to_bash(const std::string& command) {
+void TerminalBash::send_to_bash(const std::string& command, bool raw) {
 #ifndef _WIN32
     if (bash_stdin_fd >= 0) {
         // Simply append a newline to the command and send it directly
@@ -198,14 +198,17 @@ void TerminalBash::send_to_bash(const std::string& command) {
         // Write command to bash's stdin
         [[maybe_unused]] auto write_result1 = write(bash_stdin_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
         
-        // Send a separate echo command to mark the end of output
-        // Use a unique string that's unlikely to appear in normal output
-        std::string end_marker = "echo ROUEN_CMD_DONE\n";
-        [[maybe_unused]] auto write_result2 = write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
+        if (!raw) {
+            // Send a separate echo command to mark the end of output
+            // Use a unique string that's unlikely to appear in normal output
+            std::string end_marker = "echo ROUEN_CMD_DONE\n";
+            [[maybe_unused]] auto write_result2 = write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
+        }
     }
 #else
     // Windows doesn't support interactive bash sessions
     (void)command;
+    (void)raw;
 #endif
 }
 

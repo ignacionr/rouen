@@ -46,7 +46,7 @@ public:
     void terminate_bash_session();
     
     // Send commands to bash
-    void send_to_bash(const std::string& command);
+    void send_to_bash(const std::string& command, bool raw = false);
     
     // Get current working directory from bash
     std::string update_cwd_from_bash();
