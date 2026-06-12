@@ -11,6 +11,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 # Note: -Wno-error=nontrivial-memcall is not supported by Apple Clang, removing it
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion -Wno-error=implicit-fallthrough -Wno-error=implicit-int-float-conversion")
 
+# When cross-compiling (e.g. -DCMAKE_OSX_ARCHITECTURES=arm64 on CI), Clang emits
+# -Wpoison-system-directories for host paths such as /usr/local/include that end up
+# in the search list via vcpkg or system package discovery.  Those libraries are
+# already built for the correct target by vcpkg, so the warning is a false-positive
+# in this setup.  We suppress it via target_compile_options (not CMAKE_CXX_FLAGS) so
+# that it is appended AFTER the per-target -Weverything flag and therefore takes effect.
+# NOTE: this file is always included from CMakeLists.txt after add_executable(), so
+# ${PROJECT_NAME} is guaranteed to refer to an existing target.
+if(TARGET ${PROJECT_NAME})
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wno-poison-system-directories)
+endif()
+
 # Add macOS-specific debug flags
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   # Enable DWARF with dSYM file generation
