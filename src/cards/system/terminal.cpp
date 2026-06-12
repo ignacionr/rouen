@@ -240,7 +240,7 @@ void terminal::render_command_input(float window_width) {
                                  bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
             if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
                 // Send the actual command (Grok or user) to bash
-                bash.send_to_bash(actual_command);
+                bash.send_to_bash(actual_command, true);
             }
         }
         input_buffer[0] = '\0';  // Clear the input

@@ -72,9 +72,9 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
         setpgid(0, 0);
         
-        // Execute bash with interactive but non-login options
+        // Execute bash with interactive but non-login options (using -i for prompt printing and SIGINT handling)
         execl(bash_path.c_str(), "bash", "--noediting", "--noprofile", "--norc", "+m", 
-              "-c", std::format("exec {} --norc +m", bash_path).c_str(), NULL);
+              "-c", std::format("exec {} --norc -i +m", bash_path).c_str(), NULL);
         
         // If execl returns, there was an error
         perror("execl");
@@ -300,22 +300,24 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                         continue;
                     }
                     
+                    // Check for special markers (prompt can be on stdout or stderr in interactive mode)
+                    if (line.starts_with("ROUEN_PROMPT|")) {
+                        // Bash prompt - indicates command has finished
+                        is_command_running = false;
+                        command_running = false;
+                        
+                        // Update current working directory and get the result
+                        std::string new_cwd = update_cwd_from_bash();
+                        
+                        // Add prompt to output
+                        output.add_to_output("", OutputType::Blank);
+                        output.add_prompt(new_cwd);
+                        continue;
+                    }
+                    
                     // Special handling for stdout stream
                     if (output_type == OutputType::StdOut) {
-                        // Check for special markers
-                        if (line.starts_with("ROUEN_PROMPT|")) {
-                            // Bash prompt - indicates command has finished
-                            is_command_running = false;
-                            command_running = false;
-                            
-                            // Update current working directory and get the result
-                            std::string new_cwd = update_cwd_from_bash();
-                            
-                            // Add prompt to output
-                            output.add_to_output("", OutputType::Blank);
-                            output.add_prompt(new_cwd);
-                            continue;
-                        } else if (line == "ROUEN_CMD_DONE") {
+                        if (line == "ROUEN_CMD_DONE") {
                             // End marker for command output
                             is_command_running = false;
                             command_running = false;
@@ -439,8 +441,8 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
         setpgid(0, 0);
         
-        // Execute sudo bash with -S to read password from stdin
-        execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "+m", NULL);
+        // Execute sudo bash with -S to read password from stdin (using -i for interactive mode)
+        execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "-i", "+m", NULL);
         
         // If execl returns, there was an error
         perror("execl");
