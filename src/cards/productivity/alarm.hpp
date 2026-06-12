@@ -49,21 +49,21 @@ namespace rouen::cards {
         bool render() override {
             auto time_remaining = get_time_remaining(std::chrono::system_clock::now());
 
-            // Play alarm sound in loop if ringing and not already playing
-            if (time_remaining <= std::chrono::seconds(0)) {
+            // Play alarm sound in loop if ringing, active and not already playing
+            if (alarm_active && time_remaining <= std::chrono::seconds(0)) {
                 if (!alarm_playing) {
                     media_player_alarm_helper::play_sound_loop(alarm_sounds[static_cast<size_t>(selected_alarm_sound)].second);
                     alarm_playing = true;
                 }
             } else {
-                // Stop alarm sound if not ringing
+                // Stop alarm sound if not active or not ringing
                 if (alarm_playing) {
                     media_player_alarm_helper::stop_sound_loop();
                     alarm_playing = false;
                 }
             }
 
-            if (time_remaining <= std::chrono::seconds(0)) {
+            if (alarm_active && time_remaining <= std::chrono::seconds(0)) {
                 static auto last_blink_time = std::chrono::steady_clock::now();
                 static bool is_visible = true;
                 auto now = std::chrono::steady_clock::now();
@@ -93,11 +93,10 @@ namespace rouen::cards {
         }
 
         void render_alarm_content() {
-            auto const current_time = std::chrono::system_clock::now();
-            ImGui::TextUnformatted(time_buffer);
-            ImGui::SameLine();
-            auto time_remaining = get_time_remaining(current_time);
-            if (time_remaining <= std::chrono::seconds(0)) {
+            auto time_remaining = get_time_remaining(std::chrono::system_clock::now());
+            
+            // Draw visual alarm ringing or countdown
+            if (alarm_active && time_remaining <= std::chrono::seconds(0)) {
                 ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize("Time's up!").x) * 0.5f);
                 ImGui::TextColored(colors[0], "Time's up!");
                 static float flash_intensity = 0.0f;
@@ -121,21 +120,27 @@ namespace rouen::cards {
                     stop_alarm();
                 }
             } else {
-                // Show remaining time in hours, minutes, seconds - centered
-                auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
-                auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
-                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
-                
-                // Make the time display larger and centered using std::format (C++20)
-                // This eliminates platform-specific format specifier issues
-                std::string time_str = std::format("{:02}:{:02}:{:02}", hours, minutes, seconds);
-                
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
-                ImGui::TextColored(colors[2], "%s", time_str.c_str());
-                ImGui::PopFont();
-                
-                // Visual progress indicator with stacked blocks
-                draw_vertical_progress_blocks(time_remaining);
+                if (!alarm_active) {
+                    ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                    std::string label = "Stopped";
+                    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - ImGui::CalcTextSize(label.c_str()).x) * 0.5f);
+                    ImGui::TextColored(colors[3], "%s", label.c_str());
+                    ImGui::PopFont();
+                } else {
+                    // Show remaining time in hours, minutes, seconds - centered
+                    auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
+                    auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
+                    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
+                    
+                    std::string time_str = std::format("{:02}:{:02}:{:02}", hours, minutes, seconds);
+                    
+                    ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Use a larger font
+                    ImGui::TextColored(colors[2], "%s", time_str.c_str());
+                    ImGui::PopFont();
+                    
+                    // Visual progress indicator with stacked blocks
+                    draw_vertical_progress_blocks(time_remaining);
+                }
             }
 
             // Time setting interface - now vertical layout
@@ -216,15 +221,18 @@ namespace rouen::cards {
             add_minutes(minutes);
             alarm_playing = false;
             media_player_alarm_helper::stop_sound_loop();
+            alarm_active = true;
         }
         void stop_alarm() {
             alarm_playing = false;
             media_player_alarm_helper::stop_sound_loop();
             set_to_current_time();
+            alarm_active = false;
         }
         void reset() {
             set_to_current_time();
             add_minutes(30);
+            alarm_active = true;
             if (alarm_playing) {
                 alarm_playing = false;
                 media_player_alarm_helper::stop_sound_loop();
@@ -241,6 +249,7 @@ namespace rouen::cards {
         void add_minutes(int minutes) {
             target_time += std::chrono::minutes(minutes);
             update_time_string();
+            alarm_active = true;
             auto new_time_remaining = get_time_remaining(std::chrono::system_clock::now());
             if (alarm_playing && new_time_remaining > std::chrono::seconds(0)) {
                 alarm_playing = false;
@@ -290,6 +299,7 @@ namespace rouen::cards {
                 }
                 target_time = new_target;
                 update_time_string();
+                alarm_active = true;
                 if (alarm_playing) {
                     alarm_playing = false;
                     media_player_alarm_helper::stop_sound_loop();
@@ -455,6 +465,7 @@ namespace rouen::cards {
         std::chrono::system_clock::time_point target_time;
         char time_buffer[16] = {0};
         bool alarm_playing = false;
+        bool alarm_active = true;
         
         // Available alarm sounds
         std::vector<std::pair<std::string, std::string>> alarm_sounds = {

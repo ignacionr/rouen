@@ -302,7 +302,7 @@ inline bool media_player_item::playMedia() {
         if (!cookies_browser.empty()) {
             ytdl_opts = " --ytdl-raw-options=cookies-from-browser=" + cookies_browser;
         }
-        std::string cmd = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"; \"" + mpv_path + "\" --no-terminal --log-file=/tmp/rouen_mpv_err.log --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + ytdl_opts + " \"" + sanitized_url + "\"";
+        std::string cmd = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"; exec \"" + mpv_path + "\" --no-terminal --log-file=/tmp/rouen_mpv_err.log --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + ytdl_opts + " \"" + sanitized_url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);
