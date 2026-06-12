@@ -1,5 +1,6 @@
 #include "terminal.hpp"
 #include "../../registrar.hpp"
+#include "../../fonts.hpp"
 
 namespace rouen::cards {
 
@@ -56,6 +57,7 @@ void terminal::test_stderr_output() {
 
 bool terminal::render() {
     return render_window([this]() {
+        rouen::fonts::with_font fnt{rouen::fonts::FontType::Mono};
         // Calculate window dimensions
         const float window_width = ImGui::GetContentRegionAvail().x;
         const float footer_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
@@ -308,6 +310,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         output.add_to_output("  /clear-history  - Clear terminal command history", OutputType::System);
         output.add_to_output("  /reset          - Restart interactive bash session", OutputType::System);
         output.add_to_output("  /info           - Show terminal card status and environment info", OutputType::System);
+        output.add_to_output("  /agy <prompt>   - Run Antigravity CLI print command using Nix", OutputType::System);
         output.add_to_output("", OutputType::Blank);
         output.add_prompt(current_working_dir);
     }
@@ -334,6 +337,33 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         output.add_to_output(std::format("  Process Running: {}", is_command_running ? "Yes" : "No"), OutputType::System);
         output.add_to_output("", OutputType::Blank);
         output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd.starts_with("/agy ")) {
+        std::string prompt = clean_cmd.substr(5);
+        // Clean prompt
+        prompt.erase(0, prompt.find_first_not_of(" \t\n\r"));
+        prompt.erase(prompt.find_last_not_of(" \t\n\r") + 1);
+        
+        if (prompt.empty()) {
+            output.add_to_output("Error: /agy requires a prompt (e.g., /agy list files)", OutputType::StdErr);
+            output.add_to_output("", OutputType::Blank);
+            output.add_prompt(current_working_dir);
+        } else {
+            // Escape special shell characters in the prompt
+            std::string escaped_prompt;
+            for (char c : prompt) {
+                if (c == '"' || c == '\\' || c == '`' || c == '$') {
+                    escaped_prompt += '\\';
+                }
+                escaped_prompt += c;
+            }
+            
+            std::string agy_cmd = std::format("NIXPKGS_ALLOW_UNFREE=1 nix shell /Users/ignaciorodriguez/src -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null", current_working_dir, escaped_prompt);
+            
+            // Execute the command in the bash session
+            is_command_running = true;
+            bash.send_to_bash(agy_cmd);
+        }
     }
     else {
         output.add_to_output(std::format("Unknown slash command: {}. Type /help for a list of commands.", clean_cmd), OutputType::StdErr);

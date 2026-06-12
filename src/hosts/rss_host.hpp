@@ -15,6 +15,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <regex>
 
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
@@ -28,6 +29,92 @@
 #include "../models/rss/sqliterepo.hpp"
 
 namespace rouen::hosts {
+
+namespace {
+    inline std::string extractYoutubeChannelId(const std::string& html) {
+        std::smatch match;
+        
+        // 1. Try to find the RSS feed link directly
+        std::regex r1(R"raw(youtube\.com/feeds/videos\.xml\?channel_id=(UC[A-Za-z0-9_-]{22}))raw");
+        if (std::regex_search(html, match, r1) && match.size() > 1) {
+            return match.str(1);
+        }
+        
+        // 2. Try metadata channelId field in page JSON
+        std::regex r2(R"raw("channelId"\s*:\s*"(UC[A-Za-z0-9_-]{22})")raw");
+        if (std::regex_search(html, match, r2) && match.size() > 1) {
+            return match.str(1);
+        }
+        
+        // 3. Try browseId field in page JSON
+        std::regex r3(R"raw("browseId"\s*:\s*"(UC[A-Za-z0-9_-]{22})")raw");
+        if (std::regex_search(html, match, r3) && match.size() > 1) {
+            return match.str(1);
+        }
+        
+        // 4. Try itemprop="channelId"
+        std::regex r4(R"raw(itemprop="channelId"\s+content="(UC[A-Za-z0-9_-]{22})")raw");
+        if (std::regex_search(html, match, r4) && match.size() > 1) {
+            return match.str(1);
+        }
+        
+        return "";
+    }
+
+    inline std::string resolveYoutubeUrl(const std::string& input_url) {
+        std::string url = input_url;
+        // Trim whitespace
+        url.erase(0, url.find_first_not_of(" \t\r\n"));
+        url.erase(url.find_last_not_of(" \t\r\n") + 1);
+        
+        if (url.empty()) {
+            return url;
+        }
+        
+        // If it's already a youtube feed URL, return it as-is
+        if (url.find("youtube.com/feeds/videos.xml") != std::string::npos) {
+            return url;
+        }
+        
+        // Check if it looks like a YouTube URL
+        bool is_youtube = (url.find("youtube.com") != std::string::npos || 
+                           url.find("youtu.be") != std::string::npos);
+        if (!is_youtube) {
+            return input_url;
+        }
+        
+        // Pattern 1: URL contains channel/UC...
+        std::regex channel_url_regex(R"raw(youtube\.com/channel/(UC[A-Za-z0-9_-]{22}))raw");
+        std::smatch match;
+        if (std::regex_search(url, match, channel_url_regex) && match.size() > 1) {
+            return "https://www.youtube.com/feeds/videos.xml?channel_id=" + match.str(1);
+        }
+        
+        // Pattern 2: Otherwise, it's handles/username (@Name, c/Name, user/Name, etc.)
+        // We should fetch the page and find the channel ID.
+        try {
+            std::string fetch_url = url;
+            if (fetch_url.find("http://") != 0 && fetch_url.find("https://") != 0) {
+                fetch_url = "https://" + fetch_url;
+            }
+            
+            http::fetch client{10};
+            std::vector<std::string> headers = {
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            
+            std::string html = client(fetch_url, headers);
+            std::string channel_id = extractYoutubeChannelId(html);
+            if (!channel_id.empty()) {
+                return "https://www.youtube.com/feeds/videos.xml?channel_id=" + channel_id;
+            }
+        } catch (const std::exception& e) {
+            HTTP_WARN_FMT("Failed to resolve YouTube channel URL {}: {}", url, e.what());
+        }
+        
+        return input_url;
+    }
+}
 
 /**
  * RSS Host Controller
@@ -558,8 +645,10 @@ private:
     // Synchronously add a feed
     std::shared_ptr<media::rss::feed> addFeedSync(std::string_view url, auto quitting) {
         try {
+            std::string resolved_url = resolveYoutubeUrl(std::string(url));
+            
             // Download and parse the feed
-            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(url));
+            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(resolved_url));
             
             if (quitting()) return nullptr;
 
@@ -597,7 +686,7 @@ private:
             }
             
             // Update the repository with feed info
-            feed_ptr->repo_id = repo_.upsert_feed(url, feed_ptr->feed_title, feed_ptr->image_url());
+            feed_ptr->repo_id = repo_.upsert_feed(resolved_url, feed_ptr->feed_title, feed_ptr->image_url());
             
             // Prepare items for batch insert
             std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items_batch;

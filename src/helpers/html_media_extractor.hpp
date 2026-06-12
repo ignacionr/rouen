@@ -94,24 +94,13 @@ namespace media::html {
                 std::string url = iter->str(1);
                 
                 // Handle YouTube URLs specially
-                if (media_type == "video" && url.find("youtube") != std::string::npos) {
-                    if (url.find("/embed/") != std::string::npos || url.find("youtu.be/") != std::string::npos) {
-                        // Convert to watch URL for better MPV compatibility
-                        std::regex yt_id_regex(R"((?:embed/|youtu\.be/)([a-zA-Z0-9_-]+))");
-                        std::smatch match;
-                        if (std::regex_search(url, match, yt_id_regex)) {
-                            url = "https://www.youtube.com/watch?v=" + match[1].str();
-                        }
-                    }
+                if (media_type == "video" && (iter->str(0).find("youtube") != std::string::npos || iter->str(0).find("youtu.be") != std::string::npos)) {
+                    url = "https://www.youtube.com/watch?v=" + iter->str(1);
                 }
                 
                 // Handle Vimeo URLs
-                if (media_type == "video" && url.find("vimeo") != std::string::npos) {
-                    std::regex vimeo_id_regex(R"(vimeo\.com/(?:video/)?(\d+))");
-                    std::smatch match;
-                    if (std::regex_search(url, match, vimeo_id_regex)) {
-                        url = "https://vimeo.com/" + match[1].str();
-                    }
+                if (media_type == "video" && iter->str(0).find("vimeo") != std::string::npos) {
+                    url = "https://vimeo.com/" + iter->str(1);
                 }
                 
                 // Normalize the URL

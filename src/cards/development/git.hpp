@@ -170,6 +170,12 @@ struct git: public card {
             git_model->openInVSCode(selected_repo);
         }
         
+        // Add "Open in Terminal" button
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Terminal")) {
+            "create_card"_sfn(std::format("terminal:{}", selected_repo));
+        }
+        
         // Add GitHub integration button
         ImGui::SameLine();
         if (ImGui::SmallButton("GitHub CI")) {
