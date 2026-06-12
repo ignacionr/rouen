@@ -78,6 +78,7 @@ private:
     std::thread bash_stderr_reader_thread;
     std::atomic<bool> should_stop_threads{false};
 #endif
+    std::atomic<bool> is_updating_cwd{false};
 
     // Output reference (set during initialization)
     TerminalOutput* output_ptr = nullptr;

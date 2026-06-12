@@ -218,6 +218,8 @@ std::string TerminalBash::update_cwd_from_bash() {
 #ifndef _WIN32
     if (!use_interactive_bash || bash_stdin_fd < 0) return current_working_dir;
     
+    is_updating_cwd = true;
+    
     // Create a temporary file for bash to write the pwd to
     char temp_filename[] = "/tmp/rouen_pwd_XXXXXX";
     int temp_fd = mkstemp(temp_filename);
@@ -245,6 +247,8 @@ std::string TerminalBash::update_cwd_from_bash() {
         // Remove the temporary file
         std::remove(temp_filename);
     }
+    
+    is_updating_cwd = false;
 #endif
 
     return current_working_dir;
@@ -306,12 +310,14 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                         is_command_running = false;
                         command_running = false;
                         
-                        // Update current working directory and get the result
-                        std::string new_cwd = update_cwd_from_bash();
-                        
-                        // Add prompt to output
-                        output.add_to_output("", OutputType::Blank);
-                        output.add_prompt(new_cwd);
+                        if (!is_updating_cwd.load()) {
+                            // Update current working directory and get the result
+                            std::string new_cwd = update_cwd_from_bash();
+                            
+                            // Add prompt to output
+                            output.add_to_output("", OutputType::Blank);
+                            output.add_prompt(new_cwd);
+                        }
                         continue;
                     }
                     
