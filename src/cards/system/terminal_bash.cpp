@@ -524,7 +524,31 @@ void TerminalBash::send_sigint() {
     if (bash_pid > 0) {
         // Send SIGINT to the process group so foreground jobs (like 'top') receive it
         kill(-bash_pid, SIGINT);
-        TERM_INFO("Sent SIGINT (Ctrl+C) to bash process group");
+        
+        // Also send SIGINT directly to direct child processes of the bash session
+        // (This acts as a robust backup if process group propagation is hindered)
+        std::string cmd = std::format("pgrep -P {}", bash_pid);
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buffer[128];
+            std::vector<pid_t> child_pids;
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                try {
+                    pid_t pid = std::stoi(buffer);
+                    if (pid > 0) {
+                        child_pids.push_back(pid);
+                    }
+                } catch (...) {}
+            }
+            pclose(pipe);
+            
+            for (pid_t pid : child_pids) {
+                kill(pid, SIGINT);
+                TERM_INFO_FMT("Sent SIGINT directly to child process {}", pid);
+            }
+        }
+        
+        TERM_INFO("Sent SIGINT (Ctrl+C) to bash process group and child processes");
     }
 #endif
 }
