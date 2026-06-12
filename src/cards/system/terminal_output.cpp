@@ -6,6 +6,13 @@ void TerminalOutput::add_to_output(const std::string& text, OutputType type) {
     std::lock_guard<std::mutex> lock(output_mutex);
     output_buffer.emplace_back(text, type);
     
+    // Clear partial buffers of the corresponding type since we now have a new complete line
+    if (type == OutputType::StdOut) {
+        stdout_partial.clear();
+    } else if (type == OutputType::StdErr) {
+        stderr_partial.clear();
+    }
+    
     // Keep buffer from growing too large (max 500 lines)
     if (output_buffer.size() > 500) {
         output_buffer.pop_front();
@@ -18,6 +25,13 @@ void TerminalOutput::add_multiple_outputs(const std::vector<std::pair<std::strin
     std::lock_guard<std::mutex> lock(output_mutex);
     for (const auto& [text, type] : entries) {
         output_buffer.emplace_back(text, type);
+        
+        // Clear partial buffers of the corresponding type
+        if (type == OutputType::StdOut) {
+            stdout_partial.clear();
+        } else if (type == OutputType::StdErr) {
+            stderr_partial.clear();
+        }
     }
     
     // Keep buffer from growing too large (max 500 lines)
@@ -31,6 +45,8 @@ void TerminalOutput::add_multiple_outputs(const std::vector<std::pair<std::strin
 void TerminalOutput::clear_terminal(const std::string& cwd) {
     std::lock_guard<std::mutex> lock(output_mutex);
     output_buffer.clear();
+    stdout_partial.clear();
+    stderr_partial.clear();
     output_buffer.emplace_back("Terminal cleared.", OutputType::System);
     output_buffer.emplace_back("", OutputType::Blank);
     
@@ -43,6 +59,16 @@ void TerminalOutput::add_prompt(const std::string& working_dir) {
     // Add the directory prompt (like "user@host:~/dir$")
     std::string prompt = std::format("{}$ ", working_dir);
     add_to_output(prompt, OutputType::Prompt);
+}
+
+void TerminalOutput::set_partial_line(const std::string& text, OutputType type) {
+    std::lock_guard<std::mutex> lock(output_mutex);
+    if (type == OutputType::StdOut) {
+        stdout_partial = text;
+    } else if (type == OutputType::StdErr) {
+        stderr_partial = text;
+    }
+    should_auto_scroll = true;
 }
 
 void TerminalOutput::display_buffer(const ImVec4* colors, bool& auto_scroll) {
@@ -72,6 +98,20 @@ void TerminalOutput::display_buffer(const ImVec4* colors, bool& auto_scroll) {
         }
         
         ImGui::TextWrapped("%s", text.c_str());
+        ImGui::PopStyleColor();
+    }
+    
+    // Display partial stdout if present
+    if (!stdout_partial.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // StdOut color
+        ImGui::TextWrapped("%s", stdout_partial.c_str());
+        ImGui::PopStyleColor();
+    }
+    
+    // Display partial stderr if present
+    if (!stderr_partial.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, colors[4]); // StdErr color
+        ImGui::TextWrapped("%s", stderr_partial.c_str());
         ImGui::PopStyleColor();
     }
     

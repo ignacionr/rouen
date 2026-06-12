@@ -160,9 +160,9 @@ void terminal::render_command_input(float window_width) {
     bool enter_pressed = false;
     bool input_active = false;
     float input_width = window_width;
-    // If Ctrl+C button is visible, make room for it
+    // If buttons are visible, make room for them
     if (is_command_running) {
-        input_width -= 80.0f; // Reserve space for spinner + button + spacing
+        input_width -= 160.0f; // Reserve space for spinner + Ctrl+C + Kill buttons + spacing
     }
     ImGui::SetNextItemWidth(input_width);
     if (ImGui::InputText("##CommandInput", input_buffer, static_cast<int>(sizeof(input_buffer)), 
@@ -172,7 +172,7 @@ void terminal::render_command_input(float window_width) {
     }
     input_active = ImGui::IsItemActive();
 
-    // If Ctrl+C button is visible, show it to the right of the input
+    // If command is running, show spinner and control buttons to the right of the input
     if (is_command_running) {
         ImGui::SameLine();
         ImGui::TextColored(colors[3], "%c", spinner_chars[(spinner_counter/5) % 4]);
@@ -181,6 +181,11 @@ void terminal::render_command_input(float window_width) {
         if (ImGui::SmallButton("\u23CE Ctrl+C")) {
             bash.send_sigint();
             output.add_to_output("Sent Ctrl+C (SIGINT) to running process.", OutputType::System);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("\u23F9 Kill")) {
+            bash.send_sigkill();
+            output.add_to_output("Sent Kill (SIGKILL) to child processes.", OutputType::System);
         }
     }
 

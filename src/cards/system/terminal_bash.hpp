@@ -62,6 +62,9 @@ public:
     // Send SIGINT (Ctrl+C) to the running bash process
     void send_sigint();
 
+    // Send SIGKILL to the child processes running inside the bash session
+    void send_sigkill();
+
 private:
     // Reader thread for bash output stream (stdout or stderr)
     void read_bash_stream(int pipe_fd, OutputType output_type, 

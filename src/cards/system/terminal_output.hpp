@@ -26,6 +26,7 @@ public:
     void add_multiple_outputs(const std::vector<std::pair<std::string, OutputType>>& entries);
     void clear_terminal(const std::string& cwd);
     void add_prompt(const std::string& working_dir);
+    void set_partial_line(const std::string& text, OutputType type);
     
     // Display output buffer in the UI
     void display_buffer(const ImVec4* colors, bool& auto_scroll);
@@ -34,6 +35,8 @@ public:
     
 private:
     std::deque<OutputEntry> output_buffer;
+    std::string stdout_partial;
+    std::string stderr_partial;
     std::mutex output_mutex;
     bool should_auto_scroll = false;
 };

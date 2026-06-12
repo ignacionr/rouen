@@ -1,6 +1,7 @@
 #include "terminal_bash.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/config_service.hpp"
+#include <vector>
 
 namespace rouen::cards {
 
@@ -117,8 +118,8 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
             read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
-        // Customize bash environment - use PS1 that has the working directory (\w)
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\"", true);
+        // Customize bash environment - use PS1 that has the working directory (\w) followed by a newline for prompt tracking
+        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
         send_to_bash("export TERM=dumb", true);
         
         // Disable history expansion to avoid problems with '!' character
@@ -328,6 +329,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                 
                 // Keep any remaining partial line
                 accumulated_output.erase(0, pos);
+                output.set_partial_line(accumulated_output, output_type);
                 
             } else if (bytes_read == 0) {
                 // EOF - bash has closed the pipe
@@ -477,8 +479,8 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
             read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
-        // Set up the environment for the sudo session (using -i / raw mode setup)
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\"", true);
+        // Set up the environment for the sudo session (using -i / raw mode setup with prompt newline)
+        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
         send_to_bash("export TERM=dumb", true);
         send_to_bash("set +H", true);
         
@@ -523,6 +525,34 @@ void TerminalBash::send_sigint() {
         // Send SIGINT to the process group so foreground jobs (like 'top') receive it
         kill(-bash_pid, SIGINT);
         TERM_INFO("Sent SIGINT (Ctrl+C) to bash process group");
+    }
+#endif
+}
+
+void TerminalBash::send_sigkill() {
+#ifndef _WIN32
+    if (bash_pid > 0) {
+        // Query child PIDs of bash_pid using pgrep -P
+        std::string cmd = std::format("pgrep -P {}", bash_pid);
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (pipe) {
+            char buffer[128];
+            std::vector<pid_t> child_pids;
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+                try {
+                    pid_t pid = std::stoi(buffer);
+                    if (pid > 0) {
+                        child_pids.push_back(pid);
+                    }
+                } catch (...) {}
+            }
+            pclose(pipe);
+            
+            for (pid_t pid : child_pids) {
+                kill(pid, SIGKILL);
+                TERM_INFO_FMT("Sent SIGKILL to child process {}", pid);
+            }
+        }
     }
 #endif
 }
