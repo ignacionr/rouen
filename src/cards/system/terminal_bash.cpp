@@ -15,6 +15,9 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
     output_ptr = &output;
     is_command_running_ptr = &is_command_running;
     
+    // Set initial cwd
+    set_cwd(initial_dir);
+    
     // Terminate any existing session
     terminate_bash_session();
     
@@ -114,15 +117,15 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
             read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
-        // Customize bash environment - use PS1 that doesn't have job control messages
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\"");
-        send_to_bash("export TERM=dumb");
+        // Customize bash environment - use PS1 that has the working directory (\w)
+        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\"", true);
+        send_to_bash("export TERM=dumb", true);
         
         // Disable history expansion to avoid problems with '!' character
-        send_to_bash("set +H");
+        send_to_bash("set +H", true);
         
         // Change to initial directory
-        send_to_bash(std::format("cd \"{}\"", initial_dir));
+        send_to_bash(std::format("cd \"{}\"", initial_dir), true);
         
         use_interactive_bash = true;
         TERM_INFO("Interactive bash session started successfully");
@@ -212,46 +215,14 @@ void TerminalBash::send_to_bash(const std::string& command, bool raw) {
 #endif
 }
 
-std::string TerminalBash::update_cwd_from_bash() {
-    std::string current_working_dir;
-    
-#ifndef _WIN32
-    if (!use_interactive_bash || bash_stdin_fd < 0) return current_working_dir;
-    
-    is_updating_cwd = true;
-    
-    // Create a temporary file for bash to write the pwd to
-    char temp_filename[] = "/tmp/rouen_pwd_XXXXXX";
-    int temp_fd = mkstemp(temp_filename);
-    
-    if (temp_fd != -1) {
-        close(temp_fd);
-        
-        // Send command to write pwd to the temporary file
-        send_to_bash(std::format("pwd > \"{}\"", temp_filename));
-        
-        // Wait for the command to complete
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        
-        // Read the file
-        std::ifstream pwd_file(temp_filename);
-        if (pwd_file) {
-            std::string pwd;
-            std::getline(pwd_file, pwd);
-            
-            if (!pwd.empty()) {
-                current_working_dir = pwd;
-            }
-        }
-        
-        // Remove the temporary file
-        std::remove(temp_filename);
-    }
-    
-    is_updating_cwd = false;
-#endif
-
+std::string TerminalBash::get_cwd() {
+    std::lock_guard<std::mutex> lock(cwd_mutex);
     return current_working_dir;
+}
+
+void TerminalBash::set_cwd(const std::string& cwd) {
+    std::lock_guard<std::mutex> lock(cwd_mutex);
+    current_working_dir = cwd;
 }
 
 void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type, 
@@ -310,14 +281,28 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                         is_command_running = false;
                         command_running = false;
                         
-                        if (!is_updating_cwd.load()) {
-                            // Update current working directory and get the result
-                            std::string new_cwd = update_cwd_from_bash();
-                            
-                            // Add prompt to output
-                            output.add_to_output("", OutputType::Blank);
-                            output.add_prompt(new_cwd);
+                        std::string parsed_cwd;
+                        size_t first_pipe = line.find('|');
+                        size_t second_pipe = line.find('|', first_pipe + 1);
+                        if (first_pipe != std::string::npos && second_pipe != std::string::npos) {
+                            parsed_cwd = line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
                         }
+                        
+                        if (!parsed_cwd.empty()) {
+                            // Expand ~ to user's home directory if needed
+                            if (parsed_cwd == "~") {
+                                const char* home = getenv("HOME");
+                                if (home) parsed_cwd = home;
+                            } else if (parsed_cwd.starts_with("~/")) {
+                                const char* home = getenv("HOME");
+                                if (home) parsed_cwd = std::string(home) + parsed_cwd.substr(1);
+                            }
+                            set_cwd(parsed_cwd);
+                        }
+                        
+                        // Add prompt to output
+                        output.add_to_output("", OutputType::Blank);
+                        output.add_prompt(get_cwd());
                         continue;
                     }
                     
@@ -492,13 +477,13 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
             read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
         });
         
-        // Set up the environment for the sudo session
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\"");
-        send_to_bash("export TERM=dumb");
-        send_to_bash("set +H");
+        // Set up the environment for the sudo session (using -i / raw mode setup)
+        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\"", true);
+        send_to_bash("export TERM=dumb", true);
+        send_to_bash("set +H", true);
         
         // Change to the previous working directory
-        send_to_bash(std::format("cd \"{}\"", prev_cwd));
+        send_to_bash(std::format("cd \"{}\"", prev_cwd), true);
         
         // Check if we have a command to run
         if (!sudo_cmd.empty()) {

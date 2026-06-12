@@ -207,7 +207,7 @@ void terminal::render_command_input(float window_width) {
         std::string user_cmd = input_buffer;
         // Always update current_working_dir from bash before handling shortcuts, but only if no command is running
         if (bash.is_interactive() && !is_command_running) {
-            std::string new_cwd = bash.update_cwd_from_bash();
+            std::string new_cwd = bash.get_cwd();
             if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
         if (handle_slash_command(user_cmd)) {

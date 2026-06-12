@@ -49,7 +49,7 @@ public:
     void send_to_bash(const std::string& command, bool raw = false);
     
     // Get current working directory from bash
-    std::string update_cwd_from_bash();
+    std::string get_cwd();
     
     // Restart with sudo privileges
     void restart_with_sudo(const char* password, const std::string& prev_cwd, 
@@ -78,7 +78,9 @@ private:
     std::thread bash_stderr_reader_thread;
     std::atomic<bool> should_stop_threads{false};
 #endif
-    std::atomic<bool> is_updating_cwd{false};
+    std::string current_working_dir;
+    std::mutex cwd_mutex;
+    void set_cwd(const std::string& cwd);
 
     // Output reference (set during initialization)
     TerminalOutput* output_ptr = nullptr;
