@@ -259,7 +259,12 @@ inline bool media_player_item::playMedia() {
     // Add headers for better compatibility with protected content (like RT.com)
     std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
     std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
-    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
+    std::string ytdl_opts;
+    std::string cookies_browser = CONFIG_SERVICE()->get_env("ROUEN_COOKIES_BROWSER");
+    if (!cookies_browser.empty()) {
+        ytdl_opts = " --ytdl-raw-options=cookies-from-browser=" + cookies_browser;
+    }
+    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + ytdl_opts + " \"" + sanitized_url + "\"";
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -292,7 +297,12 @@ inline bool media_player_item::playMedia() {
         // Add headers for better compatibility with protected content (like RT.com)
         std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
         std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
-        std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + " \"" + sanitized_url + "\"";
+        std::string ytdl_opts;
+        std::string cookies_browser = CONFIG_SERVICE()->get_env("ROUEN_COOKIES_BROWSER");
+        if (!cookies_browser.empty()) {
+            ytdl_opts = " --ytdl-raw-options=cookies-from-browser=" + cookies_browser;
+        }
+        std::string cmd = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"; \"" + mpv_path + "\" --no-terminal --log-file=/tmp/rouen_mpv_err.log --input-ipc-server=" + socket_path + " " + headers + " " + extra_opts + ytdl_opts + " \"" + sanitized_url + "\"";
         execlp("sh", "sh", "-c", cmd.c_str(), static_cast<char*>(nullptr));
         perror("execlp failed");
         exit(1);

@@ -279,6 +279,8 @@ namespace rouen::helpers {
                        "Path to the VS Code executable (e.g., code)", "code");
         register_config("PING_PATH", Category::EXECUTABLE_PATHS, false, false,
                        "Path to the ping executable (e.g., ping)", "ping");
+        register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
+                       "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)");
 
         CONFIG_INFO("Default configurations registered");
     }
