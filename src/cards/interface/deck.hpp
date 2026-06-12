@@ -142,9 +142,10 @@ struct deck {
         };
     };
 
-    bool render(card &c, float &x, float height, int &requested_fps, float y = 0.0f) {
+    bool render(card &c, float &x, float height, int &requested_fps, float y = 0.0f, float override_width = -1.0f) {
+        float const w = (override_width > 0.0f) ? override_width : c.width;
         ImGui::SetNextWindowPos({x, y}, ImGuiCond_Always);
-        ImGui::SetNextWindowSize({c.width, height}, ImGuiCond_Always);
+        ImGui::SetNextWindowSize({w, height}, ImGuiCond_Always);
 
         color_setup colors(c.get_color(0), c.get_color(1));
 
@@ -156,7 +157,7 @@ struct deck {
         bool result = c.render();
         requested_fps = std::max(requested_fps, c.requested_fps);
         
-        x += c.width + 2.0f;
+        x += w + 2.0f;
         return result;
     }
 
@@ -473,8 +474,16 @@ struct deck {
             std::set<card::ptr> cards_to_remove;
             for (auto& row : rows) {
                 x = 0.0f;
-                for (auto& c : row) {
-                    if (!render(*c, x, row_height, result.requested_fps, y)) {
+                for (size_t i = 0; i < row.size(); ++i) {
+                    auto& c = row[i];
+                    float override_width = -1.0f;
+                    if (i == row.size() - 1) {
+                        override_width = size.x - x;
+                        if (override_width < c->width) {
+                            override_width = c->width;
+                        }
+                    }
+                    if (!render(*c, x, row_height, result.requested_fps, y, override_width)) {
                         // Unregister MCP functions immediately when card fails to render
                         try {
                             c->unregister_mcp_functions();
@@ -519,7 +528,16 @@ struct deck {
             auto x{start_x};
             auto y = empty_editor ? 450.0f : 250.0f;
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, y, &result](auto c) { return !render(*c, x, y, result.requested_fps); });
+                [this, &x, y, &result](auto const& c) {
+                    float override_width = -1.0f;
+                    if (!cards_.empty() && c == cards_.back()) {
+                        float size_x = ImGui::GetMainViewport()->Size.x;
+                        if (size_x - x > c->width) {
+                            override_width = size_x - x;
+                        }
+                    }
+                    return !render(*c, x, y, result.requested_fps, 0.0f, override_width);
+                });
             
             // Unregister MCP functions for cards being removed
             for (auto it = cards_to_remove; it != cards_.end(); ++it) {
