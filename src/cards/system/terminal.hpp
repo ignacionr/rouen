@@ -43,6 +43,7 @@ private:
     void render_command_input(float window_width);
     void test_stderr_output();
     bool navigate_history(bool go_back, char* buffer, size_t buffer_size);
+    bool handle_slash_command(const std::string& cmd);
     
     std::string input_text;  // Stores the current input text (for history navigation)
     std::vector<std::string> command_history;

@@ -210,8 +210,11 @@ void terminal::render_command_input(float window_width) {
             std::string new_cwd = bash.update_cwd_from_bash();
             if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
+        if (handle_slash_command(user_cmd)) {
+            // Handled as slash command
+        }
         // Check for 'ed <filename>' shortcut with Ctrl+Enter
-        if (ctrl_down && user_cmd.starts_with("ed ") && user_cmd.size() > 3) {
+        else if (ctrl_down && user_cmd.starts_with("ed ") && user_cmd.size() > 3) {
             // Extract filename (relative to current_working_dir)
             std::string filename = user_cmd.substr(3);
             std::filesystem::path file_path = std::filesystem::path(current_working_dir) / filename;
@@ -265,6 +268,69 @@ bool terminal::navigate_history(bool go_back, char* buffer, size_t buffer_size) 
         }
     }
     return false;
+}
+
+bool terminal::handle_slash_command(const std::string& cmd) {
+    if (!cmd.starts_with("/")) {
+        return false;
+    }
+
+    // Output the command typed by the user to the terminal output log so they see it
+    output.add_to_output(cmd, OutputType::Command);
+
+    // Also add it to history so they can navigate back to it (standard shell behavior for slash commands)
+    command_history.push_back(cmd);
+    if (command_history.size() > 50) {
+        command_history.erase(command_history.begin());
+    }
+    history_index = command_history.size();
+
+    // Parse the slash command
+    std::string clean_cmd = cmd;
+    // Remove leading/trailing spaces
+    clean_cmd.erase(0, clean_cmd.find_first_not_of(" \t\n\r"));
+    clean_cmd.erase(clean_cmd.find_last_not_of(" \t\n\r") + 1);
+
+    if (clean_cmd == "/help") {
+        output.add_to_output("Available slash commands:", OutputType::System);
+        output.add_to_output("  /help           - Show this help message", OutputType::System);
+        output.add_to_output("  /clear-history  - Clear terminal command history", OutputType::System);
+        output.add_to_output("  /reset          - Restart interactive bash session", OutputType::System);
+        output.add_to_output("  /info           - Show terminal card status and environment info", OutputType::System);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd == "/clear-history" || clean_cmd == "/clear_history" || clean_cmd == "/history -c") {
+        command_history.clear();
+        history_index = 0;
+        output.add_to_output("Terminal command history cleared.", OutputType::System);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd == "/reset") {
+        output.add_to_output("Restarting interactive bash session...", OutputType::System);
+        bash.terminate_bash_session();
+        bash.initialize_bash_session(current_working_dir, output, is_command_running);
+        output.add_to_output("Bash session restarted.", OutputType::System);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd == "/info") {
+        output.add_to_output("Terminal Card Info:", OutputType::System);
+        output.add_to_output(std::format("  Working Dir: {}", current_working_dir), OutputType::System);
+        output.add_to_output(std::format("  History Size: {} / 50", command_history.size()), OutputType::System);
+        output.add_to_output(std::format("  Interactive: {}", bash.is_interactive() ? "Yes" : "No"), OutputType::System);
+        output.add_to_output(std::format("  Process Running: {}", is_command_running ? "Yes" : "No"), OutputType::System);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+    else {
+        output.add_to_output(std::format("Unknown slash command: {}. Type /help for a list of commands.", clean_cmd), OutputType::StdErr);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+
+    return true;
 }
 
 std::string terminal::get_uri() const {
