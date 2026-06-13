@@ -40,6 +40,14 @@ struct deck {
                 [this](std::string const& uri) { create_card(uri); }
             )
         );
+
+        // Register to get the active card count
+        registrar::add<std::function<size_t()>>(
+            "get_card_count", 
+            std::make_shared<std::function<size_t()>>(
+                [this]() { return cards_.size(); }
+            )
+        );
         
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
@@ -49,8 +57,9 @@ struct deck {
         // Save card state when the deck is destroyed
         save_card_uris();
         
-        // Unregister the create_card function
+        // Unregister the services
         registrar::remove<std::function<void(std::string const&)>>("create_card");
+        registrar::remove<std::function<size_t()>>("get_card_count");
     }
 
     void create_card(std::string_view uri, bool move_first = false) {
@@ -446,6 +455,25 @@ struct deck {
     };
 
     [[nodiscard]] render_status render() {
+        // Dynamic window title merging: when there's only 1 card, merge its name with the OS frame window
+        auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
+        if (get_window_service) {
+            SDL_Window* window = (*get_window_service)();
+            if (window) {
+                if (cards_.size() == 1 && cards_[0]) {
+                    std::string title = cards_[0]->window_title;
+                    size_t hash_pos = title.find("##");
+                    if (hash_pos != std::string::npos) {
+                        title = title.substr(0, hash_pos);
+                    }
+                    std::string new_title = std::format("Rouen - {}", title);
+                    SDL_SetWindowTitle(window, new_title.c_str());
+                } else {
+                    SDL_SetWindowTitle(window, "Rouen");
+                }
+            }
+        }
+
         render_status result;
         handle_shortcuts();
         auto const size {ImGui::GetMainViewport()->Size};
