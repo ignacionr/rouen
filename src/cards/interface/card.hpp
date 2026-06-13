@@ -68,6 +68,12 @@ struct card {
 
     virtual std::string get_uri() const = 0;
 
+    virtual bool matches_uri(std::string_view uri) const {
+        return get_uri() == uri;
+    }
+
+    virtual void handle_uri(std::string_view /*uri*/) {}
+
     bool run_focused_handlers() {
         is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
         if (is_focused) {

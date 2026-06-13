@@ -71,11 +71,11 @@ struct deck {
     }
 
     void create_card_impl(std::string_view uri, bool move_first = false) {
-        // do we have a card with this same uri already?
         auto existing_card = std::find_if(cards_.begin(), cards_.end(),
-            [&uri](const auto& card) { return card->get_uri() == uri; });
+            [&uri](const auto& card) { return card->matches_uri(uri); });
         if (existing_card != cards_.end()) {
-            // If the card already exists, we will make it request the focus
+            // If the card already exists, we will make it request the focus and handle the URI
+            (*existing_card)->handle_uri(uri);
             (*existing_card)->grab_focus = true;
         }
         else {

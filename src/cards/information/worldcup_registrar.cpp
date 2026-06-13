@@ -13,8 +13,8 @@ namespace {
                 rouen::cards::factory::dictionary());
             
             // Register the World Cup card
-            dict["worldcup"] = [](std::string_view, SDL_Renderer* renderer) {
-                auto card_ptr = std::make_shared<rouen::cards::worldcup_dashboard>();
+            dict["worldcup"] = [](std::string_view locator, SDL_Renderer* renderer) {
+                auto card_ptr = std::make_shared<rouen::cards::worldcup_dashboard>(locator);
                 card_ptr->set_renderer(renderer);
                 return card_ptr;
             };

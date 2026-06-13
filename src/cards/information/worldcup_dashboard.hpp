@@ -106,7 +106,7 @@ public:
         int64_t last_updated_epoch = 0;
     };
 
-    worldcup_dashboard() {
+    worldcup_dashboard(std::string_view locator = "") {
         // Set World Cup theme colors: vibrant pitch green and gold accents
         colors[0] = {0.09f, 0.45f, 0.27f, 1.0f}; // Pitch Green
         colors[1] = {0.85f, 0.68f, 0.21f, 0.7f}; // Gold Accent
@@ -125,6 +125,10 @@ public:
         // Load persistent commentary cache from disk
         load_commentary_cache_from_disk();
         load_team_players_cache_from_disk();
+
+        if (!locator.empty()) {
+            handle_uri("worldcup:" + std::string(locator));
+        }
 
         // Start Background Data Fetch
         fetch_real_data();
@@ -241,7 +245,12 @@ public:
             ImGui::Spacing();
             
             if (ImGui::BeginTabBar("WorldCupTabs", ImGuiTabBarFlags_None)) {
-                if (ImGui::BeginTabItem(ICON_MD_SPORTS_SOCCER " Match Center")) {
+                ImGuiTabItemFlags mc_flags = ImGuiTabItemFlags_None;
+                if (set_match_center_selected) {
+                    mc_flags |= ImGuiTabItemFlags_SetSelected;
+                    set_match_center_selected = false; // Reset so user can switch normally
+                }
+                if (ImGui::BeginTabItem(ICON_MD_SPORTS_SOCCER " Match Center", nullptr, mc_flags)) {
                     render_match_center();
                     ImGui::EndTabItem();
                 }
@@ -264,6 +273,26 @@ public:
 
     std::string get_uri() const override {
         return "worldcup";
+    }
+
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "worldcup" || uri.starts_with("worldcup:");
+    }
+
+    void handle_uri(std::string_view uri) override {
+        std::string_view locator = uri;
+        auto colon_pos = uri.find(':');
+        if (colon_pos != std::string_view::npos) {
+            locator = uri.substr(colon_pos + 1);
+        }
+        if (locator.starts_with("match:")) {
+            locator = locator.substr(6);
+        }
+        if (!locator.empty()) {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            expanded_match_key_ = std::string(locator);
+            set_match_center_selected = true;
+        }
     }
 
     SDL_Renderer* renderer = nullptr;
@@ -300,6 +329,7 @@ private:
     std::unordered_map<std::string, CommentaryCache> commentary_cache_;
     std::unordered_set<std::string> fetching_matches_;
     std::string expanded_match_key_;
+    bool set_match_center_selected = false;
 
     std::unordered_map<std::string, TeamPlayersCache> team_players_cache_;
     std::unordered_set<std::string> fetching_players_;
@@ -2100,6 +2130,10 @@ private:
             
             // Match detail header
             ImGui::TextColored(colors[5], "%s - %s", next_match->group.c_str(), next_match->venue.c_str());
+            ImGui::SameLine(ImGui::GetWindowWidth() - 110.0f);
+            if (ImGui::SmallButton(std::format(ICON_MD_LAUNCH " View Match##btn_next_{}", next_key).c_str())) {
+                "create_card"_sfn(std::format("worldcup:{}", next_key));
+            }
             ImGui::Separator();
             ImGui::Spacing();
 
@@ -2199,8 +2233,9 @@ private:
                     std::string opp_name = is_m_home ? m->away_team : m->home_team;
                     std::string opp_code = is_m_home ? m->away_code : m->home_code;
                     
-                    ImGui::Columns(2, nullptr, false);
-                    ImGui::SetColumnWidth(0, 260.0f);
+                    ImGui::Columns(3, nullptr, false);
+                    ImGui::SetColumnWidth(0, 220.0f);
+                    ImGui::SetColumnWidth(1, 170.0f);
                     
                     // Column 0: Opponent
                     ImGui::AlignTextToFramePadding();
@@ -2235,6 +2270,13 @@ private:
                         }
                     } else {
                         ImGui::TextColored(colors[4], "Kickoff has started!");
+                    }
+
+                    // Column 2: Action Button
+                    ImGui::NextColumn();
+                    std::string sub_key = m->home_code + "_" + m->away_code + "_" + m->date_str;
+                    if (ImGui::SmallButton(std::format(ICON_MD_LAUNCH " View##btn_sub_{}", i).c_str())) {
+                        "create_card"_sfn(std::format("worldcup:{}", sub_key));
                     }
                     
                     ImGui::Columns(1);
