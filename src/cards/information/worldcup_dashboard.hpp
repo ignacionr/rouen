@@ -825,7 +825,7 @@ private:
             ImGui::Spacing();
             
             if (has_scorers) {
-                ImGui::TextColored(colors[2], "⚽ Match Events / Scorers:");
+                ImGui::TextColored(colors[2], "%s Match Events / Scorers:", ICON_MD_SPORTS_SOCCER);
                 ImGui::Indent(10.0f);
                 if (!featured->home_scorers.empty()) {
                     ImGui::TextColored(colors[5], "%s: %s", featured->home_team.c_str(), featured->home_scorers.c_str());
@@ -1259,7 +1259,7 @@ private:
                 
                 if (!next_match->home_scorers.empty() || !next_match->away_scorers.empty()) {
                     ImGui::Spacing();
-                    ImGui::TextColored(colors[2], "⚽ Scorers:");
+                    ImGui::TextColored(colors[2], "%s Scorers:", ICON_MD_SPORTS_SOCCER);
                     ImGui::Indent(10.0f);
                     if (!next_match->home_scorers.empty()) {
                         ImGui::TextColored(colors[5], "%s: %s", next_match->home_team.c_str(), next_match->home_scorers.c_str());
