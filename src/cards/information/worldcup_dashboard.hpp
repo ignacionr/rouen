@@ -1618,7 +1618,13 @@ private:
             flags::draw_flag(ImGui::GetWindowDrawList(), flag_pos, ImVec2(36, 24), featured->home_code);
             ImGui::Spacing();
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-            ImGui::Text("%s", featured->home_team.c_str());
+            if (ImGui::Selectable(std::format("{}##feat_home", featured->home_team).c_str(), false, ImGuiSelectableFlags_None, ImVec2(150, 0))) {
+                tracker_selected_team_code = featured->home_code;
+                set_team_tracker_selected = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Go to Team Tracker for %s", featured->home_team.c_str());
+            }
             ImGui::PopFont();
             ImGui::TextColored(colors[5], "%s", featured->home_code.c_str());
             ImGui::Unindent(15);
@@ -1706,7 +1712,13 @@ private:
             flags::draw_flag(ImGui::GetWindowDrawList(), flag_pos, ImVec2(36, 24), featured->away_code);
             ImGui::Spacing();
             ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-            ImGui::Text("%s", featured->away_team.c_str());
+            if (ImGui::Selectable(std::format("{}##feat_away", featured->away_team).c_str(), false, ImGuiSelectableFlags_None, ImVec2(150, 0))) {
+                tracker_selected_team_code = featured->away_code;
+                set_team_tracker_selected = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Go to Team Tracker for %s", featured->away_team.c_str());
+            }
             ImGui::PopFont();
             ImGui::TextColored(colors[5], "%s", featured->away_code.c_str());
             ImGui::Unindent(15);
@@ -1797,8 +1809,13 @@ private:
             ImGui::Dummy(ImVec2(24, 16));
             flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(24, 16), m.home_code);
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(100);
-            ImGui::Text("%s", m.home_team.c_str());
+            if (ImGui::Selectable(std::format("{}##home_{}", m.home_team, m.home_code).c_str(), false, ImGuiSelectableFlags_None, ImVec2(100, 0))) {
+                tracker_selected_team_code = m.home_code;
+                set_team_tracker_selected = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Go to Team Tracker for %s", m.home_team.c_str());
+            }
             
             // Score / Status
             ImGui::SameLine(ImGui::GetWindowWidth() - 250);
@@ -1831,8 +1848,13 @@ private:
             fpos = ImGui::GetCursorScreenPos();
             ImGui::Dummy(ImVec2(24, 16));
             flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(24, 16), m.away_code);
-            ImGui::SameLine();
-            ImGui::Text("%s", m.away_team.c_str());
+            if (ImGui::Selectable(std::format("{}##away_{}", m.away_team, m.away_code).c_str(), false, ImGuiSelectableFlags_None, ImVec2(100, 0))) {
+                tracker_selected_team_code = m.away_code;
+                set_team_tracker_selected = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Go to Team Tracker for %s", m.away_team.c_str());
+            }
 
             // Add tooltip with stadium info and group details
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
@@ -2206,8 +2228,13 @@ private:
             ImVec2 op_flag_pos = ImGui::GetCursorScreenPos();
             ImGui::Dummy(ImVec2(24, 16));
             flags::draw_flag(ImGui::GetWindowDrawList(), op_flag_pos, ImVec2(24, 16), opponent_code);
-            ImGui::SameLine();
-            ImGui::Text("Vs. %s (%s)", opponent_name.c_str(), opponent_code.c_str());
+            if (ImGui::Selectable(std::format("Vs. {} ({})", opponent_name, opponent_code).c_str(), false, ImGuiSelectableFlags_None, ImVec2(250, 0))) {
+                tracker_selected_team_code = opponent_code;
+                set_team_tracker_selected = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Switch tracker to %s", opponent_name.c_str());
+            }
             
             ImGui::Spacing();
             
@@ -2302,8 +2329,13 @@ private:
                     ImVec2 sub_flag_pos = ImGui::GetCursorScreenPos();
                     ImGui::Dummy(ImVec2(24, 16));
                     flags::draw_flag(ImGui::GetWindowDrawList(), sub_flag_pos, ImVec2(24, 16), opp_code);
-                    ImGui::SameLine();
-                    ImGui::Text("Vs. %s (%s)", opp_name.c_str(), opp_code.c_str());
+                    if (ImGui::Selectable(std::format("Vs. {} ({})", opp_name, opp_code).c_str(), false, ImGuiSelectableFlags_None, ImVec2(180, 0))) {
+                        tracker_selected_team_code = opp_code;
+                        set_team_tracker_selected = true;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Switch tracker to %s", opp_name.c_str());
+                    }
                     
                     ImGui::TextColored(colors[5], "Stage: %s", m->group.c_str());
                     
