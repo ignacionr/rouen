@@ -263,7 +263,12 @@ public:
                     render_standings();
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem(ICON_MD_TRACK_CHANGES " Team Tracker")) {
+                ImGuiTabItemFlags tracker_flags = ImGuiTabItemFlags_None;
+                if (set_team_tracker_selected) {
+                    tracker_flags |= ImGuiTabItemFlags_SetSelected;
+                    set_team_tracker_selected = false; // Reset
+                }
+                if (ImGui::BeginTabItem(ICON_MD_TRACK_CHANGES " Team Tracker", nullptr, tracker_flags)) {
                     render_team_tracker();
                     ImGui::EndTabItem();
                 }
@@ -339,6 +344,10 @@ private:
     bool need_scroll_to_match = false;
     bool set_standings_selected = false;
     int selected_group_idx = 3; // Defaults to Group D (USA)
+    bool set_team_tracker_selected = false;
+    std::string tracker_selected_team_code = "";
+    int tracker_selected_idx = 0;
+    int tracker_last_selected_idx = -1;
 
     std::unordered_map<std::string, TeamPlayersCache> team_players_cache_;
     std::unordered_set<std::string> fetching_players_;
@@ -1938,6 +1947,18 @@ private:
                     flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(20, 13), t.code);
                     ImGui::SameLine();
                     ImGui::TextColored(text_color, "%s", t.name.c_str());
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.3f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.4f, 0.4f, 0.5f));
+                    if (ImGui::SmallButton(std::format(ICON_MD_LAUNCH "##track_{}", t.code).c_str())) {
+                        tracker_selected_team_code = t.code;
+                        set_team_tracker_selected = true;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Go to Team Tracker for %s", t.name.c_str());
+                    }
+                    ImGui::PopStyleColor(3);
                     
                     ImGui::TableSetColumnIndex(2);
                     ImGui::Text("%d", t.played);
@@ -2040,14 +2061,22 @@ private:
             return;
         }
 
-        static int selected_idx = 0;
-        if (selected_idx >= static_cast<int>(sorted_teams.size())) {
-            selected_idx = 0;
+        if (!tracker_selected_team_code.empty()) {
+            for (size_t i = 0; i < sorted_teams.size(); ++i) {
+                if (sorted_teams[i].first == tracker_selected_team_code) {
+                    tracker_selected_idx = static_cast<int>(i);
+                    break;
+                }
+            }
+            tracker_selected_team_code = ""; // Reset
         }
 
-        static int last_selected_idx = -1;
-        if (selected_idx != last_selected_idx) {
-            last_selected_idx = selected_idx;
+        if (tracker_selected_idx >= static_cast<int>(sorted_teams.size())) {
+            tracker_selected_idx = 0;
+        }
+
+        if (tracker_selected_idx != tracker_last_selected_idx) {
+            tracker_last_selected_idx = tracker_selected_idx;
             clear_player_textures();
         }
 
@@ -2064,13 +2093,13 @@ private:
             combo_items_cstr.push_back(s.c_str());
         }
 
-        ImGui::Combo("##TeamCombo", &selected_idx, combo_items_cstr.data(), static_cast<int>(combo_items_cstr.size()));
+        ImGui::Combo("##TeamCombo", &tracker_selected_idx, combo_items_cstr.data(), static_cast<int>(combo_items_cstr.size()));
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
 
-        size_t sel_u_idx = static_cast<size_t>(selected_idx);
+        size_t sel_u_idx = static_cast<size_t>(tracker_selected_idx);
         std::string sel_code = sorted_teams[sel_u_idx].first;
         std::string sel_name = sorted_teams[sel_u_idx].second;
 
