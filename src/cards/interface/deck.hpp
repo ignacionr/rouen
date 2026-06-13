@@ -172,7 +172,7 @@ struct deck {
 
     void handle_shortcuts() {
         auto& io = ImGui::GetIO();
-        auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
+        bool ctrl = io.KeyCtrl || io.KeySuper;
         if (ctrl) {
             if (io.KeyShift) {
                 if (ImGui::IsKeyPressed(ImGuiKey_P)) {
