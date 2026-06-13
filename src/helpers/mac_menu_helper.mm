@@ -24,11 +24,16 @@ void disable_mac_cmd_w_menu_item() {
                         [subitem setKeyEquivalentModifierMask:0];
                         found = true;
                     }
+                    if ([eq isEqualToString:@"p"] && (mask & NSEventModifierFlagCommand)) {
+                        [subitem setKeyEquivalent:@""];
+                        [subitem setKeyEquivalentModifierMask:0];
+                        found = true;
+                    }
                 }
             }
         }
         if (found) {
-            std::cout << "DEBUG: Successfully disabled Cmd+W menu shortcut." << std::endl;
+            std::cout << "DEBUG: Successfully disabled Cmd+W and Cmd+P menu shortcuts." << std::endl;
             completed = true;
         }
     }
