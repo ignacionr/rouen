@@ -254,7 +254,12 @@ public:
                     render_match_center();
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem(ICON_MD_FORMAT_LIST_BULLETED " Standings")) {
+                ImGuiTabItemFlags std_flags = ImGuiTabItemFlags_None;
+                if (set_standings_selected) {
+                    std_flags |= ImGuiTabItemFlags_SetSelected;
+                    set_standings_selected = false; // Reset
+                }
+                if (ImGui::BeginTabItem(ICON_MD_FORMAT_LIST_BULLETED " Standings", nullptr, std_flags)) {
                     render_standings();
                     ImGui::EndTabItem();
                 }
@@ -332,6 +337,8 @@ private:
     std::string expanded_match_key_;
     bool set_match_center_selected = false;
     bool need_scroll_to_match = false;
+    bool set_standings_selected = false;
+    int selected_group_idx = 3; // Defaults to Group D (USA)
 
     std::unordered_map<std::string, TeamPlayersCache> team_players_cache_;
     std::unordered_set<std::string> fetching_players_;
@@ -1881,8 +1888,7 @@ private:
             return;
         }
 
-        static int selected_group_idx = 3; // Defaults to Group D (USA)
-        static const char* group_dropdown_names[] = {
+        const char* group_dropdown_names[] = {
             "Group A", "Group B", "Group C", "Group D", "Group E", "Group F",
             "Group G", "Group H", "Group I", "Group J", "Group K", "Group L"
         };
@@ -2076,6 +2082,25 @@ private:
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::Text("%s", sel_name.c_str());
         ImGui::PopFont();
+
+        // Find selected team's group
+        std::string sel_group = "";
+        for (const auto& [tid, t] : display_teams) {
+            if (t.code == sel_code) {
+                sel_group = t.group;
+                break;
+            }
+        }
+        if (!sel_group.empty()) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
+            if (ImGui::SmallButton(std::format(ICON_MD_LAUNCH " Group {} Standings", sel_group).c_str())) {
+                int idx = std::toupper(static_cast<unsigned char>(sel_group[0])) - 'A';
+                if (idx >= 0 && idx < 12) {
+                    selected_group_idx = idx;
+                    set_standings_selected = true;
+                }
+            }
+        }
 
         ImGui::Spacing();
 
