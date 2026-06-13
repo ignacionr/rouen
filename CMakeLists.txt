@@ -65,6 +65,14 @@ endif()
 # Project name and version
 project(rouen VERSION 1.0 LANGUAGES C CXX)
 
+# Enable ccache if available to improve rebuild times
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  message(STATUS "ccache enabled to speed up compilation")
+endif()
+
 # Platform-specific compiler settings
 if(APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -387,6 +395,7 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp
   src/cards/information/bybit_registrar.cpp
+  src/cards/information/worldcup_registrar.cpp
   src/models/jira_model_core.cpp
   src/models/jira_model_connection.cpp
   src/models/jira_model_profiles.cpp

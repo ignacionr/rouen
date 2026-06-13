@@ -23,8 +23,8 @@ namespace media::rss {
             for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
                 std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
                                 "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                                "ON CONFLICT(link) DO "
-                                "UPDATE SET enclosure=excluded.enclosure, title=excluded.title, "
+                                "ON CONFLICT(feed_id, link, title) DO "
+                                "UPDATE SET enclosure=excluded.enclosure, "
                                 "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url";
                 
                 db.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);
@@ -53,8 +53,8 @@ namespace media::rss {
         try {
             std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
                           "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                          "ON CONFLICT(link) DO "
-                          "UPDATE SET enclosure=excluded.enclosure, title=excluded.title, "
+                          "ON CONFLICT(feed_id, link, title) DO "
+                          "UPDATE SET enclosure=excluded.enclosure, "
                           "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url";
             
             db.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);

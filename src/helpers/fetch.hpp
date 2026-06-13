@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <stdexcept>
 #include <curl/curl.h>
@@ -53,6 +54,23 @@ static size_t write_callback(char* contents, size_t size, size_t nmemb, void* us
     std::string* response = static_cast<std::string*>(userp);
     response->append(contents, real_size);
     return real_size;
+}
+
+// Callback to check for permanent redirect headers
+static size_t redirect_header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    size_t total_size = size * nitems;
+    bool* is_permanent = static_cast<bool*>(userdata);
+    std::string_view header(buffer, total_size);
+    if (header.starts_with("HTTP/")) {
+        size_t space_pos = header.find(' ');
+        if (space_pos != std::string_view::npos && space_pos + 3 < header.size()) {
+            std::string_view code = header.substr(space_pos + 1, 3);
+            if (code == "301" || code == "308") {
+                *is_permanent = true;
+            }
+        }
+    }
+    return total_size;
 }
 
 // HTTP client to fetch data from URLs with configurable timeout
@@ -152,6 +170,9 @@ public:
         return ssl_options_;
     }
     
+    bool last_redirect_was_permanent() const { return last_redirect_was_permanent_; }
+    const std::string& last_effective_url() const { return last_effective_url_; }
+    
     // Basic GET request with vector of headers
     std::string operator()(
         const std::string& url, 
@@ -159,6 +180,8 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        last_redirect_was_permanent_ = false;
+        last_effective_url_ = url;
         try {
             // Create a CURL handle
             curl_handle handle;
@@ -184,7 +207,12 @@ public:
             
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
+            
+            // Enable header callback to detect 301/308 redirects
+            bool redirect_was_permanent = false;
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -219,6 +247,13 @@ public:
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
             
+            last_redirect_was_permanent_ = redirect_was_permanent;
+            char* eff_url = nullptr;
+            curl_easy_getinfo(handle.get(), CURLINFO_EFFECTIVE_URL, &eff_url);
+            if (eff_url) {
+                last_effective_url_ = eff_url;
+            }
+            
             if (http_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
                 throw std::runtime_error("HTTP error " + std::to_string(http_code));
@@ -246,6 +281,8 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        last_redirect_was_permanent_ = false;
+        last_effective_url_ = url;
         try {
             // Create a CURL handle
             curl_handle handle;
@@ -271,7 +308,12 @@ public:
             
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
+            
+            // Enable header callback to detect 301/308 redirects
+            bool redirect_was_permanent = false;
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -309,6 +351,13 @@ public:
             // Check HTTP status code
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
+            
+            last_redirect_was_permanent_ = redirect_was_permanent;
+            char* eff_url = nullptr;
+            curl_easy_getinfo(handle.get(), CURLINFO_EFFECTIVE_URL, &eff_url);
+            if (eff_url) {
+                last_effective_url_ = eff_url;
+            }
             
             if (http_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
@@ -367,7 +416,7 @@ public:
             
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -460,7 +509,7 @@ public:
             
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -566,7 +615,7 @@ public:
             
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 10L);
+            curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -624,6 +673,8 @@ private:
     long timeout_;        // Request timeout in seconds
     long connect_timeout_; // Connection timeout in seconds
     SSLOptions ssl_options_; // SSL/TLS configuration options
+    bool last_redirect_was_permanent_ = false;
+    std::string last_effective_url_;
     
     // Initialize CURL globally
     void initialize_curl() {

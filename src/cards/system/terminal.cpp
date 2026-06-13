@@ -358,7 +358,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
                 escaped_prompt += c;
             }
             
-            std::string agy_cmd = std::format("NIXPKGS_ALLOW_UNFREE=1 nix shell /Users/ignaciorodriguez/src -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null", current_working_dir, escaped_prompt);
+            std::string agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell /Users/ignaciorodriguez/src -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, current_working_dir, escaped_prompt);
             
             // Execute the command in the bash session
             is_command_running = true;

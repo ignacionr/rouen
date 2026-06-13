@@ -30,15 +30,39 @@ namespace media::rss
                     "last_updated TEXT"
                 );
                 
+                // Migration: check if 'item' table schema needs update
+                // If it has link as the sole primary key, we drop it and let ensure_table recreate it.
+                try {
+                    int pk_count = 0;
+                    bool link_is_pk = false;
+                    db_.exec("PRAGMA table_info(item)", [&](sqlite3_stmt* stmt) {
+                        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                        int pk = sqlite3_column_int(stmt, 5);
+                        if (pk > 0) {
+                            pk_count++;
+                            if (name && std::string_view(name) == "link") {
+                                link_is_pk = true;
+                            }
+                        }
+                    });
+                    if (pk_count == 1 && link_is_pk) {
+                        RSS_INFO("Old 'item' table schema detected. Dropping table for recreation...");
+                        db_.drop_table("item");
+                    }
+                } catch (const std::exception& e) {
+                    RSS_WARN_FMT("Failed to check or drop old 'item' table: {}", e.what());
+                }
+
                 RSS_DEBUG("Creating item table...");
                 db_.ensure_table("item", 
-                    "link TEXT PRIMARY KEY, "
+                    "feed_id INTEGER NOT NULL, "
+                    "link TEXT NOT NULL, "
+                    "title TEXT NOT NULL, "
                     "enclosure TEXT, "
-                    "feed_id INTEGER, "
-                    "title TEXT, "
                     "description TEXT, "  // Consider limiting description length
                     "pub_date TEXT, "
                     "image_url TEXT, "
+                    "PRIMARY KEY(feed_id, link, title), "
                     "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
                 );
                 
@@ -96,6 +120,49 @@ namespace media::rss
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error in update_feed: {}", e.what());
                 throw std::runtime_error(std::string("Error in update_feed: ") + e.what());
+            }
+        }
+
+        void update_feed_url(std::string_view old_url, std::string_view new_url)
+        {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            RSS_DEBUG_FMT("update_feed_url starting: {} -> {}", old_url, new_url);
+            try {
+                // Check if new_url already exists
+                long long existing_id = -1;
+                std::string check_sql = "SELECT id FROM feed WHERE url = ?";
+                db_.exec(check_sql, [&existing_id](sqlite3_stmt *stmt) {
+                    existing_id = sqlite3_column_int64(stmt, 0);
+                }, new_url);
+                
+                if (existing_id != -1) {
+                    RSS_INFO_FMT("Target URL {} already exists. Merging old feed {} into it...", new_url, old_url);
+                    // Find old feed id
+                    long long old_id = -1;
+                    std::string get_old_sql = "SELECT id FROM feed WHERE url = ?";
+                    db_.exec(get_old_sql, [&old_id](sqlite3_stmt *stmt) {
+                        old_id = sqlite3_column_int64(stmt, 0);
+                    }, old_url);
+                    
+                    if (old_id != -1 && old_id != existing_id) {
+                        db_.exec("BEGIN TRANSACTION");
+                        // Re-associate items of the old feed to the existing feed
+                        db_.exec("UPDATE OR IGNORE item SET feed_id = ? WHERE feed_id = ?", {}, existing_id, old_id);
+                        // Delete any remaining items for old feed that couldn't be updated due to duplicates
+                        db_.exec("DELETE FROM item WHERE feed_id = ?", {}, old_id);
+                        // Delete the old feed
+                        db_.exec("DELETE FROM feed WHERE id = ?", {}, old_id);
+                        db_.exec("COMMIT");
+                    }
+                } else {
+                    std::string sql = "UPDATE feed SET url = ?, last_updated = datetime('now') WHERE url = ?";
+                    db_.exec(sql, {}, new_url, old_url);
+                }
+                RSS_DEBUG("update_feed_url complete");
+            } catch (const std::exception& e) {
+                try { db_.exec("ROLLBACK"); } catch (...) {}
+                RSS_ERROR_FMT("Error in update_feed_url: {}", e.what());
+                throw std::runtime_error(std::string("Error in update_feed_url: ") + e.what());
             }
         }
 
@@ -171,8 +238,8 @@ namespace media::rss
                 for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
                     std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
                                     "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                                    "ON CONFLICT(link) DO "
-                                    "UPDATE SET enclosure=excluded.enclosure, title=excluded.title, "
+                                    "ON CONFLICT(feed_id, link, title) DO "
+                                    "UPDATE SET enclosure=excluded.enclosure, "
                                     "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url";
                     
                     db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);

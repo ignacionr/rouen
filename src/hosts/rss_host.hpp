@@ -652,13 +652,18 @@ private:
             
             if (quitting()) return nullptr;
 
+            if (feed_ptr->is_permanently_redirected) {
+                RSS_INFO_FMT("Permanent 301/308 redirect detected: {} -> {}. Updating database.", resolved_url, feed_ptr->source_link);
+                repo_.update_feed_url(resolved_url, feed_ptr->source_link);
+            }
+
             std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
             auto& feeds = feeds_;
             
             // Check if the feed already exists
             auto pos = std::find_if(feeds.begin(), feeds.end(),
-                                  [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link](auto const& f) {
-                                      return f->feed_link == ourlink || f->source_link == oursrc;
+                                  [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link, original_url = resolved_url](auto const& f) {
+                                      return f->feed_link == ourlink || f->source_link == oursrc || f->source_link == original_url;
                                   });
                                   
             // Add or merge with existing feed
@@ -668,14 +673,15 @@ private:
                 (*pos)->feed_title = feed_ptr->feed_title;
                 (*pos)->feed_description = feed_ptr->feed_description;
                 (*pos)->feed_link = feed_ptr->feed_link;
+                (*pos)->source_link = feed_ptr->source_link; // Keep updated to final URL
                 (*pos)->set_image(feed_ptr->image_url());
                 
-                // Merge new items, avoiding duplicates
+                // Merge new items, avoiding duplicates (matching by both link and title to support podcasts/Megaphone)
                 for (auto const& item : feed_ptr->items) {
                     auto item_pos = std::find_if((*pos)->items.begin(), (*pos)->items.end(),
-                                              [ourlink = item.link](auto const& i) {
-                                                  return i.link == ourlink;
-                                              });
+                                              [ourlink = item.link, ourtitle = item.title](auto const& i) {
+                                                  return i.link == ourlink && i.title == ourtitle;
+                                               });
                     if (item_pos == (*pos)->items.end()) {
                         (*pos)->items.emplace_back(item);
                     }
@@ -685,8 +691,8 @@ private:
                 feeds.emplace_back(feed_ptr);
             }
             
-            // Update the repository with feed info
-            feed_ptr->repo_id = repo_.upsert_feed(resolved_url, feed_ptr->feed_title, feed_ptr->image_url());
+            // Update the repository with feed info (using the redirected/final source link)
+            feed_ptr->repo_id = repo_.upsert_feed(feed_ptr->source_link, feed_ptr->feed_title, feed_ptr->image_url());
             
             // Prepare items for batch insert
             std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items_batch;
@@ -743,6 +749,16 @@ private:
             };
             
             fetch(std::string{url}, header_client, writeCallback, &parser);
+            
+            if (fetch.last_redirect_was_permanent()) {
+                std::string final_url = fetch.last_effective_url();
+                if (!final_url.empty() && final_url != url) {
+                    parser.is_permanently_redirected = true;
+                    parser.source_link = final_url;
+                    RSS_INFO_FMT("Feed URL permanently redirected: {} -> {}", url, final_url);
+                }
+            }
+            
             RSS_INFO_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
             return parser;
         } catch (const std::exception& e) {

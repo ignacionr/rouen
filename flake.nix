@@ -58,6 +58,7 @@
             unstable.glaze
             unstable.imgui
             unstable.gtest.dev  # Google Test development headers and CMake files
+            unstable.ccache     # Compiler cache to speed up compilation
           ] 
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
