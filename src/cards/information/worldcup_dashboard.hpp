@@ -8,6 +8,7 @@
 #include "../../helpers/fetch.hpp"
 #include <glaze/glaze.hpp>
 #include "../../helpers/flag_renderer.hpp"
+#include "../../helpers/image_cache.hpp"
 
 #include <string>
 #include <vector>
@@ -21,6 +22,11 @@
 #include <ctime>
 #include <atomic>
 #include <cctype>
+#include <unordered_set>
+#include <fstream>
+#include <filesystem>
+#include "../../helpers/llm_config.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 namespace rouen::cards {
 
@@ -66,6 +72,40 @@ public:
         std::string text;
     };
 
+    struct CommentaryCache {
+        std::string text;
+        int64_t last_updated_epoch = 0;
+        int last_home_score = -1;
+        int last_away_score = -1;
+        std::string status;
+    };
+
+    struct PlayerInfo {
+        std::string name;
+        std::string photo_url;
+        std::string position;
+        int jersey_number = 0;
+        std::string comment;
+    };
+
+    struct LineupPlayer {
+        std::string name;
+        std::string position;
+        int jersey_number = 0;
+    };
+
+    struct QAPair {
+        std::string question;
+        std::string answer;
+    };
+
+    struct TeamPlayersCache {
+        std::vector<PlayerInfo> players;
+        std::vector<LineupPlayer> lineup;
+        std::vector<QAPair> qa;
+        int64_t last_updated_epoch = 0;
+    };
+
     worldcup_dashboard() {
         // Set World Cup theme colors: vibrant pitch green and gold accents
         colors[0] = {0.09f, 0.45f, 0.27f, 1.0f}; // Pitch Green
@@ -82,11 +122,18 @@ public:
         width = 560.0f;
         requested_fps = 1; // 1 FPS since simulation has been removed
 
+        // Load persistent commentary cache from disk
+        load_commentary_cache_from_disk();
+        load_team_players_cache_from_disk();
+
         // Start Background Data Fetch
         fetch_real_data();
     }
 
-    ~worldcup_dashboard() override = default;
+    ~worldcup_dashboard() override {
+        stop_speaking();
+        clear_player_textures();
+    }
 
     bool render() override {
         // Periodic background fetch every 30 seconds
@@ -101,6 +148,46 @@ public:
         if (!loaded || std::chrono::duration_cast<std::chrono::seconds>(now - last_fetch_time).count() >= 30) {
             last_fetch_time = now;
             fetch_real_data();
+        }
+
+        // Periodic commentary refresh check for expanded live matches
+        std::string current_expanded_key;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            current_expanded_key = expanded_match_key_;
+        }
+
+        if (!current_expanded_key.empty()) {
+            const Match* expanded_match = nullptr;
+            for (const auto& m : display_matches) {
+                std::string key = m.home_code + "_" + m.away_code + "_" + m.date_str;
+                if (key == current_expanded_key) {
+                    expanded_match = &m;
+                    break;
+                }
+            }
+
+            if (expanded_match && expanded_match->status == "LIVE") {
+                bool need_refresh = false;
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    if (commentary_cache_.contains(current_expanded_key)) {
+                        auto cache = commentary_cache_[current_expanded_key];
+                        auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()
+                        ).count();
+                        auto elapsed = now_epoch - cache.last_updated_epoch;
+                        if (elapsed >= 300) {
+                            need_refresh = true;
+                        }
+                    } else {
+                        need_refresh = true;
+                    }
+                }
+                if (need_refresh) {
+                    fetch_commentary_async(current_expanded_key, *expanded_match);
+                }
+            }
         }
         
         // Detect score changes to trigger goals flash animations
@@ -179,6 +266,18 @@ public:
         return "worldcup";
     }
 
+    SDL_Renderer* renderer = nullptr;
+    std::shared_ptr<::helpers::ImageCache> image_cache;
+
+    void set_renderer(SDL_Renderer* r) {
+        renderer = r;
+        if (renderer) {
+            auto db_path = rouen::platform::get_user_data_path("worldcup_images.db").string();
+            auto cache_dir = rouen::platform::get_user_data_path("cache/worldcup_images").string();
+            image_cache = std::make_shared<::helpers::ImageCache>(db_path, cache_dir, 30);
+        }
+    }
+
 private:
     // Real API Data Variables
     std::vector<Match> api_matches;
@@ -197,6 +296,750 @@ private:
         float away_flash_timer = 0.0f;
     };
     std::unordered_map<std::string, MatchFlash> match_flashes;
+
+    std::unordered_map<std::string, CommentaryCache> commentary_cache_;
+    std::unordered_set<std::string> fetching_matches_;
+    std::string expanded_match_key_;
+
+    std::unordered_map<std::string, TeamPlayersCache> team_players_cache_;
+    std::unordered_set<std::string> fetching_players_;
+    struct LoadedTexture {
+        SDL_Texture* texture = nullptr;
+        int width = 0;
+        int height = 0;
+    };
+    std::unordered_map<std::string, LoadedTexture> player_textures_;
+    std::unordered_set<std::string> fetching_player_photos_;
+
+    void fetch_commentary_async(const std::string& match_key, const Match& m) {
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            if (fetching_matches_.contains(match_key)) {
+                return;
+            }
+            fetching_matches_.insert(match_key);
+        }
+
+        std::jthread([this, match_key, m]() {
+            try {
+                auto llm_instance = helpers::LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    throw std::runtime_error("LLM not configured");
+                }
+
+                auto settings = helpers::LLMConfig::get_current_config();
+                auto fetcher = std::make_shared<http::fetch>();
+
+                std::string prompt;
+                if (m.status == "LIVE") {
+                    prompt = std::format(
+                        "You are a legendary, extremely passionate Spanish-style football commentator broadcasting live. "
+                        "Commentate on the match between {} and {}.\n"
+                        "Current Score: {} {} - {} {}.\n"
+                        "Match Status: {} ({}).\n"
+                        "Home Scorers: {}. Away Scorers: {}.\n"
+                        "Venue: {}.\n\n"
+                        "CRITICAL: Use your web search capabilities to find real-time/recent information about this match from news, live text commentaries, stats sites, or fan hubs. "
+                        "Find events and stats beyond just who scored the goals: look for yellow/red cards, shots on target, possession, fouls, outstanding player performances, tactical changes, or key saves. "
+                        "Commentate dynamically on these actual match events, focusing specifically on the events of the last 5 minutes of action! "
+                        "Make it sound incredibly exciting, dramatic, and full of energy (feel free to use words like 'GOOOOOAL', 'Incredible', 'What a match!'). "
+                        "Provide a short, intense commentary of about 3-4 paragraphs.",
+                        m.home_team, m.away_team,
+                        m.home_team, m.home_score, m.away_score, m.away_team,
+                        m.status, m.time_str,
+                        m.home_scorers.empty() ? "None" : m.home_scorers,
+                        m.away_scorers.empty() ? "None" : m.away_scorers,
+                        m.venue
+                    );
+                } else if (m.status == "COMPLETED") {
+                    prompt = std::format(
+                        "You are a legendary, extremely passionate football commentator.\n"
+                        "Write a dramatic, highly enthusiastic summary commentary of the completed match between {} and {}.\n"
+                        "Final Score: {} {} - {} {}.\n"
+                        "Home Scorers: {}. Away Scorers: {}.\n"
+                        "Venue: {}.\n\n"
+                        "CRITICAL:\n"
+                        "1. Use your web search capabilities to discover specific match events (yellow/red cards, dramatic saves, referee decisions, stats like possession/shots, player injuries, or post-match comments/reactions). "
+                        "Include these real match occurrences to enrich the commentary beyond just the goal scorers.\n"
+                        "2. Search the web to find an official or high-quality YouTube highlights/summary video link of this specific match ('{} vs {}' played on or around {}). "
+                        "Include the YouTube link clearly at the end of the commentary so the user can watch the summary.\n\n"
+                        "Write with immense energy and passion! Provide a commentary of about 3-4 paragraphs followed by the YouTube link section.",
+                        m.home_team, m.away_team,
+                        m.home_team, m.home_score, m.away_score, m.away_team,
+                        m.home_scorers.empty() ? "None" : m.home_scorers,
+                        m.away_scorers.empty() ? "None" : m.away_scorers,
+                        m.venue,
+                        m.home_team, m.away_team, m.date_str
+                    );
+                } else {
+                    prompt = std::format(
+                        "You are a legendary, extremely passionate football commentator.\n"
+                        "Provide an exciting, highly enthusiastic preview commentary for the upcoming match between {} and {} "
+                        "at the venue {}.\n\n"
+                        "CRITICAL: Use your web search capabilities to find recent news, injuries, historical head-to-head records, expected lineups, or press conference quotes for this matchup. "
+                        "Incorporate these details to build up real anticipation and hype!\n\n"
+                        "Build up the hype, talk about key players and the drama of this World Cup fixture in a passionate way! "
+                        "Provide a commentary of about 3-4 paragraphs.",
+                        m.home_team, m.away_team, m.venue
+                    );
+                }
+
+                std::string search_mode_str = "on"; // Enable web search/grounding for all compatible models (Grok, Gemini, etc.)
+
+                auto response = llm_instance->sendMessage(
+                    prompt,
+                    [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                        return fetcher->post(url, data, header_client);
+                    },
+                    "user",
+                    settings.model_name,
+                    search_mode_str,
+                    0.85f
+                );
+
+                std::string result_text;
+                if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                    result_text = response.choices[0].message.content;
+                } else {
+                    result_text = "The commentator is temporarily speechless! (AI returned an empty response)";
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    CommentaryCache cache;
+                    cache.text = result_text;
+                    cache.last_updated_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()
+                    ).count();
+                    cache.last_home_score = m.home_score;
+                    cache.last_away_score = m.away_score;
+                    cache.status = m.status;
+                    commentary_cache_[match_key] = cache;
+                    fetching_matches_.erase(match_key);
+                }
+                save_commentary_cache_to_disk();
+            } catch (const std::exception& e) {
+                DB_ERROR_FMT("Error in AI commentary request: {}", e.what());
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    CommentaryCache cache;
+                    cache.text = std::format("Error fetching commentary: {}", e.what());
+                    cache.last_updated_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::system_clock::now().time_since_epoch()
+                    ).count();
+                    cache.last_home_score = m.home_score;
+                    cache.last_away_score = m.away_score;
+                    cache.status = m.status;
+                    commentary_cache_[match_key] = cache;
+                    fetching_matches_.erase(match_key);
+                }
+                save_commentary_cache_to_disk();
+            }
+        }).detach();
+    }
+
+    void handle_commentary_click(const std::string& match_key, const Match& m) {
+        bool need_fetch = false;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            if (expanded_match_key_ == match_key) {
+                expanded_match_key_.clear();
+            } else {
+                expanded_match_key_ = match_key;
+                if (!commentary_cache_.contains(match_key)) {
+                    need_fetch = true;
+                } else {
+                    auto cache = commentary_cache_[match_key];
+                    if (m.status == "LIVE") {
+                        auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()
+                        ).count();
+                        auto elapsed = now_epoch - cache.last_updated_epoch;
+                        if (elapsed >= 300) {
+                            need_fetch = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (need_fetch) {
+            fetch_commentary_async(match_key, m);
+        }
+    }
+
+    std::vector<std::string> extract_urls(const std::string& text) {
+        std::vector<std::string> urls;
+        size_t pos = 0;
+        while (true) {
+            pos = text.find("http", pos);
+            if (pos == std::string::npos) {
+                break;
+            }
+            if (pos + 4 < text.size() && (text.substr(pos, 7) == "http://" || text.substr(pos, 8) == "https://")) {
+                size_t end_pos = pos;
+                while (end_pos < text.size()) {
+                    char c = text[end_pos];
+                    if (std::isspace(static_cast<unsigned char>(c)) || c == '"' || c == '\'' || c == '`' || c == '<' || c == '>' || c == '[' || c == ']' || c == '(' || c == ')') {
+                        break;
+                    }
+                    end_pos++;
+                }
+                std::string url = text.substr(pos, end_pos - pos);
+                while (!url.empty() && (url.back() == '.' || url.back() == ',' || url.back() == '?' || url.back() == '!')) {
+                    url.pop_back();
+                }
+                if (!url.empty()) {
+                    if (std::find(urls.begin(), urls.end(), url) == urls.end()) {
+                        urls.push_back(url);
+                    }
+                }
+                pos = end_pos;
+            } else {
+                pos += 4;
+            }
+        }
+        return urls;
+    }
+
+    std::string speaking_match_key_;
+
+    void stop_speaking() {
+        rouen::platform::stop_speech();
+        speaking_match_key_.clear();
+    }
+
+    void say_commentary_async(const std::string& match_key, const std::string& text) {
+        speaking_match_key_ = match_key;
+        rouen::platform::speak_text_async(text, [this, match_key]() {
+            if (speaking_match_key_ == match_key) {
+                speaking_match_key_.clear();
+            }
+        });
+    }
+
+    void save_commentary_cache_to_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_commentary_cache.json").string();
+            std::string json_str;
+            {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                [[maybe_unused]] auto ec = glz::write_json(commentary_cache_, json_str);
+            }
+            std::ofstream out(filepath, std::ios::out | std::ios::trunc);
+            if (out.is_open()) {
+                out << json_str;
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to save commentary cache: {}", e.what());
+        }
+    }
+
+    void load_commentary_cache_from_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_commentary_cache.json").string();
+            if (!std::filesystem::exists(filepath)) {
+                return;
+            }
+            std::ifstream in(filepath);
+            if (!in.is_open()) {
+                return;
+            }
+            std::string json_str((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::unordered_map<std::string, CommentaryCache> temp_cache;
+            auto ec = glz::read_json(temp_cache, json_str);
+            if (!ec) {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                commentary_cache_ = std::move(temp_cache);
+                DB_INFO("Loaded World Cup AI commentary cache from disk");
+            } else {
+                DB_WARN_FMT("Failed to parse commentary cache JSON: {}", glz::format_error(ec, json_str));
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to load commentary cache: {}", e.what());
+        }
+    }
+
+    void save_team_players_cache_to_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_team_players_cache.json").string();
+            std::string json_str;
+            {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                [[maybe_unused]] auto ec = glz::write_json(team_players_cache_, json_str);
+            }
+            std::ofstream out(filepath, std::ios::out | std::ios::trunc);
+            if (out.is_open()) {
+                out << json_str;
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to save team players cache: {}", e.what());
+        }
+    }
+
+    void load_team_players_cache_from_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_team_players_cache.json").string();
+            if (!std::filesystem::exists(filepath)) {
+                return;
+            }
+            std::ifstream in(filepath);
+            if (!in.is_open()) {
+                return;
+            }
+            std::string json_str((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::unordered_map<std::string, TeamPlayersCache> temp_cache;
+            auto ec = glz::read_json(temp_cache, json_str);
+            if (!ec) {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                team_players_cache_ = std::move(temp_cache);
+                DB_INFO("Loaded World Cup team players cache from disk");
+            } else {
+                DB_WARN_FMT("Failed to parse team players cache JSON: {}", glz::format_error(ec, json_str));
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to load team players cache: {}", e.what());
+        }
+    }
+
+    std::string strip_json_markdown(const std::string& input) {
+        std::string result = input;
+        
+        // Remove leading/trailing spaces
+        size_t start = result.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            result = result.substr(start);
+        }
+        
+        // Check for markdown code block starts
+        if (result.starts_with("```json")) {
+            result = result.substr(7);
+        } else if (result.starts_with("```")) {
+            result = result.substr(3);
+        }
+        
+        // Find the last ``` and remove it
+        size_t end_code = result.rfind("```");
+        if (end_code != std::string::npos) {
+            result = result.substr(0, end_code);
+        }
+        
+        // Trim again
+        start = result.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            result = result.substr(start);
+        }
+        size_t end_val = result.find_last_not_of(" \t\n\r");
+        if (end_val != std::string::npos) {
+            result = result.substr(0, end_val + 1);
+        }
+        
+        return result;
+    }
+
+    void clear_player_textures() {
+        for (auto& [url, lt] : player_textures_) {
+            if (lt.texture) {
+                SDL_DestroyTexture(lt.texture);
+            }
+        }
+        player_textures_.clear();
+    }
+
+    void fetch_team_players_async(const std::string& team_code, const std::string& team_name) {
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            if (fetching_players_.contains(team_code)) {
+                return;
+            }
+            fetching_players_.insert(team_code);
+        }
+
+        std::jthread([this, team_code, team_name]() {
+            try {
+                auto llm_instance = helpers::LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    throw std::runtime_error("LLM not configured");
+                }
+
+                auto settings = helpers::LLMConfig::get_current_config();
+                auto fetcher = std::make_shared<http::fetch>();
+
+                std::string prompt = std::format(
+                    "You are an expert football analyst.\n"
+                    "Provide detailed information for the national football team: {}.\n\n"
+                    "You must return ONLY a raw JSON object matching this schema. Do not include any commentary, intro, or markdown formatting outside the JSON code block.\n\n"
+                    "CRITICAL REQUIREMENTS:\n"
+                    "1. Use your web search capabilities to find the latest active national team roster (as of 2026/current year).\n"
+                    "2. Key Players ('players'): Provide the 5 most important/famous players in the current roster. "
+                    "(Note: Leave the 'photo_url' field as an empty string \"\").\n"
+                    "3. Full Lineup ('lineup'): Provide the expected starting XI (11 players) representing their latest lineup in a standard formation (e.g. 4-3-3 or 4-4-2). For each, include name, position (Goalkeeper/Defender/Midfielder/Forward), and jersey number.\n"
+                    "4. Q&A ('qa'): Provide 3 interesting questions and answers regarding the team's current form, history, or keys to success for the 2026 World Cup campaign.\n\n"
+                    "JSON Schema:\n"
+                    "{{\n"
+                    "  \"players\": [\n"
+                    "    {{\n"
+                    "      \"name\": \"Player Name\",\n"
+                    "      \"photo_url\": \"URL to player photo\",\n"
+                    "      \"position\": \"Goalkeeper/Defender/Midfielder/Forward\",\n"
+                    "      \"jersey_number\": 10,\n"
+                    "      \"comment\": \"Short description of their role/importance in the team today\"\n"
+                    "    }}\n"
+                    "  ],\n"
+                    "  \"lineup\": [\n"
+                    "    {{\n"
+                    "      \"name\": \"Player Name\",\n"
+                    "      \"position\": \"Goalkeeper/Defender/Midfielder/Forward\",\n"
+                    "      \"jersey_number\": 1\n"
+                    "    }}\n"
+                    "  ],\n"
+                    "  \"qa\": [\n"
+                    "    {{\n"
+                    "      \"question\": \"Question about the team?\",\n"
+                    "      \"answer\": \"Detailed answer about the team.\"\n"
+                    "    }}\n"
+                    "  ]\n"
+                    "}}\n",
+                    team_name
+                );
+
+                std::string search_mode_str = "on"; // Enable web search to get real photos/details
+
+                auto response = llm_instance->sendMessage(
+                    prompt,
+                    [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                        return fetcher->post(url, data, header_client);
+                    },
+                    "user",
+                    settings.model_name,
+                    search_mode_str,
+                    0.45f
+                );
+
+                std::string result_text;
+                if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                    result_text = response.choices[0].message.content;
+                } else {
+                    throw std::runtime_error("AI returned an empty response");
+                }
+
+                // Strip markdown code block wrappers
+                std::string clean_json = strip_json_markdown(result_text);
+
+                TeamPlayersCache cache;
+                auto ec = glz::read_json(cache, clean_json);
+                if (ec) {
+                    throw std::runtime_error(std::format("JSON parse error: {}", glz::format_error(ec, clean_json)));
+                }
+
+                cache.last_updated_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    team_players_cache_[team_code] = cache;
+                    fetching_players_.erase(team_code);
+                }
+                save_team_players_cache_to_disk();
+            } catch (const std::exception& e) {
+                DB_ERROR_FMT("Error in AI team players request: {}", e.what());
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    fetching_players_.erase(team_code);
+                    
+                    // Store error as a comment in a single player entry so the UI can show the error state
+                    TeamPlayersCache cache;
+                    PlayerInfo err_player;
+                    err_player.name = "Error Fetching Squad";
+                    err_player.comment = std::format("Failed to load: {}. Please try again.", e.what());
+                    err_player.position = "System Error";
+                    cache.players.push_back(err_player);
+                    cache.last_updated_epoch = 0; // Trigger reload
+                    team_players_cache_[team_code] = cache;
+                }
+            }
+        }).detach();
+    }
+
+    void fetch_player_photo_async(const std::string& team_code, const std::string& team_name, size_t player_idx, const std::string& player_name) {
+        std::string search_key = team_code + "_" + player_name;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            if (fetching_player_photos_.contains(search_key)) {
+                return;
+            }
+            fetching_player_photos_.insert(search_key);
+        }
+
+        std::jthread([this, team_code, team_name, player_idx, player_name, search_key]() {
+            try {
+                auto llm_instance = helpers::LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    throw std::runtime_error("LLM not configured");
+                }
+
+                auto settings = helpers::LLMConfig::get_current_config();
+                auto fetcher = std::make_shared<http::fetch>();
+
+                std::string prompt = std::format(
+                    "You are a football data assistant.\n"
+                    "Provide exactly 5 different candidate direct image URLs of the football player '{}' (who plays for the national team '{}').\n"
+                    "The URLs must be direct links to images (ending in .jpg, .jpeg, .png, etc.) from different open sources such as Wikimedia Commons, Wikipedia, FIFA/UEFA websites, official club websites, or sports news portals.\n"
+                    "Return ONLY a raw JSON object matching this schema. Do not include any commentary, intro, or markdown formatting outside the JSON code block.\n\n"
+                    "JSON Schema:\n"
+                    "{{\n"
+                    "  \"urls\": [\n"
+                    "    \"https://example.com/image1.jpg\",\n"
+                    "    \"https://example.com/image2.png\"\n"
+                    "  ]\n"
+                    "}}\n",
+                    player_name, team_name
+                );
+
+                std::string search_mode_str = "on"; // Enable web search/grounding
+
+                auto response = llm_instance->sendMessage(
+                    prompt,
+                    [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                        return fetcher->post(url, data, header_client);
+                    },
+                    "user",
+                    settings.model_name,
+                    search_mode_str,
+                    0.2f
+                );
+
+                std::string result_text;
+                if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                    result_text = response.choices[0].message.content;
+                } else {
+                    throw std::runtime_error("AI returned an empty response");
+                }
+
+                std::string clean_json = strip_json_markdown(result_text);
+                
+                glz::json_t doc;
+                auto ec = glz::read_json(doc, clean_json);
+                std::vector<std::string> candidate_urls;
+                if (!ec && doc.contains("urls") && doc["urls"].is_array()) {
+                    for (const auto& item : doc["urls"].get<std::vector<glz::json_t>>()) {
+                        if (item.is_string()) {
+                            candidate_urls.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+
+                bool found_working = false;
+                std::string working_url = "";
+
+                if (image_cache) {
+                    for (const auto& url : candidate_urls) {
+                        if (url.empty() || !url.starts_with("http")) {
+                            continue;
+                        }
+                        if (image_cache->downloadAndCache(url)) {
+                            working_url = url;
+                            found_working = true;
+                            break;
+                        }
+                    }
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(data_mutex);
+                    if (team_players_cache_.contains(team_code)) {
+                        auto& cache = team_players_cache_[team_code];
+                        if (player_idx < cache.players.size() && cache.players[player_idx].name == player_name) {
+                            if (found_working) {
+                                cache.players[player_idx].photo_url = working_url;
+                            } else {
+                                cache.players[player_idx].photo_url = "failed";
+                            }
+                        }
+                    }
+                    fetching_player_photos_.erase(search_key);
+                }
+
+                if (found_working) {
+                    save_team_players_cache_to_disk();
+                }
+
+            } catch (const std::exception& e) {
+                DB_ERROR_FMT("Error fetching photo for {}: {}", player_name, e.what());
+                std::lock_guard<std::mutex> lock(data_mutex);
+                fetching_player_photos_.erase(search_key);
+            }
+        }).detach();
+    }
+
+    void render_expanded_commentary_box(const std::string& match_key, const Match& m) {
+        bool is_fetching_comm = false;
+        bool has_cache = false;
+        CommentaryCache cache;
+
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            is_fetching_comm = fetching_matches_.contains(match_key);
+            if (commentary_cache_.contains(match_key)) {
+                has_cache = true;
+                cache = commentary_cache_[match_key];
+            }
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 10.0f));
+
+        float box_height = 200.0f;
+        if (has_cache && !is_fetching_comm) {
+            box_height = 220.0f;
+        }
+
+        ImGui::BeginChild(std::format("comm_box_{}", match_key).c_str(), ImVec2(0, box_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
+
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
+        ImGui::PopFont();
+        
+        ImGui::SameLine(ImGui::GetWindowWidth() - 250);
+        if (speaking_match_key_ == match_key) {
+            if (ImGui::SmallButton(std::format(ICON_MD_VOLUME_OFF " Stop##stop_{}", match_key).c_str())) {
+                stop_speaking();
+            }
+        } else {
+            if (has_cache && !is_fetching_comm) {
+                if (ImGui::SmallButton(std::format(ICON_MD_VOLUME_UP " Listen##listen_{}", match_key).c_str())) {
+                    say_commentary_async(match_key, cache.text);
+                }
+            }
+        }
+        ImGui::SameLine(ImGui::GetWindowWidth() - 150);
+        if (is_fetching_comm) {
+            ImGui::TextColored(colors[3], "%s Generating...", ICON_MD_AUTO_AWESOME);
+            requested_fps = 60;
+        } else {
+            if (ImGui::SmallButton(ICON_MD_REFRESH " Refresh")) {
+                fetch_commentary_async(match_key, m);
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (is_fetching_comm && !has_cache) {
+            ImGui::Spacing();
+            ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 80);
+            
+            const float RADIUS = 12.0f;
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImVec2 center = ImVec2(pos.x + RADIUS, pos.y + RADIUS);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            auto time = ImGui::GetTime() * 5.0;
+            const int NUM_SEGMENTS = 8;
+            for (int i = 0; i < NUM_SEGMENTS; i++) {
+                auto t = time + i * 0.25;
+                auto a = (t * M_PI * 2.0) / NUM_SEGMENTS;
+                auto b = ((t + 0.25) * M_PI * 2.0) / NUM_SEGMENTS;
+                float alpha = 0.1f + 0.9f * (1.0f - static_cast<float>(i) / static_cast<float>(NUM_SEGMENTS));
+                ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(colors[1].x, colors[1].y, colors[1].z, alpha));
+                draw_list->PathArcTo(center, RADIUS, static_cast<float>(a), static_cast<float>(b), 12);
+                draw_list->PathStroke(color, false, 2.0f);
+            }
+            ImGui::Dummy(ImVec2(RADIUS * 2 + 10, RADIUS * 2 + 10));
+            ImGui::SameLine();
+            ImGui::TextColored(colors[5], "Connecting to stadium booth...");
+        } else {
+            if (has_cache) {
+                if (is_fetching_comm) {
+                    ImGui::TextColored(colors[3], "(Updating commentary in background...)");
+                    ImGui::Spacing();
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+                ImGui::TextWrapped("%s", cache.text.c_str());
+                ImGui::PopStyleColor();
+
+                // Parse and render link buttons
+                auto urls = extract_urls(cache.text);
+                if (!urls.empty()) {
+                    ImGui::Spacing();
+                    ImGui::TextColored(colors[2], "%s Quick Links found in commentary:", ICON_MD_LINK);
+                    ImGui::Indent(10.0f);
+                    for (size_t idx = 0; idx < urls.size(); ++idx) {
+                        const auto& url = urls[idx];
+                        std::string label = url;
+                        if (url.find("youtube.com") != std::string::npos || url.find("youtu.be") != std::string::npos) {
+                            label = ICON_MD_PLAY_CIRCLE_FILLED " Watch YouTube Highlights";
+                        } else {
+                            label = ICON_MD_OPEN_IN_NEW " Open Link";
+                        }
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.35f, 0.22f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.16f, 0.45f, 0.28f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.09f, 0.27f, 0.17f, 1.0f));
+                        
+                        if (ImGui::Button(std::format("{}##btn_lnk_{}_{}", label, match_key, idx).c_str())) {
+                            rouen::platform::open_url(url);
+                        }
+                        ImGui::PopStyleColor(3);
+                        
+                        if (idx + 1 < urls.size()) {
+                            ImGui::SameLine();
+                        }
+                    }
+                    ImGui::Unindent(10.0f);
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                
+                auto now_epoch = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count();
+                auto elapsed_seconds = now_epoch - cache.last_updated_epoch;
+                
+                std::string age_str;
+                if (elapsed_seconds < 60) {
+                    age_str = "just now";
+                } else {
+                    age_str = std::format("{}m ago", elapsed_seconds / 60);
+                }
+
+                if (m.status == "LIVE") {
+                    static float dot_alpha = 0.0f;
+                    static bool dot_fade_up = true;
+                    if (dot_fade_up) {
+                        dot_alpha += ImGui::GetIO().DeltaTime * 2.0f;
+                        if (dot_alpha >= 1.0f) {
+                            dot_alpha = 1.0f;
+                            dot_fade_up = false;
+                        }
+                    } else {
+                        dot_alpha -= ImGui::GetIO().DeltaTime * 2.0f;
+                        if (dot_alpha <= 0.2f) {
+                            dot_alpha = 0.2f;
+                            dot_fade_up = true;
+                        }
+                    }
+                    requested_fps = 60;
+
+                    ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, dot_alpha), "%s", ICON_MD_FIBER_MANUAL_RECORD);
+                    ImGui::SameLine();
+                    int next_refresh = 300 - static_cast<int>(elapsed_seconds);
+                    if (next_refresh < 0) next_refresh = 0;
+                    ImGui::TextColored(colors[5], "Live Commentary (Last 5 mins focus) • Auto-refresh in %dm %ds", next_refresh / 60, next_refresh % 60);
+                } else {
+                    ImGui::TextColored(colors[5], "Match status: %s • Cached %s", cache.status.c_str(), age_str.c_str());
+                }
+            } else {
+                ImGui::TextColored(colors[4], "No commentary available yet.");
+            }
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+    }
 
     void fetch_real_data() {
         if (is_fetching.exchange(true)) {
@@ -690,7 +1533,7 @@ private:
         if (featured) {
             bool is_live = featured->status == "LIVE";
             bool has_scorers = is_live && (!featured->home_scorers.empty() || !featured->away_scorers.empty());
-            float feat_height = has_scorers ? 220.0f : (is_live ? 165.0f : 145.0f);
+            float feat_height = has_scorers ? 260.0f : (is_live ? 205.0f : 185.0f);
 
             ImGui::TextColored(colors[2], "Featured Match");
             ImGui::Separator();
@@ -842,8 +1685,23 @@ private:
             ImGui::SameLine(ImGui::GetWindowWidth() - 150);
             ImGui::TextColored(colors[5], "%s", featured->group.c_str());
 
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 210.0f);
+            
+            std::string feat_btn_label = (expanded_match_key_ == feat_key) ? ICON_MD_AUTO_AWESOME " Collapse Commentary" : ICON_MD_AUTO_AWESOME " Match Commentary";
+            if (ImGui::Button(std::format("{}##btn_feat", feat_btn_label).c_str(), ImVec2(190.0f, 0.0f))) {
+                handle_commentary_click(feat_key, *featured);
+            }
+
             ImGui::EndChild();
             ImGui::PopStyleColor();
+
+            if (expanded_match_key_ == feat_key) {
+                render_expanded_commentary_box(feat_key, *featured);
+                ImGui::Spacing();
+            }
         }
 
         ImGui::Spacing();
@@ -862,7 +1720,7 @@ private:
             }
             
             bool has_scorers = (m.status == "COMPLETED" || m.status == "LIVE") && (!m.home_scorers.empty() || !m.away_scorers.empty());
-            float height = has_scorers ? 85.0f : 60.0f;
+            float height = has_scorers ? 115.0f : 90.0f;
             
             std::string m_flash_key = m.home_code + "_" + m.away_code + "_" + m.date_str;
             float row_factor = 0.0f;
@@ -879,7 +1737,7 @@ private:
             }
 
             ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
-            ImGui::BeginChild(std::format("match_{}_{}_{}", m.home_code, m.away_code, m.date_str).c_str(), ImVec2(0, height), true);
+            ImGui::BeginChild(std::format("match_{}_{}_{}", m.home_code, m.away_code, m.date_str).c_str(), ImVec2(0, height), true, ImGuiWindowFlags_NoScrollbar);
             
             // Drawing flag and home team
             ImGui::AlignTextToFramePadding();
@@ -952,8 +1810,21 @@ private:
                 }
             }
 
+            // Commentary Button inside the match card
+            ImGui::Spacing();
+            ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 170.0f);
+            std::string btn_label = (expanded_match_key_ == m_flash_key) ? ICON_MD_AUTO_AWESOME " Collapse" : ICON_MD_AUTO_AWESOME " Commentary";
+            if (ImGui::Button(std::format("{}##btn_{}_{}", btn_label, m.home_code, m.away_code).c_str(), ImVec2(150.0f, 0.0f))) {
+                handle_commentary_click(m_flash_key, m);
+            }
+
             ImGui::EndChild();
             ImGui::PopStyleColor();
+
+            if (expanded_match_key_ == m_flash_key) {
+                render_expanded_commentary_box(m_flash_key, m);
+                ImGui::Spacing();
+            }
         }
         ImGui::EndChild();
     }
@@ -1132,6 +2003,12 @@ private:
             selected_idx = 0;
         }
 
+        static int last_selected_idx = -1;
+        if (selected_idx != last_selected_idx) {
+            last_selected_idx = selected_idx;
+            clear_player_textures();
+        }
+
         ImGui::TextColored(colors[2], "Select a Team to Track:");
         ImGui::SetNextItemWidth(250.0f);
         
@@ -1164,6 +2041,8 @@ private:
         ImGui::Text("%s", sel_name.c_str());
         ImGui::PopFont();
 
+        ImGui::Spacing();
+
         // 2. Find all upcoming matches for this team
         std::vector<const Match*> upcoming_matches;
         for (const auto& m : display_matches) {
@@ -1179,6 +2058,21 @@ private:
             return get_match_utc_time(a->date_str, a->stadium_id) < get_match_utc_time(b->date_str, b->stadium_id);
         });
 
+        // Sub-tabs for Schedule vs Key Players
+        if (ImGui::BeginTabBar("TeamTrackerSubTabs", ImGuiTabBarFlags_None)) {
+            if (ImGui::BeginTabItem(ICON_MD_EVENT " Matches & Schedule")) {
+                render_team_matches_section(upcoming_matches, sel_code, sel_name);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem(ICON_MD_PEOPLE " Key Squad Players")) {
+                render_team_players_section(sel_code, sel_name);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+    }
+
+    void render_team_matches_section(const std::vector<const Match*>& upcoming_matches, const std::string& sel_code, const std::string& sel_name) {
         if (!upcoming_matches.empty()) {
             const Match* next_match = upcoming_matches[0];
             bool is_live = (next_match->status == "LIVE");
@@ -1367,6 +2261,229 @@ private:
         }
     }
 
+    void render_team_players_section(const std::string& team_code, const std::string& team_name) {
+        bool has_cache = false;
+        bool is_fetching_players = false;
+        TeamPlayersCache cache;
+
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            if (team_players_cache_.contains(team_code)) {
+                has_cache = true;
+                cache = team_players_cache_[team_code];
+            }
+            is_fetching_players = fetching_players_.contains(team_code);
+        }
+
+        // Trigger fetch if not cached and not currently fetching
+        if (!has_cache && !is_fetching_players) {
+            fetch_team_players_async(team_code, team_name);
+            is_fetching_players = true;
+        }
+
+        if (is_fetching_players && !has_cache) {
+            ImGui::Spacing();
+            ImGui::Indent(10.0f);
+            ImGui::TextColored(colors[6], "%s Querying AI for key squad players...", ICON_MD_HOURGLASS_EMPTY);
+            ImGui::Unindent(10.0f);
+            return;
+        }
+
+        // Refresh/Reload button
+        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 110.0f);
+        if (ImGui::Button(std::format("{} Refresh", ICON_MD_REFRESH).c_str(), ImVec2(100.0f, 0))) {
+            fetch_team_players_async(team_code, team_name);
+        }
+        ImGui::Spacing();
+
+        if (cache.players.empty()) {
+            ImGui::Text("No key player information available for this team.");
+            return;
+        }
+
+        // Render player cards
+        ImGui::BeginChild("PlayersScrollChild", ImVec2(0, 0), false);
+        for (size_t i = 0; i < cache.players.size(); ++i) {
+            const auto& player = cache.players[i];
+            
+            // Check if this is an error node
+            if (player.position == "System Error") {
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
+                ImGui::BeginChild(std::format("err_card_{}", i).c_str(), ImVec2(0, 70.0f), true);
+                ImGui::TextColored(colors[4], "%s %s", ICON_MD_ERROR, player.name.c_str());
+                ImGui::TextWrapped("%s", player.comment.c_str());
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+                continue;
+            }
+
+            // Trigger async photo search if photo_url is empty
+            if (player.photo_url.empty()) {
+                fetch_player_photo_async(team_code, team_name, i, player.name);
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
+            ImGui::BeginChild(std::format("player_card_{}", i).c_str(), ImVec2(0, 100.0f), true);
+
+            // Columns layout for player image, details and description
+            ImGui::Columns(2, nullptr, false);
+            // Column 0: Image (fixed width)
+            ImGui::SetColumnWidth(0, 90.0f);
+
+            // Render photo placeholder or actual image if loaded
+            ImVec2 img_size(70.0f, 70.0f);
+            ImVec2 img_pos = ImGui::GetCursorScreenPos();
+            
+            SDL_Texture* player_tex = nullptr;
+            int tex_w = 0, tex_h = 0;
+            if (renderer && image_cache && !player.photo_url.empty() && player.photo_url.starts_with("http")) {
+                if (player_textures_.contains(player.photo_url)) {
+                    auto& lt = player_textures_[player.photo_url];
+                    player_tex = lt.texture;
+                    tex_w = lt.width;
+                    tex_h = lt.height;
+                } else {
+                    int w = 0, h = 0;
+                    player_tex = image_cache->getTexture(renderer, player.photo_url, w, h);
+                    // Store the result, even if it is nullptr (failed), to avoid retrying every frame!
+                    player_textures_[player.photo_url] = {player_tex, w, h};
+                    tex_w = w;
+                    tex_h = h;
+                }
+            }
+
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            
+            if (player_tex) {
+                // Draw the actual photo centered and cropped to fill!
+                ImGui::SetCursorScreenPos(img_pos);
+                ImVec2 uv0(0.0f, 0.0f);
+                ImVec2 uv1(1.0f, 1.0f);
+                if (tex_w > 0 && tex_h > 0) {
+                    float ar_tex = static_cast<float>(tex_w) / static_cast<float>(tex_h);
+                    float ar_box = 1.0f; // img_size is 70x70, so aspect ratio is 1.0
+                    if (ar_tex > ar_box) {
+                        float pct = ar_box / ar_tex;
+                        uv0.x = 0.5f - 0.5f * pct;
+                        uv1.x = 0.5f + 0.5f * pct;
+                    } else if (ar_tex < ar_box) {
+                        float pct = ar_tex / ar_box;
+                        uv0.y = 0.5f - 0.5f * pct;
+                        uv1.y = 0.5f + 0.5f * pct;
+                    }
+                }
+                ImGui::Image(
+                    rouen::helpers::texture_id_cast(player_tex),
+                    img_size,
+                    uv0,
+                    uv1
+                );
+            } else {
+                // Fallback placeholder with Jersey Number
+                ImU32 bg_col = ImGui::GetColorU32(ImGuiCol_FrameBg);
+                ImU32 border_col = ImGui::GetColorU32(ImGuiCol_Border);
+                draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), bg_col, 8.0f);
+                draw_list->AddRect(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), border_col, 8.0f);
+                
+                std::string jersey_str = player.jersey_number > 0 ? std::to_string(player.jersey_number) : "?";
+                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Bold / Large font
+                ImVec2 text_size = ImGui::CalcTextSize(jersey_str.c_str());
+                draw_list->AddText(ImVec2(img_pos.x + (img_size.x - text_size.x) / 2.0f, img_pos.y + (img_size.y - text_size.y) / 2.0f),
+                                   ImGui::GetColorU32(colors[2]), jersey_str.c_str());
+                ImGui::PopFont();
+            }
+
+            // Support opening the photo in browser when clicked
+            ImGui::SetCursorScreenPos(img_pos);
+            if (ImGui::InvisibleButton(std::format("##photo_btn_{}", i).c_str(), img_size)) {
+                if (!player.photo_url.empty() && player.photo_url.starts_with("http")) {
+                    rouen::platform::open_url(player.photo_url);
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Click to view player photo/link");
+            }
+
+            // Column 1: Details
+            ImGui::NextColumn();
+            
+            ImGui::TextColored(colors[2], "%s", player.name.c_str());
+            ImGui::SameLine();
+            ImGui::TextColored(colors[5], "#%d", player.jersey_number);
+            
+            ImGui::TextColored(colors[3], "%s", player.position.c_str());
+            
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", player.comment.c_str());
+
+            ImGui::Columns(1);
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+
+        // 2. Starting XI Lineup
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextColored(colors[2], "%s Starting XI (Lineup):", ICON_MD_FORMAT_LIST_NUMBERED);
+        ImGui::Spacing();
+
+        if (!cache.lineup.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
+            float lineup_box_height = std::min(300.0f, static_cast<float>(cache.lineup.size()) * 26.0f + 35.0f);
+            ImGui::BeginChild("LineupChildBox", ImVec2(0, lineup_box_height), true);
+            
+            ImGui::Columns(3, "LineupColumns", false);
+            ImGui::SetColumnWidth(0, 50.0f);   // Jersey number
+            ImGui::SetColumnWidth(1, 150.0f);  // Position
+            
+            // Header
+            ImGui::TextColored(colors[3], "#"); ImGui::NextColumn();
+            ImGui::TextColored(colors[3], "Position"); ImGui::NextColumn();
+            ImGui::TextColored(colors[3], "Name"); ImGui::NextColumn();
+            ImGui::Separator();
+
+            for (const auto& lp : cache.lineup) {
+                ImGui::TextColored(colors[2], "%d", lp.jersey_number); ImGui::NextColumn();
+                ImGui::Text("%s", lp.position.c_str()); ImGui::NextColumn();
+                ImGui::Text("%s", lp.name.c_str()); ImGui::NextColumn();
+            }
+
+            ImGui::Columns(1);
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::TextColored(colors[5], "Lineup details not available.");
+        }
+
+        // 3. Team Q&A Section
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextColored(colors[2], "%s Team Q&A / FAQs:", ICON_MD_QUESTION_ANSWER);
+        ImGui::Spacing();
+
+        if (!cache.qa.empty()) {
+            for (size_t q_idx = 0; q_idx < cache.qa.size(); ++q_idx) {
+                const auto& qa = cache.qa[q_idx];
+                ImGui::PushStyleColor(ImGuiCol_Header, colors[7]);
+                if (ImGui::CollapsingHeader(std::format("Q: {}", qa.question).c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(15.0f);
+                    ImGui::TextWrapped("%s", qa.answer.c_str());
+                    ImGui::Unindent(15.0f);
+                    ImGui::Spacing();
+                }
+                ImGui::PopStyleColor(); // Pop Header
+            }
+        } else {
+            ImGui::TextColored(colors[5], "Q&A details not available.");
+        }
+
+        ImGui::EndChild();
+    }
+
     time_t get_match_utc_time(const std::string& local_date_str, const std::string& stadium_id) {
         if (local_date_str.size() < 16) return 0;
         
@@ -1507,3 +2624,59 @@ private:
 };
 
 } // namespace rouen::cards
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::CommentaryCache> {
+    using T = rouen::cards::worldcup_dashboard::CommentaryCache;
+    static constexpr auto value = object(
+        "text", &T::text,
+        "last_updated_epoch", &T::last_updated_epoch,
+        "last_home_score", &T::last_home_score,
+        "last_away_score", &T::last_away_score,
+        "status", &T::status
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::PlayerInfo> {
+    using T = rouen::cards::worldcup_dashboard::PlayerInfo;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "photo_url", &T::photo_url,
+        "position", &T::position,
+        "jersey_number", &T::jersey_number,
+        "comment", &T::comment
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::LineupPlayer> {
+    using T = rouen::cards::worldcup_dashboard::LineupPlayer;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "position", &T::position,
+        "jersey_number", &T::jersey_number
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::QAPair> {
+    using T = rouen::cards::worldcup_dashboard::QAPair;
+    static constexpr auto value = object(
+        "question", &T::question,
+        "answer", &T::answer
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::TeamPlayersCache> {
+    using T = rouen::cards::worldcup_dashboard::TeamPlayersCache;
+    static constexpr auto value = object(
+        "players", &T::players,
+        "lineup", &T::lineup,
+        "qa", &T::qa,
+        "last_updated_epoch", &T::last_updated_epoch
+    );
+};
+
+

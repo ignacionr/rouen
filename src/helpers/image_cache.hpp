@@ -132,6 +132,61 @@ public:
     }
     
     /**
+     * Downloads an image in the background, verifies if it's a valid image (CPU only),
+     * and stores it in the cache database.
+     * 
+     * @param url URL of the image to download and cache
+     * @return True if successfully downloaded and cached, false if it failed or is not a valid image
+     */
+    bool downloadAndCache(const std::string& url) {
+        int w = 0, h = 0;
+        if (getImageFromCache(url, w, h)) {
+            return true;
+        }
+        
+        try {
+            auto url_hash = std::hash<std::string>{}(url);
+            std::filesystem::path final_path_obj = std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + ".img");
+            std::string final_path = final_path_obj.string();
+            std::string temp_path = final_path + ".tmp";
+            
+            FILE* fp = fopen(temp_path.c_str(), "wb");
+            if (!fp) {
+                return false;
+            }
+            
+            auto write_callback = [](void* ptr, size_t size, size_t nmemb, void* stream) -> size_t {
+                return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
+            };
+            
+            fetcher_(url, {}, write_callback, fp);
+            fclose(fp);
+            
+            // Check if it's a valid image using SDL_image's CPU-side loading
+            SDL_Surface* surface = IMG_Load(temp_path.c_str());
+            if (surface) {
+                int width = surface->w;
+                int height = surface->h;
+                SDL_FreeSurface(surface);
+                
+                if (std::filesystem::exists(final_path)) {
+                    std::filesystem::remove(final_path);
+                }
+                std::filesystem::rename(temp_path, final_path);
+                
+                storeImageInCache(url, final_path, width, height);
+                return true;
+            }
+            
+            std::filesystem::remove(temp_path);
+            return false;
+        }
+        catch (...) {
+            return false;
+        }
+    }
+    
+    /**
      * Clears the entire image cache
      */
     void clearCache() {

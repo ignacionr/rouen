@@ -71,6 +71,31 @@ namespace ignacionr
         std::optional<SearchParameters> search_parameters;
         float temperature;
     };
+
+    struct ResponsesTool {
+        std::string type;
+    };
+
+    struct ResponsesPayload {
+        std::string model;
+        std::vector<Message> input;
+        std::vector<ResponsesTool> tools;
+    };
+
+    struct ResponseContent {
+        std::string type;
+        std::string text;
+    };
+
+    struct ResponseOutputItem {
+        std::string type;
+        std::string role;
+        std::vector<ResponseContent> content;
+    };
+
+    struct ResponsesApiResponse {
+        std::vector<ResponseOutputItem> output;
+    };
 }
 
 // Define glaze schema for all structures
@@ -154,6 +179,51 @@ struct glz::meta<ignacionr::Payload> {
     );
 };
 
+template <>
+struct glz::meta<ignacionr::ResponsesTool> {
+    using T = ignacionr::ResponsesTool;
+    static constexpr auto value = object(
+        "type", &T::type
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::ResponsesPayload> {
+    using T = ignacionr::ResponsesPayload;
+    static constexpr auto value = object(
+        "model", &T::model,
+        "input", &T::input,
+        "tools", &T::tools
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::ResponseContent> {
+    using T = ignacionr::ResponseContent;
+    static constexpr auto value = object(
+        "type", &T::type,
+        "text", &T::text
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::ResponseOutputItem> {
+    using T = ignacionr::ResponseOutputItem;
+    static constexpr auto value = object(
+        "type", &T::type,
+        "role", &T::role,
+        "content", &T::content
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::ResponsesApiResponse> {
+    using T = ignacionr::ResponsesApiResponse;
+    static constexpr auto value = object(
+        "output", &T::output
+    );
+};
+
 namespace ignacionr
 {
     class cppgpt
@@ -204,6 +274,63 @@ namespace ignacionr
                 // Fallback to local conversation history + new message
                 current_conversation = conversation;
                 current_conversation.emplace_back(std::string(role), std::string(message));
+            }
+
+            // Check if we should use the xAI Responses API for web search
+            if (base_url_.find("api.x.ai") != std::string::npos && search_mode == "on") {
+                // Prepare the Responses API payload
+                ResponsesPayload responses_payload{
+                    std::string(model),
+                    std::move(current_conversation),
+                    {ResponsesTool{"web_search"}}
+                };
+                
+                auto url = std::format("{}/responses", base_url_);
+                
+                std::string body;
+                auto result = glz::write_json(responses_payload, body);
+                if (result) {
+                    throw std::runtime_error("Failed to serialize xAI Responses request payload");
+                }
+                
+                auto r = do_post(url, body, [this](auto header_setter){
+                    header_setter("Authorization: Bearer " + api_key_);
+                    header_setter("Content-Type: application/json");
+                });
+                
+                // Parse the Responses API response
+                ResponsesApiResponse responses_api_response;
+                auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(responses_api_response, r);
+                if (read_error) {
+                    std::cerr << "Error reading Responses response: " << glz::format_error(read_error, r) << std::endl;
+                    std::cerr << "Response: " << r << std::endl;
+                    throw std::runtime_error("Failed to parse Responses API response: " + glz::format_error(read_error, r));
+                }
+                
+                // Extract assistant message
+                std::string reply = "Error: No response generated from search";
+                for (const auto& item : responses_api_response.output) {
+                    if (item.type == "message" && item.role == "assistant" && !item.content.empty()) {
+                        reply = item.content[0].text;
+                        break;
+                    }
+                }
+                
+                // Only maintain local conversation if not using external conversation management
+                if (!full_conversation) {
+                    conversation.push_back({"assistant", reply});
+                }
+                
+                // Build a ChatCompletion response compatible with the caller
+                ChatCompletion response;
+                response.model = std::string(model);
+                response.choices.resize(1);
+                response.choices[0].index = 0;
+                response.choices[0].message.role = "assistant";
+                response.choices[0].message.content = reply;
+                response.choices[0].finish_reason = "stop";
+                
+                return response;
             }
 
             // Prepare the API request payload

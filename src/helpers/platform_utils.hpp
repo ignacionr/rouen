@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
+#include <thread>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
@@ -44,9 +45,8 @@ namespace rouen::platform
             (void)background; // Background is default behavior on Windows
             cmd = std::format("start \"\" \"{}\"", path);
         #else
-            // Linux and others use xdg-open
+            // Linux uses xdg-open
             cmd = std::format("xdg-open \"{}\"", path);
-            // Add & for background operation if requested
             if (background) {
                 cmd += " &";
             }
@@ -78,6 +78,75 @@ namespace rouen::platform
             std::string cmd = std::format("xdg-open \"{}\"", url_or_path);
             return system(cmd.c_str()) == 0;
         #endif
+    }
+
+    /**
+     * Terminate any active speech synthesis process
+     */
+    inline void stop_speech()
+    {
+        #ifdef __APPLE__
+            [[maybe_unused]] int result = std::system("killall say 2>/dev/null");
+        #endif
+    }
+
+    /**
+     * Synthesize speech from text asynchronously using platform capabilities
+     *
+     * @param text The text to speak
+     * @param on_complete Optional callback when speech is complete or interrupted
+     */
+    template <typename Func>
+    inline void speak_text_async(const std::string& text, Func&& on_complete)
+    {
+        #ifdef __APPLE__
+            stop_speech();
+            std::jthread([text, cb = std::forward<Func>(on_complete)]() mutable {
+                std::string clean_text = text;
+                size_t pos = 0;
+                while (true) {
+                    pos = clean_text.find("http", pos);
+                    if (pos == std::string::npos) {
+                        break;
+                    }
+                    if (pos + 4 < clean_text.size() && (clean_text.substr(pos, 7) == "http://" || clean_text.substr(pos, 8) == "https://")) {
+                        size_t end_pos = pos;
+                        while (end_pos < clean_text.size() && !std::isspace(static_cast<unsigned char>(clean_text[end_pos]))) {
+                            end_pos++;
+                        }
+                        clean_text.replace(pos, end_pos - pos, "link");
+                        pos += 4;
+                    } else {
+                        pos += 4;
+                    }
+                }
+
+                std::string safe_text;
+                for (char c : clean_text) {
+                    if (c == '"') {
+                        safe_text += "\\\"";
+                    } else if (c == '\\') {
+                        safe_text += "\\\\";
+                    } else if (c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
+                        safe_text += ' ';
+                    } else {
+                        safe_text += c;
+                    }
+                }
+
+                std::string command = std::format("say \"{}\"", safe_text);
+                [[maybe_unused]] int result = std::system(command.c_str());
+                cb();
+            }).detach();
+        #else
+            (void)text;
+            on_complete();
+        #endif
+    }
+
+    inline void speak_text_async(const std::string& text)
+    {
+        speak_text_async(text, [](){});
     }
     
     /**

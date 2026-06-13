@@ -12,8 +12,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Prefer libc++ on Darwin (macOS) for consistency with Nix
 if(APPLE)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -fexperimental-library")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++ -fexperimental-library")
     
     # Set rpath for Nix store libraries on macOS
     set(CMAKE_BUILD_RPATH "/nix/store")

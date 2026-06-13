@@ -121,6 +121,7 @@ struct deck {
             ImGuiCol_Border,
             ImGuiCol_BorderShadow,
             ImGuiCol_ButtonHovered,
+            ImGuiCol_CheckMark,
         };
         
         static constexpr ImGuiCol_ second_color_elements[] = {
@@ -133,7 +134,6 @@ struct deck {
             ImGuiCol_ResizeGrip,
             ImGuiCol_ResizeGripHovered,
             ImGuiCol_ResizeGripActive,
-            ImGuiCol_CheckMark,
             ImGuiCol_SliderGrab,
             ImGuiCol_SliderGrabActive,
             ImGuiCol_Separator,

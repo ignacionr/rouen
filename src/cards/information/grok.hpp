@@ -83,7 +83,8 @@ namespace rouen::cards {
             }
             
             // whether to allow search (only for providers that support it)
-            if (settings.provider == helpers::LLMConfig::Provider::GROK) {
+            if (settings.provider == helpers::LLMConfig::Provider::GROK || 
+                settings.provider == helpers::LLMConfig::Provider::GEMINI) {
                 ImGui::Checkbox("Allow Search", &allow_search_);
                 ImGui::SameLine();
             }
@@ -503,8 +504,16 @@ namespace rouen::cards {
                 waiting_for_response_.store(true);
                 scroll_to_bottom_.store(true);
                 
+                // Determine model and search mode before launching the thread (thread-safe capture)
+                std::string model_name = current_llm_settings_.model_name;
+                std::string search_mode_str;
+                if ((current_llm_settings_.provider == helpers::LLMConfig::Provider::GROK || 
+                     current_llm_settings_.provider == helpers::LLMConfig::Provider::GEMINI) && allow_search_) {
+                    search_mode_str = "on";
+                }
+                
                 // Launch response generation asynchronously to prevent UI blocking
-                std::thread([this, function_schemas, message]() {
+                std::thread([this, function_schemas, message, model_name, search_mode_str]() {
                     try {
                         // Create conversion from our message format to the format expected by sendMessage
                         std::vector<std::pair<std::string, std::string>> conversation_for_llm;
@@ -545,7 +554,7 @@ namespace rouen::cards {
                                         }
                                         return "Error: MCP service not available";
                                     },
-                                    "user", "", "", 0.45f, &conversation_for_llm, &function_schemas
+                                    "user", model_name, search_mode_str, 0.45f, &conversation_for_llm, &function_schemas
                                 );
                             } else {
                                 // Fallback to standard call without function schemas for other LLM types
@@ -554,7 +563,7 @@ namespace rouen::cards {
                                     [fetcher](const std::string& url, const std::string& body, auto header_setter) {
                                         return fetcher->post(url, body, header_setter);
                                     },
-                                    "user", "", "", 0.45f, &conversation_for_llm
+                                    "user", model_name, search_mode_str, 0.45f, &conversation_for_llm
                                 );
                             }
                         }, llm_instance_->instance_);

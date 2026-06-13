@@ -95,12 +95,12 @@ namespace rouen::helpers {
             return escaped;
         }
 
-        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature) const {
-            return build_gemini_request(conversation, temperature, {});
+        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, bool enable_search = false) const {
+            return build_gemini_request(conversation, temperature, {}, enable_search);
         }
 
         // Enhanced method with function calling support
-        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, const std::vector<std::string>& function_schemas) const {
+        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, const std::vector<std::string>& function_schemas, bool enable_search = false) const {
             std::string json = "{\"contents\":[";
             
             // Merge system messages and convert to Gemini format
@@ -137,14 +137,27 @@ namespace rouen::helpers {
             
             json += std::format("],\"generationConfig\":{{\"temperature\":{},\"maxOutputTokens\":4096}}", temperature);
             
-            // Add function calling tools if provided
-            if (!function_schemas.empty()) {
-                json += ",\"tools\":[{\"functionDeclarations\":[";
-                for (size_t i = 0; i < function_schemas.size(); ++i) {
-                    if (i > 0) json += ",";
-                    json += function_schemas[i];
+            // Add tools if search or function calling is enabled
+            if (enable_search || !function_schemas.empty()) {
+                json += ",\"tools\":[";
+                bool has_previous_tool = false;
+                
+                if (enable_search) {
+                    json += "{\"google_search\":{}}";
+                    has_previous_tool = true;
                 }
-                json += "]}]";
+                
+                if (!function_schemas.empty()) {
+                    if (has_previous_tool) json += ",";
+                    json += "{\"functionDeclarations\":[";
+                    for (size_t i = 0; i < function_schemas.size(); ++i) {
+                        if (i > 0) json += ",";
+                        json += function_schemas[i];
+                    }
+                    json += "]}";
+                }
+                
+                json += "]";
             }
             
             json += "}";  // Close the main JSON object
@@ -154,8 +167,8 @@ namespace rouen::helpers {
         }
 
         // Backward compatibility method that uses local conversation_
-        std::string build_gemini_request(float temperature) const {
-            return build_gemini_request(conversation_, temperature);
+        std::string build_gemini_request(float temperature, bool enable_search = false) const {
+            return build_gemini_request(conversation_, temperature, enable_search);
         }
 
         // Parse Gemini response and return the full response structure for function call handling
@@ -280,7 +293,7 @@ namespace rouen::helpers {
             DoPostFunc do_post, 
             std::string_view role = "user", 
             std::string_view model = "gemini-2.5-flash-lite", 
-            [[maybe_unused]] std::string_view search_mode = {},
+            std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
             const std::vector<std::string>* function_schemas = nullptr
@@ -304,10 +317,11 @@ namespace rouen::helpers {
                 current_conversation.emplace_back(std::string(role), std::string(message));
             }
 
+            bool enable_search = (search_mode == "on");
             // Build Gemini API request using current_conversation and function schemas
             std::string request_body = function_schemas ? 
-                build_gemini_request(current_conversation, temperature, *function_schemas) :
-                build_gemini_request(current_conversation, temperature);
+                build_gemini_request(current_conversation, temperature, *function_schemas, enable_search) :
+                build_gemini_request(current_conversation, temperature, enable_search);
 
             // Use the provided model or default
             std::string model_name = model.empty() ? model_ : std::string(model);
@@ -350,7 +364,7 @@ namespace rouen::helpers {
             std::function<std::string(const std::string&, const std::map<std::string, std::string>&)> function_executor,
             std::string_view role = "user", 
             std::string_view model = "gemini-2.5-flash-lite", 
-            [[maybe_unused]] std::string_view search_mode = {},
+            std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
             const std::vector<std::string>* function_schemas = nullptr
@@ -374,10 +388,11 @@ namespace rouen::helpers {
                 current_conversation.emplace_back(std::string(role), std::string(message));
             }
 
+            bool enable_search = (search_mode == "on");
             // Build Gemini API request using current_conversation and function schemas
             std::string request_body = function_schemas ? 
-                build_gemini_request(current_conversation, temperature, *function_schemas) :
-                build_gemini_request(current_conversation, temperature);
+                build_gemini_request(current_conversation, temperature, *function_schemas, enable_search) :
+                build_gemini_request(current_conversation, temperature, enable_search);
 
             // Use the provided model or default
             std::string model_name = model.empty() ? model_ : std::string(model);
