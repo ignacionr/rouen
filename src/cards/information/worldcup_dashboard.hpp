@@ -292,6 +292,7 @@ public:
             std::lock_guard<std::mutex> lock(data_mutex);
             expanded_match_key_ = std::string(locator);
             set_match_center_selected = true;
+            need_scroll_to_match = true;
         }
     }
 
@@ -330,6 +331,7 @@ private:
     std::unordered_set<std::string> fetching_matches_;
     std::string expanded_match_key_;
     bool set_match_center_selected = false;
+    bool need_scroll_to_match = false;
 
     std::unordered_map<std::string, TeamPlayersCache> team_players_cache_;
     std::unordered_set<std::string> fetching_players_;
@@ -1753,6 +1755,10 @@ private:
             float height = has_scorers ? 115.0f : 90.0f;
             
             std::string m_flash_key = m.home_code + "_" + m.away_code + "_" + m.date_str;
+            if (need_scroll_to_match && m_flash_key == expanded_match_key_) {
+                ImGui::SetScrollHereY(0.0f);
+                need_scroll_to_match = false; // Reset so user can scroll freely afterwards
+            }
             float row_factor = 0.0f;
             if (match_flashes.contains(m_flash_key)) {
                 row_factor = std::max(match_flashes[m_flash_key].home_flash_timer, match_flashes[m_flash_key].away_flash_timer) / 5.0f;
