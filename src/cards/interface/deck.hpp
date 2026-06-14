@@ -511,8 +511,8 @@ struct deck {
                     float override_width = -1.0f;
                     if (i == row.size() - 1) {
                         override_width = size.x - x;
-                        if (override_width < c->width) {
-                            override_width = c->width;
+                        if (override_width < c->width * dpi_scale) {
+                            override_width = c->width * dpi_scale;
                         }
                     }
                     if (!render(*c, x, row_height, result.requested_fps, y, override_width)) {
