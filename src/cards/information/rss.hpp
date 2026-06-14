@@ -196,7 +196,8 @@ public:
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
             
             // Calculate width for input field to leave space for clear button
-            float clear_button_width = 20.0f;
+            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float clear_button_width = 20.0f * dpi_scale;
             float input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
             ImGui::PushItemWidth(input_width);
             

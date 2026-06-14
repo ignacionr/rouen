@@ -102,7 +102,8 @@ void terminal::render_sudo_prompt(float window_width) {
     
     // Password input (displayed as asterisks)
     static char password_buffer[128] = "";
-    ImGui::SetNextItemWidth(window_width - 70);
+    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+    ImGui::SetNextItemWidth(window_width - 70.0f * dpi_scale);
     bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, static_cast<int>(sizeof(password_buffer)), 
                                         ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                                         nullptr, nullptr);
@@ -110,7 +111,7 @@ void terminal::render_sudo_prompt(float window_width) {
     ImGui::SameLine();
     
     // Submit button
-    if (ImGui::Button("Submit", ImVec2(60, 0)) || enter_pressed) {
+    if (ImGui::Button("Submit", ImVec2(60.0f * dpi_scale, 0)) || enter_pressed) {
         if (password_buffer[0] != '\0') {
             // Attempt to restart the bash session with sudo
             bash.restart_with_sudo(password_buffer, current_working_dir, 
@@ -161,10 +162,11 @@ void terminal::render_command_input(float window_width) {
 
     bool enter_pressed = false;
     bool input_active = false;
+    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
     float input_width = window_width;
     // If buttons are visible, make room for them
     if (is_command_running) {
-        input_width -= 160.0f; // Reserve space for spinner + Ctrl+C + Kill buttons + spacing
+        input_width -= 160.0f * dpi_scale; // Reserve space for spinner + Ctrl+C + Kill buttons + spacing
     }
     ImGui::SetNextItemWidth(input_width);
     if (ImGui::InputText("##CommandInput", input_buffer, static_cast<int>(sizeof(input_buffer)), 

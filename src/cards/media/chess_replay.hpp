@@ -113,14 +113,15 @@ public:
             chess_com_integration.render_ui(colors[9], colors[8], [this](){ load_selected_game(); });
             
             // Calculate board size based on card width
-            float board_size = std::min(width - 40.0f, 400.0f);
+            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float board_size = std::min(width * dpi_scale - 40.0f * dpi_scale, 400.0f * dpi_scale);
             float square_size = board_size / 8.0f;
             
             ImGui::Separator();
             
             // Create a two-column layout: board on left, controls and moves on right
             ImGui::Columns(2, "ChessLayout", false);
-            ImGui::SetColumnWidth(0, board_size + 20.0f);
+            ImGui::SetColumnWidth(0, board_size + 20.0f * dpi_scale);
             
             // Left column: Chess board
             render_board(board_size, square_size);
