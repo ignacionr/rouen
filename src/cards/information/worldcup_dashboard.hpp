@@ -592,7 +592,9 @@ private:
             if (!in.is_open()) {
                 return;
             }
-            std::string json_str((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            std::string json_str = ss.str();
             std::unordered_map<std::string, CommentaryCache> temp_cache;
             auto ec = glz::read_json(temp_cache, json_str);
             if (!ec) {
@@ -634,7 +636,9 @@ private:
             if (!in.is_open()) {
                 return;
             }
-            std::string json_str((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            std::string json_str = ss.str();
             std::unordered_map<std::string, TeamPlayersCache> temp_cache;
             auto ec = glz::read_json(temp_cache, json_str);
             if (!ec) {
@@ -1610,7 +1614,7 @@ private:
                 if (home_factor > 0.0f) {
                     ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.4f, home_factor), "%s GOAL!", ICON_MD_SPORTS_SOCCER);
                 } else {
-                    ImGui::Text(""); // Fixed space to prevent layout shifts
+                    ImGui::TextUnformatted(""); // Fixed space to prevent layout shifts
                 }
             }
             ImVec2 flag_pos = ImGui::GetCursorScreenPos();
@@ -1704,7 +1708,7 @@ private:
                 if (away_factor > 0.0f) {
                     ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.4f, away_factor), "%s GOAL!", ICON_MD_SPORTS_SOCCER);
                 } else {
-                    ImGui::Text("");
+                    ImGui::TextUnformatted("");
                 }
             }
             flag_pos = ImGui::GetCursorScreenPos();
@@ -1874,7 +1878,7 @@ private:
                 if (!m.home_scorers.empty()) {
                     ImGui::TextColored(colors[5], "%s %s", ICON_MD_SPORTS_SOCCER, m.home_scorers.c_str());
                 } else {
-                    ImGui::Text("");
+                    ImGui::TextUnformatted("");
                 }
                 ImGui::Unindent(32.0f);
 
