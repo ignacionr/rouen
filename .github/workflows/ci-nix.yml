@@ -43,5 +43,5 @@ jobs:
       - name: Run tests
         run: |
           nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-          nix develop --command bash -c "cd build-tests && cmake --build . --parallel"
+          nix develop --command bash -c "cd build-tests && cmake --build . --parallel 2"
           nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"

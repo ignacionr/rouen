@@ -122,7 +122,7 @@ jobs:
       run: |
         echo "Running tests with proven CI approach..."
         nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-        nix develop --command bash -c "cd build-tests && cmake --build . --parallel"
+        nix develop --command bash -c "cd build-tests && cmake --build . --parallel 2"
         nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
 
     - name: Package Linux Release
@@ -210,7 +210,7 @@ jobs:
             -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"
         fi
         
-        cmake --build build-release --config Release --parallel
+        cmake --build build-release --config Release --parallel 2
 
     - name: Create macOS Package
       run: |
@@ -317,7 +317,7 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
           -DCMAKE_BUILD_TYPE=Release ^
           -G "Visual Studio 17 2022" -A x64
-        cmake --build build --config Release --parallel
+        cmake --build build --config Release --parallel 2
 
     - name: Package Windows Release
       shell: pwsh

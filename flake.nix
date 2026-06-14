@@ -134,7 +134,11 @@
           };
           buildPhase = ''
             runHook preBuild
-            cmake --build . --parallel
+            CORES=''${NIX_BUILD_CORES:-2}
+            if [ "$CORES" -eq 0 ]; then
+              CORES=2
+            fi
+            cmake --build . --parallel "$CORES"
             runHook postBuild
           '';
           installPhase = ''
@@ -218,7 +222,11 @@
           '';
           buildPhase = ''
             runHook preBuild
-            cmake --build . --parallel
+            CORES=''${NIX_BUILD_CORES:-2}
+            if [ "$CORES" -eq 0 ]; then
+              CORES=2
+            fi
+            cmake --build . --parallel "$CORES"
             runHook postBuild
           '';
           checkPhase = ''

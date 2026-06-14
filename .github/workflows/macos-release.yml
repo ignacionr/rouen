@@ -233,7 +233,7 @@ jobs:
 
     - name: Build with CMake
       run: |
-        cmake --build build-vcpkg --config Release --parallel
+        cmake --build build-vcpkg --config Release --parallel 2
         if [ $? -ne 0 ]; then
           echo "ERROR: Build failed"
           exit 1

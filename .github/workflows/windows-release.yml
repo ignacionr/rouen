@@ -218,7 +218,7 @@ jobs:
     - name: Build with CMake
       shell: cmd
       run: |
-        cmake --build build --config Release --parallel
+        cmake --build build --config Release --parallel 2
         if errorlevel 1 (
           echo ERROR: Build failed
           exit /b 1
