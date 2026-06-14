@@ -47,7 +47,7 @@ public:
 #if defined(_WIN32)
         localtime_s(&tm, &time);
 #else
-        tm = *std::localtime(&time);
+        localtime_r(&time, &tm);
 #endif
         std::ostringstream out;
         out << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
@@ -111,6 +111,8 @@ public:
     }
 
     static std::string stable_hash(std::string_view text) {
+        // FNV-1a 64-bit hash used only for lightweight change detection in sync metadata.
+        // This is intentionally non-cryptographic and optimized for speed.
         constexpr uint64_t offset_basis = 1469598103934665603ULL;
         constexpr uint64_t prime = 1099511628211ULL;
 
@@ -454,7 +456,7 @@ public:
 
             bool local_conflict = false;
             if (local_note.has_value() && local_note->content != markdown && !last_sync.empty()) {
-                local_conflict = local_note->updated_at > last_sync && source_hash != known_hash;
+                local_conflict = is_timestamp_newer(local_note->updated_at, last_sync) && source_hash != known_hash;
             }
 
             if (local_conflict) {
@@ -474,6 +476,25 @@ private:
     static std::string column_text(sqlite3_stmt* stmt, int index) {
         const auto* text = sqlite3_column_text(stmt, index);
         return text != nullptr ? std::string(reinterpret_cast<const char*>(text)) : std::string{};
+    }
+
+    static std::optional<std::time_t> parse_timestamp(std::string_view timestamp) {
+        std::tm tm{};
+        std::istringstream in{std::string(timestamp)};
+        in >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (in.fail()) {
+            return std::nullopt;
+        }
+        return std::mktime(&tm);
+    }
+
+    static bool is_timestamp_newer(std::string_view lhs, std::string_view rhs) {
+        const auto left = parse_timestamp(lhs);
+        const auto right = parse_timestamp(rhs);
+        if (!left.has_value() || !right.has_value()) {
+            return lhs > rhs;
+        }
+        return left.value() > right.value();
     }
 
     void ensure_schema() {

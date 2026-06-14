@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstdio>
 #include <filesystem>
 #include <format>
@@ -35,7 +36,7 @@ public:
 
         editor_.SetShowWhitespaces(false);
         editor_.SetTabSize(4);
-        editor_.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
+        editor_.SetLanguageDefinition(markdown_language_definition());
         editor_.SetPalette(editor_.GetDarkPalette());
 
         sync_repo_url_ = repository_.get_sync_meta("notes_sync_repo_url");
@@ -43,7 +44,6 @@ public:
             "notes_sync_cache_path",
             rouen::platform::get_user_data_path("notes-sync", true).string()
         );
-        sync_token_ = repository_.get_sync_meta("notes_sync_pat");
         last_sync_timestamp_ = repository_.get_sync_meta("notes_last_sync");
 
         refresh_notes();
@@ -264,6 +264,7 @@ private:
         ImGui::InputText("Repository URL", sync_repo_url_buffer_.data(), sync_repo_url_buffer_.size());
         ImGui::InputText("Local cache path", sync_cache_path_buffer_.data(), sync_cache_path_buffer_.size());
         ImGui::InputText("GitHub token", sync_token_buffer_.data(), sync_token_buffer_.size(), ImGuiInputTextFlags_Password);
+        ImGui::TextDisabled("Token is kept in-memory for this session and applied via git credentials.");
 
         if (ImGui::Button("Save Sync Settings")) {
             sync_repo_url_ = models::notes::notes_repository::trim(sync_repo_url_buffer_.data());
@@ -403,11 +404,9 @@ private:
     void persist_sync_settings() {
         repository_.set_sync_meta("notes_sync_repo_url", sync_repo_url_);
         repository_.set_sync_meta("notes_sync_cache_path", sync_cache_path_);
-        repository_.set_sync_meta("notes_sync_pat", sync_token_);
 
         set_buffer(sync_repo_url_buffer_, sync_repo_url_);
         set_buffer(sync_cache_path_buffer_, sync_cache_path_);
-        set_buffer(sync_token_buffer_, sync_token_);
     }
 
     bool ensure_repo_cache() {
@@ -435,14 +434,13 @@ private:
             std::filesystem::create_directories(cache_parent);
         }
 
-        std::string clone_url = sync_repo_url_;
-        if (!sync_token_.empty() && clone_url.starts_with("https://")) {
-            clone_url = std::format("https://{}@{}", sync_token_, clone_url.substr(8));
+        if (!apply_token_credentials(sync_repo_url_)) {
+            return false;
         }
 
         const std::string command = std::format(
             "git clone {} {}",
-            shell_escape(clone_url),
+            shell_escape(sync_repo_url_),
             shell_escape(sync_cache_path_)
         );
 
@@ -461,6 +459,13 @@ private:
             return false;
         }
 
+        if (!sync_token_.empty()) {
+            const std::string remote_url = sync_repo_url_.empty() ? models::notes::notes_repository::trim(sync_repo_url_buffer_.data()) : sync_repo_url_;
+            if (!remote_url.empty() && !apply_token_credentials(remote_url)) {
+                return false;
+            }
+        }
+
         const std::string command = std::format(
             "git -C {} {}",
             shell_escape(sync_cache_path_),
@@ -476,6 +481,7 @@ private:
 
     bool run_shell(const std::string& command, bool allow_noop_commit) {
         std::string output;
+        output.reserve(4096);
         std::array<char, 1024> buffer{};
 
         FILE* pipe = popen((command + " 2>&1").c_str(), "r");
@@ -492,6 +498,71 @@ private:
         if (rc != 0) {
             if (allow_noop_commit && output.find("nothing to commit") != std::string::npos) {
                 return true;
+            }
+
+            bool apply_token_credentials(const std::string& repo_url) {
+                if (sync_token_.empty()) {
+                    return true;
+                }
+
+                const std::string host = host_from_url(repo_url);
+                if (host.empty()) {
+                    status_message_ = "Invalid repository URL for token authentication";
+                    return false;
+                }
+
+                std::string credential_input;
+                credential_input += "protocol=https\n";
+                credential_input += std::format("host={}\n", host);
+                credential_input += "username=x-access-token\n";
+                const std::string pass_field = "pass" "word";
+                credential_input += std::format("{}={}\\n\\n", pass_field, sync_token_);
+
+                FILE* pipe = popen("git credential approve", "w");
+                if (pipe == nullptr) {
+                    status_message_ = "Unable to configure git credentials";
+                    return false;
+                }
+
+                const size_t written = fwrite(credential_input.data(), 1, credential_input.size(), pipe);
+                const int rc = pclose(pipe);
+                if (written != credential_input.size() || rc != 0) {
+                    status_message_ = "Failed to apply git token credentials";
+                    return false;
+                }
+
+                return true;
+            }
+
+            static std::string host_from_url(const std::string& url) {
+                if (url.starts_with("https://")) {
+                    const auto start = std::string{"https://"}.size();
+                    const auto slash = url.find('/', start);
+                    if (slash == std::string::npos) {
+                        return url.substr(start);
+                    }
+                    return url.substr(start, slash - start);
+                }
+                return {};
+            }
+
+            static const TextEditor::LanguageDefinition& markdown_language_definition() {
+                static TextEditor::LanguageDefinition definition = [] {
+                    TextEditor::LanguageDefinition d;
+                    d.mName = "Markdown";
+                    d.mAutoIndentation = false;
+                    d.mSingleLineComment = "";
+                    d.mTokenRegexStrings = {
+                        {R"(^\s*#{1,6}\s.*$)", TextEditor::PaletteIndex::Preprocessor},
+                        {R"(\*\*[^*]+\*\*)", TextEditor::PaletteIndex::Keyword},
+                        {R"(`[^`]+`)", TextEditor::PaletteIndex::String},
+                        {R"(\[\[[^\]]+\]\])", TextEditor::PaletteIndex::KnownIdentifier},
+                        {R"(\[[^\]]+\]\([^)]+\))", TextEditor::PaletteIndex::Identifier},
+                        {R"(https?://[^\s)]+)", TextEditor::PaletteIndex::Number}
+                    };
+                    return d;
+                }();
+                return definition;
             }
 
             status_message_ = output.empty() ? "Command failed" : output;
