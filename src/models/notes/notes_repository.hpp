@@ -117,8 +117,8 @@ public:
         constexpr uint64_t prime = 1099511628211ULL;
 
         uint64_t hash = offset_basis;
-        for (unsigned char c : text) {
-            hash ^= c;
+        for (char c : text) {
+            hash ^= static_cast<unsigned char>(c);
             hash *= prime;
         }
 
@@ -421,7 +421,9 @@ public:
                 continue;
             }
 
-            std::string file_content((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+            std::ostringstream oss;
+            oss << input.rdbuf();
+            std::string file_content = oss.str();
             std::string note_title = trim(entry.path().stem().string());
             std::string tags;
             std::string markdown = file_content;
@@ -431,7 +433,9 @@ public:
                 std::string first_line;
                 if (std::getline(lines, first_line) && first_line.rfind("# ", 0) == 0) {
                     note_title = trim(first_line.substr(2));
-                    std::string remainder((std::istreambuf_iterator<char>(lines)), std::istreambuf_iterator<char>());
+                    std::ostringstream oss2;
+                    oss2 << lines.rdbuf();
+                    std::string remainder = oss2.str();
                     markdown = remainder;
                     if (!markdown.empty() && markdown.front() == '\n') {
                         markdown.erase(markdown.begin());
