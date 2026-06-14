@@ -232,9 +232,12 @@ public:
             
             ImGui::Separator();
             
+            static bool settings_open = false;
+            float bottom_margin = (settings_open ? 210.0f : 120.0f) * dpi_scale;
+            
             // Create scrollable area for feeds
             auto available_size = ImGui::GetContentRegionAvail();
-            ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - 110);
+            ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
             if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
                 auto feeds = rss_host->feeds();
                 if (feeds.empty()) {
@@ -263,6 +266,26 @@ public:
             ImGui::Separator();
 
             render_add_feed();
+            
+            ImGui::Separator();
+            settings_open = ImGui::CollapsingHeader("Connection Settings");
+            if (settings_open) {
+                int timeout = rss_host->get_timeout();
+                ImGui::SetNextItemWidth(120.0f * dpi_scale);
+                if (ImGui::SliderInt("Timeout (s)##rss_timeout", &timeout, 5, 180)) {
+                    rss_host->set_timeout(timeout);
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(5s to 180s)");
+                
+                bool auto_timeout = rss_host->is_auto_timeout_enabled();
+                if (ImGui::Checkbox("Auto-increase timeout on slow connection", &auto_timeout)) {
+                    rss_host->set_auto_timeout_enabled(auto_timeout);
+                }
+                if (auto_timeout) {
+                    ImGui::TextDisabled("Adjusts timeout dynamically (adds +20s per failure, up to 180s).");
+                }
+            }
         });
     }
 

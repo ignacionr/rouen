@@ -66,6 +66,12 @@ namespace media::rss
                     "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
                 );
                 
+                RSS_DEBUG("Creating settings table...");
+                db_.ensure_table("settings",
+                    "key TEXT PRIMARY KEY, "
+                    "value TEXT"
+                );
+
                 // Create indexes for faster lookups
                 RSS_DEBUG("Creating indexes...");
                 db_.exec("CREATE INDEX IF NOT EXISTS idx_item_feed_id ON item(feed_id)");
@@ -283,6 +289,29 @@ namespace media::rss
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error in scan_items: {}", e.what());
             }
+        }
+
+        void set_setting(const std::string& key, const std::string& value) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", {}, key, value);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in set_setting: {}", e.what());
+            }
+        }
+
+        std::string get_setting(const std::string& key, const std::string& default_value = "") {
+            std::lock_guard<std::mutex> lock(mutex_);
+            std::string result = default_value;
+            try {
+                db_.exec("SELECT value FROM settings WHERE key = ?", [&result](sqlite3_stmt* stmt) {
+                    const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    if (val) result = val;
+                }, key);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in get_setting: {}", e.what());
+            }
+            return result;
         }
 
         // Item-related methods are now in rss_item_repo

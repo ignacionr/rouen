@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -203,6 +204,21 @@ public:
     RSSHost() 
         : repo_(rouen::platform::get_user_data_path("rss.db").string())
     {
+        // Load settings from database
+        try {
+            std::string t_str = repo_.get_setting("timeout", "60");
+            timeout_s_ = std::stoi(t_str);
+        } catch (...) {
+            timeout_s_ = 60;
+        }
+        try {
+            std::string auto_str = repo_.get_setting("auto_timeout", "1");
+            auto_timeout_enabled_ = (auto_str == "1");
+        } catch (...) {
+            auto_timeout_enabled_ = true;
+        }
+        RSS_INFO_FMT("RSSHost loaded settings: timeout={}s, auto_timeout={}", timeout_s_, auto_timeout_enabled_ ? "true" : "false");
+
         RSS_INFO("RSSHost constructor starting...");
         // Load existing feeds but defer loading items until they're needed
         std::vector<std::string> urls;
@@ -244,6 +260,22 @@ public:
         RSS_INFO("RSSHost destructor starting...");
         fetch_thread_.request_stop();
         RSS_INFO("RSSHost destructor completed");
+    }
+
+    int get_timeout() const { return timeout_s_; }
+    void set_timeout(int t) {
+        timeout_s_ = std::clamp(t, 5, 300);
+        try {
+            repo_.set_setting("timeout", std::to_string(timeout_s_));
+        } catch (...) {}
+    }
+
+    bool is_auto_timeout_enabled() const { return auto_timeout_enabled_; }
+    void set_auto_timeout_enabled(bool enabled) {
+        auto_timeout_enabled_ = enabled;
+        try {
+            repo_.set_setting("auto_timeout", auto_timeout_enabled_ ? "1" : "0");
+        } catch (...) {}
     }
 
     /**
@@ -735,10 +767,28 @@ private:
     }
 
     // Fetch and parse a feed from a URL with improved error handling
-    static media::rss::feed getFeed(std::string_view url) {
+    media::rss::feed getFeed(std::string_view url) {
+        std::string url_str{url};
+        int failure_count = 0;
+        {
+            std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+            if (auto it = feed_failure_counts_.find(url_str); it != feed_failure_counts_.end()) {
+                failure_count = it->second;
+            }
+        }
+
+        int timeout = timeout_s_;
+        if (auto_timeout_enabled_) {
+            // Automatically increase timeout on failures, up to 180 seconds
+            timeout = std::min(timeout_s_ + failure_count * 20, 180);
+            if (failure_count > 0) {
+                RSS_WARN_FMT("Feed {} has failed {} times. Adjusting timeout to {}s (base: {}s)", url, failure_count, timeout, timeout_s_);
+            }
+        }
+
         try {
-            RSS_INFO_FMT("Starting feed fetch for URL: {}", url);
-            http::fetch fetch{60}; // Increase timeout for large feeds
+            RSS_INFO_FMT("Starting feed fetch for URL: {} (timeout: {}s)", url, timeout);
+            http::fetch fetch{static_cast<long>(timeout)}; // Dynamic timeout
             media::rss::feed parser;
             parser.source_link = url;
             
@@ -759,9 +809,20 @@ private:
                 }
             }
             
+            // Reset failure count on success
+            {
+                std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+                feed_failure_counts_[url_str] = 0;
+            }
+
             RSS_INFO_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
             return parser;
         } catch (const std::exception& e) {
+            // Increment failure count on failure
+            {
+                std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+                feed_failure_counts_[url_str] = failure_count + 1;
+            }
             RSS_ERROR_FMT("Failed to fetch feed {}: {}", url, e.what());
             throw std::runtime_error(std::string("Failed to fetch feed: ") + e.what());
         }
@@ -774,6 +835,11 @@ private:
     
     std::jthread fetch_thread_;
     media::rss::sqliterepo repo_;
+
+    int timeout_s_ = 60;
+    bool auto_timeout_enabled_ = true;
+    std::unordered_map<std::string, int> feed_failure_counts_;
+    std::mutex failure_counts_mutex_;
 };
 
 } // namespace rouen::hosts
