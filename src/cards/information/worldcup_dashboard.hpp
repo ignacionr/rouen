@@ -950,8 +950,8 @@ private:
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
         ImGui::PopFont();
-        
-        ImGui::SameLine(ImGui::GetWindowWidth() - 250);
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 250.0f * dpi_scale);
         if (speaking_match_key_ == match_key) {
             if (ImGui::SmallButton(std::format(ICON_MD_VOLUME_OFF " Stop##stop_{}", match_key).c_str())) {
                 stop_speaking();
@@ -963,7 +963,7 @@ private:
                 }
             }
         }
-        ImGui::SameLine(ImGui::GetWindowWidth() - 150);
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 150.0f * dpi_scale);
         if (is_fetching_comm) {
             ImGui::TextColored(colors[3], "%s Generating...", ICON_MD_AUTO_AWESOME);
             requested_fps = 60;
@@ -978,7 +978,7 @@ private:
 
         if (is_fetching_comm && !has_cache) {
             ImGui::Spacing();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 80);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 160.0f * dpi_scale) / 2.0f);
             
             const float RADIUS = 12.0f;
             ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1552,7 +1552,7 @@ private:
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "FIFA WORLD CUP 2026");
         ImGui::PopFont();
         
-        ImGui::SameLine(ImGui::GetWindowWidth() - 200.0f * dpi_scale);
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - 200.0f * dpi_scale);
         ImGui::TextColored(colors[5], "USA • CANADA • MEXICO");
         
         ImGui::EndChild();
@@ -1572,7 +1572,7 @@ private:
         if (!loaded) {
             float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
             ImGui::Spacing();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 120 * dpi_scale);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 240.0f * dpi_scale) / 2.0f);
             ImGui::TextColored(colors[6], "Loading live match schedule...");
             return;
         }
@@ -1785,13 +1785,13 @@ private:
             }
             
             ImGui::TextColored(colors[6], "  %s  %s", ICON_MD_PLACE, featured->venue.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 150 * dpi_scale);
+            ImGui::SameLine(card_width - 120.0f * dpi_scale);
             ImGui::TextColored(colors[5], "%s", featured->group.c_str());
 
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 210.0f * dpi_scale);
+            ImGui::SetCursorPosX(card_width - 190.0f * dpi_scale);
             
             std::string feat_btn_label = (expanded_match_key_ == feat_key) ? ICON_MD_AUTO_AWESOME " Collapse Commentary" : ICON_MD_AUTO_AWESOME " Match Commentary";
             if (ImGui::Button(std::format("{}##btn_feat", feat_btn_label).c_str(), ImVec2(190.0f * dpi_scale, 0.0f))) {
@@ -2005,6 +2005,7 @@ private:
     }
 
     void render_standings() {
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         bool loaded = false;
         std::unordered_map<std::string, std::vector<GroupTeam>> active_groups;
         {
@@ -2015,7 +2016,7 @@ private:
 
         if (!loaded) {
             ImGui::Spacing();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 120);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 240.0f * dpi_scale) / 2.0f);
             ImGui::TextColored(colors[6], "Loading group standings...");
             return;
         }
@@ -2025,7 +2026,7 @@ private:
             "Group G", "Group H", "Group I", "Group J", "Group K", "Group L"
         };
         
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150.0f * dpi_scale);
         ImGui::Combo("Select Group", &selected_group_idx, group_dropdown_names, IM_ARRAYSIZE(group_dropdown_names));
         ImGui::SameLine();
         if (ImGui::Button(ICON_MD_REFRESH " Refresh")) {
@@ -2044,14 +2045,14 @@ private:
             if (ImGui::BeginTable("table_standings", 8, 
                                   ImGuiTableFlags_BordersH | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_RowBg)) {
                 // Table Headers
-                ImGui::TableSetupColumn("Pos", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+                ImGui::TableSetupColumn("Pos", ImGuiTableColumnFlags_WidthFixed, 30.0f * dpi_scale);
                 ImGui::TableSetupColumn("Team", ImGuiTableColumnFlags_WidthStretch);
-                ImGui::TableSetupColumn("P", ImGuiTableColumnFlags_WidthFixed, 25.0f);
-                ImGui::TableSetupColumn("W", ImGuiTableColumnFlags_WidthFixed, 25.0f);
-                ImGui::TableSetupColumn("D", ImGuiTableColumnFlags_WidthFixed, 25.0f);
-                ImGui::TableSetupColumn("L", ImGuiTableColumnFlags_WidthFixed, 25.0f);
-                ImGui::TableSetupColumn("GD", ImGuiTableColumnFlags_WidthFixed, 30.0f);
-                ImGui::TableSetupColumn("PTS", ImGuiTableColumnFlags_WidthFixed, 35.0f);
+                ImGui::TableSetupColumn("P", ImGuiTableColumnFlags_WidthFixed, 25.0f * dpi_scale);
+                ImGui::TableSetupColumn("W", ImGuiTableColumnFlags_WidthFixed, 25.0f * dpi_scale);
+                ImGui::TableSetupColumn("D", ImGuiTableColumnFlags_WidthFixed, 25.0f * dpi_scale);
+                ImGui::TableSetupColumn("L", ImGuiTableColumnFlags_WidthFixed, 25.0f * dpi_scale);
+                ImGui::TableSetupColumn("GD", ImGuiTableColumnFlags_WidthFixed, 30.0f * dpi_scale);
+                ImGui::TableSetupColumn("PTS", ImGuiTableColumnFlags_WidthFixed, 35.0f * dpi_scale);
                 ImGui::TableHeadersRow();
 
                 int pos = 1;
@@ -2066,8 +2067,8 @@ private:
                     
                     ImGui::TableSetColumnIndex(1);
                     ImVec2 fpos = ImGui::GetCursorScreenPos();
-                    ImGui::Dummy(ImVec2(20, 13));
-                    flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(20, 13), t.code);
+                    ImGui::Dummy(ImVec2(20 * dpi_scale, 13 * dpi_scale));
+                    flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(20 * dpi_scale, 13 * dpi_scale), t.code);
                     ImGui::SameLine();
                     ImGui::TextColored(text_color, "%s", t.name.c_str());
                     ImGui::SameLine();
@@ -2140,7 +2141,7 @@ private:
             ImGui::BeginChild(s.name.c_str(), ImVec2(0, 100.0f * dpi_scale), true);
             
             ImGui::TextColored(colors[2], "%s", s.name.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 180 * dpi_scale);
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - 180.0f * dpi_scale);
             ImGui::TextColored(colors[5], "Capacity: %d", s.capacity);
             
             ImGui::Text("%s, %s", s.city.c_str(), s.country.c_str());
@@ -2167,7 +2168,7 @@ private:
         if (!loaded) {
             float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
             ImGui::Spacing();
-            ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 120 * dpi_scale);
+            ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 240.0f * dpi_scale) / 2.0f);
             ImGui::TextColored(colors[6], "Loading team tracker...");
             return;
         }
@@ -2247,7 +2248,7 @@ private:
             }
         }
         if (!sel_group.empty()) {
-            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f * dpi_scale);
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - 180.0f * dpi_scale);
             if (ImGui::SmallButton(std::format(ICON_MD_LAUNCH " Group {} Standings", sel_group).c_str())) {
                 int idx = std::toupper(static_cast<unsigned char>(sel_group[0])) - 'A';
                 if (idx >= 0 && idx < 12) {
@@ -2570,7 +2571,7 @@ private:
         }
 
         // Refresh/Reload button
-        ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 110.0f * dpi_scale);
+        ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - 110.0f * dpi_scale);
         if (ImGui::Button(std::format("{} Refresh", ICON_MD_REFRESH).c_str(), ImVec2(100.0f * dpi_scale, 0))) {
             fetch_team_players_async(team_code, team_name);
         }
@@ -2581,8 +2582,7 @@ private:
             return;
         }
 
-        // Render player cards
-        ImGui::BeginChild("PlayersScrollChild", ImVec2(0, 0), false);
+        // Render player cards (no scrollable child window so it expands naturally)
         for (size_t i = 0; i < cache.players.size(); ++i) {
             const auto& player = cache.players[i];
             
@@ -2712,7 +2712,7 @@ private:
 
         if (!cache.lineup.empty()) {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-            float lineup_box_height = std::min(300.0f * dpi_scale, static_cast<float>(cache.lineup.size()) * 26.0f * dpi_scale + 35.0f * dpi_scale);
+            float lineup_box_height = static_cast<float>(cache.lineup.size()) * 26.0f * dpi_scale + 35.0f * dpi_scale;
             ImGui::BeginChild("LineupChildBox", ImVec2(0, lineup_box_height), true);
             
             ImGui::Columns(3, "LineupColumns", false);
@@ -2761,7 +2761,6 @@ private:
             ImGui::TextColored(colors[5], "Q&A details not available.");
         }
 
-        ImGui::EndChild();
     }
 
     time_t get_match_utc_time(const std::string& local_date_str, const std::string& stadium_id) {
