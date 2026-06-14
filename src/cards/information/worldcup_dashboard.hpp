@@ -948,61 +948,44 @@ private:
         ImGui::Indent(8.0f); // Inner horizontal padding
 
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        if (ImGui::BeginTable("commentary_header_table", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("title", ImGuiTableColumnFlags_WidthStretch, 0.5f);
-            ImGui::TableSetupColumn("speak", ImGuiTableColumnFlags_WidthStretch, 0.25f);
-            ImGui::TableSetupColumn("refresh", ImGuiTableColumnFlags_WidthStretch, 0.25f);
-            ImGui::TableNextRow();
-            
-            ImGui::TableSetColumnIndex(0);
-            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-            ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
-            ImGui::PopFont();
-            
-            ImGui::TableSetColumnIndex(1);
-            bool has_speak_btn = false;
-            std::string speak_btn_label = "";
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
+        ImGui::PopFont();
+
+        std::string speak_label = (speaking_match_key_ == match_key) ? ICON_MD_VOLUME_OFF " Stop" : (has_cache && !is_fetching_comm ? ICON_MD_VOLUME_UP " Listen" : "");
+        std::string ref_label = is_fetching_comm ? ICON_MD_AUTO_AWESOME " Generating..." : ICON_MD_REFRESH " Refresh";
+        
+        float speak_w = speak_label.empty() ? 0.0f : (ImGui::CalcTextSize(speak_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f);
+        float ref_w = is_fetching_comm ? ImGui::CalcTextSize(ref_label.c_str()).x : (ImGui::CalcTextSize(ref_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f);
+        float total_buttons_w = speak_w + (speak_w > 0.0f ? ImGui::GetStyle().ItemSpacing.x : 0.0f) + ref_w;
+        
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > total_buttons_w) {
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - total_buttons_w - ImGui::GetStyle().WindowPadding.x);
+        } else {
+            ImGui::SameLine();
+        }
+        
+        if (!speak_label.empty()) {
             if (speaking_match_key_ == match_key) {
-                speak_btn_label = ICON_MD_VOLUME_OFF " Stop";
-                has_speak_btn = true;
-            } else if (has_cache && !is_fetching_comm) {
-                speak_btn_label = ICON_MD_VOLUME_UP " Listen";
-                has_speak_btn = true;
-            }
-            if (has_speak_btn) {
-                float btn_width = ImGui::CalcTextSize(speak_btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                float avail = ImGui::GetContentRegionAvail().x;
-                if (avail > btn_width) {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_width);
+                if (ImGui::SmallButton(std::format("{}##stop_{}", speak_label, match_key).c_str())) {
+                    stop_speaking();
                 }
-                if (speaking_match_key_ == match_key) {
-                    if (ImGui::SmallButton(std::format("{}##stop_{}", speak_btn_label, match_key).c_str())) {
-                        stop_speaking();
-                    }
-                } else {
-                    if (ImGui::SmallButton(std::format("{}##listen_{}", speak_btn_label, match_key).c_str())) {
-                        say_commentary_async(match_key, cache.text);
-                    }
-                }
-            }
-            
-            ImGui::TableSetColumnIndex(2);
-            std::string ref_label = is_fetching_comm ? ICON_MD_AUTO_AWESOME " Generating..." : ICON_MD_REFRESH " Refresh";
-            float ref_width = is_fetching_comm ? ImGui::CalcTextSize(ref_label.c_str()).x : (ImGui::CalcTextSize(ref_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f);
-            float avail = ImGui::GetContentRegionAvail().x;
-            if (avail > ref_width) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - ref_width);
-            }
-            if (is_fetching_comm) {
-                ImGui::TextColored(colors[3], "%s", ref_label.c_str());
-                requested_fps = 60;
             } else {
-                if (ImGui::SmallButton(ref_label.c_str())) {
-                    fetch_commentary_async(match_key, m);
+                if (ImGui::SmallButton(std::format("{}##listen_{}", speak_label, match_key).c_str())) {
+                    say_commentary_async(match_key, cache.text);
                 }
             }
-            
-            ImGui::EndTable();
+            ImGui::SameLine();
+        }
+        
+        if (is_fetching_comm) {
+            ImGui::TextColored(colors[3], "%s", ref_label.c_str());
+            requested_fps = 60;
+        } else {
+            if (ImGui::SmallButton(std::format("{}##ref_{}", ref_label, match_key).c_str())) {
+                fetch_commentary_async(match_key, m);
+            }
         }
 
         ImGui::Separator();
@@ -1577,31 +1560,23 @@ private:
         ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[0]);
         ImGui::BeginChild("HeaderBanner", ImVec2(0, 50.0f * dpi_scale), true, ImGuiWindowFlags_NoScrollbar);
         
-        if (ImGui::BeginTable("header_banner_table", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("title", ImGuiTableColumnFlags_WidthStretch, 0.6f);
-            ImGui::TableSetupColumn("hosts", ImGuiTableColumnFlags_WidthStretch, 0.4f);
-            ImGui::TableNextRow();
-            
-            ImGui::TableSetColumnIndex(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(colors[2], "  %s", ICON_MD_EMOJI_EVENTS);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(colors[2], "  %s", ICON_MD_EMOJI_EVENTS);
+        ImGui::SameLine();
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "FIFA WORLD CUP 2026");
+        ImGui::PopFont();
+        
+        std::string hosts_str = "USA • CANADA • MEXICO";
+        float txt_width = ImGui::CalcTextSize(hosts_str.c_str()).x;
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > txt_width + ImGui::GetStyle().ItemSpacing.x) {
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - txt_width - ImGui::GetStyle().WindowPadding.x);
+        } else {
             ImGui::SameLine();
-            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "FIFA WORLD CUP 2026");
-            ImGui::PopFont();
-            
-            ImGui::TableSetColumnIndex(1);
-            std::string hosts_str = "USA • CANADA • MEXICO";
-            float txt_width = ImGui::CalcTextSize(hosts_str.c_str()).x;
-            float avail = ImGui::GetContentRegionAvail().x;
-            if (avail > txt_width) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - txt_width);
-            }
-            ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(colors[5], "%s", hosts_str.c_str());
-            
-            ImGui::EndTable();
         }
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(colors[5], "%s", hosts_str.c_str());
         
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -1832,35 +1807,26 @@ private:
                 ImGui::Spacing();
             }
             
-            if (ImGui::BeginTable("featured_match_details", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-                ImGui::TableSetupColumn("venue", ImGuiTableColumnFlags_WidthStretch, 0.7f);
-                ImGui::TableSetupColumn("group", ImGuiTableColumnFlags_WidthStretch, 0.3f);
-                ImGui::TableNextRow();
-                
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(colors[6], "  %s  %s", ICON_MD_PLACE, featured->venue.c_str());
-                
-                ImGui::TableSetColumnIndex(1);
-                std::string grp_str = featured->group;
-                float txt_width = ImGui::CalcTextSize(grp_str.c_str()).x;
-                float avail = ImGui::GetContentRegionAvail().x;
-                if (avail > txt_width) {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - txt_width);
-                }
-                ImGui::TextColored(colors[5], "%s", grp_str.c_str());
-                
-                ImGui::EndTable();
+            ImGui::TextColored(colors[6], "  %s  %s", ICON_MD_PLACE, featured->venue.c_str());
+            std::string grp_str = featured->group;
+            float txt_width = ImGui::CalcTextSize(grp_str.c_str()).x;
+            float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > txt_width + ImGui::GetStyle().ItemSpacing.x) {
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - txt_width - ImGui::GetStyle().WindowPadding.x);
+            } else {
+                ImGui::SameLine();
             }
+            ImGui::TextColored(colors[5], "%s", grp_str.c_str());
 
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
             
             std::string feat_btn_label = (expanded_match_key_ == feat_key) ? ICON_MD_AUTO_AWESOME " Collapse Commentary" : ICON_MD_AUTO_AWESOME " Match Commentary";
-            float button_width = 190.0f * dpi_scale;
+            float button_width = ImGui::CalcTextSize(feat_btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float avail_w = ImGui::GetContentRegionAvail().x;
             if (avail_w > button_width) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - button_width);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - button_width - ImGui::GetStyle().WindowPadding.x);
             }
             if (ImGui::Button(std::format("{}##btn_feat", feat_btn_label).c_str(), ImVec2(button_width, 0.0f))) {
                 handle_commentary_click(feat_key, *featured);
@@ -2044,10 +2010,10 @@ private:
             // Commentary Button inside the match card
             ImGui::Spacing();
             std::string btn_label = (expanded_match_key_ == m_flash_key) ? ICON_MD_AUTO_AWESOME " Collapse" : ICON_MD_AUTO_AWESOME " Commentary";
-            float button_width = 150.0f * dpi_scale;
+            float button_width = ImGui::CalcTextSize(btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float avail_w = ImGui::GetContentRegionAvail().x;
             if (avail_w > button_width) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - button_width);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - button_width - ImGui::GetStyle().WindowPadding.x);
             }
             if (ImGui::Button(std::format("{}##btn_{}_{}", btn_label, m.home_code, m.away_code).c_str(), ImVec2(button_width, 0.0f))) {
                 handle_commentary_click(m_flash_key, m);
@@ -2212,25 +2178,16 @@ private:
             ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
             ImGui::BeginChild(s.name.c_str(), ImVec2(0, 100.0f * dpi_scale), true);
             
-            if (ImGui::BeginTable("stadium_row", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-                ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 0.7f);
-                ImGui::TableSetupColumn("capacity", ImGuiTableColumnFlags_WidthStretch, 0.3f);
-                ImGui::TableNextRow();
-                
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(colors[2], "%s", s.name.c_str());
-                
-                ImGui::TableSetColumnIndex(1);
-                std::string cap_str = std::format("Capacity: {}", s.capacity);
-                float text_width = ImGui::CalcTextSize(cap_str.c_str()).x;
-                float avail = ImGui::GetContentRegionAvail().x;
-                if (avail > text_width) {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - text_width);
-                }
-                ImGui::TextColored(colors[5], "%s", cap_str.c_str());
-                
-                ImGui::EndTable();
+            ImGui::TextColored(colors[2], "%s", s.name.c_str());
+            std::string cap_str = std::format("Capacity: {}", s.capacity);
+            float text_width = ImGui::CalcTextSize(cap_str.c_str()).x;
+            float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > text_width + ImGui::GetStyle().ItemSpacing.x) {
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - text_width - ImGui::GetStyle().WindowPadding.x);
+            } else {
+                ImGui::SameLine();
             }
+            ImGui::TextColored(colors[5], "%s", cap_str.c_str());
             
             ImGui::Text("%s, %s", s.city.c_str(), s.country.c_str());
             ImGui::TextColored(colors[6], "%s", s.highlight.c_str());
@@ -2318,47 +2275,39 @@ private:
         std::string sel_code = sorted_teams[sel_u_idx].first;
         std::string sel_name = sorted_teams[sel_u_idx].second;
 
-        if (ImGui::BeginTable("team_tracker_header", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-            ImGui::TableSetupColumn("team", ImGuiTableColumnFlags_WidthStretch, 0.6f);
-            ImGui::TableSetupColumn("group_button", ImGuiTableColumnFlags_WidthStretch, 0.4f);
-            ImGui::TableNextRow();
-            
-            ImGui::TableSetColumnIndex(0);
-            // Draw selected team flag next to name
-            ImVec2 flag_pos = ImGui::GetCursorScreenPos();
-            ImGui::Dummy(ImVec2(36 * dpi_scale, 24 * dpi_scale));
-            flags::draw_flag(ImGui::GetWindowDrawList(), flag_pos, ImVec2(36 * dpi_scale, 24 * dpi_scale), sel_code);
-            ImGui::SameLine();
-            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-            ImGui::Text("%s", sel_name.c_str());
-            ImGui::PopFont();
-            
-            ImGui::TableSetColumnIndex(1);
-            // Find selected team's group
-            std::string sel_group = "";
-            for (const auto& [tid, t] : display_teams) {
-                if (t.code == sel_code) {
-                    sel_group = t.group;
-                    break;
+        // Draw selected team flag next to name
+        ImVec2 flag_pos = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(36 * dpi_scale, 24 * dpi_scale));
+        flags::draw_flag(ImGui::GetWindowDrawList(), flag_pos, ImVec2(36 * dpi_scale, 24 * dpi_scale), sel_code);
+        ImGui::SameLine();
+        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+        ImGui::Text("%s", sel_name.c_str());
+        ImGui::PopFont();
+        
+        // Find selected team's group
+        std::string sel_group = "";
+        for (const auto& [tid, t] : display_teams) {
+            if (t.code == sel_code) {
+                sel_group = t.group;
+                break;
+            }
+        }
+        if (!sel_group.empty()) {
+            std::string btn_label = std::format(ICON_MD_LAUNCH " Group {} Standings", sel_group);
+            float btn_width = ImGui::CalcTextSize(btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > btn_width + ImGui::GetStyle().ItemSpacing.x) {
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - btn_width - ImGui::GetStyle().WindowPadding.x);
+            } else {
+                ImGui::SameLine();
+            }
+            if (ImGui::SmallButton(btn_label.c_str())) {
+                int idx = std::toupper(static_cast<unsigned char>(sel_group[0])) - 'A';
+                if (idx >= 0 && idx < 12) {
+                    selected_group_idx = idx;
+                    set_standings_selected = true;
                 }
             }
-            if (!sel_group.empty()) {
-                std::string btn_label = std::format(ICON_MD_LAUNCH " Group {} Standings", sel_group);
-                float btn_width = ImGui::CalcTextSize(btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                float avail = ImGui::GetContentRegionAvail().x;
-                if (avail > btn_width) {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_width);
-                }
-                if (ImGui::SmallButton(btn_label.c_str())) {
-                    int idx = std::toupper(static_cast<unsigned char>(sel_group[0])) - 'A';
-                    if (idx >= 0 && idx < 12) {
-                        selected_group_idx = idx;
-                        set_standings_selected = true;
-                    }
-                }
-            }
-            
-            ImGui::EndTable();
         }
 
         ImGui::Spacing();
@@ -2428,26 +2377,17 @@ private:
             ImGui::BeginGroup();
             
             // Match detail header
-            if (ImGui::BeginTable("next_match_header_table", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody)) {
-                ImGui::TableSetupColumn("details", ImGuiTableColumnFlags_WidthStretch, 0.7f);
-                ImGui::TableSetupColumn("view_match", ImGuiTableColumnFlags_WidthStretch, 0.3f);
-                ImGui::TableNextRow();
-                
-                ImGui::TableSetColumnIndex(0);
-                ImGui::TextColored(colors[5], "%s - %s", next_match->group.c_str(), next_match->venue.c_str());
-                
-                ImGui::TableSetColumnIndex(1);
-                std::string view_btn_label = std::format(ICON_MD_LAUNCH " View Match##btn_next_{}", next_key);
-                float btn_width = ImGui::CalcTextSize(view_btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                float avail = ImGui::GetContentRegionAvail().x;
-                if (avail > btn_width) {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - btn_width);
-                }
-                if (ImGui::SmallButton(view_btn_label.c_str())) {
-                    "create_card"_sfn(std::format("worldcup:{}", next_key));
-                }
-                
-                ImGui::EndTable();
+            ImGui::TextColored(colors[5], "%s - %s", next_match->group.c_str(), next_match->venue.c_str());
+            std::string view_btn_label = std::format(ICON_MD_LAUNCH " View Match##btn_next_{}", next_key);
+            float btn_width = ImGui::CalcTextSize(view_btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            float avail = ImGui::GetContentRegionAvail().x;
+            if (avail > btn_width + ImGui::GetStyle().ItemSpacing.x) {
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - btn_width - ImGui::GetStyle().WindowPadding.x);
+            } else {
+                ImGui::SameLine();
+            }
+            if (ImGui::SmallButton(view_btn_label.c_str())) {
+                "create_card"_sfn(std::format("worldcup:{}", next_key));
             }
             ImGui::Separator();
             ImGui::Spacing();
@@ -2690,12 +2630,13 @@ private:
         }
 
         // Refresh/Reload button
-        float const btn_width = 100.0f * dpi_scale;
-        float const avail_w = ImGui::GetContentRegionAvail().x;
+        std::string btn_label = std::format("{} Refresh", ICON_MD_REFRESH);
+        float btn_width = ImGui::CalcTextSize(btn_label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        float avail_w = ImGui::GetContentRegionAvail().x;
         if (avail_w > btn_width) {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - btn_width);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail_w - btn_width - ImGui::GetStyle().WindowPadding.x);
         }
-        if (ImGui::Button(std::format("{} Refresh", ICON_MD_REFRESH).c_str(), ImVec2(btn_width, 0))) {
+        if (ImGui::Button(btn_label.c_str())) {
             fetch_team_players_async(team_code, team_name);
         }
         ImGui::Spacing();
