@@ -2782,10 +2782,17 @@ private:
         ImGui::Spacing();
 
         if (!cache.lineup.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-            float lineup_box_height = static_cast<float>(cache.lineup.size()) * 26.0f * dpi_scale + 35.0f * dpi_scale;
-            ImGui::BeginChild("LineupChildBox", ImVec2(0, lineup_box_height), true);
-            
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
+
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
+            ImGui::Indent(8.0f * dpi_scale);
+            ImGui::BeginGroup();
+
             ImGui::Columns(3, "LineupColumns", false);
             ImGui::SetColumnWidth(0, 50.0f * dpi_scale);   // Jersey number
             ImGui::SetColumnWidth(1, 150.0f * dpi_scale);  // Position
@@ -2803,8 +2810,20 @@ private:
             }
 
             ImGui::Columns(1);
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
+            ImGui::EndGroup();
+            ImGui::Unindent(8.0f * dpi_scale);
+
+            ImVec2 group_max = ImGui::GetItemRectMax();
+            float card_bottom = group_max.y + 6.0f * dpi_scale;
+
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+            draw_list->ChannelsMerge();
+            
+            // Advance cursor past the card box
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
         } else {
             ImGui::TextColored(colors[5], "Lineup details not available.");
         }
