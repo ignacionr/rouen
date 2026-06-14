@@ -306,8 +306,7 @@ public:
      * Get all feeds
      */
     auto feeds() const {
-        // Need to use const_cast because we need to lock the mutex in a const method
-        std::lock_guard<std::mutex> feeds_lock(*const_cast<std::mutex*>(&feeds_mutex_));
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
         return feeds_;
     }
 
@@ -831,15 +830,17 @@ private:
 private:
     // Thread-safe collection of feeds using mutex instead of atomic
     std::vector<std::shared_ptr<media::rss::feed>> feeds_;
-    std::mutex feeds_mutex_;
+    mutable std::mutex feeds_mutex_;
     
-    std::jthread fetch_thread_;
     media::rss::sqliterepo repo_;
 
     int timeout_s_ = 60;
     bool auto_timeout_enabled_ = true;
     std::unordered_map<std::string, int> feed_failure_counts_;
     std::mutex failure_counts_mutex_;
+    
+    // Declared last so it is stopped/joined first during destruction
+    std::jthread fetch_thread_;
 };
 
 } // namespace rouen::hosts
