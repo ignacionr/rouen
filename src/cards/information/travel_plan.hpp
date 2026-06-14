@@ -68,6 +68,14 @@ public:
     ~travel_plan() override = default;
 
     bool render() override {
+        if (travel_host) {
+            auto latest = travel_host->getPlan(plan_id);
+            if (latest) {
+                plan_ptr = latest;
+                name(std::format("{} - Trip", plan_ptr->title));
+            }
+        }
+
         return render_window([this]() {            
             // Plan details section
             render_plan_details();
