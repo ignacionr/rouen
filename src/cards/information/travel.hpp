@@ -44,7 +44,7 @@ public:
         
         name("Travel Plans");
         requested_fps = 5;  // Higher FPS for smoother loading states
-        width = 400.0f;
+        width = 480.0f;
         
         DB_INFO("Travel card: Getting TravelHost");
         
@@ -545,7 +545,11 @@ public:
                             }
                             
                             // Display timeframe header
-                            ImGui::TextColored(colors[3], "%s", timeframe.c_str());
+                            ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+                            ImGui::TextColored(colors[2], "%s Trips", timeframe.c_str());
+                            ImGui::PopFont();
+                            ImGui::Separator();
+                            ImGui::Spacing();
                             
                             // Display all plans in this timeframe
                             for (const auto& plan : plans) {
@@ -555,70 +559,106 @@ public:
                                 
                                 ImGui::PushID(static_cast<int>(plan->id));
                                 
-                                ImGui::BeginGroup();
-                                
-                                // Plan title
-                                std::string title = plan->title;
-                                
-                                // Limit title length and add ellipsis if too long
-                                if (title.length() > 40) {
-                                    title = title.substr(0, 37) + "...";
-                                }
-                                
-                                if (ImGui::Selectable(title.c_str(), false)) {
-                                    // Open travel plan details in a new card
-                                    DB_INFO_FMT("Travel card: Opening plan {}", plan->id);
-                                    std::string plan_uri = std::format("travel-plan:{}", plan->id);
-                                    "create_card"_sfn(plan_uri);
-                                }
-                                
-                                // Date range
-                                ImGui::SameLine();
-                                ImGui::TextColored(
-                                    ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
-                                    "%s - %s", 
-                                    format_date(plan->start_date).c_str(),
-                                    format_date(plan->end_date).c_str()
-                                );
-                                
-                                // Status
+                                // Set up status color
                                 ImVec4 status_color;
                                 switch (plan->current_status) {
                                     case media::travel::plan::status::planning:
-                                        status_color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f); // Gray
+                                        status_color = ImVec4(0.9f, 0.6f, 0.2f, 1.0f); // Warm Orange
                                         break;
                                     case media::travel::plan::status::booked:
-                                        status_color = ImVec4(0.4f, 0.4f, 0.8f, 1.0f); // Blue
+                                        status_color = ImVec4(0.2f, 0.5f, 0.9f, 1.0f); // Bright Blue
                                         break;
                                     case media::travel::plan::status::active:
-                                        status_color = ImVec4(0.4f, 0.8f, 0.4f, 1.0f); // Green
+                                        status_color = ImVec4(0.2f, 0.8f, 0.4f, 1.0f); // Green
                                         break;
                                     case media::travel::plan::status::completed:
-                                        status_color = ImVec4(0.8f, 0.8f, 0.4f, 1.0f); // Yellow
+                                        status_color = ImVec4(0.6f, 0.4f, 0.8f, 1.0f); // Purple
                                         break;
                                     case media::travel::plan::status::cancelled:
-                                        status_color = ImVec4(0.8f, 0.4f, 0.4f, 1.0f); // Red
+                                        status_color = ImVec4(0.9f, 0.3f, 0.3f, 1.0f); // Red
                                         break;
                                 }
                                 
-                                ImGui::SameLine(ImGui::GetWindowWidth() - 100);
-                                ImGui::TextColored(
-                                    status_color,
-                                    "%s", media::travel::plan::status_to_string(plan->current_status).c_str()
-                                );
+                                // Draw a nice styled child panel for the plan card
+                                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.14f, 0.18f, 0.7f));
+                                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+                                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
                                 
-                                // Delete button
-                                ImGui::SameLine(ImGui::GetWindowWidth() - 30);
-                                if (ImGui::SmallButton("×")) {
+                                float card_height = 85.0f;
+                                ImGui::BeginChild(std::format("plan_card_{}", plan->id).c_str(), ImVec2(0, card_height), true, ImGuiWindowFlags_NoScrollbar);
+                                
+                                // Left status accent line using draw list
+                                ImVec2 w_pos = ImGui::GetWindowPos();
+                                ImVec2 line_start = ImVec2(w_pos.x + 2.0f, w_pos.y + 4.0f);
+                                ImVec2 line_end = ImVec2(w_pos.x + 2.0f, w_pos.y + card_height - 4.0f);
+                                ImGui::GetWindowDrawList()->AddLine(line_start, line_end, ImGui::GetColorU32(status_color), 4.0f);
+                                
+                                // Plan Title (bold font/large)
+                                ImGui::Indent(4.0f);
+                                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+                                std::string title = plan->title;
+                                if (title.length() > 28) {
+                                    title = title.substr(0, 25) + "...";
+                                }
+                                if (ImGui::Selectable(title.c_str(), false, ImGuiSelectableFlags_None, ImVec2(240.0f, 0.0f))) {
+                                    std::string plan_uri = std::format("travel-plan:{}", plan->id);
+                                    "create_card"_sfn(plan_uri);
+                                }
+                                if (ImGui::IsItemHovered()) {
+                                    ImGui::SetTooltip("Open trip details");
+                                }
+                                ImGui::PopFont();
+                                
+                                // Status badge
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f);
+                                ImGui::TextColored(status_color, "%s %s", ICON_MD_FIBER_MANUAL_RECORD, media::travel::plan::status_to_string(plan->current_status).c_str());
+                                
+                                // Delete button in top-right
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 30.0f);
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.1f, 0.1f, 0.3f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 0.5f));
+                                if (ImGui::SmallButton(std::format(ICON_MD_DELETE "##del_{}", plan->id).c_str())) {
                                     plans_to_delete.push_back(plan->id);
                                 }
+                                ImGui::PopStyleColor(3);
                                 
-                                ImGui::EndGroup();
+                                // Date Range under title
+                                ImGui::Spacing();
+                                ImGui::TextColored(colors[5], "%s %s - %s", ICON_MD_DATE_RANGE, format_date(plan->start_date).c_str(), format_date(plan->end_date).c_str());
                                 
+                                // Budget Progress Bar (Allocated budget vs Total Budget)
+                                double allocated_budget = 0.0;
+                                for (const auto& dest : plan->destinations) {
+                                    allocated_budget += dest.budget;
+                                }
+                                
+                                float budget_fraction = 0.0f;
+                                if (plan->total_budget > 0.0) {
+                                    budget_fraction = static_cast<float>(allocated_budget / plan->total_budget);
+                                }
+                                
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 225.0f);
+                                ImGui::TextColored(colors[5], "Allocated: $%.0f/$%.0f", allocated_budget, plan->total_budget);
+                                
+                                ImGui::SameLine(ImGui::GetWindowWidth() - 245.0f);
+                                ImGui::SetNextItemWidth(120.0f);
+                                ImVec4 progress_bar_color = (allocated_budget > plan->total_budget) ? colors[4] : colors[3];
+                                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, progress_bar_color);
+                                ImGui::ProgressBar(budget_fraction, ImVec2(100.0f, 6.0f), "");
+                                ImGui::PopStyleColor();
+                                if (ImGui::IsItemHovered()) {
+                                    ImGui::SetTooltip("Budget Allocated: %.1f%%", static_cast<double>(budget_fraction * 100.0f));
+                                }
+                                
+                                ImGui::Unindent(4.0f);
+                                ImGui::EndChild();
+                                ImGui::PopStyleVar(2);
+                                ImGui::PopStyleColor();
+                                
+                                ImGui::Spacing();
                                 ImGui::PopID();
                             }
-                            
-                            ImGui::Separator();
                         }
                         
                         // Process deletion requests
