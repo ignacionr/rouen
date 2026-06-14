@@ -59,6 +59,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **Email Client**: Connect to IMAP/SMTP servers to read and compose emails with secure SSL/TLS support
 - **Weather Info**: Check current conditions and forecasts for any location
 - **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader and right-click clipboard functionality
+- **Markdown Notes**: Personal markdown knowledge base with wiki-style links (`[[note]]`), backlinks, tags, and GitHub repository synchronization
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
 - **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video support
 
@@ -208,6 +209,7 @@ The application is built around a card-based UI where each functional component 
 - `grok` - AI chat assistant with multi-provider support
 - `rss` - RSS feed reader
 - `travel` - Travel planner
+- `notes` - Markdown notes editor with backlinks and sync
 - `weather` - Weather information
 - `mail` - Email client with SSL/TLS support
 - `radio` - Internet radio player
@@ -823,6 +825,7 @@ All builds enforce C++23 standards with strict compiler warnings:
 - **Menu Card**: Access the menu launcher to browse available cards
 - **Command Palette**: Quick search and creation of cards
 - **URI-based Creation**: Direct card creation using URI patterns (e.g., `dir:/path/to/folder`)
+  - Markdown notes URIs: `notes:` (main interface) and `notes:<note-name>` (open/create specific note)
 
 #### Card Interactions
 - **Focus Management**: Click cards to focus, use Tab to cycle through cards

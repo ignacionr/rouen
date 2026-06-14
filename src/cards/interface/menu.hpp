@@ -68,6 +68,7 @@ namespace rouen::cards {
                         {"AI Chat", []() { "create_card"_sfn("ai-chat"); }},
                         {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
                         {"Travel Plans", []() { "create_card"_sfn("travel"); }},
+                        {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
                         {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                         {"Email", []() { "create_card"_sfn("mail"); }},
                         {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},

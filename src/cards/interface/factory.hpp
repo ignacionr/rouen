@@ -20,6 +20,7 @@
 #include "../information/calendar/calendar.hpp"
 #include "../information/grok.hpp"
 #include "../information/mail/mail.hpp"
+#include "../information/markdown_notes.hpp"
 #include "../information/rss.hpp"
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
@@ -206,6 +207,10 @@ namespace rouen::cards {
                 
                 instance.emplace("weather", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<weather>(uri);
+                });
+
+                instance.emplace("notes", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<markdown_notes>(locator);
                 });
                 
                 // Explicitly register Jira cards here rather than relying solely on the registrar
