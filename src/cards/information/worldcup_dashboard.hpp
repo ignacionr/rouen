@@ -239,9 +239,6 @@ public:
         requested_fps = any_flash_active ? 60 : 1;
         
         return render_window([this]() {
-            // Header decoration
-            draw_header_banner();
-            
             ImGui::Spacing();
             
             if (ImGui::BeginTabBar("WorldCupTabs", ImGuiTabBarFlags_None)) {
@@ -1555,32 +1552,6 @@ private:
         }).detach();
     }
 
-    void draw_header_banner() {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[0]);
-        ImGui::BeginChild("HeaderBanner", ImVec2(0, 50.0f * dpi_scale), true, ImGuiWindowFlags_NoScrollbar);
-        
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors[2], "  %s", ICON_MD_EMOJI_EVENTS);
-        ImGui::SameLine();
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "FIFA WORLD CUP 2026");
-        ImGui::PopFont();
-        
-        std::string hosts_str = "USA • CANADA • MEXICO";
-        float txt_width = ImGui::CalcTextSize(hosts_str.c_str()).x;
-        float avail = ImGui::GetContentRegionAvail().x;
-        if (avail > txt_width + ImGui::GetStyle().ItemSpacing.x) {
-            ImGui::SameLine(ImGui::GetContentRegionMax().x - txt_width - ImGui::GetStyle().WindowPadding.x);
-        } else {
-            ImGui::SameLine();
-        }
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(colors[5], "%s", hosts_str.c_str());
-        
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-    }
 
     void render_match_center() {
         // Grab current matches list thread-safely
@@ -2652,13 +2623,33 @@ private:
             
             // Check if this is an error node
             if (player.position == "System Error") {
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-                ImGui::BeginChild(std::format("err_card_{}", i).c_str(), ImVec2(0, 70.0f * dpi_scale), true);
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                ImVec2 start_pos = ImGui::GetCursorScreenPos();
+                float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
+
+                draw_list->ChannelsSplit(2);
+                draw_list->ChannelsSetCurrent(1); // Foreground/text
+
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
+                ImGui::Indent(8.0f * dpi_scale);
+                ImGui::BeginGroup();
+                
                 ImGui::TextColored(colors[4], "%s %s", ICON_MD_ERROR, player.name.c_str());
                 ImGui::TextWrapped("%s", player.comment.c_str());
-                ImGui::EndChild();
-                ImGui::PopStyleColor();
-                ImGui::Spacing();
+
+                ImGui::EndGroup();
+                ImGui::Unindent(8.0f * dpi_scale);
+
+                ImVec2 group_max = ImGui::GetItemRectMax();
+                float card_bottom = group_max.y + 6.0f * dpi_scale;
+
+                draw_list->ChannelsSetCurrent(0); // Background
+                draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
+                draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+                draw_list->ChannelsMerge();
+                
+                ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
                 continue;
             }
 
@@ -2667,8 +2658,16 @@ private:
                 fetch_player_photo_async(team_code, team_name, i, player.name);
             }
 
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-            ImGui::BeginChild(std::format("player_card_{}", i).c_str(), ImVec2(0, 100.0f * dpi_scale), true);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
+
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
+            ImGui::Indent(8.0f * dpi_scale);
+            ImGui::BeginGroup();
 
             // Columns layout for player image, details and description
             ImGui::Columns(2, nullptr, false);
@@ -2690,15 +2689,12 @@ private:
                 } else {
                     int w = 0, h = 0;
                     player_tex = image_cache->getTexture(renderer, player.photo_url, w, h);
-                    // Store the result, even if it is nullptr (failed), to avoid retrying every frame!
                     player_textures_[player.photo_url] = {player_tex, w, h};
                     tex_w = w;
                     tex_h = h;
                 }
             }
 
-            ImDrawList* draw_list = ImGui::GetWindowDrawList();
-            
             if (player_tex) {
                 // Draw the actual photo centered and cropped to fill!
                 ImGui::SetCursorScreenPos(img_pos);
@@ -2762,9 +2758,20 @@ private:
             ImGui::TextWrapped("%s", player.comment.c_str());
 
             ImGui::Columns(1);
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
+            ImGui::EndGroup();
+            ImGui::Unindent(8.0f * dpi_scale);
+
+            ImVec2 group_max = ImGui::GetItemRectMax();
+            float card_bottom = std::max(group_max.y + 6.0f * dpi_scale, start_pos.y + 82.0f * dpi_scale);
+
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+            draw_list->ChannelsMerge();
+            
+            // Advance cursor past the card box
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
         }
 
         // 2. Starting XI Lineup
