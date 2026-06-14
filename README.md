@@ -12,7 +12,7 @@ A modern, card-based productivi### Information & Communication
   - **Enhanced Content Processing**: Intelligently processes `content:encoded` sections for rich media content (optimized for RT.com and similar feeds)
   - **Right-click Context Menu**: Right-click on any feed to copy feed URL or title to clipboard
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
-- **Radio Player**: Stream internet radio with MPV-based audio playback, pause/stop controls, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
+- **Radio Player**: Stream internet radio with MPV-based audio playback, pause/stop controls, volume control, and video support.
 
 ![Rouen Dashboard](img/screenshot.png)
 
@@ -69,7 +69,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 
 ### Games & Entertainment
 - **Chess Replay**: Advanced chess game analysis with PGN support, AI-powered commentary, and strategic insights
-- **Media Player**: Robust audio/video playback with MPV backend, streaming support, and network optimization
+- **Media Player**: Robust audio/video playback with MPV backend, pause/resume controls, streaming support, and network optimization
 
 ### System & Configuration
 - **Settings Card**: Centralized configuration management with category-based organization, search filtering, and secure handling of sensitive data
