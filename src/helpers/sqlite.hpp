@@ -75,7 +75,7 @@ namespace hosting::db
         void close()
         {
             DB_DEBUG_FMT("Acquiring lock to close DB: {}", db_path_);
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
             DB_DEBUG_FMT("Lock acquired, closing DB: {}", db_path_);
             if (db_)
             {
@@ -87,7 +87,7 @@ namespace hosting::db
 
         void exec(const std::string &sql) {
             DB_TRACE_FMT("Acquiring lock for exec SQL on DB {}: {}...", db_path_, sql.substr(0, 40));
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
             DB_TRACE_FMT("Lock acquired, executing SQL on {}", db_path_);
             
             // Retry logic for busy database (5 retries with increasing backoff)
@@ -118,7 +118,7 @@ namespace hosting::db
         template <typename... Args>
         void exec(const std::string &sql, stmt_callback_t callback, Args... args) {
             DB_TRACE_FMT("Acquiring lock for exec SQL with callback on DB {}: {}...", db_path_, sql.substr(0, 40));
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
             DB_TRACE_FMT("Lock acquired, preparing statement for SQL on {}", db_path_);
             
             sqlite3_stmt *stmt = nullptr;
@@ -185,7 +185,7 @@ namespace hosting::db
         }
 
         long long last_insert_rowid() const {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
             return sqlite3_last_insert_rowid(db_);
         }
         
@@ -216,7 +216,7 @@ namespace hosting::db
         }
 
         sqlite3 *db_ {nullptr};
-        mutable std::mutex mutex_;  // Protect concurrent access
+        mutable std::recursive_mutex mutex_;  // Protect concurrent access
         std::string db_path_;       // Keep path for debug info
     };
 }

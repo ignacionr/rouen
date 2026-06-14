@@ -60,27 +60,30 @@ public:
             DB_INFO("TravelHost: Loading plans from database asynchronously");
             
             // Try to catch any specific issues during the scan_plans call
+            std::vector<long long> plan_ids;
             try {
-                repo_.scan_plans([this, &new_plans](long long id, const char* , const char* , 
+                repo_.scan_plans([&plan_ids](long long id, const char* , const char* , 
                                  const char* , const char* ) {
-                    DB_INFO_FMT("TravelHost: Loading plan {} from database", id);
-                    
-                    try {
-                        auto plan = std::make_shared<media::travel::plan>();
-                        if (repo_.get_plan(id, *plan)) {
-                            new_plans.push_back(plan);
-                        } else {
-                            DB_WARN_FMT("TravelHost: Failed to load plan {} details", id);
-                        }
-                    } catch (const std::exception& e) {
-                        DB_ERROR_FMT("TravelHost: Exception loading plan {}: {}", id, e.what());
-                    }
+                    plan_ids.push_back(id);
                 });
-                
-                DB_INFO_FMT("TravelHost: Loaded {} plans during scan", new_plans.size());
             } catch (const std::exception& e) {
                 DB_ERROR_FMT("TravelHost: Exception during scan_plans: {}", e.what());
             }
+
+            for (long long id : plan_ids) {
+                DB_INFO_FMT("TravelHost: Loading plan {} from database", id);
+                try {
+                    auto plan = std::make_shared<media::travel::plan>();
+                    if (repo_.get_plan(id, *plan)) {
+                        new_plans.push_back(plan);
+                    } else {
+                        DB_WARN_FMT("TravelHost: Failed to load plan {} details", id);
+                    }
+                } catch (const std::exception& e) {
+                    DB_ERROR_FMT("TravelHost: Exception loading plan {}: {}", id, e.what());
+                }
+            }
+            DB_INFO_FMT("TravelHost: Loaded {} plans", new_plans.size());
             
             // Update the travel plans vector
             {
@@ -318,13 +321,18 @@ public:
             
             // Load plans from the database
             DB_INFO("TravelHost: Loading plans from database for refresh");
-            repo_.scan_plans([this, &new_plans](long long id, const char* , const char* , 
+            std::vector<long long> plan_ids;
+            repo_.scan_plans([&plan_ids](long long id, const char* , const char* , 
                              const char* , const char* ) {
+                plan_ids.push_back(id);
+            });
+
+            for (long long id : plan_ids) {
                 DB_INFO_FMT("TravelHost: Loading plan {} from database", id);
                 auto plan = std::make_shared<media::travel::plan>();
                 repo_.get_plan(id, *plan);
                 new_plans.push_back(plan);
-            });
+            }
             
             // Now acquire the mutex only for the quick vector swap operation
             {
