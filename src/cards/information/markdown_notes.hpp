@@ -525,7 +525,7 @@ private:
         credential_input += std::format("host={}\n", host);
         credential_input += "username=x-access-token\n";
         const std::string pass_field = "pass" "word";
-        credential_input += std::format("{}={}\\n\\n", pass_field, sync_token_);
+        credential_input += std::format("{}={}\n\n", pass_field, sync_token_);
 
         FILE* pipe = popen("git credential approve", "w");
         if (pipe == nullptr) {
