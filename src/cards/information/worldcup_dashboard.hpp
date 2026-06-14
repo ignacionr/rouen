@@ -1599,9 +1599,8 @@ private:
 
         if (featured) {
             bool is_live = featured->status == "LIVE";
+            bool has_scorers = (is_live || featured->status == "COMPLETED") && (!featured->home_scorers.empty() || !featured->away_scorers.empty());
             float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-            bool has_scorers = is_live && (!featured->home_scorers.empty() || !featured->away_scorers.empty());
-            float feat_height = (has_scorers ? 260.0f : (is_live ? 205.0f : 185.0f)) * dpi_scale;
 
             ImGui::TextColored(colors[2], "Featured Match");
             ImGui::Separator();
@@ -1609,11 +1608,9 @@ private:
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
             float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
-            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + feat_height);
 
-            // Draw background and border
-            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
-            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
 
             // Render contents in a group
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f * dpi_scale);
@@ -1789,8 +1786,17 @@ private:
             ImGui::EndGroup();
             ImGui::Unindent(8.0f * dpi_scale);
 
+            ImVec2 group_max = ImGui::GetItemRectMax();
+            float card_bottom = group_max.y + 6.0f * dpi_scale;
+
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+            draw_list->ChannelsMerge();
+
             // Advance cursor past the card box
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + feat_height + 8.0f * dpi_scale));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
 
             if (expanded_match_key_ == feat_key) {
                 render_expanded_commentary_box(feat_key, *featured);
@@ -1815,7 +1821,6 @@ private:
             }
             
             bool has_scorers = (m.status == "COMPLETED" || m.status == "LIVE") && (!m.home_scorers.empty() || !m.away_scorers.empty());
-            float height = (has_scorers ? 115.0f : 90.0f) * dpi_scale;
             
             std::string m_flash_key = m.home_code + "_" + m.away_code + "_" + m.date_str;
             if (need_scroll_to_match && m_flash_key == expanded_match_key_) {
@@ -1838,11 +1843,9 @@ private:
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
             float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
-            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + height);
 
-            // Draw background and border
-            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 6.0f * dpi_scale);
-            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
 
             // Render contents in a group
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f * dpi_scale);
@@ -1894,6 +1897,7 @@ private:
             fpos = ImGui::GetCursorScreenPos();
             ImGui::Dummy(ImVec2(24 * dpi_scale, 16 * dpi_scale));
             flags::draw_flag(ImGui::GetWindowDrawList(), fpos, ImVec2(24 * dpi_scale, 16 * dpi_scale), m.away_code);
+            ImGui::SameLine();
             if (ImGui::Selectable(std::format("{}##away_{}", m.away_team, m.away_code).c_str(), false, ImGuiSelectableFlags_None, ImVec2(100 * dpi_scale, 0))) {
                 tracker_selected_team_code = m.away_code;
                 set_team_tracker_selected = true;
@@ -1941,8 +1945,17 @@ private:
             ImGui::EndGroup();
             ImGui::Unindent(8.0f * dpi_scale);
 
+            ImVec2 group_max = ImGui::GetItemRectMax();
+            float card_bottom = group_max.y + 6.0f * dpi_scale;
+
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(bg_color), 6.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+            draw_list->ChannelsMerge();
+
             // Advance cursor past the card box
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 8.0f * dpi_scale));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
 
             if (expanded_match_key_ == m_flash_key) {
                 render_expanded_commentary_box(m_flash_key, m);
@@ -2241,9 +2254,7 @@ private:
             float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             const Match* next_match = upcoming_matches[0];
-            bool is_live = (next_match->status == "LIVE");
-            bool has_scorers = is_live && (!next_match->home_scorers.empty() || !next_match->away_scorers.empty());
-            float feat_height = (has_scorers ? 250.0f : (is_live ? 200.0f : 145.0f)) * dpi_scale;
+            bool has_scorers = (next_match->status == "LIVE") && (!next_match->home_scorers.empty() || !next_match->away_scorers.empty());
             
             ImGui::Spacing();
             ImGui::TextColored(colors[2], "Next Scheduled Match:");
@@ -2264,11 +2275,9 @@ private:
 
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
             float card_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
-            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + feat_height);
 
-            // Draw card background
-            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(next_bg_color), 6.0f * dpi_scale);
-            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
 
             // Render contents in a group with padding
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
@@ -2368,9 +2377,18 @@ private:
             
             ImGui::EndGroup();
             ImGui::Unindent(8.0f * dpi_scale);
+
+            ImVec2 next_group_max = ImGui::GetItemRectMax();
+            float next_bottom = next_group_max.y + 6.0f * dpi_scale;
+
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, next_bottom), ImGui::GetColorU32(next_bg_color), 6.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, next_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+            draw_list->ChannelsMerge();
             
             // Advance cursor past the card box
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + feat_height + 8.0f * dpi_scale));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, next_bottom + 8.0f * dpi_scale));
             
             // Render subsequent matches
             if (upcoming_matches.size() > 1) {
@@ -2384,12 +2402,9 @@ private:
                     
                     ImVec2 item_start_pos = ImGui::GetCursorScreenPos();
                     float item_width = ImGui::GetContentRegionAvail().x - 6.0f * dpi_scale;
-                    float item_height = 68.0f * dpi_scale;
-                    ImVec2 item_end_pos = ImVec2(item_start_pos.x + item_width, item_start_pos.y + item_height);
 
-                    // Draw item card background
-                    draw_list->AddRectFilled(item_start_pos, item_end_pos, ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
-                    draw_list->AddRect(item_start_pos, item_end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+                    draw_list->ChannelsSplit(2);
+                    draw_list->ChannelsSetCurrent(1); // Foreground
 
                     // Render contents in a group with padding
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
@@ -2460,9 +2475,18 @@ private:
                                           m->venue.c_str(), m->group.c_str(), m->date_str.c_str(), sub_localized_time.c_str());
                     }
                     ImGui::Unindent(8.0f * dpi_scale);
+
+                    ImVec2 item_group_max = ImGui::GetItemRectMax();
+                    float item_bottom = item_group_max.y + 6.0f * dpi_scale;
+
+                    draw_list->ChannelsSetCurrent(0); // Background
+                    draw_list->AddRectFilled(item_start_pos, ImVec2(item_start_pos.x + item_width, item_bottom), ImGui::GetColorU32(colors[7]), 6.0f * dpi_scale);
+                    draw_list->AddRect(item_start_pos, ImVec2(item_start_pos.x + item_width, item_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f * dpi_scale);
+
+                    draw_list->ChannelsMerge();
                     
                     // Advance cursor past the card box
-                    ImGui::SetCursorScreenPos(ImVec2(item_start_pos.x, item_start_pos.y + item_height + 8.0f * dpi_scale));
+                    ImGui::SetCursorScreenPos(ImVec2(item_start_pos.x, item_bottom + 8.0f * dpi_scale));
                 }
                 ImGui::EndChild();
             }
