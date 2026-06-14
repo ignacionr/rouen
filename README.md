@@ -12,7 +12,7 @@ A modern, card-based productivi### Information & Communication
   - **Enhanced Content Processing**: Intelligently processes `content:encoded` sections for rich media content (optimized for RT.com and similar feeds)
   - **Right-click Context Menu**: Right-click on any feed to copy feed URL or title to clipboard
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
-- **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
+- **Radio Player**: Stream internet radio with MPV-based audio playback, pause/stop controls, volume control, and video supporthboard with a clean, dark interface built on ImGui and SDL2.
 
 ![Rouen Dashboard](img/screenshot.png)
 
@@ -61,7 +61,7 @@ The name "Rouen" is inspired by the Rouen pattern, a historic French playing car
 - **RSS Reader**: Follow news, podcasts, and blogs with integrated feed reader and right-click clipboard functionality
 - **Markdown Notes**: Personal markdown knowledge base with wiki-style links (`[[note]]`), backlinks, tags, and GitHub repository synchronization
 - **AI Assistant**: Interact with multiple LLM providers (Grok, OpenAI, Groq, or custom endpoints) with optimized chat interface, cached rendering, and smooth scrolling
-- **Radio Player**: Stream internet radio with MPV-based audio playback, volume control, and video support
+- **Radio Player**: Stream internet radio with MPV-based audio playback, pause/stop controls, volume control, and video support
 
 ### Financial & Trading
 - **Bybit Assets**: View cryptocurrency assets and account balance on Bybit exchange using secure API integration
@@ -254,7 +254,7 @@ The `deck` class (`src/interface/deck.hpp`) manages collections of cards:
 **Media Playback** (`src/helpers/media_player.hpp`)
 - MPV-based audio/video playback with socket communication
 - Network streaming optimization
-- Volume control and video window management
+- Pause/resume, volume control, and video window management
 - Simple sound effects with `play_sound_once()`
 
 **Database Access** (`src/helpers/sqlite.hpp`)

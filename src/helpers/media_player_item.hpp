@@ -38,6 +38,7 @@ struct media_player_item {
     int player_pid{0};
 #endif
     bool is_playing{false};
+    bool is_paused{false};
     mpv_socket_helper mpv_socket;
     std::atomic<double> position{0.0};
     std::atomic<double> duration{0.0};
@@ -60,6 +61,9 @@ struct media_player_item {
     std::string formatTime(double seconds) const;
     bool seekTo(double position_seconds);
     bool setVolume(int new_volume);
+    bool pauseMedia();
+    bool resumeMedia();
+    bool togglePause();
 };
 
 using media_player_item_map = std::unordered_map<ImGuiID, media_player_item>;
@@ -74,6 +78,10 @@ inline bool media_player_item::checkMediaStatus() {
     DWORD exitCode;
     bool isRunning = GetExitCodeProcess(hProcess, &exitCode) && (exitCode == STILL_ACTIVE);
     CloseHandle(hProcess);
+    if (!isRunning) {
+        is_playing = false;
+        is_paused = false;
+    }
     return isRunning;
 #else
     if (player_pid <= 0) return false;
@@ -81,6 +89,7 @@ inline bool media_player_item::checkMediaStatus() {
     int status;
     if (waitpid(player_pid, &status, WNOHANG) == player_pid) {
         is_playing = false;
+        is_paused = false;
         return false;
     }
     return true;
@@ -89,7 +98,7 @@ inline bool media_player_item::checkMediaStatus() {
 
 inline void media_player_item::stopMedia() {
     // 1. Try to send quit command to mpv socket for graceful termination
-    if (is_playing && mpv_socket.is_connected()) {
+    if (player_pid > 0 && mpv_socket.is_connected()) {
         std::string quit_cmd = "{\"command\":[\"quit\"]}\n";
         mpv_socket.send_command(quit_cmd);
     }
@@ -135,6 +144,7 @@ inline void media_player_item::stopMedia() {
     }
 #endif
     is_playing = false;
+    is_paused = false;
     position = 0.0;
     duration = 0.0;
 }
@@ -181,8 +191,10 @@ inline void media_player_item::startPositionTracking() {
                                     duration = data.get<double>();
                                 break;
                             case 3:
-                                if (data.is_boolean())
-                                    is_playing = !data.get<bool>();
+                                if (data.is_boolean()) {
+                                    is_paused = data.get<bool>();
+                                    is_playing = !is_paused;
+                                }
                                 break;
                             case 10:
                                 has_video = false;
@@ -254,6 +266,7 @@ inline std::string media_player_item::sanitizeURL(const std::string& input_url) 
 inline bool media_player_item::playMedia() {
     stopMedia(); // Ensure any previous media is stopped
     has_video = false;
+    is_paused = false;
     
     // Validate that MPV is available
     std::string mpv_path = CONFIG_SERVICE()->get_mpv_path();
@@ -379,7 +392,7 @@ inline std::string media_player_item::formatTime(double seconds) const {
 }
 
 inline bool media_player_item::seekTo(double position_seconds) {
-    if (!is_playing || !mpv_socket.is_connected()) {
+    if (player_pid <= 0 || !mpv_socket.is_connected()) {
         return false;
     }
     std::string seek_cmd = std::format("{{\"command\":[\"set_property\",\"playback-time\",{:.2f}],\"request_id\":3}}\n", position_seconds);
@@ -387,7 +400,7 @@ inline bool media_player_item::seekTo(double position_seconds) {
 }
 
 inline bool media_player_item::setVolume(int new_volume) {
-    if (!is_playing || !mpv_socket.is_connected()) {
+    if (player_pid <= 0 || !mpv_socket.is_connected()) {
         return false;
     }
     // Clamp volume to valid range
@@ -398,4 +411,36 @@ inline bool media_player_item::setVolume(int new_volume) {
     bool ok = mpv_socket.send_command(cmd);
     if (ok) volume = new_volume;
     return ok;
+}
+
+inline bool media_player_item::pauseMedia() {
+    if (player_pid <= 0 || !mpv_socket.is_connected()) {
+        return false;
+    }
+
+    constexpr std::string_view pause_cmd{"{\"command\":[\"set_property\",\"pause\",true],\"request_id\":5}\n"};
+    bool ok = mpv_socket.send_command(std::string(pause_cmd));
+    if (ok) {
+        is_paused = true;
+        is_playing = false;
+    }
+    return ok;
+}
+
+inline bool media_player_item::resumeMedia() {
+    if (player_pid <= 0 || !mpv_socket.is_connected()) {
+        return false;
+    }
+
+    constexpr std::string_view resume_cmd{"{\"command\":[\"set_property\",\"pause\",false],\"request_id\":6}\n"};
+    bool ok = mpv_socket.send_command(std::string(resume_cmd));
+    if (ok) {
+        is_paused = false;
+        is_playing = true;
+    }
+    return ok;
+}
+
+inline bool media_player_item::togglePause() {
+    return is_paused ? resumeMedia() : pauseMedia();
 }
