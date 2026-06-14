@@ -938,16 +938,14 @@ private:
             }
         }
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 10.0f));
+        // Draw dynamically sized card box with ChannelsSplit to prevent scroll hijacking
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        draw_list->ChannelsSplit(2);
+        draw_list->ChannelsSetCurrent(1); // Set current channel to 1 (foreground / text)
 
-        float box_height = 200.0f;
-        if (has_cache && !is_fetching_comm) {
-            box_height = 220.0f;
-        }
-
-        ImGui::BeginChild(std::format("comm_box_{}", match_key).c_str(), ImVec2(0, box_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
+        ImGui::BeginGroup();
+        ImGui::Dummy(ImVec2(0, 4.0f)); // Inner vertical padding
+        ImGui::Indent(8.0f); // Inner horizontal padding
 
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
@@ -985,7 +983,6 @@ private:
             const float RADIUS = 12.0f;
             ImVec2 pos = ImGui::GetCursorScreenPos();
             ImVec2 center = ImVec2(pos.x + RADIUS, pos.y + RADIUS);
-            ImDrawList* draw_list = ImGui::GetWindowDrawList();
             auto time = ImGui::GetTime() * 5.0;
             const int NUM_SEGMENTS = 8;
             for (int i = 0; i < NUM_SEGMENTS; i++) {
@@ -1088,9 +1085,25 @@ private:
             }
         }
 
-        ImGui::EndChild();
-        ImGui::PopStyleVar(2);
-        ImGui::PopStyleColor();
+        ImGui::Unindent(8.0f);
+        ImGui::Dummy(ImVec2(0, 4.0f)); // Bottom vertical padding
+        ImGui::EndGroup();
+
+        // Get actual size of the commentary group
+        ImVec2 min_pos = ImGui::GetItemRectMin();
+        ImVec2 max_pos = ImGui::GetItemRectMax();
+        
+        // Add padding around the group for visual framing
+        min_pos.x -= 4.0f;
+        min_pos.y -= 4.0f;
+        max_pos.x += 4.0f;
+        max_pos.y += 4.0f;
+
+        draw_list->ChannelsSetCurrent(0); // Set current channel to 0 (background)
+        draw_list->AddRectFilled(min_pos, max_pos, ImGui::GetColorU32(colors[7]), 6.0f);
+        draw_list->AddRect(min_pos, max_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f);
+
+        draw_list->ChannelsMerge();
     }
 
     void fetch_real_data() {
@@ -1590,8 +1603,19 @@ private:
             ImGui::TextColored(colors[2], "Featured Match");
             ImGui::Separator();
             
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
-            ImGui::BeginChild("FeaturedMatchBox", ImVec2(0, feat_height), true);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float card_width = ImGui::GetContentRegionAvail().x - 6.0f;
+            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + feat_height);
+
+            // Draw background and border
+            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(colors[7]), 6.0f);
+            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f);
+
+            // Render contents in a group
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+            ImGui::Indent(8.0f);
+            ImGui::BeginGroup();
             
             ImGui::Columns(3, "featMatchCols", false);
             ImGui::SetColumnWidth(0, 180);
@@ -1759,8 +1783,11 @@ private:
                 handle_commentary_click(feat_key, *featured);
             }
 
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
+            ImGui::EndGroup();
+            ImGui::Unindent(8.0f);
+
+            // Advance cursor past the card box
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + feat_height + 8.0f));
 
             if (expanded_match_key_ == feat_key) {
                 render_expanded_commentary_box(feat_key, *featured);
@@ -1804,8 +1831,19 @@ private:
                 bg_color.w = bg_color.w * (1.0f - row_factor) + 0.35f * row_factor;
             }
 
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
-            ImGui::BeginChild(std::format("match_{}_{}_{}", m.home_code, m.away_code, m.date_str).c_str(), ImVec2(0, height), true, ImGuiWindowFlags_NoScrollbar);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float card_width = ImGui::GetContentRegionAvail().x - 6.0f;
+            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + height);
+
+            // Draw background and border
+            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 6.0f);
+            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.22f, 0.8f)), 6.0f);
+
+            // Render contents in a group
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+            ImGui::Indent(8.0f);
+            ImGui::BeginGroup();
             
             // Drawing flag and home team
             ImGui::AlignTextToFramePadding();
@@ -1896,8 +1934,11 @@ private:
                 handle_commentary_click(m_flash_key, m);
             }
 
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
+            ImGui::EndGroup();
+            ImGui::Unindent(8.0f);
+
+            // Advance cursor past the card box
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 8.0f));
 
             if (expanded_match_key_ == m_flash_key) {
                 render_expanded_commentary_box(m_flash_key, m);
