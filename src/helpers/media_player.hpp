@@ -41,7 +41,7 @@ struct media_player {
                 }
                 if (current_pos > 0 && current_dur > 0) {
                     ImGui::TextColored(info_color, "%s: %s / %s",
-                        item.is_paused ? "Paused" : "Playing",
+                        item.is_paused.load() ? "Paused" : "Playing",
                         item.formatTime(current_pos).c_str(),
                         item.formatTime(current_dur).c_str());
                 }
@@ -51,7 +51,7 @@ struct media_player {
                 if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
                     item.setVolume(vol);
                 }
-                if (ImGui::Button(std::format(" {} ", item.is_paused ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
+                if (ImGui::Button(std::format(" {} ", item.is_paused.load() ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
                     item.togglePause();
                 }
                 ImGui::SameLine();
