@@ -16,6 +16,7 @@ find_package(GTest CONFIG REQUIRED)
 
 # Find required dependencies for tests
 find_package(CURL REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
@@ -134,8 +135,14 @@ add_executable(test_example_math
 )
 add_test(NAME ExampleMathTest COMMAND test_example_math)
 
+add_executable(test_notes_repository_legacy
+    test_notes_repository_legacy.cpp
+)
+target_link_libraries(test_notes_repository_legacy PRIVATE SQLite::SQLite3)
+add_test(NAME NotesRepositoryLegacyTest COMMAND test_notes_repository_legacy)
+
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -155,7 +162,8 @@ add_custom_target(run_all_tests
     COMMAND echo "---------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_notes_repository_legacy
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -179,7 +187,8 @@ add_custom_target(run_legacy_tests
     COMMAND echo "================================"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
-    DEPENDS test_bybit_currency_fix test_example_math
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
+    DEPENDS test_bybit_currency_fix test_example_math test_notes_repository_legacy
     COMMENT "Running legacy console tests"
 )
 
