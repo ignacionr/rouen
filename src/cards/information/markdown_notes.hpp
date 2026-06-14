@@ -499,72 +499,6 @@ private:
             if (allow_noop_commit && output.find("nothing to commit") != std::string::npos) {
                 return true;
             }
-
-            bool apply_token_credentials(const std::string& repo_url) {
-                if (sync_token_.empty()) {
-                    return true;
-                }
-
-                const std::string host = host_from_url(repo_url);
-                if (host.empty()) {
-                    status_message_ = "Invalid repository URL for token authentication";
-                    return false;
-                }
-
-                std::string credential_input;
-                credential_input += "protocol=https\n";
-                credential_input += std::format("host={}\n", host);
-                credential_input += "username=x-access-token\n";
-                const std::string pass_field = "pass" "word";
-                credential_input += std::format("{}={}\\n\\n", pass_field, sync_token_);
-
-                FILE* pipe = popen("git credential approve", "w");
-                if (pipe == nullptr) {
-                    status_message_ = "Unable to configure git credentials";
-                    return false;
-                }
-
-                const size_t written = fwrite(credential_input.data(), 1, credential_input.size(), pipe);
-                const int rc = pclose(pipe);
-                if (written != credential_input.size() || rc != 0) {
-                    status_message_ = "Failed to apply git token credentials";
-                    return false;
-                }
-
-                return true;
-            }
-
-            static std::string host_from_url(const std::string& url) {
-                if (url.starts_with("https://")) {
-                    const auto start = std::string{"https://"}.size();
-                    const auto slash = url.find('/', start);
-                    if (slash == std::string::npos) {
-                        return url.substr(start);
-                    }
-                    return url.substr(start, slash - start);
-                }
-                return {};
-            }
-
-            static const TextEditor::LanguageDefinition& markdown_language_definition() {
-                static TextEditor::LanguageDefinition definition = [] {
-                    TextEditor::LanguageDefinition d;
-                    d.mName = "Markdown";
-                    d.mAutoIndentation = false;
-                    d.mSingleLineComment = "";
-                    d.mTokenRegexStrings = {
-                        {R"(^\s*#{1,6}\s.*$)", TextEditor::PaletteIndex::Preprocessor},
-                        {R"(\*\*[^*]+\*\*)", TextEditor::PaletteIndex::Keyword},
-                        {R"(`[^`]+`)", TextEditor::PaletteIndex::String},
-                        {R"(\[\[[^\]]+\]\])", TextEditor::PaletteIndex::KnownIdentifier},
-                        {R"(\[[^\]]+\]\([^)]+\))", TextEditor::PaletteIndex::Identifier},
-                        {R"(https?://[^\s)]+)", TextEditor::PaletteIndex::Number}
-                    };
-                    return d;
-                }();
-                return definition;
-            }
-
             status_message_ = output.empty() ? "Command failed" : output;
             return false;
         }
@@ -573,6 +507,71 @@ private:
             status_message_ = output;
         }
         return true;
+    }
+
+    bool apply_token_credentials(const std::string& repo_url) {
+        if (sync_token_.empty()) {
+            return true;
+        }
+
+        const std::string host = host_from_url(repo_url);
+        if (host.empty()) {
+            status_message_ = "Invalid repository URL for token authentication";
+            return false;
+        }
+
+        std::string credential_input;
+        credential_input += "protocol=https\n";
+        credential_input += std::format("host={}\n", host);
+        credential_input += "username=x-access-token\n";
+        const std::string pass_field = "pass" "word";
+        credential_input += std::format("{}={}\\n\\n", pass_field, sync_token_);
+
+        FILE* pipe = popen("git credential approve", "w");
+        if (pipe == nullptr) {
+            status_message_ = "Unable to configure git credentials";
+            return false;
+        }
+
+        const size_t written = fwrite(credential_input.data(), 1, credential_input.size(), pipe);
+        const int rc = pclose(pipe);
+        if (written != credential_input.size() || rc != 0) {
+            status_message_ = "Failed to apply git token credentials";
+            return false;
+        }
+
+        return true;
+    }
+
+    static std::string host_from_url(const std::string& url) {
+        if (url.starts_with("https://")) {
+            const auto start = std::string{"https://"}.size();
+            const auto slash = url.find('/', start);
+            if (slash == std::string::npos) {
+                return url.substr(start);
+            }
+            return url.substr(start, slash - start);
+        }
+        return {};
+    }
+
+    static const TextEditor::LanguageDefinition& markdown_language_definition() {
+        static TextEditor::LanguageDefinition definition = [] {
+            TextEditor::LanguageDefinition d;
+            d.mName = "Markdown";
+            d.mAutoIndentation = false;
+            d.mSingleLineComment = "";
+            d.mTokenRegexStrings = {
+                {R"(^\s*#{1,6}\s.*$)", TextEditor::PaletteIndex::Preprocessor},
+                {R"(\*\*[^*]+\*\*)", TextEditor::PaletteIndex::Keyword},
+                {R"(`[^`]+`)", TextEditor::PaletteIndex::String},
+                {R"(\[\[[^\]]+\]\])", TextEditor::PaletteIndex::KnownIdentifier},
+                {R"(\[[^\]]+\]\([^)]+\))", TextEditor::PaletteIndex::Identifier},
+                {R"(https?://[^\s)]+)", TextEditor::PaletteIndex::Number}
+            };
+            return d;
+        }();
+        return definition;
     }
 
     static void render_markdown_preview(const std::string& markdown_text) {
