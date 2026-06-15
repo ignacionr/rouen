@@ -3,11 +3,6 @@ name: macOS Build & Test
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
 
 jobs:
   macos-build:
