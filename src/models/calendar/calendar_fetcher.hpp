@@ -83,6 +83,7 @@ namespace calendar {
         std::optional<std::string> accessRole;
         // Add defaultReminders field
         std::optional<std::vector<std::map<std::string, std::variant<std::string, int>>>> defaultReminders;
+        std::optional<std::vector<std::string>> calendars;
     };
 }
 
@@ -187,7 +188,8 @@ struct glz::meta<calendar::CalendarResponse> {
         "updated", &T::updated,
         "timeZone", &T::timeZone,
         "accessRole", &T::accessRole,
-        "defaultReminders", &T::defaultReminders
+        "defaultReminders", &T::defaultReminders,
+        "calendars", &T::calendars
     );
     
     static constexpr auto options = glz::opts{
@@ -276,11 +278,91 @@ namespace calendar {
         
         // Get the last error
         std::string last_error() const { return last_error_; }
+
+        // Get the list of writable calendars
+        std::vector<std::string> get_calendars() const {
+            return calendars_;
+        }
+
+        // Create a new calendar event
+        bool create_event(const std::string& calendar_name, const std::string& summary, const std::string& description, const std::string& location,
+                          int start_year, int start_month, int start_day, int start_hour, int start_min,
+                          int end_year, int end_month, int end_day, int end_hour, int end_min,
+                          bool is_all_day) {
+#if defined(__APPLE__)
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                last_error_.clear();
+                
+                auto script_path = rouen::platform::get_resource_path("create_event.scpt");
+                if (!std::filesystem::exists(script_path)) {
+                    auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "create_event.scpt";
+                    if (std::filesystem::exists(dev_script_path)) {
+                        script_path = dev_script_path;
+                    } else {
+                        throw std::runtime_error("create_event.scpt not found in resources");
+                    }
+                }
+                
+                auto escape_arg = [](const std::string& arg) {
+                    std::string res = "'";
+                    for (char c : arg) {
+                        if (c == '\'') {
+                            res += "'\\''";
+                        } else {
+                            res += c;
+                        }
+                    }
+                    res += "'";
+                    return res;
+                };
+                
+                std::string command = "osascript \"" + script_path.string() + "\" "
+                    + escape_arg(calendar_name) + " "
+                    + escape_arg(summary) + " "
+                    + escape_arg(description) + " "
+                    + escape_arg(location) + " "
+                    + std::to_string(start_year) + " "
+                    + std::to_string(start_month) + " "
+                    + std::to_string(start_day) + " "
+                    + std::to_string(start_hour) + " "
+                    + std::to_string(start_min) + " "
+                    + std::to_string(end_year) + " "
+                    + std::to_string(end_month) + " "
+                    + std::to_string(end_day) + " "
+                    + std::to_string(end_hour) + " "
+                    + std::to_string(end_min) + " "
+                    + (is_all_day ? "true" : "false");
+                
+                std::string response = ProcessHelper::executeCommand(command);
+                while (!response.empty() && (response.back() == '\n' || response.back() == '\r')) {
+                    response.pop_back();
+                }
+                
+                if (response == "SUCCESS") {
+                    return true;
+                } else {
+                    throw std::runtime_error(response.empty() ? "Event creation failed with empty response" : response);
+                }
+            } catch (const std::exception& e) {
+                last_error_ = e.what();
+                return false;
+            }
+#else
+            (void)calendar_name; (void)summary; (void)description; (void)location;
+            (void)start_year; (void)start_month; (void)start_day; (void)start_hour; (void)start_min;
+            (void)end_year; (void)end_month; (void)end_day; (void)end_hour; (void)end_min;
+            (void)is_all_day;
+            last_error_ = "Event creation not supported on this platform";
+            return false;
+#endif
+        }
         
     private:
         std::string calendar_delegate_url_;
         std::string last_error_;
         std::mutex mutex_;
+        std::vector<std::string> calendars_;
         
         // Parse the calendar JSON response into a vector of events
         std::vector<event> parse_response(const std::string& json_response) {
@@ -331,6 +413,10 @@ namespace calendar {
                     
                     // Add to our collection
                     events.push_back(evt);
+                }
+                
+                if (calendar_data.calendars) {
+                    calendars_ = *calendar_data.calendars;
                 }
             } catch (const std::exception& e) {
                 throw std::runtime_error(std::string("Failed to parse calendar response: ") + e.what());

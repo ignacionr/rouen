@@ -106,5 +106,19 @@ tell application "Calendar"
     end repeat
 end tell
 
+set jsonOutput to jsonOutput & "],\"calendars\":["
+tell application "Calendar"
+    set firstCal to true
+    repeat with aCal in calendars
+        if writable of aCal is true then
+            if not firstCal then
+                set jsonOutput to jsonOutput & ","
+            else
+                set firstCal to false
+            end if
+            set jsonOutput to jsonOutput & "\"" & my escapeJSON(name of aCal) & "\""
+        end if
+    end repeat
+end tell
 set jsonOutput to jsonOutput & "]}"
 return jsonOutput

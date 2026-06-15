@@ -104,6 +104,24 @@ namespace rouen::cards
         std::string current_date_;              // Current date for day view
         std::string calendar_url;                    // Calendar URL
         
+        bool show_create_form_ = false;
+        char new_summary_[128] = "";
+        char new_desc_[512] = "";
+        char new_loc_[128] = "";
+        int new_start_year_ = 0;
+        int new_start_month_ = 0;
+        int new_start_day_ = 0;
+        int new_start_hour_ = 0;
+        int new_start_min_ = 0;
+        int new_end_year_ = 0;
+        int new_end_month_ = 0;
+        int new_end_day_ = 0;
+        int new_end_hour_ = 0;
+        int new_end_min_ = 0;
+        bool new_is_all_day_ = false;
+        size_t selected_calendar_idx_ = 0;
+        std::string create_error_msg_;
+        
         // Helper methods for DRY code
         void setup_colors()
         {
@@ -132,6 +150,13 @@ namespace rouen::cards
                 refresh_events();
             }
             
+            ImGui::SameLine();
+            if (ImGui::Button("New Event")) {
+                show_create_form_ = true;
+                create_error_msg_.clear();
+                new_start_year_ = 0; // Trigger default values pre-fill
+            }
+            
             // Error message if fetch failed
             if (fetcher_->has_error()) {
                 // ImGui::SameLine();
@@ -143,6 +168,11 @@ namespace rouen::cards
         
         void render_events()
         {
+            if (show_create_form_) {
+                render_create_event_form();
+                return;
+            }
+
             std::lock_guard<std::mutex> lock(events_mutex_);
             
             if (events_.empty()) {
@@ -493,6 +523,185 @@ namespace rouen::cards
                     std::string cmd = rouen::platform::open_file(selected_event_.htmlLink, true);
                     [[maybe_unused]] int system_result = system(cmd.c_str());
                 }
+            }
+        }
+
+        void render_create_event_form()
+        {
+            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[2]);
+            ImGui::Text("Create New Event");
+            ImGui::PopStyleColor();
+            
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            if (new_start_year_ == 0) {
+                auto now = std::chrono::system_clock::now();
+                auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm = *std::localtime(&now_time_t);
+                
+                new_start_year_ = now_tm.tm_year + 1900;
+                new_start_month_ = now_tm.tm_mon + 1;
+                new_start_day_ = now_tm.tm_mday;
+                new_start_hour_ = now_tm.tm_hour;
+                new_start_min_ = (now_tm.tm_min / 5) * 5;
+                
+                new_end_year_ = new_start_year_;
+                new_end_month_ = new_start_month_;
+                new_end_day_ = new_start_day_;
+                new_end_hour_ = new_start_hour_ + 1;
+                new_end_min_ = new_start_min_;
+                if (new_end_hour_ >= 24) {
+                    new_end_hour_ = 23;
+                    new_end_min_ = 59;
+                }
+            }
+            
+            auto calendars = fetcher_->get_calendars();
+            if (calendars.empty()) {
+                calendars.push_back("Calendar");
+            }
+            if (selected_calendar_idx_ >= calendars.size()) {
+                selected_calendar_idx_ = 0;
+            }
+            
+            if (ImGui::BeginCombo("Destination Calendar", calendars[selected_calendar_idx_].c_str())) {
+                for (size_t i = 0; i < calendars.size(); ++i) {
+                    bool is_selected = (selected_calendar_idx_ == i);
+                    if (ImGui::Selectable(calendars[i].c_str(), is_selected)) {
+                        selected_calendar_idx_ = i;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            
+            ImGui::Spacing();
+            
+            ImGui::InputText("Title", new_summary_, sizeof(new_summary_));
+            ImGui::InputText("Location", new_loc_, sizeof(new_loc_));
+            
+            ImGui::InputTextMultiline("Description", new_desc_, sizeof(new_desc_), 
+                                      ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 3.0f));
+            
+            ImGui::Spacing();
+            ImGui::Checkbox("All Day Event", &new_is_all_day_);
+            ImGui::Spacing();
+            
+            ImGui::Text("Start Date (Y/M/D):");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(70.0f * dpi_scale);
+            ImGui::InputInt("##start_year", &new_start_year_, 0, 0);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(45.0f * dpi_scale);
+            ImGui::InputInt("##start_month", &new_start_month_, 0, 0);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(45.0f * dpi_scale);
+            ImGui::InputInt("##start_day", &new_start_day_, 0, 0);
+            
+            if (!new_is_all_day_) {
+                ImGui::SameLine();
+                ImGui::Text("Time (H:M):");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##start_hour", &new_start_hour_, 0, 0);
+                ImGui::SameLine();
+                ImGui::Text(":");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##start_min", &new_start_min_, 0, 0);
+            }
+            
+            if (!new_is_all_day_) {
+                ImGui::Spacing();
+                ImGui::Text("End Date (Y/M/D):  ");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(70.0f * dpi_scale);
+                ImGui::InputInt("##end_year", &new_end_year_, 0, 0);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##end_month", &new_end_month_, 0, 0);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##end_day", &new_end_day_, 0, 0);
+                
+                ImGui::SameLine();
+                ImGui::Text("Time (H:M):");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##end_hour", &new_end_hour_, 0, 0);
+                ImGui::SameLine();
+                ImGui::Text(":");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(45.0f * dpi_scale);
+                ImGui::InputInt("##end_min", &new_end_min_, 0, 0);
+            }
+            
+            if (new_start_month_ < 1) new_start_month_ = 1;
+            if (new_start_month_ > 12) new_start_month_ = 12;
+            if (new_start_day_ < 1) new_start_day_ = 1;
+            if (new_start_day_ > 31) new_start_day_ = 31;
+            if (new_start_hour_ < 0) new_start_hour_ = 0;
+            if (new_start_hour_ > 23) new_start_hour_ = 23;
+            if (new_start_min_ < 0) new_start_min_ = 0;
+            if (new_start_min_ > 59) new_start_min_ = 59;
+            
+            if (new_end_month_ < 1) new_end_month_ = 1;
+            if (new_end_month_ > 12) new_end_month_ = 12;
+            if (new_end_day_ < 1) new_end_day_ = 1;
+            if (new_end_day_ > 31) new_end_day_ = 31;
+            if (new_end_hour_ < 0) new_end_hour_ = 0;
+            if (new_end_hour_ > 23) new_end_hour_ = 23;
+            if (new_end_min_ < 0) new_end_min_ = 0;
+            if (new_end_min_ > 59) new_end_min_ = 59;
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            if (ImGui::Button("Create Event")) {
+                if (new_summary_[0] == '\0') {
+                    create_error_msg_ = "Title cannot be empty";
+                } else {
+                    bool success = fetcher_->create_event(
+                        calendars[selected_calendar_idx_],
+                        new_summary_,
+                        new_desc_,
+                        new_loc_,
+                        new_start_year_, new_start_month_, new_start_day_, new_start_hour_, new_start_min_,
+                        new_end_year_, new_end_month_, new_end_day_, new_end_hour_, new_end_min_,
+                        new_is_all_day_
+                    );
+                    
+                    if (success) {
+                        new_summary_[0] = '\0';
+                        new_desc_[0] = '\0';
+                        new_loc_[0] = '\0';
+                        new_start_year_ = 0;
+                        show_create_form_ = false;
+                        create_error_msg_.clear();
+                        refresh_events();
+                    } else {
+                        create_error_msg_ = fetcher_->last_error();
+                    }
+                }
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                show_create_form_ = false;
+                create_error_msg_.clear();
+            }
+            
+            if (!create_error_msg_.empty()) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                ImGui::Text("Error: %s", create_error_msg_.c_str());
+                ImGui::PopStyleColor();
             }
         }
         
