@@ -541,7 +541,7 @@ namespace rouen::cards {
                         std::string json_str = client(chunk_url, headers);
                         
                         ChunkResponse resp;
-                        auto ec = glz::read_json(resp, json_str);
+                        auto ec = glz::read<glz::opts{.error_on_unknown_keys = false}>(resp, json_str);
                         if (ec) {
                             continue; // skip failed folder loads
                         }
