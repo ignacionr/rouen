@@ -1881,6 +1881,7 @@ private:
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f * dpi_scale);
             ImGui::Indent(8.0f * dpi_scale);
             ImGui::BeginGroup();
+            bool child_tooltip_shown = false;
             
             ImGui::Columns(3, nullptr, false);
             ImGui::SetColumnWidth(0, card_width * 0.38f);
@@ -1899,6 +1900,7 @@ private:
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Go to Team Tracker for %s", m.home_team.c_str());
+                child_tooltip_shown = true;
             }
             
             // Score / Status
@@ -1954,20 +1956,10 @@ private:
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Go to Team Tracker for %s", m.away_team.c_str());
+                child_tooltip_shown = true;
             }
 
             ImGui::Columns(1);
-
-            // Add tooltip with stadium info and group details
-            if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
-                std::string loc_str = m.date_str;
-                time_t utc = get_match_utc_time(m.date_str, m.stadium_id);
-                if (utc != 0) {
-                    loc_str = format_local_time(utc);
-                }
-                ImGui::SetTooltip("Venue: %s\nGroup/Stage: %s\nStadium Local: %s\nYour Local: %s", 
-                                  m.venue.c_str(), m.group.c_str(), m.date_str.c_str(), loc_str.c_str());
-            }
 
             // Render scorers underneath if completed
             if (has_scorers) {
@@ -2001,6 +1993,15 @@ private:
             }
 
             ImGui::EndGroup();
+            if (ImGui::IsItemHovered() && !child_tooltip_shown) {
+                std::string loc_str = m.date_str;
+                time_t utc = get_match_utc_time(m.date_str, m.stadium_id);
+                if (utc != 0) {
+                    loc_str = format_local_time(utc);
+                }
+                ImGui::SetTooltip("Venue: %s\nGroup/Stage: %s\nStadium Local: %s\nYour Local: %s", 
+                                  m.venue.c_str(), m.group.c_str(), m.date_str.c_str(), loc_str.c_str());
+            }
             ImGui::Unindent(8.0f * dpi_scale);
 
             ImVec2 group_max = ImGui::GetItemRectMax();
