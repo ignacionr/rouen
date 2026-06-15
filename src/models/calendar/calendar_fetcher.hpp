@@ -14,6 +14,12 @@
 #include "../../helpers/fetch.hpp"
 #include "event.hpp"
 
+#if defined(__APPLE__)
+#include "../../helpers/process_helper.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include <filesystem>
+#endif
+
 namespace calendar {
     // Define glaze schema for the calendar event components
     struct EventDateTime {
@@ -193,6 +199,10 @@ namespace calendar {
     class calendar_fetcher {
     public:
         calendar_fetcher(const std::string& calendar_url = {}) {
+#if defined(__APPLE__)
+            // On macOS, we query the local calendar via scripting, so calendar_url/CALENDAR_DELEGATE_URL is not required.
+            (void)calendar_url;
+#else
             // Get calendar delegate URL from parameter or environment
             if (!calendar_url.empty()) {
                 calendar_delegate_url_ = calendar_url;
@@ -205,10 +215,42 @@ namespace calendar {
             if (calendar_delegate_url_.empty()) {
                 last_error_ = "Calendar URL not provided. Please configure CALENDAR_DELEGATE_URL.";
             }
+#endif
         }
 
-        // Fetch calendar events from the Google Calendar script
+        // Fetch calendar events
         std::vector<event> fetch_events() {
+#if defined(__APPLE__)
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                last_error_.clear();
+                
+                // Locate the AppleScript helper
+                auto script_path = rouen::platform::get_resource_path("fetch_calendar.scpt");
+                if (!std::filesystem::exists(script_path)) {
+                    // Fallback to source directory scripts folder for development builds
+                    auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.scpt";
+                    if (std::filesystem::exists(dev_script_path)) {
+                        script_path = dev_script_path;
+                    } else {
+                        throw std::runtime_error("fetch_calendar.scpt not found in resources");
+                    }
+                }
+                
+                std::string command = "osascript \"" + script_path.string() + "\"";
+                std::string response = ProcessHelper::executeCommand(command);
+                if (response.empty()) {
+                    throw std::runtime_error("osascript returned empty response or failed");
+                }
+                
+                // Parse the JSON response
+                auto data = parse_response(response);
+                return data;
+            } catch (const std::exception& e) {
+                last_error_ = e.what();
+                return {};
+            }
+#else
             if (calendar_delegate_url_.empty()) {
                 last_error_ = "Calendar URL not provided. Please configure CALENDAR_DELEGATE_URL.";
                 return {};
@@ -226,6 +268,7 @@ namespace calendar {
                 last_error_ = e.what();
                 return {};
             }
+#endif
         }
 
         // Check if there was an error in the last operation
