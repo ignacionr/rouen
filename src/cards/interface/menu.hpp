@@ -76,6 +76,7 @@ namespace rouen::cards {
                     }},
                     { "Media", {
                         {"Radio", []() { "create_card"_sfn("radio"); }},
+                        {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
                         {"Chess Replay", []() { "create_card"_sfn("chess"); }}
                     }},
                     { "System", {

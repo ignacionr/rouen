@@ -29,6 +29,7 @@
 #include "../information/weather.hpp"
 #include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
+#include "../media/radiocut.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
@@ -125,6 +126,14 @@ namespace rouen::cards {
                 
                 instance.emplace("radio", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<radio>();
+                });
+                
+                instance.emplace("radiocut", [](std::string_view, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<radiocut>();
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
                 });
                 
                 instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {

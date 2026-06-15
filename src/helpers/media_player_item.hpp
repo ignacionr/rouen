@@ -47,6 +47,7 @@ struct media_player_item {
     std::mutex data_mutex;
     std::atomic<int> volume{100};
     bool has_video{false}; // New: track if current media has video
+    double start_offset{0.0};
 
     media_player_item() = default;
     ~media_player_item() { stopMedia(); }
@@ -148,6 +149,7 @@ inline void media_player_item::stopMedia() {
     is_paused = false;
     position = 0.0;
     duration = 0.0;
+    start_offset = 0.0;
 }
 
 inline void media_player_item::startPositionTracking() {
@@ -299,7 +301,11 @@ inline bool media_player_item::playMedia() {
     if (!cookies_browser.empty()) {
         ytdl_opts = " --ytdl-raw-options=cookies-from-browser=" + cookies_browser;
     }
-    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + ytdl_opts + " \"" + sanitized_url + "\"";
+    std::string start_opt;
+    if (start_offset > 0.0) {
+        start_opt = " --start=" + std::to_string(start_offset);
+    }
+    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + start_opt + ytdl_opts + " \"" + sanitized_url + "\"";
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
@@ -356,6 +362,9 @@ inline bool media_player_item::playMedia() {
         std::string cookies_browser = CONFIG_SERVICE()->get_env("ROUEN_COOKIES_BROWSER");
         if (!cookies_browser.empty()) {
             args_str.push_back("--ytdl-raw-options=cookies-from-browser=" + cookies_browser);
+        }
+        if (start_offset > 0.0) {
+            args_str.push_back("--start=" + std::to_string(start_offset));
         }
         args_str.push_back(sanitized_url);
         
