@@ -46,7 +46,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        width = 700.0f;
+        width = 805.0f;
         
         // Use the shared host instance instead of creating a new one
         rss_host = getHost();
@@ -74,7 +74,13 @@ public:
         
         // Add a new feed section
         ImGui::TextColored(colors[2], "Add RSS Feed:");
-        ImGui::PushItemWidth(-1);
+        
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float add_btn_w = ImGui::CalcTextSize("Add").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        float ai_btn_w = ImGui::CalcTextSize("AI Search").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        float input_w = ImGui::GetContentRegionAvail().x - add_btn_w - ai_btn_w - ImGui::GetStyle().ItemSpacing.x * 2.0f - 8.0f * dpi_scale;
+        
+        ImGui::PushItemWidth(input_w);
         bool url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
             ImGuiInputTextFlags_EnterReturnsTrue);
         
@@ -104,10 +110,9 @@ public:
         ImGui::SameLine();
         bool ai_search_clicked = ImGui::Button("AI Search");
         
-        // Show AI search status
+        // Show AI search status on the following line (when needed)
         if (ai_search_in_progress_) {
-            ImGui::SameLine();
-            ImGui::TextColored(colors[4], "Searching...");
+            ImGui::TextColored(colors[4], "AI is searching...");
         }
         
         // Handle AI search trigger
