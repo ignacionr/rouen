@@ -160,6 +160,13 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             status_code = 405;
             response = "{\"error\":\"Method not allowed\"}";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/schemas"), NULL)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_schemas_request(c, hm);
+        } else {
+            status_code = 405;
+            response = "{\"error\":\"Method not allowed\"}";
+        }
     } else {
         status_code = 404;
         response = "{\"error\":\"Not found\"}";
@@ -222,6 +229,21 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
 
         // For now, return a simple response
         return "{\"success\":true,\"message\":\"AI request processed\",\"model\":\"" + request.model + "\"}";
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+    }
+}
+
+std::string api_server::handle_schemas_request(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        std::vector<std::string> schemas;
+        const auto& dict = rouen::cards::factory::dictionary();
+        for (const auto& pair : dict) {
+            schemas.push_back(pair.first);
+        }
+        std::sort(schemas.begin(), schemas.end());
+        return glz::write_json(schemas).value_or("[]");
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
         return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
