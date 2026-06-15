@@ -363,8 +363,18 @@ bool terminal::handle_slash_command(const std::string& cmd) {
             
             const char* home_env = std::getenv("HOME");
             std::string home_dir = home_env ? home_env : "";
-            std::string src_path = home_dir.empty() ? "/Users/inz/src" : (std::filesystem::path(home_dir) / "src").string();
-            std::string agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell \"{}\" -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, src_path, current_working_dir, escaped_prompt);
+            
+            std::string agy_path = home_dir.empty() ? "" : (std::filesystem::path(home_dir) / ".local" / "bin" / "agy").string();
+            std::string agy_cmd;
+            
+            if (!agy_path.empty() && std::filesystem::exists(agy_path)) {
+                // Use standalone binary directly for speed and reliability
+                agy_cmd = std::format("(cd \"{}\" && \"{}\" --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, agy_path, current_working_dir, escaped_prompt);
+            } else {
+                // Fallback to nix shell using the src directory flake
+                std::string src_path = home_dir.empty() ? "/Users/inz/src" : (std::filesystem::path(home_dir) / "src").string();
+                agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell \"{}\" -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, src_path, current_working_dir, escaped_prompt);
+            }
             
             // Execute the command in the bash session
             is_command_running = true;
