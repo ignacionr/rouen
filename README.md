@@ -748,6 +748,7 @@ Rouen uses a modern multi-platform CI/CD pipeline with automated builds and rele
 - Fast feedback for development
 
 **Platform-Specific Builds**
+- Linux release packaging is handled by `release.yml` (`build-linux` job)
 - `macos-release.yml`: macOS ARM64 build testing with vcpkg/Homebrew (manual or reusable workflow)
 - `windows-release.yml`: Windows x64 build testing with vcpkg (manual or reusable workflow)
 
