@@ -188,9 +188,9 @@ namespace rouen::cards
         void render_events_list()
         {
             ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
-                                   ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollY;
+                                   ImGuiTableFlags_SizingFixedFit;
             
-            if (ImGui::BeginTable("events_table", 3, flags, ImVec2(0, 400))) {
+            if (ImGui::BeginTable("events_table", 3, flags, ImVec2(0, 0))) {
                 ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 150);
                 ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthStretch);
@@ -367,34 +367,33 @@ namespace rouen::cards
 
         void render_day_view_event(const ::calendar::event& event)
         {
+            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            
             // Calculate the event time display
             std::string time_display;
             if (event.all_day) {
                 time_display = "All day";
             } else if (event.start.length() >= 16) {
-                // Extract hour:minute from the start time (format: "YYYY-MM-DDTHH:MM:SS")
                 time_display = event.start.substr(11, 5);
             }
             
-            // Event card style
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.2f, 0.3f, 0.3f, 0.3f));
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float card_width = ImGui::GetContentRegionAvail().x;
+
+            draw_list->ChannelsSplit(2);
+            draw_list->ChannelsSetCurrent(1); // Foreground/text
             
-            // Calculate minimum height for the event card based on content
-            // Use a reasonable minimum height that works well on macOS
-            const float min_event_height = ImGui::GetTextLineHeightWithSpacing() * 2.5f;
-            
-            ImGui::BeginChild(("event_" + event.id).c_str(), 
-                             ImVec2(ImGui::GetContentRegionAvail().x, min_event_height), 
-                             true);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f * dpi_scale);
+            ImGui::Indent(8.0f * dpi_scale);
+            ImGui::BeginGroup();
             
             // Event summary with click to view details
             ImGui::PushStyleColor(ImGuiCol_Text, colors[3]); // Use the active/positive color
-            if (ImGui::Selectable(event.summary.c_str(), false)) {
+            if (ImGui::Selectable(std::format("{}##event_sel_{}", event.summary, event.id).c_str(), false)) {
                 if (ImGui::GetIO().KeyCtrl) {
-                    // Create alarm card when Ctrl+click on event
                     create_alarm_from_event(event);
                 } else {
-                    // Normal selection behavior
                     selected_event_ = event;
                     show_event_details_ = true;
                 }
@@ -403,18 +402,28 @@ namespace rouen::cards
             
             // Event time
             if (!event.all_day) {
-                ImGui::Text("Time: %s", time_display.c_str());
+                ImGui::TextColored(colors[5], "Time: %s", time_display.c_str());
             }
             
             // Event location if available
             if (!event.location.empty()) {
-                ImGui::Text("Location: %s", event.location.c_str());
+                ImGui::TextColored(colors[5], "Location: %s", event.location.c_str());
             }
             
-            ImGui::EndChild();
-            ImGui::PopStyleColor();
+            ImGui::EndGroup();
+            ImGui::Unindent(8.0f * dpi_scale);
             
-            ImGui::Spacing();
+            ImVec2 group_max = ImGui::GetItemRectMax();
+            float card_bottom = group_max.y + 6.0f * dpi_scale;
+            
+            draw_list->ChannelsSetCurrent(0); // Background
+            draw_list->AddRectFilled(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.2f, 0.3f, 0.3f, 0.15f)), 4.0f * dpi_scale);
+            draw_list->AddRect(start_pos, ImVec2(start_pos.x + card_width, card_bottom), ImGui::GetColorU32(ImVec4(0.3f, 0.7f, 0.7f, 0.3f)), 4.0f * dpi_scale);
+            
+            draw_list->ChannelsMerge();
+            
+            // Advance cursor past the card box
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, card_bottom + 8.0f * dpi_scale));
         }
         
         void render_event_details()
