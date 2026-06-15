@@ -743,14 +743,14 @@ Rouen uses a modern multi-platform CI/CD pipeline with automated builds and rele
 
 **CI Testing (`ci-nix.yml`)**
 - Triggered on push/PR to `main` branch
-- Tests Linux and macOS builds using Nix
+- Runs Linux Nix build and tests for fast feedback
 - Runs comprehensive test suite
 - Fast feedback for development
 
 **Platform-Specific Builds**
-- `linux-release.yml`: Linux build testing with Nix
-- `macos-release.yml`: macOS ARM64 build testing with vcpkg/Homebrew  
-- `windows-release.yml`: Windows x64 build testing with vcpkg
+- Linux release packaging is handled by `release.yml` (`build-linux` job)
+- `macos-release.yml`: macOS ARM64 build testing with vcpkg/Homebrew (manual or reusable workflow)
+- `windows-release.yml`: Windows x64 build testing with vcpkg (manual or reusable workflow)
 
 **Unified Release (`release.yml`)**
 - Triggered manually with `workflow_dispatch` or on release publication
