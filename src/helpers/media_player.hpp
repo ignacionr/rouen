@@ -27,10 +27,11 @@ struct media_player {
         try {
             auto &item {items()[ImGui::GetID("MediaPlayer")]};
             item.url = url;
+            bool has_active_media = false;
             if (item.player_pid > 0) {
-                item.checkMediaStatus();
+                has_active_media = item.checkMediaStatus();
             }
-            if (item.is_playing) {
+            if (has_active_media) {
                 ImGui::TextUnformatted(title.data());
                 double current_pos, current_dur;
                 {
@@ -39,7 +40,8 @@ struct media_player {
                     current_dur = item.duration;
                 }
                 if (current_pos > 0 && current_dur > 0) {
-                    ImGui::TextColored(info_color, "Playing: %s / %s", 
+                    ImGui::TextColored(info_color, "%s: %s / %s",
+                        item.is_paused.load() ? "Paused" : "Playing",
                         item.formatTime(current_pos).c_str(),
                         item.formatTime(current_dur).c_str());
                 }
@@ -49,6 +51,10 @@ struct media_player {
                 if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
                     item.setVolume(vol);
                 }
+                if (ImGui::Button(std::format(" {} ", item.is_paused.load() ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
+                    item.togglePause();
+                }
+                ImGui::SameLine();
                 if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
                     item.stopMedia();
                 }
