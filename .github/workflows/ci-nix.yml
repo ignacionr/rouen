@@ -5,14 +5,8 @@ name: CI (Nix Linux & macOS)
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
   workflow_dispatch:
 
 concurrency:
