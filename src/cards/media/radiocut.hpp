@@ -95,6 +95,7 @@ namespace rouen::cards {
             
             name("RadioCut.fm Client");
             requested_fps = 10;
+            width = 750.0f; // 250% of default 300.0f width
             
             auto db_path = rouen::platform::get_user_data_path("radiocut_images.db").string();
             auto cache_dir = rouen::platform::get_user_data_path("cache/radiocut_images").string();
