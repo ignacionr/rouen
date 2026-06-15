@@ -1480,6 +1480,16 @@ private:
                     }
                 }
 
+                // Sort matches chronologically by date and time
+                std::sort(temp_matches.begin(), temp_matches.end(), [this](const Match& a, const Match& b) {
+                    time_t t_a = get_match_utc_time(a.date_str, a.stadium_id);
+                    time_t t_b = get_match_utc_time(b.date_str, b.stadium_id);
+                    if (t_a != t_b) {
+                        return t_a < t_b;
+                    }
+                    return a.group < b.group;
+                });
+
                 // 3. Fetch groups and standings from live API /get/groups
                 DB_INFO("World Cup Card: Fetching groups from live API...");
                 std::string groups_url = "https://worldcup26.ir/get/groups";

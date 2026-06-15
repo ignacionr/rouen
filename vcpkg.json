@@ -6,17 +6,26 @@
   "dependencies": [
     {
       "name": "curl",
-      "features": ["ssl"]
+      "features": [
+        "ssl"
+      ]
     },
-    "openssl",
     "sqlite3",
     "sdl2",
     {
       "name": "sdl2-image",
-      "features": ["libjpeg-turbo"]
+      "features": [
+        "libjpeg-turbo"
+      ]
     },
     "tinyxml2",
     "glaze",
     "gtest"
+  ],
+  "overrides": [
+    {
+      "name": "openssl",
+      "version": "system"
+    }
   ]
 }

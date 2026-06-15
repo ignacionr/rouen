@@ -147,11 +147,13 @@
             
             # Find the binary regardless of platform-specific directory structure
             ${if unstable.stdenv.isDarwin then ''
-              # On macOS, look for app bundle
-              if [ -f "rouen.app/Contents/MacOS/rouen" ]; then
-                cp rouen.app/Contents/MacOS/rouen $out/bin/
+              # On macOS, copy the app bundle and symlink the binary
+              if [ -d "rouen.app" ]; then
+                mkdir -p $out/Applications
+                cp -R rouen.app $out/Applications/Rouen.app
+                ln -s ../Applications/Rouen.app/Contents/MacOS/rouen $out/bin/rouen
               else
-                echo "Error: Could not find rouen.app/Contents/MacOS/rouen"
+                echo "Error: Could not find rouen.app"
                 echo "Directory contents:"
                 find . -name "rouen*" -type f || true
                 ls -la .
