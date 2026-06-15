@@ -206,7 +206,7 @@ namespace rouen::cards
                     
                     // Summary column
                     ImGui::TableSetColumnIndex(1);
-                    if (ImGui::Selectable(event.summary.c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (ImGui::Selectable(std::format("{}##list_sel_{}", event.summary, event.id).c_str(), false, ImGuiSelectableFlags_SpanAllColumns)) {
                         if (ImGui::GetIO().KeyCtrl) {
                             // Create alarm card when Ctrl+click on event
                             create_alarm_from_event(event);
