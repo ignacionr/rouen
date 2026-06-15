@@ -46,7 +46,7 @@ public:
         
         name("RSS Reader");
         requested_fps = 1;  // Update once per second
-        width = 540.0f;
+        width = 700.0f;
         
         // Use the shared host instance instead of creating a new one
         rss_host = getHost();
@@ -291,11 +291,12 @@ public:
 
     void render_feed_list(auto &feeds, std::string &search_text, bool &has_matches)
     {
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         // Setup ImGui table for feeds
         if (ImGui::BeginTable("FeedsTable", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY))
         {
             ImGui::TableSetupColumn("Feed", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-            ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthFixed, 80.0f, 1);
+            ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthFixed, 110.0f * dpi_scale, 1);
             
             // Get current time once for all feeds instead of per feed
             auto now = std::chrono::system_clock::now();

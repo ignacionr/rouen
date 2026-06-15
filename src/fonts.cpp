@@ -36,7 +36,10 @@ namespace rouen::fonts {
         // macOS font paths
         paths.push_back("/System/Library/Fonts/");
         paths.push_back("/Library/Fonts/");
-        paths.push_back("/Users/ignaciorodriguez/Library/Fonts/");  // User fonts
+        const char* home = std::getenv("HOME");
+        if (home) {
+            paths.push_back(std::format("{}/Library/Fonts/", home));
+        }
         paths.push_back("/opt/homebrew/share/fonts/");              // Homebrew fonts location
         #elif defined(_WIN32)
         // Windows font paths

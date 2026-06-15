@@ -1,6 +1,7 @@
 #include "terminal.hpp"
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"
+#include <cstdlib>
 
 namespace rouen::cards {
 
@@ -360,7 +361,10 @@ bool terminal::handle_slash_command(const std::string& cmd) {
                 escaped_prompt += c;
             }
             
-            std::string agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell /Users/ignaciorodriguez/src -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, current_working_dir, escaped_prompt);
+            const char* home_env = std::getenv("HOME");
+            std::string home_dir = home_env ? home_env : "";
+            std::string src_path = home_dir.empty() ? "/Users/inz/src" : (std::filesystem::path(home_dir) / "src").string();
+            std::string agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell \"{}\" -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, src_path, current_working_dir, escaped_prompt);
             
             // Execute the command in the bash session
             is_command_running = true;
