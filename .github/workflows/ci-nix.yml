@@ -36,11 +36,32 @@ jobs:
       - name: Configure Nix binary cache
         uses: DeterminateSystems/magic-nix-cache-action@v8
 
-      - name: Build (Nix Flake)
-        run: nix build .#default --print-build-logs
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Build
+        run: |
+          nix develop --command bash -c "
+            cmake -B build \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
+            cmake --build build --parallel \$(nproc)
+          "
 
       - name: Run tests
         run: |
-          nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-          nix develop --command bash -c "cd build-tests && cmake --build . --parallel 2"
-          nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
+          nix develop --command bash -c "
+            cmake -B build-tests -S tests \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
+            cmake --build build-tests --parallel \$(nproc) && \
+            cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl
+          "
