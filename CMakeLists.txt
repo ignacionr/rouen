@@ -37,17 +37,23 @@ else()
   message(STATUS "Release build enabled with optimizations")
 endif()
 
-# Set compiler before project() call on Linux for better C++23 support
+# Set compiler before project() call on Linux for better C++23 support.
+# When CC/CXX are already set in the environment (e.g. Nix devShell, Docker),
+# respect them so the environment-provided compiler and its include paths are used.
 if(UNIX AND NOT APPLE)
-  find_program(CLANG_EXECUTABLE clang)
-  find_program(CLANGPP_EXECUTABLE clang++)
-  
-  if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
-    set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
-    set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
-    message(STATUS "Using Clang/Clang++ for Linux build")
+  if("$ENV{CC}" STREQUAL "" AND "$ENV{CXX}" STREQUAL "")
+    find_program(CLANG_EXECUTABLE clang)
+    find_program(CLANGPP_EXECUTABLE clang++)
+
+    if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
+      set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
+      set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
+      message(STATUS "Using Clang/Clang++ for Linux build")
+    else()
+      message(STATUS "Clang not found, using default system compiler")
+    endif()
   else()
-    message(STATUS "Clang not found, using default system compiler")
+    message(STATUS "Using compiler from environment: $ENV{CXX}")
   endif()
 endif()
 
