@@ -48,7 +48,6 @@ jobs:
         run: |
           nix develop --command bash -c "
             cmake -B build \
-              -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
@@ -59,7 +58,7 @@ jobs:
         run: |
           nix develop --command bash -c "
             cmake -B build-tests -S tests \
-              -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake \
+              -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
             cmake --build build-tests --parallel \$(nproc) && \
