@@ -747,6 +747,12 @@ Rouen uses a modern multi-platform CI/CD pipeline with automated builds and rele
 - Runs comprehensive test suite
 - Fast feedback for development
 
+**Static Analysis (`clang-tidy.yml`)**
+- Triggered on push/PR to `main` branch
+- Runs clang-tidy through CMake (`CMAKE_CXX_CLANG_TIDY`) inside the Nix environment
+- Focuses on modernization, performance, and readability checks
+- Reports warnings for baseline adoption without failing CI on clang-tidy warnings
+
 **Platform-Specific Builds**
 - Linux release packaging is handled by `release.yml` (`build-linux` job)
 - `macos-release.yml`: macOS ARM64 build testing with vcpkg/Homebrew (manual or reusable workflow)

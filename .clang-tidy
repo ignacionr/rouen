@@ -1,0 +1,14 @@
+Checks: >-
+  -*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  bugprone-*,
+  -readability-identifier-naming,
+  -readability-magic-numbers,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -bugprone-easily-swappable-parameters
+HeaderFilterRegex: '^(src|tests)/'
+FormatStyle: none
+WarningsAsErrors: ''

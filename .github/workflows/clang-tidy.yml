@@ -1,0 +1,77 @@
+name: Clang-Tidy (Nix)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Nix
+        uses: cachix/install-nix-action@v31.4.0
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Configure Nix binary cache
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-clang-tidy-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-clang-tidy-
+            ${{ runner.os }}-ccache-
+
+      - name: Run clang-tidy analysis via CMake
+        run: |
+          nix develop --command nix shell nixpkgs#clang-tools --command bash -c "
+            clang-tidy --version && \
+            cmake -B build-clang-tidy \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_CLANG_TIDY=clang-tidy\;--config-file=${GITHUB_WORKSPACE}/.clang-tidy\;--warnings-as-errors= && \
+            cmake --build build-clang-tidy --parallel \$(nproc) 2>&1 | tee clang-tidy.log
+          "
+
+      - name: Summarize clang-tidy findings
+        if: always()
+        run: |
+          LOG_FILE="clang-tidy.log"
+          if [ -f "$LOG_FILE" ]; then
+            WARNING_COUNT=$(grep -E "warning:|\\[clang-tidy\\]" -c "$LOG_FILE" || true)
+            {
+              echo "### Clang-Tidy Summary"
+              echo ""
+              echo "- Warnings detected: $WARNING_COUNT"
+              echo "- Mode: warnings-only baseline (build is not failed by clang-tidy warnings)"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "clang-tidy log was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload clang-tidy log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-log
+          path: clang-tidy.log
+          if-no-files-found: warn
