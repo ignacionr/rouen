@@ -59,7 +59,7 @@ jobs:
         run: |
           LOG_FILE="clang-tidy.log"
           if [ -f "$LOG_FILE" ]; then
-            WARNING_COUNT=$(grep -E "warning:|\\[clang-tidy\\]" -c "$LOG_FILE" || true)
+            WARNING_COUNT=$(grep -c "warning:" "$LOG_FILE" || true)
             {
               echo "### Clang-Tidy Summary"
               echo ""
