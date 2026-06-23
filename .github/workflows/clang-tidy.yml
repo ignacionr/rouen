@@ -46,11 +46,11 @@ jobs:
         run: |
           nix develop .#default nixpkgs#clang-tools --command bash -euo pipefail -c "
             clang-tidy --version
+            # Keep clang-tidy in warnings-only mode for baseline adoption.
             cmake -B build-clang-tidy \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-              # Keep clang-tidy in warnings-only mode for baseline adoption.
               -DCMAKE_CXX_CLANG_TIDY=clang-tidy\;--warnings-as-errors=
             cmake --build build-clang-tidy --parallel \$(nproc) 2>&1 | tee clang-tidy.log
           "

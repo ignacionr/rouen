@@ -10,6 +10,6 @@ Checks: >-
   -modernize-use-nodiscard,
   -bugprone-easily-swappable-parameters
 # Analyze headers under the repository's primary C++ source/test roots.
-HeaderFilterRegex: '^(src|tests)/'
+HeaderFilterRegex: '^(src|tests)/.*'
 FormatStyle: none
 WarningsAsErrors: ''
