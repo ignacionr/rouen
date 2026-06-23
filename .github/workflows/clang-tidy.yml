@@ -49,7 +49,7 @@ jobs:
               clang-tidy --version
               # Warnings-as-errors is controlled by .clang-tidy (left empty for baseline mode).
               cmake -B build-clang-tidy \
-                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
                 -DCMAKE_C_COMPILER_LAUNCHER=ccache \
                 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
                 -DCMAKE_CXX_CLANG_TIDY=clang-tidy
