@@ -47,12 +47,12 @@ jobs:
           # Use the repo devShell for project dependencies plus clang-tools for clang-tidy.
           nix develop .#default nixpkgs#clang-tools --command bash -euo pipefail -c "
             clang-tidy --version
-            # Empty --warnings-as-errors keeps clang-tidy in warnings-only baseline mode.
+            # Warnings-as-errors is controlled by .clang-tidy (left empty for baseline mode).
             cmake -B build-clang-tidy \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-              -DCMAKE_CXX_CLANG_TIDY=clang-tidy\;--warnings-as-errors=
+              -DCMAKE_CXX_CLANG_TIDY=clang-tidy
             cmake --build build-clang-tidy --parallel $(nproc) 2>&1 | tee clang-tidy.log
           "
 
