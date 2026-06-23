@@ -52,7 +52,7 @@ jobs:
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_CLANG_TIDY=clang-tidy\;--warnings-as-errors=
-            cmake --build build-clang-tidy --parallel \$(nproc) 2>&1 | tee clang-tidy.log
+            cmake --build build-clang-tidy --parallel $(nproc) 2>&1 | tee clang-tidy.log
           "
 
       - name: Summarize clang-tidy findings
