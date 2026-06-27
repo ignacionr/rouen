@@ -10,7 +10,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         submodules: recursive
 
@@ -21,7 +21,7 @@ jobs:
         Write-Host "PowerShell execution policy set to RemoteSigned"
 
     - name: Setup vcpkg cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ${{ github.workspace }}\vcpkg\installed
@@ -191,7 +191,7 @@ jobs:
         }
 
     - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v2
+      uses: microsoft/setup-msbuild@v3
 
     - name: Configure CMake
       shell: cmd
@@ -1079,7 +1079,7 @@ jobs:
         }
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: rouen-windows-x64-complete
         path: |

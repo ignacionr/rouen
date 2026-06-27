@@ -106,6 +106,12 @@ public:
         int64_t last_updated_epoch = 0;
     };
 
+    struct WorldCupDataCache {
+        std::vector<Match> matches;
+        std::unordered_map<std::string, std::vector<GroupTeam>> groups;
+        std::unordered_map<std::string, TeamInfo> teams;
+    };
+
     worldcup_dashboard(std::string_view locator = "") {
         // Set World Cup theme colors: vibrant pitch green and gold accents
         colors[0] = {0.09f, 0.45f, 0.27f, 1.0f}; // Pitch Green
@@ -125,6 +131,7 @@ public:
         // Load persistent commentary cache from disk
         load_commentary_cache_from_disk();
         load_team_players_cache_from_disk();
+        load_data_cache_from_disk();
 
         if (!locator.empty()) {
             handle_uri("worldcup:" + std::string(locator));
@@ -650,6 +657,62 @@ private:
         }
     }
 
+    void save_data_cache_to_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_data_cache.json").string();
+            WorldCupDataCache cache_to_save;
+            {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                cache_to_save.matches = api_matches;
+                cache_to_save.groups = api_groups;
+                cache_to_save.teams = api_teams;
+            }
+            std::string json_str;
+            auto ec = glz::write_json(cache_to_save, json_str);
+            if (!ec) {
+                std::ofstream out(filepath, std::ios::out | std::ios::trunc);
+                if (out.is_open()) {
+                    out << json_str;
+                    DB_INFO("Saved World Cup data cache to disk");
+                }
+            } else {
+                DB_WARN_FMT("Failed to serialize World Cup data cache: {}", glz::format_error(ec, json_str));
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to save World Cup data cache: {}", e.what());
+        }
+    }
+
+    void load_data_cache_from_disk() {
+        try {
+            std::string filepath = rouen::platform::get_user_data_path("worldcup_data_cache.json").string();
+            if (!std::filesystem::exists(filepath)) {
+                return;
+            }
+            std::ifstream in(filepath);
+            if (!in.is_open()) {
+                return;
+            }
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            std::string json_str = ss.str();
+            WorldCupDataCache temp_cache;
+            auto ec = glz::read_json(temp_cache, json_str);
+            if (!ec) {
+                std::lock_guard<std::mutex> lock(data_mutex);
+                api_matches = std::move(temp_cache.matches);
+                api_groups = std::move(temp_cache.groups);
+                api_teams = std::move(temp_cache.teams);
+                data_loaded = true;
+                DB_INFO("Loaded World Cup data cache from disk");
+            } else {
+                DB_WARN_FMT("Failed to parse World Cup data cache JSON: {}", glz::format_error(ec, json_str));
+            }
+        } catch (const std::exception& e) {
+            DB_ERROR_FMT("Failed to load World Cup data cache: {}", e.what());
+        }
+    }
+
     std::string strip_json_markdown(const std::string& input) {
         std::string result = input;
         
@@ -1123,6 +1186,10 @@ private:
             return;
         }
         std::jthread([this]() {
+            struct fetch_guard {
+                std::atomic<bool>& flag;
+                ~fetch_guard() { flag = false; }
+            } guard{is_fetching};
             try {
                 auto get_safe_string = [](const glz::json_t& g, const std::string& key, const std::string& default_val = "") -> std::string {
                     if (g.contains(key)) {
@@ -1132,6 +1199,17 @@ private:
                         }
                     }
                     return default_val;
+                };
+
+                auto safe_stoi = [](const std::string& s, int default_val = 0) -> int {
+                    if (s.empty() || s == "null") return default_val;
+                    try {
+                        size_t pos = 0;
+                        int val = std::stoi(s, &pos);
+                        return val;
+                    } catch (...) {
+                        return default_val;
+                    }
                 };
 
                 auto clean_scorers = [](const std::string& raw) -> std::string {
@@ -1262,8 +1340,8 @@ private:
                     
                     std::string hscore_str = get_safe_string(g, "home_score", "0");
                     std::string ascore_str = get_safe_string(g, "away_score", "0");
-                    m.home_score = hscore_str.empty() ? 0 : std::stoi(hscore_str);
-                    m.away_score = ascore_str.empty() ? 0 : std::stoi(ascore_str);
+                    m.home_score = safe_stoi(hscore_str);
+                    m.away_score = safe_stoi(ascore_str);
                     
                     m.date_str = get_safe_string(g, "local_date");
                     std::string sid = get_safe_string(g, "stadium_id");
@@ -1335,149 +1413,153 @@ private:
                     std::string away_scorers;
                 };
 
-                std::vector<EspnMatch> espn_matches;
-                if (espn_loaded && espn_json.contains("events")) {
-                    for (const auto& ev : espn_json["events"].get<std::vector<glz::json_t>>()) {
-                        if (!ev.contains("competitions")) continue;
-                        const auto& comps = ev["competitions"].get<std::vector<glz::json_t>>();
-                        if (comps.empty()) continue;
-                        const auto& comp = comps[0];
-                        if (!comp.contains("competitors")) continue;
+                try {
+                    std::vector<EspnMatch> espn_matches;
+                    if (espn_loaded && espn_json.contains("events")) {
+                        for (const auto& ev : espn_json["events"].get<std::vector<glz::json_t>>()) {
+                            if (!ev.contains("competitions")) continue;
+                            const auto& comps = ev["competitions"].get<std::vector<glz::json_t>>();
+                            if (comps.empty()) continue;
+                            const auto& comp = comps[0];
+                            if (!comp.contains("competitors")) continue;
 
-                        EspnMatch em;
+                            EspnMatch em;
 
-                        std::string state = "pre";
-                        if (ev.contains("status") && ev["status"].contains("type")) {
-                            state = get_safe_string(ev["status"]["type"], "state", "pre");
-                            em.time_str = get_safe_string(ev["status"]["type"], "detail", "");
-                        }
-
-                        if (state == "in") {
-                            em.status = "LIVE";
-                        } else if (state == "post") {
-                            em.status = "COMPLETED";
-                            em.time_str = "FT";
-                        } else {
-                            em.status = "UPCOMING";
-                        }
-
-                        for (const auto& team : comp["competitors"].get<std::vector<glz::json_t>>()) {
-                            std::string ha = get_safe_string(team, "homeAway");
-                            std::string tname = "";
-                            if (team.contains("team")) {
-                                tname = get_safe_string(team["team"], "displayName");
+                            std::string state = "pre";
+                            if (ev.contains("status") && ev["status"].contains("type")) {
+                                state = get_safe_string(ev["status"]["type"], "state", "pre");
+                                em.time_str = get_safe_string(ev["status"]["type"], "detail", "");
                             }
-                            std::string score_str = get_safe_string(team, "score", "0");
-                            int score = score_str.empty() ? 0 : std::stoi(score_str);
 
-                            if (ha == "home") {
-                                em.home_team = tname;
-                                em.home_score = score;
+                            if (state == "in") {
+                                em.status = "LIVE";
+                            } else if (state == "post") {
+                                em.status = "COMPLETED";
+                                em.time_str = "FT";
                             } else {
-                                em.away_team = tname;
-                                em.away_score = score;
+                                em.status = "UPCOMING";
                             }
-                        }
 
-                        if (comp.contains("details")) {
-                            std::vector<std::string> home_goals;
-                            std::vector<std::string> away_goals;
-                            for (const auto& det : comp["details"].get<std::vector<glz::json_t>>()) {
-                                std::string type_text = "";
-                                if (det.contains("type")) {
-                                    type_text = get_safe_string(det["type"], "text");
+                            for (const auto& team : comp["competitors"].get<std::vector<glz::json_t>>()) {
+                                std::string ha = get_safe_string(team, "homeAway");
+                                std::string tname = "";
+                                if (team.contains("team")) {
+                                    tname = get_safe_string(team["team"], "displayName");
                                 }
-                                bool is_goal = (type_text.find("Goal") != std::string::npos || type_text == "Penalty");
-                                if (!is_goal) continue;
+                                std::string score_str = get_safe_string(team, "score", "0");
+                                int score = safe_stoi(score_str);
 
-                                std::string clock_val = "";
-                                if (det.contains("clock")) {
-                                    clock_val = get_safe_string(det["clock"], "displayValue");
+                                if (ha == "home") {
+                                    em.home_team = tname;
+                                    em.home_score = score;
+                                } else {
+                                    em.away_team = tname;
+                                    em.away_score = score;
                                 }
+                            }
 
-                                std::string scorer_name = "";
-                                if (det.contains("athletesInvolved")) {
-                                    const auto& aths = det["athletesInvolved"].get<std::vector<glz::json_t>>();
-                                    if (!aths.empty()) {
-                                        scorer_name = get_safe_string(aths[0], "displayName");
+                            if (comp.contains("details")) {
+                                std::vector<std::string> home_goals;
+                                std::vector<std::string> away_goals;
+                                for (const auto& det : comp["details"].get<std::vector<glz::json_t>>()) {
+                                    std::string type_text = "";
+                                    if (det.contains("type")) {
+                                        type_text = get_safe_string(det["type"], "text");
+                                    }
+                                    bool is_goal = (type_text.find("Goal") != std::string::npos || type_text == "Penalty");
+                                    if (!is_goal) continue;
+
+                                    std::string clock_val = "";
+                                    if (det.contains("clock")) {
+                                        clock_val = get_safe_string(det["clock"], "displayValue");
+                                    }
+
+                                    std::string scorer_name = "";
+                                    if (det.contains("athletesInvolved")) {
+                                        const auto& aths = det["athletesInvolved"].get<std::vector<glz::json_t>>();
+                                        if (!aths.empty()) {
+                                            scorer_name = get_safe_string(aths[0], "displayName");
+                                        }
+                                    }
+
+                                    if (scorer_name.empty()) continue;
+
+                                    std::string team_id_str = "";
+                                    if (det.contains("team")) {
+                                        team_id_str = get_safe_string(det["team"], "id");
+                                    }
+
+                                    bool is_own_goal = (type_text.find("Own Goal") != std::string::npos);
+
+                                    std::string goal_entry = scorer_name;
+                                    if (!clock_val.empty()) {
+                                        goal_entry += " " + clock_val;
+                                    }
+                                    if (is_own_goal) {
+                                        goal_entry += " (OG)";
+                                    }
+
+                                    std::string home_team_id = "";
+                                    std::string away_team_id = "";
+                                    for (const auto& competitor : comp["competitors"].get<std::vector<glz::json_t>>()) {
+                                        std::string ha = get_safe_string(competitor, "homeAway");
+                                        std::string tid = get_safe_string(competitor, "id");
+                                        if (ha == "home") home_team_id = tid;
+                                        else away_team_id = tid;
+                                    }
+
+                                    if (team_id_str == home_team_id) {
+                                        home_goals.push_back(goal_entry);
+                                    } else {
+                                        away_goals.push_back(goal_entry);
                                     }
                                 }
 
-                                if (scorer_name.empty()) continue;
-
-                                std::string team_id_str = "";
-                                if (det.contains("team")) {
-                                    team_id_str = get_safe_string(det["team"], "id");
+                                for (size_t i = 0; i < home_goals.size(); ++i) {
+                                    if (i > 0) em.home_scorers += ", ";
+                                    em.home_scorers += home_goals[i];
                                 }
-
-                                bool is_own_goal = (type_text.find("Own Goal") != std::string::npos);
-
-                                std::string goal_entry = scorer_name;
-                                if (!clock_val.empty()) {
-                                    goal_entry += " " + clock_val;
-                                }
-                                if (is_own_goal) {
-                                    goal_entry += " (OG)";
-                                }
-
-                                std::string home_team_id = "";
-                                std::string away_team_id = "";
-                                for (const auto& competitor : comp["competitors"].get<std::vector<glz::json_t>>()) {
-                                    std::string ha = get_safe_string(competitor, "homeAway");
-                                    std::string tid = get_safe_string(competitor, "id");
-                                    if (ha == "home") home_team_id = tid;
-                                    else away_team_id = tid;
-                                }
-
-                                if (team_id_str == home_team_id) {
-                                    home_goals.push_back(goal_entry);
-                                } else {
-                                    away_goals.push_back(goal_entry);
+                                for (size_t i = 0; i < away_goals.size(); ++i) {
+                                    if (i > 0) em.away_scorers += ", ";
+                                    em.away_scorers += away_goals[i];
                                 }
                             }
 
-                            for (size_t i = 0; i < home_goals.size(); ++i) {
-                                if (i > 0) em.home_scorers += ", ";
-                                em.home_scorers += home_goals[i];
-                            }
-                            for (size_t i = 0; i < away_goals.size(); ++i) {
-                                if (i > 0) em.away_scorers += ", ";
-                                em.away_scorers += away_goals[i];
-                            }
+                            espn_matches.push_back(em);
                         }
-
-                        espn_matches.push_back(em);
                     }
-                }
 
-                if (!espn_matches.empty()) {
-                    for (auto& m : temp_matches) {
-                        std::string norm_m_home = normalize_team_name(m.home_team);
-                        std::string norm_m_away = normalize_team_name(m.away_team);
+                    if (!espn_matches.empty()) {
+                        for (auto& m : temp_matches) {
+                            std::string norm_m_home = normalize_team_name(m.home_team);
+                            std::string norm_m_away = normalize_team_name(m.away_team);
 
-                        for (const auto& em : espn_matches) {
-                            std::string norm_em_home = normalize_team_name(em.home_team);
-                            std::string norm_em_away = normalize_team_name(em.away_team);
+                            for (const auto& em : espn_matches) {
+                                std::string norm_em_home = normalize_team_name(em.home_team);
+                                std::string norm_em_away = normalize_team_name(em.away_team);
 
-                            if ((norm_m_home == norm_em_home && norm_m_away == norm_em_away) ||
-                                (norm_m_home == norm_em_away && norm_m_away == norm_em_home)) {
+                                if ((norm_m_home == norm_em_home && norm_m_away == norm_em_away) ||
+                                    (norm_m_home == norm_em_away && norm_m_away == norm_em_home)) {
 
-                                m.home_score = (norm_m_home == norm_em_home) ? em.home_score : em.away_score;
-                                m.away_score = (norm_m_home == norm_em_home) ? em.away_score : em.home_score;
-                                m.status = em.status;
-                                m.time_str = em.time_str;
+                                    m.home_score = (norm_m_home == norm_em_home) ? em.home_score : em.away_score;
+                                    m.away_score = (norm_m_home == norm_em_home) ? em.away_score : em.home_score;
+                                    m.status = em.status;
+                                    m.time_str = em.time_str;
 
-                                if (norm_m_home == norm_em_home) {
-                                    m.home_scorers = em.home_scorers;
-                                    m.away_scorers = em.away_scorers;
-                                } else {
-                                    m.home_scorers = em.away_scorers;
-                                    m.away_scorers = em.home_scorers;
+                                    if (norm_m_home == norm_em_home) {
+                                        m.home_scorers = em.home_scorers;
+                                        m.away_scorers = em.away_scorers;
+                                    } else {
+                                        m.home_scorers = em.away_scorers;
+                                        m.away_scorers = em.home_scorers;
+                                    }
+                                    break;
                                 }
-                                break;
                             }
                         }
                     }
+                } catch (const std::exception& e) {
+                    DB_WARN_FMT("Exception processing ESPN live scores: {}", e.what());
                 }
 
                 // Sort matches chronologically by date and time
@@ -1525,12 +1607,12 @@ private:
                                 std::string gd_str = get_safe_string(gt, "gd", "0");
                                 std::string pts_str = get_safe_string(gt, "pts", "0");
                                 
-                                team.played = mp_str.empty() ? 0 : std::stoi(mp_str);
-                                team.won = w_str.empty() ? 0 : std::stoi(w_str);
-                                team.drawn = d_str.empty() ? 0 : std::stoi(d_str);
-                                team.lost = l_str.empty() ? 0 : std::stoi(l_str);
-                                team.gd = gd_str.empty() ? 0 : std::stoi(gd_str);
-                                team.points = pts_str.empty() ? 0 : std::stoi(pts_str);
+                                team.played = safe_stoi(mp_str);
+                                team.won = safe_stoi(w_str);
+                                team.drawn = safe_stoi(d_str);
+                                team.lost = safe_stoi(l_str);
+                                team.gd = safe_stoi(gd_str);
+                                team.points = safe_stoi(pts_str);
                                 
                                 gteams.push_back(team);
                             }
@@ -1553,6 +1635,9 @@ private:
                     api_teams = std::move(temp_teams);
                     data_loaded = true;
                 }
+                
+                // Save to disk cache
+                save_data_cache_to_disk();
                 
                 DB_INFO("World Cup Card: Fetch completed successfully!");
             } catch (const std::exception& e) {
@@ -3047,7 +3132,6 @@ struct glz::meta<rouen::cards::worldcup_dashboard::QAPair> {
         "answer", &T::answer
     );
 };
-
 template <>
 struct glz::meta<rouen::cards::worldcup_dashboard::TeamPlayersCache> {
     using T = rouen::cards::worldcup_dashboard::TeamPlayersCache;
@@ -3059,4 +3143,58 @@ struct glz::meta<rouen::cards::worldcup_dashboard::TeamPlayersCache> {
     );
 };
 
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::Match> {
+    using T = rouen::cards::worldcup_dashboard::Match;
+    static constexpr auto value = object(
+        "group", &T::group,
+        "home_team", &T::home_team,
+        "home_code", &T::home_code,
+        "away_team", &T::away_team,
+        "away_code", &T::away_code,
+        "home_score", &T::home_score,
+        "away_score", &T::away_score,
+        "status", &T::status,
+        "date_str", &T::date_str,
+        "venue", &T::venue,
+        "time_str", &T::time_str,
+        "home_scorers", &T::home_scorers,
+        "away_scorers", &T::away_scorers,
+        "stadium_id", &T::stadium_id
+    );
+};
 
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::GroupTeam> {
+    using T = rouen::cards::worldcup_dashboard::GroupTeam;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "code", &T::code,
+        "played", &T::played,
+        "won", &T::won,
+        "drawn", &T::drawn,
+        "lost", &T::lost,
+        "gd", &T::gd,
+        "points", &T::points
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::TeamInfo> {
+    using T = rouen::cards::worldcup_dashboard::TeamInfo;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "code", &T::code,
+        "group", &T::group
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::worldcup_dashboard::WorldCupDataCache> {
+    using T = rouen::cards::worldcup_dashboard::WorldCupDataCache;
+    static constexpr auto value = object(
+        "matches", &T::matches,
+        "groups", &T::groups,
+        "teams", &T::teams
+    );
+};

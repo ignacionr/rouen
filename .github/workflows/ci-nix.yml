@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
@@ -34,7 +34,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Configure Nix binary cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -53,6 +53,11 @@ jobs:
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
             cmake --build build --parallel \$(nproc)
           "
+
+      - name: Run Clang-Tidy static analysis
+        run: |
+          nix develop --command bash -c "cmake -B build-tidy -S . -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+          nix develop --command bash -c "run-clang-tidy -clang-tidy-binary ./scripts/run-clang-tidy.sh -p build-tidy"
 
       - name: Run tests
         run: |

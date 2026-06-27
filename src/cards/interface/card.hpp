@@ -13,6 +13,7 @@
 
 // 3. All other includes
 #include "../../registrar.hpp"
+#include "../../helpers/ui_context.hpp"
 // Forward declarations to avoid circular dependencies
 namespace rouen::helpers {
     class mcp_service;
@@ -64,7 +65,8 @@ struct card {
     // Unregister this card's MCP functions (called automatically by deck)  
     void unregister_mcp_functions();
 
-    virtual bool render() = 0;
+    virtual bool render() { return false; }
+    virtual bool render(rouen::ui::ui_context& /*ui*/) { return render(); }
 
     virtual std::string get_uri() const = 0;
 

@@ -250,12 +250,12 @@ struct sysinfo_card : public card {
     }
     
     // Draw a progress bar with text overlay
-    void draw_progress_bar(const char* label, float fraction, const char* overlay_text) {
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, colors[2]);
-        ImGui::ProgressBar(fraction, ImVec2(400, 0), overlay_text);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::Text("%s", label);
+    void draw_progress_bar(rouen::ui::ui_context& ui, const char* label, float fraction, const char* overlay_text) {
+        ui.push_style_color(rouen::ui::style_color::plot_histogram, colors[2]);
+        ui.progress_bar(fraction, ImVec2(400, 0), overlay_text);
+        ui.pop_style_color();
+        ui.same_line(0.0f, ui.get_item_inner_spacing_x());
+        ui.text(label);
     }
 
     // Get system uptime in seconds
@@ -297,8 +297,8 @@ struct sysinfo_card : public card {
 #endif
     }
     
-    bool render() override {
-        return render_window([this]() {
+    bool render(rouen::ui::ui_context& ui) override {
+        return render_window([this, &ui]() {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count();
             
@@ -315,86 +315,86 @@ struct sysinfo_card : public card {
             int minutes = static_cast<int>((uptime_seconds / 60) % 60);
             int seconds = static_cast<int>(uptime_seconds % 60);
             
-            ImGui::Text("System Uptime: %ld days, %d:%02d:%02d", days, hours, minutes, seconds);
-            ImGui::Separator();
+            ui.text(std::format("System Uptime: {} days, {}:{:02d}:{:02d}", days, hours, minutes, seconds));
+            ui.separator();
             
             // Memory section
             auto [mem_total, mem_used, mem_free] = memory_info;
             std::string mem_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", mem_used, mem_total, (mem_used / mem_total) * 100.0);
-            draw_progress_bar("RAM", static_cast<float>(mem_used / mem_total), mem_text.c_str());
+            draw_progress_bar(ui, "RAM", static_cast<float>(mem_used / mem_total), mem_text.c_str());
             
-            ImGui::Spacing();
+            ui.spacing();
             
             // Disk space section
             auto [disk_total, disk_used, disk_free] = disk_info;
             std::string disk_text = std::format("{:.2f}/{:.2f} GB ({:.1f}%)", disk_used, disk_total, (disk_used / disk_total) * 100.0);
-            draw_progress_bar("Disk", static_cast<float>(disk_used / disk_total), disk_text.c_str());
+            draw_progress_bar(ui, "Disk", static_cast<float>(disk_used / disk_total), disk_text.c_str());
             
-            ImGui::Spacing();
+            ui.spacing();
             
             // CPU usage section
             std::string cpu_text = std::format("{:.1f}%", cpu_usage);
-            draw_progress_bar("CPU", static_cast<float>(cpu_usage / 100.0), cpu_text.c_str());
+            draw_progress_bar(ui, "CPU", static_cast<float>(cpu_usage / 100.0), cpu_text.c_str());
             
             // Display number of processes
             int process_count = get_process_count();
-            ImGui::Text("Running Processes: %d", process_count);
+            ui.text(std::format("Running Processes: {}", process_count));
             
-            ImGui::Separator();
+            ui.separator();
             
             // Drive Benchmark section
-            ImGui::Text("Drive Benchmark:");
+            ui.text("Drive Benchmark:");
             
             if (!benchmark_running) {
-                if (ImGui::Button("Run Drive Benchmark", ImVec2(-1, 0))) {
+                if (ui.button("Run Drive Benchmark", ImVec2(-1, 0))) {
                     start_drive_benchmark();
                 }
                 
                 // Display previous results if available
                 if (!benchmark_results.empty()) {
-                    ImGui::Spacing();
-                    ImGui::Text("Last Benchmark Results:");
+                    ui.spacing();
+                    ui.text("Last Benchmark Results:");
                     
                     // Create a table for the results
-                    if (ImGui::BeginTable("BenchmarkTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                        ImGui::TableSetupColumn("Drive", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                        ImGui::TableSetupColumn("Write MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                        ImGui::TableSetupColumn("Read MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthStretch);
-                        ImGui::TableHeadersRow();
+                    if (ui.begin_table("BenchmarkTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                        ui.table_setup_column("Drive", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                        ui.table_setup_column("Write MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ui.table_setup_column("Read MB/s", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+                        ui.table_setup_column("Type", ImGuiTableColumnFlags_WidthStretch);
+                        ui.table_headers_row();
                         
                         for (const auto& result : benchmark_results) {
-                            ImGui::TableNextRow();
+                            ui.table_next_row();
                             
-                            ImGui::TableSetColumnIndex(0);
-                            ImGui::Text("%s", result.display_name.c_str());
+                            ui.table_set_column_index(0);
+                            ui.text(result.display_name);
                             
-                            ImGui::TableSetColumnIndex(1);
+                            ui.table_set_column_index(1);
                             if (result.success) {
-                                ImGui::Text("%.1f", result.write_speed_mbps);
+                                ui.text(std::format("{:.1f}", result.write_speed_mbps));
                             } else {
-                                ImGui::Text("Error");
+                                ui.text("Error");
                             }
                             
-                            ImGui::TableSetColumnIndex(2);
+                            ui.table_set_column_index(2);
                             if (result.success) {
-                                ImGui::Text("%.1f", result.read_speed_mbps);
+                                ui.text(std::format("{:.1f}", result.read_speed_mbps));
                             } else {
-                                ImGui::Text("Error");
+                                ui.text("Error");
                             }
                             
-                            ImGui::TableSetColumnIndex(3);
-                            ImGui::Text("%s", result.get_drive_type().c_str());
+                            ui.table_set_column_index(3);
+                            ui.text(result.get_drive_type());
                         }
                         
-                        ImGui::EndTable();
+                        ui.end_table();
                     }
                 }
             } else {
                 // Show progress when benchmark is running
-                ImGui::Text("Benchmarking drives...");
-                ImGui::ProgressBar(benchmark_progress, ImVec2(-1, 0), "");
-                ImGui::Text("This may take a few moments...");
+                ui.text("Benchmarking drives...");
+                ui.progress_bar(benchmark_progress, ImVec2(-1, 0), "");
+                ui.text("This may take a few moments...");
                 
                 // Check if benchmark is complete
                 if (benchmark_future.valid() && 

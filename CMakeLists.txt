@@ -252,6 +252,14 @@ if(NOT TARGET imgui)
       add_library(imgui ALIAS imgui::imgui)
     endif()
     
+    # Locate include path for system ImGui headers (required for clang-tidy support under Nix)
+    find_path(IMGUI_INCLUDE_DIR NAMES imgui.h)
+    if(IMGUI_INCLUDE_DIR)
+      message(STATUS "Found ImGui headers at: ${IMGUI_INCLUDE_DIR}")
+    else()
+      message(WARNING "Could not find ImGui headers path explicitly via find_path")
+    endif()
+    
     message(STATUS "ImGui system package with local backends configured successfully")
   else()
     # System ImGui not found, try FetchContent
@@ -310,6 +318,7 @@ if(TARGET imgui::imgui AND NOT TARGET imgui_backends)
   
   target_include_directories(imgui_backends PUBLIC 
     ${CMAKE_SOURCE_DIR}/external/imgui_backends
+    ${IMGUI_INCLUDE_DIR}
   )
   
   target_link_libraries(imgui_backends PUBLIC 
@@ -445,7 +454,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # Add ImGui include directories based on which target is available
-if(TARGET imgui)
+if(TARGET imgui AND NOT TARGET imgui::imgui)
   # FetchContent ImGui
   target_include_directories(${PROJECT_NAME} PRIVATE 
     ${imgui_SOURCE_DIR}
@@ -455,6 +464,7 @@ elseif(TARGET imgui::imgui)
   # System ImGui - use local backends
   target_include_directories(${PROJECT_NAME} PRIVATE 
     ${CMAKE_SOURCE_DIR}/external/imgui_backends
+    ${IMGUI_INCLUDE_DIR}
   )
 endif()
 

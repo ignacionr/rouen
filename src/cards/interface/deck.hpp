@@ -25,6 +25,7 @@
 #include "../../registrar.hpp"
 #include "../productivity/editor.hpp"
 #include "factory.hpp"
+#include "../../helpers/imgui_ui_context.hpp"
 
 struct deck {
     deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer), editor_() {
@@ -164,7 +165,8 @@ struct deck {
             c.grab_focus = false;
             ImGui::SetNextWindowFocus();
         }
-        bool result = c.render();
+        ui_context_.prepare();
+        bool result = c.render(ui_context_);
         requested_fps = std::max(requested_fps, c.requested_fps);
         
         x += scaled_width + 2.0f * dpi_scale;
@@ -252,7 +254,8 @@ struct deck {
                             ImGui::PushStyleColor(ImGuiCol_Text, text_color);                
                             color_setup colors(c.get_color(0), c.get_color(1));
                             
-                            c.render();
+                            ui_context_.prepare();
+                            c.render(ui_context_);
                             ImGui::PopStyleColor(3); // Pop the style colors
                             ImGui::PopStyleVar(2); // Pop the style variables
                         };
@@ -635,4 +638,5 @@ private:
     ImVec4 text_color;
     editor editor_;
     float start_x {2.0f};
+    rouen::ui::imgui_ui_context_impl ui_context_;
 };

@@ -10,7 +10,7 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "../../helpers/imgui_include.hpp"
+#include "../../helpers/ui_context.hpp"
 #include <SDL.h>
 
 // 3. All other includes
@@ -38,8 +38,8 @@ namespace rouen::cards {
             return "menu";
         }
         
-        bool render() override {
-            return render_window([this]() {
+        bool render(rouen::ui::ui_context& ui) override {
+            return render_window([this, &ui]() {
                 // Define menu categories
                 struct MenuCategory {
                     std::string name;
@@ -108,36 +108,26 @@ namespace rouen::cards {
                 bool enter_pressed = false;
                 
                 // Command palette style input box at the top
-                ImGui::TextColored(colors[5], "%s", "Launch Application");
-                ImGui::Separator();
+                ui.text_colored(colors[5], "Launch Application");
+                ui.separator();
                 
                 // Search box with icon
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
+                ui.push_style_color(rouen::ui::style_color::frame_bg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
                 
-                ImGui::PushItemWidth(-1);
-                if (ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive() && !ImGui::IsMouseClicked(0)) {
-                    ImGui::SetKeyboardFocusHere(0);
+                ui.push_item_width(-1);
+                if (ui.is_window_focused() && !ui.is_any_item_active() && !ui.is_mouse_clicked(0)) {
+                    ui.set_keyboard_focus_here(0);
                 }
                 
                 // Input with placeholder text
-                ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
-                if (ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)), input_flags)) {
+                if (ui.input_text_with_placeholder("##search", search_buffer, static_cast<int>(sizeof(search_buffer)), "Search applications... (Type to filter)", true)) {
                     enter_pressed = true;
                 }
                 
-                // Show placeholder when empty
-                if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                    auto pos = ImGui::GetItemRectMin();
-                    ImGui::GetWindowDrawList()->AddText(
-                        ImVec2(pos.x + 5, pos.y + 2), 
-                        ImGui::GetColorU32(ImGuiCol_TextDisabled), 
-                        "Search applications... (Type to filter)"
-                    );
-                }
-                ImGui::PopItemWidth();
-                ImGui::PopStyleColor(); // Pop FrameBg
+                ui.pop_item_width();
+                ui.pop_style_color(); // Pop FrameBg
                 
-                ImGui::Separator();
+                ui.separator();
                 
                 // Filter items based on search text
                 std::string search_text = search_buffer;
@@ -146,38 +136,38 @@ namespace rouen::cards {
                 std::vector<std::tuple<int, int, std::string>> filtered_items;
                 if (search_text.empty()) {
                     // Display categorized menu when no search text
-                    ImGui::BeginChild("MenuCategories", ImVec2(0, 0), false);
+                    ui.begin_child("MenuCategories", ImVec2(0, 0), false);
                     
                     for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
                         const auto& category = menu_categories[cat_idx];
                         
                         // Category header
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
-                        ImGui::TextUnformatted(category.name.c_str());
-                        ImGui::PopStyleColor();
-                        ImGui::Separator();
+                        ui.push_style_color(rouen::ui::style_color::text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
+                        ui.text_unformatted(category.name);
+                        ui.pop_style_color();
+                        ui.separator();
                         
                         // Category items
                         for (size_t item_idx = 0; item_idx < category.items.size(); item_idx++) {
                             const auto& item = category.items[item_idx];
                             
-                            ImGui::PushStyleColor(ImGuiCol_Header, colors[2]);
-                            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors[3]);
-                            ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors[4]);
+                            ui.push_style_color(rouen::ui::style_color::header, colors[2]);
+                            ui.push_style_color(rouen::ui::style_color::header_hovered, colors[3]);
+                            ui.push_style_color(rouen::ui::style_color::header_active, colors[4]);
                             
-                            if (ImGui::Selectable(item.first.c_str(), false)) {
+                            if (ui.selectable(item.first, false)) {
                                 item.second();
                             }
                             
-                            ImGui::PopStyleColor(3);
+                            ui.pop_style_color(3);
                         }
                         
                         // Add spacing between categories
-                        ImGui::Spacing();
-                        ImGui::Spacing();
+                        ui.spacing();
+                        ui.spacing();
                     }
                     
-                    ImGui::EndChild();
+                    ui.end_child();
                 } else {
                     // Filter and display search results
                     for (const auto& [cat_idx, item_idx, item_text] : all_menu_items) {
@@ -187,11 +177,11 @@ namespace rouen::cards {
                     }
                     
                     // Handle keyboard navigation
-                    if (ImGui::IsWindowFocused()) {
-                        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && !filtered_items.empty()) {
+                    if (ui.is_window_focused()) {
+                        if (ui.is_key_pressed(rouen::ui::key::down_arrow) && !filtered_items.empty()) {
                             selected_index = static_cast<int>((static_cast<size_t>(selected_index) + 1) % filtered_items.size());
                         }
-                        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && !filtered_items.empty()) {
+                        else if (ui.is_key_pressed(rouen::ui::key::up_arrow) && !filtered_items.empty()) {
                             selected_index = static_cast<int>((static_cast<size_t>(selected_index) + filtered_items.size() - 1) % filtered_items.size());
                         }
                         
@@ -207,11 +197,11 @@ namespace rouen::cards {
                     }
                     
                     // Display search results
-                    ImGui::BeginChild("SearchResults", ImVec2(0, 0), false);
+                    ui.begin_child("SearchResults", ImVec2(0, 0), false);
                     
                     // If no items match the filter, show a message
                     if (filtered_items.empty()) {
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", "No applications match your search");
+                        ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
                     } 
                     else {
                         // Render filtered items
@@ -221,24 +211,24 @@ namespace rouen::cards {
                             // Set selection color for the currently selected item
                             bool is_selected = (static_cast<int>(i) == selected_index);
                             
-                            ImGui::PushStyleColor(ImGuiCol_Header, colors[2]);
-                            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, colors[3]);
-                            ImGui::PushStyleColor(ImGuiCol_HeaderActive, colors[4]);
+                            ui.push_style_color(rouen::ui::style_color::header, colors[2]);
+                            ui.push_style_color(rouen::ui::style_color::header_hovered, colors[3]);
+                            ui.push_style_color(rouen::ui::style_color::header_active, colors[4]);
                             
-                            if (ImGui::Selectable(item_text.c_str(), is_selected)) {
+                            if (ui.selectable(item_text, is_selected)) {
                                 menu_categories[static_cast<size_t>(cat_idx)].items[static_cast<size_t>(item_idx)].second();
                             }
                             
                             // Make the selected item visible - auto-scroll to it
                             if (is_selected) {
-                                ImGui::SetItemDefaultFocus();
+                                ui.set_item_default_focus();
                             }
                             
-                            ImGui::PopStyleColor(3);
+                            ui.pop_style_color(3);
                         }
                     }
                     
-                    ImGui::EndChild();
+                    ui.end_child();
                 }
             });
         }
