@@ -458,7 +458,7 @@ private:
         }
     }
     
-    std::string git_status_to_string(rouen::models::GitRepoStatus status) const {
+    static std::string git_status_to_string(rouen::models::GitRepoStatus status) {
         switch (status) {
             case rouen::models::GitRepoStatus::Clean: return "clean";
             case rouen::models::GitRepoStatus::Modified: return "modified";
