@@ -36,10 +36,9 @@ struct card {
     }
     
     // Virtual destructor - ensure clean destruction
-    virtual ~card() {
-        // Note: MCP cleanup will be handled by deck before destruction
-        // to avoid calling virtual methods during destruction
-    }
+    // Note: MCP cleanup will be handled by deck before destruction
+    // to avoid calling virtual methods during destruction
+    virtual ~card() = default;
     
     // MCP Function definition structure (forward declare to avoid includes)
     struct mcp_function {
@@ -91,7 +90,7 @@ struct card {
         return true;
     }
 
-    bool render_window(std::function<void()> render_func) {
+    bool render_window(const std::function<void()>& render_func) {
         bool is_open = true;
         if (window_title.empty()) {
             name("Unnamed Card");
@@ -104,7 +103,8 @@ struct card {
                 flags |= ImGuiWindowFlags_NoTitleBar;
             }
         } catch (...) {
-            // Ignore if service not registered
+            // Intentionally ignored: service may not be registered in all contexts
+            static_cast<void>(0);
         }
 
         if (ImGui::Begin(window_title.c_str(), &is_open, flags)) {

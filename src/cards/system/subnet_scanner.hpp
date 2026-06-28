@@ -138,7 +138,7 @@ private:
     std::queue<std::function<void()>> tasks;
     std::mutex queue_mutex;
     std::condition_variable condition;
-    bool stop;
+    bool stop{false};
 };
 
 class subnet_scanner : public card {
@@ -431,15 +431,16 @@ private:
         free(pAddresses);
 #else
         // Unix implementation using getifaddrs
-        struct ifaddrs *ifaddr, *ifa;
+        struct ifaddrs *ifaddr = nullptr;
+        struct ifaddrs *ifa = nullptr;
         
         if (getifaddrs(&ifaddr) == -1) {
             NET_ERROR("Failed to get interface addresses");
             return;
         }
         
-        for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-            if (ifa->ifa_addr == NULL)
+        for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+            if (ifa->ifa_addr == nullptr)
                 continue;
             
             // Only consider IPv4 interfaces
@@ -512,7 +513,7 @@ private:
         int cidr = std::stoi(selected_subnet.substr(slash_pos + 1));
         
         // Calculate the number of hosts in this subnet
-        unsigned int host_bits = static_cast<unsigned int>(32 - cidr);
+        auto host_bits = static_cast<unsigned int>(32 - cidr);
         total_hosts = (1 << host_bits) - 2;  // Exclude network and broadcast addresses
         
         // Convert network to integer
@@ -541,7 +542,7 @@ private:
                 char ip_str[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &ip_addr, ip_str, INET_ADDRSTRLEN);
                 
-                ip_queue.push_back(ip_str);
+                ip_queue.emplace_back(ip_str);
             }
             
             // Shuffle the IP addresses to distribute the load more evenly
@@ -630,7 +631,7 @@ private:
     }
     
     // Try connecting to a specific port with timeout
-    bool try_port(const char* ip_str, int port) {
+    bool try_port(const char* ip_str, int port) const {
 #ifdef _WIN32
         // Windows implementation
         SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -666,7 +667,7 @@ private:
                 // Prepare timeout
                 struct timeval timeout;
                 timeout.tv_sec = ping_timeout_ms / 1000;
-                timeout.tv_usec = (ping_timeout_ms % 1000) * 1000;
+                timeout.tv_usec = static_cast<long>(ping_timeout_ms % 1000) * 1000;
                 
                 // Wait for the socket to become writable (connection complete) or timeout
                 result = select(0, nullptr, &write_fds, nullptr, &timeout);
@@ -729,7 +730,7 @@ private:
                 // Prepare timeout
                 struct timeval timeout;
                 timeout.tv_sec = ping_timeout_ms / 1000;
-                timeout.tv_usec = (ping_timeout_ms % 1000) * 1000;
+                timeout.tv_usec = static_cast<long>(ping_timeout_ms % 1000) * 1000;
                 
                 // Wait for the socket to become writable (connection complete) or timeout
                 result = select(sock + 1, nullptr, &write_fds, nullptr, &timeout);
@@ -746,21 +747,18 @@ private:
                     // Connection succeeded
                     close(sock);
                     return true;
-                } else {
-                    // Timeout or error
-                    close(sock);
-                    return false;
                 }
-            } else {
-                // Immediate connection failure
+                // Timeout or error
                 close(sock);
                 return false;
             }
-        } else {
-            // Immediate connection success (rare but possible)
+            // Immediate connection failure
             close(sock);
-            return true;
+            return false;
         }
+        // Immediate connection success (rare but possible)
+        close(sock);
+        return true;
 #endif
     }
     
@@ -788,7 +786,7 @@ private:
     }
     
     // Resolve hostname from IP
-    void resolve_hostname(const char* ip_str, std::string& hostname) {
+    static void resolve_hostname(const char* ip_str, std::string& hostname) {
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = 0;
@@ -796,29 +794,23 @@ private:
         
         char host[NI_MAXHOST];
         int result = getnameinfo(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr),
-                                host, sizeof(host), NULL, 0, NI_NAMEREQD);
+                                host, sizeof(host), nullptr, 0, NI_NAMEREQD);
         
         if (result == 0) {
             hostname = host;
-        } else {
-            hostname = "";  // No hostname found
+            return;
         }
+        hostname = "";  // No hostname found
     }
     
-    bool ping_host(const std::string& host) {
+    static bool ping_host(const std::string& host) {
         std::string ping_path = CONFIG_SERVICE()->get_ping_path();
         std::string cmd = std::format("{} -c 1 -W 1 {}", ping_path, host);
 #ifdef _WIN32
         cmd = std::format("{} -n 1 -w 1000 {}", ping_path, host); // Windows-specific command
 #endif
-        [[maybe_unused]] int ping_result = system(cmd.c_str());
-        if (ping_result == 0) {
-            // Host is reachable
-            return true;
-        } else {
-            // Host is not reachable
-            return false;
-        }
+        // NOLINTNEXTLINE(cert-env33-c)
+        return system(cmd.c_str()) == 0;
     }
 };
 

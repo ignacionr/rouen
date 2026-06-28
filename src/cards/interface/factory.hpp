@@ -51,7 +51,7 @@ namespace rouen::cards {
     struct factory {
         using factory_t = std::function<card::ptr(std::string_view, SDL_Renderer*)>;
 
-        card::ptr create_card(std::string_view uri, SDL_Renderer* renderer) {
+        static card::ptr create_card(std::string_view uri, SDL_Renderer* renderer) {
             std::string_view schema;
             std::string_view locator;
     
@@ -169,37 +169,35 @@ namespace rouen::cards {
                     if (uri.empty()) {
                         // Use default URL from environment variable
                         return std::make_shared<calendar>();
-                    } else {
-                        // Use provided URL
-                        return std::make_shared<calendar>(std::string(uri));
                     }
+                    // Use provided URL
+                    return std::make_shared<calendar>(std::string(uri));
                 });
                 
                 instance.emplace("mail", [](std::string_view uri, SDL_Renderer*) {
                     if (uri.empty()) {
                         // Use default credentials from environment
                         return std::make_shared<mail>();
-                    } else {
-                        // Parse the URI format mail:imaps://host:username:password
-                        auto params = std::string(uri);
-                        size_t pos1 = params.find(':');
-                        if (pos1 == std::string::npos) {
-                            throw std::runtime_error("Invalid mail URI format");
-                        }
-                        pos1 = params.find(':', pos1 + 1);
-                        if (pos1 == std::string::npos) {
-                            throw std::runtime_error("Invalid mail URI format");
-                        }
-                        
-                        std::string host = params.substr(0, pos1);
-                        
-                        size_t pos2 = params.find(':', pos1 + 1);
-                        
-                        std::string username = params.substr(pos1 + 1, pos2 - pos1 - 1);
-                        std::string password = (pos2 == std::string::npos) ? std::string{} : params.substr(pos2 + 1);
-                        
-                        return std::make_shared<mail>(host, username, password);
                     }
+                    // Parse the URI format mail:imaps://host:username:password
+                    auto params = std::string(uri);
+                    size_t pos1 = params.find(':');
+                    if (pos1 == std::string::npos) {
+                        throw std::runtime_error("Invalid mail URI format");
+                    }
+                    pos1 = params.find(':', pos1 + 1);
+                    if (pos1 == std::string::npos) {
+                        throw std::runtime_error("Invalid mail URI format");
+                    }
+                    
+                    std::string host = params.substr(0, pos1);
+                    
+                    size_t pos2 = params.find(':', pos1 + 1);
+                    
+                    std::string username = params.substr(pos1 + 1, pos2 - pos1 - 1);
+                    std::string password = (pos2 == std::string::npos) ? std::string{} : params.substr(pos2 + 1);
+                    
+                    return std::make_shared<mail>(host, username, password);
                 });
                 
                 instance.emplace("travel", [](std::string_view, SDL_Renderer*) {

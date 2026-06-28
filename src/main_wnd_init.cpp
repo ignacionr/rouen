@@ -18,18 +18,18 @@
 
 bool main_wnd::initialize() {
     try {
-        std::cout << "DEBUG: Starting main_wnd::initialize()" << std::endl;
+        std::cout << "DEBUG: Starting main_wnd::initialize()" << '\n';
         
         // Initialize SDL
-        std::cout << "DEBUG: Initializing SDL..." << std::endl;
+        std::cout << "DEBUG: Initializing SDL..." << '\n';
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
             DB_ERROR_FMT("SDL initialization error: {}", SDL_GetError());
             return false;
         }
-        std::cout << "DEBUG: SDL initialized successfully" << std::endl;
+        std::cout << "DEBUG: SDL initialized successfully" << '\n';
         
         // Initialize SDL_image
-        std::cout << "DEBUG: Initializing SDL_image..." << std::endl;
+        std::cout << "DEBUG: Initializing SDL_image..." << '\n';
         int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
         int img_init_result = IMG_Init(img_flags);
         
@@ -39,7 +39,7 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
-        std::cout << "DEBUG: SDL_image initialized successfully" << std::endl;
+        std::cout << "DEBUG: SDL_image initialized successfully" << '\n';
         
         // Log warning if JPEG support is not available
         if (!(img_init_result & IMG_INIT_JPG)) {
@@ -56,7 +56,7 @@ bool main_wnd::initialize() {
 #endif
 
         // Create window with SDL - properly configure for high DPI
-        std::cout << "DEBUG: Creating SDL window..." << std::endl;
+        std::cout << "DEBUG: Creating SDL window..." << '\n';
         SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
         
         m_window = SDL_CreateWindow(
@@ -71,14 +71,14 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
-        std::cout << "DEBUG: SDL window created successfully" << std::endl;
+        std::cout << "DEBUG: SDL window created successfully" << '\n';
 
 #ifdef __APPLE__
         rouen::platform::disable_mac_cmd_w_menu_item();
 #endif
 
         // Create renderer
-        std::cout << "DEBUG: Creating SDL renderer..." << std::endl;
+        std::cout << "DEBUG: Creating SDL renderer..." << '\n';
         m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
         if (!m_renderer) {
             DB_ERROR_FMT("Error creating renderer: {}", SDL_GetError());
@@ -86,10 +86,10 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
-        std::cout << "DEBUG: SDL renderer created successfully" << std::endl;
+        std::cout << "DEBUG: SDL renderer created successfully" << '\n';
 
         // Register renderer in the registrar
-        std::cout << "DEBUG: Registering renderer and services..." << std::endl;
+        std::cout << "DEBUG: Registering renderer and services..." << '\n';
         registrar::add<SDL_Renderer*>("main_renderer", std::make_shared<SDL_Renderer*>(m_renderer));
         
         // Register the deferred operations service
@@ -102,9 +102,9 @@ bool main_wnd::initialize() {
         // Initialize and start the API server
         if (m_api_server->initialize()) {
             m_api_server->start("http://127.0.0.1:8081");
-            std::cout << "API server initialized and started on port 8081" << std::endl;
+            std::cout << "API server initialized and started on port 8081" << '\n';
         } else {
-            std::cerr << "Failed to initialize API server" << std::endl;
+            std::cerr << "Failed to initialize API server" << '\n';
         }
 
         // Register window services for fit-to-width feature
@@ -139,13 +139,13 @@ bool main_wnd::initialize() {
         ));
 
         // Initialize ImGui
-        std::cout << "DEBUG: Initializing ImGui..." << std::endl;
+        std::cout << "DEBUG: Initializing ImGui..." << '\n';
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         m_imgui_context_created = true;
         ImGuiIO& io = ImGui::GetIO();
         (void)io;
-        std::cout << "DEBUG: ImGui context created" << std::endl;
+        std::cout << "DEBUG: ImGui context created" << '\n';
 
         // Enable keyboard and mouse controls
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;

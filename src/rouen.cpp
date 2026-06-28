@@ -46,9 +46,9 @@ void setup_windows_debug_console() {
             SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         }
         
-        std::cout << "=== Rouen Debug Console Initialized ===" << std::endl;
-        std::cout << "Debug build - Console output enabled" << std::endl;
-        std::cout << "=========================================" << std::endl;
+        std::cout << "=== Rouen Debug Console Initialized ===" << '\n';
+        std::cout << "Debug build - Console output enabled" << '\n';
+        std::cout << "=========================================" << '\n';
     }
 #endif // _DEBUG
 }
@@ -78,9 +78,9 @@ int SDL_main(int argc, char* argv[]) {
 int main() {
 #endif
     // Debug: Print working directory at startup
-    std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << std::endl;
-    std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << std::endl;
-    std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << std::endl;
+    std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << '\n';
+    std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << '\n';
+    std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << '\n';
     
     notify_service notify; // Initialize the notify service
     
@@ -90,7 +90,7 @@ int main() {
     // Force reload of .env file now that we have the correct working directory
     auto config_service = rouen::helpers::ConfigService::instance();
     config_service->load_env_file();
-    std::cout << "[DEBUG] Forced reload of .env file completed" << std::endl;
+    std::cout << "[DEBUG] Forced reload of .env file completed" << '\n';
     
     // Register the run_command function - non-blocking with incremental output
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
@@ -176,15 +176,15 @@ int main() {
     );
     
     // Create and initialize the main window
-    std::cout << "Creating main window..." << std::endl;
+    std::cout << "Creating main window..." << '\n';
     main_wnd window;
-    std::cout << "Initializing main window..." << std::endl;
+    std::cout << "Initializing main window..." << '\n';
     if (!window.initialize()) {
-        std::cout << "Failed to initialize window!" << std::endl;
+        std::cout << "Failed to initialize window!" << '\n';
         SYS_ERROR("Failed to initialize window");
         return -1;
     }
-    std::cout << "Main window initialized successfully, starting main loop..." << std::endl;
+    std::cout << "Main window initialized successfully, starting main loop..." << '\n';
     
     // Run the main loop
     window.run();

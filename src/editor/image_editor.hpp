@@ -109,7 +109,7 @@ public:
             
             // Calculate the display size while maintaining aspect ratio
             ImVec2 content_size = ImGui::GetContentRegionAvail();
-            float aspect_ratio = static_cast<float>(image_width_) / static_cast<float>(image_height_);
+            auto aspect_ratio = static_cast<float>(image_width_) / static_cast<float>(image_height_);
             
             ImVec2 display_size;
             if (content_size.x / aspect_ratio <= content_size.y) {

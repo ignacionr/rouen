@@ -95,9 +95,9 @@ namespace rouen::cards {
                 if (all_menu_items.empty()) {
                     for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
                         for (size_t item_idx = 0; item_idx < menu_categories[cat_idx].items.size(); item_idx++) {
-                            all_menu_items.push_back(std::make_tuple(
+                            all_menu_items.emplace_back(
                                 static_cast<int>(cat_idx), static_cast<int>(item_idx), menu_categories[cat_idx].items[item_idx].first
-                            ));
+                            );
                         }
                     }
                 }
@@ -138,8 +138,7 @@ namespace rouen::cards {
                     // Display categorized menu when no search text
                     ui.begin_child("MenuCategories", ImVec2(0, 0), false);
                     
-                    for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
-                        const auto& category = menu_categories[cat_idx];
+                    for (const auto& category : menu_categories) {
                         
                         // Category header
                         ui.push_style_color(rouen::ui::style_color::text, ImVec4(0.8f, 0.8f, 1.0f, 1.0f));
@@ -148,8 +147,7 @@ namespace rouen::cards {
                         ui.separator();
                         
                         // Category items
-                        for (size_t item_idx = 0; item_idx < category.items.size(); item_idx++) {
-                            const auto& item = category.items[item_idx];
+                        for (const auto& item : category.items) {
                             
                             ui.push_style_color(rouen::ui::style_color::header, colors[2]);
                             ui.push_style_color(rouen::ui::style_color::header_hovered, colors[3]);
@@ -172,7 +170,7 @@ namespace rouen::cards {
                     // Filter and display search results
                     for (const auto& [cat_idx, item_idx, item_text] : all_menu_items) {
                         if (::helpers::StringHelper::contains_case_insensitive(item_text, search_text)) {
-                            filtered_items.push_back(std::make_tuple(cat_idx, item_idx, item_text));
+                            filtered_items.emplace_back(cat_idx, item_idx, item_text);
                         }
                     }
                     

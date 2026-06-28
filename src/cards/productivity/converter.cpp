@@ -472,7 +472,7 @@ std::string converter::decode_hex(const std::string& input) {
     std::string result;
     for (size_t i = 0; i < input.length(); i += 2) {
         std::string byte = input.substr(i, 2);
-        char chr = static_cast<char>(std::stoi(byte, nullptr, 16));
+        auto chr = static_cast<char>(std::stoi(byte, nullptr, 16));
         result.push_back(chr);
     }
     return result;
@@ -495,7 +495,7 @@ std::string converter::decode_url(const std::string& input) {
     for (size_t i = 0; i < input.length(); ++i) {
         if (input[i] == '%' && i + 2 < input.length()) {
             std::string hex = input.substr(i + 1, 2);
-            char chr = static_cast<char>(std::stoi(hex, nullptr, 16));
+            auto chr = static_cast<char>(std::stoi(hex, nullptr, 16));
             result.push_back(chr);
             i += 2;
         } else if (input[i] == '+') {

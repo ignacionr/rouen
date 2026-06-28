@@ -46,9 +46,7 @@ struct sysinfo_card : public card {
         // Initialize last update time
         last_update = std::chrono::steady_clock::now();
         
-        // Initialize benchmark state
-        benchmark_running = false;
-        benchmark_progress = 0.0f;
+        // benchmark state is initialized via member declarations
     }
     
     // Add explicit destructor
@@ -65,7 +63,7 @@ struct sysinfo_card : public card {
     }
     
     // Get memory information (total, used, free)
-    std::tuple<double, double, double> get_memory_info() {
+    static std::tuple<double, double, double> get_memory_info() {
 #ifdef _WIN32
         MEMORYSTATUSEX memStatus;
         memStatus.dwLength = sizeof(memStatus);
@@ -89,7 +87,7 @@ struct sysinfo_card : public card {
     }
     
     // Get disk space information (total, used, free)
-    std::tuple<double, double, double> get_disk_info(const std::string& path = "/") {
+    static std::tuple<double, double, double> get_disk_info(const std::string& path = "/") {
 #ifdef _WIN32
         // Windows: Use GetDiskFreeSpaceEx for C: drive by default
         std::string drive_path = (path == "/") ? "C:\\" : path;
@@ -122,7 +120,7 @@ struct sysinfo_card : public card {
     }
     
     // Get CPU usage in percentage
-    double get_cpu_usage() {
+    static double get_cpu_usage() {
 #ifdef _WIN32
         // Windows CPU usage calculation using Performance Data Helper (PDH)
         static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
@@ -237,8 +235,8 @@ struct sysinfo_card : public card {
         
         double percent = 0.0;
         if (prev_total > 0 && total > prev_total) {
-            double idle_delta = static_cast<double>(idle - prev_idle);
-            double total_delta = static_cast<double>(total - prev_total);
+            auto idle_delta = static_cast<double>(idle - prev_idle);
+            auto total_delta = static_cast<double>(total - prev_total);
             percent = 100.0 * (1.0 - idle_delta / total_delta);
         }
         
@@ -259,7 +257,7 @@ struct sysinfo_card : public card {
     }
 
     // Get system uptime in seconds
-    long get_system_uptime() {
+    static long get_system_uptime() {
 #ifdef _WIN32
         return static_cast<long>(GetTickCount64() / 1000);
 #elif defined(__APPLE__) || defined(__linux__)
@@ -272,7 +270,7 @@ struct sysinfo_card : public card {
     }
 
     // Get number of running processes
-    int get_process_count() {
+    static int get_process_count() {
 #ifdef _WIN32
         int process_count = 0;
         HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -310,8 +308,8 @@ struct sysinfo_card : public card {
             
             // System uptime information
             long uptime_seconds = get_system_uptime();
-            long days = uptime_seconds / (60 * 60 * 24);
-            int hours = static_cast<int>((uptime_seconds / (60 * 60)) % 24);
+            long days = uptime_seconds / (60L * 60L * 24L);
+            int hours = static_cast<int>((uptime_seconds / (60L * 60L)) % 24L);
             int minutes = static_cast<int>((uptime_seconds / 60) % 60);
             int seconds = static_cast<int>(uptime_seconds % 60);
             
@@ -452,8 +450,8 @@ private:
     double cpu_usage = 0.0;
     
     // Drive benchmark members
-    bool benchmark_running;
-    float benchmark_progress;
+    bool benchmark_running{false};
+    float benchmark_progress{0.0F};
     std::future<std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult>> benchmark_future;
     std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult> benchmark_results;
 };

@@ -62,7 +62,7 @@ bool api_server::initialize() {
 
     mgr_ = new mg_mgr();
     if (!mgr_) {
-        std::cerr << "Failed to allocate mongoose manager" << std::endl;
+        std::cerr << "Failed to allocate mongoose manager" << '\n';
         return false;
     }
 
@@ -82,7 +82,7 @@ bool api_server::start(const std::string& address) {
 
     conn_ = mg_http_listen(mgr_, address.c_str(), event_handler, this);
     if (!conn_) {
-        std::cerr << "Failed to start HTTP server on " << address << std::endl;
+        std::cerr << "Failed to start HTTP server on " << address << '\n';
         return false;
     }
 
@@ -90,7 +90,7 @@ bool api_server::start(const std::string& address) {
     running_ = true;
     server_thread_ = new std::thread(&api_server::server_loop, this);
 
-    std::cout << "API server started on " << address << std::endl;
+    std::cout << "API server started on " << address << '\n';
     return true;
 }
 
@@ -139,28 +139,28 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
     int status_code = 200;
     std::string content_type = "application/json";
 
-    if (mg_match(hm->uri, mg_str("/api/health"), NULL)) {
+    if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = "{\"status\":\"ok\",\"message\":\"API server is running\"}";
         } else {
             status_code = 405;
             response = "{\"error\":\"Method not allowed\"}";
         }
-    } else if (mg_match(hm->uri, mg_str("/api/cards"), NULL)) {
+    } else if (mg_match(hm->uri, mg_str("/api/cards"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_card_creation(c, hm);
         } else {
             status_code = 405;
             response = "{\"error\":\"Method not allowed\"}";
         }
-    } else if (mg_match(hm->uri, mg_str("/api/ai"), NULL)) {
+    } else if (mg_match(hm->uri, mg_str("/api/ai"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_ai_request(c, hm);
         } else {
             status_code = 405;
             response = "{\"error\":\"Method not allowed\"}";
         }
-    } else if (mg_match(hm->uri, mg_str("/api/schemas"), NULL)) {
+    } else if (mg_match(hm->uri, mg_str("/api/schemas"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_schemas_request(c, hm);
         } else {

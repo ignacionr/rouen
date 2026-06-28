@@ -272,7 +272,7 @@ namespace rouen::cards {
             if (clean_str.find(':') != std::string::npos) {
                 // Format with colon (HH:MM or HH:MM:SS)
                 std::stringstream ss(clean_str);
-                char delimiter;
+                char delimiter{'\0'};
                 ss >> hours >> delimiter >> minutes;
             } else if (clean_str.length() >= 3) {
                 // Format without colon (HHMM)

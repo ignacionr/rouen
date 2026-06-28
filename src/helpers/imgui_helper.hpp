@@ -48,7 +48,7 @@
          level == LOG_LEVEL_WARN ? "WARN" : \
          level == LOG_LEVEL_INFO ? "INFO" : \
          level == LOG_LEVEL_DEBUG ? "DEBUG" : "TRACE") \
-        << "] " << message << std::endl; \
+        << "] " << message << '\n'; \
     }
 
 // Component-specific logging macros

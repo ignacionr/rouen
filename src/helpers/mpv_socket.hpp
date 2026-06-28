@@ -402,7 +402,7 @@ public:
         FD_SET(socket_fd, &readfds);
         
         tv.tv_sec = timeout_ms / 1000;
-        tv.tv_usec = (timeout_ms % 1000) * 1000; // Convert remaining ms to microseconds
+        tv.tv_usec = static_cast<long>(timeout_ms % 1000) * 1000L; // Convert remaining ms to microseconds
         
         // Clear the buffer first
         memset(buffer, 0, buffer_size);
@@ -411,7 +411,7 @@ public:
         // Try multiple reads until we get a complete response or timeout
         int max_attempts = 3;
         for (int attempt = 0; attempt < max_attempts; attempt++) {
-            int select_result = select(socket_fd + 1, &readfds, NULL, NULL, &tv);
+            int select_result = select(socket_fd + 1, &readfds, nullptr, nullptr, &tv);
             
             if (select_result > 0) {
                 // Data is available to read

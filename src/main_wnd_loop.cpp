@@ -160,7 +160,7 @@ bool main_wnd::process_events() {
                              event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
                              event.window.event == SDL_WINDOWEVENT_MOVED) {
                         
-                        std::cout << "Window event detected, updating display settings..." << std::endl;
+                        std::cout << "Window event detected, updating display settings..." << '\n';
                         
                         // Update ImGui display settings immediately
                         update_imgui_display_settings();
@@ -170,7 +170,7 @@ bool main_wnd::process_events() {
                         
                         // Only rebuild fonts if there's a significant DPI change
                         if (rouen::fonts::needs_font_rebuild()) {
-                            std::cout << "Significant DPI change detected, rebuilding fonts..." << std::endl;
+                            std::cout << "Significant DPI change detected, rebuilding fonts..." << '\n';
                             // Clear current fonts and rebuild
                             ImGui::GetIO().Fonts->Clear();
                             rouen::fonts::setup();

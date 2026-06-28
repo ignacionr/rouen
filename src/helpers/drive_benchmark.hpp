@@ -195,8 +195,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = static_cast<double>(duration.count()) / 1000000.0;
-            double mb_written = static_cast<double>(TEST_SIZE) / (1024.0 * 1024.0);
+            auto seconds = static_cast<double>(duration.count()) / 1000000.0;
+            auto mb_written = static_cast<double>(TEST_SIZE) / (1024.0 * 1024.0);
             
             return mb_written / seconds;
             
@@ -226,8 +226,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = static_cast<double>(duration.count()) / 1000000.0;
-            double mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
+            auto seconds = static_cast<double>(duration.count()) / 1000000.0;
+            auto mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
             
             return mb_read / seconds;
             
@@ -258,8 +258,8 @@ private:
             auto end = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
             
-            double seconds = static_cast<double>(duration.count()) / 1000000.0;
-            double mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
+            auto seconds = static_cast<double>(duration.count()) / 1000000.0;
+            auto mb_read = static_cast<double>(total_read) / (1024.0 * 1024.0);
             
             return mb_read / seconds;
             

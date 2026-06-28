@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <format>
@@ -641,23 +642,15 @@ namespace rouen::cards
                 ImGui::InputInt("##end_min", &new_end_min_, 0, 0);
             }
             
-            if (new_start_month_ < 1) new_start_month_ = 1;
-            if (new_start_month_ > 12) new_start_month_ = 12;
-            if (new_start_day_ < 1) new_start_day_ = 1;
-            if (new_start_day_ > 31) new_start_day_ = 31;
-            if (new_start_hour_ < 0) new_start_hour_ = 0;
-            if (new_start_hour_ > 23) new_start_hour_ = 23;
-            if (new_start_min_ < 0) new_start_min_ = 0;
-            if (new_start_min_ > 59) new_start_min_ = 59;
-            
-            if (new_end_month_ < 1) new_end_month_ = 1;
-            if (new_end_month_ > 12) new_end_month_ = 12;
-            if (new_end_day_ < 1) new_end_day_ = 1;
-            if (new_end_day_ > 31) new_end_day_ = 31;
-            if (new_end_hour_ < 0) new_end_hour_ = 0;
-            if (new_end_hour_ > 23) new_end_hour_ = 23;
-            if (new_end_min_ < 0) new_end_min_ = 0;
-            if (new_end_min_ > 59) new_end_min_ = 59;
+            new_start_month_ = std::clamp(new_start_month_, 1, 12);
+            new_start_day_ = std::clamp(new_start_day_, 1, 31);
+            new_start_hour_ = std::clamp(new_start_hour_, 0, 23);
+            new_start_min_ = std::clamp(new_start_min_, 0, 59);
+
+            new_end_month_ = std::clamp(new_end_month_, 1, 12);
+            new_end_day_ = std::clamp(new_end_day_, 1, 31);
+            new_end_hour_ = std::clamp(new_end_hour_, 0, 23);
+            new_end_min_ = std::clamp(new_end_min_, 0, 59);
             
             ImGui::Spacing();
             ImGui::Separator();

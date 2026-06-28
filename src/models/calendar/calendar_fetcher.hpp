@@ -390,8 +390,8 @@ namespace calendar {
                 auto error = glz::read<glz::opts{.error_on_unknown_keys = false}>(calendar_data, json_response, ctx);
 
                 if (error) {
-                    std::cerr << "Error parsing JSON: " << glz::format_error(error, json_response) << std::endl;
-                    std::cerr << "Source: " << json_response << std::endl;
+                    std::cerr << "Error parsing JSON: " << glz::format_error(error, json_response) << '\n';
+                    std::cerr << "Source: " << json_response << '\n';
                     
                     throw std::runtime_error("Failed to parse JSON response");
                 }

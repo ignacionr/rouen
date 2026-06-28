@@ -94,7 +94,7 @@ namespace rouen::cards {
                     for (int i = 0; i < 5; ++i) {
                         auto const angle = static_cast<float>(2 * M_PI * i / 5 + M_PI / 2) + animation_angle;
                         // Use a helper function that takes double parameters to avoid warnings
-                        double angle_d = static_cast<double>(angle);
+                        auto angle_d = static_cast<double>(angle);
                         auto const spike = ImVec2 {
                             static_cast<float>(center.x) + radius * static_cast<float>(std::cos(angle_d)),
                             static_cast<float>(center.y) + radius * static_cast<float>(std::sin(angle_d))};
@@ -118,7 +118,7 @@ namespace rouen::cards {
                             ImGui::ColorConvertFloat4ToU32(colors[0]));
                     }
                     // and now the rest
-                    double angle_d = static_cast<double>(angle);
+                    auto angle_d = static_cast<double>(angle);
                     auto const spike_from = ImVec2 {
                         static_cast<float>(center.x) + radius * static_cast<float>(std::cos(angle_d)),
                         static_cast<float>(center.y) + radius * static_cast<float>(std::sin(angle_d))};
