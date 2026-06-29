@@ -402,7 +402,7 @@ public:
         FD_SET(socket_fd, &readfds);
         
         tv.tv_sec = timeout_ms / 1000;
-        tv.tv_usec = static_cast<long>(timeout_ms % 1000) * 1000L; // Convert remaining ms to microseconds
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>((timeout_ms % 1000) * 1000); // Convert remaining ms to microseconds
         
         // Clear the buffer first
         memset(buffer, 0, buffer_size);

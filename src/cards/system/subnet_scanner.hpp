@@ -667,7 +667,7 @@ private:
                 // Prepare timeout
                 struct timeval timeout;
                 timeout.tv_sec = ping_timeout_ms / 1000;
-                timeout.tv_usec = static_cast<long>(ping_timeout_ms % 1000) * 1000;
+                timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>((ping_timeout_ms % 1000) * 1000);
                 
                 // Wait for the socket to become writable (connection complete) or timeout
                 result = select(0, nullptr, &write_fds, nullptr, &timeout);
@@ -730,7 +730,7 @@ private:
                 // Prepare timeout
                 struct timeval timeout;
                 timeout.tv_sec = ping_timeout_ms / 1000;
-                timeout.tv_usec = static_cast<long>(ping_timeout_ms % 1000) * 1000;
+                timeout.tv_usec = static_cast<decltype(timeout.tv_usec)>((ping_timeout_ms % 1000) * 1000);
                 
                 // Wait for the socket to become writable (connection complete) or timeout
                 result = select(sock + 1, nullptr, &write_fds, nullptr, &timeout);
