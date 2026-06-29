@@ -5,6 +5,7 @@
 #include <format>
 #include <iostream>
 #include <filesystem>
+#include <fstream>
 #include <SDL.h>
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
@@ -43,14 +44,24 @@ struct about_card : public card {
         if (renderer) {
             std::filesystem::path icon_path = rouen::platform::get_resource_path("Rouen.png", "img");
             std::cout << "[INFO] about_card: Resolving Rouen.png path: " << icon_path.string() << '\n';
+            
+            std::ofstream log_file("/tmp/rouen_log.txt", std::ios::app);
+            log_file << "[INFO] about_card: Resolving Rouen.png path: " << icon_path.string() << std::endl;
+            
             icon_texture = TextureHelper::loadTextureFromFile(renderer, icon_path.string().c_str(), icon_width, icon_height);
             if (!icon_texture) {
                 std::cerr << "[ERROR] about_card: Failed to load icon texture from path: " << icon_path.string() << ". Error: " << SDL_GetError() << '\n';
+                log_file << "[ERROR] about_card: Failed to load icon texture from path: " << icon_path.string() << ". Error: " << SDL_GetError() << std::endl;
             } else {
                 std::cout << "[INFO] about_card: Successfully loaded icon texture (" << icon_width << "x" << icon_height << ")\n";
+                log_file << "[INFO] about_card: Successfully loaded icon texture (" << icon_width << "x" << icon_height << ")" << std::endl;
             }
+            log_file.close();
         } else {
             std::cerr << "[ERROR] about_card: Renderer is null!\n";
+            std::ofstream log_file("/tmp/rouen_log.txt", std::ios::app);
+            log_file << "[ERROR] about_card: Renderer is null!" << std::endl;
+            log_file.close();
         }
         
         // Fetch remote hash in a background thread to prevent UI freezing
