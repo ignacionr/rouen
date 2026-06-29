@@ -12,6 +12,7 @@
 #include "../../helpers/texture_helper.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 // Fallback if COMPILE_GIT_HASH is not defined by build system
 #ifndef COMPILE_GIT_HASH
@@ -115,6 +116,10 @@ struct about_card : public card {
             ui.text_colored(colors[0], "Version Information");
             ui.indent(10.0f);
             ui.text(std::format("Local Commit Hash: {}", local_hash));
+            ui.same_line();
+            if (ui.button(ICON_MD_CONTENT_COPY " Copy")) {
+                ui.set_clipboard_text(local_hash);
+            }
             
             if (loading) {
                 ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Fetching remote repository state...");

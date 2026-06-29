@@ -97,6 +97,10 @@ public:
         ImGui::Image(user_texture_id, size, uv0, uv1, tint_col, border_col);
     }
     
+    void set_clipboard_text(const std::string& text) override {
+        ImGui::SetClipboardText(text.c_str());
+    }
+    
     void separator() override {
         ImGui::Separator();
     }

@@ -51,6 +51,7 @@ public:
     virtual void progress_bar(float fraction, const ImVec2& size = ImVec2(-1, 0), const std::string& overlay = "") = 0;
     virtual bool selectable(const std::string& label, bool selected = false) = 0;
     virtual void image(ImTextureID user_texture_id, const ImVec2& size, const ImVec2& uv0 = ImVec2(0, 0), const ImVec2& uv1 = ImVec2(1, 1), const ImVec4& tint_col = ImVec4(1, 1, 1, 1), const ImVec4& border_col = ImVec4(0, 0, 0, 0)) = 0;
+    virtual void set_clipboard_text(const std::string& text) = 0;
     
     // Layout and Styling
     virtual void separator() = 0;
