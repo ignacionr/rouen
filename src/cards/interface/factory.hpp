@@ -35,6 +35,7 @@
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/trello_card.hpp"
+#include "../system/about.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
 #include "../system/settings.hpp"
@@ -142,6 +143,10 @@ namespace rouen::cards {
                 
                 instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<settings_card>();
+                });
+                
+                instance.emplace("about", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<about_card>();
                 });
                 
                 // Register the new terminal card

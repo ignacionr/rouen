@@ -86,6 +86,7 @@ namespace rouen::cards {
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                         {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},
                         {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
+                        {"About", []() { "create_card"_sfn("about"); }},
                         {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }} // Fixed: Use [[maybe_unused]] to suppress nodiscard warning
                     }}
                 };

@@ -129,6 +129,7 @@
             "-DCMAKE_BUILD_TYPE=Release" 
             "-DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake"
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+            "-DCOMPILE_GIT_HASH=${self.rev or "unknown"}"
           ] ++ darwinCmakeFlags;
           env = darwinEnv // {
             # Disable dynamic icon generation for Nix builds to avoid sips/iconutil dependency
@@ -215,13 +216,14 @@
           cmakeFlags = [ 
             "-DCMAKE_BUILD_TYPE=Debug"
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+            "-DCOMPILE_GIT_HASH=${self.rev or "unknown"}"
           ] ++ darwinCmakeFlags;
           env = darwinEnv;
           configurePhase = ''
             runHook preConfigure
             mkdir -p build-tests
             cd build-tests
-            cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+            cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCOMPILE_GIT_HASH=${self.rev or "unknown"}
             runHook postConfigure
           '';
           buildPhase = ''

@@ -71,6 +71,25 @@ endif()
 # Project name and version
 project(rouen VERSION 1.0 LANGUAGES C CXX)
 
+# Retrieve the current git commit hash if not already provided (e.g. by Nix)
+if(NOT COMPILE_GIT_HASH)
+  find_program(GIT_EXECUTABLE git)
+  if(GIT_EXECUTABLE)
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      OUTPUT_VARIABLE COMPILE_GIT_HASH
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+    )
+  endif()
+  if(NOT COMPILE_GIT_HASH)
+    set(COMPILE_GIT_HASH "unknown")
+  endif()
+endif()
+add_compile_definitions(COMPILE_GIT_HASH="${COMPILE_GIT_HASH}")
+message(STATUS "Build git commit hash: ${COMPILE_GIT_HASH}")
+
 # Enable ccache if available to improve rebuild times
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
