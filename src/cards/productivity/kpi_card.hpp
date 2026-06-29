@@ -7,6 +7,7 @@
 #include <fstream>
 #include <ctime>
 #include <cstring>
+#include <format>
 #include "../interface/card.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -26,6 +27,26 @@ struct kpi_invoice_state {
     bool tax_filed = false;
 };
 
+struct kpi_goals_checklist {
+    // Goal A targets
+    bool a_std_lib = false;
+    bool a_optimization = false;
+    bool a_simplification = false;
+    bool a_cpp23 = false;
+    
+    // Goal B targets
+    bool b_async = false;
+    bool b_self_documenting = false;
+    bool b_no_meetings = false;
+    bool b_timezone = false;
+    
+    // Goal C targets
+    bool c_ie_structure = false;
+    bool c_banking_paperwork = false;
+    bool c_invoices_on_time = false;
+    bool c_tax_statements = false;
+};
+
 struct kpi_state {
     int dependency_count = 0;
     int added_lines = 0;
@@ -38,6 +59,7 @@ struct kpi_state {
         {"August", {}},
         {"September", {}}
     };
+    kpi_goals_checklist goals_checklist{};
 };
 
 struct kpi_card : public card {
@@ -75,7 +97,7 @@ struct kpi_card : public card {
                     content.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
                     auto err = glz::read_json(state, content);
                     if (err) {
-                        // Handle or log error in debug
+                        // Handle error or log in debug
                     }
                 }
             }
@@ -149,19 +171,59 @@ struct kpi_card : public card {
         ui.spacing();
         ui.separator();
 
-        // Goals
-        ui.text_colored(colors[0], "Self-Imposed Goals");
-        
-        ui.text_colored(colors[1], "GOAL A: Modernization & Minimalist Design");
-        ui.text_wrapped("Deliver high-performance features using pure C++ standard library, avoiding dependency bloat.");
+        // Goals Breakdown
+        ui.text_colored(colors[0], "Sovereign Goals Checklist");
         ui.spacing();
+
+        // Goal A
+        float progress_a = 0.0f;
+        if (state.goals_checklist.a_std_lib) progress_a += 0.25f;
+        if (state.goals_checklist.a_optimization) progress_a += 0.25f;
+        if (state.goals_checklist.a_simplification) progress_a += 0.25f;
+        if (state.goals_checklist.a_cpp23) progress_a += 0.25f;
+
+        ui.text_colored(colors[1], "GOAL A: Modernization & Minimalist Design");
+        ui.progress_bar(progress_a, ImVec2(-1.0f, 15.0f), std::format("{:.0f}%", progress_a * 100.0f));
+        ui.indent(15.0f);
+        ui.checkbox("Modern C++ standard library priority (no new bloat)##a1", &state.goals_checklist.a_std_lib);
+        ui.checkbox("Hot path latency / memory optimization completed##a2", &state.goals_checklist.a_optimization);
+        ui.checkbox("Code simplification (deleted > added) achieved##a3", &state.goals_checklist.a_simplification);
+        ui.checkbox("Standard C++23 standards leveraged##a4", &state.goals_checklist.a_cpp23);
+        ui.unindent(15.0f);
+        ui.spacing();
+
+        // Goal B
+        float progress_b = 0.0f;
+        if (state.goals_checklist.b_async) progress_b += 0.25f;
+        if (state.goals_checklist.b_self_documenting) progress_b += 0.25f;
+        if (state.goals_checklist.b_no_meetings) progress_b += 0.25f;
+        if (state.goals_checklist.b_timezone) progress_b += 0.25f;
 
         ui.text_colored(colors[2], "GOAL B: Operational Independence & Autonomy");
-        ui.text_wrapped("Establish a highly autonomous rhythm with self-documenting code and minimum meetings.");
+        ui.progress_bar(progress_b, ImVec2(-1.0f, 15.0f), std::format("{:.0f}%", progress_b * 100.0f));
+        ui.indent(15.0f);
+        ui.checkbox("Asynchronous status updates (minimized sync alignment)##b1", &state.goals_checklist.b_async);
+        ui.checkbox("Self-documenting technical designs and comments##b2", &state.goals_checklist.b_self_documenting);
+        ui.checkbox("Autonomy maintained (no micro-management meetings)##b3", &state.goals_checklist.b_no_meetings);
+        ui.checkbox("Consistent timezone compliance maintained on rotation##b4", &state.goals_checklist.b_timezone);
+        ui.unindent(15.0f);
         ui.spacing();
 
+        // Goal C
+        float progress_c = 0.0f;
+        if (state.goals_checklist.c_ie_structure) progress_c += 0.25f;
+        if (state.goals_checklist.c_banking_paperwork) progress_c += 0.25f;
+        if (state.goals_checklist.c_invoices_on_time) progress_c += 0.25f;
+        if (state.goals_checklist.c_tax_statements) progress_c += 0.25f;
+
         ui.text_colored(colors[0], "GOAL C: Flawless Invoicing & Banking Trail");
-        ui.text_wrapped("Maintain structured invoice tracking into Georgian banking structures to build credit.");
+        ui.progress_bar(progress_c, ImVec2(-1.0f, 15.0f), std::format("{:.0f}%", progress_c * 100.0f));
+        ui.indent(15.0f);
+        ui.checkbox("Georgian IE structure compliant (1% tax rate secured)##c1", &state.goals_checklist.c_ie_structure);
+        ui.checkbox("Banking paperwork for international transfers finalized##c2", &state.goals_checklist.c_banking_paperwork);
+        ui.checkbox("Compliant invoices sent on-time monthly##c3", &state.goals_checklist.c_invoices_on_time);
+        ui.checkbox("Clean ledger and Georgian tax statements filed##c4", &state.goals_checklist.c_tax_statements);
+        ui.unindent(15.0f);
     }
 
     void render_tech_kpis(rouen::ui::ui_context& ui) {
