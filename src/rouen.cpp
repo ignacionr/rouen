@@ -96,79 +96,83 @@ int main() {
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
         "run_command", 
         std::make_shared<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
-            [](std::string const& cmd, std::shared_ptr<std::function<void(std::string)>> callback) {
+            [](std::string const& cmd, std::shared_ptr<std::function<void(std::string)>> const& callback) {
                 // Launch the command in a background thread to avoid freezing the UI
-                std::thread([cmd, callback]() {
-                    // Create a pipe to the command
-                    FILE* pipe = popen(cmd.c_str(), "r");
-                    if (!pipe) {
-                        if (callback) {
-                            (*callback)("Error: Failed to execute command");
+                std::thread([cmd, callback]() noexcept {
+                    try {
+                        // Create a pipe to the command
+                        FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
+                        if (!pipe) {
+                            if (callback) {
+                                (*callback)("Error: Failed to execute command");
+                            }
+                            return;
                         }
-                        return;
-                    }
-                    
-                    // Buffer for reading output
-                    std::array<char, 128> buffer;
-                    std::string current_output;
-                    bool has_output = false;
-                    
-                    // Read output incrementally
-                    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
-                        has_output = true;
-                        current_output += buffer.data();
                         
-                        // Send the current output to the callback
-                        if (callback) {
-                            (*callback)(current_output);
+                        // Buffer for reading output
+                        std::array<char, 128> buffer;
+                        std::string current_output;
+                        bool has_output = false;
+                        
+                        // Read output incrementally
+                        while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+                            has_output = true;
+                            current_output += buffer.data();
+                            
+                            // Send the current output to the callback
+                            if (callback) {
+                                (*callback)(current_output);
+                            }
                         }
-                    }
-                    
-                    // Get the exit status of the command
-                    int status = pclose(pipe);
-                    
-                    // If there was no output but the command completed, provide a default message
-                    if (!has_output) {
-                        if (WIFEXITED(status)) {
-                            int exit_status = WEXITSTATUS(status);
-                            if (exit_status == 0) {
-                                current_output = "Command completed successfully with no output.";
+                        
+                        // Get the exit status of the command
+                        int status = pclose(pipe);
+                        
+                        // If there was no output but the command completed, provide a default message
+                        if (!has_output) {
+                            if (WIFEXITED(status)) {
+                                int exit_status = WEXITSTATUS(status);
+                                if (exit_status == 0) {
+                                    current_output = "Command completed successfully with no output.";
+                                } else {
+                                    current_output = std::format("Command failed with exit code: {}", exit_status);
+                                }
                             } else {
-                                current_output = std::format("Command failed with exit code: {}", exit_status);
+                                current_output = "Command terminated abnormally.";
+                            }
+                            
+                            // Send the final status message to the callback
+                            if (callback) {
+                                (*callback)(current_output);
                             }
                         } else {
-                            current_output = "Command terminated abnormally.";
+                            // For commands with output, append the exit status
+                            std::string status_message;
+                            if (WIFEXITED(status)) {
+                                int exit_status = WEXITSTATUS(status);
+                                status_message = std::format("\n\nProcess exited with code: {}", exit_status);
+                            } else if (WIFSIGNALED(status)) {
+                                int term_signal = WTERMSIG(status);
+                                status_message = std::format("\n\nProcess terminated by signal: {}", term_signal);
+                            } else {
+                                status_message = "\n\nProcess completed.";
+                            }
+                            
+                            current_output += status_message;
+                            
+                            // Send the final output with status to the callback
+                            if (callback) {
+                                (*callback)(current_output);
+                            }
                         }
                         
-                        // Send the final status message to the callback
+                        // Add a small marker to indicate process completion
                         if (callback) {
-                            (*callback)(current_output);
+                            // Send a specially marked message that the card can detect to know the process is definitely complete
+                            (*callback)(current_output + "\n<PROCESS_COMPLETED>");
                         }
-                    } else {
-                        // For commands with output, append the exit status
-                        std::string status_message;
-                        if (WIFEXITED(status)) {
-                            int exit_status = WEXITSTATUS(status);
-                            status_message = std::format("\n\nProcess exited with code: {}", exit_status);
-                        } else if (WIFSIGNALED(status)) {
-                            int term_signal = WTERMSIG(status);
-                            status_message = std::format("\n\nProcess terminated by signal: {}", term_signal);
-                        } else {
-                            status_message = "\n\nProcess completed.";
-                        }
-                        
-                        current_output += status_message;
-                        
-                        // Send the final output with status to the callback
-                        if (callback) {
-                            (*callback)(current_output);
-                        }
-                    }
-                    
-                    // Add a small marker to indicate process completion
-                    if (callback) {
-                        // Send a specially marked message that the card can detect to know the process is definitely complete
-                        (*callback)(current_output + "\n<PROCESS_COMPLETED>");
+                    } catch (...) {
+                        // Prevent exceptions from escaping the thread
                     }
                 }).detach(); // Detach the thread so it runs independently
             }
