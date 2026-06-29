@@ -71,6 +71,10 @@ public:
         return ImGui::InputText(label.c_str(), buf, buf_size);
     }
 
+    bool input_int(const std::string& label, int* v, int step = 1, int step_fast = 100) override {
+        return ImGui::InputInt(label.c_str(), v, step, step_fast);
+    }
+
     bool input_text_with_placeholder(const std::string& label, char* buf, size_t buf_size, const std::string& placeholder, bool enter_returns_true = false) override {
         ImGuiInputTextFlags flags = enter_returns_true ? ImGuiInputTextFlags_EnterReturnsTrue : 0;
         bool result = ImGui::InputText(label.c_str(), buf, buf_size, flags);

@@ -47,6 +47,7 @@ public:
     virtual bool button(const std::string& label, const ImVec2& size = ImVec2(0, 0)) = 0;
     virtual bool checkbox(const std::string& label, bool* checked) = 0;
     virtual bool input_text(const std::string& label, char* buf, size_t buf_size) = 0;
+    virtual bool input_int(const std::string& label, int* v, int step = 1, int step_fast = 100) = 0;
     virtual bool input_text_with_placeholder(const std::string& label, char* buf, size_t buf_size, const std::string& placeholder, bool enter_returns_true = false) = 0;
     virtual void progress_bar(float fraction, const ImVec2& size = ImVec2(-1, 0), const std::string& overlay = "") = 0;
     virtual bool selectable(const std::string& label, bool selected = false) = 0;

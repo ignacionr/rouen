@@ -35,6 +35,7 @@
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/trello_card.hpp"
+#include "../productivity/kpi_card.hpp"
 #include "../system/about.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
@@ -143,6 +144,10 @@ namespace rouen::cards {
                 
                 instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<settings_card>();
+                });
+                
+                instance.emplace("kpis", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<kpi_card>();
                 });
                 
                 instance.emplace("about", [](std::string_view, SDL_Renderer* renderer) {
