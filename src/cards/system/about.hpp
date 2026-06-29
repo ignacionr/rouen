@@ -42,7 +42,15 @@ struct about_card : public card {
         // Load app icon texture
         if (renderer) {
             std::filesystem::path icon_path = rouen::platform::get_resource_path("Rouen.png", "img");
+            std::cout << "[INFO] about_card: Resolving Rouen.png path: " << icon_path.string() << '\n';
             icon_texture = TextureHelper::loadTextureFromFile(renderer, icon_path.string().c_str(), icon_width, icon_height);
+            if (!icon_texture) {
+                std::cerr << "[ERROR] about_card: Failed to load icon texture from path: " << icon_path.string() << ". Error: " << SDL_GetError() << '\n';
+            } else {
+                std::cout << "[INFO] about_card: Successfully loaded icon texture (" << icon_width << "x" << icon_height << ")\n";
+            }
+        } else {
+            std::cerr << "[ERROR] about_card: Renderer is null!\n";
         }
         
         // Fetch remote hash in a background thread to prevent UI freezing
