@@ -98,7 +98,7 @@ int main() {
         std::make_shared<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
             [](std::string const& cmd, std::shared_ptr<std::function<void(std::string)>> const& callback) {
                 // Launch the command in a background thread to avoid freezing the UI
-                std::thread([cmd, callback]() noexcept {
+                std::thread([cmd, callback]() noexcept { // NOLINT(bugprone-exception-escape)
                     try {
                         // Create a pipe to the command
                         FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
@@ -171,8 +171,10 @@ int main() {
                             // Send a specially marked message that the card can detect to know the process is definitely complete
                             (*callback)(current_output + "\n<PROCESS_COMPLETED>");
                         }
+                    } catch (std::exception const& e) {
+                        std::cerr << "[ERROR] Exception in run_command thread: " << e.what() << '\n';
                     } catch (...) {
-                        // Prevent exceptions from escaping the thread
+                        std::cerr << "[ERROR] Unknown exception in run_command thread\n";
                     }
                 }).detach(); // Detach the thread so it runs independently
             }
