@@ -50,6 +50,7 @@ public:
     virtual bool input_text_with_placeholder(const std::string& label, char* buf, size_t buf_size, const std::string& placeholder, bool enter_returns_true = false) = 0;
     virtual void progress_bar(float fraction, const ImVec2& size = ImVec2(-1, 0), const std::string& overlay = "") = 0;
     virtual bool selectable(const std::string& label, bool selected = false) = 0;
+    virtual void image(void* user_texture_id, const ImVec2& size, const ImVec2& uv0 = ImVec2(0, 0), const ImVec2& uv1 = ImVec2(1, 1), const ImVec4& tint_col = ImVec4(1, 1, 1, 1), const ImVec4& border_col = ImVec4(0, 0, 0, 0)) = 0;
     
     // Layout and Styling
     virtual void separator() = 0;

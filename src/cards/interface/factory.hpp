@@ -145,8 +145,8 @@ namespace rouen::cards {
                     return std::make_shared<settings_card>();
                 });
                 
-                instance.emplace("about", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<about_card>();
+                instance.emplace("about", [](std::string_view, SDL_Renderer* renderer) {
+                    return std::make_shared<about_card>(renderer);
                 });
                 
                 // Register the new terminal card

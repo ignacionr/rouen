@@ -4,9 +4,14 @@
 #include <thread>
 #include <format>
 #include <iostream>
+#include <filesystem>
+#include <SDL.h>
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/texture_helper.hpp"
+#include "../../helpers/texture_utils.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 // Fallback if COMPILE_GIT_HASH is not defined by build system
 #ifndef COMPILE_GIT_HASH
@@ -23,12 +28,22 @@ struct about_card : public card {
     bool is_up_to_date = false;
     bool is_open = true;
 
-    about_card() {
+    SDL_Texture* icon_texture = nullptr;
+    int icon_width = 0;
+    int icon_height = 0;
+
+    explicit about_card(SDL_Renderer* renderer) {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f};     // Blue primary color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f};   // Turquoise secondary color (second_color)
         
         name("About Rouen");
-        width = 450.0f;
+        width = 460.0f;
+        
+        // Load app icon texture
+        if (renderer) {
+            std::filesystem::path icon_path = rouen::platform::get_resource_path("Rouen.png", "img");
+            icon_texture = TextureHelper::loadTextureFromFile(renderer, icon_path.string().c_str(), icon_width, icon_height);
+        }
         
         // Fetch remote hash in a background thread to prevent UI freezing
         // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -69,7 +84,11 @@ struct about_card : public card {
     }
 
     // Explicit destructor
-    ~about_card() override = default;
+    ~about_card() override {
+        if (icon_texture) {
+            TextureHelper::destroyTexture(icon_texture);
+        }
+    }
 
     std::string get_uri() const override {
         return "about";
@@ -79,8 +98,18 @@ struct about_card : public card {
         if (!is_open) return false;
         
         return render_window([this, &ui]() {
+            // Horizontal layout for icon and title
+            if (icon_texture) {
+                auto tex_id = rouen::helpers::texture_id_cast(icon_texture);
+                ui.image(tex_id, ImVec2(64.0f, 64.0f));
+                ui.same_line(0.0f, 15.0f);
+            }
+            
+            ui.begin_group();
             ui.text("Rouen Dashboard Application");
             ui.text("A productivity tool built with C++, SDL2, and ImGui.");
+            ui.end_group();
+            
             ui.separator();
             
             ui.text_colored(colors[0], "Version Information");
