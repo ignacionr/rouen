@@ -1,6 +1,28 @@
 #import <Cocoa/Cocoa.h>
 #include "mac_menu_helper.hpp"
+#include "../registrar.hpp"
 #include <iostream>
+
+@interface RouenMenuHandler : NSObject
+- (void)handleAboutMenu:(id)sender;
+@end
+
+static RouenMenuHandler* g_menuHandler = nil;
+
+@implementation RouenMenuHandler
+- (void)handleAboutMenu:(id)sender {
+    try {
+        auto service = registrar::get<std::function<void(std::string const&)>>("create_card");
+        if (service) {
+            (*service)("about");
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR: Failed to trigger About card from macOS menu: " << e.what() << '\n';
+    } catch (...) {
+        std::cerr << "ERROR: Unknown error triggering About card from macOS menu" << '\n';
+    }
+}
+@end
 
 namespace rouen::platform {
 
@@ -32,8 +54,27 @@ void disable_mac_cmd_w_menu_item() {
                 }
             }
         }
+        
+        // Configure native "About Rouen" menu item to trigger our custom card
+        if ([mainMenu numberOfItems] > 0) {
+            NSMenuItem* appMenuItem = [mainMenu itemAtIndex:0];
+            if ([appMenuItem hasSubmenu]) {
+                NSMenu* appMenu = [appMenuItem submenu];
+                for (NSMenuItem* subitem in [appMenu itemArray]) {
+                    if ([[subitem title] rangeOfString:@"About" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                        if (!g_menuHandler) {
+                            g_menuHandler = [[RouenMenuHandler alloc] init];
+                        }
+                        [subitem setTarget:g_menuHandler];
+                        [subitem setAction:@selector(handleAboutMenu:)];
+                        std::cout << "DEBUG: Custom About menu handler registered successfully." << '\n';
+                        found = true;
+                    }
+                }
+            }
+        }
+        
         if (found) {
-            std::cout << "DEBUG: Successfully disabled Cmd+W and Cmd+P menu shortcuts." << '\n';
             completed = true;
         }
     }
