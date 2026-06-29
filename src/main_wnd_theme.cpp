@@ -74,8 +74,10 @@ void main_wnd::configure_highdpi_settings() {
     auto& io = ImGui::GetIO();
     
     // Get the window size and drawable size to calculate DPI scale
-    int window_w, window_h;
-    int drawable_w, drawable_h;
+    int window_w = 0;
+    int window_h = 0;
+    int drawable_w = 0;
+    int drawable_h = 0;
     
     SDL_GetWindowSize(m_window, &window_w, &window_h);
     SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);
@@ -83,25 +85,27 @@ void main_wnd::configure_highdpi_settings() {
     float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
     float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
     
-    std::cout << "Configuring high-DPI settings:" << std::endl;
-    std::cout << "  Window size: " << window_w << "x" << window_h << std::endl;
-    std::cout << "  Drawable size: " << drawable_w << "x" << drawable_h << std::endl;
-    std::cout << "  Scale factors: " << scale_x << " x " << scale_y << std::endl;
+    std::cout << "Configuring high-DPI settings:" << '\n';
+    std::cout << "  Window size: " << window_w << "x" << window_h << '\n';
+    std::cout << "  Drawable size: " << drawable_w << "x" << drawable_h << '\n';
+    std::cout << "  Scale factors: " << scale_x << " x " << scale_y << '\n';
     
     // Set the display scale and framebuffer scale
     io.DisplaySize = ImVec2(static_cast<float>(window_w), static_cast<float>(window_h));
     io.DisplayFramebufferScale = ImVec2(scale_x, scale_y);
     
-    std::cout << "  ImGui DisplaySize set to: " << io.DisplaySize.x << "x" << io.DisplaySize.y << std::endl;
-    std::cout << "  ImGui DisplayFramebufferScale set to: " << io.DisplayFramebufferScale.x << "x" << io.DisplayFramebufferScale.y << std::endl;
+    std::cout << "  ImGui DisplaySize set to: " << io.DisplaySize.x << "x" << io.DisplaySize.y << '\n';
+    std::cout << "  ImGui DisplayFramebufferScale set to: " << io.DisplayFramebufferScale.x << "x" << io.DisplayFramebufferScale.y << '\n';
 }
 
 void main_wnd::update_imgui_display_settings() {
     auto& io = ImGui::GetIO();
     
     // Get current window and drawable sizes
-    int window_w, window_h;
-    int drawable_w, drawable_h;
+    int window_w = 0;
+    int window_h = 0;
+    int drawable_w = 0;
+    int drawable_h = 0;
     
     SDL_GetWindowSize(m_window, &window_w, &window_h);
     SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);

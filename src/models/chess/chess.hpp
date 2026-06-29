@@ -45,8 +45,8 @@ struct Position {
             return "??";
         }
         
-        char file_char = static_cast<char>('a' + file);
-        char rank_char = static_cast<char>('1' + rank);
+        auto file_char = static_cast<char>('a' + file);
+        auto rank_char = static_cast<char>('1' + rank);
         
         return std::string{file_char, rank_char};
     }

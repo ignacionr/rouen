@@ -29,6 +29,20 @@ namespace detail {
         std::is_convertible_v<From, To> || 
         (std::is_integral_v<From> && std::is_integral_v<To>) ||
         (std::is_pointer_v<From> && std::is_pointer_v<To>);
+
+    // Cast a uintptr_t value to TargetType, choosing reinterpret_cast for pointer
+    // targets and static_cast for integral targets.  By parameterizing on TargetType
+    // the discarded branch of if constexpr is truly dependent and never instantiated,
+    // which avoids the hard "reinterpret_cast between integer types" error that clang
+    // emits even for non-taken if constexpr branches when the types are concrete.
+    template<typename TargetType>
+    [[nodiscard]] constexpr auto int_to_target(uintptr_t val) noexcept -> TargetType {
+        if constexpr (std::is_pointer_v<TargetType>) {
+            return reinterpret_cast<TargetType>(val);
+        } else {
+            return static_cast<TargetType>(val);
+        }
+    }
 }
 
 /**
@@ -52,30 +66,22 @@ template<typename T>
     else if constexpr (detail::is_texture_id_integral_v<TextureIdType> && std::is_integral_v<DecayedT>) {
         return static_cast<ImTextureID>(texture_handle);
     }
-    // Case 4: Pointer to integral - use uint64_t as universal bridge
+    // Case 4: Pointer to integral - use uintptr_t as universal bridge
     else if constexpr (detail::is_texture_id_integral_v<TextureIdType> && std::is_pointer_v<DecayedT>) {
-        return static_cast<ImTextureID>(reinterpret_cast<uint64_t>(texture_handle));
+        return static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texture_handle));
     }
-    // Case 5: Integral to pointer - use uint64_t as universal bridge
+    // Case 5: Integral to pointer - use uintptr_t as universal bridge
     else if constexpr (detail::is_texture_id_pointer_v<TextureIdType> && std::is_integral_v<DecayedT>) {
-        return reinterpret_cast<ImTextureID>(static_cast<uint64_t>(texture_handle));
+        return detail::int_to_target<ImTextureID>(static_cast<uintptr_t>(texture_handle));
     }
-    // Case 6: Fallback - universal conversion via uint64_t (instead of uintptr_t)
+    // Case 6: Fallback - universal conversion via uintptr_t
     else {
         if constexpr (std::is_pointer_v<DecayedT>) {
-            const auto int_value = reinterpret_cast<uint64_t>(texture_handle);
-            if constexpr (detail::is_texture_id_pointer_v<TextureIdType>) {
-                return reinterpret_cast<ImTextureID>(int_value);
-            } else {
-                return static_cast<ImTextureID>(int_value);
-            }
+            const auto int_value = reinterpret_cast<uintptr_t>(texture_handle);
+            return detail::int_to_target<ImTextureID>(int_value);
         } else {
-            const auto int_value = static_cast<uint64_t>(texture_handle);
-            if constexpr (detail::is_texture_id_pointer_v<TextureIdType>) {
-                return reinterpret_cast<ImTextureID>(int_value);
-            } else {
-                return static_cast<ImTextureID>(int_value);
-            }
+            const auto int_value = static_cast<uintptr_t>(texture_handle);
+            return detail::int_to_target<ImTextureID>(int_value);
         }
     }
 }

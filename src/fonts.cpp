@@ -64,7 +64,7 @@ namespace rouen::fonts {
         try {
             return std::filesystem::current_path().string();
         } catch (const std::exception& e) {
-            std::cerr << "Error getting current path: " << e.what() << std::endl;
+            std::cerr << "Error getting current path: " << e.what() << '\n';
             return ".";
         }
     }
@@ -76,7 +76,7 @@ namespace rouen::fonts {
         // Get DPI scale from ImGui's already configured display scale
         float dpi_scale = io.DisplayFramebufferScale.x;
         
-        std::cout << "Font setup using DPI scale: " << dpi_scale << std::endl;
+        std::cout << "Font setup using DPI scale: " << dpi_scale << '\n';
         
         // Scale base font size for high-DPI displays
         float scaled_base_size = base_size * dpi_scale;
@@ -88,10 +88,10 @@ namespace rouen::fonts {
         if (!style_scaled && dpi_scale > 1.0f) {
             style.ScaleAllSizes(dpi_scale);
             style_scaled = true;
-            std::cout << "Scaled ImGui style by factor: " << dpi_scale << std::endl;
+            std::cout << "Scaled ImGui style by factor: " << dpi_scale << '\n';
         }
         
-        std::cout << "Using DPI scale: " << dpi_scale << ", Scaled font size: " << scaled_base_size << std::endl;
+        std::cout << "Using DPI scale: " << dpi_scale << ", Scaled font size: " << scaled_base_size << '\n';
         
         // Store the current DPI scale for change detection
         last_dpi_scale = dpi_scale;
@@ -179,18 +179,18 @@ namespace rouen::fonts {
         }
         
         // Log found font paths
-        std::cout << "Default font path: " << default_font_path << std::endl;
-        std::cout << "Monospace font path: " << mono_font_path << std::endl;
-        std::cout << "Material icons font path: " << material_icons_path << std::endl;
+        std::cout << "Default font path: " << default_font_path << '\n';
+        std::cout << "Monospace font path: " << mono_font_path << '\n';
+        std::cout << "Material icons font path: " << material_icons_path << '\n';
         
         // Check if we found the fonts
         if (default_font_path.empty()) {
-            std::cerr << "ERROR: Could not find a suitable default font!" << std::endl;
+            std::cerr << "ERROR: Could not find a suitable default font!" << '\n';
             // Use a fallback to ImGui's default embedded font
             // This will prevent the assertion failure but won't have all the glyphs
         } else {
             // Load the default font first
-            io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, NULL, ranges);
+            io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Then merge Material Design Icons with the default font
             if (!material_icons_path.empty()) {
@@ -204,15 +204,15 @@ namespace rouen::fonts {
                 strcpy(icons_config.Name, "Material Icons");
                 
                 io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
-                std::cout << "Successfully merged Material Icons with default font" << std::endl;
+                std::cout << "Successfully merged Material Icons with default font" << '\n';
             } else {
-                std::cerr << "WARNING: Could not find Material Icons font!" << std::endl;
+                std::cerr << "WARNING: Could not find Material Icons font!" << '\n';
             }
         }
         
         // Add monospace font if found
         if (!mono_font_path.empty()) {
-            io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, NULL, ranges);
+            io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Also merge Material Design Icons with the monospace font if found
             if (!material_icons_path.empty()) {
@@ -225,10 +225,10 @@ namespace rouen::fonts {
                 strcpy(icons_config.Name, "Material Icons (Mono)");
                 
                 io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
-                std::cout << "Successfully merged Material Icons with monospace font" << std::endl;
+                std::cout << "Successfully merged Material Icons with monospace font" << '\n';
             }
         } else {
-            std::cerr << "WARNING: Could not find a suitable monospace font!" << std::endl;
+            std::cerr << "WARNING: Could not find a suitable monospace font!" << '\n';
         }
         
         // Build the font atlas after loading all fonts
@@ -269,13 +269,13 @@ namespace rouen::fonts {
                     
                     std::cout << "Refreshed DPI scale: " << dpi_scale << 
                                  " (window: " << window_w << "x" << window_h << 
-                                 ", drawable: " << drawable_w << "x" << drawable_h << ")" << std::endl;
+                                 ", drawable: " << drawable_w << "x" << drawable_h << ")" << '\n';
                     
                     // Check if DPI scale has changed significantly
                     if (std::abs(dpi_scale - last_dpi_scale) > 0.1f) {
                         fonts_need_rebuild = true;
                         std::cout << "DPI scale changed from " << last_dpi_scale << " to " << dpi_scale << 
-                                     ", fonts need rebuild" << std::endl;
+                                     ", fonts need rebuild" << '\n';
                     }
                 }
             }

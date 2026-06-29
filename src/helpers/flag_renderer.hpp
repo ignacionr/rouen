@@ -68,7 +68,7 @@ inline void draw_flag(ImDrawList* draw_list, ImVec2 pos, ImVec2 size, const std:
         );
         // Row of stars
         for (int i = 0; i < 5; ++i) {
-            float fi = static_cast<float>(i);
+            auto fi = static_cast<float>(i);
             draw_list->AddCircleFilled(ImVec2(pos.x + w/3.0f + fi*w/12.0f, pos.y + fi*h/5.0f), 1.0f, IM_COL32(255, 255, 255, 255));
         }
     } else if (team_code == "BRA") { // Brazil
@@ -306,7 +306,7 @@ inline void draw_flag(ImDrawList* draw_list, ImVec2 pos, ImVec2 size, const std:
         float sh = h / 9.0f;
         for (int i = 0; i < 9; ++i) {
             if (i % 2 == 1) {
-                float fi = static_cast<float>(i);
+                auto fi = static_cast<float>(i);
                 draw_list->AddRectFilled(ImVec2(pos.x, pos.y + fi*sh), ImVec2(end.x, pos.y + (fi+1.0f)*sh), IM_COL32(0, 56, 168, 255));
             }
         }
@@ -316,7 +316,7 @@ inline void draw_flag(ImDrawList* draw_list, ImVec2 pos, ImVec2 size, const std:
         float sh = h / 7.0f;
         for (int i = 0; i < 7; ++i) {
             ImU32 color = (i % 2 == 0) ? IM_COL32(191, 10, 48, 255) : IM_COL32(255, 255, 255, 255);
-            float fi = static_cast<float>(i);
+            auto fi = static_cast<float>(i);
             draw_list->AddRectFilled(ImVec2(pos.x, pos.y + fi*sh), ImVec2(end.x, pos.y + (fi+1.0f)*sh), color);
         }
         draw_list->AddRectFilled(pos, ImVec2(pos.x + w/2.2f, pos.y + h/2.0f), IM_COL32(0, 40, 104, 255));

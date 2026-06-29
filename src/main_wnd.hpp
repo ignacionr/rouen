@@ -36,7 +36,7 @@ public:
     SDL_Renderer* get_renderer() const { return m_renderer; }
     SDL_Window* get_window() const { return m_window; }
 
-    void setup_dark_theme();
+    static void setup_dark_theme();
 
     // Configure high-DPI settings for ImGui
     void configure_highdpi_settings();

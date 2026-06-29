@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <atomic>
 #include <thread>
@@ -393,9 +394,9 @@ inline bool media_player_item::playMedia() {
 }
 
 inline std::string media_player_item::formatTime(double seconds) const {
-    int hours = static_cast<int>(seconds) / 3600;
+    auto hours = static_cast<int>(seconds) / 3600;
     int minutes = (static_cast<int>(seconds) % 3600) / 60;
-    int secs = static_cast<int>(seconds) % 60;
+    auto secs = static_cast<int>(seconds) % 60;
     char buffer[100];
     snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hours, minutes, secs);
     return std::string(buffer);
@@ -414,8 +415,7 @@ inline bool media_player_item::setVolume(int new_volume) {
         return false;
     }
     // Clamp volume to valid range
-    if (new_volume < 0) new_volume = 0;
-    if (new_volume > 100) new_volume = 100;
+    new_volume = std::clamp(new_volume, 0, 100);
     
     std::string cmd = std::format("{{\"command\":[\"set_property\",\"volume\",{}],\"request_id\":4}}\n", new_volume);
     bool ok = mpv_socket.send_command(cmd);

@@ -28,7 +28,7 @@
 #include "../../helpers/imgui_ui_context.hpp"
 
 struct deck {
-    deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer), editor_() {
+    deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer) {
         // Initialize colors
         background_color = {0.0, 0.0f, 0.0f, 0.70f};
         editor_background_color = {0.76f, 0.76f, 0.66f, 0.40f};
@@ -211,7 +211,7 @@ struct deck {
                             
                             int current_height = 600; // default fallback
                             if (window) {
-                                int current_width;
+                                int current_width = 0;
                                 SDL_GetWindowSize(window, &current_width, &current_height);
                                 
                                 // Check if window is maximized and skip if so
@@ -270,7 +270,7 @@ struct deck {
                         
                         if (snapshot_texture) {
                             // Read the pixel data from the texture
-                            int texture_width, texture_height;
+                            int texture_width{0}, texture_height{0};
                             SDL_QueryTexture(snapshot_texture, nullptr, nullptr, &texture_width, &texture_height);
                             
                             // Create a surface to store the pixel data
@@ -291,12 +291,12 @@ struct deck {
                                     // Save the surface as PNG
                                     if (IMG_SavePNG(surface, filename.c_str()) == 0) {
                                         // Success - show a message or notification if desired
-                                        std::cout << "Card snapshot saved to " << filename << std::endl;
+                                        std::cout << "Card snapshot saved to " << filename << '\n';
                                     } else {
-                                        std::cerr << "Failed to save snapshot: " << IMG_GetError() << std::endl;
+                                        std::cerr << "Failed to save snapshot: " << IMG_GetError() << '\n';
                                     }
                                 } else {
-                                    std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << std::endl;
+                                    std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << '\n';
                                 }
                                 
                                 // Restore the default render target
@@ -362,8 +362,8 @@ struct deck {
                 if (line == "[rouen]") {
                     found_rouen_section = true;
                     in_rouen_section = true;
-                    buffer << line << std::endl;
-                    buffer << "cards=" << uris << std::endl;
+                    buffer << line << '\n';
+                    buffer << "cards=" << uris << '\n';
                     continue;
                 }
                 
@@ -374,7 +374,7 @@ struct deck {
                 
                 // Skip card entries in rouen section, keep everything else
                 if (!in_rouen_section || line.substr(0, 6) != "cards=") {
-                    buffer << line << std::endl;
+                    buffer << line << '\n';
                 }
             }
             ini_file.close();
@@ -382,8 +382,8 @@ struct deck {
         
         // If rouen section wasn't found, add it
         if (!found_rouen_section) {
-            buffer << "[rouen]" << std::endl;
-            buffer << "cards=" << uris << std::endl;
+            buffer << "[rouen]" << '\n';
+            buffer << "cards=" << uris << '\n';
         }
         
         // Write back to the file
@@ -513,17 +513,15 @@ struct deck {
                     auto& c = row[i];
                     float override_width = -1.0f;
                     if (i == row.size() - 1) {
-                        override_width = size.x - x;
-                        if (override_width < c->width * dpi_scale) {
-                            override_width = c->width * dpi_scale;
-                        }
+                        override_width = std::max(size.x - x, c->width * dpi_scale);
                     }
                     if (!render(*c, x, row_height, result.requested_fps, y, override_width)) {
                         // Unregister MCP functions immediately when card fails to render
                         try {
                             c->unregister_mcp_functions();
                         } catch (...) {
-                            // Ignore exceptions during cleanup - card might already be corrupted
+                            // Intentionally ignored: card might already be corrupted during cleanup
+                            static_cast<void>(0);
                         }
                         cards_to_remove.insert(c);
                     }
@@ -558,9 +556,7 @@ struct deck {
             if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
                 start_x = right_corner_offset;
             }
-            if (start_x < left_corner) {
-                start_x = left_corner;
-            }
+            start_x = std::max(start_x, left_corner);
             auto x{start_x};
             auto y = (empty_editor ? 450.0f : 250.0f) * dpi_scale;
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
@@ -584,7 +580,7 @@ struct deck {
             cards_.erase(cards_to_remove, cards_.end());
 
             // Render the editor window
-            ImGui::SetNextWindowPos({0.0f, 2.0f * dpi_scale + y}, ImGuiCond_Always);
+            ImGui::SetNextWindowPos({0.0f, (2.0f * dpi_scale) + y}, ImGuiCond_Always);
             ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
             editor_.render();

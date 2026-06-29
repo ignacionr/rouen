@@ -92,7 +92,7 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             auto result_error = glz::read<glz::opts{.error_on_unknown_keys = false}>(result, response);
 
             if (result_error) {
-                std::cerr << "Failed to parse search result JSON: " << glz::format_error(result_error, response) << std::endl;
+                std::cerr << "Failed to parse search result JSON: " << glz::format_error(result_error, response) << '\n';
                 throw std::runtime_error("Failed to parse search result JSON");
             }
         } catch (const std::exception& e) {

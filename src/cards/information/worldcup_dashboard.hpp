@@ -519,7 +519,7 @@ private:
         }
     }
 
-    std::vector<std::string> extract_urls(const std::string& text) {
+    static std::vector<std::string> extract_urls(const std::string& text) {
         std::vector<std::string> urls;
         size_t pos = 0;
         while (true) {
@@ -3017,13 +3017,13 @@ private:
         return std::string(buf);
     }
 
-    std::string normalize_team_name(const std::string& name) {
+    static std::string normalize_team_name(const std::string& name) {
         std::string s = name;
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
         
-        size_t pos;
+        size_t pos{0};
         while ((pos = s.find(" and ")) != std::string::npos) {
             s.replace(pos, 5, " ");
         }

@@ -77,7 +77,7 @@ void main_wnd::resize_window(int width, int height) {
         // Update viewport if needed
         if (m_renderer) {
             // SDL handles the renderer viewport automatically
-            std::cout << "Window resized to " << width << "x" << height << std::endl;
+            std::cout << "Window resized to " << width << "x" << height << '\n';
         }
     }
 }

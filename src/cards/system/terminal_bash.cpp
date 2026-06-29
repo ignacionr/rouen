@@ -178,7 +178,7 @@ void TerminalBash::terminate_bash_session() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         // Kill the process if it's still running
-        int status;
+        int status{0};
         pid_t result = waitpid(bash_pid, &status, WNOHANG);
         if (result == 0) {
             // Process is still running, kill it
@@ -267,7 +267,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                 
                 // Process accumulated output line by line
                 size_t pos = 0;
-                size_t end_line;
+                size_t end_line{0};
                 
                 while ((end_line = accumulated_output.find('\n', pos)) != std::string::npos) {
                     // Extract line

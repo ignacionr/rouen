@@ -78,7 +78,7 @@ public:
     }
 
     // Helper for formatting dates
-    std::string format_date(const std::chrono::system_clock::time_point& tp) {
+    static std::string format_date(const std::chrono::system_clock::time_point& tp) {
         auto time = std::chrono::system_clock::to_time_t(tp);
         std::stringstream ss;
         ss << std::put_time(std::localtime(&time), "%b %d, %Y");
@@ -86,7 +86,7 @@ public:
     }
 
     // Helper for parsing dates from string
-    std::chrono::system_clock::time_point parse_date(const std::string& date_str) {
+    static std::chrono::system_clock::time_point parse_date(const std::string& date_str) {
         std::tm tm = {};
         std::stringstream ss(date_str);
         ss >> std::get_time(&tm, "%Y-%m-%d");
@@ -94,13 +94,13 @@ public:
     }
     
     // Convert date info to string in YYYY-MM-DD format
-    std::string date_to_string(int year, int month, int day) {
+    static std::string date_to_string(int year, int month, int day) {
         // Use std::format instead of std::snprintf for modern C++ style and type safety
         return std::format("{:04d}-{:02d}-{:02d}", year, month + 1, day);
     }
     
     // Get number of days in a month
-    int get_days_in_month(int year, int month) {
+    static int get_days_in_month(int year, int month) {
         static const int days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
         if (month == 1) { // February
             if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
@@ -111,7 +111,7 @@ public:
     }
     
     // Get the day of the week for the first day of the month (0 = Sunday, 6 = Saturday)
-    int get_first_day_of_month(int year, int month) {
+    static int get_first_day_of_month(int year, int month) {
         std::tm time_info = {};
         time_info.tm_year = year - 1900;
         time_info.tm_mon = month;

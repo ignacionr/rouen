@@ -281,8 +281,8 @@ private:
                     const auto& stats = project_statistics_[project.key];
                     
                     if (stats.total_issues > 0) {
-                        float done_ratio = static_cast<float>(stats.done_issues) / static_cast<float>(stats.total_issues);
-                        float in_progress_ratio = static_cast<float>(stats.in_progress_issues) / static_cast<float>(stats.total_issues);
+                        auto done_ratio = static_cast<float>(stats.done_issues) / static_cast<float>(stats.total_issues);
+                        auto in_progress_ratio = static_cast<float>(stats.in_progress_issues) / static_cast<float>(stats.total_issues);
                         
                         // Progress bars for each status
                         ImVec2 bar_pos = ImGui::GetCursorScreenPos();

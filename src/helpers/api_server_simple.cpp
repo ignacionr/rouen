@@ -21,7 +21,7 @@ bool api_server::initialize(int port) {
 }
 
 void api_server::start() {
-    std::cout << "API server started" << std::endl;
+    std::cout << "API server started" << '\n';
 }
 
 void api_server::stop() {

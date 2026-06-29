@@ -119,7 +119,7 @@ private:
     
     void render_settings_content() {
         // Refresh periodically
-        float current_time = static_cast<float>(ImGui::GetTime());
+        auto current_time = static_cast<float>(ImGui::GetTime());
         if (current_time - last_refresh_time_ > 2.0f) {
             refresh_config_data();
             last_refresh_time_ = current_time;
@@ -342,7 +342,7 @@ private:
         }
     }
     
-    void export_to_env_file() {
+    static void export_to_env_file() {
         auto config_service = helpers::ConfigService::instance();
         if (config_service->export_to_env_file()) {
             // Show success message (could be enhanced with a popup or status indicator)
@@ -372,7 +372,7 @@ private:
         }
     }
     
-    void render_ssl_mode_selector() {
+    static void render_ssl_mode_selector() {
         auto config_service = helpers::ConfigService::instance();
         std::string current_ssl_mode = config_service->get_env_optional("ROUEN_SSL_MODE").value_or("strict");
         

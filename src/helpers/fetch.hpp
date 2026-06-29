@@ -646,7 +646,7 @@ public:
             }
             
             // Check HTTP response code
-            long response_code;
+            long response_code{0};
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &response_code);
             if (response_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", response_code, url);
@@ -705,8 +705,8 @@ private:
         
         // Additional SSL options for better compatibility
         // Use system's CA bundle for certificate verification
-        curl_easy_setopt(handle, CURLOPT_CAINFO, NULL);  // Use system default
-        curl_easy_setopt(handle, CURLOPT_CAPATH, NULL);  // Use system default
+        curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);  // Use system default
+        curl_easy_setopt(handle, CURLOPT_CAPATH, nullptr);  // Use system default
         
         // Set SSL/TLS version - use TLS 1.2 as minimum for security
         curl_easy_setopt(handle, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);

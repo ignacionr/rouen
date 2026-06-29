@@ -33,7 +33,7 @@ void disable_mac_cmd_w_menu_item() {
             }
         }
         if (found) {
-            std::cout << "DEBUG: Successfully disabled Cmd+W and Cmd+P menu shortcuts." << std::endl;
+            std::cout << "DEBUG: Successfully disabled Cmd+W and Cmd+P menu shortcuts." << '\n';
             completed = true;
         }
     }
