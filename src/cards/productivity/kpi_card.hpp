@@ -73,7 +73,10 @@ struct kpi_card : public card {
                 std::ifstream f(path);
                 if (f) {
                     content.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-                    glz::read_json(state, content);
+                    auto err = glz::read_json(state, content);
+                    if (err) {
+                        // Handle or log error in debug
+                    }
                 }
             }
         } catch (...) {
@@ -112,7 +115,7 @@ struct kpi_card : public card {
             // Tab switcher
             if (ui.selectable(ICON_MD_DASHBOARD " Overview & Goals", selected_tab == 0)) { selected_tab = 0; }
             ui.same_line();
-            if (ui.selectable(ICON_MD_MICROCHIP " Technical KPIs", selected_tab == 1)) { selected_tab = 1; }
+            if (ui.selectable(ICON_MD_MEMORY " Technical KPIs", selected_tab == 1)) { selected_tab = 1; }
             ui.same_line();
             if (ui.selectable(ICON_MD_BUSINESS " Ops & Admin", selected_tab == 2)) { selected_tab = 2; }
             ui.separator();
@@ -140,9 +143,9 @@ struct kpi_card : public card {
         // Setup Grid
         ui.text_colored(colors[0], "Operational Setup");
         
-        ui.text(ICON_MD_BRIEFCASE " Engagement Model: Raptor B2B Strategy");
+        ui.text(ICON_MD_WORK " Engagement Model: Raptor B2B Strategy");
         ui.text(ICON_MD_PERCENT " Tax Structure: Georgian IE (1% optimized)");
-        ui.text(ICON_MD_PLANE_DEPARTURE " Travel & Rotation: 3-3-3-3 travel model");
+        ui.text(ICON_MD_FLIGHT " Travel & Rotation: 3-3-3-3 travel model");
         ui.spacing();
         ui.separator();
 
@@ -166,7 +169,7 @@ struct kpi_card : public card {
         ui.spacing();
 
         // Dependency count
-        ui.text(ICON_MD_CUBE " Dependency Count (Target: 0 New Libs)");
+        ui.text(ICON_MD_EXTENSION " Dependency Count (Target: 0 New Libs)");
         ui.push_item_width(120.0f);
         if (ui.input_int("Added Dependencies##dep_count", &state.dependency_count)) {
             if (state.dependency_count < 0) state.dependency_count = 0;
@@ -181,7 +184,7 @@ struct kpi_card : public card {
         ui.separator();
 
         // Refactoring debt
-        ui.text(ICON_MD_TRASH_CAN " Refactoring Debt (Target: Simplified > Added)");
+        ui.text(ICON_MD_DELETE " Refactoring Debt (Target: Simplified > Added)");
         ui.push_item_width(120.0f);
         ui.input_int("Added Lines##added", &state.added_lines);
         ui.input_int("Deleted/Simplified Lines##deleted", &state.deleted_lines);
@@ -197,7 +200,7 @@ struct kpi_card : public card {
         ui.separator();
 
         // Resource Optimizations
-        ui.text(ICON_MD_MICROCHIP " Resource Optimizations Log");
+        ui.text(ICON_MD_MEMORY " Resource Optimizations Log");
         
         for (const auto& opt : state.optimizations) {
             ui.text_colored(colors[1], std::format("* {} ({})", opt.description, opt.impact));
@@ -230,13 +233,13 @@ struct kpi_card : public card {
         ui.spacing();
 
         // Timezone compliance & Autonomy
-        ui.checkbox(ICON_MD_EARTH_AMERICAS " 100% Timezone Output Compliance", &state.ops_timezone_compliance);
-        ui.checkbox(ICON_MD_HOURGLASS_HALF " Asynchronous Alignment First (Min sync calls)", &state.ops_async_alignment);
+        ui.checkbox(ICON_MD_PUBLIC " 100% Timezone Output Compliance", &state.ops_timezone_compliance);
+        ui.checkbox(ICON_MD_HOURGLASS_EMPTY " Asynchronous Alignment First (Min sync calls)", &state.ops_async_alignment);
         ui.spacing();
         ui.separator();
 
         // Invoicing & Administration
-        ui.text(ICON_MD_FILE_INVOICE_DOLLAR " Invoicing & Banking Trail");
+        ui.text(ICON_MD_RECEIPT " Invoicing & Banking Trail");
         
         for (auto& [month, data] : state.invoices) {
             ui.text_colored(colors[0], month);
