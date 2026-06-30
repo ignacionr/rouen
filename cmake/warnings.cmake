@@ -109,7 +109,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   function(target_add_strict_warnings target)
     target_compile_options(${target} PRIVATE
       -Werror              # Treat warnings as errors
-      
+
+      # GCC 14 emits false-positive -Wnull-dereference warnings in <streambuf>
+      # when istreambuf_iterator is used (inlined from standard library headers).
+      # This is a known GCC 14 regression; keep the warning but don't fail the build.
+      -Wno-error=null-dereference
+
       # CI Strictness: Make unused-result specifically an error in all builds
       $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
       
