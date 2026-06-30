@@ -27,17 +27,17 @@ jobs:
           submodules: recursive
 
       - name: Set up Nix
-        uses: cachix/install-nix-action@v31.4.0
+        uses: cachix/install-nix-action@v31.10.6
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Configure Nix binary cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
+        uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ccache
           key: ${{ runner.os }}-ccache-${{ github.sha }}
