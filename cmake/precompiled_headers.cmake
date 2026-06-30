@@ -17,8 +17,8 @@ endfunction()
 function(setup_precompiled_headers TARGET_NAME)
     check_pch_support(${TARGET_NAME})
     
-    if(NOT PCH_SUPPORTED)
-        message(STATUS "Skipping PCH setup for ${TARGET_NAME} - not supported")
+    if(DISABLE_PCH OR NOT PCH_SUPPORTED)
+        message(STATUS "Skipping PCH setup for ${TARGET_NAME} - disabled or not supported")
         return()
     endif()
 

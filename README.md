@@ -112,17 +112,58 @@ Rouen provides convenient installation options for Windows and macOS platforms w
 
 ### macOS Installation
 
-#### DMG Package (Apple Silicon)
+Rouen supports installation on macOS via two primary options: using the pre-built DMG installer package, or compiling and installing directly from source via an automated script.
+
+#### Option 1: DMG Installer (Recommended)
 1. **Download** the latest `.dmg` file from the [Releases page](https://github.com/ignaciorodriguez/rouen/releases)
-2. **Mount** the DMG by double-clicking
-3. **Drag** Rouen.app to your Applications folder
-4. **Launch** from Applications or Spotlight
+2. **Mount** the DMG by double-clicking it.
+3. **Drag** `Rouen.app` to your `/Applications` folder.
+4. **Launch** Rouen from your Applications folder or via Spotlight.
+
+**DMG Package Features:**
+- **Pre-packaged & Portable**: Clean drag-and-drop bundle.
+- **Self-contained**: All required libraries are bundled into the application package.
+- **Apple Silicon Native**: Optimized specifically for Apple Silicon (M1/M2/M3+) Macs.
+
+#### Option 2: Automated Install from Source (Nix Script)
+> **✅ NEW**: Automated script to build from source and install to system/user Applications and link the CLI.
+
+For developers or advanced users who prefer building from source, Rouen provides a convenient script `nix-build-and-install.sh` that builds the application using Nix and installs it directly under your `/Applications` directory.
+
+To use the automated installer:
+
+1. **Install Nix** (if you don't have it):
+   ```bash
+   curl -L https://nixos.org/nix/install | sh
+   ```
+2. **Run the build and install script** from the repository root:
+   - **System-wide Installation** (Installs to `/Applications/Rouen.app` and `/usr/local/bin/rouen`):
+     ```bash
+     ./scripts/nix-build-and-install.sh --system
+     ```
+     *(Requires sudo privileges to write to system directories)*
+
+   - **User-only Installation** (Installs to `~/Applications/Rouen.app` and `~/.local/bin/rouen`):
+     ```bash
+     ./scripts/nix-build-and-install.sh --user
+     ```
+     *(Does not require sudo/root privileges)*
+
+   - **Interactive Mode**: Run the script without flags to be prompted for your preferred installation location:
+     ```bash
+     ./scripts/nix-build-and-install.sh
+     ```
+
+**Script Features:**
+- **Automated compilation**: Compiles Rouen using isolated dependencies via Nix (flake/reproducible build).
+- **macOS App Bundle**: Registers the built app under `/Applications` or `~/Applications`.
+- **Command-line (CLI) Symlink**: Automatically symlinks the `rouen` CLI binary into your PATH (`/usr/local/bin/rouen` or `~/.local/bin/rouen`), allowing you to launch Rouen from your terminal.
+- **Permission updates**: Sets appropriate user-writeable flags on the installed bundle.
 
 **macOS Requirements:**
 - **Apple Silicon Mac** (M1, M2, M3+) - ARM64 native
 - **macOS 11.0 (Big Sur)** or later - optimized for modern macOS
-- **Automatic Dependencies**: All required libraries bundled in the app package
-- **Enhanced Build System**: Robust dependency management with Nix (see below)
+- **Nix Package Manager** (only if building/installing from source)
 
 ### Linux Installation
 
