@@ -326,13 +326,37 @@ public:
         return truncated + "...";
     }
 
+    void calculate_cover_uvs(float target_w, float target_h, float tex_w, float tex_h, ImVec2& uv0, ImVec2& uv1) {
+        if (tex_w <= 0.0f || tex_h <= 0.0f || target_w <= 0.0f || target_h <= 0.0f) {
+            uv0 = ImVec2(0.0f, 0.0f);
+            uv1 = ImVec2(1.0f, 1.0f);
+            return;
+        }
+        float target_aspect = target_w / target_h;
+        float tex_aspect = tex_w / tex_h;
+
+        if (tex_aspect > target_aspect) {
+            // Texture is wider than target, crop sides
+            float f = target_aspect / tex_aspect;
+            float c = (1.0f - f) * 0.5f;
+            uv0 = ImVec2(c, 0.0f);
+            uv1 = ImVec2(1.0f - c, 1.0f);
+        } else {
+            // Texture is taller than target, crop top/bottom
+            float f = tex_aspect / target_aspect;
+            float c = (1.0f - f) * 0.5f;
+            uv0 = ImVec2(0.0f, c);
+            uv1 = ImVec2(1.0f, 1.0f - c);
+        }
+    }
+
     void render_feed_list(auto &feeds, std::string &search_text, bool &has_matches)
     {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         auto now = std::chrono::system_clock::now();
 
         float card_width = 180.0f;
-        float card_height = 175.0f;
+        float card_height = 190.0f;
         float spacing = 12.0f;
         float avail_width = ImGui::GetContentRegionAvail().x;
         int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
@@ -378,7 +402,7 @@ public:
             ImGui::BeginGroup();
             
             // 1. Draw Image / Placeholder
-            ImVec2 img_size(card_width - 12.0f, 105.0f);
+            ImVec2 img_size(card_width - 12.0f, 120.0f);
             ImVec2 img_pos = ImGui::GetCursorScreenPos();
             
             // Invisible button to capture click on cover
@@ -409,8 +433,10 @@ public:
             }
             
             if (tex) {
-                // Draw texture in the image region
-                draw_list->AddImage(rouen::helpers::texture_id_cast(tex), img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y));
+                // Draw texture in the image region, cropped to fit the aspect ratio
+                ImVec2 uv0, uv1;
+                calculate_cover_uvs(img_size.x, img_size.y, static_cast<float>(img_w), static_cast<float>(img_h), uv0, uv1);
+                draw_list->AddImage(rouen::helpers::texture_id_cast(tex), img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), uv0, uv1);
             } else {
                 // Draw placeholder
                 draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
