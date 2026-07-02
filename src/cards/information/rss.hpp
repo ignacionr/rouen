@@ -21,6 +21,9 @@
 #include "../../hosts/rss_host.hpp"
 #include "../../models/rss/feed.hpp"
 #include "../../registrar.hpp"
+#include "../../helpers/image_cache.hpp"
+#include "../../helpers/texture_helper.hpp"
+#include "../../helpers/texture_utils.hpp"
 
 namespace rouen::cards {
 
@@ -62,7 +65,27 @@ public:
         );
     }
     
-    ~rss() override = default;
+    ~rss() override {
+        clear_feed_textures();
+    }
+
+    void clear_feed_textures() {
+        for (auto& [url, lt] : feed_textures) {
+            if (lt.texture) {
+                SDL_DestroyTexture(lt.texture);
+            }
+        }
+        feed_textures.clear();
+    }
+
+    void set_renderer(SDL_Renderer* r) {
+        renderer = r;
+        if (renderer && !image_cache) {
+            auto db_path = rouen::platform::get_user_data_path("rss_images.db").string();
+            auto cache_dir = rouen::platform::get_user_data_path("cache/rss_images").string();
+            image_cache = std::make_shared<::helpers::ImageCache>(db_path, cache_dir, 30);
+        }
+    }
 
     std::string get_uri() const override
     {
@@ -294,94 +317,161 @@ public:
         });
     }
 
+    std::string truncate_text(const std::string& text, float max_width) {
+        if (ImGui::CalcTextSize(text.c_str()).x <= max_width) return text;
+        std::string truncated = text;
+        while (!truncated.empty() && ImGui::CalcTextSize((truncated + "...").c_str()).x > max_width) {
+            truncated.pop_back();
+        }
+        return truncated + "...";
+    }
+
     void render_feed_list(auto &feeds, std::string &search_text, bool &has_matches)
     {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        // Setup ImGui table for feeds
-        if (ImGui::BeginTable("FeedsTable", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY))
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        auto now = std::chrono::system_clock::now();
+
+        float card_width = 180.0f;
+        float card_height = 175.0f;
+        float spacing = 12.0f;
+        float avail_width = ImGui::GetContentRegionAvail().x;
+        int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
+        
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
+        
+        int visible_index = 0;
+        for (const auto &feed : feeds)
         {
-            ImGui::TableSetupColumn("Feed", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-            ImGui::TableSetupColumn("Items", ImGuiTableColumnFlags_WidthFixed, 110.0f * dpi_scale, 1);
-            
-            // Get current time once for all feeds instead of per feed
-            auto now = std::chrono::system_clock::now();
+            ImGui::PushID(feed->source_link.c_str());
 
-            for (const auto &feed : feeds)
+            std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+
+            // Filter based on search query if search text is present
+            if (!search_text.empty() &&
+                !::helpers::StringHelper::contains_case_insensitive(title, search_text) &&
+                !::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text))
             {
-                ImGui::PushID(feed->source_link.c_str());
-
-                std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
-
-                // Filter based on search query if search text is present
-                if (!search_text.empty() &&
-                    !::helpers::StringHelper::contains_case_insensitive(title, search_text) &&
-                    !::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text))
-                {
-                    ImGui::PopID();
-                    continue; // Skip items that don't match the search
-                }
-
-                has_matches = true;
-
-                ImGui::TableNextRow();
-
-                // Feed title (with truncation)
-                ImGui::TableSetColumnIndex(0);
-                
-                // Get color based on feed freshness
-                ImVec4 freshness_color = get_freshness_color(feed, now);
-                
-                // Apply the freshness color
-                ImGui::PushStyleColor(ImGuiCol_Text, freshness_color);
-                
-                // Add a small colored circle to visually indicate freshness
-                ImGui::TextColored(freshness_color, "● ");
-                ImGui::SameLine(0, 0); // No spacing
-                
-                if (ImGui::Selectable(title.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
-                {
-                    std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
-                    "create_card"_sfn(feed_uri);
-                }
-                
-                // Add right-click context menu for copying feed URL
-                if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
-                    ImGui::OpenPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str());
-                }
-                
-                // Context menu for feed
-                if (ImGui::BeginPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str())) {
-                    if (ImGui::MenuItem("Copy Feed URL")) {
-                        ImGui::SetClipboardText(feed->source_link.c_str());
-                    }
-                    
-                    if (ImGui::MenuItem("Copy Feed Title")) {
-                        ImGui::SetClipboardText(title.c_str());
-                    }
-                    
-                    ImGui::EndPopup();
-                }
-                
-                ImGui::PopStyleColor(); // Restore normal text color
-
-                // Item count
-                ImGui::TableSetColumnIndex(1);
-                // Use the fixed-width font
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
-                ImGui::TextColored(
-                    ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
-                    "%7zu", feed->items.size());
-                ImGui::PopFont();
-                ImGui::SameLine();
-                if (ImGui::SmallButton("×"))
-                {
-                    feeds_to_delete.push_back(feed->source_link);
-                }
-
                 ImGui::PopID();
+                continue; // Skip items that don't match the search
             }
-            ImGui::EndTable();
+
+            has_matches = true;
+
+            if (visible_index > 0 && (visible_index % cols) != 0) {
+                ImGui::SameLine();
+            }
+
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + card_height);
+            
+            bool is_hovered = ImGui::IsMouseHoveringRect(start_pos, end_pos);
+            
+            // Draw background and borders
+            ImVec4 bg_color = is_hovered ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
+            ImVec4 border_color = is_hovered ? colors[0] : ImVec4(0.24f, 0.24f, 0.27f, 0.6f);
+            
+            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f);
+            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f);
+            
+            // Padding
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 6.0f));
+            ImGui::BeginGroup();
+            
+            // 1. Draw Image / Placeholder
+            ImVec2 img_size(card_width - 12.0f, 105.0f);
+            ImVec2 img_pos = ImGui::GetCursorScreenPos();
+            
+            // Invisible button to capture click on cover
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
+            bool cover_clicked = ImGui::Button(std::format("##cover_btn_{}", feed->repo_id).c_str(), img_size);
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar();
+            
+            // Render the actual image or placeholder on the draw list
+            std::string img_url = feed->image_url();
+            SDL_Texture* tex = nullptr;
+            int img_w = 0, img_h = 0;
+            if (renderer && image_cache && !img_url.empty()) {
+                if (feed_textures.contains(img_url)) {
+                    auto& lt = feed_textures[img_url];
+                    tex = lt.texture;
+                    img_w = lt.width;
+                    img_h = lt.height;
+                } else {
+                    tex = image_cache->getTexture(renderer, img_url, img_w, img_h);
+                    if (tex) {
+                        feed_textures[img_url] = {tex, img_w, img_h};
+                    }
+                }
+            }
+            
+            if (tex) {
+                // Draw texture in the image region
+                draw_list->AddImage(rouen::helpers::texture_id_cast(tex), img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y));
+            } else {
+                // Draw placeholder
+                draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
+                std::string placeholder_icon = ICON_MD_RSS_FEED;
+                ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
+                ImVec2 icon_pos = ImVec2(img_pos.x + (img_size.x - icon_size.x) * 0.5f, img_pos.y + (img_size.y - icon_size.y) * 0.5f);
+                draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
+            }
+            
+            ImGui::Spacing();
+            
+            // 2. Draw Title
+            std::string truncated_title = truncate_text(title, card_width - 12.0f);
+            bool title_clicked = ImGui::Selectable(std::format("{}##title_{}", truncated_title, feed->repo_id).c_str(), false, ImGuiSelectableFlags_None, ImVec2(card_width - 12.0f, 0));
+            
+            // Right-click context menu
+            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
+                ImGui::OpenPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str());
+            }
+            if (ImGui::BeginPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str())) {
+                if (ImGui::MenuItem("Copy Feed URL")) {
+                    ImGui::SetClipboardText(feed->source_link.c_str());
+                }
+                if (ImGui::MenuItem("Copy Feed Title")) {
+                    ImGui::SetClipboardText(title.c_str());
+                }
+                ImGui::EndPopup();
+            }
+            
+            // 3. Draw Footer
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 24.0f));
+            
+            ImVec4 freshness_color = get_freshness_color(feed, now);
+            ImGui::TextColored(freshness_color, "●");
+            ImGui::SameLine();
+            
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[5]);
+            ImGui::Text("%zu items", feed->items.size());
+            ImGui::PopStyleColor();
+            
+            ImGui::SameLine(card_width - 24.0f);
+            if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {
+                feeds_to_delete.push_back(feed->source_link);
+            }
+            
+            ImGui::EndGroup();
+            
+            if (cover_clicked || title_clicked) {
+                std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
+                "create_card"_sfn(feed_uri);
+            }
+            
+            // Reset cursor back to the start of the card box but advanced by width + spacing
+            ImGui::SetCursorScreenPos(start_pos);
+            ImGui::Dummy(ImVec2(card_width, card_height));
+
+            visible_index++;
+            ImGui::PopID();
         }
+        
+        ImGui::PopStyleVar();
     }
 
     // Add a new feed by URL
@@ -690,6 +780,16 @@ private:
 
     std::shared_ptr<hosts::RSSHost> rss_host;
     std::vector<std::string> feeds_to_delete;
+
+    SDL_Renderer* renderer = nullptr;
+    std::shared_ptr<::helpers::ImageCache> image_cache;
+
+    struct LoadedFeedTexture {
+        SDL_Texture* texture = nullptr;
+        int width = 0;
+        int height = 0;
+    };
+    std::unordered_map<std::string, LoadedFeedTexture> feed_textures;
 };
 
 } // namespace rouen::cards
