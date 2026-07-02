@@ -70,11 +70,42 @@ namespace rouen::cards
 
         ~rss_feed() override
         {
-            // Clean up textures
             if (feed_image_texture)
             {
                 SDL_DestroyTexture(feed_image_texture);
                 feed_image_texture = nullptr;
+            }
+            clear_item_textures();
+        }
+
+        void clear_item_textures() {
+            for (auto& [url, lt] : item_textures) {
+                if (lt.texture) {
+                    SDL_DestroyTexture(lt.texture);
+                }
+            }
+            item_textures.clear();
+        }
+
+        void calculate_cover_uvs(float target_w, float target_h, float tex_w, float tex_h, ImVec2& uv0, ImVec2& uv1) {
+            if (tex_w <= 0.0f || tex_h <= 0.0f || target_w <= 0.0f || target_h <= 0.0f) {
+                uv0 = ImVec2(0.0f, 0.0f);
+                uv1 = ImVec2(1.0f, 1.0f);
+                return;
+            }
+            float target_aspect = target_w / target_h;
+            float tex_aspect = tex_w / tex_h;
+
+            if (tex_aspect > target_aspect) {
+                float f = target_aspect / tex_aspect;
+                float c = (1.0f - f) * 0.5f;
+                uv0 = ImVec2(c, 0.0f);
+                uv1 = ImVec2(1.0f - c, 1.0f);
+            } else {
+                float f = tex_aspect / target_aspect;
+                float c = (1.0f - f) * 0.5f;
+                uv0 = ImVec2(0.0f, c);
+                uv1 = ImVec2(1.0f, 1.0f - c);
             }
         }
 
@@ -239,17 +270,40 @@ namespace rouen::cards
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items found");
                         } else {
                             if (ImGui::BeginChild("FeedItemsScroll", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
-                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
-                                for (size_t i = 0; i < count; ++i) {
+                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());                                for (size_t i = 0; i < count; ++i) {
                                     const auto& item = filtered_items[i];
-                                    // Using scope guard pattern for ImGui pairs
                                     ImGui::PushID(item.link.c_str());
                                     
                                     try {
-                                        // Item container with spacing
                                         ImGui::BeginGroup();
                                         
                                         try {
+                                            // Try to load item thumbnail
+                                            SDL_Texture* item_tex = nullptr;
+                                            int item_tex_w = 0, item_tex_h = 0;
+                                            if (renderer && image_cache && !item.image_url.empty()) {
+                                                if (item_textures.contains(item.image_url)) {
+                                                    auto& lt = item_textures[item.image_url];
+                                                    item_tex = lt.texture;
+                                                    item_tex_w = lt.width;
+                                                    item_tex_h = lt.height;
+                                                } else {
+                                                    item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
+                                                    if (item_tex) {
+                                                        item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                                    }
+                                                }
+                                            }
+
+                                            bool has_item_image = (item_tex != nullptr);
+                                            
+                                            if (has_item_image) {
+                                                ImGui::Columns(2, nullptr, false);
+                                                float col_width = ImGui::GetContentRegionAvail().x;
+                                                ImGui::SetColumnWidth(0, col_width - 130.0f);
+                                                ImGui::SetColumnWidth(1, 130.0f);
+                                            }
+                                            
                                             // Title (selectable to open item)
                                             if (ImGui::Selectable(item.title.c_str(), false)) {
                                                 // Open item in a new card
@@ -279,7 +333,7 @@ namespace rouen::cards
                                                 
                                                 ImGui::TextWrapped("%s", desc.c_str());
                                             }
-
+ 
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
                                                 media_player::player(item.enclosure, colors[4], "Play Audio");
@@ -310,6 +364,38 @@ namespace rouen::cards
                                                      item.link.find("vimeo.com") != std::string::npos) {
                                                 media_player::player(item.link, colors[4], "Play Video");
                                             }
+
+                                            // Draw thumbnail in the right column
+                                            if (has_item_image) {
+                                                ImGui::NextColumn();
+                                                
+                                                ImVec2 thumb_size(120.0f, 80.0f);
+                                                ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
+                                                
+                                                ImVec2 uv0, uv1;
+                                                calculate_cover_uvs(thumb_size.x, thumb_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
+                                                
+                                                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                                                draw_list->AddImage(
+                                                    rouen::helpers::texture_id_cast(item_tex),
+                                                    thumb_pos,
+                                                    ImVec2(thumb_pos.x + thumb_size.x, thumb_pos.y + thumb_size.y),
+                                                    uv0,
+                                                    uv1
+                                                );
+                                                
+                                                // Make thumbnail clickable
+                                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+                                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
+                                                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
+                                                if (ImGui::Button(std::format("##thumb_btn_{}", i).c_str(), thumb_size)) {
+                                                    std::string item_uri = std::format("rss-item:{},{}", feed_id, item.link);
+                                                    "create_card"_sfn(item_uri);
+                                                }
+                                                ImGui::PopStyleColor(3);
+                                                
+                                                ImGui::Columns(1);
+                                            }
                                         }
                                         catch (const std::exception& e) {
                                             RSS_ERROR_FMT("Exception in RSS feed item rendering: {}", e.what());
@@ -320,7 +406,6 @@ namespace rouen::cards
                                     }
                                     catch (const std::exception& e) {
                                         RSS_ERROR_FMT("Exception in RSS feed group: {}", e.what());
-                                        // Make sure we end any ImGui operations that were started
                                         ImGui::EndGroup();
                                     }
                                     
@@ -413,6 +498,13 @@ namespace rouen::cards
         int feed_image_width = 0;
         int feed_image_height = 0;
         std::shared_ptr<::helpers::ImageCache> image_cache;
+
+        struct LoadedItemTexture {
+            SDL_Texture* texture = nullptr;
+            int width = 0;
+            int height = 0;
+        };
+        std::unordered_map<std::string, LoadedItemTexture> item_textures;
     };
 
 } // namespace rouen::cards
