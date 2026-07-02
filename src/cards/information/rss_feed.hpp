@@ -296,16 +296,17 @@ namespace rouen::cards
                                             }
 
                                             bool has_item_image = (item_tex != nullptr);
+                                            float avail_width = ImGui::GetContentRegionAvail().x;
                                             
                                             if (has_item_image) {
-                                                ImGui::Columns(2, nullptr, false);
-                                                float col_width = ImGui::GetContentRegionAvail().x;
-                                                ImGui::SetColumnWidth(0, col_width - 130.0f);
-                                                ImGui::SetColumnWidth(1, 130.0f);
+                                                ImGui::BeginGroup();
+                                                ImGui::PushTextWrapPos(avail_width - 130.0f);
+                                            } else {
+                                                ImGui::PushTextWrapPos(avail_width);
                                             }
                                             
                                             // Title (selectable to open item)
-                                            if (ImGui::Selectable(item.title.c_str(), false)) {
+                                            if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f : avail_width, 0))) {
                                                 // Open item in a new card
                                                 std::string item_uri = std::format("rss-item:{},{}", feed_id, item.link);
                                                 "create_card"_sfn(item_uri);
@@ -365,9 +366,12 @@ namespace rouen::cards
                                                 media_player::player(item.link, colors[4], "Play Video");
                                             }
 
-                                            // Draw thumbnail in the right column
+                                            ImGui::PopTextWrapPos();
+
+                                            // Draw thumbnail on the right
                                             if (has_item_image) {
-                                                ImGui::NextColumn();
+                                                ImGui::EndGroup();
+                                                ImGui::SameLine(avail_width - 120.0f);
                                                 
                                                 ImVec2 thumb_size(120.0f, 80.0f);
                                                 ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
@@ -393,8 +397,6 @@ namespace rouen::cards
                                                     "create_card"_sfn(item_uri);
                                                 }
                                                 ImGui::PopStyleColor(3);
-                                                
-                                                ImGui::Columns(1);
                                             }
                                         }
                                         catch (const std::exception& e) {
