@@ -130,6 +130,18 @@ public:
             return nullptr;
         }
     }
+
+    /**
+     * Check if an image is already stored in the cache
+     * 
+     * @param url URL of the image to check
+     * @param width Output parameter for stored width
+     * @param height Output parameter for stored height
+     * @return True if in cache, false otherwise
+     */
+    bool isCached(const std::string& url, int& width, int& height) {
+        return getImageFromCache(url, width, height).has_value();
+    }
     
     /**
      * Downloads an image in the background, verifies if it's a valid image (CPU only),

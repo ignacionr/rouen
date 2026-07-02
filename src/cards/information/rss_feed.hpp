@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <thread>
+#include <set>
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../external/IconsMaterialDesign.h" // Added icon header
@@ -288,9 +290,14 @@ namespace rouen::cards
                                                     item_tex_w = lt.width;
                                                     item_tex_h = lt.height;
                                                 } else {
-                                                    item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
-                                                    if (item_tex) {
-                                                        item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                                    int cached_w = 0, cached_h = 0;
+                                                    if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
+                                                        item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
+                                                        if (item_tex) {
+                                                            item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                                        }
+                                                    } else {
+                                                        request_image_download(item.image_url);
                                                     }
                                                 }
                                             }
@@ -507,6 +514,31 @@ namespace rouen::cards
             int height = 0;
         };
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
+
+        void request_image_download(const std::string& url) {
+            static std::set<std::string> downloading_urls;
+            static std::mutex downloading_mutex;
+
+            {
+                std::lock_guard<std::mutex> lock(downloading_mutex);
+                if (downloading_urls.contains(url)) {
+                    return; // Already downloading
+                }
+                downloading_urls.insert(url);
+            }
+
+            auto cache = image_cache;
+            std::thread([cache, url]() {
+                try {
+                    cache->downloadAndCache(url);
+                } catch (...) {}
+                
+                {
+                    std::lock_guard<std::mutex> lock(downloading_mutex);
+                    downloading_urls.erase(url);
+                }
+            }).detach();
+        }
     };
 
 } // namespace rouen::cards

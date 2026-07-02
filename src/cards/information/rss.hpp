@@ -12,6 +12,8 @@
 #include <iostream>
 #include <future>
 #include <regex>
+#include <thread>
+#include <set>
 
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
@@ -425,9 +427,14 @@ public:
                     img_w = lt.width;
                     img_h = lt.height;
                 } else {
-                    tex = image_cache->getTexture(renderer, img_url, img_w, img_h);
-                    if (tex) {
-                        feed_textures[img_url] = {tex, img_w, img_h};
+                    int cached_w = 0, cached_h = 0;
+                    if (image_cache->isCached(img_url, cached_w, cached_h)) {
+                        tex = image_cache->getTexture(renderer, img_url, img_w, img_h);
+                        if (tex) {
+                            feed_textures[img_url] = {tex, img_w, img_h};
+                        }
+                    } else {
+                        request_image_download(img_url);
                     }
                 }
             }
@@ -816,6 +823,31 @@ private:
         int height = 0;
     };
     std::unordered_map<std::string, LoadedFeedTexture> feed_textures;
+
+    void request_image_download(const std::string& url) {
+        static std::set<std::string> downloading_urls;
+        static std::mutex downloading_mutex;
+
+        {
+            std::lock_guard<std::mutex> lock(downloading_mutex);
+            if (downloading_urls.contains(url)) {
+                return; // Already downloading
+            }
+            downloading_urls.insert(url);
+        }
+
+        auto cache = image_cache;
+        std::thread([cache, url]() {
+            try {
+                cache->downloadAndCache(url);
+            } catch (...) {}
+            
+            {
+                std::lock_guard<std::mutex> lock(downloading_mutex);
+                downloading_urls.erase(url);
+            }
+        }).detach();
+    }
 };
 
 } // namespace rouen::cards

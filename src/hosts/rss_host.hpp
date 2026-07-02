@@ -693,8 +693,8 @@ private:
             
             // Check if the feed already exists
             auto pos = std::find_if(feeds.begin(), feeds.end(),
-                                  [ourlink = feed_ptr->feed_link, oursrc = feed_ptr->source_link, original_url = resolved_url](auto const& f) {
-                                      return f->feed_link == ourlink || f->source_link == oursrc || f->source_link == original_url;
+                                  [oursrc = feed_ptr->source_link, original_url = resolved_url](auto const& f) {
+                                      return f->source_link == oursrc || f->source_link == original_url;
                                   });
                                   
             // Add or merge with existing feed
