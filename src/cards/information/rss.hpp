@@ -274,16 +274,153 @@ public:
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds added yet");
                 } else {
                     std::string search_text = search_buffer;
-                    bool has_matches = false;
+                    if (search_text.empty()) {
+                        bool has_matches = false;
+                        render_feed_list(feeds, search_text, has_matches);
+                    } else {
+                        // 1. Search matching Feeds
+                        std::vector<std::shared_ptr<media::rss::feed>> matching_feeds;
+                        for (const auto& feed : feeds) {
+                            std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+                            if (::helpers::StringHelper::contains_case_insensitive(title, search_text) ||
+                                ::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
+                                matching_feeds.push_back(feed);
+                            }
+                        }
 
-                    render_feed_list(feeds, search_text, has_matches);
+                        if (!matching_feeds.empty()) {
+                            ImGui::TextColored(colors[2], "Matching Feeds (%d):", static_cast<int>(matching_feeds.size()));
+                            ImGui::Spacing();
+                            bool has_matches = false;
+                            render_feed_list(matching_feeds, search_text, has_matches);
+                            ImGui::Spacing();
+                            ImGui::Separator();
+                            ImGui::Spacing();
+                        }
 
-                    // Show message when no feeds match the search
-                    if (!search_text.empty() && !has_matches) {
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
-                            "No feeds match your search");
+                        // 2. Deep Search matching Articles
+                        auto matching_items = rss_host->searchItems(search_text);
+                        ImGui::TextColored(colors[2], "Matching Articles (%d):", static_cast<int>(matching_items.size()));
+                        ImGui::Spacing();
+
+                        if (matching_items.empty()) {
+                            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No articles found matching your search");
+                        } else {
+                            for (size_t i = 0; i < matching_items.size(); ++i) {
+                                const auto& item = matching_items[i];
+                                ImGui::PushID(item.link.c_str());
+
+                                try {
+                                    ImGui::BeginGroup();
+                                    try {
+                                        // Try to load item thumbnail
+                                        SDL_Texture* item_tex = nullptr;
+                                        int item_tex_w = 0, item_tex_h = 0;
+                                        if (renderer && image_cache && !item.image_url.empty()) {
+                                            if (feed_textures.contains(item.image_url)) {
+                                                auto& lt = feed_textures[item.image_url];
+                                                item_tex = lt.texture;
+                                                item_tex_w = lt.width;
+                                                item_tex_h = lt.height;
+                                            } else {
+                                                int cached_w = 0, cached_h = 0;
+                                                if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
+                                                    item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
+                                                    if (item_tex) {
+                                                        feed_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                                    }
+                                                } else {
+                                                    request_image_download(item.image_url);
+                                                }
+                                            }
+                                        }
+
+                                        bool has_item_image = (item_tex != nullptr);
+                                        float avail_width = ImGui::GetContentRegionAvail().x;
+
+                                        if (has_item_image) {
+                                            ImGui::BeginGroup();
+                                            ImGui::PushTextWrapPos(avail_width - 130.0f);
+                                        } else {
+                                            ImGui::PushTextWrapPos(avail_width);
+                                        }
+
+                                        // Display feed title as source tag
+                                        ImGui::TextColored(colors[0], "[%s]", item.feed_title.c_str());
+                                        ImGui::SameLine();
+                                        
+                                        // Title (selectable to open item)
+                                        if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f : avail_width, 0))) {
+                                            std::string item_uri = std::format("rss-item:{},{}", item.feed_id, item.link);
+                                            "create_card"_sfn(item_uri);
+                                        }
+
+                                        // Date
+                                        auto time = std::chrono::system_clock::to_time_t(item.publish_date);
+                                        std::tm* tm = std::localtime(&time);
+                                        char date_str[64];
+                                        std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
+                                        ImGui::TextColored(colors[3], "%s", date_str);
+
+                                        // Description
+                                        if (!item.description.empty()) {
+                                            std::string desc = item.description;
+                                            desc.erase(std::remove_if(desc.begin(), desc.end(),
+                                                [](char c) { return c == '<' || c == '>'; }), desc.end());
+                                            if (desc.length() > 100) {
+                                                desc = desc.substr(0, 97) + "...";
+                                            }
+                                            ImGui::TextWrapped("%s", desc.c_str());
+                                        }
+
+                                        ImGui::PopTextWrapPos();
+
+                                        if (has_item_image) {
+                                            ImGui::EndGroup();
+                                            ImGui::SameLine(avail_width - 120.0f);
+
+                                            ImVec2 thumb_size(120.0f, 80.0f);
+                                            ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
+
+                                            ImVec2 uv0, uv1;
+                                            calculate_cover_uvs(thumb_size.x, thumb_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
+
+                                            ImDrawList* d_list = ImGui::GetWindowDrawList();
+                                            d_list->AddImage(
+                                                rouen::helpers::texture_id_cast(item_tex),
+                                                thumb_pos,
+                                                ImVec2(thumb_pos.x + thumb_size.x, thumb_pos.y + thumb_size.y),
+                                                uv0,
+                                                uv1
+                                            );
+
+                                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
+                                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
+                                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
+                                            if (ImGui::Button(std::format("##thumb_btn_{}", i).c_str(), thumb_size)) {
+                                                std::string item_uri = std::format("rss-item:{},{}", item.feed_id, item.link);
+                                                "create_card"_sfn(item_uri);
+                                            }
+                                            ImGui::PopStyleColor(3);
+                                        }
+                                    }
+                                    catch (const std::exception& e) {
+                                        RSS_ERROR_FMT("Exception in search item rendering: {}", e.what());
+                                    }
+
+                                    ImGui::EndGroup();
+                                }
+                                catch (const std::exception& e) {
+                                    RSS_ERROR_FMT("Exception in search item group: {}", e.what());
+                                    ImGui::EndGroup();
+                                }
+
+                                ImGui::Separator();
+                                ImGui::PopID();
+                            }
+                        }
                     }
-                    
+
                     // Process deletion requests
                     for (const auto& url : feeds_to_delete) {
                         rss_host->deleteFeed(url);

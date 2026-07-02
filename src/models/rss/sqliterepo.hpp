@@ -290,6 +290,42 @@ namespace media::rss
                 RSS_ERROR_FMT("Error in scan_items: {}", e.what());
             }
         }
+        template <typename Sink>
+        void search_items(std::string_view query, Sink sink) {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            try {
+                std::string sql = "SELECT item.feed_id, feed.title, item.link, item.enclosure, item.title, item.description, item.pub_date, item.image_url "
+                                  "FROM item JOIN feed ON item.feed_id = feed.id "
+                                  "WHERE item.title LIKE ? OR item.description LIKE ? "
+                                  "ORDER BY item.pub_date DESC LIMIT 100";
+                
+                std::string like_query = "%" + std::string(query) + "%";
+                
+                db_.exec(sql, [&sink](sqlite3_stmt *stmt) {
+                    auto feed_id = sqlite3_column_int64(stmt, 0);
+                    const char* feed_title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                    const char* link = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+                    const char* enclosure = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+                    const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+                    const char* description = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    const char* pub_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+                    const char* image_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+                    
+                    sink(
+                        feed_id,
+                        feed_title ? feed_title : "",
+                        link ? link : "", 
+                        enclosure ? enclosure : "", 
+                        title ? title : "", 
+                        description ? description : "", 
+                        pub_date ? pub_date : "", 
+                        image_url ? image_url : ""
+                    );
+                }, like_query, like_query);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in search_items: {}", e.what());
+            }
+        }
 
         void set_setting(const std::string& key, const std::string& value) {
             std::lock_guard<std::mutex> lock(mutex_);

@@ -136,6 +136,9 @@ public:
         std::chrono::system_clock::time_point publish_date;
         std::vector<media::html::extracted_media> extracted_media_urls; // Enhanced: extracted media from content
         
+        long long feed_id = -1;
+        std::string feed_title;
+        
         // Enhanced: Get the best available media URL for playback
         std::string get_best_media_url() const {
             // Priority order:
@@ -276,6 +279,31 @@ public:
         try {
             repo_.set_setting("auto_timeout", auto_timeout_enabled_ ? "1" : "0");
         } catch (...) {}
+    }
+
+    std::vector<FeedItem> searchItems(const std::string& query) {
+        std::vector<FeedItem> results;
+        repo_.search_items(query, [&results](long long feed_id, const char* feed_title, const char* link,
+                                            const char* enclosure, const char* title, const char* description,
+                                            const char* pub_date, const char* image_url) {
+            FeedItem item;
+            item.feed_id = feed_id;
+            item.feed_title = feed_title ? feed_title : "";
+            item.link = link ? link : "";
+            item.enclosure = enclosure ? enclosure : "";
+            item.title = title ? title : "";
+            item.description = description ? description : "";
+            item.image_url = image_url ? image_url : "";
+            
+            item.publish_date = media::rss::parse_rss_date(pub_date);
+            
+            if (!item.description.empty()) {
+                item.extracted_media_urls = media::html::extract_media_urls(item.description);
+            }
+            
+            results.push_back(std::move(item));
+        });
+        return results;
     }
 
     /**
