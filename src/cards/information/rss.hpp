@@ -356,7 +356,7 @@ public:
         auto now = std::chrono::system_clock::now();
 
         float card_width = 180.0f;
-        float card_height = 190.0f;
+        float card_height = 290.0f;
         float spacing = 12.0f;
         float avail_width = ImGui::GetContentRegionAvail().x;
         int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
@@ -402,7 +402,7 @@ public:
             ImGui::BeginGroup();
             
             // 1. Draw Image / Placeholder
-            ImVec2 img_size(card_width - 12.0f, 120.0f);
+            ImVec2 img_size(card_width - 12.0f, 220.0f);
             ImVec2 img_pos = ImGui::GetCursorScreenPos();
             
             // Invisible button to capture click on cover
