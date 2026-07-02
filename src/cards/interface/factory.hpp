@@ -175,8 +175,12 @@ namespace rouen::cards {
                     return feed;
                 });
                 
-                instance.emplace("rss-item", [](std::string_view uri, SDL_Renderer*) {
-                    return std::make_shared<rss_item>(std::string(uri));
+                instance.emplace("rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<rss_item>(std::string(uri));
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
                 });
                 
                 instance.emplace("calendar", [](std::string_view uri, SDL_Renderer*) {

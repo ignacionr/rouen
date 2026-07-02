@@ -7,6 +7,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <thread>
+#include <set>
+#include <mutex>
 
 #include "../interface/card.hpp"
 #include "rss.hpp"
@@ -50,6 +53,16 @@ public:
             name("RSS Item");
         }
         
+        // Initialize the image cache with paths in user data directory
+        auto db_path = rouen::platform::get_user_data_path("rss_images.db").string();
+        auto cache_dir = rouen::platform::get_user_data_path("cache/rss_images").string();
+        
+        image_cache = std::make_shared<::helpers::ImageCache>(
+            db_path,          // SQLite database for image cache in user's data directory
+            cache_dir,        // Cache directory for image files in user's data directory
+            30                // Expire images after 30 days
+        );
+
         // Adjust size to be larger for content display
         width *= 2.0f;
         
@@ -62,6 +75,67 @@ public:
         if (!item.enclosure.empty()) {
             media.stopMedia();
         }
+        clear_item_textures();
+    }
+
+    void clear_item_textures() {
+        for (auto& [url, lt] : item_textures) {
+            if (lt.texture) {
+                SDL_DestroyTexture(lt.texture);
+            }
+        }
+        item_textures.clear();
+    }
+
+    void set_renderer(SDL_Renderer *r) {
+        renderer = r;
+    }
+
+    void calculate_cover_uvs(float target_w, float target_h, float tex_w, float tex_h, ImVec2& uv0, ImVec2& uv1) {
+        if (tex_w <= 0.0f || tex_h <= 0.0f || target_w <= 0.0f || target_h <= 0.0f) {
+            uv0 = ImVec2(0.0f, 0.0f);
+            uv1 = ImVec2(1.0f, 1.0f);
+            return;
+        }
+        float target_aspect = target_w / target_h;
+        float tex_aspect = tex_w / tex_h;
+
+        if (tex_aspect > target_aspect) {
+            float f = target_aspect / tex_aspect;
+            float c = (1.0f - f) * 0.5f;
+            uv0 = ImVec2(c, 0.0f);
+            uv1 = ImVec2(1.0f - c, 1.0f);
+        } else {
+            float f = tex_aspect / target_aspect;
+            float c = (1.0f - f) * 0.5f;
+            uv0 = ImVec2(0.0f, c);
+            uv1 = ImVec2(1.0f, 1.0f - c);
+        }
+    }
+
+    void request_image_download(const std::string& url) {
+        static std::set<std::string> downloading_urls;
+        static std::mutex downloading_mutex;
+
+        {
+            std::lock_guard<std::mutex> lock(downloading_mutex);
+            if (downloading_urls.contains(url)) {
+                return; // Already downloading
+            }
+            downloading_urls.insert(url);
+        }
+
+        auto cache = image_cache;
+        std::thread([cache, url]() {
+            try {
+                cache->downloadAndCache(url);
+            } catch (...) {}
+            
+            {
+                std::lock_guard<std::mutex> lock(downloading_mutex);
+                downloading_urls.erase(url);
+            }
+        }).detach();
     }
     
     void loadItem() {
@@ -171,6 +245,49 @@ public:
                         bool is_visible = ImGui::BeginChild("ContentScrollArea", ImVec2(0, 0), true);
                         
                         if (is_visible) {
+                            // Try to load item image if available
+                            SDL_Texture* item_tex = nullptr;
+                            int item_tex_w = 0, item_tex_h = 0;
+                            if (renderer && image_cache && !item.image_url.empty()) {
+                                if (item_textures.contains(item.image_url)) {
+                                    auto& lt = item_textures[item.image_url];
+                                    item_tex = lt.texture;
+                                    item_tex_w = lt.width;
+                                    item_tex_h = lt.height;
+                                } else {
+                                    int cached_w = 0, cached_h = 0;
+                                    if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
+                                        item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
+                                        if (item_tex) {
+                                            item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                        }
+                                    } else {
+                                        request_image_download(item.image_url);
+                                    }
+                                }
+                            }
+
+                            if (item_tex) {
+                                float avail_w = ImGui::GetContentRegionAvail().x;
+                                ImVec2 banner_size(avail_w, 240.0f);
+                                ImVec2 banner_pos = ImGui::GetCursorScreenPos();
+                                
+                                ImVec2 uv0, uv1;
+                                calculate_cover_uvs(banner_size.x, banner_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
+                                
+                                ImGui::GetWindowDrawList()->AddImage(
+                                    rouen::helpers::texture_id_cast(item_tex),
+                                    banner_pos,
+                                    ImVec2(banner_pos.x + banner_size.x, banner_pos.y + banner_size.y),
+                                    uv0,
+                                    uv1
+                                );
+                                ImGui::Dummy(banner_size);
+                                ImGui::Spacing();
+                                ImGui::Separator();
+                                ImGui::Spacing();
+                            }
+
                             // Use description as content
                             std::string content = item.description;
                             
@@ -248,6 +365,16 @@ private:
     
     // Use the media_player helper for media playback
     media_player::item media;
+
+    SDL_Renderer* renderer = nullptr;
+    std::shared_ptr<::helpers::ImageCache> image_cache;
+
+    struct LoadedItemTexture {
+        SDL_Texture* texture = nullptr;
+        int width = 0;
+        int height = 0;
+    };
+    std::unordered_map<std::string, LoadedItemTexture> item_textures;
 };
 
 } // namespace rouen::cards
