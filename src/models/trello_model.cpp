@@ -13,12 +13,10 @@
 
 namespace rouen::models::trello {
 
-// Global singleton instance
-static std::shared_ptr<trello_model> g_trello_model;
-static std::mutex g_trello_model_mutex;
-
 std::shared_ptr<trello_model> get_trello_model() {
+    static std::mutex g_trello_model_mutex;
     std::lock_guard<std::mutex> lock(g_trello_model_mutex);
+    static std::shared_ptr<trello_model> g_trello_model;
     if (!g_trello_model) {
         g_trello_model = std::make_shared<trello_model>();
     }
