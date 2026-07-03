@@ -20,11 +20,17 @@ if [ -n "$NIX_CFLAGS_COMPILE" ]; then
             next_idx=$((i + 1))
             if [ $next_idx -lt ${#flags[@]} ]; then
                 next_flag="${flags[$next_idx]}"
-                EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
-                if [ -d "${next_flag}/c++/v1" ]; then
-                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
+                
+                # Skip GCC standard library header paths to avoid conflict with libc++
+                if [[ "$next_flag" == *"/include/c++/"* ]] || [[ "$next_flag" == *"/gcc/"* ]]; then
+                    i=$next_idx
+                else
+                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
+                    if [ -d "${next_flag}/c++/v1" ]; then
+                        EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
+                    fi
+                    i=$next_idx
                 fi
-                i=$next_idx
             else
                 EXTRA_ARGS+=("-extra-arg=$flag")
             fi
