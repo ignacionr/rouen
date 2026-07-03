@@ -42,7 +42,7 @@
         # No special environment needed - let Nix handle it automatically
         darwinEnv = {};
       in {
-        devShells.default = unstable.mkShell {
+        devShells.default = stdenv.mkShell {
           buildInputs = [
             unstable.cmake
             unstable.ninja
