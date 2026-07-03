@@ -400,7 +400,9 @@ public:
                 .enclosure = enclosure ? enclosure : "",
                 .image_url = image_url ? image_url : "",
                 .publish_date = publish_date,
-                .extracted_media_urls = {}
+                .extracted_media_urls = {},
+                .feed_id = -1,
+                .feed_title = ""
             };
             
             // Enhanced: Extract media URLs from description content
@@ -445,7 +447,9 @@ public:
                     .enclosure = enclosure ? enclosure : "",
                     .image_url = image_url ? image_url : "",
                     .publish_date = publish_date,
-                    .extracted_media_urls = {}
+                    .extracted_media_urls = {},
+                    .feed_id = -1,
+                    .feed_title = ""
                 };
                 
                 // Enhanced: Extract media URLs from description content
