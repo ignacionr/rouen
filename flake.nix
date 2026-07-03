@@ -14,7 +14,7 @@
         unstable = import nixpkgs-unstable { inherit system; };
         
         # Use appropriate stdenv for each platform
-        stdenv = if unstable.stdenv.isDarwin then unstable.clang19Stdenv else unstable.stdenv;
+        stdenv = if unstable.stdenv.isDarwin then unstable.clang19Stdenv else unstable.gcc15Stdenv;
         
         # Modern Darwin frameworks - use the current approach that works
         darwinFrameworks = unstable.lib.optionals unstable.stdenv.isDarwin [
@@ -64,7 +64,7 @@
           ] 
             ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
-              unstable.gcc 
+              unstable.gcc15 
               unstable.libGL 
               unstable.xorg.libX11.dev
               unstable.xorg.libXext.dev
