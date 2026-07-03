@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper script to run parallel run-clang-tidy with Nix system includes injected
 
-EXTRA_ARGS=("-extra-arg=-stdlib=libc++")
+EXTRA_ARGS=("-extra-arg=-stdlib=libc++" "-extra-arg=-nostdinc++")
 
 # Dynamically get compiler's resource directory for built-in headers
 if command -v clang++ >/dev/null 2>&1; then
