@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper script to run clang-tidy with Nix system includes and resource directory injected
 
-EXTRA_ARGS=()
+EXTRA_ARGS=("-extra-arg=-stdlib=libc++")
 
 # Dynamically get compiler's resource directory for built-in headers like stdarg.h
 if command -v clang++ >/dev/null 2>&1; then
