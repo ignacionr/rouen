@@ -5,7 +5,7 @@ namespace rouen::models {
 
 // Get issues from a project
 std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& project_key, int max_results) {
-    return std::async(std::launch::async, [this, project_key, max_results]() {
+    return std::async(std::launch::async, [this, project_key, max_results]() { // NOLINT(bugprone-exception-escape)
         std::vector<jira_issue> issues;
         
         try {
@@ -26,6 +26,8 @@ std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& p
             JIRA_INFO_FMT("Retrieved {} issues for project {}", issues.size(), project_key);
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error getting JIRA issues: {}", e.what());
+        } catch (...) {
+            DB_ERROR_FMT("{}", "Unknown error getting JIRA issues");
         }
         
         return issues;
@@ -34,7 +36,7 @@ std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& p
 
 // Get details for a specific issue
 std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
-    return std::async(std::launch::async, [this, issue_key]() {
+    return std::async(std::launch::async, [this, issue_key]() { // NOLINT(bugprone-exception-escape)
         jira_issue issue;
         
         try {
@@ -145,6 +147,8 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
             }
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error getting JIRA issue: {}", e.what());
+        } catch (...) {
+            DB_ERROR_FMT("{}", "Unknown error getting JIRA issue");
         }
         
         return issue;
@@ -153,7 +157,7 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
 
 // Create a new JIRA issue
 std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_data) {
-    return std::async(std::launch::async, [this, issue_data]() {
+    return std::async(std::launch::async, [this, issue_data]() { // NOLINT(bugprone-exception-escape)
         jira_issue created_issue;
         
         try {
@@ -214,6 +218,8 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
             }
         } catch (const std::exception& e) {
             JIRA_ERROR_FMT("Error creating JIRA issue: {}", e.what());
+        } catch (...) {
+            JIRA_ERROR_FMT("{}", "Unknown error creating JIRA issue");
         }
         
         return created_issue;
@@ -222,7 +228,7 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
 
 // Get available transitions for an issue
 std::future<std::vector<jira_transition>> jira_model::get_transitions(const std::string& issue_key) {
-    return std::async(std::launch::async, [this, issue_key]() {
+    return std::async(std::launch::async, [this, issue_key]() { // NOLINT(bugprone-exception-escape)
         std::vector<jira_transition> transitions;
         
         try {
@@ -256,6 +262,8 @@ std::future<std::vector<jira_transition>> jira_model::get_transitions(const std:
             }
         } catch (const std::exception& e) {
             JIRA_ERROR_FMT("Error getting JIRA transitions: {}", e.what());
+        } catch (...) {
+            JIRA_ERROR_FMT("{}", "Unknown error getting JIRA transitions");
         }
         
         return transitions;
@@ -289,7 +297,7 @@ bool jira_model::transition_issue(const std::string& issue_key, const std::strin
 
 // Add comment to an issue
 std::future<bool> jira_model::add_comment(const std::string& issue_key, const std::string& comment_text) {
-    return std::async(std::launch::async, [this, issue_key, comment_text]() {
+    return std::async(std::launch::async, [this, issue_key, comment_text]() { // NOLINT(bugprone-exception-escape)
         try {
             // Construct request payload
             glz::json_t payload;
@@ -307,6 +315,9 @@ std::future<bool> jira_model::add_comment(const std::string& issue_key, const st
             return true;
         } catch (const std::exception& e) {
             JIRA_ERROR_FMT("Error adding comment to JIRA issue: {}", e.what());
+            return false;
+        } catch (...) {
+            JIRA_ERROR_FMT("{}", "Unknown error adding comment to JIRA issue");
             return false;
         }
     });

@@ -207,7 +207,7 @@ std::future<std::vector<trello_board>> trello_model::get_user_boards() {
 }
 
 std::future<trello_board> trello_model::get_board(const std::string& board_id, bool include_lists, bool include_cards) {
-    return std::async(std::launch::async, [this, board_id, include_lists, include_cards]() {
+    return std::async(std::launch::async, [this, board_id, include_lists, include_cards]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string endpoint = "boards/" + board_id + "?";
             if (include_lists) endpoint += "lists=all&";
@@ -224,7 +224,7 @@ std::future<trello_board> trello_model::get_board(const std::string& board_id, b
 }
 
 std::future<bool> trello_model::create_board(const std::string& name, const std::string& desc) {
-    return std::async(std::launch::async, [this, name, desc]() {
+    return std::async(std::launch::async, [this, name, desc]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string data = "name=" + name;
             if (!desc.empty()) {
@@ -241,7 +241,7 @@ std::future<bool> trello_model::create_board(const std::string& name, const std:
 
 // Async API operations - Lists
 std::future<std::vector<trello_list>> trello_model::get_board_lists(const std::string& board_id) {
-    return std::async(std::launch::async, [this, board_id]() {
+    return std::async(std::launch::async, [this, board_id]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string response = make_request("boards/" + board_id + "/lists");
             return parse_lists(response);
@@ -253,7 +253,7 @@ std::future<std::vector<trello_list>> trello_model::get_board_lists(const std::s
 }
 
 std::future<trello_list> trello_model::create_list(const std::string& board_id, const std::string& name, float pos) {
-    return std::async(std::launch::async, [this, board_id, name, pos]() {
+    return std::async(std::launch::async, [this, board_id, name, pos]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string data = "name=" + name + "&idBoard=" + board_id;
             if (pos > 0) {
@@ -270,7 +270,7 @@ std::future<trello_list> trello_model::create_list(const std::string& board_id, 
 
 // Async API operations - Cards
 std::future<std::vector<trello_card>> trello_model::get_board_cards(const std::string& board_id) {
-    return std::async(std::launch::async, [this, board_id]() {
+    return std::async(std::launch::async, [this, board_id]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string response = make_request("boards/" + board_id + "/cards");
             return parse_cards(response);
@@ -282,7 +282,7 @@ std::future<std::vector<trello_card>> trello_model::get_board_cards(const std::s
 }
 
 std::future<trello_card> trello_model::create_card(const std::string& list_id, const std::string& name, const std::string& desc, float pos) {
-    return std::async(std::launch::async, [this, list_id, name, desc, pos]() {
+    return std::async(std::launch::async, [this, list_id, name, desc, pos]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string data = "name=" + name + "&idList=" + list_id;
             if (!desc.empty()) {
@@ -301,7 +301,7 @@ std::future<trello_card> trello_model::create_card(const std::string& list_id, c
 }
 
 std::future<bool> trello_model::move_card(const std::string& card_id, const std::string& list_id, float pos) {
-    return std::async(std::launch::async, [this, card_id, list_id, pos]() {
+    return std::async(std::launch::async, [this, card_id, list_id, pos]() { // NOLINT(bugprone-exception-escape)
         try {
             // For Trello API, moving a card requires PUT to /1/cards/{id}
             // The request body should be form-encoded data
@@ -340,7 +340,7 @@ std::future<bool> trello_model::move_card(const std::string& card_id, const std:
 
 // Search functionality
 std::future<std::vector<trello_card>> trello_model::search_cards(const std::string& query, const std::string& board_id) {
-    return std::async(std::launch::async, [this, query, board_id]() {
+    return std::async(std::launch::async, [this, query, board_id]() { // NOLINT(bugprone-exception-escape)
         try {
             std::string endpoint = "search?query=" + query + "&modelTypes=cards";
             if (!board_id.empty()) {
@@ -611,7 +611,7 @@ std::vector<trello_label> trello_model::parse_labels(const std::string& json_str
 // Missing method implementations
 
 std::future<bool> trello_model::delete_card(const std::string& card_id) {
-    return std::async(std::launch::async, [this, card_id]() -> bool {
+    return std::async(std::launch::async, [this, card_id]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "cards/" + card_id;
             make_request(endpoint, "DELETE");
@@ -625,7 +625,7 @@ std::future<bool> trello_model::delete_card(const std::string& card_id) {
 }
 
 std::future<bool> trello_model::update_card(const std::string& card_id, const std::string& name, const std::string& desc) {
-    return std::async(std::launch::async, [this, card_id, name, desc]() -> bool {
+    return std::async(std::launch::async, [this, card_id, name, desc]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "cards/" + card_id;
             std::string params = "name=" + name;
@@ -643,7 +643,7 @@ std::future<bool> trello_model::update_card(const std::string& card_id, const st
 }
 
 std::future<bool> trello_model::update_list(const std::string& list_id, const std::string& name) {
-    return std::async(std::launch::async, [this, list_id, name]() -> bool {
+    return std::async(std::launch::async, [this, list_id, name]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "lists/" + list_id;
             const std::string params = "name=" + name;
@@ -658,7 +658,7 @@ std::future<bool> trello_model::update_list(const std::string& list_id, const st
 }
 
 std::future<bool> trello_model::archive_list(const std::string& list_id) {
-    return std::async(std::launch::async, [this, list_id]() -> bool {
+    return std::async(std::launch::async, [this, list_id]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "lists/" + list_id + "/closed";
             make_request(endpoint, "PUT", "value=true");
@@ -672,7 +672,7 @@ std::future<bool> trello_model::archive_list(const std::string& list_id) {
 }
 
 std::future<bool> trello_model::delete_board(const std::string& board_id) {
-    return std::async(std::launch::async, [this, board_id]() -> bool {
+    return std::async(std::launch::async, [this, board_id]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "boards/" + board_id;
             make_request(endpoint, "DELETE");
@@ -686,7 +686,7 @@ std::future<bool> trello_model::delete_board(const std::string& board_id) {
 }
 
 std::future<bool> trello_model::update_board(const std::string& board_id, const std::string& name, const std::string& desc) {
-    return std::async(std::launch::async, [this, board_id, name, desc]() -> bool {
+    return std::async(std::launch::async, [this, board_id, name, desc]() -> bool { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "boards/" + board_id;
             std::string params = "name=" + name;
@@ -704,7 +704,7 @@ std::future<bool> trello_model::update_board(const std::string& board_id, const 
 }
 
 std::future<std::vector<trello_card>> trello_model::get_list_cards(const std::string& list_id) {
-    return std::async(std::launch::async, [this, list_id]() -> std::vector<trello_card> {
+    return std::async(std::launch::async, [this, list_id]() -> std::vector<trello_card> { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "lists/" + list_id + "/cards";
             const std::string response = make_request(endpoint);
@@ -717,7 +717,7 @@ std::future<std::vector<trello_card>> trello_model::get_list_cards(const std::st
 }
 
 std::future<trello_card> trello_model::get_card(const std::string& card_id) {
-    return std::async(std::launch::async, [this, card_id]() -> trello_card {
+    return std::async(std::launch::async, [this, card_id]() -> trello_card { // NOLINT(bugprone-exception-escape)
         try {
             const std::string endpoint = "cards/" + card_id;
             const std::string response = make_request(endpoint);

@@ -5,7 +5,7 @@ namespace rouen::models {
 
 // Get projects from JIRA
 std::future<std::vector<jira_project>> jira_model::get_projects() {
-    return std::async(std::launch::async, [this]() {
+    return std::async(std::launch::async, [this]() { // NOLINT(bugprone-exception-escape)
         std::vector<jira_project> projects;
         
         try {
@@ -37,6 +37,8 @@ std::future<std::vector<jira_project>> jira_model::get_projects() {
             }
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error getting JIRA projects: {}", e.what());
+        } catch (...) {
+            DB_ERROR_FMT("{}", "Unknown error getting JIRA projects");
         }
         
         return projects;
@@ -45,7 +47,7 @@ std::future<std::vector<jira_project>> jira_model::get_projects() {
 
 // Get a specific project by key
 std::future<jira_project> jira_model::get_project(const std::string& project_key) {
-    return std::async(std::launch::async, [this, project_key]() {
+    return std::async(std::launch::async, [this, project_key]() { // NOLINT(bugprone-exception-escape)
         jira_project project;
         
         try {
@@ -99,6 +101,8 @@ std::future<jira_project> jira_model::get_project(const std::string& project_key
             }
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error getting JIRA project: {}", e.what());
+        } catch (...) {
+            DB_ERROR_FMT("{}", "Unknown error getting JIRA project");
         }
         
         return project;

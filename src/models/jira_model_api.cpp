@@ -55,7 +55,7 @@ std::string jira_model::make_request(const std::string& endpoint,
 
 // Search for issues using JQL
 std::future<jira_search_result> jira_model::search_issues(const std::string& jql, int start_at, int max_results) {
-    return std::async(std::launch::async, [this, jql, start_at, max_results]() {
+    return std::async(std::launch::async, [this, jql, start_at, max_results]() { // NOLINT(bugprone-exception-escape)
         jira_search_result result;
         
         try {
@@ -97,6 +97,8 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
             }
         } catch (const std::exception& e) {
             DB_ERROR_FMT("Error searching JIRA issues: {}", e.what());
+        } catch (...) {
+            DB_ERROR_FMT("{}", "Unknown error searching JIRA issues");
         }
         
         return result;
