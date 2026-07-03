@@ -4,10 +4,10 @@
 namespace rouen::models {
 
 // External declarations from core
-extern std::mutex profiles_mutex;
-extern bool profiles_modified;
-extern std::vector<jira_connection_profile> environment_profiles;
-extern std::vector<jira_connection_profile> saved_profiles;
+extern std::mutex profiles_mutex; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+extern bool profiles_modified; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+extern std::vector<jira_connection_profile> environment_profiles; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+extern std::vector<jira_connection_profile> saved_profiles; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::string strip_trailing_slash(const std::string& url);
 std::string base64_encode(const std::string& input);
 

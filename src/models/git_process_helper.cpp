@@ -14,7 +14,7 @@ namespace rouen::models {
         std::string full_cmd = "cd '" + dir + "' && " + command + " 2>&1";
         std::array<char, 128> buffer;
         std::string result;
-        FILE* pipe = popen(full_cmd.c_str(), "r");
+        FILE* pipe = popen(full_cmd.c_str(), "r"); // NOLINT(cert-env33-c)
         if (!pipe) return "";
         while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
             result += buffer.data();

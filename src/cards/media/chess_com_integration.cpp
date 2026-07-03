@@ -4,7 +4,7 @@
 
 namespace rouen::cards {
 
-void ChessComIntegration::render_ui(ImVec4 info_color, ImVec4 error_color, std::function<void()> on_game_selected) {
+void ChessComIntegration::render_ui(ImVec4 info_color, ImVec4 error_color, const std::function<void()>& on_game_selected) {
     ImGui::TextColored(info_color, "Chess.com Player Games");
     ImGui::SetNextItemWidth(200.0f);
     if (ImGui::InputText("##ChessUsername", state_.username_buffer, sizeof(state_.username_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {

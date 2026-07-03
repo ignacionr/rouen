@@ -28,7 +28,7 @@ public:
     ChessComIntegration(ChessComIntegrationState& state, rouen::chess::ChessComApiClient& api)
         : state_(state), api_(api) {}
 
-    void render_ui(ImVec4 info_color, ImVec4 error_color, std::function<void()> on_game_selected);
+    void render_ui(ImVec4 info_color, ImVec4 error_color, const std::function<void()>& on_game_selected);
     void fetch_player_archives(const std::string& username);
     void fetch_archive_games(const std::string& archive_url);
     void process_api_responses();
