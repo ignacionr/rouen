@@ -11,10 +11,10 @@
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
-#include <limits.h>
+#include <climits>
 #elif defined(__linux__)
 #include <unistd.h>
-#include <limits.h>
+#include <climits>
 #elif defined(_WIN32)
 #include <windows.h>
 #endif
@@ -23,7 +23,7 @@
     #include <stdlib.h>
 #else
     #include <cstdlib>
-    extern char **environ;
+    extern char **environ; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 #endif
 
 namespace rouen::helpers {
@@ -147,7 +147,7 @@ namespace rouen::helpers {
         cache_[name] = value;
     }
 
-    std::string ConfigService::mask_sensitive_value(const std::string& value, bool is_sensitive) const {
+    std::string ConfigService::mask_sensitive_value(const std::string& value, bool is_sensitive) {
         if (!is_sensitive || value.empty()) {
             return value;
         }
@@ -178,7 +178,7 @@ namespace rouen::helpers {
                lower_name.find("auth") != std::string::npos;
     }
 
-    std::map<std::string, std::string> ConfigService::get_all_env_vars() const {
+    std::map<std::string, std::string> ConfigService::get_all_env_vars() {
         std::map<std::string, std::string> env_vars;
         
         // Get all environment variables (platform-specific)
@@ -294,7 +294,7 @@ namespace rouen::helpers {
         
         // Log by category
         for (int cat = 0; cat <= static_cast<int>(Category::GENERAL); ++cat) {
-            Category category = static_cast<Category>(cat);
+            auto category = static_cast<Category>(cat);
             auto configs = get_configs_by_category_unlocked(category);
             if (!configs.empty()) {
                 CONFIG_INFO_FMT("Category {}: {} configurations", static_cast<int>(category), configs.size());
@@ -446,7 +446,7 @@ namespace rouen::helpers {
  * @param path The path to validate
  * @return true if the path exists and is executable, false otherwise
  */
-bool ConfigService::validate_executable_path(const std::string& path) const {
+bool ConfigService::validate_executable_path(const std::string& path) {
     if (path.empty()) {
         return false;
     }
@@ -566,7 +566,7 @@ std::string ConfigService::get_ping_path() const {
 
     void ConfigService::set_change_callback(std::function<void(const std::string&, const std::string&)> callback) {
         std::lock_guard<std::mutex> lock(mutex_);
-        change_callback_ = callback;
+        change_callback_ = std::move(callback);
     }
 
     // Template specializations
@@ -598,7 +598,8 @@ std::string ConfigService::get_ping_path() const {
         
         if (lower_value == "true" || lower_value == "1" || lower_value == "yes" || lower_value == "on") {
             return true;
-        } else if (lower_value == "false" || lower_value == "0" || lower_value == "no" || lower_value == "off") {
+        }
+        if (lower_value == "false" || lower_value == "0" || lower_value == "no" || lower_value == "off") {
             return false;
         }
         
@@ -822,7 +823,7 @@ std::string ConfigService::get_ping_path() const {
     }
 
     // Private helper methods
-    std::pair<std::string, std::string> ConfigService::parse_env_line(const std::string& line) const {
+    std::pair<std::string, std::string> ConfigService::parse_env_line(const std::string& line) {
         // Find the first = character
         size_t eq_pos = line.find('=');
         if (eq_pos == std::string::npos) {
@@ -865,7 +866,7 @@ std::string ConfigService::get_ping_path() const {
         return {key, unescaped_value};
     }
 
-    std::string ConfigService::get_executable_directory() const {
+    std::string ConfigService::get_executable_directory() {
         // Use the centralized platform-specific executable directory function
         return rouen::platform::get_executable_directory().string();
     }

@@ -20,8 +20,8 @@ namespace media::rss {
         feed_item(std::string_view title, std::string_view link, std::string_view description,
                  std::string_view enclosure, std::string_view image_url,
                  std::chrono::system_clock::time_point updated);
-        void refresh_summary() noexcept;
-        [[nodiscard]] std::string_view summary() noexcept;
+        void refresh_summary();
+        [[nodiscard]] std::string_view summary();
         
         // Enhanced: Get the best available media URL for playback
         std::string get_best_media_url() const;

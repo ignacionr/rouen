@@ -11,7 +11,7 @@ namespace media::rss {
         : title(title_param), link(link_param), description(description_param),
           enclosure(enclosure_param), image_url(image_url_param), updated(updated_param) {}
 
-    void feed_item::refresh_summary() noexcept {
+    void feed_item::refresh_summary() {
         try {
             auto const link_contents = http::fetch{}(link);
             auto const summarize = registrar::get<std::function<std::string(std::string_view)>>({});
@@ -25,7 +25,7 @@ namespace media::rss {
             summary_ = "Failed to summarize";
         }
     }
-    std::string_view feed_item::summary() noexcept {
+    std::string_view feed_item::summary() {
         if (summary_.empty()) {
             refresh_summary();
         }

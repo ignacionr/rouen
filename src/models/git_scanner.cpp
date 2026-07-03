@@ -47,7 +47,7 @@ namespace rouen::models {
             if (cwd != "/" && cwd != "C:\\" && cwd != "c:\\") {
                 scan_roots.push_back(cwd);
             }
-        } catch (...) {}
+        } catch (...) {} // NOLINT(bugprone-empty-catch)
         
         // Remove duplicates while keeping order
         std::vector<std::filesystem::path> unique_roots;
@@ -88,7 +88,7 @@ namespace rouen::models {
                         self(self, entry.path(), depth + 1);
                     }
                 }
-            } catch (...) {
+            } catch (...) { // NOLINT(bugprone-empty-catch)
                 // Ignore permission or other access errors
             }
         };

@@ -93,7 +93,7 @@ namespace rouen::helpers {
         std::string get_ping_path() const;  // Added for ping
 
         // Path validation helpers
-        bool validate_executable_path(const std::string& path) const;
+        static bool validate_executable_path(const std::string& path);
         std::string get_validated_executable_path(const std::string& env_name, const std::string& default_value) const;
 
         // Configuration monitoring and refresh
@@ -105,7 +105,7 @@ namespace rouen::helpers {
         std::vector<ConfigEntry> get_all_configs() const;
         
         // System monitoring - get all environment variables
-        std::map<std::string, std::string> get_all_env_vars() const;
+        static std::map<std::string, std::string> get_all_env_vars();
 
         // .env file support
         bool load_env_file(const std::string& file_path = "");
@@ -126,13 +126,13 @@ namespace rouen::helpers {
 
         // Internal helpers
         void update_cache_entry(const std::string& name) const;
-        std::string mask_sensitive_value(const std::string& value, bool is_sensitive) const;
+        static std::string mask_sensitive_value(const std::string& value, bool is_sensitive);
         bool is_sensitive_config(const std::string& name) const;
         void register_default_configs();
         
         // .env file parsing helpers
-        std::pair<std::string, std::string> parse_env_line(const std::string& line) const;
-        std::string get_executable_directory() const;
+        static std::pair<std::string, std::string> parse_env_line(const std::string& line);
+        static std::string get_executable_directory();
         std::string get_env_value_priority(const std::string& name) const;  // Check .env file first, then environment
         
         // Private helper that doesn't acquire mutex (assumes caller already has lock)
