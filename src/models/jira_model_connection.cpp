@@ -3,11 +3,7 @@
 
 namespace rouen::models {
 
-// External declarations from core
-extern std::mutex profiles_mutex; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-extern bool profiles_modified; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-extern std::vector<jira_connection_profile> environment_profiles; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-extern std::vector<jira_connection_profile> saved_profiles; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+// Encapsulated state accessed via jira_model static getters
 std::string strip_trailing_slash(const std::string& url);
 std::string base64_encode(const std::string& input);
 
@@ -172,14 +168,16 @@ void jira_model::connect(const jira_connection_profile& profile) {
         DB_INFO_FMT("  Title: {}", server_info.server_title);
         
         // Check if we need to save this profile
-        if (!profile.is_environment && 
-            std::find_if(saved_profiles.begin(), saved_profiles.end(),
-                       [&profile](const auto& p) { return p.name == profile.name; }) == saved_profiles.end()) {
-            // Add to saved profiles
-            std::lock_guard<std::mutex> lock(profiles_mutex);
-            saved_profiles.push_back(profile);
-            profiles_modified = true;
-            DB_INFO_FMT("Saved profile '{}' to disk", profile.name);
+        if (!profile.is_environment) {
+            auto& saved = jira_model::get_saved_profiles_ref();
+            if (std::find_if(saved.begin(), saved.end(),
+                           [&profile](const auto& p) { return p.name == profile.name; }) == saved.end()) {
+                // Add to saved profiles
+                std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+                saved.push_back(profile);
+                jira_model::get_profiles_modified() = true;
+                DB_INFO_FMT("Saved profile '{}' to disk", profile.name);
+            }
         }
         
     } catch (const std::exception& e) {

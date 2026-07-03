@@ -34,14 +34,26 @@ struct jira_priority {
     std::string icon_url;
 };
 
-// Static mutex for thread safety with profiles
-std::mutex profiles_mutex;
-// Flag to track if profiles have been modified
-bool profiles_modified = false;
-// Cached profiles loaded from environment variables
-std::vector<jira_connection_profile> environment_profiles;
-// Cached profiles loaded from disk
-std::vector<jira_connection_profile> saved_profiles;
+// Implementations of the profile state getters (encapsulating what were global variables)
+std::mutex& jira_model::get_profiles_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+bool& jira_model::get_profiles_modified() {
+    static bool modified = false;
+    return modified;
+}
+
+std::vector<jira_connection_profile>& jira_model::get_environment_profiles_ref() {
+    static std::vector<jira_connection_profile> profiles;
+    return profiles;
+}
+
+std::vector<jira_connection_profile>& jira_model::get_saved_profiles_ref() {
+    static std::vector<jira_connection_profile> profiles;
+    return profiles;
+}
 
 // Forward declarations of helper methods
 std::string strip_trailing_slash(const std::string& url);
@@ -140,8 +152,8 @@ jira_model::jira_model() {
 
 jira_model::~jira_model() {
     // Save profiles if modified
-    if (profiles_modified) {
-        save_profiles(saved_profiles);
+    if (get_profiles_modified()) {
+        save_profiles(get_saved_profiles_ref());
     }
 }
 

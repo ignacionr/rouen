@@ -369,6 +369,12 @@ public:
         return get_profiles_path();
     }
     
+    // Global profile state encapsulation to avoid non-const global variables
+    static std::mutex& get_profiles_mutex();
+    static bool& get_profiles_modified();
+    static std::vector<jira_connection_profile>& get_environment_profiles_ref();
+    static std::vector<jira_connection_profile>& get_saved_profiles_ref();
+    
 private:
     // Current connection state
     bool connected_ = false;
