@@ -22,7 +22,7 @@ namespace rouen::cards {
             colors[1] = {0.4f, 0.2f, 0.6f, 0.7f}; // Darker purple secondary color
             
             // Additional colors for status indicators
-            get_color(2, ImVec4(0.5f, 0.225f, 0.025f, 1.0f)); // Dark amber for playing
+            get_color(2, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green for playing
             get_color(3, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for errors
             
             name("Radio");
@@ -83,14 +83,14 @@ namespace rouen::cards {
                 
                 // Draw 2-column layout: Left = Vintage Dial, Right = Controls & VU
                 if (ImGui::BeginTable("RadioLayoutTable", 2, ImGuiTableFlags_None)) {
-                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 240.0f); // Wider column (240 instead of 210)
+                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 240.0f); // Wider column
                     ImGui::TableSetupColumn("ControlsColumn", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableNextRow();
                     
                     // --- COLUMN 0: VINTAGE DIAL SCALE ---
                     ImGui::TableSetColumnIndex(0);
                     
-                    ImVec2 dial_size(220.0f, dial_height); // Wider dial size (220 instead of 190)
+                    ImVec2 dial_size(220.0f, dial_height); // Wider dial size
                     ImVec2 dial_pos = ImGui::GetCursorScreenPos();
                     
                     // Transparent button for drag interaction
@@ -229,10 +229,13 @@ namespace rouen::cards {
                                 }
                             }
                             
+                            // Playing station uses dark amber/brown color
+                            ImU32 indicator_color = is_playing ? IM_COL32(90, 45, 10, 255) : IM_COL32(50, 20, 5, static_cast<int>(180.0f * contrast));
+                            
                             draw_list->AddCircleFilled(
                                 ImVec2(scale_max.x - 135.0f, y_val),
                                 is_playing ? 4.0f : 2.5f,
-                                is_playing ? IM_COL32(20, 220, 20, 255) : IM_COL32(40, 15, 0, static_cast<int>(180.0f * contrast))
+                                indicator_color
                             );
                             
                             std::string display_name = name;
@@ -241,12 +244,11 @@ namespace rouen::cards {
                             }
                             
                             ImVec2 text_pos(scale_max.x - 126.0f, y_val - 6.0f);
-                            ImU32 text_color = is_playing ? IM_COL32(20, 180, 20, 255) : IM_COL32(50, 20, 5, static_cast<int>(230.0f * contrast));
                             draw_list->AddText(
                                 ImGui::GetFont(),
                                 ImGui::GetFontSize() * 0.65f,
                                 text_pos,
-                                text_color,
+                                indicator_color,
                                 display_name.c_str()
                             );
                         }
@@ -308,51 +310,71 @@ namespace rouen::cards {
                     }
                     current_signal += (target_signal - current_signal) * 0.15f;
                     
-                    // Draw VU Meter
+                    // Draw VU Meter (centered horizontally, fixed dimensions to prevent resizing bugs)
+                    float avail_width = ImGui::GetContentRegionAvail().x;
+                    float vu_w = 150.0f;
+                    float vu_h = 80.0f;
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_width - vu_w) * 0.5f);
                     ImVec2 vu_pos = ImGui::GetCursorScreenPos();
-                    ImVec2 vu_size(ImGui::GetContentRegionAvail().x, 85.0f);
+                    ImVec2 vu_size(vu_w, vu_h);
                     draw_vu_meter(draw_list, vu_pos, vu_size, current_signal);
-                    ImGui::Dummy(ImVec2(0.0f, 90.0f));
+                    ImGui::Dummy(ImVec2(0.0f, vu_h + 5.0f));
                     
-                    // Retro glowing LED Status display
+                    // Retro glowing LED Status display (stretches, text centered)
+                    float led_w = ImGui::GetContentRegionAvail().x;
                     ImVec2 led_pos = ImGui::GetCursorScreenPos();
-                    ImVec2 led_size(ImGui::GetContentRegionAvail().x, 50.0f);
+                    ImVec2 led_size(led_w, 50.0f);
                     draw_list->AddRectFilled(led_pos, ImVec2(led_pos.x + led_size.x, led_pos.y + led_size.y), IM_COL32(12, 28, 12, 255), 4.0f);
                     draw_list->AddRect(led_pos, ImVec2(led_pos.x + led_size.x, led_pos.y + led_size.y), IM_COL32(40, 50, 40, 255), 4.0f, 0, 1.5f);
                     
-                    ImVec2 text_offset(10.0f, 8.0f);
                     if (playing_active) {
+                        std::string station_text = current_playing_station;
+                        ImVec2 text_size = ImGui::CalcTextSize(station_text.c_str());
+                        ImVec2 text_pos(led_pos.x + (led_w - text_size.x) * 0.5f, led_pos.y + 8.0f);
+                        
                         draw_list->AddText(
                             ImGui::GetFont(),
                             ImGui::GetFontSize() * 0.95f,
-                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            text_pos,
                             IM_COL32(50, 255, 50, 255),
-                            current_playing_station.c_str()
+                            station_text.c_str()
                         );
+                        
                         char details_str[32];
                         snprintf(details_str, sizeof(details_str), "Tuned - FM %0.1f MHz", 88.0f + (1.0f - current_needle_pos) * 20.0f);
+                        ImVec2 det_size = ImGui::CalcTextSize(details_str);
+                        ImVec2 det_pos(led_pos.x + (led_w - det_size.x) * 0.5f, led_pos.y + 30.0f);
+                        
                         draw_list->AddText(
                             ImGui::GetFont(),
                             ImGui::GetFontSize() * 0.65f,
-                            ImVec2(led_pos.x + 10.0f, led_pos.y + 30.0f),
+                            det_pos,
                             IM_COL32(30, 200, 30, 220),
                             details_str
                         );
                     } else if (tuning_active) {
+                        std::string tune_text = "TUNING...";
+                        ImVec2 text_size = ImGui::CalcTextSize(tune_text.c_str());
+                        ImVec2 text_pos(led_pos.x + (led_w - text_size.x) * 0.5f, led_pos.y + 16.0f);
+                        
                         draw_list->AddText(
                             ImGui::GetFont(),
                             ImGui::GetFontSize() * 0.95f,
-                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            text_pos,
                             IM_COL32(255, 180, 20, 255),
-                            "TUNING..."
+                            tune_text.c_str()
                         );
                     } else {
+                        std::string off_text = "POWER OFF - STANDBY";
+                        ImVec2 text_size = ImGui::CalcTextSize(off_text.c_str());
+                        ImVec2 text_pos(led_pos.x + (led_w - text_size.x) * 0.5f, led_pos.y + 16.0f);
+                        
                         draw_list->AddText(
                             ImGui::GetFont(),
                             ImGui::GetFontSize() * 0.95f,
-                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            text_pos,
                             IM_COL32(100, 110, 100, 255),
-                            "POWER OFF - STANDBY"
+                            off_text.c_str()
                         );
                     }
                     ImGui::Dummy(ImVec2(0.0f, 55.0f));
