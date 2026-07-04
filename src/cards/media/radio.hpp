@@ -53,7 +53,7 @@ namespace rouen::cards {
                 
                 // Initialize volume knob position from model
                 if (!initialized_volume) {
-                    volume_knob_val = radio_model->getVolume() / 100.0f;
+                    volume_knob_val = static_cast<float>(radio_model->getVolume()) / 100.0f;
                     saved_volume = radio_model->getVolume();
                     initialized_volume = true;
                 }
@@ -127,7 +127,7 @@ namespace rouen::cards {
                     
                     // Draw dial ticks & frequency markers (FM: 88-108 MHz)
                     for (int i = 0; i <= 20; ++i) {
-                        float t = i / 20.0f;
+                        float t = static_cast<float>(i) / 20.0f;
                         float y_val = track_top + t * track_h;
                         
                         bool is_major = (i % 5 == 0);
@@ -160,8 +160,8 @@ namespace rouen::cards {
                     
                     if (!visible_stations.empty()) {
                         int num_presets = static_cast<int>(visible_stations.size());
-                        for (int idx = 0; idx < num_presets; ++idx) {
-                            float t_preset = (num_presets > 1) ? (idx / static_cast<float>(num_presets - 1)) : 0.5f;
+                        for (size_t idx = 0; idx < static_cast<size_t>(num_presets); ++idx) {
+                            float t_preset = (num_presets > 1) ? (static_cast<float>(idx) / static_cast<float>(num_presets - 1)) : 0.5f;
                             float y_val = track_top + t_preset * track_h;
                             
                             const std::string& name = visible_stations[idx];
@@ -170,7 +170,7 @@ namespace rouen::cards {
                             float dist = fabsf(target_needle_pos - t_preset);
                             if (dist < closest_dist) {
                                 closest_dist = dist;
-                                closest_idx = idx;
+                                closest_idx = static_cast<int>(idx);
                             }
                             
                             // Snapping threshold detents
@@ -246,10 +246,10 @@ namespace rouen::cards {
                     bool tuning_active = (fabsf(target_needle_pos - current_needle_pos) > 0.005f);
                     
                     if (playing_active) {
-                        float noise = ((rand() % 100) / 100.0f - 0.5f) * 0.015f;
+                        float noise = (static_cast<float>(rand() % 100) / 100.0f - 0.5f) * 0.015f;
                         target_signal = 0.85f + noise;
                     } else if (tuning_active) {
-                        target_signal = 0.15f + ((rand() % 100) / 100.0f) * 0.20f; // Jitter static noise
+                        target_signal = 0.15f + (static_cast<float>(rand() % 100) / 100.0f) * 0.20f; // Jitter static noise
                     } else {
                         target_signal = 0.0f;
                     }
@@ -360,9 +360,9 @@ namespace rouen::cards {
                         if (playing_active) {
                             radio_model->stopCurrentStation();
                         } else if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
-                            target_needle_pos = (visible_stations.size() > 1) ? (closest_idx / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                            target_needle_pos = (visible_stations.size() > 1) ? (static_cast<float>(closest_idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
                             tuning_knob_val = target_needle_pos;
-                            radio_model->playStation(visible_stations[closest_idx]);
+                            radio_model->playStation(visible_stations[static_cast<size_t>(closest_idx)]);
                             radio_model->setVolume(saved_volume);
                         }
                     }
@@ -372,9 +372,9 @@ namespace rouen::cards {
                     if (was_dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                         was_dragging = false;
                         if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
-                            target_needle_pos = (visible_stations.size() > 1) ? (closest_idx / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                            target_needle_pos = (visible_stations.size() > 1) ? (static_cast<float>(closest_idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
                             tuning_knob_val = target_needle_pos;
-                            radio_model->playStation(visible_stations[closest_idx]);
+                            radio_model->playStation(visible_stations[static_cast<size_t>(closest_idx)]);
                             radio_model->setVolume(saved_volume);
                         }
                     }
@@ -416,7 +416,7 @@ namespace rouen::cards {
             draw_list->AddCircle(center, radius, IM_COL32(80, 80, 80, 255), 0, 1.0f);
             
             for (int i = 0; i <= 5; ++i) {
-                float t = i / 5.0f;
+                float t = static_cast<float>(i) / 5.0f;
                 float angle = min_angle + t * (max_angle - min_angle);
                 ImVec2 p1(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
                 ImVec2 p2(center.x + cosf(angle) * (radius - 6.0f), center.y + sinf(angle) * (radius - 6.0f));
