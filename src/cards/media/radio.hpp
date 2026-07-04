@@ -82,14 +82,14 @@ namespace rouen::cards {
                 
                 // Draw 2-column layout: Left = Vintage Dial, Right = Controls & VU
                 if (ImGui::BeginTable("RadioLayoutTable", 2, ImGuiTableFlags_None)) {
-                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 210.0f); // Wider column
                     ImGui::TableSetupColumn("ControlsColumn", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableNextRow();
                     
                     // --- COLUMN 0: VINTAGE DIAL SCALE ---
                     ImGui::TableSetColumnIndex(0);
                     
-                    ImVec2 dial_size(150.0f, dial_height);
+                    ImVec2 dial_size(190.0f, dial_height); // Wider dial size
                     ImVec2 dial_pos = ImGui::GetCursorScreenPos();
                     
                     // Transparent button for drag interaction
@@ -157,6 +157,26 @@ namespace rouen::cards {
                         }
                     }
                     
+                    // Find the single preset closest to the mouse y-position for click/hover
+                    int hover_idx = -1;
+                    float min_mouse_dist = 999.0f;
+                    ImGuiIO& io = ImGui::GetIO();
+                    
+                    bool mouse_in_labels_x = (io.MousePos.x >= scale_max.x - 115.0f && io.MousePos.x <= scale_max.x - 5.0f);
+                    bool mouse_in_dial_y = (io.MousePos.y >= scale_min.y && io.MousePos.y <= scale_max.y);
+                    
+                    if (mouse_in_labels_x && mouse_in_dial_y && !visible_stations.empty()) {
+                        for (size_t idx = 0; idx < visible_stations.size(); ++idx) {
+                            float t_preset = (visible_stations.size() > 1) ? (static_cast<float>(idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                            float y_val = track_top + t_preset * track_h;
+                            float dist = fabsf(io.MousePos.y - y_val);
+                            if (dist < min_mouse_dist) {
+                                min_mouse_dist = dist;
+                                hover_idx = static_cast<int>(idx);
+                            }
+                        }
+                    }
+                    
                     // Draw preset station tags
                     int closest_idx = -1;
                     float closest_dist = 999.0f;
@@ -177,10 +197,10 @@ namespace rouen::cards {
                             }
                             
                             // Make preset label interactive (clickable)
-                            ImVec2 label_min(scale_max.x - 78.0f, y_val - 8.0f);
+                            ImVec2 label_min(scale_max.x - 110.0f, y_val - 8.0f);
                             ImVec2 label_max(scale_max.x - 4.0f, y_val + 8.0f);
                             
-                            if (ImGui::IsMouseHoveringRect(label_min, label_max)) {
+                            if (hover_idx == static_cast<int>(idx)) {
                                 // Draw a subtle hover glow
                                 draw_list->AddRectFilled(label_min, label_max, IM_COL32(255, 255, 255, 35), 3.0f);
                                 
@@ -194,17 +214,17 @@ namespace rouen::cards {
                             }
                             
                             draw_list->AddCircleFilled(
-                                ImVec2(scale_max.x - 72.0f, y_val),
+                                ImVec2(scale_max.x - 105.0f, y_val),
                                 is_playing ? 4.0f : 2.5f,
                                 is_playing ? IM_COL32(20, 220, 20, 255) : IM_COL32(40, 15, 0, 180)
                             );
                             
                             std::string display_name = name;
-                            if (display_name.length() > 9) {
-                                display_name = display_name.substr(0, 8) + ".";
+                            if (display_name.length() > 14) {
+                                display_name = display_name.substr(0, 13) + ".";
                             }
                             
-                            ImVec2 text_pos(scale_max.x - 63.0f, y_val - 6.0f);
+                            ImVec2 text_pos(scale_max.x - 96.0f, y_val - 6.0f);
                             ImU32 text_color = is_playing ? IM_COL32(20, 180, 20, 255) : IM_COL32(50, 20, 5, 230);
                             draw_list->AddText(
                                 ImGui::GetFont(),
@@ -258,9 +278,6 @@ namespace rouen::cards {
                     
                     // --- COLUMN 1: CONTROL PANEL ---
                     ImGui::TableSetColumnIndex(1);
-                    
-                    ImGui::TextColored(ImVec4(0.85f, 0.70f, 0.45f, 1.0f), "VINTAGE TRANSISTOR RECEIVER");
-                    ImGui::Separator();
                     
                     // Signal / VU meter state calculation
                     bool playing_active = !current_playing_station.empty() && radio_model->isPlaying();
@@ -434,7 +451,9 @@ namespace rouen::cards {
             float min_angle = -3.14159f * 0.75f;
             float max_angle = -3.14159f * 0.25f;
             
-            draw_list->AddCircle(center, radius, IM_COL32(80, 80, 80, 255), 0, 1.0f);
+            // Draw clean arc instead of full circle
+            draw_list->PathArcTo(center, radius, min_angle, max_angle, 30);
+            draw_list->PathStroke(IM_COL32(80, 80, 80, 255), 0, 1.0f);
             
             for (int i = 0; i <= 5; ++i) {
                 float t = static_cast<float>(i) / 5.0f;
@@ -482,7 +501,7 @@ namespace rouen::cards {
             float radius = size.x * 0.5f;
             ImVec2 center(pos.x + radius, pos.y + radius);
             
-            draw_list->AddCircleFilled(center, radius, IM_COL32(30, 30, 30, 255));
+            // Draw clean knob without the background circle
             draw_list->AddCircleFilled(center, radius * 0.95f, IM_COL32(65, 60, 55, 255));
             draw_list->AddCircle(center, radius * 0.95f, IM_COL32(100, 95, 90, 255), 0, 1.0f);
             draw_list->AddCircleFilled(center, radius * 0.75f, IM_COL32(40, 35, 30, 255));
