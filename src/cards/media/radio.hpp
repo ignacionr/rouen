@@ -77,6 +77,9 @@ namespace rouen::cards {
                     }
                 }
                 
+                // Make vertical dial fill the available height
+                float dial_height = std::max(340.0f, ImGui::GetContentRegionAvail().y - 15.0f);
+                
                 // Draw 2-column layout: Left = Vintage Dial, Right = Controls & VU
                 if (ImGui::BeginTable("RadioLayoutTable", 2, ImGuiTableFlags_None)) {
                     ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 170.0f);
@@ -86,7 +89,7 @@ namespace rouen::cards {
                     // --- COLUMN 0: VINTAGE DIAL SCALE ---
                     ImGui::TableSetColumnIndex(0);
                     
-                    ImVec2 dial_size(150.0f, 340.0f);
+                    ImVec2 dial_size(150.0f, dial_height);
                     ImVec2 dial_pos = ImGui::GetCursorScreenPos();
                     
                     // Transparent button for drag interaction
@@ -173,10 +176,21 @@ namespace rouen::cards {
                                 closest_idx = static_cast<int>(idx);
                             }
                             
-                            // Snapping threshold detents
-                            if (dial_active && dist < 0.025f) {
-                                target_needle_pos = t_preset;
-                                tuning_knob_val = t_preset;
+                            // Make preset label interactive (clickable)
+                            ImVec2 label_min(scale_max.x - 78.0f, y_val - 8.0f);
+                            ImVec2 label_max(scale_max.x - 4.0f, y_val + 8.0f);
+                            
+                            if (ImGui::IsMouseHoveringRect(label_min, label_max)) {
+                                // Draw a subtle hover glow
+                                draw_list->AddRectFilled(label_min, label_max, IM_COL32(255, 255, 255, 35), 3.0f);
+                                
+                                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                                    target_needle_pos = t_preset;
+                                    tuning_knob_val = t_preset;
+                                    radio_model->playStation(name);
+                                    radio_model->setVolume(saved_volume);
+                                    was_dragging = false; // Prevent drag release override
+                                }
                             }
                             
                             draw_list->AddCircleFilled(
@@ -200,6 +214,13 @@ namespace rouen::cards {
                                 display_name.c_str()
                             );
                         }
+                    }
+                    
+                    // Single closest station snapping (applied outside the loop)
+                    if (dial_active && closest_idx >= 0 && closest_dist < 0.030f) {
+                        float t_snap = (visible_stations.size() > 1) ? (static_cast<float>(closest_idx) / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                        target_needle_pos = t_snap;
+                        tuning_knob_val = t_snap;
                     }
                     
                     // Animate dial needle
