@@ -112,8 +112,8 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 
       # GCC 14+ emits false-positive -Wnull-dereference warnings in <streambuf>
       # when istreambuf_iterator is used (inlined from standard library headers).
-      # This is a known GCC 14 regression; keep the warning but don't fail the build.
-      $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},14.0>:-Wno-error=null-dereference>
+      # This is a known GCC 14 regression; disable the warning to avoid build log spam.
+      $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},14.0>:-Wno-null-dereference>
 
       # CI Strictness: Make unused-result specifically an error in all builds
       $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
