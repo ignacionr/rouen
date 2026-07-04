@@ -22,7 +22,7 @@ namespace rouen::cards {
             colors[1] = {0.4f, 0.2f, 0.6f, 0.7f}; // Darker purple secondary color
             
             // Additional colors for status indicators
-            get_color(2, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green for playing
+            get_color(2, ImVec4(0.5f, 0.225f, 0.025f, 1.0f)); // Dark amber for playing
             get_color(3, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for errors
             
             name("Radio");
