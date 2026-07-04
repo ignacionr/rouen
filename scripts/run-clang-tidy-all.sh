@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper script to run parallel run-clang-tidy with Nix system includes injected
 
-EXTRA_ARGS=("-extra-arg=-stdlib=libc++" "-extra-arg=-nostdinc++")
+EXTRA_ARGS=()
 
 # Dynamically get compiler's resource directory for built-in headers
 if command -v clang++ >/dev/null 2>&1; then
@@ -20,17 +20,11 @@ if [ -n "$NIX_CFLAGS_COMPILE" ]; then
             next_idx=$((i + 1))
             if [ $next_idx -lt ${#flags[@]} ]; then
                 next_flag="${flags[$next_idx]}"
-                
-                # Skip GCC standard library header paths to avoid conflict with libc++
-                if [[ "$next_flag" == *"/include/c++/"* ]] || [[ "$next_flag" == *"/gcc/"* ]]; then
-                    i=$next_idx
-                else
-                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
-                    if [ -d "${next_flag}/c++/v1" ]; then
-                        EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
-                    fi
-                    i=$next_idx
+                EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
+                if [ -d "${next_flag}/c++/v1" ]; then
+                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
                 fi
+                i=$next_idx
             else
                 EXTRA_ARGS+=("-extra-arg=$flag")
             fi

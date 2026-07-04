@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper script to run clang-tidy with Nix system includes and resource directory injected
 
-EXTRA_ARGS=("-extra-arg=-stdlib=libc++" "-extra-arg=-nostdinc++")
+EXTRA_ARGS=()
 
 # Dynamically get compiler's resource directory for built-in headers like stdarg.h
 if command -v clang++ >/dev/null 2>&1; then
@@ -21,21 +21,15 @@ if [ -n "$NIX_CFLAGS_COMPILE" ]; then
             next_idx=$((i + 1))
             if [ $next_idx -lt ${#flags[@]} ]; then
                 next_flag="${flags[$next_idx]}"
+                # Add the original system include path
+                EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
                 
-                # Skip GCC standard library header paths to avoid conflict with libc++
-                if [[ "$next_flag" == *"/include/c++/"* ]] || [[ "$next_flag" == *"/gcc/"* ]]; then
-                    i=$next_idx
-                else
-                    # Add the original system include path
-                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}")
-                    
-                    # If this is libcxx and has c++/v1 subdirectory, add it as well
-                    if [ -d "${next_flag}/c++/v1" ]; then
-                        EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
-                    fi
-                    
-                    i=$next_idx
+                # If this is libcxx and has c++/v1 subdirectory, add it as well
+                if [ -d "${next_flag}/c++/v1" ]; then
+                    EXTRA_ARGS+=("-extra-arg=-isystem${next_flag}/c++/v1")
                 fi
+                
+                i=$next_idx
             else
                 EXTRA_ARGS+=("-extra-arg=$flag")
             fi
