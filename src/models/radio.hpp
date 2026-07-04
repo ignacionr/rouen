@@ -177,6 +177,25 @@ namespace rouen::models {
             return media_item.checkMediaStatus();
         }
 
+        /**
+         * Set volume for the radio player
+         * 
+         * @param vol Volume level from 0 to 100
+         * @return true if successful, false otherwise
+         */
+        bool setVolume(int vol) {
+            return media_item.setVolume(vol);
+        }
+
+        /**
+         * Get current volume of the radio player
+         * 
+         * @return Current volume level
+         */
+        int getVolume() const {
+            return media_item.volume.load();
+        }
+
     private:
         std::map<std::string, RadioStation> stations;
         std::vector<std::string> station_names;

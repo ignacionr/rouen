@@ -3,6 +3,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <cstdlib>
+#include <algorithm>
 #include "../../helpers/imgui_include.hpp"
 
 #include "../interface/card.hpp"
@@ -23,7 +26,7 @@ namespace rouen::cards {
             get_color(3, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for errors
             
             name("Radio");
-            requested_fps = 5;  // Update 5 times per second
+            requested_fps = 10;  // Higher FPS for smooth dial and needle animations
             
             // Create radio model
             radio_model = std::make_unique<rouen::models::radio>();
@@ -45,93 +48,446 @@ namespace rouen::cards {
             return render_window([this]() {
                 if (!radio_model) {
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Radio model not initialized");
-                    return; // This is fine in a void lambda
+                    return;
                 }
                 
-                // Get current station and all station names
-                const std::string& current_station = radio_model->getCurrentStation();
-                const std::vector<std::string>& stations = radio_model->getStationNames();
-                
-                // Display currently playing station
-                if (!current_station.empty()) {
-                    ImGui::TextColored(colors[2], "Now Playing: %s", current_station.c_str());
-                    
-                    // Stop button
-                    if (ImGui::Button("Stop")) {
-                        radio_model->stopCurrentStation();
-                    }
-                } else {
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No station playing");
+                // Initialize volume knob position from model
+                if (!initialized_volume) {
+                    volume_knob_val = radio_model->getVolume() / 100.0f;
+                    saved_volume = radio_model->getVolume();
+                    initialized_volume = true;
                 }
                 
-                ImGui::Separator();
+                const std::string& current_playing_station = radio_model->getCurrentStation();
+                const std::vector<std::string>& all_stations = radio_model->getStationNames();
                 
-                // Search filter
+                // Apply search filter to presets
                 static char search_buffer[256] = "";
-                ImGui::PushItemWidth(-1);
-                ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
-                
-                // Show placeholder text when search is empty
-                if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                    auto pos = ImGui::GetItemRectMin();
-                    ImGui::GetWindowDrawList()->AddText(
-                        ImVec2(pos.x + 5, pos.y + 2),
-                        ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                        "Search stations..."
-                    );
-                }
-                ImGui::PopItemWidth();
-                
-                ImGui::Separator();
-                
-                // List of stations with scroll
-                if (ImGui::BeginChild("StationsList", ImVec2(0, 0), true)) {
-                    std::string search_text = search_buffer;
-                    std::transform(search_text.begin(), search_text.end(), search_text.begin(),
+                std::string search_text = search_buffer;
+                std::transform(search_text.begin(), search_text.end(), search_text.begin(),
+                              [](unsigned char c) { return std::tolower(c); });
+                              
+                std::vector<std::string> visible_stations;
+                for (const auto& name : all_stations) {
+                    std::string lower_name = name;
+                    std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
                                   [](unsigned char c) { return std::tolower(c); });
-                    
-                    for (const auto& station_name : stations) {
-                        // Apply search filter
-                        std::string lower_name = station_name;
-                        std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                                      [](unsigned char c) { return std::tolower(c); });
-                        
-                        if (!search_text.empty() && lower_name.find(search_text) == std::string::npos) {
-                            continue;  // Skip stations that don't match search
-                        }
-                        
-                        // Highlight currently playing station
-                        bool is_current = (station_name == current_station);
-                        if (is_current) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2]));
-                        }
-                        
-                        // Station entry with play button
-                        // if (ImGui::Selectable(station_name.c_str(), is_current)) {
-                        //     radio_model->playStation(station_name);
-                        // }
-
-                        const auto* station = radio_model ? radio_model->getStation(station_name) : nullptr;
-                        if (station) {
-                            media_player::player(station->url, colors[0], station_name);
-                        }
-                        
-                        if (is_current) {
-                            ImGui::PopStyleColor();
-                        }
-                    }
-                    
-                    // If no stations match the search, show a message
-                    if (ImGui::GetScrollMaxY() < 0.1f && search_text.length() > 0) {
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No stations match your search");
+                    if (search_text.empty() || lower_name.find(search_text) != std::string::npos) {
+                        visible_stations.push_back(name);
                     }
                 }
-                ImGui::EndChild();
+                
+                // Draw 2-column layout: Left = Vintage Dial, Right = Controls & VU
+                if (ImGui::BeginTable("RadioLayoutTable", 2, ImGuiTableFlags_None)) {
+                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+                    ImGui::TableSetupColumn("ControlsColumn", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableNextRow();
+                    
+                    // --- COLUMN 0: VINTAGE DIAL SCALE ---
+                    ImGui::TableSetColumnIndex(0);
+                    
+                    ImVec2 dial_size(150.0f, 340.0f);
+                    ImVec2 dial_pos = ImGui::GetCursorScreenPos();
+                    
+                    // Transparent button for drag interaction
+                    ImGui::InvisibleButton("##DialClickTarget", dial_size);
+                    bool dial_active = ImGui::IsItemActive();
+                    
+                    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                    
+                    // Drag tuning interaction
+                    if (dial_active && !visible_stations.empty()) {
+                        ImGuiIO& io = ImGui::GetIO();
+                        float relative_y = (io.MousePos.y - dial_pos.y - 20.0f) / (dial_size.y - 40.0f);
+                        relative_y = std::max(0.0f, std::min(1.0f, relative_y));
+                        tuning_knob_val = relative_y;
+                        target_needle_pos = relative_y;
+                        was_dragging = true;
+                    }
+                    
+                    // Draw outer bezel (Bakelite styling)
+                    draw_list->AddRectFilled(dial_pos, ImVec2(dial_pos.x + dial_size.x, dial_pos.y + dial_size.y), IM_COL32(42, 28, 16, 255), 10.0f);
+                    draw_list->AddRect(dial_pos, ImVec2(dial_pos.x + dial_size.x, dial_pos.y + dial_size.y), IM_COL32(80, 54, 30, 255), 10.0f, 0, 2.5f);
+                    
+                    // Inner glowing amber scale
+                    ImVec2 scale_min(dial_pos.x + 10.0f, dial_pos.y + 15.0f);
+                    ImVec2 scale_max(dial_pos.x + dial_size.x - 10.0f, dial_pos.y + dial_size.y - 15.0f);
+                    
+                    draw_list->AddRectFilledMultiColor(
+                        scale_min, scale_max,
+                        IM_COL32(200, 90, 10, 255),
+                        IM_COL32(235, 140, 20, 255),
+                        IM_COL32(235, 140, 20, 255),
+                        IM_COL32(200, 90, 10, 255)
+                    );
+                    draw_list->AddRect(scale_min, scale_max, IM_COL32(50, 25, 5, 255), 0.0f, 0, 1.5f);
+                    
+                    float track_h = scale_max.y - scale_min.y - 40.0f;
+                    float track_top = scale_min.y + 20.0f;
+                    
+                    // Draw dial ticks & frequency markers (FM: 88-108 MHz)
+                    for (int i = 0; i <= 20; ++i) {
+                        float t = i / 20.0f;
+                        float y_val = track_top + t * track_h;
+                        
+                        bool is_major = (i % 5 == 0);
+                        float tick_len = is_major ? 12.0f : 6.0f;
+                        
+                        draw_list->AddLine(
+                            ImVec2(scale_min.x + 5.0f, y_val),
+                            ImVec2(scale_min.x + 5.0f + tick_len, y_val),
+                            IM_COL32(30, 15, 0, 220),
+                            is_major ? 1.8f : 1.0f
+                        );
+                        
+                        if (is_major) {
+                            int mhz = 88 + (20 - i) * 1;
+                            char freq_str[8];
+                            snprintf(freq_str, sizeof(freq_str), "%d", mhz);
+                            draw_list->AddText(
+                                ImGui::GetFont(),
+                                ImGui::GetFontSize() * 0.7f,
+                                ImVec2(scale_min.x + 20.0f, y_val - 6.0f),
+                                IM_COL32(40, 15, 0, 240),
+                                freq_str
+                            );
+                        }
+                    }
+                    
+                    // Draw preset station tags
+                    int closest_idx = -1;
+                    float closest_dist = 999.0f;
+                    
+                    if (!visible_stations.empty()) {
+                        int num_presets = static_cast<int>(visible_stations.size());
+                        for (int idx = 0; idx < num_presets; ++idx) {
+                            float t_preset = (num_presets > 1) ? (idx / static_cast<float>(num_presets - 1)) : 0.5f;
+                            float y_val = track_top + t_preset * track_h;
+                            
+                            const std::string& name = visible_stations[idx];
+                            bool is_playing = (name == current_playing_station);
+                            
+                            float dist = fabsf(target_needle_pos - t_preset);
+                            if (dist < closest_dist) {
+                                closest_dist = dist;
+                                closest_idx = idx;
+                            }
+                            
+                            // Snapping threshold detents
+                            if (dial_active && dist < 0.025f) {
+                                target_needle_pos = t_preset;
+                                tuning_knob_val = t_preset;
+                            }
+                            
+                            draw_list->AddCircleFilled(
+                                ImVec2(scale_max.x - 72.0f, y_val),
+                                is_playing ? 4.0f : 2.5f,
+                                is_playing ? IM_COL32(20, 220, 20, 255) : IM_COL32(40, 15, 0, 180)
+                            );
+                            
+                            std::string display_name = name;
+                            if (display_name.length() > 9) {
+                                display_name = display_name.substr(0, 8) + ".";
+                            }
+                            
+                            ImVec2 text_pos(scale_max.x - 63.0f, y_val - 6.0f);
+                            ImU32 text_color = is_playing ? IM_COL32(20, 180, 20, 255) : IM_COL32(50, 20, 5, 230);
+                            draw_list->AddText(
+                                ImGui::GetFont(),
+                                ImGui::GetFontSize() * 0.65f,
+                                text_pos,
+                                text_color,
+                                display_name.c_str()
+                            );
+                        }
+                    }
+                    
+                    // Animate dial needle
+                    current_needle_pos += (target_needle_pos - current_needle_pos) * 0.25f;
+                    
+                    // Draw red indicator line (Needle)
+                    float needle_y = track_top + current_needle_pos * track_h;
+                    draw_list->AddLine(
+                        ImVec2(scale_min.x + 2.0f, needle_y),
+                        ImVec2(scale_max.x - 2.0f, needle_y),
+                        IM_COL32(230, 20, 20, 255),
+                        2.2f
+                    );
+                    
+                    draw_list->AddCircleFilled(
+                        ImVec2(scale_min.x + (scale_max.x - scale_min.x) * 0.28f, needle_y),
+                        5.0f,
+                        IM_COL32(230, 20, 20, 255)
+                    );
+                    draw_list->AddCircle(
+                        ImVec2(scale_min.x + (scale_max.x - scale_min.x) * 0.28f, needle_y),
+                        5.0f,
+                        IM_COL32(255, 255, 255, 180),
+                        0,
+                        1.0f
+                    );
+                    
+                    // Glass glare highlight
+                    draw_list->AddTriangleFilled(
+                        scale_min,
+                        ImVec2(scale_max.x - 30.0f, scale_min.y),
+                        ImVec2(scale_min.x, scale_max.y - 50.0f),
+                        IM_COL32(255, 255, 255, 25)
+                    );
+                    
+                    // --- COLUMN 1: CONTROL PANEL ---
+                    ImGui::TableSetColumnIndex(1);
+                    
+                    ImGui::TextColored(ImVec4(0.85f, 0.70f, 0.45f, 1.0f), "VINTAGE TRANSISTOR RECEIVER");
+                    ImGui::Separator();
+                    
+                    // Signal / VU meter state calculation
+                    bool playing_active = !current_playing_station.empty() && radio_model->isPlaying();
+                    bool tuning_active = (fabsf(target_needle_pos - current_needle_pos) > 0.005f);
+                    
+                    if (playing_active) {
+                        float noise = ((rand() % 100) / 100.0f - 0.5f) * 0.015f;
+                        target_signal = 0.85f + noise;
+                    } else if (tuning_active) {
+                        target_signal = 0.15f + ((rand() % 100) / 100.0f) * 0.20f; // Jitter static noise
+                    } else {
+                        target_signal = 0.0f;
+                    }
+                    current_signal += (target_signal - current_signal) * 0.15f;
+                    
+                    // Draw VU Meter
+                    ImVec2 vu_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 vu_size(ImGui::GetContentRegionAvail().x, 85.0f);
+                    draw_vu_meter(draw_list, vu_pos, vu_size, current_signal);
+                    ImGui::Dummy(ImVec2(0.0f, 90.0f));
+                    
+                    // Retro glowing LED Status display
+                    ImVec2 led_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 led_size(ImGui::GetContentRegionAvail().x, 50.0f);
+                    draw_list->AddRectFilled(led_pos, ImVec2(led_pos.x + led_size.x, led_pos.y + led_size.y), IM_COL32(12, 28, 12, 255), 4.0f);
+                    draw_list->AddRect(led_pos, ImVec2(led_pos.x + led_size.x, led_pos.y + led_size.y), IM_COL32(40, 50, 40, 255), 4.0f, 0, 1.5f);
+                    
+                    ImVec2 text_offset(10.0f, 8.0f);
+                    if (playing_active) {
+                        draw_list->AddText(
+                            ImGui::GetFont(),
+                            ImGui::GetFontSize() * 0.95f,
+                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            IM_COL32(50, 255, 50, 255),
+                            current_playing_station.c_str()
+                        );
+                        char details_str[32];
+                        snprintf(details_str, sizeof(details_str), "Tuned - FM %0.1f MHz", 88.0f + (1.0f - current_needle_pos) * 20.0f);
+                        draw_list->AddText(
+                            ImGui::GetFont(),
+                            ImGui::GetFontSize() * 0.65f,
+                            ImVec2(led_pos.x + 10.0f, led_pos.y + 30.0f),
+                            IM_COL32(30, 200, 30, 220),
+                            details_str
+                        );
+                    } else if (tuning_active) {
+                        draw_list->AddText(
+                            ImGui::GetFont(),
+                            ImGui::GetFontSize() * 0.95f,
+                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            IM_COL32(255, 180, 20, 255),
+                            "TUNING..."
+                        );
+                    } else {
+                        draw_list->AddText(
+                            ImGui::GetFont(),
+                            ImGui::GetFontSize() * 0.95f,
+                            ImVec2(led_pos.x + text_offset.x, led_pos.y + text_offset.y),
+                            IM_COL32(100, 110, 100, 255),
+                            "POWER OFF - STANDBY"
+                        );
+                    }
+                    ImGui::Dummy(ImVec2(0.0f, 55.0f));
+                    
+                    // Search box
+                    ImGui::PushItemWidth(-1);
+                    ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
+                    if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+                        auto pos = ImGui::GetItemRectMin();
+                        draw_list->AddText(
+                            ImVec2(pos.x + 5, pos.y + 2),
+                            ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                            "Search presets..."
+                        );
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::Spacing();
+                    
+                    // Knobs Table
+                    if (ImGui::BeginTable("KnobsTable", 2)) {
+                        ImGui::TableNextRow();
+                        
+                        // Volume Knob
+                        ImGui::TableSetColumnIndex(0);
+                        ImVec2 knob_size(55.0f, 55.0f);
+                        float vol_val = volume_knob_val;
+                        
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - knob_size.x) * 0.5f);
+                        if (draw_knob("VOLUME##VolKnob", &vol_val, 0.0f, 1.0f, knob_size, draw_list)) {
+                            volume_knob_val = vol_val;
+                            int vol_pct = static_cast<int>(vol_val * 100.0f);
+                            radio_model->setVolume(vol_pct);
+                            saved_volume = vol_pct;
+                        }
+                        
+                        // Tuning Knob
+                        ImGui::TableSetColumnIndex(1);
+                        float tune_val = tuning_knob_val;
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - knob_size.x) * 0.5f);
+                        if (draw_knob("TUNING##TuneKnob", &tune_val, 0.0f, 1.0f, knob_size, draw_list)) {
+                            tuning_knob_val = tune_val;
+                            target_needle_pos = tune_val;
+                            was_dragging = true;
+                        }
+                        
+                        ImGui::EndTable();
+                    }
+                    
+                    ImGui::Dummy(ImVec2(0.0f, 15.0f));
+                    
+                    // Stop / Power rocker button
+                    ImGui::Spacing();
+                    ImVec4 btn_color = playing_active ? colors[3] : colors[2];
+                    ImGui::PushStyleColor(ImGuiCol_Button, btn_color);
+                    
+                    std::string power_btn_label = playing_active ? ICON_MD_POWER_SETTINGS_NEW " STOP RECEIVER" : ICON_MD_PLAY_ARROW " TUNE CLOSE STATION";
+                    if (ImGui::Button(power_btn_label.c_str(), ImVec2(-1, 32.0f))) {
+                        if (playing_active) {
+                            radio_model->stopCurrentStation();
+                        } else if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
+                            target_needle_pos = (visible_stations.size() > 1) ? (closest_idx / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                            tuning_knob_val = target_needle_pos;
+                            radio_model->playStation(visible_stations[closest_idx]);
+                            radio_model->setVolume(saved_volume);
+                        }
+                    }
+                    ImGui::PopStyleColor();
+                    
+                    // Drag release activation
+                    if (was_dragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                        was_dragging = false;
+                        if (closest_idx >= 0 && closest_idx < static_cast<int>(visible_stations.size())) {
+                            target_needle_pos = (visible_stations.size() > 1) ? (closest_idx / static_cast<float>(visible_stations.size() - 1)) : 0.5f;
+                            tuning_knob_val = target_needle_pos;
+                            radio_model->playStation(visible_stations[closest_idx]);
+                            radio_model->setVolume(saved_volume);
+                        }
+                    }
+                    
+                    ImGui::EndTable();
+                }
             });
         }
         
     private:
         std::unique_ptr<rouen::models::radio> radio_model;
+        
+        // Tuning state variables
+        float current_needle_pos = 0.5f;
+        float target_needle_pos = 0.5f;
+        float current_signal = 0.0f;
+        float target_signal = 0.0f;
+        float tuning_knob_val = 0.5f;
+        float volume_knob_val = 0.8f;
+        bool was_dragging = false;
+        bool initialized_volume = false;
+        int saved_volume = 80;
+
+        // Vintage VU Signal strength meter draw helper
+        void draw_vu_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size, float signal) {
+            draw_list->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(30, 30, 30, 255), 6.0f);
+            draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(80, 80, 80, 255), 6.0f, 0, 1.5f);
+            
+            ImVec2 inner_min(pos.x + 5.0f, pos.y + 5.0f);
+            ImVec2 inner_max(pos.x + size.x - 5.0f, pos.y + size.y - 5.0f);
+            draw_list->AddRectFilled(inner_min, inner_max, IM_COL32(245, 240, 215, 255), 4.0f);
+            
+            ImVec2 center(pos.x + size.x * 0.5f, pos.y + size.y * 0.95f);
+            float radius = size.x * 0.42f;
+            
+            float min_angle = -3.14159f * 0.75f;
+            float max_angle = -3.14159f * 0.25f;
+            
+            draw_list->AddCircle(center, radius, IM_COL32(80, 80, 80, 255), 0, 1.0f);
+            
+            for (int i = 0; i <= 5; ++i) {
+                float t = i / 5.0f;
+                float angle = min_angle + t * (max_angle - min_angle);
+                ImVec2 p1(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
+                ImVec2 p2(center.x + cosf(angle) * (radius - 6.0f), center.y + sinf(angle) * (radius - 6.0f));
+                draw_list->AddLine(p1, p2, IM_COL32(50, 50, 50, 255), 1.5f);
+                
+                char label_str[4];
+                snprintf(label_str, sizeof(label_str), "%d", i * 2);
+                ImVec2 text_size = ImGui::CalcTextSize(label_str);
+                ImVec2 text_pos(center.x + cosf(angle) * (radius - 15.0f) - text_size.x * 0.5f,
+                               center.y + sinf(angle) * (radius - 15.0f) - text_size.y * 0.5f);
+                
+                draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.7f, text_pos, IM_COL32(80, 80, 80, 255), label_str);
+            }
+            
+            ImVec2 vu_text_pos(center.x, center.y - radius * 0.45f);
+            std::string vu_label = "TUNING / SIGNAL";
+            ImVec2 vu_text_size = ImGui::CalcTextSize(vu_label.c_str());
+            draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.65f, ImVec2(vu_text_pos.x - vu_text_size.x * 0.5f, vu_text_pos.y), IM_COL32(100, 100, 100, 255), vu_label.c_str());
+            
+            float needle_angle = min_angle + signal * (max_angle - min_angle);
+            float needle_len = radius * 0.9f;
+            ImVec2 needle_end(center.x + cosf(needle_angle) * needle_len, center.y + sinf(needle_angle) * needle_len);
+            draw_list->AddLine(center, needle_end, IM_COL32(220, 20, 20, 255), 1.8f);
+            
+            draw_list->AddCircleFilled(center, 5.0f, IM_COL32(40, 40, 40, 255));
+            draw_list->AddCircle(center, 5.0f, IM_COL32(100, 100, 100, 255), 0, 1.0f);
+        }
+
+        // Rotary knob draw and interaction helper
+        bool draw_knob(const char* label, float* value, float min_val, float max_val, const ImVec2& size, ImDrawList* draw_list) {
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            
+            ImGui::InvisibleButton(label, size);
+            bool active = ImGui::IsItemActive();
+            
+            if (active) {
+                ImVec2 delta = ImGui::GetIO().MouseDelta;
+                *value -= delta.y * 0.005f * (max_val - min_val);
+                *value = std::max(min_val, std::min(max_val, *value));
+            }
+            
+            float radius = size.x * 0.5f;
+            ImVec2 center(pos.x + radius, pos.y + radius);
+            
+            draw_list->AddCircleFilled(center, radius, IM_COL32(30, 30, 30, 255));
+            draw_list->AddCircleFilled(center, radius * 0.95f, IM_COL32(65, 60, 55, 255));
+            draw_list->AddCircle(center, radius * 0.95f, IM_COL32(100, 95, 90, 255), 0, 1.0f);
+            draw_list->AddCircleFilled(center, radius * 0.75f, IM_COL32(40, 35, 30, 255));
+            draw_list->AddCircleFilled(center, radius * 0.4f, IM_COL32(180, 140, 40, 255));
+            draw_list->AddCircleFilled(center, radius * 0.35f, IM_COL32(210, 180, 80, 255));
+            
+            float angle = 2.356f + ((*value - min_val) / (max_val - min_val)) * 3.927f;
+            ImVec2 indicator(cosf(angle) * radius * 0.7f, sinf(angle) * radius * 0.7f);
+            draw_list->AddLine(
+                ImVec2(center.x + indicator.x * 0.3f, center.y + indicator.y * 0.3f),
+                ImVec2(center.x + indicator.x, center.y + indicator.y),
+                IM_COL32(230, 220, 210, 255),
+                2.0f
+            );
+            
+            std::string label_str = label;
+            size_t hash_pos = label_str.find("##");
+            if (hash_pos != std::string::npos) {
+                label_str = label_str.substr(0, hash_pos);
+            }
+            ImVec2 text_size = ImGui::CalcTextSize(label_str.c_str());
+            ImVec2 text_pos(center.x - text_size.x * 0.5f, center.y + radius + 3.0f);
+            draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.75f, text_pos, IM_COL32(180, 180, 180, 255), label_str.c_str());
+            
+            return active;
+        }
     };
     
 }
