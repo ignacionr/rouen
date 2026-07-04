@@ -66,6 +66,7 @@ private:
     bool m_imgui_sdl_initialized = false;
     bool m_imgui_renderer_initialized = false;
     bool m_imgui_context_created = false;
+    std::string m_imgui_ini_path;
     
     // API server for command and control
     std::unique_ptr<rouen::helpers::api_server> m_api_server;

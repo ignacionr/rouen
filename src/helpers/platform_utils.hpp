@@ -218,6 +218,60 @@ namespace rouen::platform
     }
 
     /**
+     * Get a writable directory for user-specific configuration files
+     * Resolves to standard paths:
+     * - Windows: %APPDATA%/Rouen
+     * - macOS: ~/Library/Application Support/Rouen
+     * - Linux/Unix: ~/.config/rouen (or XDG_CONFIG_HOME)
+     */
+    inline std::filesystem::path get_user_config_directory()
+    {
+        std::filesystem::path config_dir;
+        #if defined(_WIN32)
+            const char* appdata = std::getenv("APPDATA");
+            if (appdata) {
+                config_dir = std::filesystem::path(appdata) / "Rouen";
+            } else {
+                const char* userprofile = std::getenv("USERPROFILE");
+                if (userprofile) {
+                    config_dir = std::filesystem::path(userprofile) / ".config" / "rouen";
+                } else {
+                    config_dir = std::filesystem::current_path();
+                }
+            }
+        #elif defined(__APPLE__)
+            const char* home = std::getenv("HOME");
+            if (home) {
+                config_dir = std::filesystem::path(home) / "Library" / "Application Support" / "Rouen";
+            } else {
+                config_dir = std::filesystem::current_path();
+            }
+        #else
+            const char* xdg = std::getenv("XDG_CONFIG_HOME");
+            if (xdg && xdg[0] != '\0') {
+                config_dir = std::filesystem::path(xdg) / "rouen";
+            } else {
+                const char* home = std::getenv("HOME");
+                if (home) {
+                    config_dir = std::filesystem::path(home) / ".config" / "rouen";
+                } else {
+                    config_dir = std::filesystem::current_path();
+                }
+            }
+        #endif
+
+        // Ensure the directory exists
+        try {
+            std::filesystem::create_directories(config_dir);
+        } catch (...) {
+            config_dir = std::filesystem::current_path();
+        }
+
+        return config_dir;
+    }
+
+    /**
+
      * Get the full path to a resource file
      * Handles both app bundle resources and development environment paths
      * 

@@ -347,10 +347,16 @@ struct deck {
             uris += card->get_uri();
         }
         
-        // Save to a custom section in imgui.ini through a file write
-        // First read the file to preserve other settings
-        auto rouen_ini_path = rouen::platform::get_resource_path("rouen.ini");
-        std::ifstream ini_file(rouen_ini_path);
+        // Save to rouen.ini in the user's config directory (always writable)
+        std::filesystem::path rouen_ini_path = rouen::platform::get_user_config_directory() / "rouen.ini";
+        
+        // First read from user config path, fallback to bundle resource path if not present to preserve other options
+        std::filesystem::path read_path = rouen_ini_path;
+        if (!std::filesystem::exists(read_path)) {
+            read_path = rouen::platform::get_resource_path("rouen.ini");
+        }
+        
+        std::ifstream ini_file(read_path);
         std::stringstream buffer;
         bool found_rouen_section = false;
         bool in_rouen_section = false;
@@ -386,7 +392,7 @@ struct deck {
             buffer << "cards=" << uris << '\n';
         }
         
-        // Write back to the file
+        // Write back to the user config directory file
         std::ofstream out_file(rouen_ini_path);
         if (out_file) {
             out_file << buffer.str();
@@ -396,8 +402,12 @@ struct deck {
     
     // Load cards from ImGui configuration
     void load_card_uris() {
-        // Read from imgui.ini file
-        auto rouen_ini_path = rouen::platform::get_resource_path("rouen.ini");
+        // Read from user config path, fallback to bundle resource path if not present
+        std::filesystem::path rouen_ini_path = rouen::platform::get_user_config_directory() / "rouen.ini";
+        if (!std::filesystem::exists(rouen_ini_path)) {
+            rouen_ini_path = rouen::platform::get_resource_path("rouen.ini");
+        }
+        
         std::ifstream ini_file(rouen_ini_path);
         if (!ini_file) {
             // If file doesn't exist, create the default menu card

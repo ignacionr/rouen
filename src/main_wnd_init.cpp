@@ -10,6 +10,7 @@
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
 #include "helpers/mcp_service.hpp"
+#include "helpers/platform_utils.hpp"
 #include "main_wnd.hpp"
 
 #ifdef __APPLE__
@@ -145,6 +146,11 @@ bool main_wnd::initialize() {
         m_imgui_context_created = true;
         ImGuiIO& io = ImGui::GetIO();
         (void)io;
+        
+        // Configure standard write-enabled path for imgui.ini
+        m_imgui_ini_path = (rouen::platform::get_user_config_directory() / "imgui.ini").string();
+        io.IniFilename = m_imgui_ini_path.c_str();
+        
         std::cout << "DEBUG: ImGui context created" << '\n';
 
         // Enable keyboard and mouse controls
