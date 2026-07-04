@@ -61,8 +61,8 @@
             unstable.ccache     # Compiler cache to speed up compilation
             unstable.clang-tools # Clang-tidy and other analysis tools
             unstable.python3     # Python 3 interpreter (required by run-clang-tidy)
-            unstable.libcxx
           ] 
+            ++ (unstable.lib.optionals (unstable.stdenv.isDarwin) [ unstable.libcxx ])
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.gcc15 
               unstable.libGL 
