@@ -27,6 +27,7 @@ namespace rouen::cards {
             
             name("Radio");
             requested_fps = 10;  // Higher FPS for smooth dial and needle animations
+            width = 390.0f;      // Made the card width 30% wider (default is 300)
             
             // Create radio model
             radio_model = std::make_unique<rouen::models::radio>();
@@ -82,14 +83,14 @@ namespace rouen::cards {
                 
                 // Draw 2-column layout: Left = Vintage Dial, Right = Controls & VU
                 if (ImGui::BeginTable("RadioLayoutTable", 2, ImGuiTableFlags_None)) {
-                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 210.0f); // Wider column
+                    ImGui::TableSetupColumn("DialColumn", ImGuiTableColumnFlags_WidthFixed, 240.0f); // Wider column (240 instead of 210)
                     ImGui::TableSetupColumn("ControlsColumn", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableNextRow();
                     
                     // --- COLUMN 0: VINTAGE DIAL SCALE ---
                     ImGui::TableSetColumnIndex(0);
                     
-                    ImVec2 dial_size(190.0f, dial_height); // Wider dial size
+                    ImVec2 dial_size(220.0f, dial_height); // Wider dial size (220 instead of 190)
                     ImVec2 dial_pos = ImGui::GetCursorScreenPos();
                     
                     // Transparent button for drag interaction
@@ -112,21 +113,36 @@ namespace rouen::cards {
                     draw_list->AddRectFilled(dial_pos, ImVec2(dial_pos.x + dial_size.x, dial_pos.y + dial_size.y), IM_COL32(42, 28, 16, 255), 10.0f);
                     draw_list->AddRect(dial_pos, ImVec2(dial_pos.x + dial_size.x, dial_pos.y + dial_size.y), IM_COL32(80, 54, 30, 255), 10.0f, 0, 2.5f);
                     
-                    // Inner glowing amber scale
+                    // Smoothly transition backlight intensity (grows to 1.0 when active, dims to 0.22 when stopped)
+                    bool playing_active = !current_playing_station.empty() && radio_model->isPlaying();
+                    float target_light = playing_active ? 1.0f : 0.22f;
+                    current_light += (target_light - current_light) * 0.12f;
+                    
+                    // Inner glowing amber scale (intensity-controlled)
                     ImVec2 scale_min(dial_pos.x + 10.0f, dial_pos.y + 15.0f);
                     ImVec2 scale_max(dial_pos.x + dial_size.x - 10.0f, dial_pos.y + dial_size.y - 15.0f);
                     
-                    draw_list->AddRectFilledMultiColor(
-                        scale_min, scale_max,
-                        IM_COL32(200, 90, 10, 255),
-                        IM_COL32(235, 140, 20, 255),
-                        IM_COL32(235, 140, 20, 255),
-                        IM_COL32(200, 90, 10, 255)
+                    ImU32 col_left = IM_COL32(
+                        static_cast<int>(200.0f * current_light),
+                        static_cast<int>(90.0f * current_light),
+                        static_cast<int>(10.0f * current_light),
+                        255
                     );
+                    ImU32 col_right = IM_COL32(
+                        static_cast<int>(235.0f * current_light),
+                        static_cast<int>(140.0f * current_light),
+                        static_cast<int>(20.0f * current_light),
+                        255
+                    );
+                    
+                    draw_list->AddRectFilledMultiColor(scale_min, scale_max, col_left, col_right, col_right, col_left);
                     draw_list->AddRect(scale_min, scale_max, IM_COL32(50, 25, 5, 255), 0.0f, 0, 1.5f);
                     
                     float track_h = scale_max.y - scale_min.y - 40.0f;
                     float track_top = scale_min.y + 20.0f;
+                    
+                    // Scale contrast modifier based on backlight state
+                    float contrast = 0.4f + current_light * 0.6f;
                     
                     // Draw dial ticks & frequency markers (FM: 88-108 MHz)
                     for (int i = 0; i <= 20; ++i) {
@@ -139,7 +155,7 @@ namespace rouen::cards {
                         draw_list->AddLine(
                             ImVec2(scale_min.x + 5.0f, y_val),
                             ImVec2(scale_min.x + 5.0f + tick_len, y_val),
-                            IM_COL32(30, 15, 0, 220),
+                            IM_COL32(30, 15, 0, static_cast<int>(220.0f * contrast)),
                             is_major ? 1.8f : 1.0f
                         );
                         
@@ -151,7 +167,7 @@ namespace rouen::cards {
                                 ImGui::GetFont(),
                                 ImGui::GetFontSize() * 0.7f,
                                 ImVec2(scale_min.x + 20.0f, y_val - 6.0f),
-                                IM_COL32(40, 15, 0, 240),
+                                IM_COL32(40, 15, 0, static_cast<int>(240.0f * contrast)),
                                 freq_str
                             );
                         }
@@ -162,7 +178,7 @@ namespace rouen::cards {
                     float min_mouse_dist = 999.0f;
                     ImGuiIO& io = ImGui::GetIO();
                     
-                    bool mouse_in_labels_x = (io.MousePos.x >= scale_max.x - 115.0f && io.MousePos.x <= scale_max.x - 5.0f);
+                    bool mouse_in_labels_x = (io.MousePos.x >= scale_max.x - 145.0f && io.MousePos.x <= scale_max.x - 5.0f);
                     bool mouse_in_dial_y = (io.MousePos.y >= scale_min.y && io.MousePos.y <= scale_max.y);
                     
                     if (mouse_in_labels_x && mouse_in_dial_y && !visible_stations.empty()) {
@@ -197,7 +213,7 @@ namespace rouen::cards {
                             }
                             
                             // Make preset label interactive (clickable)
-                            ImVec2 label_min(scale_max.x - 110.0f, y_val - 8.0f);
+                            ImVec2 label_min(scale_max.x - 140.0f, y_val - 8.0f);
                             ImVec2 label_max(scale_max.x - 4.0f, y_val + 8.0f);
                             
                             if (hover_idx == static_cast<int>(idx)) {
@@ -214,18 +230,18 @@ namespace rouen::cards {
                             }
                             
                             draw_list->AddCircleFilled(
-                                ImVec2(scale_max.x - 105.0f, y_val),
+                                ImVec2(scale_max.x - 135.0f, y_val),
                                 is_playing ? 4.0f : 2.5f,
-                                is_playing ? IM_COL32(20, 220, 20, 255) : IM_COL32(40, 15, 0, 180)
+                                is_playing ? IM_COL32(20, 220, 20, 255) : IM_COL32(40, 15, 0, static_cast<int>(180.0f * contrast))
                             );
                             
                             std::string display_name = name;
-                            if (display_name.length() > 14) {
-                                display_name = display_name.substr(0, 13) + ".";
+                            if (display_name.length() > 18) {
+                                display_name = display_name.substr(0, 17) + ".";
                             }
                             
-                            ImVec2 text_pos(scale_max.x - 96.0f, y_val - 6.0f);
-                            ImU32 text_color = is_playing ? IM_COL32(20, 180, 20, 255) : IM_COL32(50, 20, 5, 230);
+                            ImVec2 text_pos(scale_max.x - 126.0f, y_val - 6.0f);
+                            ImU32 text_color = is_playing ? IM_COL32(20, 180, 20, 255) : IM_COL32(50, 20, 5, static_cast<int>(230.0f * contrast));
                             draw_list->AddText(
                                 ImGui::GetFont(),
                                 ImGui::GetFontSize() * 0.65f,
@@ -251,19 +267,19 @@ namespace rouen::cards {
                     draw_list->AddLine(
                         ImVec2(scale_min.x + 2.0f, needle_y),
                         ImVec2(scale_max.x - 2.0f, needle_y),
-                        IM_COL32(230, 20, 20, 255),
+                        IM_COL32(230, 20, 20, static_cast<int>(255.0f * (0.6f + current_light * 0.4f))),
                         2.2f
                     );
                     
                     draw_list->AddCircleFilled(
                         ImVec2(scale_min.x + (scale_max.x - scale_min.x) * 0.28f, needle_y),
                         5.0f,
-                        IM_COL32(230, 20, 20, 255)
+                        IM_COL32(230, 20, 20, static_cast<int>(255.0f * (0.6f + current_light * 0.4f)))
                     );
                     draw_list->AddCircle(
                         ImVec2(scale_min.x + (scale_max.x - scale_min.x) * 0.28f, needle_y),
                         5.0f,
-                        IM_COL32(255, 255, 255, 180),
+                        IM_COL32(255, 255, 255, static_cast<int>(180.0f * (0.6f + current_light * 0.4f))),
                         0,
                         1.0f
                     );
@@ -273,14 +289,13 @@ namespace rouen::cards {
                         scale_min,
                         ImVec2(scale_max.x - 30.0f, scale_min.y),
                         ImVec2(scale_min.x, scale_max.y - 50.0f),
-                        IM_COL32(255, 255, 255, 25)
+                        IM_COL32(255, 255, 255, static_cast<int>(25.0f * (0.4f + current_light * 0.6f)))
                     );
                     
                     // --- COLUMN 1: CONTROL PANEL ---
                     ImGui::TableSetColumnIndex(1);
                     
                     // Signal / VU meter state calculation
-                    bool playing_active = !current_playing_station.empty() && radio_model->isPlaying();
                     bool tuning_active = (fabsf(target_needle_pos - current_needle_pos) > 0.005f);
                     
                     if (playing_active) {
@@ -435,6 +450,7 @@ namespace rouen::cards {
         bool was_dragging = false;
         bool initialized_volume = false;
         int saved_volume = 80;
+        float current_light = 0.22f; // Backlight intensity variable (grows when playing, dims when stopped)
 
         // Vintage VU Signal strength meter draw helper
         void draw_vu_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size, float signal) {
