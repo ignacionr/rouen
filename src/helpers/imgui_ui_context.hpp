@@ -40,7 +40,8 @@ public:
     imgui_ui_context_impl() = default;
     
     void prepare() {
-        draw_impl_.set_draw_list(ImGui::GetWindowDrawList());
+        // No-op: ImDrawList is fetched lazily in get_draw_context() to prevent
+        // ImGui from initializing fallback "Debug##Default" window before Begin() is called.
     }
 
     void text(const std::string& text) override {
@@ -252,6 +253,7 @@ public:
     }
     
     draw_context& get_draw_context() override {
+        draw_impl_.set_draw_list(ImGui::GetWindowDrawList());
         return draw_impl_;
     }
 
