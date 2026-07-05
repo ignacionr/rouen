@@ -341,7 +341,7 @@ namespace rouen::cards {
                         );
                         
                         char details_str[32];
-                        snprintf(details_str, sizeof(details_str), "Tuned - FM %0.1f MHz", 88.0f + (1.0f - current_needle_pos) * 20.0f);
+                        snprintf(details_str, sizeof(details_str), "Tuned - FM %0.1f MHz", static_cast<double>(88.0f + (1.0f - current_needle_pos) * 20.0f));
                         ImVec2 det_size = ImGui::CalcTextSize(details_str);
                         ImVec2 det_pos(led_pos.x + (led_w - det_size.x) * 0.5f, led_pos.y + 30.0f);
                         
