@@ -147,9 +147,8 @@ bool main_wnd::initialize() {
         ImGuiIO& io = ImGui::GetIO();
         (void)io;
         
-        // Configure standard write-enabled path for imgui.ini
-        m_imgui_ini_path = (rouen::platform::get_user_config_directory() / "imgui.ini").string();
-        io.IniFilename = m_imgui_ini_path.c_str();
+        // Disable automatic saving/restoring of window layouts (imgui.ini)
+        io.IniFilename = nullptr;
         
         std::cout << "DEBUG: ImGui context created" << '\n';
 
