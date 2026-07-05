@@ -292,8 +292,8 @@ public:
         RSS_INFO("RSSHost constructor completed");
         
         // Register the watermark callback so the player can update our database
-        media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, double watermark) {
-            this->updateWatermark(feed_id, item_link, watermark);
+        media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {
+            this->updateWatermark(feed_id, item_link, item_title, watermark);
         };
     }
 
@@ -515,8 +515,8 @@ public:
         return result;
     }
     
-    void updateWatermark(long long feed_id, const std::string& item_link, std::optional<double> watermark) {
-        repo_.update_watermark(feed_id, item_link, watermark);
+    void updateWatermark(long long feed_id, const std::string& item_link, const std::string& item_title, std::optional<double> watermark) {
+        repo_.update_watermark(feed_id, item_link, item_title, watermark);
     }
 
     /**

@@ -190,7 +190,7 @@ public:
                         
                         // Use the media_player helper for playback controls
                         try {
-                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.watermark);
+                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in media player: {}", e.what());
                         }
@@ -213,7 +213,7 @@ public:
                                 extracted_media.format);
                             
                             try {
-                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.watermark);
+                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark);
                                 if (i < item.extracted_media_urls.size() - 1) {
                                     ImGui::Spacing();
                                 }
@@ -231,7 +231,7 @@ public:
                         ImGui::Separator();
                         
                         try {
-                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.watermark);
+                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in video link player: {}", e.what());
                         }

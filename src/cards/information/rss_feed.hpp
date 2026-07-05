@@ -346,7 +346,7 @@ namespace rouen::cards
  
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
-                                                 media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.watermark);
+                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark);
                                             }
                                             // Enhanced: Check for extracted media URLs if no direct enclosure
                                             else if (!item.extracted_media_urls.empty()) {
@@ -365,14 +365,14 @@ namespace rouen::cards
                                                             break;
                                                         }
                                                     }
-                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.watermark);
+                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark);
                                                 }
                                             }
                                             // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
                                             else if (item.link.find("youtube.com") != std::string::npos || 
                                                      item.link.find("youtu.be") != std::string::npos ||
                                                      item.link.find("vimeo.com") != std::string::npos) {
-                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.watermark);
+                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
                                             }
 
                                             ImGui::PopTextWrapPos();

@@ -21,7 +21,7 @@ struct media_player {
         }
     }
 
-    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::optional<double> initial_watermark = std::nullopt) noexcept {
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double> initial_watermark = std::nullopt) noexcept {
         (void)info_color;
         ImGui::PushID(url.data());
         try {
@@ -30,6 +30,7 @@ struct media_player {
             if (feed_id != -1) {
                 item.feed_id = feed_id;
                 item.item_link = item_link;
+                item.item_title = item_title;
             }
             bool has_active_media = false;
             if (item.player_pid > 0) {

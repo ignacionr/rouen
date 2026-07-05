@@ -388,10 +388,10 @@ namespace media::rss
             return result;
         }
 
-        void update_watermark(long long feed_id, const std::string& link, std::optional<double> watermark) {
+        void update_watermark(long long feed_id, const std::string& link, const std::string& title, std::optional<double> watermark) {
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety
             try {
-                db_.exec("UPDATE item SET watermark = ? WHERE feed_id = ? AND link = ?", {}, watermark, feed_id, link);
+                db_.exec("UPDATE item SET watermark = ? WHERE feed_id = ? AND link = ? AND title = ?", {}, watermark, feed_id, link, title);
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error in update_watermark: {}", e.what());
             }

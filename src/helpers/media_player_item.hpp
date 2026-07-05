@@ -53,8 +53,9 @@ struct media_player_item {
     double start_offset{0.0};
     long long feed_id{-1};
     std::string item_link;
+    std::string item_title;
     std::optional<double> watermark;
-    static inline std::function<void(long long, const std::string&, double)> save_watermark_cb;
+    static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
 
     media_player_item() = default;
     ~media_player_item() { stopMedia(); }
@@ -111,7 +112,7 @@ inline void media_player_item::stopMedia() {
     if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
         watermark = cur_pos;
         if (save_watermark_cb) {
-            save_watermark_cb(feed_id, item_link, cur_pos);
+            save_watermark_cb(feed_id, item_link, item_title, cur_pos);
         }
     }
 
@@ -246,7 +247,7 @@ inline void media_player_item::startPositionTracking() {
                 if (std::abs(cur_pos - last_saved_position) >= 2.0 || 
                     std::chrono::duration_cast<std::chrono::seconds>(now - last_save_time).count() >= 5) {
                     if (save_watermark_cb) {
-                        save_watermark_cb(feed_id, item_link, cur_pos);
+                        save_watermark_cb(feed_id, item_link, item_title, cur_pos);
                     }
                     last_saved_position = cur_pos;
                     last_save_time = now;
