@@ -2,8 +2,53 @@
 #include <iomanip>
 #include <sstream>
 #include <format>
+#include <regex>
 
 namespace media::rss {
+    namespace {
+        long parse_tz_offset(const std::string& date_string) {
+            // Trim trailing whitespace
+            std::string s = date_string;
+            s.erase(s.find_last_not_of(" \t\r\n") + 1);
+            
+            // 1. Check for numeric offset: +hhmm, -hhmm, +hh:mm, -hh:mm at the end
+            std::regex num_tz_regex(R"raw(([+-])(\d{2}):?(\d{2})$)raw");
+            std::smatch match;
+            if (std::regex_search(s, match, num_tz_regex)) {
+                char sign = match.str(1)[0];
+                int hours = std::stoi(match.str(2));
+                int minutes = std::stoi(match.str(3));
+                long offset_sec = (hours * 3600 + minutes * 60);
+                return (sign == '-') ? -offset_sec : offset_sec;
+            }
+            
+            // 2. Check for named timezone abbreviations at the end
+            std::regex alpha_tz_regex(R"raw(([A-Z]{3,4})$)raw");
+            if (std::regex_search(s, match, alpha_tz_regex)) {
+                std::string tz = match.str(1);
+                if (tz == "GMT" || tz == "UTC" || tz == "UT" || tz == "Z") return 0;
+                if (tz == "EST") return -5 * 3600;
+                if (tz == "EDT") return -4 * 3600;
+                if (tz == "CST") return -6 * 3600;
+                if (tz == "CDT") return -5 * 3600;
+                if (tz == "MST") return -7 * 3600;
+                if (tz == "MDT") return -6 * 3600;
+                if (tz == "PST") return -8 * 3600;
+                if (tz == "PDT") return -7 * 3600;
+                if (tz == "BST") return 1 * 3600;
+                if (tz == "CET") return 1 * 3600;
+                if (tz == "CEST") return 2 * 3600;
+            }
+            
+            // Check if it ends with 'Z' (ISO 8601)
+            if (!s.empty() && s.back() == 'Z') {
+                return 0;
+            }
+            
+            return 0; // Default to 0 offset (UTC)
+        }
+    }
+
     std::chrono::system_clock::time_point parse_rss_date(const char* date_str) {
         if (!date_str || !*date_str) {
             return std::chrono::system_clock::now();
@@ -24,7 +69,15 @@ namespace media::rss {
             if (!ss2.fail()) parsed = true;
         }
         if (parsed) {
-            return std::chrono::system_clock::from_time_t(std::mktime(&tm));
+            // Convert tm to UTC time_point using C++20 calendar types
+            using namespace std::chrono;
+            auto date = year{tm.tm_year + 1900}/(tm.tm_mon + 1)/tm.tm_mday;
+            auto time = hours{tm.tm_hour} + minutes{tm.tm_min} + seconds{tm.tm_sec};
+            auto parsed_tp = sys_days{date} + time;
+            
+            // Adjust by the parsed timezone offset (utc_time = local_time - offset)
+            long offset_sec = parse_tz_offset(date_string);
+            return parsed_tp - seconds{offset_sec};
         }
         return std::chrono::system_clock::now();
     }

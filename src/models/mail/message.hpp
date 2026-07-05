@@ -22,8 +22,27 @@ namespace mail {
             std::tm tm = {};
             std::istringstream ss{date_str};
             ss.imbue(std::locale::classic());
-            ss >> std::get_time(&tm, "%a, %d %b %Y %H:%M %z");
-            date_ = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+            ss >> std::get_time(&tm, "%a, %d %b %Y %H:%M");
+            if (!ss.fail()) {
+                using namespace std::chrono;
+                auto date = year{tm.tm_year + 1900}/(tm.tm_mon + 1)/tm.tm_mday;
+                auto time = hours{tm.tm_hour} + minutes{tm.tm_min} + seconds{tm.tm_sec};
+                auto parsed_tp = sys_days{date} + time;
+                
+                long offset_sec = 0;
+                std::regex num_tz_regex(R"raw(([+-])(\d{2})(\d{2})$)raw");
+                std::smatch match;
+                if (std::regex_search(date_str, match, num_tz_regex)) {
+                    char sign = match.str(1)[0];
+                    int hours_val = std::stoi(match.str(2));
+                    int minutes_val = std::stoi(match.str(3));
+                    long calculated_offset = (hours_val * 3600 + minutes_val * 60);
+                    offset_sec = (sign == '-') ? -calculated_offset : calculated_offset;
+                }
+                date_ = parsed_tp - seconds{offset_sec};
+            } else {
+                date_ = std::chrono::system_clock::now();
+            }
         }
 
         static std::string get_header_field(std::string_view header, std::string_view field) {
