@@ -6,6 +6,8 @@
 #include <mutex>
 #include <iostream>
 #include <chrono>
+#include <optional>
+#include <tuple>
 
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
@@ -62,9 +64,29 @@ namespace media::rss
                     "description TEXT, "  // Consider limiting description length
                     "pub_date TEXT, "
                     "image_url TEXT, "
+                    "watermark REAL, "
                     "PRIMARY KEY(feed_id, link, title), "
                     "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
                 );
+                
+                // Migration: check if 'watermark' column exists, and add it if not
+                try {
+                    bool has_watermark = false;
+                    db_.exec("PRAGMA table_info(item)", [&](sqlite3_stmt* stmt) {
+                        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                        if (name && std::string_view(name) == "watermark") {
+                            has_watermark = true;
+                        }
+                    });
+                    if (!has_watermark) {
+                        RSS_INFO("Adding 'watermark' column to 'item' table...");
+                        db_.exec("ALTER TABLE item ADD COLUMN watermark REAL");
+                        // Initialize watermark to 0 for items without enclosure, NULL for items with enclosure
+                        db_.exec("UPDATE item SET watermark = 0 WHERE enclosure IS NULL OR enclosure = ''");
+                    }
+                } catch (const std::exception& e) {
+                    RSS_WARN_FMT("Failed to migrate 'item' table watermark column: {}", e.what());
+                }
                 
                 RSS_DEBUG("Creating settings table...");
                 db_.ensure_table("settings",
@@ -242,13 +264,19 @@ namespace media::rss
                 db_.exec("BEGIN TRANSACTION");
                 
                 for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
-                    std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
-                                    "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                    std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url, watermark) "
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
                                     "ON CONFLICT(feed_id, link, title) DO "
                                     "UPDATE SET enclosure=excluded.enclosure, "
-                                    "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url";
+                                    "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url, "
+                                    "watermark=COALESCE(item.watermark, excluded.watermark)";
                     
-                    db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url);
+                    bool has_media = !enclosure.empty();
+                    if (has_media) {
+                        db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url, std::nullopt);
+                    } else {
+                        db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url, 0.0);
+                    }
                 }
                 
                 // Commit the transaction
@@ -268,7 +296,7 @@ namespace media::rss
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety
             
             try {
-                std::string sql = "SELECT link, enclosure, title, description, pub_date, image_url FROM item WHERE feed_id = ? ORDER BY pub_date DESC";
+                std::string sql = "SELECT link, enclosure, title, description, pub_date, image_url, watermark FROM item WHERE feed_id = ? ORDER BY pub_date DESC";
                 db_.exec(sql, [&sink](sqlite3_stmt *stmt) {
                     const char* link = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
                     const char* enclosure = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
@@ -277,13 +305,18 @@ namespace media::rss
                     const char* pub_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
                     const char* image_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
                     
+                    bool is_null = (sqlite3_column_type(stmt, 6) == SQLITE_NULL);
+                    double watermark_val = sqlite3_column_double(stmt, 6);
+                    std::optional<double> watermark = is_null ? std::nullopt : std::optional<double>(watermark_val);
+                    
                     sink(
                         link ? link : "", 
                         enclosure ? enclosure : "", 
                         title ? title : "", 
                         description ? description : "", 
                         pub_date ? pub_date : "", 
-                        image_url ? image_url : ""
+                        image_url ? image_url : "",
+                        watermark
                     );
                 }, feed_id);
             } catch (const std::exception& e) {
@@ -294,7 +327,7 @@ namespace media::rss
         void search_items(std::string_view query, Sink sink) {
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety
             try {
-                std::string sql = "SELECT item.feed_id, feed.title, item.link, item.enclosure, item.title, item.description, item.pub_date, item.image_url "
+                std::string sql = "SELECT item.feed_id, feed.title, item.link, item.enclosure, item.title, item.description, item.pub_date, item.image_url, item.watermark "
                                   "FROM item JOIN feed ON item.feed_id = feed.id "
                                   "WHERE item.title LIKE ? OR item.description LIKE ? "
                                   "ORDER BY item.pub_date DESC LIMIT 100";
@@ -311,6 +344,10 @@ namespace media::rss
                     const char* pub_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
                     const char* image_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
                     
+                    bool is_null = (sqlite3_column_type(stmt, 8) == SQLITE_NULL);
+                    double watermark_val = sqlite3_column_double(stmt, 8);
+                    std::optional<double> watermark = is_null ? std::nullopt : std::optional<double>(watermark_val);
+                    
                     sink(
                         feed_id,
                         feed_title ? feed_title : "",
@@ -319,7 +356,8 @@ namespace media::rss
                         title ? title : "", 
                         description ? description : "", 
                         pub_date ? pub_date : "", 
-                        image_url ? image_url : ""
+                        image_url ? image_url : "",
+                        watermark
                     );
                 }, like_query, like_query);
             } catch (const std::exception& e) {
@@ -348,6 +386,15 @@ namespace media::rss
                 RSS_ERROR_FMT("Error in get_setting: {}", e.what());
             }
             return result;
+        }
+
+        void update_watermark(long long feed_id, const std::string& link, std::optional<double> watermark) {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            try {
+                db_.exec("UPDATE item SET watermark = ? WHERE feed_id = ? AND link = ?", {}, watermark, feed_id, link);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in update_watermark: {}", e.what());
+            }
         }
 
         // Item-related methods are now in rss_item_repo

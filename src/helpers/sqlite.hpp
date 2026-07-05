@@ -4,6 +4,7 @@
 #include <functional>
 #include <string>
 #include <stdexcept>
+#include <optional>
 #include <mutex>
 #include <thread>
 #include <chrono>
@@ -208,6 +209,14 @@ namespace hosting::db
                     sqlite3_bind_null(stmt, index);
                 } else {
                     sqlite3_bind_text(stmt, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+                }
+            } else if constexpr (std::is_same_v<T, std::nullopt_t>) {
+                sqlite3_bind_null(stmt, index);
+            } else if constexpr (requires(T t) { t.has_value(); }) {
+                if (value.has_value()) {
+                    bind_param(stmt, index, *value);
+                } else {
+                    sqlite3_bind_null(stmt, index);
                 }
             } else {
                 // Fix always_false implementation to properly trigger a compile-time error

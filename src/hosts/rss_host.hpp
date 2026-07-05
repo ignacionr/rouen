@@ -22,6 +22,7 @@
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
 #include "../helpers/html_media_extractor.hpp"
+#include "../helpers/media_player_item.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -136,6 +137,7 @@ public:
         std::string image_url;
         std::chrono::system_clock::time_point publish_date;
         std::vector<media::html::extracted_media> extracted_media_urls; // Enhanced: extracted media from content
+        std::optional<double> watermark; // playback watermark
         
         long long feed_id = -1;
         std::string feed_title;
@@ -241,7 +243,8 @@ public:
                 
                 // Load existing items from database
                 repo_.scan_items(feed_id, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
-                                                 const char* item_desc, const char* item_pub_date, const char* item_img_url) {
+                                                 const char* item_desc, const char* item_pub_date, const char* item_img_url,
+                                                 std::optional<double> watermark) {
                     std::tm tm = {};
                     std::istringstream ss(item_pub_date ? item_pub_date : "");
                     ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
@@ -255,6 +258,7 @@ public:
                         item_img_url ? item_img_url : "",
                         publish_date
                     );
+                    item.watermark = watermark;
                     
                     // Populate extracted media URLs from description if present
                     if (!item.description.empty()) {
@@ -286,6 +290,11 @@ public:
         RSS_INFO("RSSHost starting feed refresh in background thread...");
         refreshFeeds(std::move(urls));
         RSS_INFO("RSSHost constructor completed");
+        
+        // Register the watermark callback so the player can update our database
+        media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, double watermark) {
+            this->updateWatermark(feed_id, item_link, watermark);
+        };
     }
 
     ~RSSHost() {
@@ -314,7 +323,7 @@ public:
         std::vector<FeedItem> results;
         repo_.search_items(query, [&results](long long feed_id, const char* feed_title, const char* link,
                                             const char* enclosure, const char* title, const char* description,
-                                            const char* pub_date, const char* image_url) {
+                                            const char* pub_date, const char* image_url, std::optional<double> watermark) {
             FeedItem item;
             item.feed_id = feed_id;
             item.feed_title = feed_title ? feed_title : "";
@@ -323,6 +332,7 @@ public:
             item.title = title ? title : "";
             item.description = description ? description : "";
             item.image_url = image_url ? image_url : "";
+            item.watermark = watermark;
             
             item.publish_date = media::rss::parse_rss_date(pub_date);
             
@@ -409,8 +419,9 @@ public:
     std::vector<FeedItem> getFeedItems(long long feed_id) {
         std::vector<FeedItem> items;
         
-        repo_.scan_items(feed_id, [&items](const char* link, const char* enclosure, const char* title, 
-                                         const char* description, const char* pub_date, const char* image_url) {
+        repo_.scan_items(feed_id, [&items, feed_id](const char* link, const char* enclosure, const char* title, 
+                                         const char* description, const char* pub_date, const char* image_url,
+                                         std::optional<double> watermark) {
             // Mark unused parameters to avoid warnings
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
@@ -430,7 +441,8 @@ public:
                 .image_url = image_url ? image_url : "",
                 .publish_date = publish_date,
                 .extracted_media_urls = {},
-                .feed_id = -1,
+                .watermark = watermark,
+                .feed_id = feed_id,
                 .feed_title = ""
             };
             
@@ -456,8 +468,9 @@ public:
     std::optional<FeedItem> getFeedItem(long long feed_id, const std::string& item_link) {
         std::optional<FeedItem> result;
         
-        repo_.scan_items(feed_id, [&result, &item_link](const char* link, const char* enclosure, const char* title, 
-                                                     const char* description, const char* pub_date, const char* image_url) {
+        repo_.scan_items(feed_id, [&result, &item_link, feed_id](const char* link, const char* enclosure, const char* title, 
+                                                     const char* description, const char* pub_date, const char* image_url,
+                                                     std::optional<double> watermark) {
             // Mark unused parameters to avoid warnings
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
@@ -477,7 +490,8 @@ public:
                     .image_url = image_url ? image_url : "",
                     .publish_date = publish_date,
                     .extracted_media_urls = {},
-                    .feed_id = -1,
+                    .watermark = watermark,
+                    .feed_id = feed_id,
                     .feed_title = ""
                 };
                 
@@ -489,6 +503,10 @@ public:
         });
         
         return result;
+    }
+    
+    void updateWatermark(long long feed_id, const std::string& item_link, std::optional<double> watermark) {
+        repo_.update_watermark(feed_id, item_link, watermark);
     }
 
     /**

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <string_view>
 #include <vector>
+#include <optional>
 #include "../../helpers/html_media_extractor.hpp"
 
 namespace media::rss {
@@ -15,6 +16,7 @@ namespace media::rss {
         std::string image_url;
         std::chrono::system_clock::time_point updated;
         std::vector<media::html::extracted_media> extracted_media_urls; // Enhanced: extracted media from content
+        std::optional<double> watermark; // playback watermark
         
         feed_item() = default;
         feed_item(std::string_view title, std::string_view link, std::string_view description,

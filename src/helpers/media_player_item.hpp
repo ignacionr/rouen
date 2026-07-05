@@ -11,6 +11,8 @@
 #include <fstream>
 #include <chrono>
 #include <cerrno>
+#include <functional>
+#include <optional>
 
 #ifndef _WIN32
 #include <signal.h>
@@ -49,6 +51,9 @@ struct media_player_item {
     std::atomic<int> volume{100};
     bool has_video{false}; // New: track if current media has video
     double start_offset{0.0};
+    long long feed_id{-1};
+    std::string item_link;
+    static inline std::function<void(long long, const std::string&, double)> save_watermark_cb;
 
     media_player_item() = default;
     ~media_player_item() { stopMedia(); }
@@ -100,6 +105,14 @@ inline bool media_player_item::checkMediaStatus() {
 }
 
 inline void media_player_item::stopMedia() {
+    // Save watermark before stopping
+    double cur_pos = position.load();
+    if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
+        if (save_watermark_cb) {
+            save_watermark_cb(feed_id, item_link, cur_pos);
+        }
+    }
+
     // 1. Try to send quit command to mpv socket for graceful termination
     if (player_pid > 0 && mpv_socket.is_connected()) {
         std::string quit_cmd = "{\"command\":[\"quit\"]}\n";
@@ -156,6 +169,9 @@ inline void media_player_item::stopMedia() {
 inline void media_player_item::startPositionTracking() {
     thread_running = true;
     position_thread = std::thread([this]() {
+        double last_saved_position = -1.0;
+        auto last_save_time = std::chrono::steady_clock::now();
+        
         while (thread_running) {
             if (!mpv_socket.is_connected()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -219,6 +235,21 @@ inline void media_player_item::startPositionTracking() {
                     } catch (...) { /* Ignore parse errors */ }
                 }
             }
+            
+            // Periodically save watermark
+            double cur_pos = position.load();
+            if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
+                auto now = std::chrono::steady_clock::now();
+                if (std::abs(cur_pos - last_saved_position) >= 2.0 || 
+                    std::chrono::duration_cast<std::chrono::seconds>(now - last_save_time).count() >= 5) {
+                    if (save_watermark_cb) {
+                        save_watermark_cb(feed_id, item_link, cur_pos);
+                    }
+                    last_saved_position = cur_pos;
+                    last_save_time = now;
+                }
+            }
+            
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     });
