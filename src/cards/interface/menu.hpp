@@ -149,8 +149,8 @@ namespace rouen::cards {
                         ui.pop_style_color();
                         ui.separator();
                         
-                        // Category items (horizontal layout with wrapping)
-                        float const window_visible_x2 = ImGui::GetContentRegionMax().x;
+                        // Category items (horizontal layout with wrapping, avoiding horizontal scrolling)
+                        float const window_visible_x2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x - ImGui::GetStyle().ItemSpacing.x;
                         for (size_t i = 0; i < category.items.size(); ++i) {
                             const auto& item = category.items[i];
                             
@@ -162,7 +162,7 @@ namespace rouen::cards {
                             float item_width = ImGui::CalcTextSize(item.first.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                             
                             if (i > 0) {
-                                float next_x = ImGui::GetCursorPosX() + ImGui::GetStyle().ItemSpacing.x + item_width;
+                                float next_x = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + item_width;
                                 if (next_x < window_visible_x2) {
                                     ImGui::SameLine();
                                 }
