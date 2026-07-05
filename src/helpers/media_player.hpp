@@ -35,6 +35,9 @@ struct media_player {
             if (item.player_pid > 0) {
                 has_active_media = item.checkMediaStatus();
             }
+            if (!has_active_media) {
+                item.watermark = initial_watermark;
+            }
             if (has_active_media) {
                 ImGui::TextUnformatted(title.data());
                 double current_pos, current_dur;
@@ -91,16 +94,16 @@ struct media_player {
                 }
             } else {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-                bool has_bookmark = initial_watermark.has_value() && *initial_watermark > 0.0;
+                bool has_bookmark = item.watermark.has_value() && *item.watermark > 0.0;
                 
                 if (has_bookmark) {
-                    std::string formatted_bookmark = item.formatTime(*initial_watermark);
+                    std::string formatted_bookmark = item.formatTime(*item.watermark);
                     float restart_btn_w = ImGui::CalcTextSize("Restart").x + ImGui::GetStyle().FramePadding.x * 2.0f;
                     float play_btn_w = ImGui::GetContentRegionAvail().x - restart_btn_w - ImGui::GetStyle().ItemSpacing.x;
                     
                     if (ImGui::Button(std::format(" {} Resume ({})", ICON_MD_PLAY_ARROW, formatted_bookmark).c_str(), ImVec2(play_btn_w, 0))) {
                         stopAll();
-                        item.start_offset = *initial_watermark;
+                        item.start_offset = *item.watermark;
                         item.playMedia();
                     }
                     ImGui::SameLine();

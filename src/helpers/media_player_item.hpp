@@ -53,6 +53,7 @@ struct media_player_item {
     double start_offset{0.0};
     long long feed_id{-1};
     std::string item_link;
+    std::optional<double> watermark;
     static inline std::function<void(long long, const std::string&, double)> save_watermark_cb;
 
     media_player_item() = default;
@@ -108,6 +109,7 @@ inline void media_player_item::stopMedia() {
     // Save watermark before stopping
     double cur_pos = position.load();
     if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
+        watermark = cur_pos;
         if (save_watermark_cb) {
             save_watermark_cb(feed_id, item_link, cur_pos);
         }
@@ -239,6 +241,7 @@ inline void media_player_item::startPositionTracking() {
             // Periodically save watermark
             double cur_pos = position.load();
             if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
+                watermark = cur_pos;
                 auto now = std::chrono::steady_clock::now();
                 if (std::abs(cur_pos - last_saved_position) >= 2.0 || 
                     std::chrono::duration_cast<std::chrono::seconds>(now - last_save_time).count() >= 5) {
@@ -299,7 +302,9 @@ inline std::string media_player_item::sanitizeURL(const std::string& input_url) 
 }
 
 inline bool media_player_item::playMedia() {
+    double offset = start_offset;
     stopMedia(); // Ensure any previous media is stopped
+    start_offset = offset;
     has_video = false;
     is_paused = false;
     
