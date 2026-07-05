@@ -14,6 +14,7 @@
 #include <vector>
 #include <thread>
 #include <iostream>
+#include <sstream>
 #include <fstream>
 #include <filesystem>
 #include <regex>
@@ -238,12 +239,40 @@ public:
                 feed_ptr->set_image(image_url ? image_url : "");
                 feed_ptr->repo_id = feed_id;
                 
-                // Don't load items here - they'll be loaded on demand
-                // Just record the feed metadata
+                // Load existing items from database
+                repo_.scan_items(feed_id, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
+                                                 const char* item_desc, const char* item_pub_date, const char* item_img_url) {
+                    std::tm tm = {};
+                    std::istringstream ss(item_pub_date ? item_pub_date : "");
+                    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+                    auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+                    
+                    media::rss::feed_item item(
+                        item_title ? item_title : "",
+                        item_link ? item_link : "",
+                        item_desc ? item_desc : "",
+                        item_enclosure ? item_enclosure : "",
+                        item_img_url ? item_img_url : "",
+                        publish_date
+                    );
+                    
+                    // Populate extracted media URLs from description if present
+                    if (!item.description.empty()) {
+                        item.extracted_media_urls = media::html::extract_media_urls(item.description);
+                    }
+                    
+                    feed_ptr->items.push_back(std::move(item));
+                });
+                
+                // Sort items by date (newest first)
+                std::sort(feed_ptr->items.begin(), feed_ptr->items.end(), [](const media::rss::feed_item& a, const media::rss::feed_item& b) {
+                    return a.updated > b.updated;
+                });
+                
                 std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
                 feeds_.emplace_back(feed_ptr);
                 urls.emplace_back(url ? url : "");
-                RSS_DEBUG_FMT("Added feed ID={} to collection (deferred loading)", feed_id);
+                RSS_DEBUG_FMT("Added feed ID={} to collection with {} cached items", feed_id, feed_ptr->items.size());
             });
         } catch (const std::exception& e) {
             RSS_ERROR_FMT("Exception during RSSHost feed scanning: {}", e.what());
