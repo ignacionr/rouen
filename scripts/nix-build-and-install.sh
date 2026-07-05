@@ -164,6 +164,14 @@ if [[ "$INSTALL_MODE" == "user" ]]; then
     mkdir -p "$APP_DIR"
 fi
 
+# Backup existing .env file if it exists
+ENV_BACKUP=""
+if [[ -f "$APP_DIR/Rouen.app/Contents/MacOS/.env" ]]; then
+    info "Found existing .env configuration. Backing up..."
+    ENV_BACKUP=$(mktemp)
+    cp "$APP_DIR/Rouen.app/Contents/MacOS/.env" "$ENV_BACKUP"
+fi
+
 # Remove existing installation
 if [[ -d "$APP_DIR/Rouen.app" ]]; then
     warn "Removing existing installation at $APP_DIR/Rouen.app..."
@@ -177,6 +185,14 @@ $SUDO_CMD cp -R "$SRC_APP" "$APP_DIR/"
 # Make files writable (copied files from Nix store are read-only)
 info "Setting writable permissions on installed App Bundle..."
 $SUDO_CMD chmod -R u+w "$APP_DIR/Rouen.app"
+
+# Restore .env file if backup exists
+if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
+    info "Restoring .env configuration..."
+    $SUDO_CMD cp "$ENV_BACKUP" "$APP_DIR/Rouen.app/Contents/MacOS/.env"
+    $SUDO_CMD chmod u+w "$APP_DIR/Rouen.app/Contents/MacOS/.env"
+    rm -f "$ENV_BACKUP"
+fi
 
 success "App Bundle installed to $APP_DIR/Rouen.app"
 
