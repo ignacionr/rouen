@@ -73,7 +73,8 @@ namespace rouen::cards {
                         {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                         {"Email", []() { "create_card"_sfn("mail"); }},
                         {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
-                        {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }}
+                        {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
+                        {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
                     }},
                     { "Media", {
                         {"Radio", []() { "create_card"_sfn("radio"); }},
