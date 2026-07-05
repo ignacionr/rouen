@@ -21,6 +21,7 @@ namespace mail {
             auto date_str = get_header_field(header, "Date");
             std::tm tm = {};
             std::istringstream ss{date_str};
+            ss.imbue(std::locale::classic());
             ss >> std::get_time(&tm, "%a, %d %b %Y %H:%M %z");
             date_ = std::chrono::system_clock::from_time_t(std::mktime(&tm));
         }

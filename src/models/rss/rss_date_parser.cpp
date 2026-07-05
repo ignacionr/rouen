@@ -13,11 +13,13 @@ namespace media::rss {
         std::string date_string = date_str;
         // Try RFC 822
         std::istringstream ss1(date_string);
+        ss1.imbue(std::locale::classic());
         ss1 >> std::get_time(&tm, "%a, %d %b %Y %H:%M:%S");
         if (!ss1.fail()) parsed = true;
         // Try ISO 8601
         if (!parsed) {
             std::istringstream ss2(date_string);
+            ss2.imbue(std::locale::classic());
             ss2 >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
             if (!ss2.fail()) parsed = true;
         }
