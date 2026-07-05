@@ -149,14 +149,26 @@ namespace rouen::cards {
                         ui.pop_style_color();
                         ui.separator();
                         
-                        // Category items
-                        for (const auto& item : category.items) {
+                        // Category items (horizontal layout with wrapping)
+                        float const window_visible_x2 = ImGui::GetContentRegionMax().x;
+                        for (size_t i = 0; i < category.items.size(); ++i) {
+                            const auto& item = category.items[i];
                             
                             ui.push_style_color(rouen::ui::style_color::header, colors[2]);
                             ui.push_style_color(rouen::ui::style_color::header_hovered, colors[3]);
                             ui.push_style_color(rouen::ui::style_color::header_active, colors[4]);
                             
-                            if (ui.selectable(item.first, false)) {
+                            // Calculate item width
+                            float item_width = ImGui::CalcTextSize(item.first.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                            
+                            if (i > 0) {
+                                float next_x = ImGui::GetCursorPosX() + ImGui::GetStyle().ItemSpacing.x + item_width;
+                                if (next_x < window_visible_x2) {
+                                    ImGui::SameLine();
+                                }
+                            }
+                            
+                            if (ImGui::Selectable(item.first.c_str(), false, 0, ImVec2(item_width, 0))) {
                                 item.second();
                             }
                             
