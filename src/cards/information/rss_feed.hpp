@@ -20,6 +20,7 @@
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../models/rss/rss_date_parser.hpp"
 
 namespace rouen::cards
 {
@@ -319,13 +320,14 @@ namespace rouen::cards
                                                 "create_card"_sfn(item_uri);
                                             }
                                             
-                                            // Date - format as "Day Month Year Hour:Minute"
+                                            // Date - format as "Day Month Year Hour:Minute (Age)"
                                             auto time = std::chrono::system_clock::to_time_t(item.publish_date);
                                             std::tm* tm = std::localtime(&time);
                                             char date_str[64];
                                             std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
+                                            std::string age_str = media::rss::format_rss_age(item.publish_date);
                                             
-                                            ImGui::TextColored(colors[3], "%s", date_str);
+                                            ImGui::TextColored(colors[3], "%s (%s)", date_str, age_str.c_str());
                                             
                                             // Truncated description (if available)
                                             if (!item.description.empty()) {

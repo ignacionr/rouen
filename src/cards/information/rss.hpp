@@ -22,6 +22,7 @@
 #include "../../helpers/llm_config.hpp"
 #include "../../hosts/rss_host.hpp"
 #include "../../models/rss/feed.hpp"
+#include "../../models/rss/rss_date_parser.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/image_cache.hpp"
 #include "../../helpers/texture_helper.hpp"
@@ -355,12 +356,13 @@ public:
                                             "create_card"_sfn(item_uri);
                                         }
 
-                                        // Date
+                                        // Date (with Age)
                                         auto time = std::chrono::system_clock::to_time_t(item.publish_date);
                                         std::tm* tm = std::localtime(&time);
                                         char date_str[64];
                                         std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
-                                        ImGui::TextColored(colors[3], "%s", date_str);
+                                        std::string age_str = media::rss::format_rss_age(item.publish_date);
+                                        ImGui::TextColored(colors[3], "%s (%s)", date_str, age_str.c_str());
 
                                         // Description
                                         if (!item.description.empty()) {
