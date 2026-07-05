@@ -22,7 +22,7 @@
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
 #include "../helpers/html_media_extractor.hpp"
-#include "../helpers/media_player_item.hpp"
+#include "../helpers/media_player.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -299,6 +299,16 @@ public:
 
     ~RSSHost() {
         RSS_INFO("RSSHost destructor starting...");
+        // 1. Stop all active media playback to save final watermarks gracefully while the host is still alive
+        try {
+            media_player::stopAll();
+        } catch (...) {
+            RSS_WARN("Failed to stop media player during RSSHost destructor");
+        }
+        
+        // 2. Clear the callback so no late background notifications try to invoke it
+        media_player_item::save_watermark_cb = nullptr;
+        
         fetch_thread_.request_stop();
         RSS_INFO("RSSHost destructor completed");
     }
