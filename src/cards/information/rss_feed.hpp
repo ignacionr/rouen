@@ -264,7 +264,7 @@ namespace rouen::cards
                     }
 
                     if (!search_text.empty()) {
-                        ImGui::TextColored(colors[3], "%zu items found", filtered_items.size());
+                        ImGui::TextColored(colors[1], "%zu items found", filtered_items.size());
                     }
 
                     // Items in a scrollable area
@@ -327,7 +327,7 @@ namespace rouen::cards
                                             std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
                                             std::string age_str = media::rss::format_rss_age(item.publish_date);
                                             
-                                            ImGui::TextColored(colors[3], "%s (%s)", date_str, age_str.c_str());
+                                            ImGui::TextColored(colors[1], "%s (%s)", date_str, age_str.c_str());
                                             
                                             // Truncated description (if available)
                                             if (!item.description.empty()) {
@@ -346,7 +346,7 @@ namespace rouen::cards
  
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
-                                                media_player::player(item.enclosure, colors[4], "Play Audio");
+                                                media_player::player(item.enclosure, colors[0], "Play Audio");
                                             }
                                             // Enhanced: Check for extracted media URLs if no direct enclosure
                                             else if (!item.extracted_media_urls.empty()) {
@@ -365,14 +365,14 @@ namespace rouen::cards
                                                             break;
                                                         }
                                                     }
-                                                    media_player::player(best_media_url, colors[4], media_title);
+                                                    media_player::player(best_media_url, colors[0], media_title);
                                                 }
                                             }
                                             // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
                                             else if (item.link.find("youtube.com") != std::string::npos || 
                                                      item.link.find("youtu.be") != std::string::npos ||
                                                      item.link.find("vimeo.com") != std::string::npos) {
-                                                media_player::player(item.link, colors[4], "Play Video");
+                                                media_player::player(item.link, colors[0], "Play Video");
                                             }
 
                                             ImGui::PopTextWrapPos();

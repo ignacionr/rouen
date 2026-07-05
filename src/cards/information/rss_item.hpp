@@ -169,7 +169,7 @@ public:
                     }
                     
                     // Original URL link
-                    ImGui::TextColored(colors[4], "Source: ");
+                    ImGui::TextColored(colors[1], "Source: ");
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Open in Browser")) {
                         // Open URL in browser using platform-specific command
@@ -182,7 +182,7 @@ public:
                     std::tm* tm = std::localtime(&time);
                     char date_str[64];
                     std::strftime(date_str, sizeof(date_str), "%A, %d %B %Y %H:%M", tm);
-                    ImGui::TextColored(colors[3], "Published: %s", date_str);
+                    ImGui::TextColored(colors[1], "Published: %s", date_str);
                     
                     // Media enclosure playback controls
                     if (!item.enclosure.empty()) {
@@ -190,7 +190,7 @@ public:
                         
                         // Use the media_player helper for playback controls
                         try {
-                            media_player::player(item.enclosure, colors[2]);
+                            media_player::player(item.enclosure, colors[0]);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in media player: {}", e.what());
                         }
@@ -202,7 +202,7 @@ public:
                         ImGui::Separator();
                         
                         // Show all available media options
-                        ImGui::TextColored(colors[2], "Media Content:");
+                        ImGui::TextColored(colors[0], "Media Content:");
                         
                         for (size_t i = 0; i < item.extracted_media_urls.size(); ++i) {
                             const auto& extracted_media = item.extracted_media_urls[i];
@@ -213,7 +213,7 @@ public:
                                 extracted_media.format);
                             
                             try {
-                                media_player::player(extracted_media.url, colors[2], media_title);
+                                media_player::player(extracted_media.url, colors[0], media_title);
                                 if (i < item.extracted_media_urls.size() - 1) {
                                     ImGui::Spacing();
                                 }
@@ -231,7 +231,7 @@ public:
                         ImGui::Separator();
                         
                         try {
-                            media_player::player(item.link, colors[2], "Play Video");
+                            media_player::player(item.link, colors[0], "Play Video");
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in video link player: {}", e.what());
                         }

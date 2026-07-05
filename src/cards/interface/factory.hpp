@@ -36,6 +36,7 @@
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/trello_card.hpp"
 #include "../productivity/kpi_card.hpp"
+#include "../productivity/theme_card.hpp"
 #include "../system/about.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
@@ -265,6 +266,11 @@ namespace rouen::cards {
                 // Register the chess replay card
                 instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
                     return std::make_shared<chess_replay>(pgn_path);
+                });
+
+                // Register the theme settings card
+                instance.emplace("theme", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<theme_card>();
                 });
 
                 initialized = true;

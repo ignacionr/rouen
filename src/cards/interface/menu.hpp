@@ -83,6 +83,7 @@ namespace rouen::cards {
                     { "System", {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                         {"Settings", []() { "create_card"_sfn("settings"); }},
+                        {"Theme Settings", []() { "create_card"_sfn("theme"); }},
                         {"Terminal", []() { "create_card"_sfn("terminal"); }},
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                         {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},

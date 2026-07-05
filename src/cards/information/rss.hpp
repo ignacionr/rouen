@@ -99,7 +99,7 @@ public:
         static char url_buffer[512] = "";
         
         // Add a new feed section
-        ImGui::TextColored(colors[2], "Add RSS Feed:");
+        ImGui::TextColored(colors[0], "Add RSS Feed:");
         
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         float add_btn_w = ImGui::CalcTextSize("Add").x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -161,7 +161,7 @@ public:
         // Display AI search results if available
         if (!ai_search_results_.empty()) {
             ImGui::Separator();
-            ImGui::TextColored(colors[2], "AI Found Feeds:");
+            ImGui::TextColored(colors[0], "AI Found Feeds:");
             
             for (size_t i = 0; i < ai_search_results_.size(); ++i) {
                 const auto& result = ai_search_results_[i];
@@ -181,7 +181,7 @@ public:
                 
                 if (!result.description.empty()) {
                     ImGui::Indent();
-                    ImGui::TextColored(colors[5], "%s", result.description.c_str());
+                    ImGui::TextColored(colors[1], "%s", result.description.c_str());
                     ImGui::Unindent();
                 }
                 
@@ -220,7 +220,7 @@ public:
         
         return render_window([this] {
             // Feeds section title
-            ImGui::TextColored(colors[2], "Your RSS Feeds:");
+            ImGui::TextColored(colors[0], "Your RSS Feeds:");
             
             // Search functionality
             static char search_buffer[256] = "";
@@ -290,7 +290,7 @@ public:
                         }
 
                         if (!matching_feeds.empty()) {
-                            ImGui::TextColored(colors[2], "Matching Feeds (%d):", static_cast<int>(matching_feeds.size()));
+                            ImGui::TextColored(colors[0], "Matching Feeds (%d):", static_cast<int>(matching_feeds.size()));
                             ImGui::Spacing();
                             bool has_matches = false;
                             render_feed_list(matching_feeds, search_text, has_matches);
@@ -301,7 +301,7 @@ public:
 
                         // 2. Deep Search matching Articles
                         auto matching_items = rss_host->searchItems(search_text);
-                        ImGui::TextColored(colors[2], "Matching Articles (%d):", static_cast<int>(matching_items.size()));
+                        ImGui::TextColored(colors[0], "Matching Articles (%d):", static_cast<int>(matching_items.size()));
                         ImGui::Spacing();
 
                         if (matching_items.empty()) {
@@ -362,7 +362,7 @@ public:
                                         char date_str[64];
                                         std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
                                         std::string age_str = media::rss::format_rss_age(item.publish_date);
-                                        ImGui::TextColored(colors[3], "%s (%s)", date_str, age_str.c_str());
+                                        ImGui::TextColored(colors[1], "%s (%s)", date_str, age_str.c_str());
 
                                         // Description
                                         if (!item.description.empty()) {
@@ -619,7 +619,7 @@ public:
             ImGui::TextColored(freshness_color, "●");
             ImGui::SameLine();
             
-            ImGui::PushStyleColor(ImGuiCol_Text, colors[5]);
+            ImGui::PushStyleColor(ImGuiCol_Text, colors[1]);
             ImGui::Text("%zu items", feed->items.size());
             ImGui::PopStyleColor();
             

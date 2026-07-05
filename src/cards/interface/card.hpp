@@ -14,6 +14,7 @@
 // 3. All other includes
 #include "../../registrar.hpp"
 #include "../../helpers/ui_context.hpp"
+#include "../../helpers/theme_manager.hpp"
 // Forward declarations to avoid circular dependencies
 namespace rouen::helpers {
     class mcp_service;
@@ -106,6 +107,9 @@ struct card {
             // Intentionally ignored: service may not be registered in all contexts
             static_cast<void>(0);
         }
+
+        // Apply active theme to the card's color array
+        rouen::theme::theme_manager::get().apply_theme_to_card(this);
 
         if (ImGui::Begin(window_title.c_str(), &is_open, flags)) {
             is_open &= run_focused_handlers();

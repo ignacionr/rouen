@@ -12,6 +12,7 @@
 #include "helpers/mcp_service.hpp"
 #include "helpers/platform_utils.hpp"
 #include "main_wnd.hpp"
+#include "helpers/theme_manager.hpp"
 
 #ifdef __APPLE__
 #include "helpers/mac_menu_helper.hpp"
@@ -163,6 +164,7 @@ bool main_wnd::initialize() {
 
         // Setup ImGui style
         setup_dark_theme();
+        rouen::theme::theme_manager::get().apply_theme_to_imgui();
 
         // Initialize ImGui SDL2 backend
         if (!ImGui_ImplSDL2_InitForSDLRenderer(m_window, m_renderer)) {

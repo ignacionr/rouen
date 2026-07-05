@@ -51,14 +51,14 @@ namespace rouen::cards
             colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Secondary color - turquoise
             
             // Additional colors for file types
-            get_color(2, {150.0f/255.0f, 150.0f/255.0f, 255.0f/255.0f, 1.0f}); // Parent directory - blue (index 2)
-            get_color(3, {0.3f, 0.3f, 1.0f, 1.0f}); // Directories - light blue (index 3)
-            get_color(4, {120.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // Code files - green (index 4)
-            get_color(5, {220.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // Text files - yellow (index 5)
-            get_color(6, {220.0f/255.0f, 120.0f/255.0f, 220.0f/255.0f, 1.0f}); // Image files - purple (index 6)
-            get_color(7, {255.0f/255.0f, 100.0f/255.0f, 100.0f/255.0f, 1.0f}); // Executable files - red (index 7)
-            get_color(8, {200.0f/255.0f, 200.0f/255.0f, 200.0f/255.0f, 1.0f}); // Other files - light gray (index 8)
-            get_color(9, {120.0f/255.0f, 220.0f/255.0f, 220.0f/255.0f, 1.0f}); // Symlinks - cyan (index 9)
+            // Additional colors for file types mapped to standard indices
+            get_color(2, {255.0f/255.0f, 100.0f/255.0f, 100.0f/255.0f, 1.0f}); // 2: Executable files - Red/Error
+            get_color(3, {120.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // 3: Code files - Green/Success
+            get_color(4, {220.0f/255.0f, 220.0f/255.0f, 120.0f/255.0f, 1.0f}); // 4: Text files - Yellow/Warning
+            get_color(5, {150.0f/255.0f, 150.0f/255.0f, 255.0f/255.0f, 1.0f}); // 5: Parent & Directories - Blue/Info
+            get_color(6, {220.0f/255.0f, 120.0f/255.0f, 220.0f/255.0f, 1.0f}); // 6: Image files - Purple/Special 1
+            get_color(8, {120.0f/255.0f, 220.0f/255.0f, 220.0f/255.0f, 1.0f}); // 8: Symlinks - Cyan/Special 3
+            get_color(9, {200.0f/255.0f, 200.0f/255.0f, 200.0f/255.0f, 1.0f}); // 9: Other files - Light Gray/Special 4
             
             // if the path is empty, reset it to the current directory
             if (path_.empty())
@@ -130,7 +130,7 @@ namespace rouen::cards
                 }
                 
                 // List files in the directory
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2])); // Parent directory color
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5])); // Parent directory color (Blue/Info)
                 if (ImGui::Selectable("..")) {
                     // Go up one directory
                     auto entry = path_.parent_path();
@@ -149,25 +149,25 @@ namespace rouen::cards
                     if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
                     // Set color based on file type
                         if (entry.is_directory()) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[3])); // Directories
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5])); // Directories (Blue/Info)
                         } else if (entry.is_regular_file()) {
                             // Check file extension for common types
                             std::string ext = entry.path().extension().string();
                             if (ext == ".cpp" || ext == ".hpp" || ext == ".h" || ext == ".c" || ext == ".cc") {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4])); // Code files
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[3])); // Code files (Green/Success)
                             } else if (ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".yaml" || ext == ".yml") {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5])); // Text files
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4])); // Text files (Yellow/Warning)
                             } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".bmp") {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6])); // Image files
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6])); // Image files (Purple/Special 1)
                             } else if (ext == ".exe" || ext == "" || ext == ".bin" || ext == ".sh") {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[7])); // Executable files
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2])); // Executable files (Red/Error)
                             } else {
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[8])); // Other files
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[9])); // Other files (Light Gray/Special 4)
                             }
                         } else if (entry.is_symlink()) {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[9])); // Symlinks
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[8])); // Symlinks (Cyan/Special 3)
                         } else {
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[8])); // Other types
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[9])); // Other types (Light Gray)
                         }
                         
                         if (ImGui::Selectable(entry.path().filename().string().c_str())) {
