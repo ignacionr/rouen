@@ -434,6 +434,7 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/converter.cpp
   src/cards/information/bybit_registrar.cpp
   src/cards/information/worldcup_registrar.cpp
+  src/cards/information/movies_registrar.cpp
   src/models/jira_model_core.cpp
   src/models/jira_model_connection.cpp
   src/models/jira_model_profiles.cpp

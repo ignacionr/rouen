@@ -238,6 +238,12 @@ namespace rouen::helpers {
         register_config("GEMINI_API_KEY", Category::API_CREDENTIALS, false, true,
                        "Google Gemini API key for Gemini models");
                        
+        // TMDB Configuration
+        register_config("TMDB_API_KEY", Category::API_CREDENTIALS, false, true,
+                       "The Movie Database (TMDB) API Key (v3)");
+        register_config("TMDB_TOKEN", Category::API_CREDENTIALS, false, true,
+                       "The Movie Database (TMDB) Read Access Bearer Token (v4)");
+                       
         // HTTP/SSL Configuration
         register_config("ROUEN_SSL_MODE", Category::HTTP_SSL_CONFIG, false, false,
                        "SSL mode: strict (default), relaxed, compatible, atlassian, insecure", "strict");

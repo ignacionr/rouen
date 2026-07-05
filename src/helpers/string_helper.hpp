@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <sstream>
+#include <iomanip>
 
 namespace helpers {
 
@@ -81,6 +83,33 @@ public:
         // Use substring view for comparison - no memory allocation
         auto str_end = str.substr(str.size() - suffix.size());
         return to_lower(str_end) == to_lower(suffix);
+    }
+
+    /**
+     * URL encodes a string.
+     * 
+     * @param s The string to encode
+     * @return The URL-encoded string
+     */
+    static std::string url_encode(std::string_view s) {
+        std::ostringstream oss;
+        oss.fill('0');
+        oss << std::hex << std::uppercase;
+        for (char ch : s) {
+            const unsigned char c = static_cast<unsigned char>(ch);
+            if ((c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == '-' || c == '_' || c == '.' || c == '~') {
+                oss << static_cast<char>(c);
+            } else if (c == ' ') {
+                oss << "%20";
+            } else {
+                oss << '%' << std::setw(2) << int(c);
+                oss << std::setw(0);
+            }
+        }
+        return oss.str();
     }
 };
 
