@@ -13,6 +13,7 @@
 #include <chrono>
 #include <sstream>
 #include <optional>
+#include <cstring>
 
 #include "../interface/card.hpp"
 #include "../../helpers/sqlite.hpp"
@@ -32,7 +33,9 @@ public:
         std::string poster_path; // Stored as full URL
         std::string release_date; // Stored as Year
         double vote_average{0.0}; // Stored as Rank
-        std::string overview; // Stored as Actors list
+        std::string overview; // Stored as Notes/Overview
+        std::string actors; // Stored as Cast/Actors
+        std::string directors; // Stored as Director(s)
         std::string list_name;
     };
 
@@ -128,6 +131,9 @@ public:
 
             // Render Movie Details Popup Modal if active
             render_details_modal();
+
+            // Render Edit Details Modal if active
+            render_edit_modal();
         });
     }
 
@@ -135,13 +141,15 @@ private:
     void init_db() {
         try {
             db_ = std::make_unique<hosting::db::sqlite>(rouen::platform::get_user_data_path("movies.db").string());
-            db_->ensure_table("movie_list_v2", 
+            db_->ensure_table("movie_list_v3", 
                 "id TEXT NOT NULL, "
                 "title TEXT NOT NULL, "
                 "poster_path TEXT, "
                 "release_date TEXT, "
                 "vote_average REAL, "
                 "overview TEXT, "
+                "actors TEXT, "
+                "directors TEXT, "
                 "list_name TEXT NOT NULL, "
                 "added_at TEXT, "
                 "PRIMARY KEY(id, list_name)"
@@ -159,7 +167,7 @@ private:
         lists_["Favorites"].clear();
         
         try {
-            db_->exec("SELECT id, title, poster_path, release_date, vote_average, overview, list_name FROM movie_list_v2 ORDER BY added_at DESC", 
+            db_->exec("SELECT id, title, poster_path, release_date, vote_average, overview, actors, directors, list_name FROM movie_list_v3 ORDER BY added_at DESC", 
                 [this](sqlite3_stmt* stmt) {
                     MovieItem movie;
                     const char* id_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
@@ -178,8 +186,14 @@ private:
                     
                     const char* over_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
                     movie.overview = over_val ? over_val : "";
+
+                    const char* actors_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+                    movie.actors = actors_val ? actors_val : "";
+
+                    const char* dirs_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+                    movie.directors = dirs_val ? dirs_val : "";
                     
-                    const char* list_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+                    const char* list_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
                     movie.list_name = list_val ? list_val : "";
                     
                     lists_[movie.list_name].push_back(movie);
@@ -193,10 +207,10 @@ private:
     void add_to_list(const MovieItem& movie, const std::string& target_list) {
         try {
             // Delete first to prevent constraint violations
-            db_->exec("DELETE FROM movie_list_v2 WHERE id = ? AND list_name = ?", {}, movie.id, target_list);
+            db_->exec("DELETE FROM movie_list_v3 WHERE id = ? AND list_name = ?", {}, movie.id, target_list);
             
-            db_->exec("INSERT INTO movie_list_v2 (id, title, poster_path, release_date, vote_average, overview, list_name, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))", 
-                {}, movie.id, movie.title, movie.poster_path, movie.release_date, movie.vote_average, movie.overview, target_list);
+            db_->exec("INSERT INTO movie_list_v3 (id, title, poster_path, release_date, vote_average, overview, actors, directors, list_name, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))", 
+                {}, movie.id, movie.title, movie.poster_path, movie.release_date, movie.vote_average, movie.overview, movie.actors, movie.directors, target_list);
             
             load_lists_from_db();
         } catch (const std::exception& e) {
@@ -206,10 +220,29 @@ private:
 
     void remove_from_list(const std::string& movie_id, const std::string& list_name) {
         try {
-            db_->exec("DELETE FROM movie_list_v2 WHERE id = ? AND list_name = ?", {}, movie_id, list_name);
+            db_->exec("DELETE FROM movie_list_v3 WHERE id = ? AND list_name = ?", {}, movie_id, list_name);
             load_lists_from_db();
         } catch (const std::exception& e) {
             try { "notify"_sfn("Failed to remove movie: " + std::string(e.what())); } catch (...) {}
+        }
+    }
+
+    void save_movie_edits(const MovieItem& movie) {
+        try {
+            db_->exec("UPDATE movie_list_v3 SET title = ?, release_date = ?, vote_average = ?, directors = ?, actors = ?, overview = ? WHERE id = ? AND list_name = ?",
+                {}, 
+                std::string(edit_title_), 
+                std::string(edit_year_), 
+                edit_rating_, 
+                std::string(edit_directors_), 
+                std::string(edit_actors_), 
+                std::string(edit_overview_), 
+                movie.id, 
+                movie.list_name
+            );
+            load_lists_from_db();
+        } catch (const std::exception& e) {
+            try { "notify"_sfn("Failed to save edits: " + std::string(e.what())); } catch (...) {}
         }
     }
 
@@ -245,7 +278,9 @@ private:
                             }
                             
                             movie.vote_average = item.contains("#RANK") ? item["#RANK"].get<double>() : 0.0;
-                            movie.overview = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
+                            
+                            // IMDb unofficial search returns actors in #ACTORS, map to actors field
+                            movie.actors = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
                             
                             results.push_back(movie);
                         }
@@ -263,7 +298,8 @@ private:
         trending_in_progress_ = true;
         std::thread([this]() {
             try {
-                std::string url = "https://imdb.iamidiotareyoutoo.com/search?q=top";
+                // "the" query acts as a trending query because it fetches the most popular IMDb-ranked movies
+                std::string url = "https://imdb.iamidiotareyoutoo.com/search?q=the";
                 std::vector<std::string> headers = {"accept: application/json"};
                 
                 std::string response = http::fetch()(url, headers);
@@ -289,7 +325,7 @@ private:
                             }
                             
                             movie.vote_average = item.contains("#RANK") ? item["#RANK"].get<double>() : 0.0;
-                            movie.overview = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
+                            movie.actors = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
                             
                             results.push_back(movie);
                         }
@@ -406,14 +442,23 @@ private:
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
         
-        // Year & Rank
+        // Year & Rank/Rating
         ImGui::TextColored(colors[4], "%s  |  ", movie.release_date.c_str());
         ImGui::SameLine();
-        ImGui::TextColored(colors[3], "Rank: %.0f", movie.vote_average);
+        ImGui::TextColored(colors[3], "Rank/Rating: %.0f", movie.vote_average);
+
+        // Director
+        if (!movie.directors.empty()) {
+            ImGui::TextColored(colors[4], "Dir: %s", movie.directors.c_str());
+        }
         
         // Actors
-        if (!movie.overview.empty()) {
-            ImGui::TextWrapped("Cast: %s", movie.overview.c_str());
+        if (!movie.actors.empty()) {
+            std::string short_cast = movie.actors;
+            if (short_cast.length() > 60) {
+                short_cast = short_cast.substr(0, 57) + "...";
+            }
+            ImGui::TextWrapped("Cast: %s", short_cast.c_str());
         }
         
         // Action Buttons Row
@@ -445,6 +490,19 @@ private:
                 }
                 ImGui::SameLine();
             }
+
+            // Edit button (Manually input details)
+            if (ImGui::SmallButton(std::format(" {} Edit", ICON_MD_EDIT).c_str())) {
+                edit_movie_details_ = movie;
+                strncpy(edit_title_, movie.title.c_str(), sizeof(edit_title_) - 1);
+                strncpy(edit_year_, movie.release_date.c_str(), sizeof(edit_year_) - 1);
+                edit_rating_ = movie.vote_average;
+                strncpy(edit_directors_, movie.directors.c_str(), sizeof(edit_directors_) - 1);
+                strncpy(edit_actors_, movie.actors.c_str(), sizeof(edit_actors_) - 1);
+                strncpy(edit_overview_, movie.overview.c_str(), sizeof(edit_overview_) - 1);
+                show_edit_popup_ = true;
+            }
+            ImGui::SameLine();
             
             // Delete button
             ImGui::PushStyleColor(ImGuiCol_Text, colors[5]);
@@ -601,19 +659,32 @@ private:
             ImGui::TextColored(colors[2], "%s", selected_movie_details_.title.c_str());
             ImGui::PopFont();
             
-            // Year & Rank
+            // Year & Rating/Rank
             ImGui::TextColored(colors[4], "Release Year: %s", selected_movie_details_.release_date.c_str());
-            ImGui::TextColored(colors[3], "IMDb Rank: %.0f", selected_movie_details_.vote_average);
+            ImGui::TextColored(colors[3], "Rating/Rank: %.0f", selected_movie_details_.vote_average);
             
             ImGui::Separator();
             
-            // Actors Scrollable region
+            // Scrollable region for Cast, Directors, and Notes
             ImGui::BeginChild("OverviewScroll", ImVec2(ImGui::GetContentRegionAvail().x, 150.0f), false);
-            if (!selected_movie_details_.overview.empty()) {
-                ImGui::TextWrapped("Starring:\n%s", selected_movie_details_.overview.c_str());
-            } else {
-                ImGui::TextWrapped("Cast details unavailable.");
+            
+            if (!selected_movie_details_.directors.empty()) {
+                ImGui::TextColored(colors[2], "Director(s):");
+                ImGui::TextWrapped("%s", selected_movie_details_.directors.c_str());
+                ImGui::Spacing();
             }
+
+            if (!selected_movie_details_.actors.empty()) {
+                ImGui::TextColored(colors[2], "Starring:");
+                ImGui::TextWrapped("%s", selected_movie_details_.actors.c_str());
+                ImGui::Spacing();
+            }
+
+            if (!selected_movie_details_.overview.empty()) {
+                ImGui::TextColored(colors[2], "Notes / Description:");
+                ImGui::TextWrapped("%s", selected_movie_details_.overview.c_str());
+            }
+            
             ImGui::EndChild();
             
             ImGui::PopTextWrapPos();
@@ -627,6 +698,47 @@ private:
                 ImGui::CloseCurrentPopup();
             }
             
+            ImGui::EndPopup();
+        }
+    }
+
+    void render_edit_modal() {
+        if (!show_edit_popup_) return;
+
+        ImGui::OpenPopup("Edit Movie Details");
+
+        ImGui::SetNextWindowSize(ImVec2(520.0f, 400.0f), ImGuiCond_Appearing);
+        if (ImGui::BeginPopupModal("Edit Movie Details", &show_edit_popup_, ImGuiWindowFlags_NoResize)) {
+            
+            ImGui::TextColored(colors[2], "Edit metadata for: %s", edit_movie_details_.title.c_str());
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::InputText("Title", edit_title_, sizeof(edit_title_));
+            ImGui::InputText("Release Year", edit_year_, sizeof(edit_year_));
+            ImGui::InputDouble("Rank / Rating", &edit_rating_, 1.0, 10.0, "%.0f");
+            ImGui::InputText("Director(s)", edit_directors_, sizeof(edit_directors_));
+            
+            ImGui::Text("Cast / Actors:");
+            ImGui::InputTextMultiline("##EditActors", edit_actors_, sizeof(edit_actors_), ImVec2(-1, 60));
+
+            ImGui::Text("Notes / Storyline:");
+            ImGui::InputTextMultiline("##EditNotes", edit_overview_, sizeof(edit_overview_), ImVec2(-1, 80));
+
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            if (ImGui::Button("Save", ImVec2(100.0f, 0))) {
+                save_movie_edits(edit_movie_details_);
+                show_edit_popup_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100.0f, 0))) {
+                show_edit_popup_ = false;
+                ImGui::CloseCurrentPopup();
+            }
+
             ImGui::EndPopup();
         }
     }
@@ -652,6 +764,16 @@ private:
     
     bool show_details_popup_{false};
     MovieItem selected_movie_details_;
+
+    // Edit Buffer Fields
+    bool show_edit_popup_{false};
+    MovieItem edit_movie_details_;
+    char edit_title_[256]{""};
+    char edit_year_[64]{""};
+    double edit_rating_{0.0};
+    char edit_directors_[256]{""};
+    char edit_actors_[512]{""};
+    char edit_overview_[1024]{""};
     
     std::mutex data_mutex_;
     std::mutex downloading_mutex_;
