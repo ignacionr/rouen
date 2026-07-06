@@ -231,7 +231,7 @@ namespace rouen::cards {
             for (const auto& item : list) {
                 sum += get_objective_progress(item);
             }
-            return sum / list.size();
+            return sum / static_cast<double>(list.size());
         }
 
         void initialize_evening_ledger() {
@@ -529,7 +529,7 @@ namespace rouen::cards {
                     ImGui::BulletText("%s: %s", type_label.c_str(), item.title.c_str());
                     ImGui::SameLine(ImGui::GetContentRegionAvail().x - 30.0f);
                     if (ImGui::SmallButton(std::format(ICON_MD_DELETE "##del_stage_{}", i).c_str())) {
-                        staging_objs_.erase(staging_objs_.begin() + i);
+                        staging_objs_.erase(staging_objs_.begin() + static_cast<std::ptrdiff_t>(i));
                         break;
                     }
                 }
