@@ -122,6 +122,22 @@ add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp
 # RT Media Extraction Test - tests RT.com specific RSS media extraction patterns
 add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 
+# RSS Watermark Test
+add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
+target_link_libraries(test_rss_watermark 
+    PRIVATE 
+    SQLite::SQLite3
+)
+add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
+
+# Objectives Test
+add_gtest_executable(test_objectives test_objectives.cpp)
+target_link_libraries(test_objectives 
+    PRIVATE 
+    SQLite::SQLite3
+)
+add_test(NAME ObjectivesTest COMMAND test_objectives)
+
 # Legacy tests (keeping for compatibility)
 # Test for Bybit currency conversion fix
 add_executable(test_bybit_currency_fix 
@@ -142,7 +158,7 @@ target_link_libraries(test_notes_repository_legacy PRIVATE SQLite::SQLite3)
 add_test(NAME NotesRepositoryLegacyTest COMMAND test_notes_repository_legacy)
 
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_rss_watermark PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -157,13 +173,14 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND echo ""
     COMMAND echo "Legacy Console Tests:"
     COMMAND echo "---------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_notes_repository_legacy
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_rss_media_extraction test_rt_media test_rss_watermark test_bybit_currency_fix test_example_math test_notes_repository_legacy
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -177,7 +194,8 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_weather_glaze
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_rss_watermark
     COMMENT "Running Google Test suite only"
 )
 
@@ -239,7 +257,7 @@ add_custom_target(run_rt_media_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
     COMMENT "Running tests through CTest framework"
 )
 

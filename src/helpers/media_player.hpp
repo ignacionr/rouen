@@ -21,7 +21,12 @@ struct media_player {
         }
     }
 
-    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double> initial_watermark = std::nullopt) noexcept {
+    static std::optional<double>& get_dummy_watermark() noexcept {
+        static std::optional<double> dummy = std::nullopt;
+        return dummy;
+    }
+
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark()) noexcept {
         (void)info_color;
         ImGui::PushID(url.data());
         try {
@@ -38,6 +43,8 @@ struct media_player {
             }
             if (!has_active_media) {
                 item.watermark = initial_watermark;
+            } else {
+                initial_watermark = item.watermark;
             }
             if (has_active_media) {
                 ImGui::TextUnformatted(title.data());

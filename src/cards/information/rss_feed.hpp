@@ -250,15 +250,17 @@ namespace rouen::cards
                     ImGui::Separator();
                     
                     // Filter items
-                    std::vector<rouen::hosts::RSSHost::FeedItem> filtered_items;
+                    std::vector<rouen::hosts::RSSHost::FeedItem*> filtered_items;
                     std::string search_text = search_buffer;
                     if (search_text.empty()) {
-                        filtered_items = items;
+                        for (auto& item : items) {
+                            filtered_items.push_back(&item);
+                        }
                     } else {
-                        for (const auto& item : items) {
+                        for (auto& item : items) {
                             if (::helpers::StringHelper::contains_case_insensitive(item.title, search_text) ||
                                 ::helpers::StringHelper::contains_case_insensitive(item.description, search_text)) {
-                                filtered_items.push_back(item);
+                                filtered_items.push_back(&item);
                             }
                         }
                     }
@@ -273,8 +275,9 @@ namespace rouen::cards
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items found");
                         } else {
                             if (ImGui::BeginChild("FeedItemsScroll", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
-                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());                                for (size_t i = 0; i < count; ++i) {
-                                    const auto& item = filtered_items[i];
+                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
+                                for (size_t i = 0; i < count; ++i) {
+                                    auto& item = *filtered_items[i];
                                     ImGui::PushID(item.link.c_str());
                                     
                                     try {

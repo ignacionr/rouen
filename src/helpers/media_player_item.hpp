@@ -91,15 +91,38 @@ inline bool media_player_item::checkMediaStatus() {
     if (!isRunning) {
         is_playing = false;
         is_paused = false;
+        player_pid = 0;
+
+        // Reset watermark to 0.0 if reached the end
+        double cur_pos = position.load();
+        double cur_dur = duration.load();
+        if (feed_id != -1 && !item_link.empty() && cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
+            watermark = 0.0;
+            if (save_watermark_cb) {
+                save_watermark_cb(feed_id, item_link, item_title, 0.0);
+            }
+        }
     }
     return isRunning;
 #else
     if (player_pid <= 0) return false;
     // check process is running
     int status;
-    if (waitpid(player_pid, &status, WNOHANG) == player_pid) {
+    int res = waitpid(player_pid, &status, WNOHANG);
+    if (res == player_pid || (res == -1 && errno == ECHILD)) {
         is_playing = false;
         is_paused = false;
+        player_pid = 0;
+
+        // Reset watermark to 0.0 if reached the end
+        double cur_pos = position.load();
+        double cur_dur = duration.load();
+        if (feed_id != -1 && !item_link.empty() && cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
+            watermark = 0.0;
+            if (save_watermark_cb) {
+                save_watermark_cb(feed_id, item_link, item_title, 0.0);
+            }
+        }
         return false;
     }
     return true;
@@ -110,9 +133,17 @@ inline void media_player_item::stopMedia() {
     // Save watermark before stopping
     double cur_pos = position.load();
     if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
-        watermark = cur_pos;
-        if (save_watermark_cb) {
-            save_watermark_cb(feed_id, item_link, item_title, cur_pos);
+        double cur_dur = duration.load();
+        if (cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
+            watermark = 0.0;
+            if (save_watermark_cb) {
+                save_watermark_cb(feed_id, item_link, item_title, 0.0);
+            }
+        } else {
+            watermark = cur_pos;
+            if (save_watermark_cb) {
+                save_watermark_cb(feed_id, item_link, item_title, cur_pos);
+            }
         }
     }
 
@@ -242,12 +273,18 @@ inline void media_player_item::startPositionTracking() {
             // Periodically save watermark
             double cur_pos = position.load();
             if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
-                watermark = cur_pos;
+                double cur_dur = duration.load();
+                double target_watermark = cur_pos;
+                if (cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
+                    target_watermark = 0.0;
+                }
+
+                watermark = target_watermark;
                 auto now = std::chrono::steady_clock::now();
                 if (std::abs(cur_pos - last_saved_position) >= 2.0 || 
                     std::chrono::duration_cast<std::chrono::seconds>(now - last_save_time).count() >= 5) {
                     if (save_watermark_cb) {
-                        save_watermark_cb(feed_id, item_link, item_title, cur_pos);
+                        save_watermark_cb(feed_id, item_link, item_title, target_watermark);
                     }
                     last_saved_position = cur_pos;
                     last_save_time = now;

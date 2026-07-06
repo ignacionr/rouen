@@ -34,6 +34,7 @@
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
+#include "../productivity/objectives_card.hpp"
 #include "../productivity/trello_card.hpp"
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
@@ -101,6 +102,10 @@ namespace rouen::cards {
                 
                 instance.emplace("pomodoro", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<pomodoro>();
+                });
+                
+                instance.emplace("objectives", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<objectives_card>();
                 });
                 
                 instance.emplace("alarm", [](std::string_view uri, SDL_Renderer*) {

@@ -55,6 +55,7 @@ namespace rouen::cards {
                         {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}
                     }},
                     { "Productivity", {
+                        {"Objectives", []() { "create_card"_sfn("objectives"); }},
                         {"Sovereign KPIs", []() { "create_card"_sfn("kpis"); }},
                         {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
                         {"Alarm", []() { "create_card"_sfn("alarm"); }},

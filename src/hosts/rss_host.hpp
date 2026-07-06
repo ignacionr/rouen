@@ -24,12 +24,12 @@
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
 #include "../helpers/html_media_extractor.hpp"
+#include "../helpers/platform_utils.hpp"
 #include "../helpers/media_player.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
-#include "../helpers/platform_utils.hpp"
 #include "../models/rss/feed.hpp"
 #include "../models/rss/sqliterepo.hpp"
 
@@ -521,7 +521,22 @@ public:
     }
     
     void updateWatermark(long long feed_id, const std::string& item_link, const std::string& item_title, std::optional<double> watermark) {
+        // Update database
         repo_.update_watermark(feed_id, item_link, item_title, watermark);
+        
+        // Update in-memory cache
+        std::lock_guard<std::mutex> lock(feeds_mutex_);
+        for (auto& feed : feeds_) {
+            if (feed->repo_id == feed_id) {
+                for (auto& item : feed->items) {
+                    if (item.link == item_link && item.title == item_title) {
+                        item.watermark = watermark;
+                        RSS_DEBUG_FMT("Updated in-memory watermark for feed_id={}, title='{}' to {}", feed_id, item_title, watermark ? *watermark : 0.0);
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /**

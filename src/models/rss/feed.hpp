@@ -23,6 +23,38 @@ namespace media::rss {
     struct feed {
         void operator()(std::string_view partial_contents) {
             contents += partial_contents;
+            
+            // Fast path: avoid parsing on every chunk if it doesn't end with a feed closing tag
+            std::string_view trimmed(contents);
+            size_t last_non_ws = trimmed.find_last_not_of(" \t\r\n");
+            if (last_non_ws == std::string_view::npos) {
+                return;
+            }
+            trimmed = trimmed.substr(0, last_non_ws + 1);
+            
+            auto ends_with_case_insensitive = [](std::string_view str, std::string_view suffix) {
+                if (str.size() < suffix.size()) return false;
+                std::string_view part = str.substr(str.size() - suffix.size());
+                for (size_t i = 0; i < suffix.size(); ++i) {
+                    if (std::tolower(static_cast<unsigned char>(part[i])) != 
+                        std::tolower(static_cast<unsigned char>(suffix[i]))) {
+                        return false;
+                    }
+                }
+                return true;
+            };
+
+            bool complete = false;
+            if (ends_with_case_insensitive(trimmed, "</rss>") || 
+                ends_with_case_insensitive(trimmed, "</feed>") || 
+                ends_with_case_insensitive(trimmed, "</rdf>")) {
+                complete = true;
+            }
+            
+            if (!complete) {
+                return;
+            }
+
             tinyxml2::XMLDocument doc;
             doc.Parse(contents.c_str());
             if (doc.Error()) {
