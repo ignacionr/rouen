@@ -11,6 +11,29 @@ TerminalBash::~TerminalBash() {
     terminate_bash_session();
 }
 
+namespace {
+std::string ProcessCarriageReturns(const std::string& input) {
+    if (input.find('\r') == std::string::npos) {
+        return input;
+    }
+    
+    size_t last_r = input.find_last_of('\r');
+    if (last_r != std::string::npos) {
+        if (last_r + 1 < input.size()) {
+            return input.substr(last_r + 1);
+        } else {
+            size_t prev_r = input.find_last_of('\r', last_r - 1);
+            if (prev_r != std::string::npos) {
+                return input.substr(prev_r + 1, last_r - (prev_r + 1));
+            } else {
+                return input.substr(0, last_r);
+            }
+        }
+    }
+    return input;
+}
+}
+
 void TerminalBash::initialize_bash_session(const std::string& initial_dir, TerminalOutput& output, bool& is_command_running) {
     // Store the references
     output_ptr = &output;
@@ -28,101 +51,62 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
     (void)initial_dir; // Suppress unused variable warning
     return;
 #else
-    // Create pipes for communication with bash
-    int stdin_pipe[2];    // For writing to bash's stdin
-    int stdout_pipe[2];   // For reading from bash's stdout
-    int stderr_pipe[2];   // For reading from bash's stderr
+    // Set up terminal attributes (disable echo to prevent double commands)
+    struct termios tio;
+    memset(&tio, 0, sizeof(tio));
     
-    // Create pipes
-    if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
-        TERM_ERROR("Failed to create pipes for bash session");
-        use_interactive_bash = false;
-        return;
+    // Get standard attributes from stdin
+    if (tcgetattr(STDIN_FILENO, &tio) != 0) {
+        // Fallback default init if stdin is not a tty
+        tio.c_iflag = TTYDEF_IFLAG;
+        tio.c_oflag = TTYDEF_OFLAG;
+        tio.c_cflag = TTYDEF_CFLAG;
+        tio.c_lflag = TTYDEF_LFLAG;
     }
+    tio.c_lflag &= ~ECHO; // Turn off local echoing of input commands
     
-    // Get the configured bash path before forking
+    // Set terminal window size parameters
+    struct winsize ws;
+    ws.ws_row = 24;
+    ws.ws_col = 80;
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+    
     std::string bash_path = CONFIG_SERVICE()->get_bash_path();
     
-    // Fork a child process for bash
-    bash_pid = fork();
+    // Fork a child process with a pseudo-terminal (PTY) master-slave pair
+    bash_pid = forkpty(&bash_master_fd, nullptr, &tio, &ws);
     
     if (bash_pid == -1) {
-        // Fork failed
-        TERM_ERROR("Failed to fork process for bash session");
-        close(stdin_pipe[0]);
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[0]);
-        close(stderr_pipe[1]);
+        TERM_ERROR("Failed to fork PTY for bash session");
         use_interactive_bash = false;
         return;
     } else if (bash_pid == 0) {
-        // Child process (bash)
+        // Child process (executes inside the PTY slave)
+        setenv("TERM", "xterm-256color", 1);
         
-        // Redirect stdin/stdout/stderr
-        dup2(stdin_pipe[0], STDIN_FILENO);
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stderr_pipe[1], STDERR_FILENO);
+        // Execute bash in interactive mode
+        execl(bash_path.c_str(), "bash", "-i", nullptr);
         
-        // Close unused pipe ends
-        close(stdin_pipe[0]);
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[0]);
-        close(stderr_pipe[1]);
-        
-        // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
-        setpgid(0, 0);
-        
-        // Execute bash with interactive but non-login options (using -i for prompt printing and SIGINT handling)
-        execl(bash_path.c_str(), "bash", "--noediting", "--noprofile", "--norc", "+m", 
-              "-c", std::format("exec {} --norc -i +m", bash_path).c_str(), NULL);
-        
-        // If execl returns, there was an error
         perror("execl");
         exit(1);
     } else {
         // Parent process
         
-        // Close unused pipe ends
-        close(stdin_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
+        // Set master PTY fd to non-blocking mode
+        int flags = fcntl(bash_master_fd, F_GETFL, 0);
+        [[maybe_unused]] int fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
         
-        // Store pipe file descriptors
-        bash_stdin_fd = stdin_pipe[1];
-        bash_stdout_fd = stdout_pipe[0];
-        bash_stderr_fd = stderr_pipe[0];
-        
-        // Set pipes to non-blocking mode
-        int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result1 = fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        flags = fcntl(bash_stdout_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result2 = fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        flags = fcntl(bash_stderr_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result3 = fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        // Reset stop flag before starting threads
+        // Reset stop flag before starting thread
         should_stop_threads = false;
         
-        // Start reader threads for bash output
+        // Start single reader thread for both stdout/stderr coming from PTY master
         bash_stdout_reader_thread = std::thread([this, &output]() {
-            read_bash_stream(bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
-        });
-        
-        bash_stderr_reader_thread = std::thread([this, &output]() {
-            read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
+            read_bash_stream(bash_master_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
         // Customize bash environment - use PS1 that has the working directory (\w) followed by a newline for prompt tracking
         send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
-        send_to_bash("export TERM=dumb", true);
-        
-        // Disable history expansion to avoid problems with '!' character
         send_to_bash("set +H", true);
         
         // Ensure Nix and standard paths are loaded
@@ -134,7 +118,7 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         send_to_bash(std::format("cd \"{}\"", initial_dir), true);
         
         use_interactive_bash = true;
-        TERM_INFO("Interactive bash session started successfully");
+        TERM_INFO("Interactive PTY bash session started successfully");
     }
 #endif
 }
@@ -142,36 +126,19 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
 void TerminalBash::terminate_bash_session() {
 #ifndef _WIN32
     if (bash_pid > 0) {
-        // Signal threads to stop
+        // Signal thread to stop
         should_stop_threads = true;
         
-        // Stop reader threads
+        // Stop reader thread
         if (bash_stdout_reader_thread.joinable()) {
             bash_stdout_reader_thread.join();
         }
         
-        if (bash_stderr_reader_thread.joinable()) {
-            bash_stderr_reader_thread.join();
-        }
-        
-        // Send exit command to bash
-        if (bash_stdin_fd >= 0) {
-            // Send the exit command to bash
-            [[maybe_unused]] auto write_result = write(bash_stdin_fd, "exit\n", 5);
-            close(bash_stdin_fd);
-            bash_stdin_fd = -1;
-        }
-        
-        // Close stdout pipe
-        if (bash_stdout_fd >= 0) {
-            close(bash_stdout_fd);
-            bash_stdout_fd = -1;
-        }
-        
-        // Close stderr pipe
-        if (bash_stderr_fd >= 0) {
-            close(bash_stderr_fd);
-            bash_stderr_fd = -1;
+        // Close PTY master connection
+        if (bash_master_fd >= 0) {
+            [[maybe_unused]] auto write_result = write(bash_master_fd, "exit\n", 5);
+            close(bash_master_fd);
+            bash_master_fd = -1;
         }
         
         // Give bash a moment to exit cleanly
@@ -181,11 +148,8 @@ void TerminalBash::terminate_bash_session() {
         int status{0};
         pid_t result = waitpid(bash_pid, &status, WNOHANG);
         if (result == 0) {
-            // Process is still running, kill it
             kill(bash_pid, SIGTERM);
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            // Force kill if still running
             result = waitpid(bash_pid, &status, WNOHANG);
             if (result == 0) {
                 kill(bash_pid, SIGKILL);
@@ -200,22 +164,16 @@ void TerminalBash::terminate_bash_session() {
 
 void TerminalBash::send_to_bash(const std::string& command, bool raw) {
 #ifndef _WIN32
-    if (bash_stdin_fd >= 0) {
-        // Simply append a newline to the command and send it directly
+    if (bash_master_fd >= 0) {
         std::string cmd_with_nl = command + "\n";
-        
-        // Write command to bash's stdin
-        [[maybe_unused]] auto write_result1 = write(bash_stdin_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
+        [[maybe_unused]] auto write_result1 = write(bash_master_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
         
         if (!raw) {
-            // Send a separate echo command to mark the end of output
-            // Use a unique string that's unlikely to appear in normal output
             std::string end_marker = "echo ROUEN_CMD_DONE\n";
-            [[maybe_unused]] auto write_result2 = write(bash_stdin_fd, end_marker.c_str(), end_marker.length());
+            [[maybe_unused]] auto write_result2 = write(bash_master_fd, end_marker.c_str(), end_marker.length());
         }
     }
 #else
-    // Windows doesn't support interactive bash sessions
     (void)command;
     (void)raw;
 #endif
@@ -245,57 +203,47 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
     std::string accumulated_output;
     bool command_running = false;
     
-    // Set up poll structure to check for data
     struct pollfd pfd;
     pfd.fd = pipe_fd;
     pfd.events = POLLIN;
     
     while (!should_stop_threads.load()) {
-        // Poll with a short timeout
-        int poll_result = poll(&pfd, 1, 10); // 10ms timeout
+        int poll_result = poll(&pfd, 1, 10);
         
         if (poll_result > 0 && (pfd.revents & POLLIN)) {
-            // Data is available to read
             ssize_t bytes_read = read(pipe_fd, buffer, sizeof(buffer) - 1);
             
             if (bytes_read > 0) {
-                // Null-terminate the buffer
                 buffer[bytes_read] = '\0';
-                
-                // Add to accumulated output
                 accumulated_output += buffer;
                 
-                // Process accumulated output line by line
                 size_t pos = 0;
                 size_t end_line{0};
                 
                 while ((end_line = accumulated_output.find('\n', pos)) != std::string::npos) {
-                    // Extract line
                     std::string line = accumulated_output.substr(pos, end_line - pos);
                     pos = end_line + 1;
                     
-                    // Filter out job control warning messages
                     if (line.find("cannot set terminal process group") != std::string::npos ||
                         line.find("no job control in shell") != std::string::npos) {
-                        // Skip these bash startup warning messages
                         continue;
                     }
                     
-                    // Check for special markers (prompt can be on stdout or stderr in interactive mode)
-                    if (line.starts_with("ROUEN_PROMPT|")) {
-                        // Bash prompt - indicates command has finished
+                    // Collapse any carriage returns (like progress update bars)
+                    std::string clean_line = ProcessCarriageReturns(line);
+                    
+                    if (clean_line.starts_with("ROUEN_PROMPT|")) {
                         is_command_running = false;
                         command_running = false;
                         
                         std::string parsed_cwd;
-                        size_t first_pipe = line.find('|');
-                        size_t second_pipe = line.find('|', first_pipe + 1);
+                        size_t first_pipe = clean_line.find('|');
+                        size_t second_pipe = clean_line.find('|', first_pipe + 1);
                         if (first_pipe != std::string::npos && second_pipe != std::string::npos) {
-                            parsed_cwd = line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
+                            parsed_cwd = clean_line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
                         }
                         
                         if (!parsed_cwd.empty()) {
-                            // Expand ~ to user's home directory if needed
                             if (parsed_cwd == "~") {
                                 const char* home = getenv("HOME");
                                 if (home) parsed_cwd = home;
@@ -306,65 +254,50 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                             set_cwd(parsed_cwd);
                         }
                         
-                        // Add prompt to output
                         output.add_to_output("", OutputType::Blank);
                         output.add_prompt(get_cwd());
                         continue;
                     }
                     
-                    // Special handling for stdout stream
                     if (output_type == OutputType::StdOut) {
-                        if (line == "ROUEN_CMD_DONE") {
-                            // End marker for command output
+                        if (clean_line == "ROUEN_CMD_DONE") {
                             is_command_running = false;
                             command_running = false;
                             continue;
                         } else if (!command_running && 
-                                  (line.empty() || line.find("bash") != std::string::npos || 
-                                   line.find("TERM=") != std::string::npos)) {
-                            // Ignore initial bash startup messages
+                                  (clean_line.empty() || clean_line.find("bash") != std::string::npos || 
+                                   clean_line.find("TERM=") != std::string::npos)) {
                             continue;
                         }
                     }
                     
-                    // Regular output line - stdout or stderr
                     command_running = true;
-                    output.add_to_output(line, output_type);
+                    output.add_to_output(clean_line, output_type);
                 }
                 
-                // Keep any remaining partial line
                 accumulated_output.erase(0, pos);
-                output.set_partial_line(accumulated_output, output_type);
+                output.set_partial_line(ProcessCarriageReturns(accumulated_output), output_type);
                 
             } else if (bytes_read == 0) {
-                // EOF - bash has closed the pipe
-                TERM_WARN_FMT("Bash {} stream closed unexpectedly", output_type == OutputType::StdOut ? "stdout" : "stderr");
+                TERM_WARN("PTY master connection closed EOF");
                 break;
             } else if (bytes_read < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    // No data available, continue to next poll
                     continue;
                 } else {
-                    // Error
-                    TERM_ERROR_FMT("Error reading from bash {}: {}", 
-                        output_type == OutputType::StdOut ? "stdout" : "stderr", 
-                        strerror(errno));
+                    TERM_ERROR_FMT("Error reading from PTY: {}", strerror(errno));
                     break;
                 }
             }
         } else if (poll_result < 0) {
-            // Poll error
             if (errno != EINTR) {
-                TERM_ERROR_FMT("Poll error on bash {}: {}", 
-                    output_type == OutputType::StdOut ? "stdout" : "stderr", 
-                    strerror(errno));
+                TERM_ERROR_FMT("Poll error on PTY master: {}", strerror(errno));
                 break;
             }
         }
-        // Poll timeout or no data - just continue
     }
     
-    TERM_INFO_FMT("Bash {} reader thread exiting", output_type == OutputType::StdOut ? "stdout" : "stderr");
+    TERM_INFO("PTY reader thread exiting");
 #endif
 }
 
@@ -372,146 +305,68 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
                                      const std::string& sudo_cmd, TerminalOutput& output,
                                      bool& is_command_running) {
 #ifndef _WIN32
-    // Prepare a message to inform the user that we're starting a sudo session
-    output.add_to_output("Starting sudo session...", OutputType::System);
-    
-    // Terminate current bash session
+    output.add_to_output("Starting sudo PTY session...", OutputType::System);
     terminate_bash_session();
     
-    // Create pipes for the new bash session
-    int stdin_pipe[2];    // For writing to bash's stdin
-    int stdout_pipe[2];   // For reading from bash's stdout
-    int stderr_pipe[2];   // For reading from bash's stderr
-    
-    // Create pipes
-    if (pipe(stdin_pipe) != 0 || pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
-        TERM_ERROR("Failed to create pipes for sudo bash session");
-        output.add_to_output("Failed to start sudo session: pipe creation error", OutputType::StdErr);
-        
-        // Restart a regular bash session
-        initialize_bash_session(prev_cwd, output, is_command_running);
-        output.add_to_output("", OutputType::Blank);
-        output.add_prompt(prev_cwd);
-        return;
+    struct termios tio;
+    memset(&tio, 0, sizeof(tio));
+    if (tcgetattr(STDIN_FILENO, &tio) != 0) {
+        tio.c_iflag = TTYDEF_IFLAG;
+        tio.c_oflag = TTYDEF_OFLAG;
+        tio.c_cflag = TTYDEF_CFLAG;
+        tio.c_lflag = TTYDEF_LFLAG;
     }
+    tio.c_lflag &= ~ECHO;
     
-    // Get the configured sudo and bash paths before forking
+    struct winsize ws;
+    ws.ws_row = 24;
+    ws.ws_col = 80;
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+    
     std::string sudo_path = CONFIG_SERVICE()->get_sudo_path();
     std::string bash_path = CONFIG_SERVICE()->get_bash_path();
     
-    // Fork a child process for sudo
-    bash_pid = fork();
+    bash_pid = forkpty(&bash_master_fd, nullptr, &tio, &ws);
     
     if (bash_pid == -1) {
-        // Fork failed
-        TERM_ERROR("Failed to fork process for sudo bash session");
-        output.add_to_output("Failed to start sudo session: fork error", OutputType::StdErr);
-        
-        // Close pipes
-        close(stdin_pipe[0]);
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[0]);
-        close(stderr_pipe[1]);
-        
-        // Restart a regular bash session
+        TERM_ERROR("Failed to fork PTY for sudo bash session");
+        output.add_to_output("Failed to start sudo session: PTY error", OutputType::StdErr);
         initialize_bash_session(prev_cwd, output, is_command_running);
-        output.add_to_output("", OutputType::Blank);
-        output.add_prompt(prev_cwd);
         return;
     } else if (bash_pid == 0) {
-        // Child process (sudo bash)
-        
-        // Redirect stdin/stdout/stderr
-        dup2(stdin_pipe[0], STDIN_FILENO);
-        dup2(stdout_pipe[1], STDOUT_FILENO);
-        dup2(stderr_pipe[1], STDERR_FILENO);
-        
-        // Close unused pipe ends
-        close(stdin_pipe[0]);
-        close(stdin_pipe[1]);
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[0]);
-        close(stderr_pipe[1]);
-        
-        // Set the child as the leader of a new process group so signals can be sent to all foreground jobs
-        setpgid(0, 0);
-        
-        // Execute sudo bash with -S to read password from stdin (using -i for interactive mode)
-        execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "-i", "+m", NULL);
-        
-        // If execl returns, there was an error
+        setenv("TERM", "xterm-256color", 1);
+        execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "-i", nullptr);
         perror("execl");
         exit(1);
     } else {
-        // Parent process
+        int flags = fcntl(bash_master_fd, F_GETFL, 0);
+        [[maybe_unused]] int fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
         
-        // Close unused pipe ends
-        close(stdin_pipe[0]);
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
-        
-        // Store pipe file descriptors
-        bash_stdin_fd = stdin_pipe[1];
-        bash_stdout_fd = stdout_pipe[0];
-        bash_stderr_fd = stderr_pipe[0];
-        
-        // Set pipes to non-blocking mode
-        int flags = fcntl(bash_stdin_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result1 = fcntl(bash_stdin_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        flags = fcntl(bash_stdout_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result2 = fcntl(bash_stdout_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        flags = fcntl(bash_stderr_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result3 = fcntl(bash_stderr_fd, F_SETFL, flags | O_NONBLOCK);
-        
-        // Write password to sudo's stdin
-        std::string pass_str = std::string(password) + "\n";
-        [[maybe_unused]] auto write_result = write(bash_stdin_fd, pass_str.c_str(), pass_str.length());
-        
-        // Reset stop flag before starting threads
         should_stop_threads = false;
-        
-        // Start reader threads for bash output
         bash_stdout_reader_thread = std::thread([this, &output]() {
-            read_bash_stream(bash_stdout_fd, OutputType::StdOut, output, *is_command_running_ptr);
+            read_bash_stream(bash_master_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
-        bash_stderr_reader_thread = std::thread([this, &output]() {
-            read_bash_stream(bash_stderr_fd, OutputType::StdErr, output, *is_command_running_ptr);
-        });
+        std::string pass_str = std::string(password) + "\n";
+        [[maybe_unused]] auto write_result = write(bash_master_fd, pass_str.c_str(), pass_str.length());
         
-        // Set up the environment for the sudo session (using -i / raw mode setup with prompt newline)
         send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
-        send_to_bash("export TERM=dumb", true);
         send_to_bash("set +H", true);
-        
-        // Ensure Nix and standard paths are loaded
         send_to_bash("export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
         send_to_bash("export NIXPKGS_ALLOW_UNFREE=1", true);
         send_to_bash("if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e \"$HOME/.nix-profile/etc/profile.d/nix.sh\" ]; then . \"$HOME/.nix-profile/etc/profile.d/nix.sh\"; fi", true);
         
-        // Change to the previous working directory
         send_to_bash(std::format("cd \"{}\"", prev_cwd), true);
         
-        // Check if we have a command to run
         if (!sudo_cmd.empty()) {
-            // Execute the sudo command
             output.add_to_output("", OutputType::Blank);
             output.add_to_output(sudo_cmd, OutputType::Command);
-            
-            // Execute the command
             *is_command_running_ptr = true;
             send_to_bash(sudo_cmd);
         }
         
         use_interactive_bash = true;
-        TERM_INFO("Sudo bash session started successfully");
-        
-        // Add a note about being in a sudo session
         output.add_to_output("", OutputType::Blank);
         output.add_to_output("You are now in a sudo session. Be careful with privileged commands.", OutputType::System);
     }

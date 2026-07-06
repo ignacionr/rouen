@@ -15,6 +15,13 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <errno.h>
+#include <termios.h>
+#include <sys/ioctl.h>
+#ifdef __APPLE__
+#include <util.h>
+#else
+#include <pty.h>
+#endif
 #endif
 
 #include "../../helpers/debug.hpp"
@@ -74,11 +81,8 @@ private:
     
 #ifndef _WIN32
     pid_t bash_pid = -1;
-    int bash_stdin_fd = -1;
-    int bash_stdout_fd = -1;
-    int bash_stderr_fd = -1;
+    int bash_master_fd = -1;
     std::thread bash_stdout_reader_thread;
-    std::thread bash_stderr_reader_thread;
     std::atomic<bool> should_stop_threads{false};
 #endif
     std::string current_working_dir;
