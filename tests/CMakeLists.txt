@@ -40,6 +40,9 @@ function(add_gtest_executable test_name source_file)
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+        target_add_strict_warnings(${test_name})
+    endif()
 endfunction()
 
 # Helper function to create GTest-based tests with HTTP dependencies
@@ -75,6 +78,9 @@ function(add_gtest_http_executable test_name source_file)
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+        target_add_strict_warnings(${test_name})
+    endif()
 endfunction()
 
 # Helper function to create GTest-based tests with RSS dependencies
@@ -107,6 +113,9 @@ function(add_gtest_rss_executable test_name source_file)
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+        target_add_strict_warnings(${test_name})
+    endif()
 endfunction()
 
 # Create Google Test-based tests
@@ -161,6 +170,12 @@ add_test(NAME NotesRepositoryLegacyTest COMMAND test_notes_repository_legacy)
 set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_rss_watermark PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(test_bybit_currency_fix)
+    target_add_strict_warnings(test_example_math)
+    target_add_strict_warnings(test_notes_repository_legacy)
+endif()
 
 # Create a comprehensive test runner that builds and runs all tests
 add_custom_target(run_all_tests
