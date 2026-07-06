@@ -26,12 +26,12 @@ namespace rouen::cards {
 class movies : public card {
 public:
     struct MovieItem {
-        long long id{0};
+        std::string id;
         std::string title;
-        std::string poster_path;
-        std::string release_date;
-        double vote_average{0.0};
-        std::string overview;
+        std::string poster_path; // Stored as full URL
+        std::string release_date; // Stored as Year
+        double vote_average{0.0}; // Stored as Rank
+        std::string overview; // Stored as Actors list
         std::string list_name;
     };
 
@@ -41,13 +41,13 @@ public:
         colors[1] = ImVec4(0.6f, 0.4f, 0.8f, 0.7f); // Lighter secondary
         
         get_color(2, ImVec4(0.9f, 0.9f, 0.9f, 1.0f)); // White for titles
-        get_color(3, ImVec4(0.9f, 0.8f, 0.2f, 1.0f)); // Yellow for ratings
-        get_color(4, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Gray for overview text
+        get_color(3, ImVec4(0.9f, 0.8f, 0.2f, 1.0f)); // Yellow for rankings
+        get_color(4, ImVec4(0.7f, 0.7f, 0.7f, 1.0f)); // Gray for secondary details
         get_color(5, ImVec4(0.9f, 0.3f, 0.3f, 1.0f)); // Red for delete button
 
         name("My Movies & Watchlists");
         width = 650.0f;
-        requested_fps = 30; // High frame rate for animations/scrolling
+        requested_fps = 30; // Smooth UI scrolling
 
         // Resolve paths for ImageCache
         std::string db_path = rouen::platform::get_user_data_path("movies_images.db").string();
@@ -66,23 +66,6 @@ public:
 
     bool render() override {
         return render_window([this]() {
-            auto config = rouen::helpers::ConfigService::instance();
-            std::string api_key = config->get_env("TMDB_API_KEY");
-            std::string token = config->get_env("TMDB_TOKEN");
-
-            if (api_key.empty() && token.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-                ImGui::TextWrapped("TMDB API Key or Token is not configured!");
-                ImGui::PopStyleColor();
-                ImGui::Spacing();
-                ImGui::TextWrapped("Please edit your environment configuration and add either:");
-                ImGui::BulletText("TMDB_API_KEY (v3 API Key)");
-                ImGui::BulletText("TMDB_TOKEN (v4 Read Access Bearer Token)");
-                ImGui::Spacing();
-                ImGui::TextWrapped("You can create an account and generate these keys for free at: https://www.themoviedb.org/");
-                return;
-            }
-
             // Left Side: Sidebar navigation (List selector)
             ImGui::BeginGroup();
             float sidebar_w = 140.0f;
@@ -139,8 +122,8 @@ private:
     void init_db() {
         try {
             db_ = std::make_unique<hosting::db::sqlite>(rouen::platform::get_user_data_path("movies.db").string());
-            db_->ensure_table("movie_list", 
-                "id INTEGER NOT NULL, "
+            db_->ensure_table("movie_list_v2", 
+                "id TEXT NOT NULL, "
                 "title TEXT NOT NULL, "
                 "poster_path TEXT, "
                 "release_date TEXT, "
@@ -163,10 +146,11 @@ private:
         lists_["Favorites"].clear();
         
         try {
-            db_->exec("SELECT id, title, poster_path, release_date, vote_average, overview, list_name FROM movie_list ORDER BY added_at DESC", 
+            db_->exec("SELECT id, title, poster_path, release_date, vote_average, overview, list_name FROM movie_list_v2 ORDER BY added_at DESC", 
                 [this](sqlite3_stmt* stmt) {
                     MovieItem movie;
-                    movie.id = sqlite3_column_int64(stmt, 0);
+                    const char* id_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    movie.id = id_val ? id_val : "";
                     
                     const char* title_val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
                     movie.title = title_val ? title_val : "";
@@ -196,20 +180,20 @@ private:
     void add_to_list(const MovieItem& movie, const std::string& target_list) {
         try {
             // Delete first to prevent constraint violations
-            db_->exec("DELETE FROM movie_list WHERE id = ? AND list_name = ?", {}, movie.id, target_list);
+            db_->exec("DELETE FROM movie_list_v2 WHERE id = ? AND list_name = ?", {}, movie.id, target_list);
             
-            db_->exec("INSERT INTO movie_list (id, title, poster_path, release_date, vote_average, overview, list_name, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))", 
+            db_->exec("INSERT INTO movie_list_v2 (id, title, poster_path, release_date, vote_average, overview, list_name, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))", 
                 {}, movie.id, movie.title, movie.poster_path, movie.release_date, movie.vote_average, movie.overview, target_list);
             
             load_lists_from_db();
         } catch (const std::exception& e) {
-            try { "notify"_sfn("Failed to add movie to list: " + std::string(e.what())); } catch (...) {}
+            try { "notify"_sfn("Failed to add movie: " + std::string(e.what())); } catch (...) {}
         }
     }
 
-    void remove_from_list(long long movie_id, const std::string& list_name) {
+    void remove_from_list(const std::string& movie_id, const std::string& list_name) {
         try {
-            db_->exec("DELETE FROM movie_list WHERE id = ? AND list_name = ?", {}, movie_id, list_name);
+            db_->exec("DELETE FROM movie_list_v2 WHERE id = ? AND list_name = ?", {}, movie_id, list_name);
             load_lists_from_db();
         } catch (const std::exception& e) {
             try { "notify"_sfn("Failed to remove movie: " + std::string(e.what())); } catch (...) {}
@@ -222,17 +206,8 @@ private:
         search_in_progress_ = true;
         std::thread([this, query]() {
             try {
-                auto config = rouen::helpers::ConfigService::instance();
-                std::string api_key = config->get_env("TMDB_API_KEY");
-                std::string token = config->get_env("TMDB_TOKEN");
-                
-                std::string url = "https://api.themoviedb.org/3/search/movie?query=" + ::helpers::StringHelper::url_encode(query);
-                std::vector<std::string> headers;
-                if (!token.empty()) {
-                    headers.push_back("Authorization: Bearer " + token);
-                } else if (!api_key.empty()) {
-                    url += "&api_key=" + api_key;
-                }
+                std::string url = "https://imdb.iamidiotareyoutoo.com/search?q=" + ::helpers::StringHelper::url_encode(query);
+                std::vector<std::string> headers = {"accept: application/json"};
                 
                 std::string response = http::fetch()(url, headers);
                 
@@ -240,16 +215,25 @@ private:
                 auto ec = glz::read_json(doc, response);
                 if (!ec) {
                     std::vector<MovieItem> results;
-                    if (doc.contains("results")) {
-                        auto items = doc["results"].get<std::vector<glz::json_t>>();
+                    if (doc.contains("description")) {
+                        auto items = doc["description"].get<std::vector<glz::json_t>>();
                         for (const auto& item : items) {
                             MovieItem movie;
-                            movie.id = item.contains("id") ? static_cast<long long>(item["id"].get<double>()) : 0;
-                            movie.title = item.contains("title") ? item["title"].get<std::string>() : "";
-                            movie.poster_path = (item.contains("poster_path") && item["poster_path"].is_string()) ? item["poster_path"].get<std::string>() : "";
-                            movie.release_date = (item.contains("release_date") && item["release_date"].is_string()) ? item["release_date"].get<std::string>() : "";
-                            movie.vote_average = item.contains("vote_average") ? item["vote_average"].get<double>() : 0.0;
-                            movie.overview = (item.contains("overview") && item["overview"].is_string()) ? item["overview"].get<std::string>() : "";
+                            movie.id = item.contains("#IMDB_ID") ? item["#IMDB_ID"].get<std::string>() : "";
+                            movie.title = item.contains("#TITLE") ? item["#TITLE"].get<std::string>() : "";
+                            movie.poster_path = (item.contains("#IMG_POSTER") && item["#IMG_POSTER"].is_string()) ? item["#IMG_POSTER"].get<std::string>() : "";
+                            
+                            if (item.contains("#YEAR")) {
+                                if (item["#YEAR"].is_number()) {
+                                    movie.release_date = std::to_string(static_cast<int>(item["#YEAR"].get<double>()));
+                                } else if (item["#YEAR"].is_string()) {
+                                    movie.release_date = item["#YEAR"].get<std::string>();
+                                }
+                            }
+                            
+                            movie.vote_average = item.contains("#RANK") ? item["#RANK"].get<double>() : 0.0;
+                            movie.overview = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
+                            
                             results.push_back(movie);
                         }
                     }
@@ -266,17 +250,8 @@ private:
         trending_in_progress_ = true;
         std::thread([this]() {
             try {
-                auto config = rouen::helpers::ConfigService::instance();
-                std::string api_key = config->get_env("TMDB_API_KEY");
-                std::string token = config->get_env("TMDB_TOKEN");
-                
-                std::string url = "https://api.themoviedb.org/3/trending/movie/week";
-                std::vector<std::string> headers;
-                if (!token.empty()) {
-                    headers.push_back("Authorization: Bearer " + token);
-                } else if (!api_key.empty()) {
-                    url += "?api_key=" + api_key;
-                }
+                std::string url = "https://imdb.iamidiotareyoutoo.com/search?q=top";
+                std::vector<std::string> headers = {"accept: application/json"};
                 
                 std::string response = http::fetch()(url, headers);
                 
@@ -284,16 +259,25 @@ private:
                 auto ec = glz::read_json(doc, response);
                 if (!ec) {
                     std::vector<MovieItem> results;
-                    if (doc.contains("results")) {
-                        auto items = doc["results"].get<std::vector<glz::json_t>>();
+                    if (doc.contains("description")) {
+                        auto items = doc["description"].get<std::vector<glz::json_t>>();
                         for (const auto& item : items) {
                             MovieItem movie;
-                            movie.id = item.contains("id") ? static_cast<long long>(item["id"].get<double>()) : 0;
-                            movie.title = item.contains("title") ? item["title"].get<std::string>() : "";
-                            movie.poster_path = (item.contains("poster_path") && item["poster_path"].is_string()) ? item["poster_path"].get<std::string>() : "";
-                            movie.release_date = (item.contains("release_date") && item["release_date"].is_string()) ? item["release_date"].get<std::string>() : "";
-                            movie.vote_average = item.contains("vote_average") ? item["vote_average"].get<double>() : 0.0;
-                            movie.overview = (item.contains("overview") && item["overview"].is_string()) ? item["overview"].get<std::string>() : "";
+                            movie.id = item.contains("#IMDB_ID") ? item["#IMDB_ID"].get<std::string>() : "";
+                            movie.title = item.contains("#TITLE") ? item["#TITLE"].get<std::string>() : "";
+                            movie.poster_path = (item.contains("#IMG_POSTER") && item["#IMG_POSTER"].is_string()) ? item["#IMG_POSTER"].get<std::string>() : "";
+                            
+                            if (item.contains("#YEAR")) {
+                                if (item["#YEAR"].is_number()) {
+                                    movie.release_date = std::to_string(static_cast<int>(item["#YEAR"].get<double>()));
+                                } else if (item["#YEAR"].is_string()) {
+                                    movie.release_date = item["#YEAR"].get<std::string>();
+                                }
+                            }
+                            
+                            movie.vote_average = item.contains("#RANK") ? item["#RANK"].get<double>() : 0.0;
+                            movie.overview = (item.contains("#ACTORS") && item["#ACTORS"].is_string()) ? item["#ACTORS"].get<std::string>() : "";
+                            
                             results.push_back(movie);
                         }
                     }
@@ -318,10 +302,9 @@ private:
         SDL_Texture* poster_tex = nullptr;
         
         if (!movie.poster_path.empty()) {
-            std::string img_url = "https://image.tmdb.org/t/p/w200" + movie.poster_path;
             int w = 0, h = 0;
             poster_tex = image_cache_->getTexture(ImGui::GetIO().BackendRendererUserData ? 
-                static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, img_url, w, h);
+                static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, movie.poster_path, w, h);
         }
         
         ImVec2 start_pos = ImGui::GetCursorScreenPos();
@@ -362,18 +345,15 @@ private:
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
         
-        // Year & Vote Rating
-        std::string year = movie.release_date.length() >= 4 ? movie.release_date.substr(0, 4) : "Unknown";
-        ImGui::TextColored(colors[4], "%s  |  ", year.c_str());
+        // Year & Rank
+        ImGui::TextColored(colors[4], "%s  |  ", movie.release_date.c_str());
         ImGui::SameLine();
-        ImGui::TextColored(colors[3], "%s %.1f", ICON_MD_STAR, movie.vote_average);
+        ImGui::TextColored(colors[3], "Rank: %.0f", movie.vote_average);
         
-        // Short Overview
-        std::string short_overview = movie.overview;
-        if (short_overview.length() > 100) {
-            short_overview = short_overview.substr(0, 97) + "...";
+        // Actors
+        if (!movie.overview.empty()) {
+            ImGui::TextWrapped("Cast: %s", movie.overview.c_str());
         }
-        ImGui::TextWrapped("%s", short_overview.c_str());
         
         // Action Buttons Row
         ImGui::Spacing();
@@ -421,7 +401,7 @@ private:
     }
 
     void render_search_view() {
-        ImGui::Text("Search TMDB Database:");
+        ImGui::Text("Search IMDb Database:");
         
         // Search Input
         ImGui::PushItemWidth(-80.0f);
@@ -464,11 +444,11 @@ private:
     }
 
     void render_trending_view() {
-        ImGui::Text("Trending Movies This Week:");
+        ImGui::Text("Popular Movies (IMDb):");
         ImGui::Separator();
         
         if (trending_in_progress_) {
-            ImGui::Text("Loading trending movies...");
+            ImGui::Text("Loading popular movies...");
             return;
         }
         
@@ -526,10 +506,9 @@ private:
             SDL_Texture* poster_tex = nullptr;
             
             if (!selected_movie_details_.poster_path.empty()) {
-                std::string img_url = "https://image.tmdb.org/t/p/w500" + selected_movie_details_.poster_path;
                 int w = 0, h = 0;
                 poster_tex = image_cache_->getTexture(ImGui::GetIO().BackendRendererUserData ? 
-                    static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, img_url, w, h);
+                    static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, selected_movie_details_.poster_path, w, h);
             }
             
             ImGui::BeginGroup();
@@ -546,10 +525,10 @@ private:
                 ImGui::Dummy(ImVec2(poster_w, poster_h));
             }
             
-            // Link to TMDB page
+            // Link to IMDb profile page
             ImGui::Spacing();
-            if (ImGui::Button("TMDB Profile", ImVec2(poster_w, 0))) {
-                std::string profile_url = "https://www.themoviedb.org/movie/" + std::to_string(selected_movie_details_.id);
+            if (ImGui::Button("IMDb Profile", ImVec2(poster_w, 0))) {
+                std::string profile_url = "https://imdb.com/title/" + selected_movie_details_.id;
                 auto cmd = rouen::platform::open_file(profile_url, true);
                 [[maybe_unused]] int res = std::system(cmd.c_str());
             }
@@ -566,17 +545,19 @@ private:
             ImGui::TextColored(colors[2], "%s", selected_movie_details_.title.c_str());
             ImGui::PopFont();
             
-            // Year & Rating
-            std::string year = selected_movie_details_.release_date.length() >= 4 ? 
-                selected_movie_details_.release_date.substr(0, 4) : "Unknown";
-            ImGui::TextColored(colors[4], "Release Year: %s", year.c_str());
-            ImGui::TextColored(colors[3], "Rating: %s %.1f/10", ICON_MD_STAR, selected_movie_details_.vote_average);
+            // Year & Rank
+            ImGui::TextColored(colors[4], "Release Year: %s", selected_movie_details_.release_date.c_str());
+            ImGui::TextColored(colors[3], "IMDb Rank: %.0f", selected_movie_details_.vote_average);
             
             ImGui::Separator();
             
-            // Overview Scrollable region
+            // Actors Scrollable region
             ImGui::BeginChild("OverviewScroll", ImVec2(ImGui::GetContentRegionAvail().x, 150.0f), false);
-            ImGui::TextWrapped("%s", selected_movie_details_.overview.c_str());
+            if (!selected_movie_details_.overview.empty()) {
+                ImGui::TextWrapped("Starring:\n%s", selected_movie_details_.overview.c_str());
+            } else {
+                ImGui::TextWrapped("Cast details unavailable.");
+            }
             ImGui::EndChild();
             
             ImGui::PopTextWrapPos();
