@@ -19,6 +19,8 @@
 #include <filesystem>
 #include <regex>
 
+#include <chrono>
+
 // Include our compatibility layer for C++20/23 features
 #include "../helpers/compat/compat.hpp"
 #include "../helpers/html_media_extractor.hpp"
@@ -34,6 +36,20 @@
 namespace rouen::hosts {
 
 namespace {
+    inline std::chrono::system_clock::time_point parse_db_date(const std::string& date_str) {
+        std::tm tm = {};
+        std::istringstream ss(date_str);
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (ss.fail()) {
+            return std::chrono::system_clock::now();
+        }
+        
+        using namespace std::chrono;
+        auto date = year{tm.tm_year + 1900}/(tm.tm_mon + 1)/tm.tm_mday;
+        auto time = hours{tm.tm_hour} + minutes{tm.tm_min} + seconds{tm.tm_sec};
+        return sys_days{date} + time;
+    }
+
     inline std::string extractYoutubeChannelId(const std::string& html) {
         std::smatch match;
         
@@ -245,10 +261,7 @@ public:
                 repo_.scan_items(feed_id, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
                                                  const char* item_desc, const char* item_pub_date, const char* item_img_url,
                                                  std::optional<double> watermark) {
-                    std::tm tm = {};
-                    std::istringstream ss(item_pub_date ? item_pub_date : "");
-                    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-                    auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+                    auto publish_date = parse_db_date(item_pub_date ? item_pub_date : "");
                     
                     media::rss::feed_item item(
                         item_title ? item_title : "",
@@ -436,11 +449,7 @@ public:
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
             
-            // Parse the date string 
-            std::tm tm = {};
-            std::istringstream ss(pub_date ? pub_date : "");
-            ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-            auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+            auto publish_date = parse_db_date(pub_date ? pub_date : "");
             
             // Create and store the item
             FeedItem item{
@@ -486,11 +495,7 @@ public:
             (void)description; (void)pub_date; (void)image_url;
             
             if (link && item_link == link) {
-                // Parse the date string
-                std::tm tm = {};
-                std::istringstream ss(pub_date ? pub_date : "");
-                ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-                auto publish_date = std::chrono::system_clock::from_time_t(std::mktime(&tm));
+                auto publish_date = parse_db_date(pub_date ? pub_date : "");
                 
                 result = FeedItem{
                     .title = title ? title : "",
