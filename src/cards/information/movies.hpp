@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <mutex>
 #include <thread>
 #include <algorithm>
@@ -35,6 +36,12 @@ public:
         std::string list_name;
     };
 
+    struct LoadedMovieTexture {
+        SDL_Texture* texture{nullptr};
+        int width{0};
+        int height{0};
+    };
+
     movies() {
         // Setup card colors (violet primary/secondary for movie theater feel)
         colors[0] = ImVec4(0.5f, 0.3f, 0.7f, 1.0f); // Violet primary
@@ -58,7 +65,9 @@ public:
         fetch_trending();
     }
 
-    ~movies() override = default;
+    ~movies() override {
+        clear_loaded_textures();
+    }
 
     std::string get_uri() const override {
         return "movies";
@@ -290,22 +299,73 @@ private:
         }).detach();
     }
 
+    void clear_loaded_textures() {
+        std::lock_guard<std::mutex> lock(data_mutex_);
+        for (auto& [url, lt] : loaded_textures_) {
+            if (lt.texture) {
+                SDL_DestroyTexture(lt.texture);
+            }
+        }
+        loaded_textures_.clear();
+    }
+
+    SDL_Texture* get_movie_poster_texture(SDL_Renderer* renderer, const std::string& url, int& w, int& h) {
+        if (url.empty()) return nullptr;
+        
+        // 1. Check in-memory loaded textures
+        {
+            std::lock_guard<std::mutex> lock(data_mutex_);
+            auto it = loaded_textures_.find(url);
+            if (it != loaded_textures_.end()) {
+                w = it->second.width;
+                h = it->second.height;
+                return it->second.texture;
+            }
+        }
+        
+        // 2. Check if already downloaded/cached on disk
+        int cached_w = 0, cached_h = 0;
+        if (image_cache_->isCached(url, cached_w, cached_h)) {
+            // Load into texture (runs on render thread but only once per image life!)
+            SDL_Texture* tex = image_cache_->getTexture(renderer, url, w, h);
+            if (tex) {
+                std::lock_guard<std::mutex> lock(data_mutex_);
+                loaded_textures_[url] = {tex, w, h};
+                return tex;
+            }
+        } else {
+            // 3. Trigger background download
+            std::lock_guard<std::mutex> lock(downloading_mutex_);
+            if (downloading_urls_.find(url) == downloading_urls_.end()) {
+                downloading_urls_.insert(url);
+                std::thread([this, url]() {
+                    try {
+                        image_cache_->downloadAndCache(url);
+                    } catch (...) {}
+                    std::lock_guard<std::mutex> lock2(downloading_mutex_);
+                    downloading_urls_.erase(url);
+                }).detach();
+            }
+        }
+        
+        return nullptr;
+    }
+
     void render_movie_row(const MovieItem& movie, const std::string& current_list) {
         ImGui::PushID(std::format("{}_{}", movie.id, current_list).c_str());
         
         // Horizontal Layout for Poster + Metadata
         ImGui::BeginGroup();
         
-        // 1. Poster Image
+        // 1. Poster Image (Non-blocking lazy load)
         float poster_w = 50.0f;
         float poster_h = 75.0f;
-        SDL_Texture* poster_tex = nullptr;
+        int w = 0, h = 0;
         
-        if (!movie.poster_path.empty()) {
-            int w = 0, h = 0;
-            poster_tex = image_cache_->getTexture(ImGui::GetIO().BackendRendererUserData ? 
-                static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, movie.poster_path, w, h);
-        }
+        SDL_Texture* poster_tex = get_movie_poster_texture(
+            ImGui::GetIO().BackendRendererUserData ? static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr,
+            movie.poster_path, w, h
+        );
         
         ImVec2 start_pos = ImGui::GetCursorScreenPos();
         if (poster_tex) {
@@ -503,13 +563,11 @@ private:
             // Poster (larger size)
             float poster_w = 120.0f;
             float poster_h = 180.0f;
-            SDL_Texture* poster_tex = nullptr;
-            
-            if (!selected_movie_details_.poster_path.empty()) {
-                int w = 0, h = 0;
-                poster_tex = image_cache_->getTexture(ImGui::GetIO().BackendRendererUserData ? 
-                    static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr, selected_movie_details_.poster_path, w, h);
-            }
+            int w = 0, h = 0;
+            SDL_Texture* poster_tex = get_movie_poster_texture(
+                ImGui::GetIO().BackendRendererUserData ? static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr,
+                selected_movie_details_.poster_path, w, h
+            );
             
             ImGui::BeginGroup();
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
@@ -583,6 +641,10 @@ private:
     std::vector<MovieItem> search_results_;
     std::vector<MovieItem> trending_movies_;
     
+    // In-memory texture cache to prevent disk loading on every frame
+    std::unordered_map<std::string, LoadedMovieTexture> loaded_textures_;
+    std::unordered_set<std::string> downloading_urls_;
+    
     char search_buffer_[256]{""};
     std::string last_search_query_;
     
@@ -593,6 +655,7 @@ private:
     MovieItem selected_movie_details_;
     
     std::mutex data_mutex_;
+    std::mutex downloading_mutex_;
 };
 
 } // namespace rouen::cards
