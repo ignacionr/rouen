@@ -255,10 +255,10 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnCompletion) {
     // Verify in-memory of Episode 1 is updated to 0.0
     auto feed = host->feeds()[0];
     bool in_memory_updated = false;
-    for (auto& item : feed->items) {
-        if (item.title == "Episode 1") {
-            if (item.watermark.has_value()) {
-                EXPECT_DOUBLE_EQ(*item.watermark, 0.0);
+    for (auto& feed_item : feed->items) {
+        if (feed_item.title == "Episode 1") {
+            if (feed_item.watermark.has_value()) {
+                EXPECT_DOUBLE_EQ(*feed_item.watermark, 0.0);
                 in_memory_updated = true;
             }
         }
@@ -328,10 +328,10 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
     // Verify in-memory of Episode 1 is updated to 0.0
     auto feed = host->feeds()[0];
     bool in_memory_updated = false;
-    for (auto& item : feed->items) {
-        if (item.title == "Episode 1") {
-            if (item.watermark.has_value()) {
-                EXPECT_DOUBLE_EQ(*item.watermark, 0.0);
+    for (auto& feed_item : feed->items) {
+        if (feed_item.title == "Episode 1") {
+            if (feed_item.watermark.has_value()) {
+                EXPECT_DOUBLE_EQ(*feed_item.watermark, 0.0);
                 in_memory_updated = true;
             }
         }

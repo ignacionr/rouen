@@ -24,6 +24,10 @@ find_package(tinyxml2 CONFIG REQUIRED)
 # Include parent directories for access to source files
 include_directories(..)
 
+if(NOT COMMAND target_add_strict_warnings)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)
+endif()
+
 # Helper function to create GTest-based tests
 function(add_gtest_executable test_name source_file)
     add_executable(${test_name} ${source_file})

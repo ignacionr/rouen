@@ -89,6 +89,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wno-switch-default           # Allow exhaustive enum switches without default
       -Wno-unsafe-buffer-usage      # Legacy C-style buffer usage (would require major refactoring)
       -Wno-reserved-macro-identifier # Allow mongoose's internal macros
+      -Wno-nrvo                  # Allow return value copy elision warnings
+      -Wno-thread-safety-negative # Disable negative capability thread warnings
+      -Wno-unknown-warning-option # Ignore unknown warning flags across clang versions
     )
   endfunction()
 

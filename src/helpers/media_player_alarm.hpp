@@ -23,12 +23,12 @@
 #include <fstream>
 
 namespace media_player_alarm_helper {
-    static media_player_item& alarm_item_instance() {
+    inline media_player_item& alarm_item_instance() {
         static media_player_item alarm_item;
         return alarm_item;
     }
     
-    static void play_sound_loop(std::string_view file_path) {
+    inline void play_sound_loop(std::string_view file_path) {
         auto& alarm_item = alarm_item_instance();
         auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
         alarm_item.url = resource_path.string();
@@ -125,7 +125,7 @@ namespace media_player_alarm_helper {
 #endif
     }
     
-    static void stop_sound_loop() {
+    inline void stop_sound_loop() {
         auto& alarm_item = alarm_item_instance();
         alarm_item.stopMedia();
     }

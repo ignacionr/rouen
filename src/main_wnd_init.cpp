@@ -59,7 +59,7 @@ bool main_wnd::initialize() {
 
         // Create window with SDL - properly configure for high DPI
         std::cout << "DEBUG: Creating SDL window..." << '\n';
-        SDL_WindowFlags window_flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
         
         m_window = SDL_CreateWindow(
             "Rouen",
