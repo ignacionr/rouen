@@ -484,17 +484,17 @@ public:
     /**
      * Get a specific item from a feed by its link
      */
-    std::optional<FeedItem> getFeedItem(long long feed_id, const std::string& item_link) {
+    std::optional<FeedItem> getFeedItem(long long feed_id, const std::string& item_link, const std::string& item_title) {
         std::optional<FeedItem> result;
         
-        repo_.scan_items(feed_id, [&result, &item_link, feed_id](const char* link, const char* enclosure, const char* title, 
+        repo_.scan_items(feed_id, [&result, &item_link, &item_title, feed_id](const char* link, const char* enclosure, const char* title, 
                                                      const char* description, const char* pub_date, const char* image_url,
                                                      std::optional<double> watermark) {
             // Mark unused parameters to avoid warnings
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
             
-            if (link && item_link == link) {
+            if (link && item_link == link && (item_title.empty() || (title && item_title == title))) {
                 auto publish_date = parse_db_date(pub_date ? pub_date : "");
                 
                 result = FeedItem{

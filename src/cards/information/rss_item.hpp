@@ -33,12 +33,15 @@ public:
         get_color(4, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green for playing status
         get_color(5, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for stop/error status
         
-        // Parse the feed_id,link info
-        size_t comma_pos = item_info.find(',');
-        if (comma_pos != std::string::npos) {
+        // Parse the feed_id,link,title info (separated by ||| or fallback to comma)
+        size_t first_delim = item_info.find("|||");
+        size_t second_delim = (first_delim != std::string::npos) ? item_info.find("|||", first_delim + 3) : std::string::npos;
+        
+        if (first_delim != std::string::npos && second_delim != std::string::npos) {
             try {
-                feed_id = std::stoll(item_info.substr(0, comma_pos));
-                item_link = item_info.substr(comma_pos + 1);
+                feed_id = std::stoll(item_info.substr(0, first_delim));
+                item_link = item_info.substr(first_delim + 3, second_delim - (first_delim + 3));
+                item_title = item_info.substr(second_delim + 3);
                 
                 // Get the RSS host controller
                 rss_host = rss::getHost();
@@ -46,11 +49,23 @@ public:
                 // Load the item
                 loadItem();
             } catch (...) {
-                // Handle parsing error
                 name("RSS Item");
             }
         } else {
-            name("RSS Item");
+            // Fallback to comma parsing for compatibility with legacy URLs
+            size_t comma_pos = item_info.find(',');
+            if (comma_pos != std::string::npos) {
+                try {
+                    feed_id = std::stoll(item_info.substr(0, comma_pos));
+                    item_link = item_info.substr(comma_pos + 1);
+                    rss_host = rss::getHost();
+                    loadItem();
+                } catch (...) {
+                    name("RSS Item");
+                }
+            } else {
+                name("RSS Item");
+            }
         }
         
         // Initialize the image cache with paths in user data directory
@@ -142,7 +157,7 @@ public:
         if (feed_id < 0 || item_link.empty() || !rss_host) return;
         
         // Get the item from the controller
-        auto found_item = rss_host->getFeedItem(feed_id, item_link);
+        auto found_item = rss_host->getFeedItem(feed_id, item_link, item_title);
         if (!found_item) return;
         
         // Store the item
@@ -353,12 +368,13 @@ public:
 
     std::string get_uri() const override
     {
-        return std::format("rss-item:{},{}", feed_id, item_link);
+        return std::format("rss-item:{}|||{}|||{}", feed_id, item_link, item_title);
     }
     
 private:
     long long feed_id = -1;
     std::string item_link;
+    std::string item_title;
     bool item_loaded = false;
     std::shared_ptr<hosts::RSSHost> rss_host;
     hosts::RSSHost::FeedItem item; // Use the FeedItem from the controller

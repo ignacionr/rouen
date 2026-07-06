@@ -352,7 +352,7 @@ public:
                                         
                                         // Title (selectable to open item)
                                         if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f : avail_width, 0))) {
-                                            std::string item_uri = std::format("rss-item:{},{}", item.feed_id, item.link);
+                                            std::string item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
                                             "create_card"_sfn(item_uri);
                                         }
 
@@ -400,7 +400,7 @@ public:
                                             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
                                             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
                                             if (ImGui::Button(std::format("##thumb_btn_{}", i).c_str(), thumb_size)) {
-                                                std::string item_uri = std::format("rss-item:{},{}", item.feed_id, item.link);
+                                                std::string item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
                                                 "create_card"_sfn(item_uri);
                                             }
                                             ImGui::PopStyleColor(3);
