@@ -69,6 +69,10 @@ public:
         clear_loaded_textures();
     }
 
+    void set_renderer(SDL_Renderer* r) {
+        renderer_ = r;
+    }
+
     std::string get_uri() const override {
         return "movies";
     }
@@ -362,10 +366,7 @@ private:
         float poster_h = 75.0f;
         int w = 0, h = 0;
         
-        SDL_Texture* poster_tex = get_movie_poster_texture(
-            ImGui::GetIO().BackendRendererUserData ? static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr,
-            movie.poster_path, w, h
-        );
+        SDL_Texture* poster_tex = get_movie_poster_texture(renderer_, movie.poster_path, w, h);
         
         ImVec2 start_pos = ImGui::GetCursorScreenPos();
         if (poster_tex) {
@@ -564,10 +565,7 @@ private:
             float poster_w = 120.0f;
             float poster_h = 180.0f;
             int w = 0, h = 0;
-            SDL_Texture* poster_tex = get_movie_poster_texture(
-                ImGui::GetIO().BackendRendererUserData ? static_cast<SDL_Renderer*>(ImGui::GetIO().BackendRendererUserData) : nullptr,
-                selected_movie_details_.poster_path, w, h
-            );
+            SDL_Texture* poster_tex = get_movie_poster_texture(renderer_, selected_movie_details_.poster_path, w, h);
             
             ImGui::BeginGroup();
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
@@ -635,6 +633,7 @@ private:
 
     std::unique_ptr<hosting::db::sqlite> db_;
     std::shared_ptr<::helpers::ImageCache> image_cache_;
+    SDL_Renderer* renderer_{nullptr};
     
     std::string selected_list_{"To Watch"};
     std::unordered_map<std::string, std::vector<MovieItem>> lists_;

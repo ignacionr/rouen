@@ -13,8 +13,12 @@ namespace {
                 rouen::cards::factory::dictionary());
             
             // Register the Movies card
-            dict["movies"] = [](std::string_view, SDL_Renderer*) {
-                return std::make_shared<rouen::cards::movies>();
+            dict["movies"] = [](std::string_view, SDL_Renderer* renderer) {
+                auto card = std::make_shared<rouen::cards::movies>();
+                if (renderer) {
+                    card->set_renderer(renderer);
+                }
+                return card;
             };
         }
     };

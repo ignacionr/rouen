@@ -8,6 +8,7 @@
 #include <sstream>
 #include <memory>
 #include <functional>
+#include <filesystem>
 
 #include "debug.hpp"
 
@@ -705,8 +706,21 @@ private:
         
         // Additional SSL options for better compatibility
         // Use system's CA bundle for certificate verification
-        curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);  // Use system default
-        curl_easy_setopt(handle, CURLOPT_CAPATH, nullptr);  // Use system default
+        const char* env_ssl_file = std::getenv("SSL_CERT_FILE");
+        if (env_ssl_file) {
+            curl_easy_setopt(handle, CURLOPT_CAINFO, env_ssl_file);
+        } else {
+#ifdef __APPLE__
+            if (std::filesystem::exists("/etc/ssl/cert.pem")) {
+                curl_easy_setopt(handle, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
+            } else {
+                curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);
+            }
+#else
+            curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);
+#endif
+        }
+        curl_easy_setopt(handle, CURLOPT_CAPATH, nullptr);
         
         // Set SSL/TLS version - use TLS 1.2 as minimum for security
         curl_easy_setopt(handle, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_2);
