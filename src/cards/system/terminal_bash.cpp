@@ -63,7 +63,7 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         tio.c_cflag = TTYDEF_CFLAG;
         tio.c_lflag = TTYDEF_LFLAG;
     }
-    tio.c_lflag &= ~ECHO; // Turn off local echoing of input commands
+    tio.c_lflag &= ~static_cast<tcflag_t>(ECHO); // Turn off local echoing of input commands
     
     // Set terminal window size parameters
     struct winsize ws;
@@ -316,7 +316,7 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         tio.c_cflag = TTYDEF_CFLAG;
         tio.c_lflag = TTYDEF_LFLAG;
     }
-    tio.c_lflag &= ~ECHO;
+    tio.c_lflag &= ~static_cast<tcflag_t>(ECHO);
     
     struct winsize ws;
     ws.ws_row = 24;
