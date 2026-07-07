@@ -9,7 +9,12 @@
 #include <format>
 #include <optional>
 #include <memory>
-#include "../../helpers/sqlite.hpp"
+#include <filesystem>
+#include <fstream>
+#include <algorithm>
+#include <mutex>
+
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 
 namespace rouen::models::productivity {
@@ -26,6 +31,38 @@ namespace rouen::models::productivity {
         std::string status;            // "pending", "committed", "completed", "failed", "dropped"
         std::string created_at;
         std::string updated_at;
+
+        struct glaze {
+            using T = objective_record;
+            static constexpr auto value = glz::object(
+                "id", &T::id,
+                "parent_id", &T::parent_id,
+                "period", &T::period,
+                "period_identifier", &T::period_identifier,
+                "title", &T::title,
+                "type", &T::type,
+                "target_val", &T::target_val,
+                "current_val", &T::current_val,
+                "status", &T::status,
+                "created_at", &T::created_at,
+                "updated_at", &T::updated_at
+            );
+        };
+    };
+
+    struct ledger_record {
+        std::string date;
+        int closed{0};
+        std::string closed_at;
+
+        struct glaze {
+            using T = ledger_record;
+            static constexpr auto value = glz::object(
+                "date", &T::date,
+                "closed", &T::closed,
+                "closed_at", &T::closed_at
+            );
+        };
     };
 
     struct date_context {
@@ -37,9 +74,14 @@ namespace rouen::models::productivity {
 
     class objective_repository {
     public:
-        explicit objective_repository(const std::string& db_path = rouen::platform::get_user_data_path("objectives.db").string())
-            : db_(db_path) {
-            ensure_schema();
+        explicit objective_repository(const std::string& base_path = "") {
+            if (base_path.empty()) {
+                dir_path_ = rouen::platform::get_user_data_path("objectives", true);
+            } else {
+                dir_path_ = std::filesystem::path(base_path);
+                std::filesystem::create_directories(dir_path_);
+            }
+            load_data();
         }
 
         static date_context get_date_context_for_time(std::time_t time) {
@@ -91,244 +133,370 @@ namespace rouen::models::productivity {
         }
 
         std::vector<objective_record> get_objectives(const std::string& period, const std::string& identifier) {
+            std::lock_guard<std::mutex> lock(mutex_);
             std::vector<objective_record> results;
-            std::string sql = "SELECT id, parent_id, period, period_identifier, title, type, target_val, current_val, status, created_at, updated_at "
-                              "FROM objective WHERE period = ? AND period_identifier = ?";
-            
-            db_.exec(sql, [&](sqlite3_stmt* stmt) {
-                objective_record rec;
-                rec.id = sqlite3_column_int(stmt, 0);
-                if (sqlite3_column_type(stmt, 1) != SQLITE_NULL) {
-                    rec.parent_id = sqlite3_column_int(stmt, 1);
+            for (const auto& rec : objectives_) {
+                if (rec.period == period && rec.period_identifier == identifier) {
+                    results.push_back(rec);
                 }
-                rec.period = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-                rec.period_identifier = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-                rec.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-                rec.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-                rec.target_val = sqlite3_column_double(stmt, 6);
-                rec.current_val = sqlite3_column_double(stmt, 7);
-                rec.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-                rec.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
-                rec.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
-                results.push_back(rec);
-            }, period, identifier);
-            
+            }
             return results;
         }
 
         objective_record get_objective_by_id(int id) {
-            objective_record rec;
-            std::string sql = "SELECT id, parent_id, period, period_identifier, title, type, target_val, current_val, status, created_at, updated_at "
-                              "FROM objective WHERE id = ?";
-            
-            bool found = false;
-            db_.exec(sql, [&](sqlite3_stmt* stmt) {
-                found = true;
-                rec.id = sqlite3_column_int(stmt, 0);
-                if (sqlite3_column_type(stmt, 1) != SQLITE_NULL) {
-                    rec.parent_id = sqlite3_column_int(stmt, 1);
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& rec : objectives_) {
+                if (rec.id == id) {
+                    return rec;
                 }
-                rec.period = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
-                rec.period_identifier = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-                rec.title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
-                rec.type = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
-                rec.target_val = sqlite3_column_double(stmt, 6);
-                rec.current_val = sqlite3_column_double(stmt, 7);
-                rec.status = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 8));
-                rec.created_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
-                rec.updated_at = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 10));
-            }, id);
-            
-            if (!found) {
-                rec.id = 0;
             }
-            return rec;
+            objective_record empty_rec;
+            empty_rec.id = 0;
+            return empty_rec;
         }
 
         int add_objective(const objective_record& rec) {
-            std::string sql = "INSERT INTO objective (parent_id, period, period_identifier, title, type, target_val, current_val, status, created_at, updated_at) "
-                              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))";
+            std::lock_guard<std::mutex> lock(mutex_);
             
-            std::optional<int> parent = rec.parent_id;
-            
-            if (parent.has_value()) {
-                db_.exec(sql, {}, *parent, rec.period, rec.period_identifier, rec.title, rec.type, rec.target_val, rec.current_val, rec.status);
-            } else {
-                db_.exec(sql, {}, std::nullopt, rec.period, rec.period_identifier, rec.title, rec.type, rec.target_val, rec.current_val, rec.status);
+            // Find next unique ID
+            int next_id = 1;
+            for (const auto& o : objectives_) {
+                if (o.id >= next_id) {
+                    next_id = o.id + 1;
+                }
             }
 
-            int last_id = 0;
-            db_.exec("SELECT last_insert_rowid()", [&](sqlite3_stmt* stmt) {
-                last_id = sqlite3_column_int(stmt, 0);
-            });
-            return last_id;
+            objective_record new_rec = rec;
+            new_rec.id = next_id;
+            
+            auto now = std::chrono::system_clock::now();
+            std::string now_str = std::format("{:%F %T}", now);
+            new_rec.created_at = now_str;
+            new_rec.updated_at = now_str;
+
+            objectives_.push_back(new_rec);
+            save_data_unlocked();
+            return next_id;
         }
 
         void update_objective(const objective_record& rec) {
-            std::string sql = "UPDATE objective SET parent_id = ?, title = ?, type = ?, target_val = ?, current_val = ?, status = ?, updated_at = datetime('now') "
-                              "WHERE id = ?";
-            
-            std::optional<int> parent = rec.parent_id;
-            if (parent.has_value()) {
-                db_.exec(sql, {}, *parent, rec.title, rec.type, rec.target_val, rec.current_val, rec.status, rec.id);
-            } else {
-                db_.exec(sql, {}, std::nullopt, rec.title, rec.type, rec.target_val, rec.current_val, rec.status, rec.id);
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto& o : objectives_) {
+                if (o.id == rec.id) {
+                    o.parent_id = rec.parent_id;
+                    o.title = rec.title;
+                    o.type = rec.type;
+                    o.target_val = rec.target_val;
+                    o.current_val = rec.current_val;
+                    o.status = rec.status;
+                    
+                    auto now = std::chrono::system_clock::now();
+                    o.updated_at = std::format("{:%F %T}", now);
+                    break;
+                }
             }
+            save_data_unlocked();
         }
 
         void delete_objective(int id) {
-            // Delete children recursively (simplified cascade deletion)
-            std::vector<int> child_ids;
-            db_.exec("SELECT id FROM objective WHERE parent_id = ?", [&](sqlite3_stmt* stmt) {
-                child_ids.push_back(sqlite3_column_int(stmt, 0));
-            }, id);
-            
-            for (int child : child_ids) {
-                delete_objective(child);
-            }
-
-            db_.exec("DELETE FROM objective WHERE id = ?", {}, id);
+            std::lock_guard<std::mutex> lock(mutex_);
+            delete_objective_recursive(id);
+            save_data_unlocked();
         }
 
         // Ledger States for Closing Days
         bool is_day_closed(const std::string& date) {
-            std::string sql = "SELECT closed FROM ledger WHERE date = ?";
-            int closed = 0;
-            bool found = false;
-            db_.exec(sql, [&](sqlite3_stmt* stmt) {
-                found = true;
-                closed = sqlite3_column_int(stmt, 0);
-            }, date);
-            return found && (closed != 0);
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& entry : ledger_) {
+                if (entry.date == date) {
+                    return entry.closed != 0;
+                }
+            }
+            return false;
         }
 
         bool has_ledger_entry(const std::string& date) {
-            std::string sql = "SELECT count(*) FROM ledger WHERE date = ?";
-            int count = 0;
-            db_.exec(sql, [&](sqlite3_stmt* stmt) {
-                count = sqlite3_column_int(stmt, 0);
-            }, date);
-            return count > 0;
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto& entry : ledger_) {
+                if (entry.date == date) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         void initialize_day_ledger(const std::string& date) {
-            if (!has_ledger_entry(date)) {
-                db_.exec("INSERT INTO ledger (date, closed, closed_at) VALUES (?, 0, NULL)", {}, date);
+            std::lock_guard<std::mutex> lock(mutex_);
+            bool exists = false;
+            for (const auto& entry : ledger_) {
+                if (entry.date == date) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                ledger_record entry;
+                entry.date = date;
+                entry.closed = 0;
+                entry.closed_at = "";
+                ledger_.push_back(entry);
+                save_data_unlocked();
             }
         }
 
         std::string get_unclosed_day_before(const std::string& current_date) {
-            std::string sql = "SELECT date FROM ledger WHERE date < ? AND closed = 0 ORDER BY date DESC LIMIT 1";
+            std::lock_guard<std::mutex> lock(mutex_);
             std::string unclosed_date = "";
-            db_.exec(sql, [&](sqlite3_stmt* stmt) {
-                unclosed_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            }, current_date);
+            for (const auto& entry : ledger_) {
+                if (entry.date < current_date && entry.closed == 0) {
+                    if (unclosed_date.empty() || entry.date > unclosed_date) {
+                        unclosed_date = entry.date;
+                    }
+                }
+            }
             return unclosed_date;
         }
 
         void quick_zero_and_archive_day(const std::string& date) {
+            std::lock_guard<std::mutex> lock(mutex_);
             // Update all active objectives of that day to failed/completed depending on values
-            auto day_items = get_objectives("daily", date);
-            for (auto& item : day_items) {
-                bool is_success = false;
-                if (item.type == "binary") {
-                    is_success = (item.current_val >= 1.0);
-                } else if (item.type == "volumetric") {
-                    is_success = (item.current_val >= item.target_val);
-                } else if (item.type == "constraint") {
-                    is_success = (item.current_val <= item.target_val);
-                }
+            for (auto& item : objectives_) {
+                if (item.period == "daily" && item.period_identifier == date) {
+                    bool is_success = false;
+                    if (item.type == "binary") {
+                        is_success = (item.current_val >= 1.0);
+                    } else if (item.type == "volumetric") {
+                        is_success = (item.current_val >= item.target_val);
+                    } else if (item.type == "constraint") {
+                        is_success = (item.current_val <= item.target_val);
+                    }
 
-                item.status = is_success ? "completed" : "failed";
-                update_objective(item);
+                    item.status = is_success ? "completed" : "failed";
+                    auto now = std::chrono::system_clock::now();
+                    item.updated_at = std::format("{:%F %T}", now);
+                }
             }
             
             // Mark day as closed in ledger
-            db_.exec("INSERT OR REPLACE INTO ledger (date, closed, closed_at) VALUES (?, 1, datetime('now'))", {}, date);
+            bool found = false;
+            auto now = std::chrono::system_clock::now();
+            std::string now_str = std::format("{:%F %T}", now);
+            for (auto& entry : ledger_) {
+                if (entry.date == date) {
+                    entry.closed = 1;
+                    entry.closed_at = now_str;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                ledger_record entry;
+                entry.date = date;
+                entry.closed = 1;
+                entry.closed_at = now_str;
+                ledger_.push_back(entry);
+            }
+            
+            save_data_unlocked();
         }
 
         void commit_day_objectives(const std::string& date) {
-            db_.exec("UPDATE objective SET status = 'committed' WHERE period = 'daily' AND period_identifier = ? AND status = 'pending'", {}, date);
-            initialize_day_ledger(date);
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto& item : objectives_) {
+                if (item.period == "daily" && item.period_identifier == date && item.status == "pending") {
+                    item.status = "committed";
+                    auto now = std::chrono::system_clock::now();
+                    item.updated_at = std::format("{:%F %T}", now);
+                }
+            }
+            
+            bool ledger_exists = false;
+            for (const auto& entry : ledger_) {
+                if (entry.date == date) {
+                    ledger_exists = true;
+                    break;
+                }
+            }
+            if (!ledger_exists) {
+                ledger_record entry;
+                entry.date = date;
+                entry.closed = 0;
+                entry.closed_at = "";
+                ledger_.push_back(entry);
+            }
+            
+            save_data_unlocked();
         }
 
         void close_day(const std::string& date, const std::vector<std::pair<int, std::string>>& rollovers) {
-            // 1. Update status of items on that day based on actual progress
-            auto day_items = get_objectives("daily", date);
-            for (auto& item : day_items) {
-                bool is_success = false;
-                if (item.type == "binary") {
-                    is_success = (item.current_val >= 1.0);
-                } else if (item.type == "volumetric") {
-                    is_success = (item.current_val >= item.target_val);
-                } else if (item.type == "constraint") {
-                    is_success = (item.current_val <= item.target_val);
-                }
+            std::lock_guard<std::mutex> lock(mutex_);
+            
+            // Collect items that need rolling over to create tomorrow
+            std::vector<objective_record> new_rollover_items;
+            
+            for (auto& item : objectives_) {
+                if (item.period == "daily" && item.period_identifier == date) {
+                    bool is_success = false;
+                    if (item.type == "binary") {
+                        is_success = (item.current_val >= 1.0);
+                    } else if (item.type == "volumetric") {
+                        is_success = (item.current_val >= item.target_val);
+                    } else if (item.type == "constraint") {
+                        is_success = (item.current_val <= item.target_val);
+                    }
 
-                std::string final_status = is_success ? "completed" : "failed";
-                
-                // Find custom rollover option if provided and item is incomplete
-                if (!is_success) {
-                    for (const auto& [item_id, option] : rollovers) {
-                        if (item_id == item.id) {
-                            if (option == "push") {
-                                // Create new pending objective for tomorrow
-                                auto tomorrow_ctx = get_tomorrow_date_context();
-                                objective_record tomorrow_item;
-                                tomorrow_item.parent_id = item.parent_id;
-                                tomorrow_item.period = "daily";
-                                tomorrow_item.period_identifier = tomorrow_ctx.date;
-                                tomorrow_item.title = item.title;
-                                tomorrow_item.type = item.type;
-                                tomorrow_item.target_val = item.target_val;
-                                tomorrow_item.current_val = 0.0;
-                                tomorrow_item.status = "pending";
-                                add_objective(tomorrow_item);
-                                
-                                final_status = "dropped"; // Dropped on this day, rolled over to next
-                            } else {
-                                final_status = "dropped";
+                    std::string final_status = is_success ? "completed" : "failed";
+                    
+                    if (!is_success) {
+                        for (const auto& [item_id, option] : rollovers) {
+                            if (item_id == item.id) {
+                                if (option == "push") {
+                                    // Prepare tomorrow's item
+                                    objective_record tomorrow_item;
+                                    tomorrow_item.parent_id = item.parent_id;
+                                    tomorrow_item.period = "daily";
+                                    tomorrow_item.title = item.title;
+                                    tomorrow_item.type = item.type;
+                                    tomorrow_item.target_val = item.target_val;
+                                    tomorrow_item.current_val = 0.0;
+                                    tomorrow_item.status = "pending";
+                                    new_rollover_items.push_back(tomorrow_item);
+                                    
+                                    final_status = "dropped";
+                                } else {
+                                    final_status = "dropped";
+                                }
+                                break;
                             }
-                            break;
                         }
                     }
-                }
 
-                item.status = final_status;
-                update_objective(item);
+                    item.status = final_status;
+                    auto now = std::chrono::system_clock::now();
+                    item.updated_at = std::format("{:%F %T}", now);
+                }
             }
 
-            // 2. Mark ledger as closed
-            db_.exec("INSERT OR REPLACE INTO ledger (date, closed, closed_at) VALUES (?, 1, datetime('now'))", {}, date);
+            // Add rollover items (need to assign unique IDs)
+            if (!new_rollover_items.empty()) {
+                auto tomorrow_ctx = get_tomorrow_date_context();
+                int next_id = 1;
+                for (const auto& o : objectives_) {
+                    if (o.id >= next_id) next_id = o.id + 1;
+                }
+                
+                auto now = std::chrono::system_clock::now();
+                std::string now_str = std::format("{:%F %T}", now);
+                
+                for (auto& item : new_rollover_items) {
+                    item.id = next_id++;
+                    item.period_identifier = tomorrow_ctx.date;
+                    item.created_at = now_str;
+                    item.updated_at = now_str;
+                    objectives_.push_back(item);
+                }
+            }
+
+            // Mark ledger as closed
+            bool found = false;
+            auto now = std::chrono::system_clock::now();
+            std::string now_str = std::format("{:%F %T}", now);
+            for (auto& entry : ledger_) {
+                if (entry.date == date) {
+                    entry.closed = 1;
+                    entry.closed_at = now_str;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                ledger_record entry;
+                entry.date = date;
+                entry.closed = 1;
+                entry.closed_at = now_str;
+                ledger_.push_back(entry);
+            }
+
+            save_data_unlocked();
         }
 
     private:
-        hosting::db::sqlite db_;
+        std::filesystem::path dir_path_;
+        std::vector<objective_record> objectives_;
+        std::vector<ledger_record> ledger_;
+        std::mutex mutex_;
 
-        void ensure_schema() {
-            db_.ensure_table("objective",
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "parent_id INTEGER NULLABLE, "
-                "period TEXT NOT NULL, "
-                "period_identifier TEXT NOT NULL, "
-                "title TEXT NOT NULL, "
-                "type TEXT NOT NULL, "
-                "target_val REAL NOT NULL, "
-                "current_val REAL NOT NULL, "
-                "status TEXT NOT NULL, "
-                "created_at TEXT NOT NULL, "
-                "updated_at TEXT NOT NULL, "
-                "FOREIGN KEY(parent_id) REFERENCES objective(id) ON DELETE SET NULL"
+        void delete_objective_recursive(int id) {
+            std::vector<int> child_ids;
+            for (const auto& o : objectives_) {
+                if (o.parent_id && *(o.parent_id) == id) {
+                    child_ids.push_back(o.id);
+                }
+            }
+            for (int child_id : child_ids) {
+                delete_objective_recursive(child_id);
+            }
+            objectives_.erase(
+                std::remove_if(objectives_.begin(), objectives_.end(), [id](const auto& o) { return o.id == id; }),
+                objectives_.end()
             );
+        }
 
-            db_.ensure_table("ledger",
-                "date TEXT PRIMARY KEY, "
-                "closed INTEGER NOT NULL, "
-                "closed_at TEXT NULLABLE"
-            );
+        void load_data() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                auto obj_path = dir_path_ / "objectives.json";
+                if (std::filesystem::exists(obj_path)) {
+                    std::string content;
+                    std::ifstream f(obj_path);
+                    if (f) {
+                        content.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                        auto err = glz::read_json(objectives_, content);
+                        if (err) {
+                            // Empty or parse error, fallback
+                        }
+                    }
+                }
+            } catch (...) {}
 
-            db_.exec("CREATE INDEX IF NOT EXISTS idx_objective_period_identifier ON objective(period, period_identifier)");
-            db_.exec("CREATE INDEX IF NOT EXISTS idx_objective_parent ON objective(parent_id)");
+            try {
+                auto ledger_path = dir_path_ / "ledger.json";
+                if (std::filesystem::exists(ledger_path)) {
+                    std::string content;
+                    std::ifstream f(ledger_path);
+                    if (f) {
+                        content.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                        auto err = glz::read_json(ledger_, content);
+                        if (err) {
+                            // Empty or parse error, fallback
+                        }
+                    }
+                }
+            } catch (...) {}
+        }
+
+        void save_data_unlocked() {
+            try {
+                auto obj_path = dir_path_ / "objectives.json";
+                std::string content = glz::write_json(objectives_).value_or("");
+                if (!content.empty()) {
+                    std::ofstream f(obj_path);
+                    if (f) {
+                        f << content;
+                    }
+                }
+            } catch (...) {}
+
+            try {
+                auto ledger_path = dir_path_ / "ledger.json";
+                std::string content = glz::write_json(ledger_).value_or("");
+                if (!content.empty()) {
+                    std::ofstream f(ledger_path);
+                    if (f) {
+                        f << content;
+                    }
+                }
+            } catch (...) {}
         }
     };
 }
