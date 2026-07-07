@@ -7,8 +7,6 @@ https://audioboom.com/channels/5021027.rss
 https://changelog.com/podcast/feed
 https://cppcast.com/feed.rss
 https://cuonda.com/monos-estocasticos/feed
-https://fapi-top.prisasd.com/podcast/elpais/las_noticias_del_pais.xml
-https://feed.podbean.com/podcast.hernancattaneo.com/feed.xml
 https://feeds.acast.com/public/shows/6671e5b65d053f5ca36c0ca8
 https://feeds.megaphone.fm/ADSMOVILESPAASL6591275552
 https://feeds.megaphone.fm/AUDD1328230683
@@ -25,7 +23,6 @@ https://feeds.simplecast.com/WCb5SgYj
 https://feeds.transistor.fm/energy-bytes
 https://feeds.transistor.fm/small-big-wins
 https://feeds.transistor.fm/techradio
-https://feeds.transistor.fm/test-and-code
 https://feeds.twit.tv/brickhouse.xml
 https://feeds.twit.tv/twit.xml
 https://mavecloud.s3mts.ru/storage/feeds/41353.xml
