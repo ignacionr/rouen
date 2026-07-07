@@ -359,105 +359,7 @@ public:
                     feeds = all_feeds;
                 } else {
                     for (const auto& feed : all_feeds) {
-                        bool matches = false;
-                        std::string url = feed->source_link;
-                        std::transform(url.begin(), url.end(), url.begin(), ::tolower);
-                        
-                        if (selected_tag_ == "Podcasts") {
-                            matches = (url.find("megaphone.fm") != std::string::npos ||
-                                       url.find("spreaker.com") != std::string::npos ||
-                                       url.find("libsyn.com") != std::string::npos ||
-                                       url.find("simplecast.com") != std::string::npos ||
-                                       url.find("transistor.fm") != std::string::npos ||
-                                       url.find("anchor.fm") != std::string::npos ||
-                                       url.find("audioboom.com") != std::string::npos ||
-                                       url.find("podbean.com") != std::string::npos ||
-                                       url.find("acast.com") != std::string::npos ||
-                                       url.find("podplaystudio.com") != std::string::npos);
-                            if (!matches) {
-                                for (const auto& item : feed->items) {
-                                    if (!item.enclosure.empty() && 
-                                        (item.enclosure.find(".mp3") != std::string::npos || 
-                                         item.enclosure.find(".wav") != std::string::npos ||
-                                         item.enclosure.find("audio") != std::string::npos)) {
-                                        matches = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if (selected_tag_ == "YouTube") {
-                            matches = (url.find("youtube.com") != std::string::npos ||
-                                       url.find("youtu.be") != std::string::npos);
-                        } else if (selected_tag_ == "Tech / Dev") {
-                            matches = (url.find("cpp") != std::string::npos ||
-                                       url.find("changelog") != std::string::npos ||
-                                       url.find("softwareengineering") != std::string::npos ||
-                                       url.find("devsarg") != std::string::npos ||
-                                       url.find("osnews") != std::string::npos ||
-                                       url.find("computerhistory") != std::string::npos ||
-                                       url.find("pythontest") != std::string::npos);
-                        } else if (selected_tag_ == "News") {
-                            matches = (url.find("wsj") != std::string::npos ||
-                                       url.find("npr") != std::string::npos ||
-                                       url.find("elpais") != std::string::npos ||
-                                       url.find("rt.com") != std::string::npos ||
-                                       url.find("repubblica") != std::string::npos ||
-                                       url.find("leftcom") != std::string::npos ||
-                                       url.find("themoscowtimes") != std::string::npos ||
-                                       url.find("aljazeera") != std::string::npos ||
-                                       url.find("channel4") != std::string::npos ||
-                                       url.find("c5n") != std::string::npos ||
-                                       url.find("clarin") != std::string::npos ||
-                                       url.find("dw.com") != std::string::npos ||
-                                       url.find("bbci.co.uk") != std::string::npos);
-                        } else if (selected_tag_ == "Other") {
-                            bool is_podcast = (url.find("megaphone.fm") != std::string::npos ||
-                                               url.find("spreaker.com") != std::string::npos ||
-                                               url.find("libsyn.com") != std::string::npos ||
-                                               url.find("simplecast.com") != std::string::npos ||
-                                               url.find("transistor.fm") != std::string::npos ||
-                                               url.find("anchor.fm") != std::string::npos ||
-                                               url.find("audioboom.com") != std::string::npos ||
-                                               url.find("podbean.com") != std::string::npos ||
-                                               url.find("acast.com") != std::string::npos ||
-                                               url.find("podplaystudio.com") != std::string::npos);
-                            if (!is_podcast) {
-                                for (const auto& item : feed->items) {
-                                    if (!item.enclosure.empty() && 
-                                        (item.enclosure.find(".mp3") != std::string::npos || 
-                                         item.enclosure.find(".wav") != std::string::npos ||
-                                         item.enclosure.find("audio") != std::string::npos)) {
-                                        is_podcast = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            bool is_youtube = (url.find("youtube.com") != std::string::npos ||
-                                               url.find("youtu.be") != std::string::npos);
-                            bool is_tech = (url.find("cpp") != std::string::npos ||
-                                            url.find("changelog") != std::string::npos ||
-                                            url.find("softwareengineering") != std::string::npos ||
-                                            url.find("devsarg") != std::string::npos ||
-                                            url.find("osnews") != std::string::npos ||
-                                            url.find("computerhistory") != std::string::npos ||
-                                            url.find("pythontest") != std::string::npos);
-                            bool is_news = (url.find("wsj") != std::string::npos ||
-                                            url.find("npr") != std::string::npos ||
-                                            url.find("elpais") != std::string::npos ||
-                                            url.find("rt.com") != std::string::npos ||
-                                            url.find("repubblica") != std::string::npos ||
-                                            url.find("leftcom") != std::string::npos ||
-                                            url.find("themoscowtimes") != std::string::npos ||
-                                            url.find("aljazeera") != std::string::npos ||
-                                            url.find("channel4") != std::string::npos ||
-                                            url.find("c5n") != std::string::npos ||
-                                            url.find("clarin") != std::string::npos ||
-                                            url.find("dw.com") != std::string::npos ||
-                                            url.find("bbci.co.uk") != std::string::npos);
-                            matches = (!is_podcast && !is_youtube && !is_tech && !is_news);
-                        }
-                        
-                        if (matches) {
+                        if (feed->tags.contains(selected_tag_)) {
                             feeds.push_back(feed);
                         }
                     }
@@ -701,27 +603,24 @@ public:
     {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         auto now = std::chrono::system_clock::now();
-
-        float card_width = 180.0f;
-        float card_height = 290.0f;
+ 
+        float card_width = ImGui::GetContentRegionAvail().x;
+        float card_height = 92.0f;
         float spacing = 12.0f;
-        float avail_width = ImGui::GetContentRegionAvail().x;
-        int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
         
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
         
-        int visible_index = 0;
         for (const auto &feed : feeds)
         {
             if (feed->items.empty())
             {
                 continue; // Skip feeds with zero items
             }
-
+ 
             ImGui::PushID(feed->source_link.c_str());
-
+ 
             std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
-
+ 
             // Filter based on search query if search text is present
             if (!search_text.empty() &&
                 !::helpers::StringHelper::contains_case_insensitive(title, search_text) &&
@@ -730,13 +629,9 @@ public:
                 ImGui::PopID();
                 continue; // Skip items that don't match the search
             }
-
+ 
             has_matches = true;
-
-            if (visible_index > 0 && (visible_index % cols) != 0) {
-                ImGui::SameLine();
-            }
-
+ 
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
             ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + card_height);
             
@@ -749,15 +644,12 @@ public:
             draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f);
             draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f);
             
-            // Padding
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 6.0f));
-            ImGui::BeginGroup();
-            
-            // 1. Draw Image / Placeholder
-            ImVec2 img_size(card_width - 12.0f, 220.0f);
-            ImVec2 img_pos = ImGui::GetCursorScreenPos();
+            // 1. Draw Image / Placeholder (80x80) on the left
+            ImVec2 img_size(80.0f, 80.0f);
+            ImVec2 img_pos = ImVec2(start_pos.x + 6.0f, start_pos.y + 6.0f);
             
             // Invisible button to capture click on cover
+            ImGui::SetCursorScreenPos(img_pos);
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
@@ -766,7 +658,6 @@ public:
             ImGui::PopStyleColor(3);
             ImGui::PopStyleVar();
             
-            // Render the actual image or placeholder on the draw list
             std::string img_url = feed->image_url();
             SDL_Texture* tex = nullptr;
             int img_w = 0, img_h = 0;
@@ -790,12 +681,10 @@ public:
             }
             
             if (tex) {
-                // Draw texture in the image region, cropped to fit the aspect ratio
                 ImVec2 uv0, uv1;
                 calculate_cover_uvs(img_size.x, img_size.y, static_cast<float>(img_w), static_cast<float>(img_h), uv0, uv1);
                 draw_list->AddImage(rouen::helpers::texture_id_cast(tex), img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), uv0, uv1);
             } else {
-                // Draw placeholder
                 draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
                 std::string placeholder_icon = ICON_MD_RSS_FEED;
                 ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
@@ -803,11 +692,10 @@ public:
                 draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
             }
             
-            ImGui::Spacing();
-            
-            // 2. Draw Title
-            std::string truncated_title = truncate_text(title, card_width - 12.0f);
-            bool title_clicked = ImGui::Selectable(std::format("{}##title_{}", truncated_title, feed->repo_id).c_str(), false, ImGuiSelectableFlags_None, ImVec2(card_width - 12.0f, 0));
+            // 2. Draw Title next to the image
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 96.0f, start_pos.y + 10.0f));
+            std::string truncated_title = truncate_text(title, card_width - 160.0f);
+            bool title_clicked = ImGui::Selectable(std::format("{}##title_{}", truncated_title, feed->repo_id).c_str(), false, ImGuiSelectableFlags_None, ImVec2(card_width - 160.0f, 20.0f));
             
             // Right-click context menu
             if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
@@ -823,9 +711,8 @@ public:
                 ImGui::EndPopup();
             }
             
-            // 3. Draw Footer
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 24.0f));
-            
+            // 3. Draw Sub-title (Freshness and Item count)
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 96.0f, start_pos.y + 32.0f));
             ImVec4 freshness_color = get_freshness_color(feed, now);
             ImGui::TextColored(freshness_color, "●");
             ImGui::SameLine();
@@ -834,23 +721,65 @@ public:
             ImGui::Text("%zu items", feed->items.size());
             ImGui::PopStyleColor();
             
-            ImGui::SameLine(card_width - 24.0f);
+            // 4. Draw Tag Selector Pills horizontally
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 96.0f, start_pos.y + 56.0f));
+            ImGui::BeginGroup();
+            {
+                std::vector<std::string> all_possible_tags = {"News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 2.0f));
+                
+                for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
+                    const auto& tag_name = all_possible_tags[t_idx];
+                    bool has_tag = feed->tags.contains(tag_name);
+                    
+                    std::string btn_id = std::format("{}##tag_{}_{}", tag_name, tag_name, feed->repo_id);
+                    
+                    if (has_tag) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x * 1.1f, colors[0].y * 1.1f, colors[0].z * 1.1f, colors[0].w));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x * 0.9f, colors[0].y * 0.9f, colors[0].z * 0.9f, colors[0].w));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.12f, 0.15f, 0.6f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.25f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.15f, 0.18f, 0.9f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.6f, 1.0f));
+                    }
+                    
+                    if (ImGui::Button(btn_id.c_str())) {
+                        if (has_tag) {
+                            rss_host->removeFeedTag(feed->repo_id, tag_name);
+                        } else {
+                            rss_host->addFeedTag(feed->repo_id, tag_name);
+                        }
+                    }
+                    
+                    ImGui::PopStyleColor(4);
+                    
+                    if (t_idx < all_possible_tags.size() - 1) {
+                        ImGui::SameLine();
+                    }
+                }
+                ImGui::PopStyleVar(2);
+            }
+            ImGui::EndGroup();
+            
+            // 5. Draw Delete Button in the top right corner
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + card_width - 24.0f, start_pos.y + 10.0f));
             if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {
                 feeds_to_delete.push_back(feed->source_link);
             }
-            
-            ImGui::EndGroup();
             
             if (cover_clicked || title_clicked) {
                 std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
                 "create_card"_sfn(feed_uri);
             }
             
-            // Reset cursor back to the start of the card box but advanced by width + spacing
+            // Advance cursor position for the next card
             ImGui::SetCursorScreenPos(start_pos);
-            ImGui::Dummy(ImVec2(card_width, card_height));
-
-            visible_index++;
+            ImGui::Dummy(ImVec2(card_width, card_height + spacing));
+            
             ImGui::PopID();
         }
         

@@ -286,6 +286,22 @@ public:
                     return a.updated > b.updated;
                 });
                 
+                // Load tags from database
+                feed_ptr->tags = repo_.get_feed_tags(feed_id);
+                
+                // If feed has no tags, classify dynamically and save
+                if (feed_ptr->tags.empty()) {
+                    std::vector<media::rss::feed_item> items_copy;
+                    for (const auto& item : feed_ptr->items) {
+                        items_copy.push_back(item);
+                    }
+                    auto default_tags = classify_feed_dynamically(feed_ptr->source_link, items_copy);
+                    for (const auto& tag : default_tags) {
+                        repo_.add_feed_tag(feed_id, tag);
+                    }
+                    feed_ptr->tags = std::set<std::string>(default_tags.begin(), default_tags.end());
+                }
+
                 std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
                 feeds_.emplace_back(feed_ptr);
                 urls.emplace_back(url ? url : "");
@@ -429,6 +445,36 @@ public:
         if (pos != feeds_.end()) {
             feeds_.erase(pos);
             repo_.delete_feed(url);
+        }
+    }
+
+    std::set<std::string> getFeedTags(long long feed_id) {
+        return repo_.get_feed_tags(feed_id);
+    }
+    
+    void addFeedTag(long long feed_id, std::string_view tag) {
+        repo_.add_feed_tag(feed_id, tag);
+        
+        // Also update memory representation
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        for (auto& feed : feeds_) {
+            if (feed->repo_id == feed_id) {
+                feed->tags.insert(std::string(tag));
+                break;
+            }
+        }
+    }
+    
+    void removeFeedTag(long long feed_id, std::string_view tag) {
+        repo_.remove_feed_tag(feed_id, tag);
+        
+        // Also update memory representation
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        for (auto& feed : feeds_) {
+            if (feed->repo_id == feed_id) {
+                feed->tags.erase(std::string(tag));
+                break;
+            }
         }
     }
 
@@ -873,6 +919,20 @@ private:
             if (!items_batch.empty()) {
                 repo_.batch_upsert_items(feed_ptr->repo_id, items_batch);
             }
+
+            // Load tags for feed
+            feed_ptr->tags = repo_.get_feed_tags(feed_ptr->repo_id);
+            if (feed_ptr->tags.empty()) {
+                std::vector<media::rss::feed_item> items_copy;
+                for (const auto& item : feed_ptr->items) {
+                    items_copy.push_back(item);
+                }
+                auto default_tags = classify_feed_dynamically(feed_ptr->source_link, items_copy);
+                for (const auto& tag : default_tags) {
+                    repo_.add_feed_tag(feed_ptr->repo_id, tag);
+                }
+                feed_ptr->tags = std::set<std::string>(default_tags.begin(), default_tags.end());
+            }
             
             // Sort the feeds from the latest updated to the oldest
             std::sort(feeds.begin(), feeds.end(),
@@ -950,6 +1010,77 @@ private:
             RSS_ERROR_FMT("Failed to fetch feed {}: {}", url, e.what());
             throw std::runtime_error(std::string("Failed to fetch feed: ") + e.what());
         }
+    }
+
+private:
+    std::vector<std::string> classify_feed_dynamically(const std::string& url, const std::vector<media::rss::feed_item>& items) {
+        std::vector<std::string> tags;
+        std::string lower_url = url;
+        std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
+        
+        // Podcasts
+        bool is_podcast = (lower_url.find("megaphone.fm") != std::string::npos ||
+                           lower_url.find("spreaker.com") != std::string::npos ||
+                           lower_url.find("libsyn.com") != std::string::npos ||
+                           lower_url.find("simplecast.com") != std::string::npos ||
+                           lower_url.find("transistor.fm") != std::string::npos ||
+                           lower_url.find("anchor.fm") != std::string::npos ||
+                           lower_url.find("audioboom.com") != std::string::npos ||
+                           lower_url.find("podbean.com") != std::string::npos ||
+                           lower_url.find("acast.com") != std::string::npos ||
+                           lower_url.find("podplaystudio.com") != std::string::npos);
+        if (!is_podcast) {
+            for (const auto& item : items) {
+                if (!item.enclosure.empty() && 
+                    (item.enclosure.find(".mp3") != std::string::npos || 
+                     item.enclosure.find(".wav") != std::string::npos ||
+                     item.enclosure.find("audio") != std::string::npos)) {
+                    is_podcast = true;
+                    break;
+                }
+            }
+        }
+        if (is_podcast) tags.push_back("Podcasts");
+        
+        // YouTube
+        if (lower_url.find("youtube.com") != std::string::npos ||
+            lower_url.find("youtu.be") != std::string::npos) {
+            tags.push_back("YouTube");
+        }
+        
+        // Tech / Dev
+        if (lower_url.find("cpp") != std::string::npos ||
+            lower_url.find("changelog") != std::string::npos ||
+            lower_url.find("softwareengineering") != std::string::npos ||
+            lower_url.find("devsarg") != std::string::npos ||
+            lower_url.find("osnews") != std::string::npos ||
+            lower_url.find("computerhistory") != std::string::npos ||
+            lower_url.find("pythontest") != std::string::npos) {
+            tags.push_back("Tech / Dev");
+        }
+        
+        // News
+        if (lower_url.find("wsj") != std::string::npos ||
+            lower_url.find("npr") != std::string::npos ||
+            lower_url.find("elpais") != std::string::npos ||
+            lower_url.find("rt.com") != std::string::npos ||
+            lower_url.find("repubblica") != std::string::npos ||
+            lower_url.find("leftcom") != std::string::npos ||
+            lower_url.find("themoscowtimes") != std::string::npos ||
+            lower_url.find("aljazeera") != std::string::npos ||
+            lower_url.find("channel4") != std::string::npos ||
+            lower_url.find("c5n") != std::string::npos ||
+            lower_url.find("clarin") != std::string::npos ||
+            lower_url.find("dw.com") != std::string::npos ||
+            lower_url.find("bbci.co.uk") != std::string::npos) {
+            tags.push_back("News");
+        }
+        
+        if (tags.empty()) {
+            tags.push_back("Other");
+        }
+        
+        return tags;
     }
 
 private:

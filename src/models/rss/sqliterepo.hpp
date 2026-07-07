@@ -94,6 +94,14 @@ namespace media::rss
                     "value TEXT"
                 );
 
+                RSS_DEBUG("Creating feed_tag table...");
+                db_.ensure_table("feed_tag",
+                    "feed_id INTEGER NOT NULL, "
+                    "tag TEXT NOT NULL, "
+                    "PRIMARY KEY(feed_id, tag), "
+                    "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
+                );
+
                 // Create indexes for faster lookups
                 RSS_DEBUG("Creating indexes...");
                 db_.exec("CREATE INDEX IF NOT EXISTS idx_item_feed_id ON item(feed_id)");
@@ -102,6 +110,43 @@ namespace media::rss
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error setting up SQLite repo: {}", e.what());
                 // Indexes already exist or another error occurred - continue anyway
+            }
+        }
+
+        std::set<std::string> get_feed_tags(long long feed_id)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            std::set<std::string> tags;
+            try {
+                db_.exec("SELECT tag FROM feed_tag WHERE feed_id = ?", [&](sqlite3_stmt* stmt) {
+                    const char* tag = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    if (tag) {
+                        tags.insert(tag);
+                    }
+                }, feed_id);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error getting feed tags: {}", e.what());
+            }
+            return tags;
+        }
+
+        void add_feed_tag(long long feed_id, std::string_view tag)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec("INSERT OR IGNORE INTO feed_tag (feed_id, tag) VALUES (?, ?)", [](sqlite3_stmt*){}, feed_id, tag);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error adding feed tag: {}", e.what());
+            }
+        }
+
+        void remove_feed_tag(long long feed_id, std::string_view tag)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec("DELETE FROM feed_tag WHERE feed_id = ? AND tag = ?", [](sqlite3_stmt*){}, feed_id, tag);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error removing feed tag: {}", e.what());
             }
         }
 
