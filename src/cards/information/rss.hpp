@@ -219,6 +219,52 @@ public:
         }
         
         return render_window([this] {
+            // Draw thin progress line on top of the window content
+            {
+                auto last_refresh = rss_host->last_refresh_time();
+                auto interval = rss_host->refresh_interval_s();
+                auto now = std::chrono::system_clock::now();
+                
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh).count() / 1000.0;
+                float ratio = static_cast<float>(elapsed / interval);
+                if (ratio < 0.0f) ratio = 0.0f;
+                if (ratio > 1.0f) ratio = 1.0f;
+                
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                float width = ImGui::GetContentRegionAvail().x;
+                float height = 2.0f;
+                
+                ImVec2 p_min = pos;
+                ImVec2 p_max = ImVec2(pos.x + width * ratio, pos.y + height);
+                
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    p_min, 
+                    ImVec2(pos.x + width, pos.y + height), 
+                    ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.3f))
+                );
+                ImGui::GetWindowDrawList()->AddRectFilled(
+                    p_min, 
+                    p_max, 
+                    ImGui::GetColorU32(colors[0])
+                );
+                
+                // Invisible button to capture hover for tooltip & double click to force refresh
+                ImGui::SetCursorScreenPos(pos);
+                ImGui::InvisibleButton("##refresh_progress_bar", ImVec2(width, height + 4.0f));
+                if (ImGui::IsItemHovered()) {
+                    int seconds_left = std::max(0, static_cast<int>(interval - elapsed));
+                    int minutes = seconds_left / 60;
+                    int seconds = seconds_left % 60;
+                    ImGui::SetTooltip("Next auto-refresh in %02d:%02d\nDouble-click to refresh now", minutes, seconds);
+                    
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        rss_host->triggerManualRefresh();
+                    }
+                }
+                
+                ImGui::Dummy(ImVec2(0.0f, height + 4.0f));
+            }
+
             // Feeds section title
             ImGui::TextColored(colors[0], "Your RSS Feeds:");
             

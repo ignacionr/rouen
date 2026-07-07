@@ -299,6 +299,9 @@ public:
         // This must happen AFTER loading existing feeds so we can properly check for duplicates
         loadPodcastsFromFile();
         
+        // Start the periodic background refresh loop
+        startRefreshLoop();
+        
         // Refresh feeds (this will happen in a background thread)
         RSS_INFO("RSSHost starting feed refresh in background thread...");
         refreshFeeds(std::move(urls));
@@ -322,8 +325,21 @@ public:
         // 2. Clear the callback so no late background notifications try to invoke it
         media_player_item::save_watermark_cb = nullptr;
         
+        periodic_refresh_thread_.request_stop();
         fetch_thread_.request_stop();
         RSS_INFO("RSSHost destructor completed");
+    }
+
+    std::chrono::system_clock::time_point last_refresh_time() const {
+        return last_refresh_time_;
+    }
+    
+    int refresh_interval_s() const {
+        return refresh_interval_s_;
+    }
+    
+    void triggerManualRefresh() {
+        should_force_refresh_.store(true);
     }
 
     int get_timeout() const { return timeout_s_; }
@@ -950,6 +966,95 @@ private:
     
     // Declared last so it is stopped/joined first during destruction
     std::jthread fetch_thread_;
+
+    std::chrono::system_clock::time_point last_refresh_time_ = std::chrono::system_clock::now();
+    int refresh_interval_s_ = 900; // 15 minutes (900 seconds)
+    std::atomic<bool> should_force_refresh_{false};
+    std::jthread periodic_refresh_thread_;
+
+    void startRefreshLoop() {
+        periodic_refresh_thread_ = std::jthread([this] (std::stop_token stoken) {
+            auto quit_job = [stoken]() -> bool {
+                return "quitting"_fnb() || stoken.stop_requested();
+            };
+            
+            last_refresh_time_ = std::chrono::system_clock::now();
+            
+            while (!quit_job()) {
+                // Sleep until next refresh interval, waking up periodically to check stop token/force refresh
+                auto next_refresh = last_refresh_time_ + std::chrono::seconds(refresh_interval_s_);
+                while (std::chrono::system_clock::now() < next_refresh && !quit_job()) {
+                    if (should_force_refresh_.load()) {
+                        break; // Break the sleep loop to refresh immediately
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                }
+                
+                if (quit_job()) break;
+                
+                // Reset force refresh flag
+                should_force_refresh_ = false;
+                
+                // Collect URLs of all currently loaded feeds
+                std::vector<std::string> urls;
+                {
+                    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+                    for (const auto& feed : feeds_) {
+                        urls.push_back(feed->source_link);
+                    }
+                }
+                
+                if (!urls.empty()) {
+                    RSS_INFO_FMT("Starting periodic refresh of {} feeds...", urls.size());
+                    
+                    int success_count = 0;
+                    int error_count = 0;
+                    const int BATCH_SIZE = 15;
+                    
+                    for (size_t i = 0; i < urls.size(); i += BATCH_SIZE) {
+                        std::vector<std::jthread> workers;
+                        std::mutex results_mutex;
+                        size_t end = std::min(i + BATCH_SIZE, urls.size());
+                        
+                        for (size_t j = i; j < end; ++j) {
+                            if (quit_job()) break;
+                            
+                            workers.emplace_back([this, &urls, j, &results_mutex, &success_count, 
+                                                 &error_count, &quit_job](std::stop_token worker_stoken) {
+                                auto worker_quit = [worker_stoken, &quit_job]() -> bool {
+                                    return quit_job() || worker_stoken.stop_requested();
+                                };
+                                
+                                try {
+                                    if (!worker_quit()) {
+                                        auto feed_ptr = addFeedSync(urls[j], worker_quit);
+                                        if (feed_ptr) {
+                                            std::lock_guard<std::mutex> lock(results_mutex);
+                                            ++success_count;
+                                        }
+                                    }
+                                } catch (...) {
+                                    std::lock_guard<std::mutex> lock(results_mutex);
+                                    ++error_count;
+                                }
+                            });
+                        }
+                        
+                        for (auto& worker : workers) {
+                            worker.join();
+                        }
+                        
+                        if (quit_job()) break;
+                    }
+                    
+                    RSS_INFO_FMT("Periodic refresh done. Success: {}, Error: {}", success_count, error_count);
+                }
+                
+                // Update last refresh time after completing the refresh
+                last_refresh_time_ = std::chrono::system_clock::now();
+            }
+        });
+    }
 };
 
 } // namespace rouen::hosts
