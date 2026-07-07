@@ -265,6 +265,41 @@ public:
                 ImGui::Dummy(ImVec2(0.0f, height + 4.0f));
             }
 
+            // Tag Filter Pills
+            {
+                std::vector<std::string> tags = {"All", "News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
+                
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f); // Pill-shaped!
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 3.0f));
+                
+                for (size_t i = 0; i < tags.size(); ++i) {
+                    const auto& tag = tags[i];
+                    bool is_selected = (selected_tag_ == tag);
+                    
+                    if (is_selected) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, colors[0]); // Primary theme color
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x * 1.1f, colors[0].y * 1.1f, colors[0].z * 1.1f, colors[0].w));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x * 0.9f, colors[0].y * 0.9f, colors[0].z * 0.9f, colors[0].w));
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.12f, 0.15f, 0.6f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.25f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.15f, 0.2f, 0.9f));
+                    }
+                    
+                    if (ImGui::Button(tag.c_str())) {
+                        selected_tag_ = tag;
+                    }
+                    
+                    ImGui::PopStyleColor(3);
+                    
+                    if (i < tags.size() - 1) {
+                        ImGui::SameLine();
+                    }
+                }
+                ImGui::PopStyleVar(2);
+                ImGui::Spacing();
+            }
+
             // Feeds section title
             ImGui::TextColored(colors[0], "Your RSS Feeds:");
             
@@ -316,16 +351,127 @@ public:
             auto available_size = ImGui::GetContentRegionAvail();
             ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
             if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
-                auto feeds = rss_host->feeds();
+                auto all_feeds = rss_host->feeds();
+                
+                // Filter feeds based on selected_tag_
+                std::vector<std::shared_ptr<media::rss::feed>> feeds;
+                if (selected_tag_ == "All") {
+                    feeds = all_feeds;
+                } else {
+                    for (const auto& feed : all_feeds) {
+                        bool matches = false;
+                        std::string url = feed->source_link;
+                        std::transform(url.begin(), url.end(), url.begin(), ::tolower);
+                        
+                        if (selected_tag_ == "Podcasts") {
+                            matches = (url.find("megaphone.fm") != std::string::npos ||
+                                       url.find("spreaker.com") != std::string::npos ||
+                                       url.find("libsyn.com") != std::string::npos ||
+                                       url.find("simplecast.com") != std::string::npos ||
+                                       url.find("transistor.fm") != std::string::npos ||
+                                       url.find("anchor.fm") != std::string::npos ||
+                                       url.find("audioboom.com") != std::string::npos ||
+                                       url.find("podbean.com") != std::string::npos ||
+                                       url.find("acast.com") != std::string::npos ||
+                                       url.find("podplaystudio.com") != std::string::npos);
+                            if (!matches) {
+                                for (const auto& item : feed->items) {
+                                    if (!item.enclosure.empty() && 
+                                        (item.enclosure.find(".mp3") != std::string::npos || 
+                                         item.enclosure.find(".wav") != std::string::npos ||
+                                         item.enclosure.find("audio") != std::string::npos)) {
+                                        matches = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else if (selected_tag_ == "YouTube") {
+                            matches = (url.find("youtube.com") != std::string::npos ||
+                                       url.find("youtu.be") != std::string::npos);
+                        } else if (selected_tag_ == "Tech / Dev") {
+                            matches = (url.find("cpp") != std::string::npos ||
+                                       url.find("changelog") != std::string::npos ||
+                                       url.find("softwareengineering") != std::string::npos ||
+                                       url.find("devsarg") != std::string::npos ||
+                                       url.find("osnews") != std::string::npos ||
+                                       url.find("computerhistory") != std::string::npos ||
+                                       url.find("pythontest") != std::string::npos);
+                        } else if (selected_tag_ == "News") {
+                            matches = (url.find("wsj") != std::string::npos ||
+                                       url.find("npr") != std::string::npos ||
+                                       url.find("elpais") != std::string::npos ||
+                                       url.find("rt.com") != std::string::npos ||
+                                       url.find("repubblica") != std::string::npos ||
+                                       url.find("leftcom") != std::string::npos ||
+                                       url.find("themoscowtimes") != std::string::npos ||
+                                       url.find("aljazeera") != std::string::npos ||
+                                       url.find("channel4") != std::string::npos ||
+                                       url.find("c5n") != std::string::npos ||
+                                       url.find("clarin") != std::string::npos ||
+                                       url.find("dw.com") != std::string::npos ||
+                                       url.find("bbci.co.uk") != std::string::npos);
+                        } else if (selected_tag_ == "Other") {
+                            bool is_podcast = (url.find("megaphone.fm") != std::string::npos ||
+                                               url.find("spreaker.com") != std::string::npos ||
+                                               url.find("libsyn.com") != std::string::npos ||
+                                               url.find("simplecast.com") != std::string::npos ||
+                                               url.find("transistor.fm") != std::string::npos ||
+                                               url.find("anchor.fm") != std::string::npos ||
+                                               url.find("audioboom.com") != std::string::npos ||
+                                               url.find("podbean.com") != std::string::npos ||
+                                               url.find("acast.com") != std::string::npos ||
+                                               url.find("podplaystudio.com") != std::string::npos);
+                            if (!is_podcast) {
+                                for (const auto& item : feed->items) {
+                                    if (!item.enclosure.empty() && 
+                                        (item.enclosure.find(".mp3") != std::string::npos || 
+                                         item.enclosure.find(".wav") != std::string::npos ||
+                                         item.enclosure.find("audio") != std::string::npos)) {
+                                        is_podcast = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            bool is_youtube = (url.find("youtube.com") != std::string::npos ||
+                                               url.find("youtu.be") != std::string::npos);
+                            bool is_tech = (url.find("cpp") != std::string::npos ||
+                                            url.find("changelog") != std::string::npos ||
+                                            url.find("softwareengineering") != std::string::npos ||
+                                            url.find("devsarg") != std::string::npos ||
+                                            url.find("osnews") != std::string::npos ||
+                                            url.find("computerhistory") != std::string::npos ||
+                                            url.find("pythontest") != std::string::npos);
+                            bool is_news = (url.find("wsj") != std::string::npos ||
+                                            url.find("npr") != std::string::npos ||
+                                            url.find("elpais") != std::string::npos ||
+                                            url.find("rt.com") != std::string::npos ||
+                                            url.find("repubblica") != std::string::npos ||
+                                            url.find("leftcom") != std::string::npos ||
+                                            url.find("themoscowtimes") != std::string::npos ||
+                                            url.find("aljazeera") != std::string::npos ||
+                                            url.find("channel4") != std::string::npos ||
+                                            url.find("c5n") != std::string::npos ||
+                                            url.find("clarin") != std::string::npos ||
+                                            url.find("dw.com") != std::string::npos ||
+                                            url.find("bbci.co.uk") != std::string::npos);
+                            matches = (!is_podcast && !is_youtube && !is_tech && !is_news);
+                        }
+                        
+                        if (matches) {
+                            feeds.push_back(feed);
+                        }
+                    }
+                }
+
                 if (feeds.empty()) {
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds added yet");
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds in this category");
                 } else {
                     std::string search_text = search_buffer;
                     if (search_text.empty()) {
                         bool has_matches = false;
                         render_feed_list(feeds, search_text, has_matches);
                     } else {
-                        // 1. Search matching Feeds
+                        // 1. Search matching Feeds within current category
                         std::vector<std::shared_ptr<media::rss::feed>> matching_feeds;
                         for (const auto& feed : feeds) {
                             std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
@@ -345,8 +491,22 @@ public:
                             ImGui::Spacing();
                         }
 
-                        // 2. Deep Search matching Articles
-                        auto matching_items = rss_host->searchItems(search_text);
+                        // 2. Deep Search matching Articles within category
+                        auto raw_matching_items = rss_host->searchItems(search_text);
+                        std::vector<hosts::RSSHost::FeedItem> matching_items;
+                        if (selected_tag_ == "All") {
+                            matching_items = raw_matching_items;
+                        } else {
+                            std::set<long long> active_ids;
+                            for (const auto& f : feeds) {
+                                active_ids.insert(f->repo_id);
+                            }
+                            for (const auto& item : raw_matching_items) {
+                                if (active_ids.contains(item.feed_id)) {
+                                    matching_items.push_back(item);
+                                }
+                            }
+                        }
                         ImGui::TextColored(colors[0], "Matching Articles (%d):", static_cast<int>(matching_items.size()));
                         ImGui::Spacing();
 
@@ -905,6 +1065,8 @@ private:
     bool ai_search_in_progress_ = false;
     std::vector<AISearchResult> ai_search_results_;
     std::future<std::vector<AISearchResult>> ai_search_future_;
+    
+    std::string selected_tag_ = "All";
     
     // Cache for feed freshness colors to avoid recalculating every frame
     mutable std::unordered_map<std::string, std::pair<ImVec4, std::chrono::system_clock::time_point>> freshness_cache;
