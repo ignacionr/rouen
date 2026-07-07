@@ -225,7 +225,7 @@ public:
                 auto interval = rss_host->refresh_interval_s();
                 auto now = std::chrono::system_clock::now();
                 
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh).count() / 1000.0;
+                auto elapsed = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh).count()) / 1000.0;
                 float ratio = static_cast<float>(elapsed / interval);
                 if (ratio < 0.0f) ratio = 0.0f;
                 if (ratio > 1.0f) ratio = 1.0f;
