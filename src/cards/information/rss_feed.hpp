@@ -372,10 +372,7 @@ namespace rouen::cards
                                             
                                             // Truncated description (if available)
                                             if (!item.description.empty()) {
-                                                std::string desc = item.description;
-                                                // Strip HTML tags (basic approach)
-                                                desc.erase(std::remove_if(desc.begin(), desc.end(), 
-                                                    [](char c) { return c == '<' || c == '>'; }), desc.end());
+                                                std::string desc = ::helpers::StringHelper::strip_html_tags(item.description);
                                                 
                                                 // Limit length
                                                 if (desc.length() > 100) {

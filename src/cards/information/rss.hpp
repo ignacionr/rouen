@@ -474,9 +474,7 @@ public:
 
                                         // Description
                                         if (!item.description.empty()) {
-                                            std::string desc = item.description;
-                                            desc.erase(std::remove_if(desc.begin(), desc.end(),
-                                                [](char c) { return c == '<' || c == '>'; }), desc.end());
+                                            std::string desc = ::helpers::StringHelper::strip_html_tags(item.description);
                                             if (desc.length() > 100) {
                                                 desc = desc.substr(0, 97) + "...";
                                             }

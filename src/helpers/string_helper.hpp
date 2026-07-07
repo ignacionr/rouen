@@ -111,6 +111,96 @@ public:
         }
         return oss.str();
     }
+
+    /**
+     * Strips HTML tags and decodes common HTML entities from a string.
+     * Replaces multiple whitespace characters with a single space.
+     * 
+     * @param html The HTML string to clean
+     * @return Cleaned plain text
+     */
+    static std::string strip_html_tags(std::string_view html) {
+        std::string tag_stripped;
+        tag_stripped.reserve(html.size());
+        
+        // 1. Strip HTML tags
+        bool in_tag = false;
+        for (char c : html) {
+            if (c == '<') {
+                in_tag = true;
+            } else if (c == '>') {
+                in_tag = false;
+            } else if (!in_tag) {
+                tag_stripped.push_back(c);
+            }
+        }
+        
+        // 2. Decode HTML entities from the stripped text
+        std::string decoded;
+        decoded.reserve(tag_stripped.size());
+        for (size_t i = 0; i < tag_stripped.size(); ++i) {
+            if (tag_stripped[i] == '&') {
+                if (tag_stripped.substr(i, 4) == "&lt;") {
+                    decoded.push_back('<');
+                    i += 3;
+                } else if (tag_stripped.substr(i, 4) == "&gt;") {
+                    decoded.push_back('>');
+                    i += 3;
+                } else if (tag_stripped.substr(i, 5) == "&amp;") {
+                    decoded.push_back('&');
+                    i += 4;
+                } else if (tag_stripped.substr(i, 6) == "&quot;") {
+                    decoded.push_back('"');
+                    i += 5;
+                } else if (tag_stripped.substr(i, 6) == "&apos;") {
+                    decoded.push_back('\'');
+                    i += 5;
+                } else if (tag_stripped.substr(i, 5) == "&#39;") {
+                    decoded.push_back('\'');
+                    i += 4;
+                } else if (tag_stripped.substr(i, 6) == "&nbsp;") {
+                    decoded.push_back(' ');
+                    i += 5;
+                } else {
+                    decoded.push_back(tag_stripped[i]);
+                }
+            } else {
+                decoded.push_back(tag_stripped[i]);
+            }
+        }
+        
+        // 3. Normalize whitespace (collapse multiple spaces/newlines/tabs into a single space)
+        std::string normalized;
+        normalized.reserve(decoded.size());
+        bool last_was_ws = false;
+        
+        // Find first non-whitespace
+        size_t start = 0;
+        while (start < decoded.size() && std::isspace(static_cast<unsigned char>(decoded[start]))) {
+            start++;
+        }
+        
+        // Find last non-whitespace
+        size_t end = decoded.size();
+        while (end > start && std::isspace(static_cast<unsigned char>(decoded[end - 1]))) {
+            end--;
+        }
+        
+        for (size_t i = start; i < end; ++i) {
+            char c = decoded[i];
+            if (std::isspace(static_cast<unsigned char>(c))) {
+                if (!last_was_ws) {
+                    normalized.push_back(' ');
+                    last_was_ws = true;
+                }
+            } else {
+                normalized.push_back(c);
+                last_was_ws = false;
+            }
+        }
+        
+        return normalized;
+    }
 };
 
 } // namespace helpers
