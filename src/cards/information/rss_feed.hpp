@@ -8,6 +8,7 @@
 #include <vector>
 #include <thread>
 #include <set>
+#include <mutex>
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../external/IconsMaterialDesign.h" // Added icon header
@@ -412,6 +413,50 @@ namespace rouen::cards
                                                      item.link.find("vimeo.com") != std::string::npos) {
                                                 media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
                                             }
+                                            else {
+                                                // Check if currently speaking
+                                                bool is_this_speaking = false;
+                                                {
+                                                    std::lock_guard<std::mutex> lock(speaking_mutex);
+                                                    is_this_speaking = (currently_speaking_link == item.link);
+                                                }
+                                                
+                                                std::string btn_label = is_this_speaking ? std::format("{} Stop Reading", ICON_MD_VOLUME_OFF) : std::format("{} Read Article", ICON_MD_VOLUME_UP);
+                                                
+                                                if (is_this_speaking) {
+                                                    ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x * 1.1f, colors[0].y * 1.1f, colors[0].z * 1.1f, colors[0].w));
+                                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x * 0.9f, colors[0].y * 0.9f, colors[0].z * 0.9f, colors[0].w));
+                                                } else {
+                                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.12f, 0.15f, 0.6f));
+                                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.25f, 0.8f));
+                                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.15f, 0.18f, 0.9f));
+                                                }
+                                                
+                                                if (ImGui::Button(btn_label.c_str())) {
+                                                    if (is_this_speaking) {
+                                                        rouen::platform::stop_speech();
+                                                        std::lock_guard<std::mutex> lock(speaking_mutex);
+                                                        currently_speaking_link = "";
+                                                    } else {
+                                                        rouen::platform::stop_speech();
+                                                        {
+                                                            std::lock_guard<std::mutex> lock(speaking_mutex);
+                                                            currently_speaking_link = item.link;
+                                                        }
+                                                        std::string clean_desc = ::helpers::StringHelper::strip_html_tags(item.description);
+                                                        std::string speech_text = item.title + ". " + clean_desc;
+                                                        
+                                                        rouen::platform::speak_text_async(speech_text, [item_link = item.link]() {
+                                                            std::lock_guard<std::mutex> lock(speaking_mutex);
+                                                            if (currently_speaking_link == item_link) {
+                                                                currently_speaking_link = "";
+                                                            }
+                                                        });
+                                                    }
+                                                }
+                                                ImGui::PopStyleColor(3);
+                                            }
 
                                             ImGui::PopTextWrapPos();
 
@@ -532,6 +577,9 @@ namespace rouen::cards
         }
 
     private:
+        inline static std::string currently_speaking_link;
+        inline static std::mutex speaking_mutex;
+
         long long feed_id = -1;
         int items_limit = 20;
         char search_buffer[256] = "";
