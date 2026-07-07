@@ -227,25 +227,63 @@ namespace rouen::cards
                     
                     ImGui::EndGroup();
                     
-                    // Display the feed image if we have one
+                    // Display the feed image (or placeholder) and tags to the side of it
+                    ImGui::BeginGroup();
+                    
+                    float img_display_w = 100.0f;
+                    float img_display_h = 100.0f;
+                    ImVec2 cur_pos = ImGui::GetCursorScreenPos();
+                    
                     if (feed_image_texture && feed_image_width > 0 && feed_image_height > 0) {
-                        // Set fixed height of 140.0f and scale width to maintain aspect ratio
-                        float fixed_height = 140.0f;
                         float aspect_ratio = static_cast<float>(feed_image_width) / static_cast<float>(feed_image_height);
-                        float display_width = fixed_height * aspect_ratio;
+                        float display_width = img_display_h * aspect_ratio;
+                        if (display_width > 120.0f) display_width = 120.0f;
+                        img_display_w = display_width;
                         
-                        // Center the image horizontally
-                        float offset = (available_width - display_width) * 0.5f;
-                        if (offset > 0.0f) {
-                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
-                        }
-                        
-                        // Create ImGui image from SDL texture
                         ImGui::Image(
                             rouen::helpers::texture_id_cast(feed_image_texture),
-                            ImVec2(display_width, fixed_height)
+                            ImVec2(img_display_w, img_display_h)
                         );
+                    } else {
+                        // Draw a placeholder cover box
+                        ImGui::GetWindowDrawList()->AddRectFilled(cur_pos, ImVec2(cur_pos.x + img_display_w, cur_pos.y + img_display_h), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
+                        std::string placeholder_icon = ICON_MD_RSS_FEED;
+                        ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
+                        ImVec2 icon_pos = ImVec2(cur_pos.x + (img_display_w - icon_size.x) * 0.5f, cur_pos.y + (img_display_h - icon_size.y) * 0.5f);
+                        ImGui::GetWindowDrawList()->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
+                        ImGui::Dummy(ImVec2(img_display_w, img_display_h));
                     }
+                    
+                    ImGui::SameLine(img_display_w + 16.0f);
+                    
+                    // Right Side: Tags editor group
+                    ImGui::BeginGroup();
+                    ImGui::TextColored(colors[2], "Tags:");
+                    
+                    auto current_tags = rss_host->getFeedTags(feed_id);
+                    std::vector<std::string> all_possible_tags = {"News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
+                    
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
+                    for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
+                        const auto& tag_name = all_possible_tags[t_idx];
+                        bool has_tag = current_tags.contains(tag_name);
+                        
+                        std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
+                        if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
+                            if (has_tag) {
+                                rss_host->addFeedTag(feed_id, tag_name);
+                            } else {
+                                rss_host->removeFeedTag(feed_id, tag_name);
+                            }
+                        }
+                        if (t_idx < all_possible_tags.size() - 1) {
+                            ImGui::SameLine(0.0f, 12.0f);
+                        }
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::EndGroup();
+                    
+                    ImGui::EndGroup();
                                 
                     ImGui::Separator();
                     
