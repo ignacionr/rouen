@@ -313,6 +313,7 @@ namespace media::rss {
         std::string feed_description;
         std::vector<feed_item> items;
         long long repo_id;
+        std::string language;
         std::set<std::string> tags;
         bool is_permanently_redirected = false;
     private:

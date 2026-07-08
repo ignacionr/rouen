@@ -257,17 +257,69 @@ namespace rouen::cards
                     
                     ImGui::SameLine(img_display_w + 16.0f);
                     
-                    // Right Side: Tags editor group
+                    // Right Side: Language and Tags editor group
                     ImGui::BeginGroup();
+                    
+                    // 1. Language Selector
+                    ImGui::TextColored(colors[2], "Language:");
+                    ImGui::SameLine();
+                    
+                    std::vector<std::pair<std::string, std::string>> languages = {
+                        {"", "Auto Detect"},
+                        {"en", "English (UK)"},
+                        {"es", "Spanish"},
+                        {"fr", "French"},
+                        {"de", "German"},
+                        {"it", "Italian"}
+                    };
+                    
+                    std::string current_lang = rss_host->getFeedLanguage(feed_id);
+                    std::string current_display = "Auto Detect";
+                    for (const auto& [code, label] : languages) {
+                        if (code == current_lang) {
+                            current_display = label;
+                            break;
+                        }
+                    }
+                    
+                    ImGui::SetNextItemWidth(130.0f);
+                    if (ImGui::BeginCombo("##feed_lang", current_display.c_str())) {
+                        for (const auto& [code, label] : languages) {
+                            bool is_selected = (code == current_lang);
+                            if (ImGui::Selectable(label.c_str(), is_selected)) {
+                                rss_host->setFeedLanguage(feed_id, code);
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                    
+                    ImGui::Spacing();
+                    
+                    // 2. Tags Selector (with wrapping layout)
                     ImGui::TextColored(colors[2], "Tags:");
                     
                     auto current_tags = rss_host->getFeedTags(feed_id);
                     std::vector<std::string> all_possible_tags = {"News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
                     
+                    float window_max_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+                    
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
                     for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
                         const auto& tag_name = all_possible_tags[t_idx];
                         bool has_tag = current_tags.contains(tag_name);
+                        
+                        // Estimate checkbox width: checkbox box frame (GetFrameHeight) + text + paddings
+                        float chk_width = ImGui::CalcTextSize(tag_name.c_str()).x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x * 2.0f;
+                        
+                        float current_x = ImGui::GetCursorScreenPos().x;
+                        if (t_idx > 0 && current_x + chk_width > window_max_x - 20.0f) {
+                            // Wrapping to next line!
+                        } else if (t_idx > 0) {
+                            ImGui::SameLine(0.0f, 12.0f);
+                        }
                         
                         std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
                         if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
@@ -276,9 +328,6 @@ namespace rouen::cards
                             } else {
                                 rss_host->removeFeedTag(feed_id, tag_name);
                             }
-                        }
-                        if (t_idx < all_possible_tags.size() - 1) {
-                            ImGui::SameLine(0.0f, 12.0f);
                         }
                     }
                     ImGui::PopStyleVar();
@@ -604,6 +653,13 @@ namespace rouen::cards
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
 
         std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
+            std::string manual_lang = rss_host->getFeedLanguage(feed_id);
+            if (manual_lang == "en") return "Daniel";
+            if (manual_lang == "es") return "Jorge";
+            if (manual_lang == "fr") return "Thomas";
+            if (manual_lang == "de") return "Anna";
+            if (manual_lang == "it") return "Alice";
+
             std::string lower_url = std::string(url);
             std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
             

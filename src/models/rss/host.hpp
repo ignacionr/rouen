@@ -24,13 +24,14 @@ namespace media::rss
         host(std::function<std::string(std::string_view)> system_runner) : system_runner_(system_runner)
         {
             std::vector<std::string> urls;
-            repo_.scan_feeds([this, &urls](long long feed_id, const char * url, const char * title, const char * image_url) {
+            repo_.scan_feeds([this, &urls](long long feed_id, const char * url, const char * title, const char * image_url, const char * language) {
                 auto feed_ptr = std::make_shared<media::rss::feed>(system_runner_);
                 feed_ptr->feed_title = title;
                 feed_ptr->source_link = url;
                 feed_ptr->feed_link = url;
                 feed_ptr->set_image(image_url);
                 feed_ptr->repo_id = feed_id;
+                feed_ptr->language = language ? language : "";
                 repo_.scan_items(feed_id, [feed_ptr](const char * link, const char * enclosure, const char * title, const char * description, const char * pub_date, const char * image_url) {
                     // the published date time appears as a string of format "2024-12-07 06:49:08"
                     std::tm tm = {};

@@ -218,6 +218,7 @@ public:
         std::string title;
         std::string url;
         std::string image_url;
+        std::string language;
     };
 
     /**
@@ -247,7 +248,7 @@ public:
         
         try {
             RSS_INFO("RSSHost scanning feeds from repository...");
-            repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url) {
+            repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url, const char* language) {
                 RSS_DEBUG_FMT("Found feed: ID={}, URL={}", feed_id, (url ? url : "null"));
                 
                 auto feed_ptr = std::make_shared<media::rss::feed>();
@@ -256,6 +257,7 @@ public:
                 feed_ptr->feed_link = url ? url : "";
                 feed_ptr->set_image(image_url ? image_url : "");
                 feed_ptr->repo_id = feed_id;
+                feed_ptr->language = language ? language : "";
                 
                 // Load existing items from database
                 repo_.scan_items(feed_id, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
@@ -478,19 +480,43 @@ public:
         }
     }
 
+    std::string getFeedLanguage(long long feed_id) {
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        for (const auto& feed : feeds_) {
+            if (feed->repo_id == feed_id) {
+                return feed->language;
+            }
+        }
+        return "";
+    }
+    
+    void setFeedLanguage(long long feed_id, std::string_view language) {
+        repo_.update_feed_language(feed_id, language);
+        
+        // Also update memory representation
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        for (auto& feed : feeds_) {
+            if (feed->repo_id == feed_id) {
+                feed->language = std::string(language);
+                break;
+            }
+        }
+    }
+
     /**
      * Get feed information by ID
      */
     std::optional<FeedInfo> getFeedInfo(long long feed_id) {
         std::optional<FeedInfo> result;
         
-        repo_.scan_feeds([&result, feed_id](long long id, const char* url, const char* title, const char* image_url) {
+        repo_.scan_feeds([&result, feed_id](long long id, const char* url, const char* title, const char* image_url, const char* language) {
             if (id == feed_id) {
                 result = FeedInfo{
                     .id = id,
                     .title = title ? title : "",
                     .url = url ? url : "",
-                    .image_url = image_url ? image_url : ""
+                    .image_url = image_url ? image_url : "",
+                    .language = language ? language : ""
                 };
             }
         });
@@ -719,7 +745,7 @@ public:
             // Find the feed URL from the repository
             std::optional<std::string> feed_url;
             
-            repo_.scan_feeds([&feed_url, feed_id](long long id, const char* url, const char* /*title*/, const char* /*image_url*/) {
+            repo_.scan_feeds([&feed_url, feed_id](long long id, const char* url, const char* /*title*/, const char* /*image_url*/, const char* /*language*/) {
                 if (id == feed_id && url) {
                     feed_url = url;
                 }

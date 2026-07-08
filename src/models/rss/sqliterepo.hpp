@@ -87,6 +87,23 @@ namespace media::rss
                 } catch (const std::exception& e) {
                     RSS_WARN_FMT("Failed to migrate 'item' table watermark column: {}", e.what());
                 }
+
+                // Migration: check if 'language' column exists in 'feed' table, and add it if not
+                try {
+                    bool has_language = false;
+                    db_.exec("PRAGMA table_info(feed)", [&](sqlite3_stmt* stmt) {
+                        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                        if (name && std::string_view(name) == "language") {
+                            has_language = true;
+                        }
+                    });
+                    if (!has_language) {
+                        RSS_INFO("Adding 'language' column to 'feed' table...");
+                        db_.exec("ALTER TABLE feed ADD COLUMN language TEXT DEFAULT ''");
+                    }
+                } catch (const std::exception& e) {
+                    RSS_WARN_FMT("Failed to migrate 'feed' table language column: {}", e.what());
+                }
                 
                 RSS_DEBUG("Creating settings table...");
                 db_.ensure_table("settings",
@@ -110,6 +127,16 @@ namespace media::rss
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error setting up SQLite repo: {}", e.what());
                 // Indexes already exist or another error occurred - continue anyway
+            }
+        }
+
+        void update_feed_language(long long feed_id, std::string_view language)
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec("UPDATE feed SET language = ? WHERE id = ?", [](sqlite3_stmt*){}, language, feed_id);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error updating feed language: {}", e.what());
             }
         }
 
@@ -281,14 +308,15 @@ namespace media::rss
         {
             RSS_DEBUG("scan_feeds starting...");
             try {
-                std::string sql = "SELECT id, url, title, image_url FROM feed";
+                std::string sql = "SELECT id, url, title, image_url, language FROM feed";
                 db_.exec(sql, [&sink](sqlite3_stmt *stmt) {
                     auto id = sqlite3_column_int64(stmt, 0);
                     auto url = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 1));
                     auto title = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 2));
                     auto image_url = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 3));
+                    auto language = reinterpret_cast<const char *>(sqlite3_column_text(stmt, 4));
                     RSS_TRACE_FMT("scan_feeds found: id={}, url={}", id, (url ? url : "null"));
-                    sink(id, url, title, image_url);
+                    sink(id, url, title, image_url, language ? language : "");
                 });
                 RSS_DEBUG("scan_feeds complete");
             } catch (const std::exception& e) {
