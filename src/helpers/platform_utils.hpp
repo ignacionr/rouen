@@ -11,6 +11,7 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
 #include <limits.h>      // For PATH_MAX
+#include <unistd.h>      // For access()
 #elif defined(__linux__)
 #include <unistd.h>      // For readlink
 #include <limits.h>      // For PATH_MAX
@@ -138,10 +139,17 @@ namespace rouen::platform
 
                 std::string command;
                 if (lang == "es") {
-                    // Prefer say-es for Spanish if available, otherwise fall back to say with voice or default
-                    int which_res = std::system("which say-es > /dev/null 2>&1");
-                    if (which_res == 0) {
-                        command = std::format("say-es \"{}\"", safe_text);
+                    // Prefer say-es for Spanish. Check common install locations (GUI apps may have limited PATH).
+                    std::string sayes_path;
+                    std::vector<std::string> candidates = {"/usr/bin/say-es", "/usr/local/bin/say-es", "/opt/homebrew/bin/say-es", "/usr/local/sbin/say-es"};
+                    for (const auto& p : candidates) {
+                        if (std::filesystem::exists(p) && access(p.c_str(), X_OK) == 0) {
+                            sayes_path = p;
+                            break;
+                        }
+                    }
+                    if (!sayes_path.empty()) {
+                        command = std::format("\"{}\" \"{}\"", sayes_path, safe_text);
                     } else if (!voice.empty()) {
                         command = std::format("say -v \"{}\" \"{}\"", voice, safe_text);
                     } else {
