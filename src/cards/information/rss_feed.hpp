@@ -696,10 +696,10 @@ namespace rouen::cards
         std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
             std::string manual_lang = rss_host->getFeedLanguage(feed_id);
             if (manual_lang == "en") return ""; // Use system default high-quality voice for English
-            if (manual_lang == "es") return "Paulina";
-            if (manual_lang == "fr") return "Thomas";
-            if (manual_lang == "de") return "Anna";
-            if (manual_lang == "it") return "Alice";
+            if (manual_lang == "es") return "Mónica";
+            if (manual_lang == "fr") return "Flo";
+            if (manual_lang == "de") return "Eddy";
+            if (manual_lang == "it") return "Flo";
 
             std::string lower_url = std::string(url);
             std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
@@ -709,19 +709,19 @@ namespace rouen::cards
                 lower_url.find("clarin.com") != std::string::npos ||
                 lower_url.find("c5n.com") != std::string::npos ||
                 lower_url.find("infobae.com") != std::string::npos) {
-                return "Paulina";
+                return "Mónica";
             }
             
             if (lower_url.find(".fr") != std::string::npos) {
-                return "Thomas";
+                return "Flo";
             }
             
             if (lower_url.find(".de") != std::string::npos) {
-                return "Anna";
+                return "Eddy";
             }
             
             if (lower_url.find(".it") != std::string::npos) {
-                return "Alice";
+                return "Flo";
             }
             
             std::string lower_text = std::string(text);
@@ -748,7 +748,7 @@ namespace rouen::cards
             }
             
             if (es_score > en_score && es_score > 2) {
-                return "Paulina";
+                return "Mónica";
             }
             
             return ""; // Default system voice
