@@ -446,8 +446,8 @@ namespace rouen::cards
                                                         }
                                                         std::string clean_desc = ::helpers::StringHelper::strip_html_tags(item.description);
                                                         std::string speech_text = item.title + ". " + clean_desc;
-                                                        
-                                                        rouen::platform::speak_text_async(speech_text, [item_link = item.link]() {
+                                                        std::string chosen_voice = detect_language_and_select_voice(speech_text, item.link);
+                                                        rouen::platform::speak_text_async(speech_text, chosen_voice, [item_link = item.link]() {
                                                             std::lock_guard<std::mutex> lock(speaking_mutex);
                                                             if (currently_speaking_link == item_link) {
                                                                 currently_speaking_link = "";
@@ -602,6 +602,60 @@ namespace rouen::cards
             int height = 0;
         };
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
+
+        std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
+            std::string lower_url = std::string(url);
+            std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
+            
+            if (lower_url.find(".es") != std::string::npos || 
+                lower_url.find("elpais.com") != std::string::npos ||
+                lower_url.find("clarin.com") != std::string::npos ||
+                lower_url.find("c5n.com") != std::string::npos ||
+                lower_url.find("infobae.com") != std::string::npos) {
+                return "Jorge";
+            }
+            
+            if (lower_url.find(".fr") != std::string::npos) {
+                return "Thomas";
+            }
+            
+            if (lower_url.find(".de") != std::string::npos) {
+                return "Anna";
+            }
+            
+            if (lower_url.find(".it") != std::string::npos) {
+                return "Alice";
+            }
+            
+            std::string lower_text = std::string(text);
+            std::transform(lower_text.begin(), lower_text.end(), lower_text.begin(), ::tolower);
+            
+            int es_score = 0;
+            std::vector<std::string> es_words = {" el ", " la ", " de ", " en ", " y ", " que ", " los ", " las ", " con ", " para "};
+            for (const auto& w : es_words) {
+                size_t pos = 0;
+                while ((pos = lower_text.find(w, pos)) != std::string::npos) {
+                    es_score++;
+                    pos += w.length();
+                }
+            }
+            
+            int en_score = 0;
+            std::vector<std::string> en_words = {" the ", " of ", " and ", " to ", " a ", " in ", " is ", " that ", " with ", " for "};
+            for (const auto& w : en_words) {
+                size_t pos = 0;
+                while ((pos = lower_text.find(w, pos)) != std::string::npos) {
+                    en_score++;
+                    pos += w.length();
+                }
+            }
+            
+            if (es_score > en_score && es_score > 2) {
+                return "Jorge";
+            }
+            
+            return "Daniel";
+        }
 
         void request_image_download(const std::string& url) {
             static std::set<std::string> downloading_urls;
