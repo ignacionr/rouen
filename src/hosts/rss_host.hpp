@@ -320,10 +320,14 @@ public:
         // Start the periodic background refresh loop
         startRefreshLoop();
         
-        // Refresh feeds (this will happen in a background thread)
-        RSS_INFO("RSSHost starting feed refresh in background thread...");
-        refreshFeeds(std::move(urls));
-        RSS_INFO("RSSHost constructor completed");
+        // Defer initial feed refresh to allow the startup phase to complete smoothly without thread/DB contention
+        std::jthread([this, urls_to_refresh = std::move(urls)]() mutable {
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            if ("quitting"_fnb()) return;
+            RSS_INFO("RSSHost starting initial feed refresh asynchronously...");
+            refreshFeeds(std::move(urls_to_refresh));
+        }).detach();
+        RSS_INFO("RSSHost constructor completed (initial refresh deferred)");
         
         // Register the watermark callback so the player can update our database
         media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {

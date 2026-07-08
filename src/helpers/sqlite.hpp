@@ -31,6 +31,8 @@ namespace hosting::db
                 createDatabase(path.c_str());
             }
             
+            sqlite3_busy_timeout(db_, 5000); // 5 seconds busy timeout
+            
             // Configure SQLite for better performance and concurrency
             try {
                 DB_DEBUG_FMT("Setting SQLite PRAGMA settings for: {}", path);
@@ -71,6 +73,7 @@ namespace hosting::db
                 throw std::runtime_error(std::format("Can't open database: {} - {}",
                     sqlite3_errmsg(db_), dbName));
             }
+            sqlite3_busy_timeout(db_, 5000); // 5 seconds busy timeout
         }
 
         void close()
