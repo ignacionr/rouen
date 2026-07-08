@@ -142,6 +142,10 @@ namespace rouen::platform
                     // Prefer say-es for Spanish. Check common install locations (GUI apps may have limited PATH).
                     std::string sayes_path;
                     std::vector<std::string> candidates = {"/usr/bin/say-es", "/usr/local/bin/say-es", "/opt/homebrew/bin/say-es", "/usr/local/sbin/say-es"};
+                    // Also check the user's ~/bin which GUI apps often use
+                    if (const char* home = std::getenv("HOME"); home && home[0] != '\0') {
+                        candidates.push_back(std::string(home) + "/bin/say-es");
+                    }
                     for (const auto& p : candidates) {
                         if (std::filesystem::exists(p) && access(p.c_str(), X_OK) == 0) {
                             sayes_path = p;
