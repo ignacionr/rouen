@@ -396,6 +396,40 @@ namespace media::rss
                 RSS_ERROR_FMT("Error in scan_items: {}", e.what());
             }
         }
+
+        template <typename Sink>
+        void scan_items_limit(long long feed_id, int limit, Sink sink)
+        {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            
+            try {
+                std::string sql = "SELECT link, enclosure, title, description, pub_date, image_url, watermark FROM item WHERE feed_id = ? ORDER BY pub_date DESC LIMIT ?";
+                db_.exec(sql, [&sink](sqlite3_stmt *stmt) {
+                    const char* link = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    const char* enclosure = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                    const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+                    const char* description = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+                    const char* pub_date = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+                    const char* image_url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+                    
+                    bool is_null = (sqlite3_column_type(stmt, 6) == SQLITE_NULL);
+                    double watermark_val = sqlite3_column_double(stmt, 6);
+                    std::optional<double> watermark = is_null ? std::nullopt : std::optional<double>(watermark_val);
+                    
+                    sink(
+                        link ? link : "", 
+                        enclosure ? enclosure : "", 
+                        title ? title : "", 
+                        description ? description : "", 
+                        pub_date ? pub_date : "", 
+                        image_url ? image_url : "",
+                        watermark
+                    );
+                }, feed_id, limit);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in scan_items_limit: {}", e.what());
+            }
+        }
         template <typename Sink>
         void search_items(std::string_view query, Sink sink) {
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety

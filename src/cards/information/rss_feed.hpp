@@ -131,9 +131,17 @@ namespace rouen::cards
             // Update the card title with the feed title
             name(std::format("{} - Feed", feed_title));
 
-            // Load feed items
-            items = rss_host->getFeedItems(feed_id);
             items_limit = 20; // Reset display limit
+
+            // Load feed items asynchronously to prevent UI thread blocking
+            std::jthread([this, f_id = feed_id]() {
+                try {
+                    auto loaded_items = rss_host->getFeedItems(f_id, 100); // Limit to 100 items by default
+                    std::lock_guard<std::mutex> lock(items_mutex_);
+                    pending_items_ = std::move(loaded_items);
+                    items_loaded_ = true;
+                } catch (...) {}
+            }).detach();
 
             // Load the feed image if available
             loadFeedImage();
@@ -197,6 +205,13 @@ namespace rouen::cards
             {
                 feed_image_downloaded_ = false;
                 loadFeedImage();
+            }
+
+            if (items_loaded_.load())
+            {
+                items_loaded_ = false;
+                std::lock_guard<std::mutex> lock(items_mutex_);
+                items = std::move(pending_items_);
             }
             
             try
@@ -667,6 +682,9 @@ namespace rouen::cards
         int feed_image_height = 0;
         std::shared_ptr<::helpers::ImageCache> image_cache;
         std::atomic<bool> feed_image_downloaded_{false};
+        std::atomic<bool> items_loaded_{false};
+        std::vector<rouen::hosts::RSSHost::FeedItem> pending_items_;
+        std::mutex items_mutex_;
 
         struct LoadedItemTexture {
             SDL_Texture* texture = nullptr;

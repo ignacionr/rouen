@@ -257,8 +257,8 @@ public:
                 feed_ptr->repo_id = feed_id;
                 feed_ptr->language = language ? language : "";
                 
-                // Load existing items from database
-                repo_.scan_items(feed_id, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
+                // Load existing items from database (only load latest 5 items to keep startup instant)
+                repo_.scan_items_limit(feed_id, 5, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
                                                  const char* item_desc, const char* item_pub_date, const char* item_img_url,
                                                  std::optional<double> watermark) {
                     auto publish_date = parse_db_date(item_pub_date ? item_pub_date : "");
@@ -524,10 +524,10 @@ public:
     /**
      * Get items for a specific feed
      */
-    std::vector<FeedItem> getFeedItems(long long feed_id) {
+    std::vector<FeedItem> getFeedItems(long long feed_id, int limit = 100) {
         std::vector<FeedItem> items;
         
-        repo_.scan_items(feed_id, [&items, feed_id](const char* link, const char* enclosure, const char* title, 
+        repo_.scan_items_limit(feed_id, limit, [&items, feed_id](const char* link, const char* enclosure, const char* title, 
                                          const char* description, const char* pub_date, const char* image_url,
                                          std::optional<double> watermark) {
             // Mark unused parameters to avoid warnings
