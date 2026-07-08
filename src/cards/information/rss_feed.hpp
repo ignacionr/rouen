@@ -141,7 +141,6 @@ namespace rouen::cards
 
         void loadFeedImage()
         {
-            // Clean up previous texture if it exists
             if (feed_image_texture)
             {
                 SDL_DestroyTexture(feed_image_texture);
@@ -156,12 +155,29 @@ namespace rouen::cards
                 return;
             }
 
-            // Use the image cache to load the image
-            feed_image_texture = image_cache->getTexture(
-                renderer,
-                feed_image_url,
-                feed_image_width,
-                feed_image_height);
+            int cached_w = 0, cached_h = 0;
+            if (image_cache->isCached(feed_image_url, cached_w, cached_h))
+            {
+                // Use the image cache to load the image (fast from cache)
+                feed_image_texture = image_cache->getTexture(
+                    renderer,
+                    feed_image_url,
+                    feed_image_width,
+                    feed_image_height);
+            }
+            else
+            {
+                // Download in background to prevent startup freezes
+                auto cache = image_cache;
+                auto url = feed_image_url;
+                std::jthread([this, cache, url]() {
+                    try {
+                        if (cache->downloadAndCache(url)) {
+                            feed_image_downloaded_ = true;
+                        }
+                    } catch (...) {}
+                }).detach();
+            }
         }
 
         void set_renderer(SDL_Renderer *r)
@@ -177,6 +193,12 @@ namespace rouen::cards
 
         bool render() override
         {
+            if (feed_image_downloaded_.load())
+            {
+                feed_image_downloaded_ = false;
+                loadFeedImage();
+            }
+            
             try
             {
                 return render_window([this]()
@@ -644,6 +666,7 @@ namespace rouen::cards
         int feed_image_width = 0;
         int feed_image_height = 0;
         std::shared_ptr<::helpers::ImageCache> image_cache;
+        std::atomic<bool> feed_image_downloaded_{false};
 
         struct LoadedItemTexture {
             SDL_Texture* texture = nullptr;

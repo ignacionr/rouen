@@ -242,10 +242,8 @@ public:
         }
         RSS_INFO_FMT("RSSHost loaded settings: timeout={}s, auto_timeout={}", timeout_s_, auto_timeout_enabled_ ? "true" : "false");
 
-        RSS_INFO("RSSHost constructor starting...");
-        // Load existing feeds but defer loading items until they're needed
+        // Load feeds from database synchronously so they are available immediately
         std::vector<std::string> urls;
-        
         try {
             RSS_INFO("RSSHost scanning feeds from repository...");
             repo_.scan_feeds([this, &urls](long long feed_id, const char* url, const char* title, const char* image_url, const char* language) {
@@ -312,22 +310,13 @@ public:
         } catch (const std::exception& e) {
             RSS_ERROR_FMT("Exception during RSSHost feed scanning: {}", e.what());
         }
+
+        // Load feeds and start background tasks in a background thread to prevent UI thread freezes
+        init_thread_ = std::jthread([this, urls_to_refresh = std::move(urls)](std::stop_token stoken) mutable {
+            initializeAsync(stoken, std::move(urls_to_refresh));
+        });
         
-        // Load podcasts from podcasts.txt file if it exists
-        // This must happen AFTER loading existing feeds so we can properly check for duplicates
-        loadPodcastsFromFile();
-        
-        // Start the periodic background refresh loop
-        startRefreshLoop();
-        
-        // Defer initial feed refresh to allow the startup phase to complete smoothly without thread/DB contention
-        std::jthread([this, urls_to_refresh = std::move(urls)]() mutable {
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            if ("quitting"_fnb()) return;
-            RSS_INFO("RSSHost starting initial feed refresh asynchronously...");
-            refreshFeeds(std::move(urls_to_refresh));
-        }).detach();
-        RSS_INFO("RSSHost constructor completed (initial refresh deferred)");
+        RSS_INFO("RSSHost constructor completed (initialization deferred to background)");
         
         // Register the watermark callback so the player can update our database
         media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {
@@ -347,6 +336,10 @@ public:
         // 2. Clear the callback so no late background notifications try to invoke it
         media_player_item::save_watermark_cb = nullptr;
         
+        init_thread_.request_stop();
+        if (init_thread_.joinable()) {
+            init_thread_.join();
+        }
         periodic_refresh_thread_.request_stop();
         fetch_thread_.request_stop();
         RSS_INFO("RSSHost destructor completed");
@@ -1042,6 +1035,31 @@ private:
         }
     }
 
+    void initializeAsync(std::stop_token stoken, std::vector<std::string> urls) {
+        auto quit_job = [stoken]() -> bool {
+            return "quitting"_fnb() || stoken.stop_requested();
+        };
+
+        if (quit_job()) return;
+
+        // Load podcasts from podcasts.txt file if it exists
+        loadPodcastsFromFile();
+        
+        if (quit_job()) return;
+
+        // Start the periodic background refresh loop
+        startRefreshLoop();
+        
+        // Defer initial feed refresh to allow the startup phase to complete smoothly
+        for (int i = 0; i < 30; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            if (quit_job()) return;
+        }
+        
+        RSS_INFO("RSSHost starting initial feed refresh asynchronously...");
+        refreshFeeds(std::move(urls));
+    }
+
 private:
     std::vector<std::string> classify_feed_dynamically(const std::string& url, const std::vector<media::rss::feed_item>& items) {
         std::vector<std::string> tags;
@@ -1127,11 +1145,12 @@ private:
     
     // Declared last so it is stopped/joined first during destruction
     std::jthread fetch_thread_;
+    std::jthread periodic_refresh_thread_;
+    std::jthread init_thread_;
 
     std::chrono::system_clock::time_point last_refresh_time_ = std::chrono::system_clock::now();
     int refresh_interval_s_ = 900; // 15 minutes (900 seconds)
     std::atomic<bool> should_force_refresh_{false};
-    std::jthread periodic_refresh_thread_;
 
     void startRefreshLoop() {
         periodic_refresh_thread_ = std::jthread([this] (std::stop_token stoken) {
