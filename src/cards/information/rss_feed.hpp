@@ -303,7 +303,7 @@ namespace rouen::cards
                     
                     std::vector<std::pair<std::string, std::string>> languages = {
                         {"", "Auto Detect"},
-                        {"en", "English (UK)"},
+                        {"en", "English"},
                         {"es", "Spanish"},
                         {"fr", "French"},
                         {"de", "German"},
@@ -695,7 +695,7 @@ namespace rouen::cards
 
         std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
             std::string manual_lang = rss_host->getFeedLanguage(feed_id);
-            if (manual_lang == "en") return "Daniel";
+            if (manual_lang == "en") return ""; // Use system default high-quality voice for English
             if (manual_lang == "es") return "Paulina";
             if (manual_lang == "fr") return "Thomas";
             if (manual_lang == "de") return "Anna";
@@ -751,7 +751,7 @@ namespace rouen::cards
                 return "Paulina";
             }
             
-            return "Daniel";
+            return ""; // Default system voice
         }
 
         void request_image_download(const std::string& url) {
