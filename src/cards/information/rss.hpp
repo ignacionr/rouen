@@ -231,15 +231,15 @@ public:
                 if (ratio > 1.0f) ratio = 1.0f;
                 
                 ImVec2 pos = ImGui::GetCursorScreenPos();
-                float width = ImGui::GetContentRegionAvail().x;
+                float bar_width = ImGui::GetContentRegionAvail().x;
                 float height = 2.0f;
                 
                 ImVec2 p_min = pos;
-                ImVec2 p_max = ImVec2(pos.x + width * ratio, pos.y + height);
+                ImVec2 p_max = ImVec2(pos.x + bar_width * ratio, pos.y + height);
                 
                 ImGui::GetWindowDrawList()->AddRectFilled(
                     p_min, 
-                    ImVec2(pos.x + width, pos.y + height), 
+                    ImVec2(pos.x + bar_width, pos.y + height), 
                     ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.3f))
                 );
                 ImGui::GetWindowDrawList()->AddRectFilled(
@@ -250,7 +250,7 @@ public:
                 
                 // Invisible button to capture hover for tooltip & double click to force refresh
                 ImGui::SetCursorScreenPos(pos);
-                ImGui::InvisibleButton("##refresh_progress_bar", ImVec2(width, height + 4.0f));
+                ImGui::InvisibleButton("##refresh_progress_bar", ImVec2(bar_width, height + 4.0f));
                 if (ImGui::IsItemHovered()) {
                     int seconds_left = std::max(0, static_cast<int>(interval - elapsed));
                     int minutes = seconds_left / 60;
