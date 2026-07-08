@@ -655,7 +655,7 @@ namespace rouen::cards
         std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
             std::string manual_lang = rss_host->getFeedLanguage(feed_id);
             if (manual_lang == "en") return "Daniel";
-            if (manual_lang == "es") return "Jorge";
+            if (manual_lang == "es") return "Paulina";
             if (manual_lang == "fr") return "Thomas";
             if (manual_lang == "de") return "Anna";
             if (manual_lang == "it") return "Alice";
@@ -668,7 +668,7 @@ namespace rouen::cards
                 lower_url.find("clarin.com") != std::string::npos ||
                 lower_url.find("c5n.com") != std::string::npos ||
                 lower_url.find("infobae.com") != std::string::npos) {
-                return "Jorge";
+                return "Paulina";
             }
             
             if (lower_url.find(".fr") != std::string::npos) {
@@ -707,7 +707,7 @@ namespace rouen::cards
             }
             
             if (es_score > en_score && es_score > 2) {
-                return "Jorge";
+                return "Paulina";
             }
             
             return "Daniel";
