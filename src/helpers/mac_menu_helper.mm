@@ -1,6 +1,9 @@
 #import <Cocoa/Cocoa.h>
 #include "mac_menu_helper.hpp"
 #include "../registrar.hpp"
+#include <SDL.h>
+#include <SDL_syswm.h>
+#include <cmath>
 #include <iostream>
 
 @interface RouenMenuHandler : NSObject
@@ -79,6 +82,28 @@ void disable_mac_cmd_w_menu_item() {
         }
     }
     [pool release];
+}
+
+int get_mac_titlebar_height(SDL_Window* window) {
+    if (!window) {
+        return 0;
+    }
+
+    SDL_SysWMinfo wm_info{};
+    SDL_VERSION(&wm_info.version);
+    if (!SDL_GetWindowWMInfo(window, &wm_info)) {
+        return 0;
+    }
+
+    NSWindow* ns_window = wm_info.info.cocoa.window;
+    if (!ns_window) {
+        return 0;
+    }
+
+    const NSRect frame_rect = [ns_window frame];
+    const NSRect content_rect = [ns_window contentRectForFrameRect:frame_rect];
+    const CGFloat titlebar_height = NSMaxY(frame_rect) - NSMaxY(content_rect);
+    return static_cast<int>(std::lround(titlebar_height));
 }
 
 } // namespace rouen::platform

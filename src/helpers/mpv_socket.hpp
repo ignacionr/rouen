@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <thread>
 #include <cstring>
+#include <mutex>
 
 // Platform-specific socket headers
 #ifdef _WIN32
@@ -45,6 +46,7 @@ private:
 #endif
     std::string socket_path;
     bool using_fd_socket{false}; // Flag to indicate if we're using direct FD socket
+    mutable std::mutex io_mutex;
 
 public:
     mpv_socket_helper() = default;
@@ -53,6 +55,7 @@ public:
     }
 
     void close_socket() {
+        std::lock_guard<std::mutex> lock(io_mutex);
 #ifdef _WIN32
         if (socket_fd != INVALID_SOCKET) {
             closesocket(socket_fd);
@@ -73,6 +76,7 @@ public:
     
     // For direct file descriptor socket approach
     void set_socket_fd(int fd) {
+        std::lock_guard<std::mutex> lock(io_mutex);
         // Close any existing socket first
 #ifdef _WIN32
         if (socket_fd != INVALID_SOCKET) {
@@ -297,6 +301,7 @@ public:
         MPV_WARN("MPV socket communication not available on Windows");
         return false;
 #else
+        std::lock_guard<std::mutex> lock(io_mutex);
         // First check if the socket is valid
         if (socket_fd < 0) {
             MPV_WARN("Cannot send command - socket not connected");
@@ -390,6 +395,7 @@ public:
         MPV_WARN("MPV socket communication not available on Windows");
         return false;
 #else
+        std::lock_guard<std::mutex> lock(io_mutex);
         if (socket_fd < 0) {
             MPV_DEBUG("Attempted to receive from closed socket");
             return false;

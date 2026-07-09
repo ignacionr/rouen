@@ -2,9 +2,11 @@
 
 #include "media_player_item.hpp"
 #include "media_player_alarm.hpp"
+#include "mac_menu_helper.hpp"
 #include "./imgui_include.hpp"
 #include "../registrar.hpp"
 #include "../../external/IconsMaterialDesign.h"
+#include <algorithm>
 
 struct media_player {
     using item = media_player_item;
@@ -98,6 +100,65 @@ struct media_player {
                         // Send MPV command to show video window (if hidden)
                         std::string show_cmd = "{\"command\":[\"set_property\",\"vid\",1]}\n";
                         item.mpv_socket.send_command(show_cmd);
+                        item.last_docked_video_rect.reset();
+                    }
+
+                    ImGui::Spacing();
+                    const float dock_width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
+                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, 360.0f);
+                    const ImVec2 dock_size{dock_width, dock_height};
+                    const ImVec2 dock_min = ImGui::GetCursorScreenPos();
+
+                    ImGui::Dummy(dock_size);
+
+                    const ImVec2 dock_max = ImGui::GetItemRectMax();
+                    auto* draw_list = ImGui::GetWindowDrawList();
+                    const auto fill_color = ImGui::GetColorU32(ImGuiCol_FrameBg);
+                    const auto border_color = ImGui::GetColorU32(ImGuiCol_Border);
+                    const auto text_color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+                    draw_list->AddRectFilled(dock_min, dock_max, fill_color, 10.0f);
+                    draw_list->AddRect(dock_min, dock_max, border_color, 10.0f, 0, 2.0f);
+
+                    constexpr const char* dock_label = "Docked MPV video window";
+                    const ImVec2 label_size = ImGui::CalcTextSize(dock_label);
+                    draw_list->AddText(
+                        ImVec2(
+                            dock_min.x + std::max(0.0f, (dock_size.x - label_size.x) * 0.5f),
+                            dock_min.y + std::max(0.0f, (dock_size.y - label_size.y) * 0.5f)
+                        ),
+                        text_color,
+                        dock_label
+                    );
+
+                    auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
+                    if (get_window_service) {
+                        if (SDL_Window* window = (*get_window_service)()) {
+                            int window_x = 0;
+                            int window_y = 0;
+                            SDL_GetWindowPosition(window, &window_x, &window_y);
+
+                            int content_origin_x = window_x;
+                            int content_origin_y = window_y;
+#ifdef __APPLE__
+                            content_origin_y -= rouen::platform::get_mac_titlebar_height(window);
+#else
+                            int border_top = 0;
+                            int border_left = 0;
+                            int border_bottom = 0;
+                            int border_right = 0;
+                            if (SDL_GetWindowBordersSize(window, &border_top, &border_left, &border_bottom, &border_right) == 0) {
+                                content_origin_x += border_left;
+                                content_origin_y += border_top;
+                            }
+#endif
+
+                            item.syncVideoWindowRect({
+                                content_origin_x + static_cast<int>(dock_min.x),
+                                content_origin_y + static_cast<int>(dock_min.y),
+                                std::max(1, static_cast<int>(dock_size.x)),
+                                std::max(1, static_cast<int>(dock_size.y))
+                            });
+                        }
                     }
                 }
             } else {

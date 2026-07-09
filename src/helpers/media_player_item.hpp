@@ -34,6 +34,15 @@
 #include "../../src/helpers/glaze_include.hpp"
 
 struct media_player_item {
+    struct window_rect {
+        int x{0};
+        int y{0};
+        int w{0};
+        int h{0};
+
+        bool operator==(const window_rect&) const = default;
+    };
+
     std::string url;
 #ifdef _WIN32
     DWORD player_pid{0};
@@ -55,6 +64,7 @@ struct media_player_item {
     std::string item_link;
     std::string item_title;
     std::optional<double> watermark;
+    std::optional<window_rect> last_docked_video_rect;
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
 
     media_player_item() = default;
@@ -74,6 +84,7 @@ struct media_player_item {
     bool resumeMedia();
     bool togglePause();
     bool setPaused(bool paused);
+    bool syncVideoWindowRect(const window_rect& rect);
 };
 
 using media_player_item_map = std::unordered_map<ImGuiID, media_player_item>;
@@ -198,6 +209,7 @@ inline void media_player_item::stopMedia() {
     position = 0.0;
     duration = 0.0;
     start_offset = 0.0;
+    last_docked_video_rect.reset();
 }
 
 inline void media_player_item::startPositionTracking() {
@@ -345,6 +357,7 @@ inline bool media_player_item::playMedia() {
     start_offset = offset;
     has_video = false;
     is_paused = false;
+    last_docked_video_rect.reset();
     
     // Validate that MPV is available
     std::string mpv_path = CONFIG_SERVICE()->get_mpv_path();
@@ -428,6 +441,8 @@ inline bool media_player_item::playMedia() {
         args_str.push_back("--no-terminal");
         args_str.push_back("--log-file=/tmp/rouen_mpv_err.log");
         args_str.push_back("--input-ipc-server=" + socket_path);
+        args_str.push_back("--ontop=yes");
+        args_str.push_back("--no-border");
         args_str.push_back("--http-header-fields=User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         args_str.push_back("--http-header-fields=Referer: https://www.rt.com/");
         args_str.push_back("--cache=yes");
@@ -523,4 +538,36 @@ inline bool media_player_item::resumeMedia() {
 
 inline bool media_player_item::togglePause() {
     return is_paused.load() ? resumeMedia() : pauseMedia();
+}
+
+inline bool media_player_item::syncVideoWindowRect(const window_rect& rect) {
+    if (player_pid <= 0 || !mpv_socket.is_connected() || rect.w <= 0 || rect.h <= 0) {
+        return false;
+    }
+
+    if (last_docked_video_rect && *last_docked_video_rect == rect) {
+        return true;
+    }
+
+    const auto geometry = std::format("{}x{}+{}+{}", rect.w, rect.h, rect.x, rect.y);
+    const auto border_cmd = R"({"command":["set_property","border",false],"request_id":10}
+)";
+    const auto ontop_cmd = R"({"command":["set_property","ontop",true],"request_id":11}
+)";
+    const auto video_align_y_cmd = R"({"command":["set_property","video-align-y",-1],"request_id":13}
+)";
+    const auto geometry_cmd = std::format(
+        "{{\"command\":[\"set_property\",\"geometry\",\"{}\"],\"request_id\":12}}\n",
+        geometry
+    );
+
+    const bool border_ok = mpv_socket.send_command(border_cmd);
+    const bool ontop_ok = mpv_socket.send_command(ontop_cmd);
+    const bool video_align_y_ok = mpv_socket.send_command(video_align_y_cmd);
+    const bool geometry_ok = mpv_socket.send_command(geometry_cmd);
+    if (border_ok && ontop_ok && video_align_y_ok && geometry_ok) {
+        last_docked_video_rect = rect;
+        return true;
+    }
+    return false;
 }
