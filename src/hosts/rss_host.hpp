@@ -819,6 +819,25 @@ private:
                             // Only attempt to add the feed if we're not quitting
                             if (!worker_quit()) {
                                 RSS_INFO_FMT("Starting to process feed: {}", url_list[j]);
+
+                                // Respect per-feed backoff if set (e.g., after recent 429)
+                                {
+                                    std::lock_guard<std::mutex> lock(backoff_mutex_);
+                                    if (auto it = feed_backoff_until_.find(url_list[j]); it != feed_backoff_until_.end()) {
+                                        auto now = std::chrono::system_clock::now();
+                                        if (now < it->second) {
+                                            auto secs_left = std::chrono::duration_cast<std::chrono::seconds>(it->second - now).count();
+                                            RSS_WARN_FMT("Skipping feed {} due to backoff ({}s remaining)", url_list[j], secs_left);
+                                            // Count as an error for summary reporting
+                                            std::lock_guard<std::mutex> rlock(results_mutex);
+                                            ++error_count;
+                                            return;
+                                        } else {
+                                            // Backoff expired, remove entry
+                                            feed_backoff_until_.erase(it);
+                                        }
+                                    }
+                                }
                                 auto feed_ptr = addFeedSync(url_list[j], worker_quit);
                                 
                                 if (feed_ptr) {
@@ -1016,10 +1035,14 @@ private:
                 }
             }
             
-            // Reset failure count on success
+            // Reset failure count on success and clear any backoff
             {
                 std::lock_guard<std::mutex> lock(failure_counts_mutex_);
                 feed_failure_counts_[url_str] = 0;
+            }
+            {
+                std::lock_guard<std::mutex> lock(backoff_mutex_);
+                feed_backoff_until_.erase(url_str);
             }
 
             RSS_INFO_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
@@ -1030,6 +1053,32 @@ private:
                 std::lock_guard<std::mutex> lock(failure_counts_mutex_);
                 feed_failure_counts_[url_str] = failure_count + 1;
             }
+
+            // If this was a rate-limit (HTTP 429) we should back off intelligently
+            try {
+                std::string err = e.what();
+                if (err.find("HTTP error 429") != std::string::npos) {
+                    using namespace std::chrono;
+                    auto now = system_clock::now();
+                    // Exponential backoff in minutes: 5, 10, 20, 40, 60 (cap at 60)
+                    int minutes = std::min((failure_count + 1) * 5, 60);
+                    // Add small jitter of up to 30% to avoid herd effects
+                    int max_jitter = std::max(1, (minutes * 30) / 100);
+                    int jitter = std::rand() % (max_jitter + 1);
+                    minutes += jitter;
+
+                    auto until = now + std::chrono::minutes(minutes);
+
+                    {
+                        std::lock_guard<std::mutex> lock(backoff_mutex_);
+                        feed_backoff_until_[url_str] = until;
+                    }
+                    RSS_WARN_FMT("Received HTTP 429 for {}. Backing off for {} minutes (with jitter).", url, minutes);
+                }
+            } catch (...) {
+                // Ignore any parsing errors
+            }
+
             RSS_ERROR_FMT("Failed to fetch feed {}: {}", url, e.what());
             throw std::runtime_error(std::string("Failed to fetch feed: ") + e.what());
         }
@@ -1142,6 +1191,10 @@ private:
     bool auto_timeout_enabled_ = true;
     std::unordered_map<std::string, int> feed_failure_counts_;
     std::mutex failure_counts_mutex_;
+
+    // Per-feed backoff state (e.g., after HTTP 429 responses)
+    std::unordered_map<std::string, std::chrono::system_clock::time_point> feed_backoff_until_;
+    std::mutex backoff_mutex_;
     
     // Declared last so it is stopped/joined first during destruction
     std::jthread fetch_thread_;
