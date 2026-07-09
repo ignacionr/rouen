@@ -61,12 +61,17 @@ static size_t write_callback(char* contents, size_t size, size_t nmemb, void* us
     return real_size;
 }
 
+// Helper used as userdata for header callback
+struct HeaderCollector {
+    bool* redirect_flag = nullptr;
+    std::unordered_map<std::string, std::string>* headers = nullptr;
+};
+
 // Header callback that collects headers and detects permanent redirects
 static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
     size_t total_size = size * nitems;
     if (!userdata) return total_size;
-    // userdata will be a pointer to the fetch instance
-    http::fetch* self = static_cast<http::fetch*>(userdata);
+    HeaderCollector* collector = static_cast<HeaderCollector*>(userdata);
     std::string_view header(buffer, total_size);
 
     // Detect first status line for redirect codes
@@ -75,7 +80,7 @@ static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, 
         if (space_pos != std::string_view::npos && space_pos + 3 < header.size()) {
             std::string_view code = header.substr(space_pos + 1, 3);
             if (code == "301" || code == "308") {
-                self->last_redirect_was_permanent_ = true;
+                if (collector->redirect_flag) *collector->redirect_flag = true;
             }
         }
         return total_size;
@@ -83,7 +88,7 @@ static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, 
 
     // Parse header lines like "Name: value"
     size_t colon = header.find(':');
-    if (colon != std::string_view::npos) {
+    if (colon != std::string_view::npos && collector->headers) {
         std::string name = std::string(header.substr(0, colon));
         std::string value = std::string(header.substr(colon + 1));
 
@@ -101,7 +106,7 @@ static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, 
         // Lowercase header name for normalization
         for (auto &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
-        self->last_response_headers_[name] = value;
+        (*collector->headers)[name] = value;
     }
 
     return total_size;
@@ -250,10 +255,14 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
-            // Enable header callback to detect 301/308 redirects
-            bool redirect_was_permanent = false;
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -351,10 +360,14 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
-            // Enable header callback to detect 301/308 redirects
-            bool redirect_was_permanent = false;
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
