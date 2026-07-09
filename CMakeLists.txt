@@ -429,6 +429,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/theme_manager.cpp
   src/cards/interface/card.cpp
   src/cards/development/github_registrar.cpp
+  src/cards/development/github/ci_card.cpp
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp

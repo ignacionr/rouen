@@ -1,7 +1,9 @@
 #pragma once
 
 #include <chrono>
+#include <future>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -106,6 +108,9 @@ namespace rouen::cards::github {
         
         void auto_refresh_if_needed();
         bool should_auto_refresh() const;
+        void apply_pending_fetch();
+        bool has_pending_fetch() const;
+        void clear_loading_flags();
         
         // UI state
         std::string selected_repo_full_name_;
@@ -134,6 +139,32 @@ namespace rouen::cards::github {
         // Error handling
         std::string last_error_;
         std::chrono::steady_clock::time_point error_time_;
+
+        enum class FetchKind {
+            None,
+            Repositories,
+            Workflows,
+            Runs,
+            Jobs
+        };
+
+        struct FetchResult {
+            FetchKind kind{FetchKind::None};
+            std::string repo_full_name;
+            std::string workflow_id;
+            std::string run_id;
+            std::vector<std::string> repositories;
+            std::vector<Workflow> workflows;
+            std::vector<WorkflowRun> runs;
+            glz::json_t jobs;
+            std::string error;
+        };
+
+        std::future<FetchResult> pending_fetch_;
+        bool loading_repositories_{false};
+        bool loading_workflows_{false};
+        bool loading_runs_{false};
+        bool loading_jobs_{false};
         
         // UI helpers
         helpers::views::json_view json_view_;

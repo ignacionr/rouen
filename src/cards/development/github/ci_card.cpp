@@ -101,6 +101,8 @@ namespace rouen::cards::github {
 
     ImVec4 WorkflowRun::get_status_color(WorkflowStatus status) {
         switch (status) {
+            case WorkflowStatus::Unknown:
+                return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);  // Dark gray
             case WorkflowStatus::Success:
                 return ImVec4(0.0f, 0.8f, 0.2f, 1.0f);  // Green
             case WorkflowStatus::Failed:
@@ -113,6 +115,8 @@ namespace rouen::cards::github {
                 return ImVec4(0.6f, 0.6f, 0.6f, 1.0f);  // Gray
             case WorkflowStatus::Skipped:
                 return ImVec4(0.7f, 0.5f, 0.9f, 1.0f);  // Purple
+            case WorkflowStatus::Completed:
+                return ImVec4(0.2f, 0.8f, 0.8f, 1.0f);  // Cyan
             default:
                 return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);  // Dark gray
         }
@@ -120,6 +124,8 @@ namespace rouen::cards::github {
 
     const char* WorkflowRun::get_status_icon(WorkflowStatus status) {
         switch (status) {
+            case WorkflowStatus::Unknown:
+                return ICON_MD_HELP;
             case WorkflowStatus::Success:
                 return ICON_MD_CHECK_CIRCLE;
             case WorkflowStatus::Failed:
@@ -132,6 +138,8 @@ namespace rouen::cards::github {
                 return ICON_MD_CANCEL;
             case WorkflowStatus::Skipped:
                 return ICON_MD_SKIP_NEXT;
+            case WorkflowStatus::Completed:
+                return ICON_MD_DONE_ALL;
             default:
                 return ICON_MD_HELP;
         }
@@ -139,6 +147,8 @@ namespace rouen::cards::github {
 
     const char* WorkflowRun::get_status_text(WorkflowStatus status) {
         switch (status) {
+            case WorkflowStatus::Unknown:
+                return "Unknown";
             case WorkflowStatus::Success:
                 return "Success";
             case WorkflowStatus::Failed:
@@ -220,6 +230,10 @@ namespace rouen::cards::github {
 
     github_ci_card::github_ci_card(std::string_view config_name) 
         : config_name_(config_name) {
+        if (config_name_.contains('/')) {
+            selected_repo_full_name_ = config_name_;
+            config_name_ = "default";
+        }
         
         // Set card colors - GitHub CI theme
         colors[0] = {0.13f, 0.37f, 0.71f, 1.0f}; // GitHub blue
@@ -231,7 +245,6 @@ namespace rouen::cards::github {
         
         name("GitHub CI/CD");
         width = 900.0f; // Wider for better workflow visualization
-        height = 600.0f;
         
         // Initialize GitHub integration
         try {
@@ -255,6 +268,8 @@ namespace rouen::cards::github {
 
     bool github_ci_card::render() {
         return render_window([this]() {
+            apply_pending_fetch();
+
             if (login_host_->personal_token().empty()) {
                 ImGui::TextColored(colors[2], ICON_MD_WARNING " GitHub token not configured");
                 ImGui::Text("Please configure GitHub integration first.");
@@ -265,7 +280,11 @@ namespace rouen::cards::github {
             }
             
             if (!initialized_) {
-                fetch_repositories();
+                if (selected_repo_full_name_.empty()) {
+                    fetch_repositories();
+                } else {
+                    fetch_workflows_for_repo(selected_repo_full_name_);
+                }
                 initialized_ = true;
             }
             
@@ -333,6 +352,11 @@ namespace rouen::cards::github {
         if (ImGui::Button(ICON_MD_REFRESH " Refresh##ci_refresh_repos")) {
             fetch_repositories();
         }
+
+        if (loading_repositories_) {
+            ImGui::SameLine();
+            ImGui::TextColored(colors[4], "Loading repositories...");
+        }
         
         // Repository selection
         if (ImGui::BeginCombo("##ci_repository_selector", selected_repo_full_name_.empty() ? 
@@ -340,7 +364,7 @@ namespace rouen::cards::github {
             
             for (size_t i = 0; i < repositories_.size(); ++i) {
                 const auto& repo = repositories_[i];
-                if (!repo_filter_.empty() && 
+                if (repo_filter_[0] != '\0' && 
                     repo.find(repo_filter_) == std::string::npos) {
                     continue;
                 }
@@ -350,6 +374,10 @@ namespace rouen::cards::github {
                 bool is_selected = (repo == selected_repo_full_name_);
                 if (ImGui::Selectable(repo.c_str(), is_selected)) {
                     selected_repo_full_name_ = repo;
+                    selected_workflow_id_.clear();
+                    selected_run_id_.clear();
+                    workflow_runs_.clear();
+                    run_jobs_.clear();
                     fetch_workflows_for_repo(repo);
                 }
                 if (is_selected) {
@@ -373,6 +401,11 @@ namespace rouen::cards::github {
     void github_ci_card::render_workflows_overview() {
         if (selected_repo_full_name_.empty()) {
             ImGui::TextColored(colors[5], "Select a repository to view workflows");
+            return;
+        }
+
+        if (loading_workflows_) {
+            ImGui::TextColored(colors[4], "Loading workflows for %s...", selected_repo_full_name_.c_str());
             return;
         }
         
@@ -457,6 +490,10 @@ namespace rouen::cards::github {
         ImGui::TextColored(colors[0], ICON_MD_SETTINGS " %s", workflow.name.c_str());
         
         auto runs_it = workflow_runs_.find(workflow.id);
+        if (loading_runs_ && selected_workflow_id_ == workflow.id && (runs_it == workflow_runs_.end() || runs_it->second.empty())) {
+            ImGui::TextColored(colors[4], "Loading workflow runs...");
+            return;
+        }
         if (runs_it == workflow_runs_.end() || runs_it->second.empty()) {
             ImGui::Text("Click 'Runs' to load workflow runs");
             return;
@@ -570,6 +607,9 @@ namespace rouen::cards::github {
             
             // Render jobs information here
             json_view_.render(jobs_it->second);
+        } else if (loading_jobs_ && selected_run_id_ == run.id) {
+            ImGui::Separator();
+            ImGui::TextColored(colors[4], "Loading jobs...");
         }
         
         // Action buttons
@@ -667,9 +707,9 @@ namespace rouen::cards::github {
         
         // Refresh status
         auto now = std::chrono::steady_clock::now();
-        auto seconds_since_refresh = std::chrono::duration_cast<std::chrono::seconds>(
+        const auto seconds_since_refresh = std::chrono::duration_cast<std::chrono::seconds>(
             now - last_refresh_).count();
-        ImGui::Text("Last Refresh: %ld seconds ago", seconds_since_refresh);
+        ImGui::Text("Last Refresh: %lld seconds ago", static_cast<long long>(seconds_since_refresh));
         ImGui::Text("Auto-refresh: %s", auto_refresh_enabled_ ? "Enabled" : "Disabled");
         
         // Error log
@@ -683,8 +723,8 @@ namespace rouen::cards::github {
         ImGui::Separator();
         ImGui::Text("Configuration:");
         ImGui::Text("  Config Name: %s", config_name_.c_str());
-        ImGui::Text("  Refresh Interval: %ld seconds", refresh_interval_.count());
-        ImGui::Text("  Card Size: %.0fx%.0f", width, height);
+        ImGui::Text("  Refresh Interval: %lld seconds", static_cast<long long>(refresh_interval_.count()));
+        ImGui::Text("  Card Width: %.0f", static_cast<double>(width));
     }
 
     void github_ci_card::render_logs_preview(const WorkflowRun& run) {
@@ -694,97 +734,114 @@ namespace rouen::cards::github {
     }
 
     void github_ci_card::fetch_repositories() {
-        try {
-            auto repos_json = host_->user_repos();
-            repositories_.clear();
-            
-            if (repos_json.is_array()) {
-                for (const auto& repo : repos_json.get<std::vector<glz::json_t>>()) {
-                    if (repo.contains("full_name")) {
-                        repositories_.push_back(repo["full_name"].get<std::string>());
+        if (has_pending_fetch()) {
+            return;
+        }
+
+        loading_repositories_ = true;
+        auto host = host_;
+        pending_fetch_ = std::async(std::launch::async, [host]() {
+            FetchResult result;
+            result.kind = FetchKind::Repositories;
+            try {
+                auto repos_json = host->user_repos();
+                if (repos_json.is_array()) {
+                    for (const auto& repo : repos_json.get<std::vector<glz::json_t>>()) {
+                        if (repo.contains("full_name")) {
+                            result.repositories.push_back(repo["full_name"].get<std::string>());
+                        }
                     }
                 }
+            } catch (const std::exception& e) {
+                result.error = std::format("Failed to fetch repositories: {}", e.what());
             }
-            
-            last_error_.clear();
-        } catch (const std::exception& e) {
-            last_error_ = std::format("Failed to fetch repositories: {}", e.what());
-            error_time_ = std::chrono::steady_clock::now();
-        }
+            return result;
+        });
     }
 
     void github_ci_card::fetch_workflows_for_repo(const std::string& repo_full_name) {
-        try {
-            auto workflows_json = host_->repo_workflows(repo_full_name);
-            workflows_.clear();
-            
-            if (workflows_json.contains("workflows") && workflows_json["workflows"].is_array()) {
-                for (const auto& workflow_json : workflows_json["workflows"].get<std::vector<glz::json_t>>()) {
-                    workflows_.push_back(Workflow::from_json(workflow_json));
-                }
-            }
-            
-            last_error_.clear();
-        } catch (const std::exception& e) {
-            last_error_ = std::format("Failed to fetch workflows: {}", e.what());
-            error_time_ = std::chrono::steady_clock::now();
+        if (has_pending_fetch()) {
+            return;
         }
+
+        loading_workflows_ = true;
+        auto host = host_;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name]() {
+            FetchResult result;
+            result.kind = FetchKind::Workflows;
+            result.repo_full_name = repo_full_name;
+            try {
+                auto workflows_json = host->repo_workflows(repo_full_name);
+                if (workflows_json.contains("workflows") && workflows_json["workflows"].is_array()) {
+                    for (const auto& workflow_json : workflows_json["workflows"].get<std::vector<glz::json_t>>()) {
+                        result.workflows.push_back(Workflow::from_json(workflow_json));
+                    }
+                }
+            } catch (const std::exception& e) {
+                result.error = std::format("Failed to fetch workflows: {}", e.what());
+            }
+            return result;
+        });
     }
 
     void github_ci_card::fetch_workflow_runs(const std::string& workflow_id) {
-        try {
-            // Find the workflow
-            auto workflow_it = std::find_if(workflows_.begin(), workflows_.end(),
-                [&workflow_id](const Workflow& w) { return w.id == workflow_id; });
-            
-            if (workflow_it == workflows_.end()) return;
-            
-            // Construct URL for workflow runs
-            std::string runs_url = std::format(
-                "https://api.github.com/repos/{}/actions/workflows/{}/runs",
-                selected_repo_full_name_, workflow_id);
-            
-            auto runs_json = host_->fetch(runs_url);
-            std::vector<WorkflowRun> runs;
-            
-            if (runs_json.contains("workflow_runs") && runs_json["workflow_runs"].is_array()) {
-                for (const auto& run_json : runs_json["workflow_runs"].get<std::vector<glz::json_t>>()) {
-                    runs.push_back(WorkflowRun::from_json(run_json));
-                }
-                
-                // Update workflow's latest status
-                if (!runs.empty()) {
-                    workflow_it->latest_status = runs[0].status;
-                    workflow_it->recent_runs = runs;
-                }
-            }
-            
-            workflow_runs_[workflow_id] = std::move(runs);
-            last_error_.clear();
-        } catch (const std::exception& e) {
-            last_error_ = std::format("Failed to fetch workflow runs: {}", e.what());
-            error_time_ = std::chrono::steady_clock::now();
+        if (has_pending_fetch() || selected_repo_full_name_.empty()) {
+            return;
         }
+
+        loading_runs_ = true;
+        auto host = host_;
+        auto repo_full_name = selected_repo_full_name_;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, workflow_id]() {
+            FetchResult result;
+            result.kind = FetchKind::Runs;
+            result.repo_full_name = repo_full_name;
+            result.workflow_id = workflow_id;
+            try {
+                std::string runs_url = std::format(
+                    "https://api.github.com/repos/{}/actions/workflows/{}/runs",
+                    repo_full_name, workflow_id);
+
+                auto runs_json = host->fetch(runs_url);
+                if (runs_json.contains("workflow_runs") && runs_json["workflow_runs"].is_array()) {
+                    for (const auto& run_json : runs_json["workflow_runs"].get<std::vector<glz::json_t>>()) {
+                        result.runs.push_back(WorkflowRun::from_json(run_json));
+                    }
+                }
+            } catch (const std::exception& e) {
+                result.error = std::format("Failed to fetch workflow runs: {}", e.what());
+            }
+            return result;
+        });
     }
 
     void github_ci_card::fetch_workflow_jobs(const std::string& run_id) {
-        try {
-            std::string jobs_url = std::format(
-                "https://api.github.com/repos/{}/actions/runs/{}/jobs",
-                selected_repo_full_name_, run_id);
-            
-            auto jobs_json = host_->fetch(jobs_url);
-            run_jobs_[run_id] = jobs_json;
-            
-            last_error_.clear();
-        } catch (const std::exception& e) {
-            last_error_ = std::format("Failed to fetch workflow jobs: {}", e.what());
-            error_time_ = std::chrono::steady_clock::now();
+        if (has_pending_fetch() || selected_repo_full_name_.empty()) {
+            return;
         }
+
+        loading_jobs_ = true;
+        auto host = host_;
+        auto repo_full_name = selected_repo_full_name_;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, run_id]() {
+            FetchResult result;
+            result.kind = FetchKind::Jobs;
+            result.repo_full_name = repo_full_name;
+            result.run_id = run_id;
+            try {
+                std::string jobs_url = std::format(
+                    "https://api.github.com/repos/{}/actions/runs/{}/jobs",
+                    repo_full_name, run_id);
+                result.jobs = host->fetch(jobs_url);
+            } catch (const std::exception& e) {
+                result.error = std::format("Failed to fetch workflow jobs: {}", e.what());
+            }
+            return result;
+        });
     }
 
     void github_ci_card::auto_refresh_if_needed() {
-        if (!auto_refresh_enabled_) return;
+        if (!auto_refresh_enabled_ || has_pending_fetch()) return;
         
         auto now = std::chrono::steady_clock::now();
         if (now - last_refresh_ >= refresh_interval_) {
@@ -804,6 +861,70 @@ namespace rouen::cards::github {
     bool github_ci_card::should_auto_refresh() const {
         auto now = std::chrono::steady_clock::now();
         return auto_refresh_enabled_ && (now - last_refresh_ >= refresh_interval_);
+    }
+
+    bool github_ci_card::has_pending_fetch() const {
+        if (!pending_fetch_.valid()) {
+            return false;
+        }
+        return pending_fetch_.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+    }
+
+    void github_ci_card::clear_loading_flags() {
+        loading_repositories_ = false;
+        loading_workflows_ = false;
+        loading_runs_ = false;
+        loading_jobs_ = false;
+    }
+
+    void github_ci_card::apply_pending_fetch() {
+        if (!pending_fetch_.valid()) {
+            return;
+        }
+
+        if (pending_fetch_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            return;
+        }
+
+        FetchResult result = pending_fetch_.get();
+        clear_loading_flags();
+
+        if (!result.error.empty()) {
+            last_error_ = result.error;
+            error_time_ = std::chrono::steady_clock::now();
+            return;
+        }
+
+        switch (result.kind) {
+            case FetchKind::Repositories:
+                repositories_ = std::move(result.repositories);
+                break;
+            case FetchKind::Workflows:
+                selected_repo_full_name_ = result.repo_full_name;
+                workflows_ = std::move(result.workflows);
+                workflow_runs_.clear();
+                run_jobs_.clear();
+                selected_workflow_id_.clear();
+                selected_run_id_.clear();
+                break;
+            case FetchKind::Runs: {
+                workflow_runs_[result.workflow_id] = result.runs;
+                auto workflow_it = std::find_if(workflows_.begin(), workflows_.end(),
+                    [&result](const Workflow& w) { return w.id == result.workflow_id; });
+                if (workflow_it != workflows_.end() && !result.runs.empty()) {
+                    workflow_it->latest_status = result.runs.front().status;
+                    workflow_it->recent_runs = result.runs;
+                }
+                break;
+            }
+            case FetchKind::Jobs:
+                run_jobs_[result.run_id] = std::move(result.jobs);
+                break;
+            case FetchKind::None:
+                break;
+        }
+
+        last_error_.clear();
     }
 
 } // namespace rouen::cards::github

@@ -17,6 +17,7 @@
 #include "../development/cmake.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/git.hpp"
+#include "../development/github.hpp"
 #include "../information/calendar/calendar.hpp"
 #include "../information/grok.hpp"
 #include "../information/mail/mail.hpp"
@@ -87,6 +88,14 @@ namespace rouen::cards {
                 // Add card factories
                 instance.emplace("git", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<git>(uri);
+                });
+
+                instance.emplace("github", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<github_card>(uri);
+                });
+
+                instance.emplace("github-ci", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<rouen::cards::github::github_ci_card>(uri);
                 });
                 
                 instance.emplace("menu", [](std::string_view, SDL_Renderer*) {
