@@ -5,6 +5,7 @@
 #include <format>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <thread>
 #include <set>
@@ -532,8 +533,8 @@ namespace rouen::cards
                                                         }
                                                         std::string clean_desc = ::helpers::StringHelper::strip_html_tags(item.description);
                                                         std::string speech_text = item.title + ". " + clean_desc;
-                                                        std::string chosen_voice = detect_language_and_select_voice(speech_text, item.link);
-                                                        rouen::platform::speak_text_async(speech_text, chosen_voice, [item_link = item.link]() {
+                                                        auto lang_voice = detect_language_and_select_voice(speech_text, item.link);
+                                                        rouen::platform::speak_text_async(speech_text, lang_voice.second, lang_voice.first, [item_link = item.link]() {
                                                             std::lock_guard<std::mutex> lock(speaking_mutex);
                                                             if (currently_speaking_link == item_link) {
                                                                 currently_speaking_link = "";
@@ -693,13 +694,13 @@ namespace rouen::cards
         };
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
 
-        std::string detect_language_and_select_voice(std::string_view text, std::string_view url) {
+        std::pair<std::string, std::string> detect_language_and_select_voice(std::string_view text, std::string_view url) {
             std::string manual_lang = rss_host->getFeedLanguage(feed_id);
-            if (manual_lang == "en") return ""; // Use system default high-quality voice for English
-            if (manual_lang == "es") return "Mónica";
-            if (manual_lang == "fr") return "Flo";
-            if (manual_lang == "de") return "Eddy";
-            if (manual_lang == "it") return "Flo";
+            if (manual_lang == "en") return {"en", ""}; // Use system default high-quality voice for English
+            if (manual_lang == "es") return {"es", "Mónica"};
+            if (manual_lang == "fr") return {"fr", "Flo"};
+            if (manual_lang == "de") return {"de", "Eddy"};
+            if (manual_lang == "it") return {"it", "Flo"};
 
             std::string lower_url = std::string(url);
             std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
@@ -709,19 +710,19 @@ namespace rouen::cards
                 lower_url.find("clarin.com") != std::string::npos ||
                 lower_url.find("c5n.com") != std::string::npos ||
                 lower_url.find("infobae.com") != std::string::npos) {
-                return "Mónica";
+                return {"es", "Mónica"};
             }
             
             if (lower_url.find(".fr") != std::string::npos) {
-                return "Flo";
+                return {"fr", "Flo"};
             }
             
             if (lower_url.find(".de") != std::string::npos) {
-                return "Eddy";
+                return {"de", "Eddy"};
             }
             
             if (lower_url.find(".it") != std::string::npos) {
-                return "Flo";
+                return {"it", "Flo"};
             }
             
             std::string lower_text = std::string(text);
@@ -748,10 +749,10 @@ namespace rouen::cards
             }
             
             if (es_score > en_score && es_score > 2) {
-                return "Mónica";
+                return {"es", "Mónica"};
             }
             
-            return ""; // Default system voice
+            return {"", ""}; // Default system voice
         }
 
         void request_image_download(const std::string& url) {

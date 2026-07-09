@@ -9,6 +9,8 @@
 #include <memory>
 #include <functional>
 #include <filesystem>
+#include <unordered_map>
+#include <cctype>
 
 #include "debug.hpp"
 
@@ -22,6 +24,8 @@
 #define HTTP_DEBUG_FMT(fmt, ...) HTTP_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 
 namespace http {
+
+class fetch; // Forward declaration for header callback usage
 
 // CURL RAII wrapper
 class curl_handle {
@@ -57,20 +61,62 @@ static size_t write_callback(char* contents, size_t size, size_t nmemb, void* us
     return real_size;
 }
 
-// Callback to check for permanent redirect headers
-static size_t redirect_header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+// Helper used as userdata for header callback
+struct HeaderCollector {
+    bool* redirect_flag = nullptr;
+    std::unordered_map<std::string, std::string>* headers = nullptr;
+};
+
+// Thread-local flag updated by header callback so higher-level logic can use it after curl_easy_perform
+inline thread_local bool header_redirect_flag = false;
+// Backwards-compatible thread-local used by older code paths (kept for transition)
+inline thread_local bool redirect_was_permanent = false;
+
+// Header callback that collects headers and detects permanent redirects
+static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
     size_t total_size = size * nitems;
-    bool* is_permanent = static_cast<bool*>(userdata);
+    if (!userdata) return total_size;
+    HeaderCollector* collector = static_cast<HeaderCollector*>(userdata);
     std::string_view header(buffer, total_size);
-    if (header.starts_with("HTTP/")) {
+
+    // Detect first status line for redirect codes
+    if (header.size() >= 5 && header.substr(0,5) == "HTTP/") {
         size_t space_pos = header.find(' ');
         if (space_pos != std::string_view::npos && space_pos + 3 < header.size()) {
             std::string_view code = header.substr(space_pos + 1, 3);
             if (code == "301" || code == "308") {
-                *is_permanent = true;
+                // Mark both the collector-provided flag and the process-local flags so callers can observe it
+                if (collector->redirect_flag) *collector->redirect_flag = true;
+                header_redirect_flag = true;
+                redirect_was_permanent = true;
             }
         }
+        return total_size;
     }
+
+    // Parse header lines like "Name: value"
+    size_t colon = header.find(':');
+    if (colon != std::string_view::npos && collector->headers) {
+        std::string name = std::string(header.substr(0, colon));
+        std::string value = std::string(header.substr(colon + 1));
+
+        // Trim whitespace
+        auto trim = [](std::string &s) {
+            size_t start = 0;
+            while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) start++;
+            size_t end = s.size();
+            while (end > start && std::isspace(static_cast<unsigned char>(s[end-1]))) end--;
+            s = s.substr(start, end - start);
+        };
+        trim(name);
+        trim(value);
+
+        // Lowercase header name for normalization
+        for (auto &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        (*collector->headers)[name] = value;
+    }
+
     return total_size;
 }
 
@@ -173,6 +219,13 @@ public:
     
     bool last_redirect_was_permanent() const { return last_redirect_was_permanent_; }
     const std::string& last_effective_url() const { return last_effective_url_; }
+    long last_http_code() const { return last_http_code_; }
+    std::optional<std::string> last_response_header(const std::string& name) const {
+        std::string lower = name;
+        for (auto &c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (auto it = last_response_headers_.find(lower); it != last_response_headers_.end()) return it->second;
+        return std::nullopt;
+    }
     
     // Basic GET request with vector of headers
     std::string operator()(
@@ -182,6 +235,8 @@ public:
         void* custom_data = nullptr
     ) {
         last_redirect_was_permanent_ = false;
+        header_redirect_flag = false;
+        redirect_was_permanent = false;
         last_effective_url_ = url;
         try {
             // Create a CURL handle
@@ -210,10 +265,16 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
-            // Enable header callback to detect 301/308 redirects
-            bool redirect_was_permanent = false;
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -283,6 +344,8 @@ public:
         void* custom_data = nullptr
     ) {
         last_redirect_was_permanent_ = false;
+        header_redirect_flag = false;
+        redirect_was_permanent = false;
         last_effective_url_ = url;
         try {
             // Create a CURL handle
@@ -311,10 +374,16 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
-            // Enable header callback to detect 301/308 redirects
-            bool redirect_was_permanent = false;
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, redirect_header_callback);
-            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &redirect_was_permanent);
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -676,6 +745,8 @@ private:
     SSLOptions ssl_options_; // SSL/TLS configuration options
     bool last_redirect_was_permanent_ = false;
     std::string last_effective_url_;
+    long last_http_code_ = 0;
+    std::unordered_map<std::string, std::string> last_response_headers_;
     
     // Initialize CURL globally
     void initialize_curl() {

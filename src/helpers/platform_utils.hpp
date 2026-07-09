@@ -11,6 +11,7 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
 #include <limits.h>      // For PATH_MAX
+#include <unistd.h>      // For access()
 #elif defined(__linux__)
 #include <unistd.h>      // For readlink
 #include <limits.h>      // For PATH_MAX
@@ -94,14 +95,16 @@ namespace rouen::platform
      * Synthesize speech from text asynchronously using platform capabilities
      *
      * @param text The text to speak
+     * @param voice Optional voice name (platform-specific)
+     * @param lang Optional language code ("es","en",...); when set to "es" prefer say-es
      * @param on_complete Optional callback when speech is complete or interrupted
      */
     template <typename Func>
-    inline void speak_text_async(const std::string& text, const std::string& voice, Func&& on_complete)
+    inline void speak_text_async(const std::string& text, const std::string& voice, const std::string& lang, Func&& on_complete)
     {
         #ifdef __APPLE__
             stop_speech();
-            std::jthread([text, voice, cb = std::forward<Func>(on_complete)]() mutable {
+            std::jthread([text, voice, lang, cb = std::forward<Func>(on_complete)]() mutable {
                 std::string clean_text = text;
                 size_t pos = 0;
                 while (true) {
@@ -134,27 +137,63 @@ namespace rouen::platform
                     }
                 }
 
-                std::string voice_arg = voice.empty() ? "" : std::format("-v \"{}\" ", voice);
-                std::string command = std::format("say {}\"{}\"", voice_arg, safe_text);
+                std::string command;
+                if (lang == "es") {
+                    // Prefer say-es for Spanish. Check common install locations (GUI apps may have limited PATH).
+                    std::string sayes_path;
+                    std::vector<std::string> candidates = {"/usr/bin/say-es", "/usr/local/bin/say-es", "/opt/homebrew/bin/say-es", "/usr/local/sbin/say-es"};
+                    // Also check the user's ~/bin which GUI apps often use
+                    if (const char* home = std::getenv("HOME"); home && home[0] != '\0') {
+                        candidates.push_back(std::string(home) + "/bin/say-es");
+                    }
+                    for (const auto& p : candidates) {
+                        if (std::filesystem::exists(p) && access(p.c_str(), X_OK) == 0) {
+                            sayes_path = p;
+                            break;
+                        }
+                    }
+                    if (!sayes_path.empty()) {
+                        command = std::format("\"{}\" \"{}\"", sayes_path, safe_text);
+                    } else if (!voice.empty()) {
+                        command = std::format("say -v \"{}\" \"{}\"", voice, safe_text);
+                    } else {
+                        command = std::format("say \"{}\"", safe_text);
+                    }
+                } else {
+                    if (!voice.empty()) {
+                        command = std::format("say -v \"{}\" \"{}\"", voice, safe_text);
+                    } else {
+                        command = std::format("say \"{}\"", safe_text);
+                    }
+                }
+
                 [[maybe_unused]] int result = std::system(command.c_str());
                 cb();
             }).detach();
         #else
             (void)text;
             (void)voice;
+            (void)lang;
             on_complete();
         #endif
+    }
+
+    // Backwards-compatible overloads
+    template <typename Func>
+    inline void speak_text_async(const std::string& text, const std::string& voice, Func&& on_complete)
+    {
+        speak_text_async(text, voice, std::string(), std::forward<Func>(on_complete));
     }
 
     template <typename Func>
     inline void speak_text_async(const std::string& text, Func&& on_complete)
     {
-        speak_text_async(text, "", std::forward<Func>(on_complete));
+        speak_text_async(text, std::string(), std::string(), std::forward<Func>(on_complete));
     }
 
     inline void speak_text_async(const std::string& text)
     {
-        speak_text_async(text, [](){});
+        speak_text_async(text, std::string(), std::string(), [](){});
     }
     
     /**
