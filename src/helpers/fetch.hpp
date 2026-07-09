@@ -68,9 +68,9 @@ struct HeaderCollector {
 };
 
 // Thread-local flag updated by header callback so higher-level logic can use it after curl_easy_perform
-thread_local bool header_redirect_flag = false;
+inline thread_local bool header_redirect_flag = false;
 // Backwards-compatible thread-local used by older code paths (kept for transition)
-thread_local bool redirect_was_permanent = false;
+inline thread_local bool redirect_was_permanent = false;
 
 // Header callback that collects headers and detects permanent redirects
 static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
