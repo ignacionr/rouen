@@ -67,6 +67,11 @@ struct HeaderCollector {
     std::unordered_map<std::string, std::string>* headers = nullptr;
 };
 
+// Thread-local flag updated by header callback so higher-level logic can use it after curl_easy_perform
+thread_local bool header_redirect_flag = false;
+// Backwards-compatible thread-local used by older code paths (kept for transition)
+thread_local bool redirect_was_permanent = false;
+
 // Header callback that collects headers and detects permanent redirects
 static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
     size_t total_size = size * nitems;
@@ -80,7 +85,10 @@ static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, 
         if (space_pos != std::string_view::npos && space_pos + 3 < header.size()) {
             std::string_view code = header.substr(space_pos + 1, 3);
             if (code == "301" || code == "308") {
+                // Mark both the collector-provided flag and the process-local flags so callers can observe it
                 if (collector->redirect_flag) *collector->redirect_flag = true;
+                header_redirect_flag = true;
+                redirect_was_permanent = true;
             }
         }
         return total_size;
@@ -227,6 +235,8 @@ public:
         void* custom_data = nullptr
     ) {
         last_redirect_was_permanent_ = false;
+        header_redirect_flag = false;
+        redirect_was_permanent = false;
         last_effective_url_ = url;
         try {
             // Create a CURL handle
@@ -260,6 +270,8 @@ public:
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
             last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
             last_response_headers_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
@@ -332,6 +344,8 @@ public:
         void* custom_data = nullptr
     ) {
         last_redirect_was_permanent_ = false;
+        header_redirect_flag = false;
+        redirect_was_permanent = false;
         last_effective_url_ = url;
         try {
             // Create a CURL handle
@@ -365,6 +379,8 @@ public:
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
             last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
             last_response_headers_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
