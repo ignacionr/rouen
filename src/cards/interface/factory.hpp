@@ -41,6 +41,7 @@
 #include "../system/about.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
+#include "../system/notifications.hpp"
 #include "../system/settings.hpp"
 #include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
@@ -150,6 +151,10 @@ namespace rouen::cards {
                 
                 instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<settings_card>();
+                });
+
+                instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<notifications_card>();
                 });
                 
                 instance.emplace("kpis", [](std::string_view, SDL_Renderer*) {

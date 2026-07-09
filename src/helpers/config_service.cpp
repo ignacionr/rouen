@@ -28,6 +28,16 @@
 
 namespace rouen::helpers {
 
+    namespace {
+        bool set_process_environment_variable(const std::string& name, const std::string& value) {
+#ifdef _WIN32
+            return _putenv_s(name.c_str(), value.c_str()) == 0;
+#else
+            return ::setenv(name.c_str(), value.c_str(), 1) == 0;
+#endif
+        }
+    }
+
     // Static member definitions
     std::shared_ptr<ConfigService> ConfigService::instance_ = nullptr;
     std::mutex ConfigService::instance_mutex_;
@@ -70,6 +80,42 @@ namespace rouen::helpers {
 
     bool ConfigService::has_env(const std::string& name) const {
         return !get_env(name).empty();
+    }
+
+    bool ConfigService::set_env_value(const std::string& name, const std::string& value, bool persist_to_env_file) {
+        std::function<void(const std::string&, const std::string&)> callback;
+
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            if (!set_process_environment_variable(name, value)) {
+                CONFIG_ERROR_FMT("Failed to set environment variable '{}'", name);
+                return false;
+            }
+
+            cache_[name] = value;
+
+            if (auto it = registered_configs_.find(name); it != registered_configs_.end()) {
+                it->second.value = value;
+            }
+
+            if (env_file_loaded_ || persist_to_env_file) {
+                env_file_values_[name] = value;
+                env_file_loaded_ = true;
+            }
+
+            callback = change_callback_;
+        }
+
+        if (callback) {
+            callback(name, value);
+        }
+
+        if (persist_to_env_file) {
+            return export_to_env_file();
+        }
+
+        return true;
     }
 
     void ConfigService::register_config(const std::string& name, Category category, 
@@ -285,6 +331,8 @@ namespace rouen::helpers {
                        "Path to the VS Code executable (e.g., code)", "code");
         register_config("PING_PATH", Category::EXECUTABLE_PATHS, false, false,
                        "Path to the ping executable (e.g., ping)", "ping");
+        register_config("ROUEN_SPOKEN_NOTIFICATIONS", Category::GENERAL, false, false,
+                       "Enable spoken notifications (1=true, 0=false)", "1");
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
                        "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)");
 

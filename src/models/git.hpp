@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <format>
 #include <iostream>
 #include <map>
@@ -170,6 +171,88 @@ namespace rouen::models {
             std::string git_path = CONFIG_SERVICE()->get_git_path();
             std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " push");
             // Update status after push
+            if (!result.empty()) {
+                updateRepoStatus(repo_path);
+            }
+            return result;
+        }
+
+        std::string gitPull(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return "";
+            }
+
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " pull");
+            if (!result.empty()) {
+                updateRepoStatus(repo_path);
+            }
+            return result;
+        }
+
+        std::string gitAddAll(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return "";
+            }
+
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string result = GitProcessHelper::executeCommandInDirectory(repo_path, git_path + " add -A");
+            updateRepoStatus(repo_path);
+            return result;
+        }
+
+        std::string getCachedDiff(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return "";
+            }
+
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            return GitProcessHelper::executeCommandInDirectory(
+                repo_path,
+                git_path + " diff --cached --stat && printf '\\n---DIFF---\\n' && " + git_path + " diff --cached"
+            );
+        }
+
+        bool hasStagedChanges(const std::string& repo_path) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end()) {
+                return false;
+            }
+
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string result = GitProcessHelper::executeCommandInDirectory(
+                repo_path,
+                git_path + " diff --cached --name-only"
+            );
+            return std::any_of(result.begin(), result.end(), [](unsigned char c) {
+                return !std::isspace(c);
+            });
+        }
+
+        std::string gitCommit(const std::string& repo_path, const std::string& message) {
+            if (repo_path.empty() || repos.find(repo_path) == repos.end() || message.empty()) {
+                return "";
+            }
+
+            std::filesystem::path temp_file = std::filesystem::temp_directory_path() /
+                std::format("rouen-git-commit-{}.txt", std::hash<std::string>{}(repo_path + message));
+
+            {
+                std::ofstream commit_message_file(temp_file);
+                if (!commit_message_file.is_open()) {
+                    return "Failed to create temporary commit message file.";
+                }
+                commit_message_file << message << '\n';
+            }
+
+            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string result = GitProcessHelper::executeCommandInDirectory(
+                repo_path,
+                std::format("{} commit -F '{}'", git_path, temp_file.string())
+            );
+
+            std::error_code ec;
+            std::filesystem::remove(temp_file, ec);
+
             if (!result.empty()) {
                 updateRepoStatus(repo_path);
             }

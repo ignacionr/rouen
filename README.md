@@ -28,7 +28,7 @@ To make the codebase easy to navigate, the documentation has been split into mod
 ## Key Features
 
 * **Development Tools**: Visual Git repository browser, GitHub workflow/CI monitoring, interactive directory explorer, syntax-highlighted code editor, CMake build integration, environment variable manager, and Jira/Trello boards.
-* **Productivity & Planning**: Pomodoro timer, configurable Alarms, Trello columns integration, travel planner, Google Calendar sync, and personal Markdown notes with wiki-style linking.
+* **Productivity & Planning**: Pomodoro timer, configurable Alarms, Trello columns integration, travel planner, Google Calendar sync, a Notifications center with spoken/silent control, and personal Markdown notes with wiki-style linking.
 * **Information & Media**: IMAP/SMTP email client, local weather tracking, RSS reader with media extraction (video/audio) and AI feed discovery, AI chat assistant (Grok, OpenAI, Groq, custom), and internet radio player with MPV.
 * **Financial Services**: Bybit trading account assets viewer, and type conversion calculators.
 * **Games**: Chess replay analysis with AI strategic commentary.

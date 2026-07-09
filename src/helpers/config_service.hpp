@@ -52,6 +52,7 @@ namespace rouen::helpers {
         std::string get_env(const std::string& name) const;
         std::optional<std::string> get_env_optional(const std::string& name) const;
         bool has_env(const std::string& name) const;
+        bool set_env_value(const std::string& name, const std::string& value, bool persist_to_env_file = false);
 
         // Typed getters with validation
         template<typename T>

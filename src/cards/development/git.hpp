@@ -6,11 +6,14 @@
 #include <vector>
 #include <filesystem>
 #include <algorithm>
+#include <memory>
 
 #include "../../helpers/imgui_include.hpp"
 #include <SDL.h>
 #include <SDL_image.h>
 #include "../interface/card.hpp"
+#include "../../helpers/fetch.hpp"
+#include "../../helpers/llm_config.hpp"
 #include "../../helpers/texture_helper.hpp"
 #include "../../models/git.hpp" // Include the git model
 #include "../../registrar.hpp"
@@ -21,6 +24,7 @@ struct git: public card {
     std::string repo_status; // Store the git status result
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
     std::string target_repo; // Optional target repository path
+    std::string last_commit_message; // AI-generated commit message used most recently
     
     git(std::string_view repo_path = "") : target_repo(repo_path) {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
@@ -191,20 +195,25 @@ struct git: public card {
             }
         }
         
-        // Add "Push" button only when the branch is ahead
-        bool is_ahead = git_model->isBranchAhead(selected_repo);
-        if (is_ahead) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Push")) {
-                // Store push result
-                std::string push_result = git_model->gitPush(selected_repo);
-                // Refresh status after push
-                updateRepoStatus();
-                // Prepend push result to status display
-                if (!push_result.empty()) {
-                    repo_status = push_result + "\n\n" + repo_status;
-                }
-            }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Push")) {
+            prepend_action_result("Push", git_model->gitPush(selected_repo));
+        }
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Pull")) {
+            prepend_action_result("Pull", git_model->gitPull(selected_repo));
+        }
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Commit All")) {
+            commit_all_with_ai_message();
+        }
+
+        if (!last_commit_message.empty()) {
+            ImGui::Separator();
+            ImGui::Text("Last AI commit message:");
+            ImGui::TextWrapped("%s", last_commit_message.c_str());
         }
         
         // GitHub status indicator (if this is a GitHub repo)
@@ -274,6 +283,111 @@ struct git: public card {
     std::string selected_repo;
     
 private:
+    void prepend_action_result(const std::string& action_name, const std::string& command_output) {
+        updateRepoStatus();
+
+        std::string output = command_output;
+        if (output.empty()) {
+            output = std::format("{} completed.", action_name);
+        }
+
+        repo_status = std::format("{} result:\n{}\n\n{}", action_name, output, repo_status);
+    }
+
+    static std::string trim_copy(std::string value) {
+        auto not_space = [](unsigned char c) { return std::isspace(c) == 0; };
+        value.erase(value.begin(), std::find_if(value.begin(), value.end(), not_space));
+        value.erase(std::find_if(value.rbegin(), value.rend(), not_space).base(), value.end());
+        return value;
+    }
+
+    std::string generate_ai_commit_message(const std::string& staged_context) {
+        if (!rouen::helpers::LLMConfig::is_configured()) {
+            return {};
+        }
+
+        auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
+        if (!llm_instance) {
+            return {};
+        }
+
+        auto settings = rouen::helpers::LLMConfig::get_current_config();
+        auto fetcher = std::make_shared<http::fetch>();
+
+        llm_instance->add_instructions(
+            "You are an expert software engineer writing git commit messages. "
+            "Return ONLY a commit message ready to pass to `git commit`. "
+            "Use imperative mood, be specific, and keep the first line under 72 characters. "
+            "If additional detail is helpful, include a blank line followed by concise bullet points. "
+            "Do not wrap the message in quotes or markdown."
+        );
+
+        std::string prompt = std::format(
+            "Repository: {}\n\n"
+            "Write a git commit message for these staged changes.\n\n"
+            "Staged context:\n{}\n",
+            selected_repo,
+            staged_context
+        );
+
+        auto response = llm_instance->sendMessage(
+            prompt,
+            [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                return fetcher->post(url, data, header_client);
+            },
+            "user",
+            settings.model_name
+        );
+
+        if (response.choices.empty() || response.choices[0].message.content.empty()) {
+            return {};
+        }
+
+        return trim_copy(response.choices[0].message.content);
+    }
+
+    void commit_all_with_ai_message() {
+        last_commit_message.clear();
+
+        std::string add_result = git_model->gitAddAll(selected_repo);
+        std::string staged_context = git_model->getCachedDiff(selected_repo);
+
+        if (!git_model->hasStagedChanges(selected_repo)) {
+            prepend_action_result(
+                "Commit All",
+                add_result.empty() ? "No changes to commit after staging." : add_result + "\nNo changes to commit after staging."
+            );
+            return;
+        }
+
+        constexpr std::size_t max_context_length = 12000;
+        if (staged_context.size() > max_context_length) {
+            staged_context.resize(max_context_length);
+            staged_context += "\n\n[truncated]";
+        }
+
+        std::string commit_message;
+        try {
+            commit_message = generate_ai_commit_message(staged_context);
+        } catch (const std::exception& e) {
+            prepend_action_result("Commit All", std::format("Failed to generate AI commit message: {}", e.what()));
+            return;
+        }
+
+        commit_message = trim_copy(commit_message);
+        if (commit_message.empty()) {
+            prepend_action_result("Commit All", "AI did not return a usable commit message.");
+            return;
+        }
+
+        last_commit_message = commit_message;
+        std::string commit_result = git_model->gitCommit(selected_repo, commit_message);
+        prepend_action_result(
+            "Commit All",
+            std::format("Generated commit message:\n{}\n\n{}", commit_message, commit_result)
+        );
+    }
+
     // Helper to extract GitHub repository name from remote URL
     std::string extract_github_repo_name(const std::string& remote_url) {
         // Handle various GitHub URL formats:
