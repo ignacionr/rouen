@@ -33,7 +33,7 @@ public:
      * @param expiry_days Number of days before cached images expire (0 = never expire)
      */
     ImageCache(const std::string& db_path, const std::string& cache_dir, int expiry_days = 30) 
-        : db_{db_path}, cache_dir_{cache_dir}, expiry_days_{expiry_days}, fetcher_{30} {
+        : db_{db_path}, cache_dir_{cache_dir}, expiry_days_{expiry_days} {
         
         // Create images directory if it doesn't exist
         std::filesystem::create_directories(cache_dir_);
@@ -101,7 +101,8 @@ public:
             };
             
             // Download the image
-            fetcher_(url, {}, write_callback, fp);
+            http::fetch fetcher{30};
+            fetcher(url, {}, write_callback, fp);
             
             // Close the file
             fclose(fp);
@@ -171,7 +172,8 @@ public:
                 return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
             };
             
-            fetcher_(url, {}, write_callback, fp);
+            http::fetch fetcher{30};
+            fetcher(url, {}, write_callback, fp);
             fclose(fp);
             
             // Check if it's a valid image using SDL_image's CPU-side loading
@@ -389,7 +391,6 @@ private:
     hosting::db::sqlite db_;
     std::string cache_dir_;
     int expiry_days_;
-    http::fetch fetcher_;
     std::mutex mutex_;
 };
 

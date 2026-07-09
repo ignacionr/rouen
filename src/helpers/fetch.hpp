@@ -7,6 +7,7 @@
 #include <curl/curl.h>
 #include <sstream>
 #include <memory>
+#include <mutex>
 #include <functional>
 #include <filesystem>
 #include <unordered_map>
@@ -217,10 +218,20 @@ public:
         return ssl_options_;
     }
     
-    bool last_redirect_was_permanent() const { return last_redirect_was_permanent_; }
-    const std::string& last_effective_url() const { return last_effective_url_; }
-    long last_http_code() const { return last_http_code_; }
+    bool last_redirect_was_permanent() const {
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        return last_redirect_was_permanent_;
+    }
+    std::string last_effective_url() const {
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        return last_effective_url_;
+    }
+    long last_http_code() const {
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        return last_http_code_;
+    }
     std::optional<std::string> last_response_header(const std::string& name) const {
+        std::lock_guard<std::mutex> lock(request_mutex_);
         std::string lower = name;
         for (auto &c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (auto it = last_response_headers_.find(lower); it != last_response_headers_.end()) return it->second;
@@ -234,6 +245,7 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        std::lock_guard<std::mutex> request_lock(request_mutex_);
         last_redirect_was_permanent_ = false;
         header_redirect_flag = false;
         redirect_was_permanent = false;
@@ -343,6 +355,7 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        std::lock_guard<std::mutex> request_lock(request_mutex_);
         last_redirect_was_permanent_ = false;
         header_redirect_flag = false;
         redirect_was_permanent = false;
@@ -456,6 +469,7 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        std::lock_guard<std::mutex> request_lock(request_mutex_);
         try {
             // Create a CURL handle
             curl_handle handle;
@@ -549,6 +563,7 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        std::lock_guard<std::mutex> request_lock(request_mutex_);
         try {
             // Create a CURL handle
             curl_handle handle;
@@ -655,6 +670,7 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
+        std::lock_guard<std::mutex> request_lock(request_mutex_);
         try {
             // Create a CURL handle
             curl_handle handle;
@@ -747,15 +763,15 @@ private:
     std::string last_effective_url_;
     long last_http_code_ = 0;
     std::unordered_map<std::string, std::string> last_response_headers_;
+    mutable std::mutex request_mutex_;
     
     // Initialize CURL globally
     void initialize_curl() {
-        static bool curl_initialized = false;
-        if (!curl_initialized) {
+        static std::once_flag curl_initialized;
+        std::call_once(curl_initialized, []() {
             curl_global_init(CURL_GLOBAL_DEFAULT);
-            curl_initialized = true;
             HTTP_INFO("CURL globally initialized");
-        }
+        });
     }
     
     // Configure SSL/TLS options for a CURL handle

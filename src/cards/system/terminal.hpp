@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <atomic>
 #include <format>
 #include <string>
 #include <string_view>
@@ -61,7 +62,7 @@ private:
     TerminalCommands commands;
     
     std::string current_working_dir;
-    bool is_command_running = false;
+    std::atomic<bool> is_command_running{false};
     
     // Animation for running process
     int spinner_counter = 0;

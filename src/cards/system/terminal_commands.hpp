@@ -35,21 +35,21 @@ public:
     void execute_command(const std::string& command, bool use_llm, 
                         TerminalOutput& output, const std::string& cwd,
                         std::vector<std::string>& history, size_t& history_index,
-                        bool& is_command_running, bool use_interactive_bash,
+                        std::atomic<bool>& is_command_running, bool use_interactive_bash,
                         bool& show_sudo_prompt, std::string& sudo_command,
                         std::string* out_actual_command = nullptr);
 
     // Check command output and update status
-    void check_command_output(bool use_interactive_bash, bool& is_command_running, 
+    void check_command_output(bool use_interactive_bash, std::atomic<bool>& is_command_running, 
                             TerminalOutput& output);
     
     // Terminate current running process
-    void terminate_current_process(bool& is_command_running);
+    void terminate_current_process(std::atomic<bool>& is_command_running);
     
     // Execute command without using interactive bash
     void execute_external_command(const std::string& command, 
                                 const std::string& cwd,
-                                bool& is_command_running,
+                                std::atomic<bool>& is_command_running,
                                 TerminalOutput& output);
     
 private:

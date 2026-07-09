@@ -49,7 +49,7 @@ public:
     ~TerminalBash();
     
     // Initialize and terminate bash sessions
-    void initialize_bash_session(const std::string& initial_dir, TerminalOutput& output, bool& is_command_running);
+    void initialize_bash_session(const std::string& initial_dir, TerminalOutput& output, std::atomic<bool>& is_command_running);
     void terminate_bash_session();
     
     // Send commands to bash
@@ -61,7 +61,7 @@ public:
     // Restart with sudo privileges
     void restart_with_sudo(const char* password, const std::string& prev_cwd, 
                          const std::string& sudo_command, TerminalOutput& output,
-                         bool& is_command_running);
+                         std::atomic<bool>& is_command_running);
                          
     // Check if interactive bash is being used
     bool is_interactive() const { return use_interactive_bash; }
@@ -75,7 +75,7 @@ public:
 private:
     // Reader thread for bash output stream (stdout or stderr)
     void read_bash_stream(int pipe_fd, OutputType output_type, 
-                         TerminalOutput& output, bool& is_command_running);
+                         TerminalOutput& output, std::atomic<bool>& is_command_running);
                          
     bool use_interactive_bash = false;
     
@@ -91,7 +91,7 @@ private:
 
     // Output reference (set during initialization)
     TerminalOutput* output_ptr = nullptr;
-    bool* is_command_running_ptr = nullptr;
+    std::atomic<bool>* is_command_running_ptr = nullptr;
 };
 
 } // namespace rouen::cards

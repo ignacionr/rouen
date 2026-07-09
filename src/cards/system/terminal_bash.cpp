@@ -32,9 +32,57 @@ std::string ProcessCarriageReturns(const std::string& input) {
     }
     return input;
 }
+
+std::string StripAnsiSequences(const std::string& input) {
+    std::string stripped;
+    stripped.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] != '\x1b') {
+            stripped += input[i];
+            continue;
+        }
+
+        if (i + 1 >= input.size()) {
+            break;
+        }
+
+        const char next = input[i + 1];
+        if (next == '[') {
+            i += 2;
+            while (i < input.size()) {
+                const unsigned char ch = static_cast<unsigned char>(input[i]);
+                if (ch >= 0x40 && ch <= 0x7e) {
+                    break;
+                }
+                ++i;
+            }
+            continue;
+        }
+
+        if (next == ']') {
+            i += 2;
+            while (i < input.size()) {
+                if (input[i] == '\a') {
+                    break;
+                }
+                if (input[i] == '\x1b' && i + 1 < input.size() && input[i + 1] == '\\') {
+                    ++i;
+                    break;
+                }
+                ++i;
+            }
+            continue;
+        }
+
+        ++i;
+    }
+
+    return stripped;
+}
 }
 
-void TerminalBash::initialize_bash_session(const std::string& initial_dir, TerminalOutput& output, bool& is_command_running) {
+void TerminalBash::initialize_bash_session(const std::string& initial_dir, TerminalOutput& output, std::atomic<bool>& is_command_running) {
     // Store the references
     output_ptr = &output;
     is_command_running_ptr = &is_command_running;
@@ -190,7 +238,7 @@ void TerminalBash::set_cwd(const std::string& cwd) {
 }
 
 void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type, 
-                                    TerminalOutput& output, bool& is_command_running) {
+                                    TerminalOutput& output, std::atomic<bool>& is_command_running) {
 #ifdef _WIN32
     (void)pipe_fd;
     (void)output_type;
@@ -232,15 +280,17 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                     // Collapse any carriage returns (like progress update bars)
                     std::string clean_line = ProcessCarriageReturns(line);
                     
-                    if (clean_line.starts_with("ROUEN_PROMPT|")) {
-                        is_command_running = false;
+                    const std::string control_stripped_line = StripAnsiSequences(clean_line);
+
+                    if (control_stripped_line.starts_with("ROUEN_PROMPT|")) {
+                        is_command_running.store(false);
                         command_running = false;
                         
                         std::string parsed_cwd;
-                        size_t first_pipe = clean_line.find('|');
-                        size_t second_pipe = clean_line.find('|', first_pipe + 1);
+                        size_t first_pipe = control_stripped_line.find('|');
+                        size_t second_pipe = control_stripped_line.find('|', first_pipe + 1);
                         if (first_pipe != std::string::npos && second_pipe != std::string::npos) {
-                            parsed_cwd = clean_line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
+                            parsed_cwd = control_stripped_line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
                         }
                         
                         if (!parsed_cwd.empty()) {
@@ -260,8 +310,8 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                     }
                     
                     if (output_type == OutputType::StdOut) {
-                        if (clean_line == "ROUEN_CMD_DONE") {
-                            is_command_running = false;
+                        if (control_stripped_line == "ROUEN_CMD_DONE") {
+                            is_command_running.store(false);
                             command_running = false;
                             continue;
                         } else if (!command_running && 
@@ -303,7 +353,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
 
 void TerminalBash::restart_with_sudo(const char* password, const std::string& prev_cwd,
                                      const std::string& sudo_cmd, TerminalOutput& output,
-                                     bool& is_command_running) {
+                                     std::atomic<bool>& is_command_running) {
 #ifndef _WIN32
     output.add_to_output("Starting sudo PTY session...", OutputType::System);
     terminate_bash_session();
@@ -362,7 +412,7 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         if (!sudo_cmd.empty()) {
             output.add_to_output("", OutputType::Blank);
             output.add_to_output(sudo_cmd, OutputType::Command);
-            *is_command_running_ptr = true;
+            is_command_running_ptr->store(true);
             send_to_bash(sudo_cmd);
         }
         

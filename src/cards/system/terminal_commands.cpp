@@ -6,7 +6,7 @@ namespace rouen::cards {
 void TerminalCommands::execute_command(const std::string& command, bool use_llm, 
                                      TerminalOutput& output, const std::string& cwd,
                                      std::vector<std::string>& history, size_t& history_index,
-                                     bool& is_command_running, bool use_interactive_bash,
+                                     std::atomic<bool>& is_command_running, bool use_interactive_bash,
                                      bool& show_sudo_prompt, std::string& sudo_command,
                                      std::string* out_actual_command) {
     // If use_llm is true, generate a shell command using Grok
@@ -56,7 +56,7 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
     // For interactive bash mode
     if (use_interactive_bash) {
         // Set command as running
-        is_command_running = true;
+        is_command_running.store(true);
     } else {
         // For non-interactive mode or if interactive mode is not available
         // Use the traditional command execution
@@ -114,13 +114,13 @@ std::string TerminalCommands::generate_shell_command(const std::string& descript
 
 void TerminalCommands::execute_external_command(const std::string& command, 
                                               const std::string& cwd,
-                                              bool& is_command_running,
+                                              std::atomic<bool>& is_command_running,
                                               TerminalOutput& output) {
     // First terminate any running process
     terminate_current_process(is_command_running);
     
     // Set command as running
-    is_command_running = true;
+    is_command_running.store(true);
     
     // Create full command with the working directory
     // Append 2>&1 to redirect stderr to stdout so we capture both
@@ -141,7 +141,7 @@ void TerminalCommands::execute_external_command(const std::string& command,
         
         if (!command_pipe) {
             output.add_to_output("Failed to execute command.", OutputType::StdErr);
-            is_command_running = false;
+            is_command_running.store(false);
             output.add_to_output("", OutputType::Blank);
             output.add_prompt(cwd);
             return;
@@ -179,13 +179,13 @@ void TerminalCommands::execute_external_command(const std::string& command,
     });
 }
 
-void TerminalCommands::check_command_output(bool use_interactive_bash, bool& is_command_running, 
+void TerminalCommands::check_command_output(bool use_interactive_bash, std::atomic<bool>& is_command_running, 
                                           TerminalOutput& output) {
     // For interactive bash mode, the command status is handled in the reader thread
     if (use_interactive_bash) return;
     
     // Check if command has finished in non-interactive mode
-    if (is_command_running) {
+    if (is_command_running.load()) {
         bool should_close = false;
         
         {
@@ -212,7 +212,7 @@ void TerminalCommands::check_command_output(bool use_interactive_bash, bool& is_
                 pclose(pipe_to_close);
 #endif
                 // Command has finished
-                is_command_running = false;
+                is_command_running.store(false);
                 
                 // Add blank line and prompt after command completes
                 output.add_to_output("", OutputType::Blank);
@@ -227,8 +227,8 @@ void TerminalCommands::check_command_output(bool use_interactive_bash, bool& is_
     }
 }
 
-void TerminalCommands::terminate_current_process(bool& is_command_running) {
-    if (is_command_running) {
+void TerminalCommands::terminate_current_process(std::atomic<bool>& is_command_running) {
+    if (is_command_running.load()) {
         // Ask the thread to stop
         if (output_reader_thread.joinable()) {
             should_stop_thread = true;
@@ -254,7 +254,7 @@ void TerminalCommands::terminate_current_process(bool& is_command_running) {
 #endif
         }
         
-        is_command_running = false;
+        is_command_running.store(false);
         
         // Wait for the thread to finish
         if (output_reader_thread.joinable()) {

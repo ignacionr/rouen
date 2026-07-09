@@ -166,7 +166,7 @@ void terminal::render_command_input(float window_width) {
     float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
     float input_width = window_width;
     // If buttons are visible, make room for them
-    if (is_command_running) {
+    if (is_command_running.load()) {
         input_width -= 160.0f * dpi_scale; // Reserve space for spinner + Ctrl+C + Kill buttons + spacing
     }
     ImGui::SetNextItemWidth(input_width);
@@ -178,7 +178,7 @@ void terminal::render_command_input(float window_width) {
     input_active = ImGui::IsItemActive();
 
     // If command is running, show spinner and control buttons to the right of the input
-    if (is_command_running) {
+    if (is_command_running.load()) {
         ImGui::SameLine();
         ImGui::TextColored(colors[3], "%c", spinner_chars[(spinner_counter/5) % 4]);
         spinner_counter++;
@@ -216,7 +216,7 @@ void terminal::render_command_input(float window_width) {
         bool ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
         std::string user_cmd = input_buffer;
         // Always update current_working_dir from bash before handling shortcuts, but only if no command is running
-        if (bash.is_interactive() && !is_command_running) {
+        if (bash.is_interactive() && !is_command_running.load()) {
             std::string new_cwd = bash.get_cwd();
             if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
@@ -236,7 +236,7 @@ void terminal::render_command_input(float window_width) {
             history_index = command_history.size();
             // Output to terminal for feedback
             output.add_to_output(std::format("Editing file: {}", file_path.string()), OutputType::System);
-        } else if (is_command_running) {
+        } else if (is_command_running.load()) {
             // A process is running in the foreground. Send the raw input to its stdin.
             output.add_to_output(user_cmd, OutputType::Command);
             if (bash.is_interactive()) {
@@ -249,8 +249,9 @@ void terminal::render_command_input(float window_width) {
                                  command_history, history_index, is_command_running, 
                                  bash.is_interactive(), show_sudo_prompt, sudo_command, &actual_command);
             if (bash.is_interactive() && !show_sudo_prompt && !actual_command.empty()) {
-                // Send the actual command (Grok or user) to bash
-                bash.send_to_bash(actual_command, true);
+                // Normal commands should emit the completion marker so the UI can
+                // reliably clear the running state when the foreground job exits.
+                bash.send_to_bash(actual_command, false);
             }
         }
         input_buffer[0] = '\0';  // Clear the input
@@ -337,7 +338,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         output.add_to_output(std::format("  Working Dir: {}", current_working_dir), OutputType::System);
         output.add_to_output(std::format("  History Size: {} / 50", command_history.size()), OutputType::System);
         output.add_to_output(std::format("  Interactive: {}", bash.is_interactive() ? "Yes" : "No"), OutputType::System);
-        output.add_to_output(std::format("  Process Running: {}", is_command_running ? "Yes" : "No"), OutputType::System);
+        output.add_to_output(std::format("  Process Running: {}", is_command_running.load() ? "Yes" : "No"), OutputType::System);
         output.add_to_output("", OutputType::Blank);
         output.add_prompt(current_working_dir);
     }
@@ -377,7 +378,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
             }
             
             // Execute the command in the bash session
-            is_command_running = true;
+            is_command_running.store(true);
             bash.send_to_bash(agy_cmd);
         }
     }
