@@ -445,7 +445,13 @@ namespace rouen::cards
                         if (filtered_items.empty()) {
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items found");
                         } else {
-                            if (ImGui::BeginChild("FeedItemsScroll", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+                            const bool feed_items_scroll_open = ImGui::BeginChild(
+                                "FeedItemsScroll",
+                                ImVec2(0, 0),
+                                false,
+                                ImGuiWindowFlags_AlwaysVerticalScrollbar
+                            );
+                            if (feed_items_scroll_open) {
                                 size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
                                 for (size_t i = 0; i < count; ++i) {
                                     auto& item = *filtered_items[i];
@@ -661,8 +667,8 @@ namespace rouen::cards
                                     }
                                 }
                                 
-                                ImGui::EndChild();
                             }
+                            ImGui::EndChild();
                         }
                     }
                     catch (const std::exception& e) {
