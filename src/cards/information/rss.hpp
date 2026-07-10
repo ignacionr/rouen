@@ -738,36 +738,14 @@ public:
                 draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
             }
             
-            ImGui::Spacing();
-            
-            // 2. Draw Title
-            std::string truncated_title = truncate_text(title, card_width - 12.0f);
-            bool title_clicked = ImGui::Selectable(std::format("{}##title_{}", truncated_title, feed->repo_id).c_str(), false, ImGuiSelectableFlags_None, ImVec2(card_width - 12.0f, 0));
-            
-            // Right-click context menu
-            if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
-                ImGui::OpenPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str());
-            }
-            if (ImGui::BeginPopup(std::format("FeedContextMenu_{}", feed->repo_id).c_str())) {
-                if (ImGui::MenuItem("Copy Feed URL")) {
-                    ImGui::SetClipboardText(feed->source_link.c_str());
-                }
-                if (ImGui::MenuItem("Copy Feed Title")) {
-                    ImGui::SetClipboardText(title.c_str());
-                }
-                ImGui::EndPopup();
-            }
-            
             // 3. Draw Footer
             ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 24.0f));
             
             ImVec4 freshness_color = get_freshness_color(feed, now);
+            std::string freshness_text = get_freshness_text(feed, now);
             ImGui::TextColored(freshness_color, "●");
             ImGui::SameLine();
-            
-            ImGui::PushStyleColor(ImGuiCol_Text, colors[1]);
-            ImGui::Text("%zu items", feed->items.size());
-            ImGui::PopStyleColor();
+            ImGui::TextColored(freshness_color, "%s", freshness_text.c_str());
             
             ImGui::SameLine(card_width - 24.0f);
             if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {
@@ -776,7 +754,7 @@ public:
             
             ImGui::EndGroup();
             
-            if (card_activated || cover_clicked || title_clicked) {
+            if (card_activated || cover_clicked) {
                 std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
                 "create_card"_sfn(feed_uri);
             }
@@ -1096,6 +1074,35 @@ private:
         // Add or update entry
         freshness_cache[feed->source_link] = {color, now};
         return color;
+    }
+
+    std::string get_freshness_text(const std::shared_ptr<media::rss::feed>& feed, 
+                                   const std::chrono::system_clock::time_point& now) const {
+        if (feed->items.empty()) {
+            return "No items";
+        }
+        
+        auto newest_time = feed->items.front().updated;
+        for (const auto& item : feed->items) {
+            if (item.updated > newest_time) {
+                newest_time = item.updated;
+            }
+        }
+        
+        auto diff = now - newest_time;
+        auto hours = std::chrono::duration_cast<std::chrono::hours>(diff).count();
+        auto days = std::chrono::duration_cast<std::chrono::days>(diff).count();
+        
+        if (hours < 1) {
+            return "Just now";
+        } else if (hours < 24) {
+            return std::format("{}h ago", hours);
+        } else if (days < 7) {
+            return std::format("{}d ago", days);
+        } else {
+            auto weeks = days / 7;
+            return std::format("{}w ago", weeks);
+        }
     }
 
     std::shared_ptr<hosts::RSSHost> rss_host;

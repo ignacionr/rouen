@@ -396,6 +396,11 @@ namespace rouen::cards
                         }
                     }
                     ImGui::PopStyleVar();
+                    
+                    // Show total item count
+                    ImGui::Spacing();
+                    ImGui::TextColored(colors[2], "Items: %zu", items.size());
+                    
                     ImGui::EndGroup();
                     
                     ImGui::EndGroup();

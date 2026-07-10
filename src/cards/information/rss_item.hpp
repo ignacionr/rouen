@@ -203,6 +203,9 @@ public:
                     if (!item.enclosure.empty()) {
                         ImGui::Separator();
                         
+                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
+                        ImGui::Spacing();
+                        
                         // Use the media_player helper for playback controls
                         try {
                             media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark);
@@ -215,6 +218,9 @@ public:
                     // Enhanced: Check for extracted media URLs if no direct enclosure
                     else if (!item.extracted_media_urls.empty()) {
                         ImGui::Separator();
+                        
+                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
+                        ImGui::Spacing();
                         
                         // Show all available media options
                         ImGui::TextColored(colors[0], "Media Content:");
@@ -245,6 +251,9 @@ public:
                              item.link.find("vimeo.com") != std::string::npos) {
                         ImGui::Separator();
                         
+                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
+                        ImGui::Spacing();
+                        
                         try {
                             media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
                         } catch (const std::exception& e) {
@@ -261,46 +270,54 @@ public:
                         
                         if (is_visible) {
                             // Try to load item image if available
-                            SDL_Texture* item_tex = nullptr;
-                            int item_tex_w = 0, item_tex_h = 0;
-                            if (renderer && image_cache && !item.image_url.empty()) {
-                                if (item_textures.contains(item.image_url)) {
-                                    auto& lt = item_textures[item.image_url];
-                                    item_tex = lt.texture;
-                                    item_tex_w = lt.width;
-                                    item_tex_h = lt.height;
-                                } else {
-                                    int cached_w = 0, cached_h = 0;
-                                    if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
-                                        item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
-                                        if (item_tex) {
-                                            item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
-                                        }
+                            // BUT: Only show image if not playing media
+                            bool is_playing_media = !item.enclosure.empty() || !item.extracted_media_urls.empty() ||
+                                                    (item.link.find("youtube.com") != std::string::npos || 
+                                                     item.link.find("youtu.be") != std::string::npos ||
+                                                     item.link.find("vimeo.com") != std::string::npos);
+                            
+                            if (!is_playing_media) {
+                                SDL_Texture* item_tex = nullptr;
+                                int item_tex_w = 0, item_tex_h = 0;
+                                if (renderer && image_cache && !item.image_url.empty()) {
+                                    if (item_textures.contains(item.image_url)) {
+                                        auto& lt = item_textures[item.image_url];
+                                        item_tex = lt.texture;
+                                        item_tex_w = lt.width;
+                                        item_tex_h = lt.height;
                                     } else {
-                                        request_image_download(item.image_url);
+                                        int cached_w = 0, cached_h = 0;
+                                        if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
+                                            item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
+                                            if (item_tex) {
+                                                item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
+                                            }
+                                        } else {
+                                            request_image_download(item.image_url);
+                                        }
                                     }
                                 }
-                            }
 
-                            if (item_tex) {
-                                float avail_w = ImGui::GetContentRegionAvail().x;
-                                ImVec2 banner_size(avail_w, 240.0f);
-                                ImVec2 banner_pos = ImGui::GetCursorScreenPos();
-                                
-                                ImVec2 uv0, uv1;
-                                calculate_cover_uvs(banner_size.x, banner_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
-                                
-                                ImGui::GetWindowDrawList()->AddImage(
-                                    rouen::helpers::texture_id_cast(item_tex),
-                                    banner_pos,
-                                    ImVec2(banner_pos.x + banner_size.x, banner_pos.y + banner_size.y),
-                                    uv0,
-                                    uv1
-                                );
-                                ImGui::Dummy(banner_size);
-                                ImGui::Spacing();
-                                ImGui::Separator();
-                                ImGui::Spacing();
+                                if (item_tex) {
+                                    float avail_w = ImGui::GetContentRegionAvail().x;
+                                    ImVec2 banner_size(avail_w, 240.0f);
+                                    ImVec2 banner_pos = ImGui::GetCursorScreenPos();
+                                    
+                                    ImVec2 uv0, uv1;
+                                    calculate_cover_uvs(banner_size.x, banner_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
+                                    
+                                    ImGui::GetWindowDrawList()->AddImage(
+                                        rouen::helpers::texture_id_cast(item_tex),
+                                        banner_pos,
+                                        ImVec2(banner_pos.x + banner_size.x, banner_pos.y + banner_size.y),
+                                        uv0,
+                                        uv1
+                                    );
+                                    ImGui::Dummy(banner_size);
+                                    ImGui::Spacing();
+                                    ImGui::Separator();
+                                    ImGui::Spacing();
+                                }
                             }
 
                             // Use description as content
