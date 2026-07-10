@@ -739,19 +739,17 @@ public:
             }
             
             // 2. Draw Title with proper spacing
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 228.0f));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 230.0f));
+            const ImVec4 text_color = is_emphasized ? colors[0] : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
             ImGui::PushTextWrapPos(start_pos.x + card_width - 6.0f);
-            ImGui::TextWrapped("%s", feed->feed_title.c_str());
+            ImGui::TextColored(text_color, "%s", title.c_str());
             ImGui::PopTextWrapPos();
             
-            // 3. Draw Footer (positioned near bottom with minimal gap)
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 20.0f));
-            
-            ImVec4 freshness_color = get_freshness_color(feed, now);
+            // 3. Draw freshness right after title
             std::string freshness_text = get_freshness_text(feed, now);
-            ImGui::TextColored(freshness_color, "●");
+            ImGui::TextColored(text_color, "●");
             ImGui::SameLine();
-            ImGui::TextColored(freshness_color, "%s", freshness_text.c_str());
+            ImGui::TextColored(text_color, "%s", freshness_text.c_str());
             
             ImGui::SameLine(card_width - 24.0f);
             if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {

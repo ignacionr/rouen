@@ -368,22 +368,31 @@ namespace rouen::cards
                     
                     auto current_tags = rss_host->getFeedTags(feed_id);
                     std::vector<std::string> all_possible_tags = {"News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
-                    
-                    float window_max_x = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+                    const float tags_row_width = ImGui::GetContentRegionAvail().x;
+                    float used_row_width = 0.0f;
                     
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
                     for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
                         const auto& tag_name = all_possible_tags[t_idx];
                         bool has_tag = current_tags.contains(tag_name);
                         
-                        // Estimate checkbox width: checkbox box frame (GetFrameHeight) + text + paddings
-                        float chk_width = ImGui::CalcTextSize(tag_name.c_str()).x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x * 2.0f;
-                        
-                        float current_x = ImGui::GetCursorScreenPos().x;
-                        if (t_idx > 0 && current_x + chk_width > window_max_x - 20.0f) {
-                            // Wrapping to next line!
+                        // Keep tags on one line when space allows; wrap to next line otherwise.
+                        const auto& style = ImGui::GetStyle();
+                        const float chk_width =
+                            ImGui::GetFrameHeight() +
+                            style.ItemInnerSpacing.x +
+                            ImGui::CalcTextSize(tag_name.c_str()).x +
+                            style.FramePadding.x * 2.0f;
+                        constexpr float tag_spacing = 12.0f;
+
+                        const bool fits_same_line =
+                            t_idx > 0 &&
+                            (used_row_width + tag_spacing + chk_width <= tags_row_width);
+                        if (fits_same_line) {
+                            ImGui::SameLine(0.0f, tag_spacing);
+                            used_row_width += tag_spacing + chk_width;
                         } else if (t_idx > 0) {
-                            ImGui::SameLine(0.0f, 12.0f);
+                            used_row_width = 0.0f;
                         }
                         
                         std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
@@ -393,6 +402,10 @@ namespace rouen::cards
                             } else {
                                 rss_host->removeFeedTag(feed_id, tag_name);
                             }
+                        }
+
+                        if (!fits_same_line) {
+                            used_row_width = chk_width;
                         }
                     }
                     ImGui::PopStyleVar();
