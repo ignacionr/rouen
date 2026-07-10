@@ -738,6 +738,10 @@ public:
                 draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
             }
             
+            // 2. Draw Title
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 226.0f));
+            ImGui::TextWrapped("%s", feed->feed_title.c_str());
+            
             // 3. Draw Footer
             ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 24.0f));
             

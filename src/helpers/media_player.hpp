@@ -28,7 +28,7 @@ struct media_player {
         return dummy;
     }
 
-    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark()) noexcept {
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) noexcept {
         (void)info_color;
         ImGui::PushID(url.data());
         try {
@@ -105,7 +105,8 @@ struct media_player {
 
                     ImGui::Spacing();
                     const float dock_width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
-                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, 360.0f);
+                    const float max_dock_height = prefer_tall_layout ? 600.0f : 360.0f;
+                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, max_dock_height);
                     const ImVec2 dock_size{dock_width, dock_height};
                     const ImVec2 dock_min = ImGui::GetCursorScreenPos();
 

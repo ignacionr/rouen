@@ -203,12 +203,9 @@ public:
                     if (!item.enclosure.empty()) {
                         ImGui::Separator();
                         
-                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
-                        ImGui::Spacing();
-                        
                         // Use the media_player helper for playback controls
                         try {
-                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark);
+                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, true);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in media player: {}", e.what());
                         }
@@ -218,9 +215,6 @@ public:
                     // Enhanced: Check for extracted media URLs if no direct enclosure
                     else if (!item.extracted_media_urls.empty()) {
                         ImGui::Separator();
-                        
-                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
-                        ImGui::Spacing();
                         
                         // Show all available media options
                         ImGui::TextColored(colors[0], "Media Content:");
@@ -234,7 +228,7 @@ public:
                                 extracted_media.format);
                             
                             try {
-                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark);
+                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, true);
                                 if (i < item.extracted_media_urls.size() - 1) {
                                     ImGui::Spacing();
                                 }
@@ -251,11 +245,8 @@ public:
                              item.link.find("vimeo.com") != std::string::npos) {
                         ImGui::Separator();
                         
-                        ImGui::TextColored(colors[0], "💡 Tip: Make window taller for better player view");
-                        ImGui::Spacing();
-                        
                         try {
-                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
+                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, true);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in video link player: {}", e.what());
                         }
