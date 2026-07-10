@@ -738,12 +738,14 @@ public:
                 draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
             }
             
-            // 2. Draw Title
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 226.0f));
+            // 2. Draw Title with proper spacing
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 228.0f));
+            ImGui::PushTextWrapPos(start_pos.x + card_width - 6.0f);
             ImGui::TextWrapped("%s", feed->feed_title.c_str());
+            ImGui::PopTextWrapPos();
             
-            // 3. Draw Footer
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 24.0f));
+            // 3. Draw Footer (positioned near bottom with minimal gap)
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + card_height - 20.0f));
             
             ImVec4 freshness_color = get_freshness_color(feed, now);
             std::string freshness_text = get_freshness_text(feed, now);
