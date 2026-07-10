@@ -7,6 +7,7 @@
 #include <vector>
 #include <fstream>
 #include <SDL.h>
+#include <SDL_image.h>
 
 #include "fetch.hpp"
 #include "sqlite.hpp"
@@ -25,6 +26,11 @@ namespace helpers {
  */
 class ImageCache {
 public:
+    enum class Variant {
+        Color,
+        Grayscale,
+    };
+
     /**
      * Constructor - initializes the database connection and ensures tables exist
      * 
@@ -66,70 +72,46 @@ public:
      * @param force_download Force download even if cached
      * @return SDL_Texture pointer if successful, nullptr if failed
      */
-    SDL_Texture* getTexture(SDL_Renderer* renderer, const std::string& url, 
-                          int& width, int& height, bool force_download = false) {
-        
-        // Try to get the image from cache if not forcing download
+    SDL_Texture* getTexture(SDL_Renderer* renderer, const std::string& url,
+                          int& width, int& height, bool force_download = false,
+                          Variant variant = Variant::Color) {
+
+        const std::string cache_key = makeCacheKey(url, variant);
+
         if (!force_download) {
-            auto cached_path = getImageFromCache(url, width, height);
+            auto cached_path = getImageFromCache(cache_key, width, height);
             if (cached_path) {
-                // Update the last accessed time
-                updateLastAccessed(url);
-                
-                // Load texture from cached file
+                updateLastAccessed(cache_key);
                 return TextureHelper::loadTextureFromFile(renderer, cached_path->c_str(), width, height);
             }
         }
-        
-        // Image not in cache or forcing download, download it
-        try {
-            // Generate a filename based on URL hash
-            auto url_hash = std::hash<std::string>{}(url);
-            std::filesystem::path final_path_obj = std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + ".img");
-            std::string final_path = final_path_obj.string();
-            std::string temp_path = final_path + ".tmp";
-            
-            // Create file for writing
-            FILE* fp = fopen(temp_path.c_str(), "wb");
-            if (!fp) {
+
+        if (variant == Variant::Grayscale) {
+            int base_width = 0;
+            int base_height = 0;
+            auto color_path = ensureVariantCached(url, Variant::Color, base_width, base_height, force_download);
+            if (!color_path) {
                 return nullptr;
             }
-            
-            // Set up callback to write to file
-            auto write_callback = [](void* ptr, size_t size, size_t nmemb, void* stream) -> size_t {
-                return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
-            };
-            
-            // Download the image
-            http::fetch fetcher{30};
-            fetcher(url, {}, write_callback, fp);
-            
-            // Close the file
-            fclose(fp);
-            
-            // Load the image to get dimensions
-            SDL_Texture* texture = TextureHelper::loadTextureFromFile(renderer, temp_path.c_str(), width, height);
-            
-            if (texture) {
-                // Move the temporary file to its final location
-                if (std::filesystem::exists(final_path)) {
-                    std::filesystem::remove(final_path);
-                }
-                std::filesystem::rename(temp_path, final_path);
-                
-                // Store info in cache
-                storeImageInCache(url, final_path, width, height);
-                
-                return texture;
+
+            auto grayscale_path = ensureGrayscaleVariant(url, *color_path, base_width, base_height, force_download);
+            if (!grayscale_path) {
+                return nullptr;
             }
-            
-            // Cleanup temp file on failure
-            std::filesystem::remove(temp_path);
+
+            width = base_width;
+            height = base_height;
+            updateLastAccessed(cache_key);
+            return TextureHelper::loadTextureFromFile(renderer, grayscale_path->c_str(), width, height);
+        }
+
+        auto color_path = ensureVariantCached(url, Variant::Color, width, height, force_download);
+        if (!color_path) {
             return nullptr;
         }
-        catch (const std::exception&) {
-            return nullptr;
-        }
+
+        updateLastAccessed(cache_key);
+        return TextureHelper::loadTextureFromFile(renderer, color_path->c_str(), width, height);
     }
 
     /**
@@ -140,8 +122,8 @@ public:
      * @param height Output parameter for stored height
      * @return True if in cache, false otherwise
      */
-    bool isCached(const std::string& url, int& width, int& height) {
-        return getImageFromCache(url, width, height).has_value();
+    bool isCached(const std::string& url, int& width, int& height, Variant variant = Variant::Color) {
+        return getImageFromCache(makeCacheKey(url, variant), width, height).has_value();
     }
     
     /**
@@ -153,51 +135,11 @@ public:
      */
     bool downloadAndCache(const std::string& url) {
         int w = 0, h = 0;
-        if (getImageFromCache(url, w, h)) {
+        if (getImageFromCache(makeCacheKey(url, Variant::Color), w, h)) {
             return true;
         }
-        
-        try {
-            auto url_hash = std::hash<std::string>{}(url);
-            std::filesystem::path final_path_obj = std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + ".img");
-            std::string final_path = final_path_obj.string();
-            std::string temp_path = final_path + ".tmp";
-            
-            FILE* fp = fopen(temp_path.c_str(), "wb");
-            if (!fp) {
-                return false;
-            }
-            
-            auto write_callback = [](void* ptr, size_t size, size_t nmemb, void* stream) -> size_t {
-                return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
-            };
-            
-            http::fetch fetcher{30};
-            fetcher(url, {}, write_callback, fp);
-            fclose(fp);
-            
-            // Check if it's a valid image using SDL_image's CPU-side loading
-            SDL_Surface* surface = IMG_Load(temp_path.c_str());
-            if (surface) {
-                int width = surface->w;
-                int height = surface->h;
-                SDL_FreeSurface(surface);
-                
-                if (std::filesystem::exists(final_path)) {
-                    std::filesystem::remove(final_path);
-                }
-                std::filesystem::rename(temp_path, final_path);
-                
-                storeImageInCache(url, final_path, width, height);
-                return true;
-            }
-            
-            std::filesystem::remove(temp_path);
-            return false;
-        }
-        catch (...) {
-            return false;
-        }
+
+        return ensureVariantCached(url, Variant::Color, w, h, false).has_value();
     }
     
     /**
@@ -238,27 +180,161 @@ public:
     void removeFromCache(const std::string& url) {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // Get the file path first
-        std::string file_path;
-        std::string sql = "SELECT file_path FROM image_cache WHERE url = ?";
-        db_.exec(sql, [&file_path](sqlite3_stmt* stmt) {
-            const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-            if (path) {
-                file_path = path;
+        for (const auto& cache_key : {makeCacheKey(url, Variant::Color), makeCacheKey(url, Variant::Grayscale)}) {
+            std::string file_path;
+            std::string sql = "SELECT file_path FROM image_cache WHERE url = ?";
+            db_.exec(sql, [&file_path](sqlite3_stmt* stmt) {
+                const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                if (path) {
+                    file_path = path;
+                }
+            }, cache_key);
+
+            if (!file_path.empty() && std::filesystem::exists(file_path)) {
+                std::filesystem::remove(file_path);
             }
-        }, url);
-        
-        // Delete the file if it exists
-        if (!file_path.empty() && std::filesystem::exists(file_path)) {
-            std::filesystem::remove(file_path);
+
+            sql = "DELETE FROM image_cache WHERE url = ?";
+            db_.exec(sql, {}, cache_key);
         }
-        
-        // Delete the record
-        sql = "DELETE FROM image_cache WHERE url = ?";
-        db_.exec(sql, {}, url);
     }
 
 private:
+    static std::string makeCacheKey(const std::string& url, Variant variant) {
+        return variant == Variant::Grayscale ? url + "#grayscale" : url;
+    }
+
+    std::filesystem::path buildCacheFilePath(const std::string& url, Variant variant) const {
+        const auto cache_key = makeCacheKey(url, variant);
+        const auto url_hash = std::hash<std::string>{}(cache_key);
+        const char* extension = variant == Variant::Grayscale ? ".png" : ".img";
+        return std::filesystem::path(cache_dir_) / (std::to_string(url_hash) + extension);
+    }
+
+    std::optional<std::string> ensureVariantCached(const std::string& url, Variant variant,
+                                                   int& width, int& height, bool force_download) {
+        const std::string cache_key = makeCacheKey(url, variant);
+        if (!force_download) {
+            auto cached_path = getImageFromCache(cache_key, width, height);
+            if (cached_path) {
+                return cached_path;
+            }
+        }
+
+        if (variant == Variant::Color) {
+            return downloadColorVariant(url, width, height);
+        }
+
+        return std::nullopt;
+    }
+
+    std::optional<std::string> ensureGrayscaleVariant(const std::string& url, const std::string& color_path,
+                                                      int& width, int& height, bool force_regenerate) {
+        const std::string cache_key = makeCacheKey(url, Variant::Grayscale);
+        int cached_width = 0;
+        int cached_height = 0;
+        if (!force_regenerate) {
+            auto cached_path = getImageFromCache(cache_key, cached_width, cached_height);
+            if (cached_path) {
+                width = cached_width;
+                height = cached_height;
+                return cached_path;
+            }
+        }
+
+        const auto grayscale_path = buildCacheFilePath(url, Variant::Grayscale);
+        if (!createGrayscaleImage(color_path, grayscale_path.string(), width, height)) {
+            return std::nullopt;
+        }
+
+        storeImageInCache(cache_key, grayscale_path.string(), width, height);
+        return grayscale_path.string();
+    }
+
+    std::optional<std::string> downloadColorVariant(const std::string& url, int& width, int& height) {
+        try {
+            const auto final_path_obj = buildCacheFilePath(url, Variant::Color);
+            const std::string final_path = final_path_obj.string();
+            const std::string temp_path = final_path + ".tmp";
+
+            FILE* fp = fopen(temp_path.c_str(), "wb");
+            if (!fp) {
+                return std::nullopt;
+            }
+
+            auto write_callback = [](void* ptr, size_t size, size_t nmemb, void* stream) -> size_t {
+                return fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
+            };
+
+            http::fetch fetcher{30};
+            fetcher(url, {}, write_callback, fp);
+            fclose(fp);
+
+            SDL_Surface* surface = IMG_Load(temp_path.c_str());
+            if (!surface) {
+                std::filesystem::remove(temp_path);
+                return std::nullopt;
+            }
+
+            width = surface->w;
+            height = surface->h;
+            SDL_FreeSurface(surface);
+
+            if (std::filesystem::exists(final_path)) {
+                std::filesystem::remove(final_path);
+            }
+            std::filesystem::rename(temp_path, final_path);
+
+            storeImageInCache(makeCacheKey(url, Variant::Color), final_path, width, height);
+            return final_path;
+        }
+        catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+
+    bool createGrayscaleImage(const std::string& source_path, const std::string& grayscale_path,
+                              int& width, int& height) {
+        SDL_Surface* source_surface = IMG_Load(source_path.c_str());
+        if (!source_surface) {
+            return false;
+        }
+
+        SDL_Surface* rgba_surface = SDL_ConvertSurfaceFormat(source_surface, SDL_PIXELFORMAT_RGBA32, 0);
+        SDL_FreeSurface(source_surface);
+        if (!rgba_surface) {
+            return false;
+        }
+
+        width = rgba_surface->w;
+        height = rgba_surface->h;
+
+        if (SDL_LockSurface(rgba_surface) != 0) {
+            SDL_FreeSurface(rgba_surface);
+            return false;
+        }
+
+        auto* pixels = static_cast<Uint32*>(rgba_surface->pixels);
+        const int pixel_count = rgba_surface->w * rgba_surface->h;
+        SDL_PixelFormat* format = rgba_surface->format;
+        for (int i = 0; i < pixel_count; ++i) {
+            Uint8 r = 0, g = 0, b = 0, a = 0;
+            SDL_GetRGBA(pixels[i], format, &r, &g, &b, &a);
+            const Uint8 gray = static_cast<Uint8>((77 * r + 150 * g + 29 * b) / 256);
+            pixels[i] = SDL_MapRGBA(format, gray, gray, gray, a);
+        }
+
+        SDL_UnlockSurface(rgba_surface);
+
+        if (std::filesystem::exists(grayscale_path)) {
+            std::filesystem::remove(grayscale_path);
+        }
+
+        const bool saved = IMG_SavePNG(rgba_surface, grayscale_path.c_str()) == 0;
+        SDL_FreeSurface(rgba_surface);
+        return saved;
+    }
+
     /**
      * Attempts to retrieve an image from the cache
      * 

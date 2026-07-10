@@ -597,6 +597,33 @@ public:
         }
     }
 
+    static std::string feed_texture_cache_key(const std::string& url, ::helpers::ImageCache::Variant variant) {
+        return variant == ::helpers::ImageCache::Variant::Grayscale ? url + "#grayscale" : url;
+    }
+
+    SDL_Texture* get_feed_texture(const std::string& url, ::helpers::ImageCache::Variant variant, int& texture_width, int& texture_height) {
+        texture_width = 0;
+        texture_height = 0;
+
+        if (!renderer || !image_cache || url.empty()) {
+            return nullptr;
+        }
+
+        const auto cache_key = feed_texture_cache_key(url, variant);
+        if (feed_textures.contains(cache_key)) {
+            auto& loaded = feed_textures[cache_key];
+            texture_width = loaded.width;
+            texture_height = loaded.height;
+            return loaded.texture;
+        }
+
+        SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
+        if (texture) {
+            feed_textures[cache_key] = {texture, texture_width, texture_height};
+        }
+        return texture;
+    }
+
     void render_feed_list(auto &feeds, std::string &search_text, bool &has_matches)
     {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -639,12 +666,23 @@ public:
 
             ImVec2 start_pos = ImGui::GetCursorScreenPos();
             ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + card_height);
-            
-            bool is_hovered = ImGui::IsMouseHoveringRect(start_pos, end_pos);
+
+            ImGui::SetCursorScreenPos(start_pos);
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
+            bool card_activated = ImGui::Selectable(
+                std::format("##feed_card_nav_{}", feed->repo_id).c_str(),
+                false,
+                ImGuiSelectableFlags_AllowOverlap,
+                ImVec2(card_width, card_height)
+            );
+            bool is_emphasized = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+            ImGui::PopStyleColor(3);
             
             // Draw background and borders
-            ImVec4 bg_color = is_hovered ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
-            ImVec4 border_color = is_hovered ? colors[0] : ImVec4(0.24f, 0.24f, 0.27f, 0.6f);
+            ImVec4 bg_color = is_emphasized ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
+            ImVec4 border_color = is_emphasized ? colors[0] : ImVec4(0.24f, 0.24f, 0.27f, 0.6f);
             
             draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f);
             draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f);
@@ -671,18 +709,15 @@ public:
             SDL_Texture* tex = nullptr;
             int img_w = 0, img_h = 0;
             if (renderer && image_cache && !img_url.empty()) {
-                if (feed_textures.contains(img_url)) {
-                    auto& lt = feed_textures[img_url];
-                    tex = lt.texture;
-                    img_w = lt.width;
-                    img_h = lt.height;
-                } else {
+                tex = get_feed_texture(
+                    img_url,
+                    is_emphasized ? ::helpers::ImageCache::Variant::Color : ::helpers::ImageCache::Variant::Grayscale,
+                    img_w,
+                    img_h
+                );
+                if (!tex) {
                     int cached_w = 0, cached_h = 0;
                     if (image_cache->isCached(img_url, cached_w, cached_h)) {
-                        tex = image_cache->getTexture(renderer, img_url, img_w, img_h);
-                        if (tex) {
-                            feed_textures[img_url] = {tex, img_w, img_h};
-                        }
                     } else {
                         request_image_download(img_url);
                     }
@@ -741,7 +776,7 @@ public:
             
             ImGui::EndGroup();
             
-            if (cover_clicked || title_clicked) {
+            if (card_activated || cover_clicked || title_clicked) {
                 std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
                 "create_card"_sfn(feed_uri);
             }

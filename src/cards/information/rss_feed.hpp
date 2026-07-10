@@ -114,6 +114,33 @@ namespace rouen::cards
             }
         }
 
+        static std::string item_texture_cache_key(const std::string& url, ::helpers::ImageCache::Variant variant) {
+            return variant == ::helpers::ImageCache::Variant::Grayscale ? url + "#grayscale" : url;
+        }
+
+        SDL_Texture* get_item_texture(const std::string& url, ::helpers::ImageCache::Variant variant, int& texture_width, int& texture_height) {
+            texture_width = 0;
+            texture_height = 0;
+
+            if (!renderer || !image_cache || url.empty()) {
+                return nullptr;
+            }
+
+            const auto cache_key = item_texture_cache_key(url, variant);
+            if (item_textures.contains(cache_key)) {
+                auto& loaded = item_textures[cache_key];
+                texture_width = loaded.width;
+                texture_height = loaded.height;
+                return loaded.texture;
+            }
+
+            SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
+            if (texture) {
+                item_textures[cache_key] = {texture, texture_width, texture_height};
+            }
+            return texture;
+        }
+
         void loadFeed()
         {
             if (feed_id < 0 || !rss_host)
@@ -405,6 +432,7 @@ namespace rouen::cards
                                 for (size_t i = 0; i < count; ++i) {
                                     auto& item = *filtered_items[i];
                                     ImGui::PushID(item.link.c_str());
+                                    const ImVec2 row_start = ImGui::GetCursorScreenPos();
                                     
                                     try {
                                         ImGui::BeginGroup();
@@ -414,19 +442,10 @@ namespace rouen::cards
                                             SDL_Texture* item_tex = nullptr;
                                             int item_tex_w = 0, item_tex_h = 0;
                                             if (renderer && image_cache && !item.image_url.empty()) {
-                                                if (item_textures.contains(item.image_url)) {
-                                                    auto& lt = item_textures[item.image_url];
-                                                    item_tex = lt.texture;
-                                                    item_tex_w = lt.width;
-                                                    item_tex_h = lt.height;
-                                                } else {
+                                                item_tex = get_item_texture(item.image_url, ::helpers::ImageCache::Variant::Color, item_tex_w, item_tex_h);
+                                                if (!item_tex) {
                                                     int cached_w = 0, cached_h = 0;
-                                                    if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
-                                                        item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
-                                                        if (item_tex) {
-                                                            item_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
-                                                        }
-                                                    } else {
+                                                    if (!image_cache->isCached(item.image_url, cached_w, cached_h)) {
                                                         request_image_download(item.image_url);
                                                     }
                                                 }
@@ -554,13 +573,32 @@ namespace rouen::cards
                                                 
                                                 ImVec2 thumb_size(120.0f, 80.0f);
                                                 ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
+                                                const float row_bottom = std::max(ImGui::GetCursorScreenPos().y, thumb_pos.y + thumb_size.y);
+                                                const bool row_hovered = ImGui::IsMouseHoveringRect(
+                                                    row_start,
+                                                    ImVec2(row_start.x + avail_width, row_bottom),
+                                                    false
+                                                );
+
+                                                SDL_Texture* display_tex = item_tex;
+                                                int display_tex_w = item_tex_w;
+                                                int display_tex_h = item_tex_h;
+                                                if (!row_hovered) {
+                                                    int grayscale_w = 0;
+                                                    int grayscale_h = 0;
+                                                    if (SDL_Texture* grayscale_tex = get_item_texture(item.image_url, ::helpers::ImageCache::Variant::Grayscale, grayscale_w, grayscale_h)) {
+                                                        display_tex = grayscale_tex;
+                                                        display_tex_w = grayscale_w;
+                                                        display_tex_h = grayscale_h;
+                                                    }
+                                                }
                                                 
                                                 ImVec2 uv0, uv1;
-                                                calculate_cover_uvs(thumb_size.x, thumb_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
+                                                calculate_cover_uvs(thumb_size.x, thumb_size.y, static_cast<float>(display_tex_w), static_cast<float>(display_tex_h), uv0, uv1);
                                                 
                                                 ImDrawList* draw_list = ImGui::GetWindowDrawList();
                                                 draw_list->AddImage(
-                                                    rouen::helpers::texture_id_cast(item_tex),
+                                                    rouen::helpers::texture_id_cast(display_tex),
                                                     thumb_pos,
                                                     ImVec2(thumb_pos.x + thumb_size.x, thumb_pos.y + thumb_size.y),
                                                     uv0,
