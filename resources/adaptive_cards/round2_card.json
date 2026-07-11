@@ -1,0 +1,53 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Container",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "Hello ${user.profile.name}",
+          "size": "Large",
+          "weight": "Bolder",
+          "color": "Accent"
+        },
+        {
+          "type": "ColumnSet",
+          "columns": [
+            {
+              "type": "Column",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Build: ${build.status}"
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "Owner: ${user.team.name}"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {
+              "title": "Status",
+              "value": "${user.status}"
+            },
+            {
+              "title": "Region",
+              "value": "${user.profile.region}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

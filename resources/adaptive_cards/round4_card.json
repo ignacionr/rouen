@@ -1,0 +1,59 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Notifications for ${user}"
+    },
+    {
+      "type": "Container",
+      "$data": "${notifications}",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "- ${title} (${severity})"
+        }
+      ]
+    },
+    {
+      "type": "Input.Text",
+      "id": "comment",
+      "title": "Comment",
+      "placeholder": "Write a comment"
+    },
+    {
+      "type": "Input.Toggle",
+      "id": "acknowledged",
+      "title": "Acknowledge all",
+      "value": "false"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.ShowCard",
+      "title": "Show Details",
+      "card": {
+        "type": "AdaptiveCard",
+        "body": [
+          {
+            "type": "FactSet",
+            "facts": [
+              {
+                "title": "Total",
+                "value": "${summary.total}"
+              },
+              {
+                "title": "Critical",
+                "value": "${summary.critical}"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "Action.Submit",
+      "title": "Submit Inputs"
+    }
+  ]
+}

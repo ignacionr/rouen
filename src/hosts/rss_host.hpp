@@ -26,6 +26,7 @@
 #include "../helpers/html_media_extractor.hpp"
 #include "../helpers/platform_utils.hpp"
 #include "../helpers/media_player.hpp"
+#include "../helpers/string_helper.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -132,6 +133,123 @@ namespace {
         }
         
         return input_url;
+    }
+
+    inline std::string trim_copy(std::string value) {
+        value.erase(0, value.find_first_not_of(" \t\r\n"));
+        if (!value.empty()) {
+            auto end_pos = value.find_last_not_of(" \t\r\n");
+            if (end_pos != std::string::npos) {
+                value.erase(end_pos + 1);
+            }
+        }
+        return value;
+    }
+
+    inline std::string decode_json_string(std::string value) {
+        std::string out;
+        out.reserve(value.size());
+        for (size_t i = 0; i < value.size(); ++i) {
+            if (value[i] == '\\' && i + 1 < value.size()) {
+                ++i;
+                switch (value[i]) {
+                    case '"': out.push_back('"'); break;
+                    case '\\': out.push_back('\\'); break;
+                    case '/': out.push_back('/'); break;
+                    case 'n': out.push_back('\n'); break;
+                    case 'r': out.push_back('\r'); break;
+                    case 't': out.push_back('\t'); break;
+                    default: out.push_back(value[i]); break;
+                }
+            } else {
+                out.push_back(value[i]);
+            }
+        }
+        return out;
+    }
+
+    struct link_metadata {
+        std::string title;
+        std::string description;
+        std::string image_url;
+    };
+
+    inline std::optional<std::string> extract_meta_content(std::string_view html, std::string_view key, std::string_view attr) {
+        const std::regex rx(
+            std::format(R"raw(<meta[^>]*{}\s*=\s*["']{}["'][^>]*content\s*=\s*["']([^"']+)["'][^>]*>)raw", attr, key),
+            std::regex::icase
+        );
+        std::smatch match;
+        std::string html_copy(html);
+        if (std::regex_search(html_copy, match, rx) && match.size() > 1) {
+            return ::helpers::StringHelper::strip_html_tags(match[1].str());
+        }
+        return std::nullopt;
+    }
+
+    inline link_metadata fetch_link_metadata(const std::string& link) {
+        link_metadata md{};
+        http::fetch client{15};
+        const std::vector<std::string> headers = {
+            "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        };
+
+        const std::string lower_link = ::helpers::StringHelper::to_lower(link);
+        const bool is_youtube = (lower_link.find("youtube.com") != std::string::npos || lower_link.find("youtu.be") != std::string::npos);
+        if (is_youtube) {
+            try {
+                const std::string oembed_url = "https://www.youtube.com/oembed?url=" + ::helpers::StringHelper::url_encode(link) + "&format=json";
+                const std::string body = client(oembed_url, headers);
+                std::smatch match;
+                const std::regex title_rx(R"raw("title"\s*:\s*"((?:\\.|[^"\\])*)")raw");
+                if (std::regex_search(body, match, title_rx) && match.size() > 1) {
+                    md.title = decode_json_string(match[1].str());
+                }
+                const std::regex thumb_rx(R"raw("thumbnail_url"\s*:\s*"((?:\\.|[^"\\])*)")raw");
+                if (std::regex_search(body, match, thumb_rx) && match.size() > 1) {
+                    md.image_url = decode_json_string(match[1].str());
+                }
+            } catch (const std::exception& e) {
+                HTTP_WARN_FMT("Failed to fetch YouTube oEmbed metadata for {}: {}", link, e.what());
+            }
+        }
+
+        try {
+            const std::string html = client(link, headers);
+
+            if (md.title.empty()) {
+                if (auto og_title = extract_meta_content(html, "og:title", "property")) {
+                    md.title = *og_title;
+                } else {
+                    std::smatch match;
+                    const std::regex title_rx(R"raw(<title[^>]*>(.*?)</title>)raw", std::regex::icase);
+                    if (std::regex_search(html, match, title_rx) && match.size() > 1) {
+                        md.title = ::helpers::StringHelper::strip_html_tags(match[1].str());
+                    }
+                }
+            }
+
+            if (md.description.empty()) {
+                if (auto og_desc = extract_meta_content(html, "og:description", "property")) {
+                    md.description = *og_desc;
+                } else if (auto desc = extract_meta_content(html, "description", "name")) {
+                    md.description = *desc;
+                }
+            }
+
+            if (md.image_url.empty()) {
+                if (auto og_image = extract_meta_content(html, "og:image", "property")) {
+                    md.image_url = *og_image;
+                }
+            }
+        } catch (const std::exception& e) {
+            HTTP_WARN_FMT("Failed to fetch HTML metadata for {}: {}", link, e.what());
+        }
+
+        md.title = trim_copy(md.title);
+        md.description = trim_copy(md.description);
+        md.image_url = trim_copy(md.image_url);
+        return md;
     }
 }
 
@@ -450,6 +568,10 @@ public:
     std::set<std::string> getFeedTags(long long feed_id) {
         return repo_.get_feed_tags(feed_id);
     }
+
+    std::vector<std::string> getAvailableTags() {
+        return repo_.get_available_tags();
+    }
     
     void addFeedTag(long long feed_id, std::string_view tag) {
         repo_.add_feed_tag(feed_id, tag);
@@ -564,6 +686,60 @@ public:
         });
         
         return items;
+    }
+
+    bool addFeedItem(long long feed_id, std::string_view item_link, std::string_view item_title = "") {
+        if (feed_id < 0) {
+            RSS_ERROR_FMT("Invalid feed_id when adding feed item: {}", feed_id);
+            return false;
+        }
+
+        std::string link = trim_copy(std::string(item_link));
+
+        if (link.empty()) {
+            RSS_WARN("Cannot add feed item with empty URL");
+            return false;
+        }
+
+        std::string title = trim_copy(std::string(item_title));
+        auto metadata = fetch_link_metadata(link);
+        if (title.empty()) {
+            title = metadata.title.empty() ? link : metadata.title;
+        }
+
+        auto now = std::chrono::system_clock::now();
+        std::string pub_date = std::format("{:%F %T}", now, now);
+        repo_.upsert_item_by_link(feed_id, link, title, "", metadata.description, pub_date, metadata.image_url);
+
+        std::lock_guard<std::mutex> lock(feeds_mutex_);
+        for (auto& feed : feeds_) {
+            if (feed->repo_id != feed_id) {
+                continue;
+            }
+
+            auto item_pos = std::find_if(feed->items.begin(), feed->items.end(), [&](const auto& item) {
+                return item.link == link;
+            });
+
+            if (item_pos == feed->items.end()) {
+                media::rss::feed_item new_item(title, link, metadata.description, "", metadata.image_url, now);
+                feed->items.push_back(std::move(new_item));
+            } else {
+                item_pos->title = title;
+                item_pos->updated = now;
+                item_pos->description = metadata.description;
+                item_pos->enclosure = "";
+                item_pos->image_url = metadata.image_url;
+            }
+
+            std::sort(feed->items.begin(), feed->items.end(), [](const media::rss::feed_item& a, const media::rss::feed_item& b) {
+                return a.updated > b.updated;
+            });
+            return true;
+        }
+
+        RSS_WARN_FMT("Added item to DB, but feed {} was not present in memory cache", feed_id);
+        return true;
     }
     
     /**
@@ -1143,6 +1319,41 @@ private:
         if (lower_url.find("youtube.com") != std::string::npos ||
             lower_url.find("youtu.be") != std::string::npos) {
             tags.push_back("YouTube");
+        }
+
+        // Music
+        if (lower_url.find("music") != std::string::npos ||
+            lower_url.find("bandcamp") != std::string::npos ||
+            lower_url.find("soundcloud") != std::string::npos ||
+            lower_url.find("spotify") != std::string::npos ||
+            lower_url.find("mixcloud") != std::string::npos ||
+            lower_url.find("rollingstone") != std::string::npos ||
+            lower_url.find("billboard") != std::string::npos ||
+            lower_url.find("pitchfork") != std::string::npos ||
+            lower_url.find("nme.com") != std::string::npos ||
+            lower_url.find("stereogum") != std::string::npos) {
+            tags.push_back("Music");
+        }
+
+        // Comedy
+        if (lower_url.find("comedy") != std::string::npos ||
+            lower_url.find("standup") != std::string::npos ||
+            lower_url.find("funny") != std::string::npos ||
+            lower_url.find("satire") != std::string::npos ||
+            lower_url.find("theonion") != std::string::npos ||
+            lower_url.find("collegehumor") != std::string::npos ||
+            lower_url.find("cracked") != std::string::npos) {
+            tags.push_back("Comedy");
+        }
+
+        // Documentary
+        if (lower_url.find("documentary") != std::string::npos ||
+            lower_url.find("docu") != std::string::npos ||
+            lower_url.find("pbs.org") != std::string::npos ||
+            lower_url.find("nationalgeographic") != std::string::npos ||
+            lower_url.find("history.com") != std::string::npos ||
+            lower_url.find("arte.tv") != std::string::npos) {
+            tags.push_back("Documentary");
         }
         
         // Tech / Dev

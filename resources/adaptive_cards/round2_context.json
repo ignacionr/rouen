@@ -1,0 +1,15 @@
+{
+  "user": {
+    "profile": {
+      "name": "Rouen",
+      "region": "LATAM"
+    },
+    "team": {
+      "name": "Platform"
+    },
+    "status": "online"
+  },
+  "build": {
+    "status": "green"
+  }
+}

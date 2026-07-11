@@ -1,0 +1,21 @@
+{
+  "user": "Rouen",
+  "notifications": [
+    {
+      "title": "Build Failed",
+      "severity": "critical"
+    },
+    {
+      "title": "Dependency Update",
+      "severity": "warning"
+    },
+    {
+      "title": "Review Requested",
+      "severity": "info"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 1
+  }
+}

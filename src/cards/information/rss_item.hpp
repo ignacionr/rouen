@@ -191,6 +191,12 @@ public:
                         auto command = rouen::platform::open_file(item_link, true);
                         [[maybe_unused]] int system_result = std::system(command.c_str());
                     }
+                    if (feed_id >= 0) {
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Open Feed")) {
+                            "create_card"_sfn(std::format("rss-feed:{}", feed_id));
+                        }
+                    }
                     
                     // Date and time
                     auto time = std::chrono::system_clock::to_time_t(item.publish_date);

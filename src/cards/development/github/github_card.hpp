@@ -498,7 +498,7 @@ namespace rouen::cards {
             std::string latest_error_;
             glz::json_t organizations_{};
             glz::json_t user_info_{};
-            helpers::views::json_view json_view_;
+            [[maybe_unused]] helpers::views::json_view json_view_;
             std::string debug_repos_json_;
     };
 }

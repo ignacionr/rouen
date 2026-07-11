@@ -17,12 +17,15 @@ find_package(GTest CONFIG REQUIRED)
 # Find required dependencies for tests
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SDL2 REQUIRED sdl2)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
 
 # Include parent directories for access to source files
 include_directories(..)
+include_directories(${SDL2_INCLUDE_DIRS})
 
 if(NOT COMMAND target_add_strict_warnings)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)
@@ -128,6 +131,7 @@ add_gtest_http_executable(test_ssl_ui test_ssl_ui.cpp)
 add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
 add_gtest_executable(test_weather_glaze test_weather_glaze.cpp)
+add_gtest_executable(test_adaptive_cards_round1 test_adaptive_cards_round1.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
@@ -211,10 +215,11 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ssl_ui
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_weather_glaze
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_adaptive_cards_round1
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_rss_watermark
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards_round1 test_rss_media_extraction test_rt_media test_rss_watermark
     COMMENT "Running Google Test suite only"
 )
 
@@ -276,7 +281,7 @@ add_custom_target(run_rt_media_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards_round1 test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
     COMMENT "Running tests through CTest framework"
 )
 

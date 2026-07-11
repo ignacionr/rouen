@@ -367,7 +367,7 @@ namespace rouen::cards
                     ImGui::TextColored(colors[2], "Tags:");
                     
                     auto current_tags = rss_host->getFeedTags(feed_id);
-                    std::vector<std::string> all_possible_tags = {"News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
+                    std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
                     const float tags_row_width = ImGui::GetContentRegionAvail().x;
                     float used_row_width = 0.0f;
                     
@@ -445,9 +445,13 @@ namespace rouen::cards
                         if (filtered_items.empty()) {
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No items found");
                         } else {
+                            const float add_item_section_height =
+                                ImGui::GetFrameHeightWithSpacing() * 2.0f + 42.0f;
+                            const float items_child_height =
+                                std::max(120.0f, ImGui::GetContentRegionAvail().y - add_item_section_height);
                             const bool feed_items_scroll_open = ImGui::BeginChild(
                                 "FeedItemsScroll",
-                                ImVec2(0, 0),
+                                ImVec2(0, items_child_height),
                                 false,
                                 ImGuiWindowFlags_AlwaysVerticalScrollbar
                             );
@@ -669,7 +673,9 @@ namespace rouen::cards
                                 
                             }
                             ImGui::EndChild();
+
                         }
+                        render_manual_add_item_section();
                     }
                     catch (const std::exception& e) {
                         RSS_ERROR_FMT("Exception in RSS feed items area: {}", e.what());
@@ -755,6 +761,55 @@ namespace rouen::cards
             int height = 0;
         };
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
+        char manual_item_url_buffer[1024] = "";
+        std::string add_item_feedback;
+        bool add_item_feedback_success = false;
+
+        void render_manual_add_item_section() {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(colors[2], "Add item URL to this feed:");
+
+            const float add_button_width =
+                ImGui::CalcTextSize("Add Item").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            const float add_input_width =
+                ImGui::GetContentRegionAvail().x - add_button_width - ImGui::GetStyle().ItemSpacing.x;
+            ImGui::PushItemWidth(std::max(140.0f, add_input_width));
+            const bool submit_from_enter = ImGui::InputText(
+                "##manual_item_url",
+                manual_item_url_buffer,
+                sizeof(manual_item_url_buffer),
+                ImGuiInputTextFlags_EnterReturnsTrue
+            );
+            ImGui::PopItemWidth();
+
+            ImGui::SameLine();
+            const bool submit_from_button = ImGui::Button("Add Item");
+            if (submit_from_enter || submit_from_button) {
+                if (manual_item_url_buffer[0] == '\0') {
+                    add_item_feedback = "Please enter a URL.";
+                    add_item_feedback_success = false;
+                } else {
+                    const bool added = rss_host && rss_host->addFeedItem(feed_id, manual_item_url_buffer);
+                    if (added) {
+                        add_item_feedback = "Item added to feed.";
+                        add_item_feedback_success = true;
+                        manual_item_url_buffer[0] = '\0';
+                        loadFeed();
+                    } else {
+                        add_item_feedback = "Failed to add item.";
+                        add_item_feedback_success = false;
+                    }
+                }
+            }
+
+            if (!add_item_feedback.empty()) {
+                const ImVec4 feedback_color = add_item_feedback_success
+                    ? ImVec4(0.45f, 0.9f, 0.45f, 1.0f)
+                    : ImVec4(0.95f, 0.4f, 0.4f, 1.0f);
+                ImGui::TextColored(feedback_color, "%s", add_item_feedback.c_str());
+            }
+        }
 
         std::pair<std::string, std::string> detect_language_and_select_voice(std::string_view text, std::string_view url) {
             std::string manual_lang = rss_host->getFeedLanguage(feed_id);

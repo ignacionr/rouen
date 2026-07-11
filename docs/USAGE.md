@@ -55,6 +55,13 @@ Rouen loads variables from system environment, `~/.secrets`, or a local `.env` f
 * **Trello Boards**:
   - `trello:` opens Trello board search and card listings.
   - `trello-board:<board-id>` directly opens a dedicated column board viewer.
+* **Adaptive Cards (Round 1)**:
+  - `adaptive-card` opens the built-in Adaptive Card test card with a dropdown to choose Round 1/2/3/4 sample JSON sets.
+  - `adaptive-card:<card_json_path>|<context_json_path>` loads a card JSON file plus a context JSON file for `${var}` substitution.
+  - The card includes a **JSON** tab showing the loaded card JSON, context JSON, and bound JSON output used by the renderer.
+  - Round 2 adds `Container`, `ColumnSet`, `Column`, and `FactSet`, with nested `${user.profile.name}` style bindings.
+  - Round 3 adds `Input.Text`, `Input.Toggle`, and `Action.OpenUrl` with expression-based URL templating.
+  - Round 4 adds `$data` repeats plus `Action.Submit` and `Action.ShowCard`; submit payloads and input state are inspectable in the card UI.
 
 ---
 

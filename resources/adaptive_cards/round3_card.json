@@ -1,0 +1,29 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Repo launcher for ${repo_owner}"
+    },
+    {
+      "type": "Input.Text",
+      "id": "repoPath",
+      "title": "Repository",
+      "value": "${repo_owner}/${repo_name}",
+      "placeholder": "owner/repo"
+    },
+    {
+      "type": "Input.Toggle",
+      "id": "openInBrowser",
+      "title": "Open in browser",
+      "value": "true"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.OpenUrl",
+      "title": "Open Repository",
+      "url": "https://github.com/${repo_owner}/${repo_name}"
+    }
+  ]
+}

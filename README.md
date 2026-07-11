@@ -22,6 +22,8 @@ To make the codebase easy to navigate, the documentation has been split into mod
 * ⚙️ **[User & Usage Guide](docs/USAGE.md)**: Operating guidelines, dynamic card URIs, keyboard shortcuts, environment variables configuration list, and troubleshooting.
 * 🏛️ **[Architecture Guide](docs/ARCHITECTURE.md)**: Design overview, the Card system, core helper services, and architecture diagrams.
 * 🛠️ **[Development & Contributing Guide](docs/DEVELOPMENT.md)**: Nix environment setup, compiling from source, building/running tests (Google Test), and guidelines for creating new cards or helpers.
+* 📇 **[Adaptive Cards Integration Plan](docs/adaptive_cards_plan.md)**: Step-by-step architectural design and execution plan to bring Adaptive Cards and Templating to Rouen.
+* 🧩 **[Adaptive Cards (Official GitHub)](https://github.com/microsoft/AdaptiveCards)**: Upstream schema, samples, and renderer ecosystem.
 
 ---
 

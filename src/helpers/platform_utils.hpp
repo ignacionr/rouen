@@ -377,19 +377,30 @@ namespace rouen::platform
         // 2. Executable directory
         {
             search_paths.push_back(exec_path / filename);
+            if (!resource_subdir.empty()) {
+                search_paths.push_back(exec_path / resource_subdir / filename);
+            }
+            search_paths.push_back(exec_path / "resources" / filename);
+            if (!resource_subdir.empty()) {
+                search_paths.push_back(exec_path / "resources" / resource_subdir / filename);
+            }
         }
-        
+         
         // 3. Current working directory
         if (!resource_subdir.empty()) {
             search_paths.push_back(current_path / resource_subdir / filename);
+            search_paths.push_back(current_path / "resources" / resource_subdir / filename);
         }
         search_paths.push_back(current_path / filename);
-        
+        search_paths.push_back(current_path / "resources" / filename);
+         
         // 4. parent directory (for running from build dir)
         if (!resource_subdir.empty()) {
             search_paths.push_back(exec_path.parent_path() / resource_subdir / filename);
+            search_paths.push_back(exec_path.parent_path() / "resources" / resource_subdir / filename);
         }
         search_paths.push_back(exec_path.parent_path() / filename);
+        search_paths.push_back(exec_path.parent_path() / "resources" / filename);
         
         // Check all paths and return the first one that exists
         for (const auto& path : search_paths) {

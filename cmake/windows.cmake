@@ -175,4 +175,18 @@ if(WIN32)
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/${CONFIG_FILE}
         )
     endforeach()
+
+    # Copy Adaptive Card test presets
+    file(GLOB ADAPTIVE_CARD_RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/adaptive_cards/*.json")
+    foreach(RES_FILE ${ADAPTIVE_CARD_RESOURCE_FILES})
+        get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/adaptive_cards
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${RES_FILE}
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/adaptive_cards/${RES_FILENAME}
+            COMMENT "Copying ${RES_FILENAME} to adaptive_cards folder"
+        )
+    endforeach()
 endif()

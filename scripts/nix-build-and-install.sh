@@ -175,7 +175,14 @@ fi
 # Remove existing installation
 if [[ -d "$APP_DIR/Rouen.app" ]]; then
     warn "Removing existing installation at $APP_DIR/Rouen.app..."
-    $SUDO_CMD rm -rf "$APP_DIR/Rouen.app"
+    # Previous installs copied from the Nix store may be read-only.
+    # Make existing bundle writable/unlocked before deletion.
+    $SUDO_CMD chflags -R nouchg "$APP_DIR/Rouen.app" 2>/dev/null || true
+    $SUDO_CMD chmod -R u+w "$APP_DIR/Rouen.app" 2>/dev/null || true
+    $SUDO_CMD find "$APP_DIR/Rouen.app" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+    if ! $SUDO_CMD rm -rf "$APP_DIR/Rouen.app"; then
+        error "Failed to remove existing app bundle at $APP_DIR/Rouen.app. Ensure you own it (or run --system)."
+    fi
 fi
 
 # Copy App Bundle

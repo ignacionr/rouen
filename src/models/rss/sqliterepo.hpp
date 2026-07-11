@@ -119,6 +119,25 @@ namespace media::rss
                     "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
                 );
 
+                RSS_DEBUG("Creating rss_tag_definition table...");
+                db_.ensure_table("rss_tag_definition",
+                    "tag TEXT PRIMARY KEY, "
+                    "sort_order INTEGER NOT NULL"
+                );
+
+                db_.exec(
+                    "INSERT OR IGNORE INTO rss_tag_definition(tag, sort_order) VALUES "
+                    "('News', 10), "
+                    "('Tech / Dev', 20), "
+                    "('Podcasts', 30), "
+                    "('YouTube', 40), "
+                    "('Music', 50), "
+                    "('Comedy', 60), "
+                    "('Documentary', 70), "
+                    "('Social', 75), "
+                    "('Other', 80)"
+                );
+
                 // Create indexes for faster lookups
                 RSS_DEBUG("Creating indexes...");
                 db_.exec("CREATE INDEX IF NOT EXISTS idx_item_feed_id ON item(feed_id)");
@@ -153,6 +172,23 @@ namespace media::rss
                 }, feed_id);
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error getting feed tags: {}", e.what());
+            }
+            return tags;
+        }
+
+        std::vector<std::string> get_available_tags()
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            std::vector<std::string> tags;
+            try {
+                db_.exec("SELECT tag FROM rss_tag_definition ORDER BY sort_order ASC, tag ASC", [&](sqlite3_stmt* stmt) {
+                    const char* tag = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                    if (tag) {
+                        tags.emplace_back(tag);
+                    }
+                });
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error getting available tags: {}", e.what());
             }
             return tags;
         }
@@ -360,6 +396,39 @@ namespace media::rss
                 // Rollback on error
                 db_.exec("ROLLBACK");
                 RSS_ERROR_FMT("Error in batch_upsert_items: {}", e.what());
+            }
+        }
+
+        void upsert_item_by_link(long long feed_id,
+                                 std::string_view link,
+                                 std::string_view title,
+                                 std::string_view enclosure,
+                                 std::string_view description,
+                                 std::string_view pub_date,
+                                 std::string_view image_url) {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            try {
+                std::optional<double> watermark = enclosure.empty() ? std::optional<double>{0.0} : std::nullopt;
+                db_.exec("BEGIN TRANSACTION");
+                db_.exec("DELETE FROM item WHERE feed_id = ? AND link = ?", {}, feed_id, link);
+                db_.exec(
+                    "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url, watermark) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    {},
+                    link,
+                    enclosure,
+                    feed_id,
+                    title,
+                    description,
+                    pub_date,
+                    image_url,
+                    watermark
+                );
+                db_.exec("COMMIT");
+            } catch (const std::exception& e) {
+                try { db_.exec("ROLLBACK"); } catch (...) {}
+                RSS_ERROR_FMT("Error in upsert_item_by_link: {}", e.what());
+                throw;
             }
         }
 

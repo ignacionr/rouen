@@ -1,0 +1,10 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "id": "greeting",
+      "text": "Hello ${name}"
+    }
+  ]
+}

@@ -119,7 +119,7 @@ namespace rouen::cards::github {
         char repo_filter_[256] = {0}; // Changed to char array for ImGui
         bool show_all_runs_{false};
         bool auto_refresh_enabled_{true};
-        bool show_diagnostics_{false};
+        [[maybe_unused]] bool show_diagnostics_{false};
         
         // Data
         std::vector<std::string> repositories_;

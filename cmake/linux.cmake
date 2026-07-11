@@ -55,6 +55,21 @@ foreach(RES_FILE ${RESOURCE_FILES})
   )
 endforeach()
 
+# Copy Adaptive Card test presets
+file(GLOB ADAPTIVE_CARD_RESOURCE_FILES "${CMAKE_SOURCE_DIR}/resources/adaptive_cards/*.json")
+foreach(RES_FILE ${ADAPTIVE_CARD_RESOURCE_FILES})
+  get_filename_component(RES_FILENAME ${RES_FILE} NAME)
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_CURRENT_BINARY_DIR}/adaptive_cards"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${RES_FILE}"
+            "${CMAKE_CURRENT_BINARY_DIR}/adaptive_cards/${RES_FILENAME}"
+    COMMENT "Copying ${RES_FILENAME} to build directory adaptive_cards"
+  )
+endforeach()
+
 # Create img directory and copy images and audio files
 file(GLOB IMAGE_FILES "${CMAKE_SOURCE_DIR}/img/*.png" "${CMAKE_SOURCE_DIR}/img/*.jpg" "${CMAKE_SOURCE_DIR}/img/*.jpeg")
 file(GLOB AUDIO_FILES "${CMAKE_SOURCE_DIR}/img/*.mp3" "${CMAKE_SOURCE_DIR}/img/*.wav")

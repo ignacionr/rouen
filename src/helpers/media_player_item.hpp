@@ -65,6 +65,8 @@ struct media_player_item {
     std::string item_title;
     std::optional<double> watermark;
     std::optional<window_rect> last_docked_video_rect;
+    bool user_tall_layout{false};
+    bool user_tall_layout_set{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
 
     media_player_item() = default;
@@ -210,6 +212,7 @@ inline void media_player_item::stopMedia() {
     duration = 0.0;
     start_offset = 0.0;
     last_docked_video_rect.reset();
+    user_tall_layout_set = false;
 }
 
 inline void media_player_item::startPositionTracking() {

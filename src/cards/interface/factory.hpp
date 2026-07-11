@@ -19,6 +19,7 @@
 #include "../development/git.hpp"
 #include "../development/github.hpp"
 #include "../information/calendar/calendar.hpp"
+#include "../information/adaptive_card.hpp"
 #include "../information/grok.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/markdown_notes.hpp"
@@ -210,6 +211,10 @@ namespace rouen::cards {
                     }
                     // Use provided URL
                     return std::make_shared<calendar>(std::string(uri));
+                });
+
+                instance.emplace("adaptive-card", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<adaptive_card>(locator);
                 });
                 
                 instance.emplace("mail", [](std::string_view uri, SDL_Renderer*) {

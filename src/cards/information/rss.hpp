@@ -267,7 +267,11 @@ public:
 
             // Tag Filter Pills
             {
-                std::vector<std::string> tags = {"All", "News", "Tech / Dev", "Podcasts", "YouTube", "Other"};
+                std::vector<std::string> tags = rss_host->getAvailableTags();
+                tags.insert(tags.begin(), "All");
+                if (std::find(tags.begin(), tags.end(), selected_tag_) == tags.end()) {
+                    selected_tag_ = "All";
+                }
                 
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f); // Pill-shaped!
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 3.0f));
@@ -1149,5 +1153,4 @@ private:
 };
 
 } // namespace rouen::cards
-
 
