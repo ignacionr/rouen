@@ -98,7 +98,7 @@ private:
     static void validate_elements(const std::vector<element>& elements) {
         for (const auto& node : elements) {
             if (!is_supported_type(node.type)) {
-                throw std::runtime_error(std::format("Round 3 does not support element type '{}'", node.type));
+                throw std::runtime_error(std::format("Adaptive Cards parser does not support element type '{}'", node.type));
             }
 
             if (node.type == "Container" || node.type == "Column") {

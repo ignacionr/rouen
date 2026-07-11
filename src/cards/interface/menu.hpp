@@ -70,7 +70,7 @@ namespace rouen::cards {
                         {"AI Chat", []() { "create_card"_sfn("ai-chat"); }},
                         {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
                         {"Travel Plans", []() { "create_card"_sfn("travel"); }},
-                        {"Adaptive Card (Round 1)", []() { "create_card"_sfn("adaptive-card"); }},
+                        {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
                         {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
                         {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                         {"Email", []() { "create_card"_sfn("mail"); }},

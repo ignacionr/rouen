@@ -129,22 +129,7 @@ private:
     }
 
     [[nodiscard]] std::string input_state_json() const {
-        glz::json_t state = glz::json_t::object_t{};
-        state["text"] = glz::json_t::object_t{};
-        state["toggle"] = glz::json_t::object_t{};
-
-        for (const auto& [key, value] : input_state_.text_values) {
-            state["text"][key] = value;
-        }
-        for (const auto& [key, value] : input_state_.toggle_values) {
-            state["toggle"][key] = value;
-        }
-
-        std::string encoded{"{}"};
-        if (const auto result = glz::write_json(state); result.has_value()) {
-            encoded = result.value();
-        }
-        return encoded;
+        return helpers::adaptive_cards::renderer::build_submit_payload(input_state_);
     }
 
     static void render_json_block(const char* label, const std::string& json) {

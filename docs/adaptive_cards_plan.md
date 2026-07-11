@@ -105,13 +105,13 @@ Round 1 is wired end-to-end with:
 - `templater_interface` implementation for flat `${key}` replacements.
 - `renderer_interface` implementation that renders `TextBlock` text through ImGui.
 - `adaptive-card` card registration in the card factory.
-- Unit tests in `tests/test_adaptive_cards_round1.cpp`.
+- Unit tests in `tests/test_adaptive_cards.cpp`.
 
 ### UI Test Procedure in Rouen
 
 1. Launch Rouen.
 2. Open the **Application Menu** card.
-3. Go to **Information** and click **Adaptive Card (Round 1)**.
+3. Go to **Information** and click **Adaptive Card**.
 4. Confirm the card renders `Hello Rouen`.
 5. Open the **JSON** tab to inspect the card JSON, context JSON, and bound JSON currently used by the card.
 
@@ -217,7 +217,7 @@ Round 3 extends Round 2 with:
 ### Round 3 UI Test Procedure in Rouen
 
 1. Launch Rouen.
-2. Open **Application Menu** → **Information** → **Adaptive Card (Round 1)**.
+2. Open **Application Menu** → **Information** → **Adaptive Card**.
 3. Open the card using URI format:  
    `adaptive-card:<card_json_path>|<context_json_path>`
 4. In **Rendered** tab:
@@ -273,7 +273,7 @@ Round 4 extends Round 3 with:
 ### Round 4 UI Test Procedure in Rouen
 
 1. Launch Rouen.
-2. Open **Application Menu** → **Information** → **Adaptive Card (Round 1)**.
+2. Open **Application Menu** → **Information** → **Adaptive Card**.
 3. In the **Adaptive Card Test Set** dropdown, choose **Round 4 - Repeat + Submit + ShowCard**.
 4. In **Rendered** tab:
    - Verify repeated notifications are rendered as a list.
