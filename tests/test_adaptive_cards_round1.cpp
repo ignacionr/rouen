@@ -31,12 +31,14 @@ TEST(AdaptiveCardsRound1, ParsesMinimalAdaptiveCard) {
 }
 
 TEST(AdaptiveCardsRound1, BindsFlatStringVariables) {
-    card_document card{
-        .type = "AdaptiveCard",
-        .body = {
-            element{.type = "TextBlock", .id = "greeting", .text = "Hello ${name}"}
-        }
-    };
+    element greeting{};
+    greeting.type = "TextBlock";
+    greeting.id = "greeting";
+    greeting.text = "Hello ${name}";
+
+    card_document card{};
+    card.type = "AdaptiveCard";
+    card.body = {greeting};
 
     templater binder{};
     context values{};
