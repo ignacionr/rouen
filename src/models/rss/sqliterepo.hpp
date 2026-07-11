@@ -132,10 +132,16 @@ namespace media::rss
                     "('Podcasts', 30), "
                     "('YouTube', 40), "
                     "('Music', 50), "
+                    "('Science', 55), "
                     "('Comedy', 60), "
                     "('Documentary', 70), "
                     "('Social', 75), "
-                    "('Other', 80)"
+                    "('Other', 80),"
+                    "('Argentina', 110),"
+                    "('Uruguay', 120),"
+                    "('Thailand', 130),"
+                    "('USA', 140),"
+                    "('Italy', 150)"
                 );
 
                 // Create indexes for faster lookups
