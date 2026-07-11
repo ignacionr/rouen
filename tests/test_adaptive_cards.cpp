@@ -326,3 +326,70 @@ TEST(AdaptiveCardsRound4, RejectsUnsupportedActionType) {
         std::runtime_error
     );
 }
+
+TEST(AdaptiveCardsRound3, CollectsInputLinesFromCard) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "Input.Text", "id": "repo", "title": "Repo" },
+    { "type": "Input.Toggle", "id": "enabled", "title": "Enabled" }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+    const auto lines = renderer::collect_lines(parsed);
+
+    ASSERT_EQ(lines.size(), 2U);
+    EXPECT_EQ(lines[0], "Input.Text: repo");
+    EXPECT_EQ(lines[1], "Input.Toggle: enabled");
+}
+
+TEST(AdaptiveCardsRound4, BindsShowCardNestedFacts) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [],
+  "actions": [
+    {
+      "type": "Action.ShowCard",
+      "title": "Details",
+      "card": {
+        "type": "AdaptiveCard",
+        "body": [
+          {
+            "type": "FactSet",
+            "facts": [
+              { "title": "Total", "value": "${summary.total}" },
+              { "title": "Critical", "value": "${summary.critical}" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON(
+{
+  "summary": { "total": 3, "critical": 1 }
+}
+)JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto parse_err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(parse_err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.actions.size(), 1U);
+    ASSERT_EQ(bound.actions[0].card.body.size(), 1U);
+    ASSERT_EQ(bound.actions[0].card.body[0].facts.size(), 2U);
+    EXPECT_EQ(bound.actions[0].card.body[0].facts[0].value, "3");
+    EXPECT_EQ(bound.actions[0].card.body[0].facts[1].value, "1");
+}
