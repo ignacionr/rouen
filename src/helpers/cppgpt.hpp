@@ -7,10 +7,9 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <utility>
-#include <vector>
 #include <string_view>
+#include <thread>
+#include <vector>
 
 #include "glaze_include.hpp"
 
@@ -149,9 +148,9 @@ namespace ignacionr
 
         OpenAIMessage() = default;
 
-        OpenAIMessage(std::string role_value, std::string content_value)
-            : role(std::move(role_value)),
-              content(std::move(content_value)) {}
+        OpenAIMessage(std::string_view role_value, std::string_view content_value)
+            : role(role_value),
+              content(content_value) {}
     };
 }
 
