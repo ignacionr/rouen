@@ -47,8 +47,7 @@ struct about_card : public card {
         }
         
         // Fetch remote hash in a background thread to prevent UI freezing
-        // NOLINTNEXTLINE(bugprone-exception-escape)
-        std::thread([this]() noexcept {
+        std::thread([this]() {
             try {
                 http::fetch fetch_client;
                 std::string response = fetch_client("https://api.github.com/repos/ignacionr/rouen/branches/main");

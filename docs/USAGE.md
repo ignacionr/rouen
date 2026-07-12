@@ -78,6 +78,20 @@ Rouen loads variables from system environment, `~/.secrets`, or a local `.env` f
 
 ---
 
+## AI Chat MCP Tool
+
+Rouen AI Chat exposes an MCP function named `run_local_command` that can execute local shell commands (including `curl`) and returns combined stdout/stderr output.
+
+Expected params JSON:
+```json
+{
+  "command": "curl -sS http://127.0.0.1:8099/v1/models",
+  "working_directory": "/optional/path"
+}
+```
+
+---
+
 ## Troubleshooting
 
 ### SSL/TLS Certificate Handshake Errors

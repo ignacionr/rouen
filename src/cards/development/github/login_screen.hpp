@@ -11,7 +11,7 @@ namespace rouen::cards::github {
     struct login_screen {
         login_screen(models::github::login_host& host): host_{host} {}
         
-        bool render() noexcept {
+        bool render() {
             if (personal_token_.reserve(256); ImGui::InputText("Personal Token", personal_token_.data(), personal_token_.capacity())) {
                 personal_token_ = personal_token_.data();
             }

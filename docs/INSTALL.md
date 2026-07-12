@@ -41,12 +41,13 @@ For developers and advanced users, Rouen provides a script to compile from sourc
      ```bash
      ./scripts/nix-build-and-install.sh --system
      ```
-     *(Requires sudo privileges to write to system directories)*
+      *(Requires sudo privileges to write to system directories)*
    * **User-only Installation** (installs to `~/Applications/Rouen.app` and `~/.local/bin/rouen`):
      ```bash
      ./scripts/nix-build-and-install.sh --user
      ```
-     *(No root/sudo privileges required)*
+      *(No root/sudo privileges required)*
+   * Existing app-bundle environment config is preserved across reinstalls when present at `Rouen.app/Contents/MacOS/.env`.
    * **Interactive Mode**:
      ```bash
      ./scripts/nix-build-and-install.sh

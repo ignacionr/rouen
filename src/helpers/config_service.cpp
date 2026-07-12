@@ -124,9 +124,10 @@ namespace rouen::helpers {
                                        const std::optional<std::string>& default_value) {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // Get the environment value without re-acquiring the mutex
-        std::string env_value = platform::get_env(name);
-        cache_[name] = env_value;  // Update cache while we have the lock
+        // Respect configured priority (.env first, then process environment)
+        // and avoid clobbering existing cache entries populated during .env load.
+        std::string env_value = get_env_value_priority(name);
+        cache_.insert_or_assign(name, env_value);
         
         ConfigEntry entry{
             .key = name,
@@ -149,7 +150,7 @@ namespace rouen::helpers {
         std::vector<std::string> missing_configs;
         
         for (const auto& [name, config] : registered_configs_) {
-            if (config.is_required && platform::get_env(name).empty()) {
+            if (config.is_required && get_env_value_priority(name).empty()) {
                 missing_configs.push_back(name);
                 CONFIG_WARN_FMT("Required configuration '{}' is missing", name);
             }
@@ -165,7 +166,7 @@ namespace rouen::helpers {
         for (const auto& [name, config] : registered_configs_) {
             if (config.category == category) {
                 ConfigEntry entry = config;
-                entry.value = platform::get_env(name); // Get current value without mutex deadlock
+                entry.value = get_env_value_priority(name);
                 result.push_back(entry);
             }
         }
@@ -180,7 +181,7 @@ namespace rouen::helpers {
         for (const auto& [name, config] : registered_configs_) {
             if (config.category == category) {
                 ConfigEntry entry = config;
-                entry.value = platform::get_env(name); // Get current value without mutex deadlock
+                entry.value = get_env_value_priority(name);
                 result.push_back(entry);
             }
         }
@@ -189,7 +190,7 @@ namespace rouen::helpers {
     }
 
     void ConfigService::update_cache_entry(const std::string& name) const {
-        std::string value = platform::get_env(name);
+        std::string value = get_env_value_priority(name);
         cache_[name] = value;
     }
 
@@ -890,6 +891,17 @@ std::string ConfigService::get_ping_path() const {
         // Trim whitespace from key
         key.erase(0, key.find_first_not_of(" \t"));
         key.erase(key.find_last_not_of(" \t") + 1);
+        
+        // Trim whitespace from unquoted value
+        if (value.length() < 2 || (value.front() != '"' && value.front() != '\'')) {
+            value.erase(0, value.find_first_not_of(" \t\r\n"));
+            auto last_non_ws = value.find_last_not_of(" \t\r\n");
+            if (last_non_ws != std::string::npos) {
+                value.erase(last_non_ws + 1);
+            } else {
+                value.clear();
+            }
+        }
         
         // Handle quoted values
         if (value.length() >= 2) {

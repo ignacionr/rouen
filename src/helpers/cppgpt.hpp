@@ -96,6 +96,56 @@ namespace ignacionr
     struct ResponsesApiResponse {
         std::vector<ResponseOutputItem> output;
     };
+
+    struct OpenAIToolCallFunction {
+        std::string name;
+        std::string arguments;
+    };
+    
+    struct OpenAIToolCall {
+        std::string id;
+        std::string type;
+        OpenAIToolCallFunction function;
+    };
+    
+    struct OpenAIChatCompletionMessage {
+        std::string role;
+        std::optional<std::string> content;
+        std::vector<OpenAIToolCall> tool_calls;
+    };
+    
+    struct OpenAIChatCompletionChoice {
+        int index;
+        OpenAIChatCompletionMessage message;
+        std::optional<std::string> finish_reason;
+    };
+    
+    struct OpenAIChatCompletion {
+        std::string id;
+        std::string object;
+        long created;
+        std::string model;
+        std::vector<OpenAIChatCompletionChoice> choices;
+    };
+    
+    struct OpenAIMessageToolCallFunction {
+        std::string name;
+        std::string arguments;
+    };
+    
+    struct OpenAIMessageToolCall {
+        std::string id;
+        std::string type{"function"};
+        OpenAIMessageToolCallFunction function;
+    };
+    
+    struct OpenAIMessage {
+        std::string role;
+        std::string content;
+        std::string name;
+        std::string tool_call_id;
+        std::vector<OpenAIMessageToolCall> tool_calls;
+    };
 }
 
 // Define glaze schema for all structures
@@ -213,6 +263,57 @@ struct glz::meta<ignacionr::ResponseOutputItem> {
         "type", &T::type,
         "role", &T::role,
         "content", &T::content
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::OpenAIToolCallFunction> {
+    using T = ignacionr::OpenAIToolCallFunction;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "arguments", &T::arguments
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::OpenAIToolCall> {
+    using T = ignacionr::OpenAIToolCall;
+    static constexpr auto value = object(
+        "id", &T::id,
+        "type", &T::type,
+        "function", &T::function
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::OpenAIChatCompletionMessage> {
+    using T = ignacionr::OpenAIChatCompletionMessage;
+    static constexpr auto value = object(
+        "role", &T::role,
+        "content", &T::content,
+        "tool_calls", &T::tool_calls
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::OpenAIChatCompletionChoice> {
+    using T = ignacionr::OpenAIChatCompletionChoice;
+    static constexpr auto value = object(
+        "index", &T::index,
+        "message", &T::message,
+        "finish_reason", &T::finish_reason
+    );
+};
+
+template <>
+struct glz::meta<ignacionr::OpenAIChatCompletion> {
+    using T = ignacionr::OpenAIChatCompletion;
+    static constexpr auto value = object(
+        "id", &T::id,
+        "object", &T::object,
+        "created", &T::created,
+        "model", &T::model,
+        "choices", &T::choices
     );
 };
 
@@ -381,6 +482,199 @@ namespace ignacionr
             }
 
             return response;
+        }
+
+        template<typename DoPostFunc>
+        ChatCompletion sendMessageWithFunctionCalling(
+            std::string_view message, 
+            DoPostFunc do_post, 
+            std::function<std::string(const std::string&, const std::string&)> function_executor,
+            std::string_view role = "user", 
+            std::string_view model = "grok-3-latest", 
+            [[maybe_unused]] std::string_view search_mode = {},
+            float temperature = 0.45f,
+            const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
+            const std::vector<std::string>* function_schemas = nullptr
+        ) {
+            wait_min_time();
+            
+            // Build conversation history
+            std::vector<OpenAIMessage> chat_history;
+            
+            // Copy system instructions from local conversation first
+            for (const auto& local_msg : conversation) {
+                if (local_msg.role == "system") {
+                    chat_history.push_back({local_msg.role, local_msg.content});
+                }
+            }
+            
+            if (full_conversation) {
+                for (const auto& [msg_role, msg_content] : *full_conversation) {
+                    chat_history.push_back({msg_role, msg_content});
+                }
+                chat_history.push_back({std::string(role), std::string(message)});
+            } else {
+                for (const auto& msg : conversation) {
+                    if (msg.role != "system") {
+                        chat_history.push_back({msg.role, msg.content});
+                    }
+                }
+                chat_history.push_back({std::string(role), std::string(message)});
+            }
+            
+            auto escape_json = [](const std::string& str) -> std::string {
+                std::string escaped;
+                escaped.reserve(str.size() + str.size() / 10 + 1);
+                for (char c : str) {
+                    switch (c) {
+                        case '"': escaped += "\\\""; break;
+                        case '\\': escaped += "\\\\"; break;
+                        case '\b': escaped += "\\b"; break;
+                        case '\f': escaped += "\\f"; break;
+                        case '\n': escaped += "\\n"; break;
+                        case '\r': escaped += "\\r"; break;
+                        case '\t': escaped += "\\t"; break;
+                        default: escaped += c; break;
+                    }
+                }
+                return escaped;
+            };
+            
+            auto serialize_messages = [&](const std::vector<OpenAIMessage>& msgs) -> std::string {
+                std::string json = "[";
+                for (size_t i = 0; i < msgs.size(); ++i) {
+                    if (i > 0) json += ",";
+                    const auto& m = msgs[i];
+                    json += "{";
+                    json += std::format("\"role\":\"{}\"", m.role);
+                    
+                    if (m.role == "tool") {
+                        json += std::format(",\"tool_call_id\":\"{}\"", m.tool_call_id);
+                        json += std::format(",\"content\":\"{}\"", escape_json(m.content));
+                    } else if (m.role == "assistant" && !m.tool_calls.empty() && m.content.empty()) {
+                        json += ",\"content\":null";
+                    } else {
+                        json += std::format(",\"content\":\"{}\"", escape_json(m.content));
+                    }
+                    
+                    if (!m.tool_calls.empty()) {
+                        json += ",\"tool_calls\":[";
+                        for (size_t j = 0; j < m.tool_calls.size(); ++j) {
+                            if (j > 0) json += ",";
+                            const auto& tc = m.tool_calls[j];
+                            json += "{";
+                            json += std::format("\"id\":\"{}\",", tc.id);
+                            json += "\"type\":\"function\",";
+                            json += std::format("\"function\":{{\"name\":\"{}\",\"arguments\":\"{}\"}}", 
+                                                tc.function.name, escape_json(tc.function.arguments));
+                            json += "}";
+                        }
+                        json += "]";
+                    }
+                    json += "}";
+                }
+                json += "]";
+                return json;
+            };
+            
+            std::string url = std::format("{}/chat/completions", base_url_);
+            if (base_url_.empty()) {
+                throw std::runtime_error("Base URL is empty in cppgpt instance");
+            }
+            
+            std::string final_text;
+            bool keep_calling = true;
+            int iterations = 0;
+            const int max_iterations = 5;
+            
+            while (keep_calling && iterations < max_iterations) {
+                iterations++;
+                
+                std::string body = "{";
+                body += std::format("\"model\":\"{}\",", model);
+                body += std::format("\"temperature\":{},", temperature);
+                body += std::format("\"messages\":{}", serialize_messages(chat_history));
+                
+                if (function_schemas && !function_schemas->empty()) {
+                    body += ",\"tools\":[";
+                    for (size_t i = 0; i < function_schemas->size(); ++i) {
+                        if (i > 0) body += ",";
+                        body += std::format("{{\"type\":\"function\",\"function\":{}}}", (*function_schemas)[i]);
+                    }
+                    body += "]";
+                    body += ",\"tool_choice\":\"auto\"";
+                }
+                body += "}";
+                
+                auto r = do_post(url, body, [this](auto header_setter){
+                    header_setter("Authorization: Bearer " + api_key_);
+                    header_setter("Content-Type: application/json");
+                });
+                
+                OpenAIChatCompletion response;
+                auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(response, r);
+                if (read_error) {
+                    throw std::runtime_error("Failed to parse response: " + glz::format_error(read_error, r));
+                }
+                
+                if (response.choices.empty()) {
+                    throw std::runtime_error("OpenAI response contains no choices");
+                }
+                
+                const auto& choice = response.choices[0];
+                
+                if (!choice.message.tool_calls.empty()) {
+                    // Append assistant message containing tool calls
+                    OpenAIMessage assistant_msg;
+                    assistant_msg.role = "assistant";
+                    assistant_msg.content = choice.message.content.value_or("");
+                    for (const auto& tc : choice.message.tool_calls) {
+                        OpenAIMessageToolCall call;
+                        call.id = tc.id;
+                        call.function.name = tc.function.name;
+                        call.function.arguments = tc.function.arguments;
+                        assistant_msg.tool_calls.push_back(call);
+                    }
+                    chat_history.push_back(assistant_msg);
+                    
+                    // Execute each tool and collect responses
+                    for (const auto& tc : choice.message.tool_calls) {
+                        std::string result;
+                        try {
+                            result = function_executor(tc.function.name, tc.function.arguments);
+                        } catch (const std::exception& e) {
+                            result = std::format("{{\"error\":\"{}\"}}", e.what());
+                        }
+                        
+                        OpenAIMessage tool_msg;
+                        tool_msg.role = "tool";
+                        tool_msg.tool_call_id = tc.id;
+                        tool_msg.name = tc.function.name;
+                        tool_msg.content = result;
+                        chat_history.push_back(tool_msg);
+                    }
+                    
+                    keep_calling = true;
+                } else {
+                    final_text = choice.message.content.value_or("");
+                    keep_calling = false;
+                }
+            }
+            
+            // Maintain local conversation history if needed
+            if (!full_conversation) {
+                conversation.push_back({"assistant", final_text});
+            }
+            
+            // Build ChatCompletion response structure
+            ChatCompletion response_obj{};
+            response_obj.choices.resize(1);
+            response_obj.choices[0].index = 0;
+            response_obj.choices[0].message.role = "assistant";
+            response_obj.choices[0].message.content = final_text;
+            response_obj.choices[0].finish_reason = "stop";
+            
+            return response_obj;
         }
 
         void clear()

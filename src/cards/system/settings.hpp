@@ -475,7 +475,7 @@ private:
             {"Grok (X.AI)", "grok", "X.AI's Grok models with web search capabilities", "grok-3-latest", "GROK_API_KEY"},
             {"OpenAI", "openai", "OpenAI's GPT models including GPT-4", "gpt-4", "OPENAI_API_KEY"},
             {"Groq", "groq", "Fast inference with open-source models", "llama3-8b-8192", "GROQ_API_KEY"},
-            {"Google Gemini", "gemini", "Google's Gemini (requires OpenAI-compatible proxy - use Custom instead)", "gemini-2.5-flash-lite", "GEMINI_API_KEY"},
+            {"Google Gemini", "gemini", "Google's Gemini models (fully native with function calling and search support)", "gemini-2.5-flash-lite", "GEMINI_API_KEY"},
             {"Custom", "custom", "Custom LLM endpoint with configurable URL", "custom-model", "LLM_CUSTOM_API_KEY"}
         };
         
@@ -532,19 +532,45 @@ private:
             
             // Check if API key is set
             std::string api_key = config_service->get_env_optional(selected_provider_info.api_key_name).value_or("");
+            
+            // Text input buffer
+            static char standard_key_buffer[512] = "";
+            static std::string last_key_provider = "";
+            if (last_key_provider != selected_provider_info.api_key_name) {
+                strncpy(standard_key_buffer, api_key.c_str(), sizeof(standard_key_buffer) - 1);
+                standard_key_buffer[sizeof(standard_key_buffer) - 1] = '\0';
+                last_key_provider = selected_provider_info.api_key_name;
+            }
+            
+            ImGui::Text("Enter API Key:");
+            ImGui::SetNextItemWidth(400);
+            std::string input_label = std::format("##key_input_{}", selected_provider_info.api_key_name);
+            if (ImGui::InputText(input_label.c_str(), standard_key_buffer, sizeof(standard_key_buffer), 
+                                 ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue)) {
+                set_environment_variable(selected_provider_info.api_key_name, standard_key_buffer, 1);
+                config_service->refresh_cache();
+            }
+            ImGui::SameLine();
+            std::string update_btn_label = std::format("Update##btn_{}", selected_provider_info.api_key_name);
+            if (ImGui::Button(update_btn_label.c_str())) {
+                set_environment_variable(selected_provider_info.api_key_name, standard_key_buffer, 1);
+                config_service->refresh_cache();
+            }
+            
+            ImGui::Spacing();
+            
             if (api_key.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, get_color(6)); // Red for missing
                 ImGui::Text("Status: Not configured");
                 ImGui::PopStyleColor();
-                ImGui::Text("Please set the %s environment variable or use the API Credentials section above.", 
-                           selected_provider_info.api_key_name);
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Text, get_color(2)); // Green for configured
                 ImGui::Text("Status: Configured");
                 ImGui::PopStyleColor();
                 
                 // Show masked API key
-                std::string masked_key = api_key.substr(0, 4) + "..." + api_key.substr(api_key.length() - 4);
+                std::string masked_key = api_key.substr(0, std::min(size_t(4), api_key.length())) + "..." + 
+                                         (api_key.length() > 4 ? api_key.substr(api_key.length() - 4) : "");
                 ImGui::Text("API Key: %s", masked_key.c_str());
             }
             

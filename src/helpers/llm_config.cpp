@@ -75,9 +75,11 @@ std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
         if (settings.provider == Provider::GEMINI) {
             auto adapter = std::make_unique<GeminiAdapter>(settings.api_key);
             
-            // Add provider-specific instructions
             adapter->add_instructions("You are a helpful AI assistant powered by Google's Gemini model. "
-                                    "You are knowledgeable, accurate, and provide helpful responses.");
+                                    "You are knowledgeable, accurate, and provide helpful responses. "
+                                    "You have access to tools that can run local commands (e.g. bash commands). "
+                                    "If the user asks you to check repository status, files, find the current date/time, or execute any shell "
+                                    "command (including curl), use the provided run_local_command tool to execute them instead of giving them instructions on how to run it themselves.");
             
             CONFIG_INFO("Created Gemini adapter instance");
             return LLMInstance{std::move(adapter)};
@@ -91,22 +93,25 @@ std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
                        settings.api_key.length(), settings.base_url);
         
         // Add provider-specific instructions
+        std::string tool_instr = " You have access to tools that can run local commands (e.g. bash commands). "
+                                 "If the user asks you to check repository status, files, find the current date/time, or execute any shell "
+                                 "command (including curl), use the provided run_local_command tool to execute them instead of giving them instructions on how to run it themselves.";
         switch (settings.provider) {
             case Provider::GROK:
-                llm->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest.");
+                llm->add_instructions("You are Grok, an AI assistant created by xAI. You are helpful, harmless, and honest." + tool_instr);
                 break;
             case Provider::OPENAI:
-                llm->add_instructions("You are ChatGPT, a helpful AI assistant created by OpenAI.");
+                llm->add_instructions("You are ChatGPT, a helpful AI assistant created by OpenAI." + tool_instr);
                 break;
             case Provider::GROQ:
-                llm->add_instructions("You are a helpful AI assistant powered by Groq's fast inference.");
+                llm->add_instructions("You are a helpful AI assistant powered by Groq's fast inference." + tool_instr);
                 break;
             case Provider::GEMINI:
                 // This case should not be reached as Gemini is handled above
-                llm->add_instructions("You are Gemini, a helpful AI assistant created by Google.");
+                llm->add_instructions("You are Gemini, a helpful AI assistant created by Google." + tool_instr);
                 break;
             case Provider::CUSTOM:
-                llm->add_instructions("You are a helpful AI assistant.");
+                llm->add_instructions("You are a helpful AI assistant." + tool_instr);
                 break;
         }
         

@@ -98,7 +98,7 @@ int main() {
         std::make_shared<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
             [](std::string const& cmd, std::shared_ptr<std::function<void(std::string)>> const& callback) {
                 // Launch the command in a background thread to avoid freezing the UI
-                std::thread([cmd, callback]() noexcept { // NOLINT(bugprone-exception-escape)
+                std::thread([cmd, callback]() {
                     try {
                         // Create a pipe to the command
                         FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)

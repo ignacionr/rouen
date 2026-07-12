@@ -16,23 +16,8 @@
         # Use appropriate stdenv for each platform
         stdenv = if unstable.stdenv.isDarwin then unstable.clang19Stdenv else unstable.gcc15Stdenv;
         
-        # Modern Darwin frameworks - use the current approach that works
-        darwinFrameworks = unstable.lib.optionals unstable.stdenv.isDarwin [
-          unstable.darwin.apple_sdk.frameworks.Foundation
-          unstable.darwin.apple_sdk.frameworks.AppKit
-          unstable.darwin.apple_sdk.frameworks.IOKit
-          unstable.darwin.apple_sdk.frameworks.CoreVideo
-          unstable.darwin.apple_sdk.frameworks.AudioToolbox
-          unstable.darwin.apple_sdk.frameworks.CoreHaptics
-          unstable.darwin.apple_sdk.frameworks.GameController
-          unstable.darwin.apple_sdk.frameworks.Metal
-          unstable.darwin.apple_sdk.frameworks.ForceFeedback
-          unstable.darwin.apple_sdk.frameworks.Carbon
-          unstable.darwin.apple_sdk.frameworks.OpenGL
-          unstable.darwin.apple_sdk.frameworks.Security
-          unstable.darwin.apple_sdk.frameworks.CoreFoundation
-          unstable.darwin.apple_sdk.frameworks.SystemConfiguration
-        ];
+        # Modern Darwin frameworks - removed in Nixpkgs 25.11 as they are now integrated into stdenv
+        darwinFrameworks = [];
         
         # macOS-specific build configuration - simplified
         darwinCmakeFlags = unstable.lib.optionals unstable.stdenv.isDarwin [

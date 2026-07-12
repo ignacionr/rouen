@@ -6,6 +6,7 @@
 #include <future>
 #include <optional>
 #include <array>
+#include <atomic>
 #include <typeinfo>
 #include <format>
 #include <memory>
@@ -17,9 +18,13 @@
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/mcp_service.hpp"
+#include "../../helpers/process_helper.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../helpers/notify_service.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 namespace rouen::cards {
     class ai_chat : public card {
@@ -28,21 +33,21 @@ namespace rouen::cards {
             name("AI Chat");
             
             // Base colors (already in vector)
-            colors[0] = ImVec4(0.15f, 0.25f, 1.0f, 0.7f);       // window background
-            colors[1] = ImVec4(0.1f, 0.2f, 0.3f, 0.7f);       // Darker slate blue with alpha - secondary elements
+            colors[0] = ImVec4(0.08f, 0.11f, 0.16f, 1.0f);      // window background
+            colors[1] = ImVec4(0.11f, 0.16f, 0.23f, 1.0f);      // secondary elements
             
             // Additional UI colors (add to the colors vector)
-            get_color(2, ImVec4(0.25f, 0.35f, 0.45f, 0.7f));  // User message background
-            get_color(3, ImVec4(0.15f, 0.25f, 0.35f, 0.7f));  // Assistant message background
+            get_color(2, ImVec4(0.18f, 0.30f, 0.44f, 1.0f));  // User message background
+            get_color(3, ImVec4(0.12f, 0.18f, 0.28f, 1.0f));  // Assistant message background
             get_color(4, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));     // User message text
-            get_color(5, ImVec4(0.6f, 0.9f, 1.0f, 1.0f));     // Assistant message text
-            get_color(6, ImVec4(0.7f, 0.8f, 0.9f, 0.8f));     // Thinking indicator
-            get_color(7, ImVec4(0.15f, 0.2f, 0.25f, 1.0f));   // Input field background
-            get_color(8, ImVec4(0.3f, 0.4f, 0.5f, 1.0f));     // Button color
-            get_color(9, ImVec4(0.4f, 0.5f, 0.6f, 1.0f));     // Button hover
-            get_color(10, ImVec4(0.5f, 0.6f, 0.7f, 1.0f));    // Button active
-            get_color(11, ImVec4(0.3f, 0.4f, 0.5f, 0.6f));    // Separator line color
-            get_color(12, ImVec4(0.2f, 0.3f, 0.4f, 1.0f));   // Chat background
+            get_color(5, ImVec4(0.94f, 0.97f, 1.0f, 1.0f));   // Assistant message text
+            get_color(6, ImVec4(0.85f, 0.90f, 0.97f, 1.0f));  // Thinking indicator
+            get_color(7, ImVec4(0.10f, 0.14f, 0.20f, 1.0f));  // Input field background
+            get_color(8, ImVec4(0.24f, 0.39f, 0.59f, 1.0f));  // Button color
+            get_color(9, ImVec4(0.30f, 0.49f, 0.72f, 1.0f));  // Button hover
+            get_color(10, ImVec4(0.36f, 0.56f, 0.80f, 1.0f)); // Button active
+            get_color(11, ImVec4(0.45f, 0.54f, 0.66f, 0.9f)); // Separator line color
+            get_color(12, ImVec4(0.06f, 0.09f, 0.13f, 1.0f)); // Chat background
             get_color(13, ImVec4(0.8f, 0.4f, 0.0f, 1.0f));   // MCP function call indicator
             
             requested_fps = 10; // Higher FPS for responsive input
@@ -91,6 +96,11 @@ namespace rouen::cards {
             
             // temperature slider
             ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
+            
+            bool speak_replies = notify_service::spoken_notifications_enabled();
+            if (ImGui::Checkbox("Speak replies", &speak_replies)) {
+                notify_service::set_spoken_notifications_enabled(speak_replies);
+            }
         }
 
         bool render() override {
@@ -104,6 +114,11 @@ namespace rouen::cards {
             
             return render_window([this]() {
                 render_llm_controls();
+                if (clear_input_on_response_.exchange(false)) {
+                    input_text_.clear();
+                    input_buffer_.fill('\0');
+                    reclaim_focus_ = true;
+                }
                 // Apply custom colors to various UI elements
                 ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[12]));
                 ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
@@ -137,11 +152,39 @@ namespace rouen::cards {
                     const ImVec2 padding(10.0f, 8.0f);
                     const float bubble_rounding = 5.0f;
                     
-                    // Pre-convert colors to avoid repeated conversions
-                    static const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(get_color(2));
-                    static const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(get_color(3));
-                    static const ImU32 user_text_color = ImGui::ColorConvertFloat4ToU32(get_color(4));
-                    static const ImU32 assistant_text_color = ImGui::ColorConvertFloat4ToU32(get_color(5));
+                    // Derive readable text colors from current bubble backgrounds.
+                    const ImVec4 raw_user_bg = get_color(0);
+                    const ImVec4 raw_assistant_bg = get_color(1);
+                    const ImVec4 chat_bg = get_color(12);
+                    
+                    const ImVec4 user_bg = ImVec4(raw_user_bg.x, raw_user_bg.y, raw_user_bg.z, 0.85f);
+                    const ImVec4 assistant_bg = ImVec4(raw_assistant_bg.x, raw_assistant_bg.y, raw_assistant_bg.z, 0.15f);
+                    
+                    const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(user_bg);
+                    const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(assistant_bg);
+                    
+                    auto pick_text_color = [](const ImVec4& bg) -> ImU32 {
+                        const float bg_luma = 0.299f * bg.x + 0.587f * bg.y + 0.114f * bg.z;
+                        const ImVec4 dark_text{0.05f, 0.06f, 0.08f, 1.0f};
+                        const ImVec4 light_text{0.96f, 0.97f, 0.99f, 1.0f};
+                        const float dark_luma = 0.299f * dark_text.x + 0.587f * dark_text.y + 0.114f * dark_text.z;
+                        const float light_luma = 0.299f * light_text.x + 0.587f * light_text.y + 0.114f * light_text.z;
+                        const float contrast_dark = (std::max(bg_luma, dark_luma) + 0.05f) / (std::min(bg_luma, dark_luma) + 0.05f);
+                        const float contrast_light = (std::max(bg_luma, light_luma) + 0.05f) / (std::min(bg_luma, light_luma) + 0.05f);
+                        return ImGui::ColorConvertFloat4ToU32(contrast_dark > contrast_light ? dark_text : light_text);
+                    };
+                    
+                    auto blend_colors = [](const ImVec4& src, const ImVec4& dst) -> ImVec4 {
+                        return ImVec4(
+                            src.w * src.x + (1.0f - src.w) * dst.x,
+                            src.w * src.y + (1.0f - src.w) * dst.y,
+                            src.w * src.z + (1.0f - src.w) * dst.z,
+                            1.0f
+                        );
+                    };
+                    
+                    const ImU32 user_text_color = pick_text_color(blend_colors(user_bg, chat_bg));
+                    const ImU32 assistant_text_color = pick_text_color(blend_colors(assistant_bg, chat_bg));
                     
                     // Display chat history using cached values
                     // Create a safe snapshot of the chat history for rendering
@@ -187,6 +230,32 @@ namespace rouen::cards {
                         // Display sender name
                         std::string sender_name = is_user ? "You" : get_assistant_name();
                         ImGui::Text("%s", sender_name.c_str());
+                        
+                        // Copy button aligned to the right inside the balloon
+                        ImGui::SameLine();
+                        float copy_btn_pos_x = cache.content_width - padding.x * 2.0f - 18.0f;
+                        if (copy_btn_pos_x > ImGui::GetCursorPosX()) {
+                            ImGui::SetCursorPosX(copy_btn_pos_x);
+                        }
+                        
+                        // Transparent/subtle styling for the copy icon button
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+                        
+                        std::string copy_btn_id = std::format("{}##copy_{}", ICON_MD_CONTENT_COPY, i);
+                        if (ImGui::Button(copy_btn_id.c_str())) {
+                            ImGui::SetClipboardText(message.second.c_str());
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Copy message text");
+                        }
+                        
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(4);
+                        
                         ImGui::Separator();
                         
                         // Display message content with proper text wrapping
@@ -336,7 +405,64 @@ namespace rouen::cards {
             return "ai-chat";
         }
 
+        std::vector<mcp_function> get_mcp_functions() const override {
+            return {
+                mcp_function(
+                    "run_local_command",
+                    "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl.",
+                    R"mcp({
+                        "type": "object",
+                        "properties": {
+                            "command": {
+                                "type": "string",
+                                "description": "Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"
+                            },
+                            "working_directory": {
+                                "type": "string",
+                                "description": "Optional directory where the command should run"
+                            }
+                        },
+                        "required": ["command"]
+                    })mcp",
+                    [this](const std::string& params) { return execute_local_command_mcp(params); }
+                )
+            };
+        }
+
     private:
+        struct local_command_request {
+            std::string command{};
+            std::string working_directory{};
+        };
+
+        std::string execute_local_command_mcp(const std::string& params) const {
+            if (params.empty()) {
+                return "Error: Missing params. Expected JSON with a non-empty 'command' field.";
+            }
+
+            local_command_request request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.command.empty()) {
+                return "Error: Invalid params. Expected JSON: {\"command\":\"...\",\"working_directory\":\"optional\"}.";
+            }
+
+            const std::string command_with_stderr = request.command + " 2>&1";
+            if (!request.working_directory.empty()) {
+                return ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
+            }
+
+            return ProcessHelper::executeCommand(command_with_stderr);
+        }
+        
+        void maybe_speak_reply(const std::string& text) const {
+            if (text.empty()) {
+                return;
+            }
+            if (notify_service::spoken_notifications_enabled()) {
+                rouen::platform::speak_text_async(text);
+            }
+        }
+
         // Async request context for memory-safe operations
         struct AsyncRequestContext {
             std::string user_message;
@@ -390,6 +516,7 @@ namespace rouen::cards {
         // Async operation management
         std::optional<std::future<void>> pending_response_{};
         std::atomic<bool> waiting_for_response_{false};
+        std::atomic<bool> clear_input_on_response_{false};
         std::mutex chat_history_mutex_; // Protect chat_history_ and message_cache_ from concurrent access
         
         // MCP service for function calling
@@ -405,6 +532,7 @@ namespace rouen::cards {
         http::fetch fetcher_{};
         
         // Configuration settings
+        static constexpr long ai_request_timeout_seconds_ = 180;
         bool allow_search_{false};
         float temperature_{0.45f};
         
@@ -515,76 +643,71 @@ namespace rouen::cards {
                 // Launch response generation asynchronously to prevent UI blocking
                 std::thread([this, function_schemas, message, model_name, search_mode_str]() {
                     try {
-                        // Create conversion from our message format to the format expected by sendMessage
+                        // Create a private local LLM instance for this request to ensure thread safety
+                        auto local_llm_opt = helpers::LLMConfig::create_llm_instance();
+                        if (!local_llm_opt) {
+                            throw std::runtime_error("LLM configuration is incomplete");
+                        }
+                        auto& local_llm = *local_llm_opt;
+
+                        // Create conversion from our message format to the format expected by sendMessage with mutex protection
                         std::vector<std::pair<std::string, std::string>> conversation_for_llm;
-                        for (const auto& chat_msg : chat_history_) {
-                            conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                        {
+                            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                            for (const auto& chat_msg : chat_history_) {
+                                conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                            }
                         }
                         
                         // Try to use function calling if we have a Gemini adapter directly
-                        auto fetcher = std::make_shared<http::fetch>();
+                        auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
                         auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
-                            using T = std::decay_t<decltype(*adapter_ptr)>;
-                            if constexpr (std::is_same_v<T, rouen::helpers::GeminiAdapter>) {
-                                // Use Gemini adapter with function calling support
-                                return adapter_ptr->sendMessageWithFunctionCalling(
-                                    message,
-                                    [fetcher](const std::string& url, const std::string& body, auto header_setter) {
-                                        return fetcher->post(url, body, header_setter);
-                                    },
-                                    [this](const std::string& function_name, const std::map<std::string, std::string>& args) -> std::string {
-                                        // Execute MCP function
-                                        if (mcp_service_) {
-                                            try {
-                                                // Convert args map to JSON string
-                                                std::string args_json = "{";
-                                                bool first = true;
-                                                for (const auto& [key, value] : args) {
-                                                    if (!first) args_json += ",";
-                                                    args_json += std::format("\"{}\":\"{}\"", key, value);
-                                                    first = false;
-                                                }
-                                                args_json += "}";
-                                                
-                                                auto result = mcp_service_->execute_function(function_name, args_json);
-                                                return result.success ? result.result : "Error: " + result.error_message;
-                                            } catch (const std::exception& e) {
-                                                return "Error executing function: " + std::string(e.what());
-                                            }
+                            return adapter_ptr->sendMessageWithFunctionCalling(
+                                message,
+                                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                                    return fetcher->post(url, body, header_setter);
+                                },
+                                [this](const std::string& function_name, const std::string& args_json) -> std::string {
+                                    // Execute MCP function
+                                    if (mcp_service_) {
+                                        try {
+                                            auto result = mcp_service_->execute_function(function_name, args_json);
+                                            return result.success ? result.result : "Error: " + result.error_message;
+                                        } catch (const std::exception& e) {
+                                            return "Error executing function: " + std::string(e.what());
                                         }
-                                        return "Error: MCP service not available";
-                                    },
-                                    "user", model_name, search_mode_str, 0.45f, &conversation_for_llm, &function_schemas
-                                );
-                            } else {
-                                // Fallback to standard call without function schemas for other LLM types
-                                return adapter_ptr->sendMessage(
-                                    message,
-                                    [fetcher](const std::string& url, const std::string& body, auto header_setter) {
-                                        return fetcher->post(url, body, header_setter);
-                                    },
-                                    "user", model_name, search_mode_str, 0.45f, &conversation_for_llm
-                                );
-                            }
-                        }, llm_instance_->instance_);
+                                    }
+                                    return "Error: MCP service not available";
+                                },
+                                "user", model_name, search_mode_str, 0.45f, &conversation_for_llm, &function_schemas
+                            );
+                        }, local_llm.instance_);
                         
                         // Process the response
                         if (!chat_completion.choices.empty()) {
                             const auto& response = chat_completion.choices[0].message.content;
                             
-                            // Add AI response to history
-                            chat_history_.emplace_back("assistant", response);
-                            message_cache_.emplace_back();
+                            // Add AI response to history with mutex protection
+                            {
+                                std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                                chat_history_.emplace_back("assistant", response);
+                                message_cache_.emplace_back();
+                            }
+                            maybe_speak_reply(response);
                         }
                         
                     } catch (const std::exception& e) {
-                        // Add error message to chat history
+                        // Add error message to chat history with mutex protection
                         std::string error_msg = "Error: " + std::string(e.what());
-                        chat_history_.emplace_back("assistant", error_msg);
-                        message_cache_.emplace_back();
+                        {
+                            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                            chat_history_.emplace_back("assistant", error_msg);
+                            message_cache_.emplace_back();
+                        }
                     }
                     
                     waiting_for_response_.store(false);
+                    clear_input_on_response_.store(true);
                     scroll_to_bottom_.store(true);
                 }).detach();
                 
@@ -631,7 +754,7 @@ namespace rouen::cards {
                 }
                 
                 // Create a shared fetcher instance for this request to avoid accessing member fetcher_
-                async_context->fetcher = std::make_shared<http::fetch>();
+                async_context->fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
                 
                 // Create a new LLM instance for this async operation rather than copying the existing one
                 auto async_llm_instance = helpers::LLMConfig::create_llm_instance();
@@ -674,6 +797,7 @@ namespace rouen::cards {
                         } else {
                             reply = "Error: Empty response received";
                         }
+                        const std::string reply_for_tts = reply;
                         
                         // Safely add to chat history using thread-safe operations
                         // Note: We need to be careful about concurrent access to chat_history_
@@ -685,6 +809,7 @@ namespace rouen::cards {
                             message_cache_.emplace_back();
                             layout_dirty_ = true;
                         }
+                        maybe_speak_reply(reply_for_tts);
                         
                     } catch (const std::bad_alloc&) {
                         std::lock_guard<std::mutex> lock(chat_history_mutex_);
@@ -709,6 +834,7 @@ namespace rouen::cards {
                     }
                     
                     waiting_for_response_.store(false);
+                    clear_input_on_response_.store(true);
                     scroll_to_bottom_.store(true);
                 }));
                 

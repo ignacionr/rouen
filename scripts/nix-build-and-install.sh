@@ -138,7 +138,7 @@ if [[ "$SKIP_BUILD" == "true" ]]; then
 else
     info "Building Rouen with Nix..."
     # Enable experimental features inline to ensure compatibility
-    nix build --extra-experimental-features "nix-command flakes" --print-build-logs
+    nix build --extra-experimental-features "nix-command flakes" --cores 4 --max-jobs 4 --print-build-logs
     success "Nix build completed successfully."
 fi
 
@@ -164,12 +164,26 @@ if [[ "$INSTALL_MODE" == "user" ]]; then
     mkdir -p "$APP_DIR"
 fi
 
-# Backup existing .env file if it exists
 ENV_BACKUP=""
-if [[ -f "$APP_DIR/Rouen.app/Contents/MacOS/.env" ]]; then
+cleanup_env_backup() {
+    if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
+        rm -f "$ENV_BACKUP"
+    fi
+}
+trap cleanup_env_backup EXIT
+
+# Backup existing .env file if it exists
+EXISTING_ENV_PATH="$APP_DIR/Rouen.app/Contents/MacOS/.env"
+if [[ -f "$EXISTING_ENV_PATH" ]]; then
     info "Found existing .env configuration. Backing up..."
     ENV_BACKUP=$(mktemp)
-    cp "$APP_DIR/Rouen.app/Contents/MacOS/.env" "$ENV_BACKUP"
+    if [[ -n "$SUDO_CMD" ]]; then
+        $SUDO_CMD cp "$EXISTING_ENV_PATH" "$ENV_BACKUP"
+        $SUDO_CMD chmod u+w "$ENV_BACKUP"
+        $SUDO_CMD chown "$(id -u):$(id -g)" "$ENV_BACKUP" 2>/dev/null || true
+    else
+        cp "$EXISTING_ENV_PATH" "$ENV_BACKUP"
+    fi
 fi
 
 # Remove existing installation
@@ -198,7 +212,6 @@ if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
     info "Restoring .env configuration..."
     $SUDO_CMD cp "$ENV_BACKUP" "$APP_DIR/Rouen.app/Contents/MacOS/.env"
     $SUDO_CMD chmod u+w "$APP_DIR/Rouen.app/Contents/MacOS/.env"
-    rm -f "$ENV_BACKUP"
 fi
 
 success "App Bundle installed to $APP_DIR/Rouen.app"

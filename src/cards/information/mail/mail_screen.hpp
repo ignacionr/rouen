@@ -24,7 +24,7 @@ namespace mail {
     public:
         mail_screen(std::shared_ptr<imap_host> host): host_(host) {}
         
-        void render() noexcept {
+        void render() {
             if (ImGui::BeginTable("Messages", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
                 ImGui::TableSetupColumn("From", ImGuiTableColumnFlags_WidthFixed, 130);
                 ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
