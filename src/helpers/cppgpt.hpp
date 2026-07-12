@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include <string_view>
 
@@ -145,6 +146,12 @@ namespace ignacionr
         std::string name;
         std::string tool_call_id;
         std::vector<OpenAIMessageToolCall> tool_calls;
+
+        OpenAIMessage() = default;
+
+        OpenAIMessage(std::string role_value, std::string content_value)
+            : role(std::move(role_value)),
+              content(std::move(content_value)) {}
     };
 }
 
