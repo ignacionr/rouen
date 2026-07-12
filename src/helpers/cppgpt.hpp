@@ -148,7 +148,7 @@ namespace ignacionr
 
         OpenAIMessage() = default;
 
-        OpenAIMessage(std::string_view role_value, std::string_view content_value)
+        OpenAIMessage(const std::string& role_value, const std::string& content_value)
             : role(role_value),
               content(content_value) {}
     };
