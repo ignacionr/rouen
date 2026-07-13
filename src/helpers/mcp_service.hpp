@@ -23,6 +23,8 @@ namespace rouen::helpers {
  */
 class mcp_service {
 public:
+    mcp_service();
+    
     // Function definition structure
     struct function_definition {
         std::string name;

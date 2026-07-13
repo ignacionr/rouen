@@ -8,8 +8,57 @@
 // 3. All other includes
 #include "debug.hpp"
 #include "mcp_service.hpp"
+#include "process_helper.hpp"
 
 namespace rouen::helpers {
+
+struct local_command_request {
+    std::string command{};
+    std::string working_directory{};
+};
+
+mcp_service::mcp_service() {
+    // Register default run_local_command function associated with terminal
+    function_definition run_cmd_def(
+        "run_local_command",
+        "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl.",
+        R"mcp({
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"
+                },
+                "working_directory": {
+                    "type": "string",
+                    "description": "Optional directory where the command should run"
+                }
+            },
+            "required": ["command"]
+        })mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return "Error: Missing params. Expected JSON with a non-empty 'command' field.";
+            }
+
+            local_command_request request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.command.empty()) {
+                return "Error: Invalid params. Expected JSON: {\"command\":\"...\",\"working_directory\":\"optional\"}.";
+            }
+
+            const std::string command_with_stderr = request.command + " 2>&1";
+            if (!request.working_directory.empty()) {
+                return ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
+            }
+
+            return ProcessHelper::executeCommand(command_with_stderr);
+        },
+        "terminal"
+    );
+    
+    register_function("terminal", run_cmd_def);
+}
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
     // Create a copy of the function with the card_type set

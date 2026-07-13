@@ -18,7 +18,6 @@
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/mcp_service.hpp"
-#include "../../helpers/process_helper.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/glaze_include.hpp"
@@ -405,54 +404,7 @@ namespace rouen::cards {
             return "ai-chat";
         }
 
-        std::vector<mcp_function> get_mcp_functions() const override {
-            return {
-                mcp_function(
-                    "run_local_command",
-                    "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl.",
-                    R"mcp({
-                        "type": "object",
-                        "properties": {
-                            "command": {
-                                "type": "string",
-                                "description": "Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"
-                            },
-                            "working_directory": {
-                                "type": "string",
-                                "description": "Optional directory where the command should run"
-                            }
-                        },
-                        "required": ["command"]
-                    })mcp",
-                    [this](const std::string& params) { return execute_local_command_mcp(params); }
-                )
-            };
-        }
 
-    private:
-        struct local_command_request {
-            std::string command{};
-            std::string working_directory{};
-        };
-
-        std::string execute_local_command_mcp(const std::string& params) const {
-            if (params.empty()) {
-                return "Error: Missing params. Expected JSON with a non-empty 'command' field.";
-            }
-
-            local_command_request request{};
-            auto parse_result = glz::read_json(request, params);
-            if (parse_result || request.command.empty()) {
-                return "Error: Invalid params. Expected JSON: {\"command\":\"...\",\"working_directory\":\"optional\"}.";
-            }
-
-            const std::string command_with_stderr = request.command + " 2>&1";
-            if (!request.working_directory.empty()) {
-                return ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
-            }
-
-            return ProcessHelper::executeCommand(command_with_stderr);
-        }
         
         void maybe_speak_reply(const std::string& text) const {
             if (text.empty()) {

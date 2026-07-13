@@ -158,6 +158,23 @@ add_test(NAME ObjectivesTest COMMAND test_objectives)
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 
+# MCP Test
+add_executable(test_mcp test_mcp.cpp ../src/helpers/mcp_service.cpp)
+target_link_libraries(test_mcp 
+    PRIVATE 
+    GTest::gtest 
+    GTest::gtest_main
+    GTest::gmock
+    GTest::gmock_main
+)
+add_test(NAME MCPTest COMMAND test_mcp)
+set_target_properties(test_mcp PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(test_mcp)
+endif()
+
 
 # Legacy tests (keeping for compatibility)
 # Test for Bybit currency conversion fix
@@ -204,13 +221,14 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
     COMMAND echo ""
     COMMAND echo "Legacy Console Tests:"
     COMMAND echo "---------------------"
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_bybit_currency_fix test_example_math test_notes_repository_legacy
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -227,7 +245,8 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp
     COMMENT "Running Google Test suite only"
 )
 

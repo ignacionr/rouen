@@ -20,7 +20,7 @@
 #include "../development/github.hpp"
 #include "../information/calendar/calendar.hpp"
 #include "../information/adaptive_card.hpp"
-#include "../information/grok.hpp"
+#include "../information/ai_chat.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/markdown_notes.hpp"
 #include "../information/rss.hpp"
@@ -136,7 +136,7 @@ namespace rouen::cards {
                     return std::make_shared<subnet_scanner>();
                 });
                 
-                instance.emplace("grok", [](std::string_view, SDL_Renderer*) {
+                instance.emplace("ai_chat", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<ai_chat>();
                 });
                 
