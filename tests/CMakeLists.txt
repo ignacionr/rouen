@@ -159,13 +159,20 @@ add_test(NAME ObjectivesTest COMMAND test_objectives)
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 
 # MCP Test
-add_executable(test_mcp test_mcp.cpp ../src/helpers/mcp_service.cpp)
+add_executable(test_mcp 
+    test_mcp.cpp 
+    ../src/helpers/mcp_service.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/git_scanner.cpp
+    ../src/helpers/config_service.cpp
+)
 target_link_libraries(test_mcp 
     PRIVATE 
     GTest::gtest 
     GTest::gtest_main
     GTest::gmock
     GTest::gmock_main
+    CURL::libcurl
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES
