@@ -119,8 +119,14 @@ struct media_player {
 
                     ImGui::Spacing();
                     const float dock_width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
-                    const float max_dock_height = is_tall ? 600.0f : 360.0f;
-                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, max_dock_height);
+                    float dock_height = 0.0f;
+                    if (is_tall) {
+                        // Expand all the way to the lower available border
+                        dock_height = std::max(140.0f, ImGui::GetContentRegionAvail().y);
+                    } else {
+                        const float max_dock_height = 360.0f;
+                        dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, max_dock_height);
+                    }
                     const ImVec2 dock_size{dock_width, dock_height};
                     const ImVec2 dock_min = ImGui::GetCursorScreenPos();
 
@@ -169,7 +175,7 @@ struct media_player {
 
                             item.syncVideoWindowRect({
                                 content_origin_x + static_cast<int>(dock_min.x),
-                                content_origin_y + static_cast<int>(dock_min.y),
+                                content_origin_y + static_cast<int>(dock_min.y) - 1,
                                 std::max(1, static_cast<int>(dock_size.x)),
                                 std::max(1, static_cast<int>(dock_size.y))
                             });
