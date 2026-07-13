@@ -94,8 +94,14 @@ public:
     }
     
     ~ThreadPool() {
+        shutdown();
+        NET_INFO("Thread pool destroyed");
+    }
+    
+    void shutdown() {
         {
             std::unique_lock<std::mutex> lock(queue_mutex);
+            if (stop) return;
             stop = true;
         }
         
@@ -106,8 +112,7 @@ public:
                 worker.join();
             }
         }
-        
-        NET_INFO("Thread pool destroyed");
+        workers.clear();
     }
     
     template<class F>
@@ -177,7 +182,11 @@ public:
     }
     
     ~subnet_scanner() override {
-        stop_scan();
+        is_scanning = false;
+        if (coordinator_thread.joinable()) {
+            coordinator_thread.join();
+        }
+        thread_pool.shutdown();
 #ifdef _WIN32
         // Cleanup Winsock
         WSACleanup();
@@ -276,7 +285,7 @@ public:
                 
                 // Create columns for the results table
                 if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 140.0f);
                     ImGui::TableSetupColumn("Hostname", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                     ImGui::TableHeadersRow();
@@ -498,6 +507,11 @@ private:
             return;
         }
         
+        // Join previous coordinator thread if it finished
+        if (coordinator_thread.joinable()) {
+            coordinator_thread.join();
+        }
+        
         is_scanning = true;
         scanned_hosts = 0;
         
@@ -550,8 +564,8 @@ private:
             std::mt19937 g(rd());
             std::shuffle(ip_queue.begin(), ip_queue.end(), g);
             
-            std::atomic<size_t> completed_tasks{0};
-            std::atomic<size_t> total_tasks{ip_queue.size()};
+            auto completed_tasks = std::make_shared<std::atomic<size_t>>(0);
+            auto total_tasks = std::make_shared<std::atomic<size_t>>(ip_queue.size());
             
             // Submit scanning tasks to the thread pool
             for (const auto& ip : ip_queue) {
@@ -559,7 +573,7 @@ private:
                     break;  // Stop if scanning was cancelled
                 }
                 
-                thread_pool.enqueue([this, ip, &completed_tasks]() {
+                thread_pool.enqueue([this, ip, completed_tasks]() {
                     // Check if the host is online
                     bool is_online = ping_host_with_ports(ip.c_str());
                     
@@ -592,12 +606,12 @@ private:
                     }
                     
                     scanned_hosts++;
-                    completed_tasks++;
+                    (*completed_tasks)++;
                 });
             }
             
             // Wait for all tasks to complete or for scanning to be cancelled
-            while (completed_tasks < total_tasks && is_scanning) {
+            while (*completed_tasks < *total_tasks && is_scanning) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             
@@ -605,15 +619,13 @@ private:
             if (!devices.empty()) {
                 std::lock_guard<std::mutex> lock(devices_mutex);
                 std::sort(devices.begin(), devices.end(), [](const auto& a, const auto& b) {
-                    return inet_addr(a.ip_address.c_str()) < inet_addr(b.ip_address.c_str());
+                     return inet_addr(a.ip_address.c_str()) < inet_addr(b.ip_address.c_str());
                 });
             }
             
             is_scanning = false;
             NET_INFO("Subnet scan completed");
         });
-        
-        coordinator_thread.detach();
     }
     
     // Stop an ongoing scan
