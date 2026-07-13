@@ -336,6 +336,16 @@ namespace rouen::helpers {
                        "Enable spoken notifications (1=true, 0=false)", "1");
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
                        "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)");
+        register_config("ROUEN_SYNC_GIT_URL", Category::GENERAL, false, false,
+                       "Remote Git sync repository URL");
+        register_config("ROUEN_SYNC_TOKEN", Category::GENERAL, false, true,
+                       "Personal Access Token for Git sync repository");
+        register_config("ROUEN_SYNC_CACHE_PATH", Category::GENERAL, false, false,
+                       "Local cache path directory for sync repository");
+        register_config("ROUEN_SYNC_AUTO_ON_STARTUP", Category::GENERAL, false, false,
+                       "Enable auto sync on application startup (1=true, 0=false)", "0");
+        register_config("ROUEN_SYNC_AUTO_ON_SHUTDOWN", Category::GENERAL, false, false,
+                       "Enable auto sync on application shutdown (1=true, 0=false)", "0");
 
         CONFIG_INFO("Default configurations registered");
     }

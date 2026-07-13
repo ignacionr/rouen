@@ -63,6 +63,7 @@ void setup_windows_debug_console() {
 #include "helpers/notify_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
 #include "helpers/process_helper.hpp" // Added this include for ProcessHelper
+#include "helpers/universal_sync_service.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
 
@@ -181,6 +182,12 @@ int main() {
         )
     );
     
+    // Run startup synchronization if enabled
+    if (config_service->get_env("ROUEN_SYNC_AUTO_ON_STARTUP") == "1") {
+        std::cout << "[INFO] Auto-sync on startup is enabled. Running Sync In...\n";
+        rouen::helpers::UniversalSyncService::instance().sync_in();
+    }
+    
     // Create and initialize the main window
     std::cout << "Creating main window..." << '\n';
     main_wnd window;
@@ -194,6 +201,12 @@ int main() {
     
     // Run the main loop
     window.run();
+
+    // Run shutdown synchronization if enabled
+    if (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1") {
+        std::cout << "[INFO] Auto-sync on shutdown is enabled. Running Sync Out...\n";
+        rouen::helpers::UniversalSyncService::instance().sync_out("Auto-sync shutdown push");
+    }
 
     return 0;
 }

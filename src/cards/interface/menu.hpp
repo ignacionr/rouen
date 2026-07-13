@@ -87,6 +87,7 @@ namespace rouen::cards {
                         {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                         {"Notifications", []() { "create_card"_sfn("notifications"); }},
                         {"Settings", []() { "create_card"_sfn("settings"); }},
+                        {"Universal Sync", []() { "create_card"_sfn("sync"); }},
                         {"Theme Settings", []() { "create_card"_sfn("theme"); }},
                         {"Terminal", []() { "create_card"_sfn("terminal"); }},
                         {"Environment Variables", []() { "create_card"_sfn("envvars"); }},

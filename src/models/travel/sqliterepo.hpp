@@ -4,11 +4,66 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+#include <algorithm>
 
 #include "../../helpers/sqlite.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "plan.hpp"
 
 namespace media::travel {
+    struct destination_dto {
+        std::string name;
+        std::string location;
+        std::string notes;
+        std::string arrival;
+        std::string departure;
+        std::string accommodation;
+        double budget{0.0};
+        bool completed{false};
+
+        struct glaze {
+            using T = destination_dto;
+            static constexpr auto value = glz::object(
+                "name", &T::name,
+                "location", &T::location,
+                "notes", &T::notes,
+                "arrival", &T::arrival,
+                "departure", &T::departure,
+                "accommodation", &T::accommodation,
+                "budget", &T::budget,
+                "completed", &T::completed
+            );
+        };
+    };
+
+    struct plan_dto {
+        std::string title;
+        std::string description;
+        std::vector<destination_dto> destinations;
+        std::string created;
+        std::string start_date;
+        std::string end_date;
+        double total_budget{0.0};
+        std::string status;
+
+        struct glaze {
+            using T = plan_dto;
+            static constexpr auto value = glz::object(
+                "title", &T::title,
+                "description", &T::description,
+                "destinations", &T::destinations,
+                "created", &T::created,
+                "start_date", &T::start_date,
+                "end_date", &T::end_date,
+                "total_budget", &T::total_budget,
+                "status", &T::status
+            );
+        };
+    };
+
     class sqliterepo {
     public:
         sqliterepo(const std::string &path) : db_{path} {
@@ -202,6 +257,153 @@ namespace media::travel {
                 DB_INFO_FMT("SQLiteRepo: Test query result: {}", sqlite3_column_int(stmt, 0));
             });
             DB_INFO("SQLiteRepo: Test query completed successfully");
+        }
+
+        // Export all plans to a directory of JSON files
+        void export_to_directory(const std::filesystem::path& directory) {
+            std::filesystem::create_directories(directory);
+
+            // Clean up existing files in the sync folder first to handle deletions
+            for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                    std::filesystem::remove(entry.path());
+                }
+            }
+
+            std::vector<long long> plan_ids;
+            scan_plans([&plan_ids](long long id, const char* /*title*/, const char* /*start*/, const char* /*end*/, const char* /*status*/) {
+                plan_ids.push_back(id);
+            });
+
+            for (long long id : plan_ids) {
+                plan p;
+                if (get_plan(id, p)) {
+                    plan_dto dto;
+                    dto.title = p.title;
+                    dto.description = p.description;
+                    dto.created = time_point_to_string(p.created);
+                    dto.start_date = time_point_to_string(p.start_date);
+                    dto.end_date = time_point_to_string(p.end_date);
+                    dto.total_budget = p.total_budget;
+                    dto.status = plan::status_to_string(p.current_status);
+
+                    for (const auto& dest : p.destinations) {
+                        destination_dto d_dto;
+                        d_dto.name = dest.name;
+                        d_dto.location = dest.location;
+                        d_dto.notes = dest.notes;
+                        d_dto.arrival = time_point_to_string(dest.arrival);
+                        d_dto.departure = time_point_to_string(dest.departure);
+                        d_dto.accommodation = dest.accommodation;
+                        d_dto.budget = dest.budget;
+                        d_dto.completed = dest.completed;
+                        dto.destinations.push_back(d_dto);
+                    }
+
+                    // Slugify the title to make a clean filename
+                    std::string filename = "";
+                    for (char c : p.title) {
+                        if (std::isalnum(static_cast<unsigned char>(c)) != 0) {
+                            filename += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                        } else if (c == ' ' || c == '-' || c == '_') {
+                            if (!filename.empty() && filename.back() != '_') {
+                                filename += '_';
+                            }
+                        }
+                    }
+                    if (filename.empty()) {
+                        filename = std::format("plan_{}", id);
+                    }
+                    filename += ".json";
+
+                    auto path = directory / filename;
+                    std::string json_content = glz::write<glz::opts{.prettify = true}>(dto).value_or("");
+                    if (!json_content.empty()) {
+                        std::ofstream f(path);
+                        if (f) {
+                            f << json_content;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Import plans from a directory of JSON files
+        void import_from_directory(const std::filesystem::path& directory) {
+            if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory)) {
+                return;
+            }
+
+            // Find all plans in the local database to check for existence
+            std::map<std::string, long long> existing_plans; // title -> id
+            scan_plans([&existing_plans](long long id, const char* title, const char* /*start*/, const char* /*end*/, const char* /*status*/) {
+                if (title) {
+                    existing_plans[title] = id;
+                }
+            });
+
+            // Set of imported plan titles to handle deletions
+            std::vector<std::string> imported_titles;
+
+            for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                if (!entry.is_regular_file() || entry.path().extension() != ".json") {
+                    continue;
+                }
+
+                std::ifstream f(entry.path());
+                if (!f) continue;
+
+                std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                plan_dto dto;
+                auto err = glz::read_json(dto, content);
+                if (err) {
+                    continue;
+                }
+
+                imported_titles.push_back(dto.title);
+
+                // Convert DTO back to core plan model
+                plan p;
+                p.title = dto.title;
+                p.description = dto.description;
+                p.created = string_to_time_point(dto.created);
+                p.start_date = string_to_time_point(dto.start_date);
+                p.end_date = string_to_time_point(dto.end_date);
+                p.total_budget = dto.total_budget;
+                
+                auto status_opt = plan::string_to_status(dto.status);
+                p.current_status = status_opt.value_or(plan::status::planning);
+
+                for (const auto& d_dto : dto.destinations) {
+                    destination dest;
+                    dest.name = d_dto.name;
+                    dest.location = d_dto.location;
+                    dest.notes = d_dto.notes;
+                    dest.arrival = string_to_time_point(d_dto.arrival);
+                    dest.departure = string_to_time_point(d_dto.departure);
+                    dest.accommodation = d_dto.accommodation;
+                    dest.budget = d_dto.budget;
+                    dest.completed = d_dto.completed;
+                    p.destinations.push_back(dest);
+                }
+
+                // Check if this plan already exists
+                auto it = existing_plans.find(p.title);
+                if (it != existing_plans.end()) {
+                    p.id = it->second;
+                } else {
+                    p.id = -1;
+                }
+
+                upsert_plan(p);
+            }
+
+            // Sync deletion: if a plan is in existing_plans but not in imported_titles, it was deleted on another device
+            for (const auto& [title, id] : existing_plans) {
+                if (std::find(imported_titles.begin(), imported_titles.end(), title) == imported_titles.end()) {
+                    delete_plan(id);
+                }
+            }
         }
 
     private:

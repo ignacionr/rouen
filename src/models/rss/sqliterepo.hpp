@@ -8,13 +8,48 @@
 #include <chrono>
 #include <optional>
 #include <tuple>
+#include <filesystem>
+#include <fstream>
+#include <set>
 
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "rss_item_repo.hpp"
 
 namespace media::rss
 {
+    struct feed_subscription_dto
+    {
+        std::string url;
+        std::string title;
+        std::string image_url;
+        std::string language;
+        std::vector<std::string> tags;
+
+        struct glaze {
+            using T = feed_subscription_dto;
+            static constexpr auto value = glz::object(
+                "url", &T::url,
+                "title", &T::title,
+                "image_url", &T::image_url,
+                "language", &T::language,
+                "tags", &T::tags
+            );
+        };
+    };
+
+    struct rss_sync_dto
+    {
+        std::vector<feed_subscription_dto> subscriptions;
+
+        struct glaze {
+            using T = rss_sync_dto;
+            static constexpr auto value = glz::object(
+                "subscriptions", &T::subscriptions
+            );
+        };
+    };
     struct sqliterepo
     {
         sqliterepo(const std::string &path) : db_{path}
@@ -576,6 +611,97 @@ namespace media::rss
                 db_.exec("UPDATE item SET watermark = ? WHERE feed_id = ? AND link = ? AND title = ?", {}, watermark, feed_id, link, title);
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error in update_watermark: {}", e.what());
+            }
+        }
+
+        // Export subscriptions to a directory of JSON files
+        void export_to_directory(const std::filesystem::path& directory) {
+            std::filesystem::create_directories(directory);
+
+            rss_sync_dto dto;
+            scan_feeds([this, &dto](long long id, const char* url, const char* title, const char* image_url, const char* language) {
+                feed_subscription_dto sub;
+                sub.url = url ? url : "";
+                sub.title = title ? title : "";
+                sub.image_url = image_url ? image_url : "";
+                sub.language = language ? language : "";
+
+                auto tag_set = get_feed_tags(id);
+                for (const auto& tag : tag_set) {
+                    sub.tags.push_back(tag);
+                }
+                // Sort tags for consistency
+                std::sort(sub.tags.begin(), sub.tags.end());
+
+                dto.subscriptions.push_back(sub);
+            });
+
+            // Sort subscriptions by URL for consistent Git diffs
+            std::sort(dto.subscriptions.begin(), dto.subscriptions.end(), [](const feed_subscription_dto& a, const feed_subscription_dto& b) {
+                return a.url < b.url;
+            });
+
+            auto path = directory / "feeds.json";
+            std::string json_content = glz::write<glz::opts{.prettify = true}>(dto).value_or("");
+            if (!json_content.empty()) {
+                std::ofstream f(path);
+                if (f) {
+                    f << json_content;
+                }
+            }
+        }
+
+        // Import subscriptions from a directory of JSON files
+        void import_from_directory(const std::filesystem::path& directory) {
+            auto path = directory / "feeds.json";
+            if (!std::filesystem::exists(path)) {
+                return;
+            }
+
+            std::ifstream f(path);
+            if (!f) return;
+
+            std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            rss_sync_dto dto;
+            auto err = glz::read_json(dto, content);
+            if (err) {
+                return;
+            }
+
+            // Find current feeds in the local database to check for existence/deletions
+            std::map<std::string, long long> existing_feeds; // url -> id
+            scan_feeds([&existing_feeds](long long id, const char* url, const char* /*title*/, const char* /*image_url*/, const char* /*language*/) {
+                if (url) {
+                    existing_feeds[url] = id;
+                }
+            });
+
+            std::vector<std::string> imported_urls;
+
+            for (const auto& sub : dto.subscriptions) {
+                imported_urls.push_back(sub.url);
+
+                // Upsert the feed
+                long long feed_id = upsert_feed(sub.url, sub.title, sub.image_url);
+                if (feed_id != -1) {
+                    update_feed_language(feed_id, sub.language);
+
+                    // Sync tags: clear existing and insert imported
+                    auto existing_tags = get_feed_tags(feed_id);
+                    for (const auto& tag : existing_tags) {
+                        remove_feed_tag(feed_id, tag);
+                    }
+                    for (const auto& tag : sub.tags) {
+                        add_feed_tag(feed_id, tag);
+                    }
+                }
+            }
+
+            // Sync deletion: if a feed is in existing_feeds but not in imported_urls, it was deleted on another device
+            for (const auto& [url, id] : existing_feeds) {
+                if (std::find(imported_urls.begin(), imported_urls.end(), url) == imported_urls.end()) {
+                    delete_feed(url);
+                }
             }
         }
 

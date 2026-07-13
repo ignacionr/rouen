@@ -45,6 +45,7 @@
 #include "../system/envvars.hpp"
 #include "../system/notifications.hpp"
 #include "../system/settings.hpp"
+#include "../system/sync_card.hpp"
 #include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/terminal.hpp"
@@ -161,6 +162,10 @@ namespace rouen::cards {
                 
                 instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<settings_card>();
+                });
+
+                instance.emplace("sync", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<sync_card>();
                 });
 
                 instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {
