@@ -173,9 +173,14 @@ struct media_player {
                             }
 #endif
 
+                            float scale = 1.0f;
+#ifdef __APPLE__
+                            scale = rouen::platform::get_mac_backing_scale_factor(window);
+#endif
+
                             item.syncVideoWindowRect({
-                                content_origin_x + static_cast<int>(dock_min.x),
-                                content_origin_y + static_cast<int>(dock_min.y) - 1,
+                                static_cast<int>(static_cast<float>(content_origin_x) * scale + dock_min.x),
+                                static_cast<int>(static_cast<float>(content_origin_y) * scale + dock_min.y - 3.0f * scale),
                                 std::max(1, static_cast<int>(dock_size.x)),
                                 std::max(1, static_cast<int>(dock_size.y))
                             });

@@ -106,4 +106,23 @@ int get_mac_titlebar_height(SDL_Window* window) {
     return static_cast<int>(std::lround(titlebar_height));
 }
 
+float get_mac_backing_scale_factor(SDL_Window* window) {
+    if (!window) {
+        return 1.0f;
+    }
+
+    SDL_SysWMinfo wm_info{};
+    SDL_VERSION(&wm_info.version);
+    if (!SDL_GetWindowWMInfo(window, &wm_info)) {
+        return 1.0f;
+    }
+
+    NSWindow* ns_window = wm_info.info.cocoa.window;
+    if (!ns_window) {
+        return 1.0f;
+    }
+
+    return static_cast<float>([ns_window backingScaleFactor]);
+}
+
 } // namespace rouen::platform

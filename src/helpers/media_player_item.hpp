@@ -446,6 +446,9 @@ inline bool media_player_item::playMedia() {
         args_str.push_back("--input-ipc-server=" + socket_path);
         args_str.push_back("--ontop=yes");
         args_str.push_back("--no-border");
+#ifdef __APPLE__
+        args_str.push_back("--hidpi-window-scale=yes");
+#endif
         args_str.push_back("--http-header-fields=User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         args_str.push_back("--http-header-fields=Referer: https://www.rt.com/");
         args_str.push_back("--cache=yes");
