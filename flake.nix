@@ -79,7 +79,23 @@
         packages.default = stdenv.mkDerivation {
           pname = "rouen";
           version = "0.1.0";
-          src = ./.;
+          src = unstable.lib.cleanSourceWith {
+            filter = name: type: let
+              baseName = baseNameOf (toString name);
+            in
+              ! (type == "directory" && (
+                baseName == "build" ||
+                baseName == "build-debug" ||
+                baseName == "build-tests" ||
+                baseName == "build-cmake-tools" ||
+                baseName == "cache" ||
+                baseName == "result" ||
+                baseName == ".git" ||
+                baseName == "vcpkg_installed" ||
+                baseName == ".direnv"
+              ));
+            src = ./.;
+          };
           nativeBuildInputs = [ 
             unstable.cmake 
             unstable.ninja 

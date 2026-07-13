@@ -55,9 +55,12 @@ function(setup_precompiled_headers TARGET_NAME)
 
     # Apply precompiled headers based on build configuration
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        # In debug builds, use conservative PCH to avoid masking issues
-        target_precompile_headers(${TARGET_NAME} PRIVATE ${SYSTEM_PCH_HEADERS})
-        message(STATUS "Applied system-only PCH for debug build of ${TARGET_NAME}")
+        # In debug builds, we precompile library headers (glaze, SDL) too for maximum local iteration speed
+        target_precompile_headers(${TARGET_NAME} PRIVATE 
+            ${SYSTEM_PCH_HEADERS}
+            ${LIBRARY_PCH_HEADERS}
+        )
+        message(STATUS "Applied system and library PCH for debug build of ${TARGET_NAME}")
     else()
         # In release builds, use aggressive PCH for maximum speed
         target_precompile_headers(${TARGET_NAME} PRIVATE 
