@@ -772,9 +772,10 @@ public:
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         auto now = std::chrono::system_clock::now();
 
-        float card_width = 180.0f;
-        float card_height = 290.0f;
-        float spacing = 12.0f;
+        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float card_width = 180.0f * dpi_scale;
+        float card_height = 290.0f * dpi_scale;
+        float spacing = 12.0f * dpi_scale;
         float avail_width = ImGui::GetContentRegionAvail().x;
         int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
         
@@ -827,19 +828,19 @@ public:
             ImVec4 bg_color = is_emphasized ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
             ImVec4 border_color = is_emphasized ? colors[0] : ImVec4(0.24f, 0.24f, 0.27f, 0.6f);
             
-            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f);
-            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f);
+            draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f * dpi_scale);
+            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f * dpi_scale);
             
             // Padding
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 6.0f));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f * dpi_scale, start_pos.y + 6.0f * dpi_scale));
             ImGui::BeginGroup();
             
             // 1. Draw Image / Placeholder
-            ImVec2 img_size(card_width - 12.0f, 220.0f);
+            ImVec2 img_size(card_width - 12.0f * dpi_scale, 220.0f * dpi_scale);
             ImVec2 img_pos = ImGui::GetCursorScreenPos();
             
             // Invisible button to capture click on cover
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f * dpi_scale);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
@@ -874,7 +875,7 @@ public:
                 draw_list->AddImage(rouen::helpers::texture_id_cast(tex), img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), uv0, uv1);
             } else {
                 // Draw placeholder
-                draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
+                draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f * dpi_scale);
                 std::string placeholder_icon = ICON_MD_RSS_FEED;
                 ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
                 ImVec2 icon_pos = ImVec2(img_pos.x + (img_size.x - icon_size.x) * 0.5f, img_pos.y + (img_size.y - icon_size.y) * 0.5f);
@@ -882,9 +883,9 @@ public:
             }
             
             // 2. Draw Title with proper spacing
-            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f, start_pos.y + 230.0f));
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f * dpi_scale, start_pos.y + 230.0f * dpi_scale));
             const ImVec4 text_color = is_emphasized ? colors[0] : ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImGui::PushTextWrapPos(start_pos.x + card_width - 6.0f);
+            ImGui::PushTextWrapPos(start_pos.x + card_width - 6.0f * dpi_scale);
             ImGui::TextColored(text_color, "%s", title.c_str());
             ImGui::PopTextWrapPos();
             
@@ -894,7 +895,7 @@ public:
             ImGui::SameLine();
             ImGui::TextColored(text_color, "%s", freshness_text.c_str());
             
-            ImGui::SameLine(card_width - 24.0f);
+            ImGui::SameLine(card_width - 24.0f * dpi_scale);
             if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {
                 feeds_to_delete.push_back(feed->source_link);
             }

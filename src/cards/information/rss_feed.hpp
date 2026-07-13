@@ -296,14 +296,15 @@ namespace rouen::cards
                     // Display the feed image (or placeholder) and tags to the side of it
                     ImGui::BeginGroup();
                     
-                    float img_display_w = 100.0f;
-                    float img_display_h = 100.0f;
+                    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+                    float img_display_w = 100.0f * dpi_scale;
+                    float img_display_h = 100.0f * dpi_scale;
                     ImVec2 cur_pos = ImGui::GetCursorScreenPos();
                     
                     if (feed_image_texture && feed_image_width > 0 && feed_image_height > 0) {
                         float aspect_ratio = static_cast<float>(feed_image_width) / static_cast<float>(feed_image_height);
                         float display_width = img_display_h * aspect_ratio;
-                        if (display_width > 120.0f) display_width = 120.0f;
+                        if (display_width > 120.0f * dpi_scale) display_width = 120.0f * dpi_scale;
                         img_display_w = display_width;
                         
                         ImGui::Image(
@@ -312,7 +313,7 @@ namespace rouen::cards
                         );
                     } else {
                         // Draw a placeholder cover box
-                        ImGui::GetWindowDrawList()->AddRectFilled(cur_pos, ImVec2(cur_pos.x + img_display_w, cur_pos.y + img_display_h), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f);
+                        ImGui::GetWindowDrawList()->AddRectFilled(cur_pos, ImVec2(cur_pos.x + img_display_w, cur_pos.y + img_display_h), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f * dpi_scale);
                         std::string placeholder_icon = ICON_MD_RSS_FEED;
                         ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
                         ImVec2 icon_pos = ImVec2(cur_pos.x + (img_display_w - icon_size.x) * 0.5f, cur_pos.y + (img_display_h - icon_size.y) * 0.5f);
@@ -320,7 +321,7 @@ namespace rouen::cards
                         ImGui::Dummy(ImVec2(img_display_w, img_display_h));
                     }
                     
-                    ImGui::SameLine(img_display_w + 16.0f);
+                    ImGui::SameLine(img_display_w + 16.0f * dpi_scale);
                     
                     // Right Side: Language and Tags editor group
                     ImGui::BeginGroup();
@@ -484,13 +485,13 @@ namespace rouen::cards
                                             
                                             if (has_item_image) {
                                                 ImGui::BeginGroup();
-                                                ImGui::PushTextWrapPos(avail_width - 130.0f);
+                                                ImGui::PushTextWrapPos(avail_width - 130.0f * dpi_scale);
                                             } else {
                                                 ImGui::PushTextWrapPos(avail_width);
                                             }
                                             
                                             // Title (selectable to open item)
-                                            if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f : avail_width, 0))) {
+                                            if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f * dpi_scale : avail_width, 0))) {
                                                 // Open item in a new card
                                                 std::string item_uri = std::format("rss-item:{}|||{}|||{}", feed_id, item.link, item.title);
                                                 "create_card"_sfn(item_uri);
@@ -597,9 +598,9 @@ namespace rouen::cards
                                             // Draw thumbnail on the right
                                             if (has_item_image) {
                                                 ImGui::EndGroup();
-                                                ImGui::SameLine(avail_width - 120.0f);
+                                                ImGui::SameLine(avail_width - 120.0f * dpi_scale);
                                                 
-                                                ImVec2 thumb_size(120.0f, 80.0f);
+                                                ImVec2 thumb_size(120.0f * dpi_scale, 80.0f * dpi_scale);
                                                 ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
                                                 const float row_bottom = std::max(ImGui::GetCursorScreenPos().y, thumb_pos.y + thumb_size.y);
                                                 const bool row_hovered = ImGui::IsMouseHoveringRect(

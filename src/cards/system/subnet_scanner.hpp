@@ -196,6 +196,7 @@ public:
     
     bool render() override {
         return render_window([this]() {
+            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
             // Show scanning status if active
             if (is_scanning) {
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Scanning in progress...");
@@ -212,7 +213,7 @@ public:
                 ImGui::TextColored(colors[5], "Active threads: %zu, Queued tasks: %zu", 
                                  thread_pool.get_thread_count(), thread_pool.get_queue_size());
                 
-                if (ImGui::Button("Stop Scan", ImVec2(120, 0))) {
+                if (ImGui::Button("Stop Scan", ImVec2(120.0f * dpi_scale, 0))) {
                     stop_scan();
                 }
             } else {
@@ -236,7 +237,7 @@ public:
                     }
                     
                     ImGui::SameLine();
-                    if (ImGui::Button("Refresh", ImVec2(80, 0))) {
+                    if (ImGui::Button("Refresh", ImVec2(80.0f * dpi_scale, 0))) {
                         detect_local_interfaces();
                     }
                     
@@ -264,14 +265,14 @@ public:
                     ImGui::Separator();
                     
                     ImGui::PushStyleColor(ImGuiCol_Button, colors[2]);
-                    if (ImGui::Button("Start Scan", ImVec2(120, 0)) && !selected_subnet.empty()) {
+                    if (ImGui::Button("Start Scan", ImVec2(120.0f * dpi_scale, 0)) && !selected_subnet.empty()) {
                         start_scan();
                     }
                     ImGui::PopStyleColor();
                     
                     if (!devices.empty()) {
                         ImGui::SameLine();
-                        if (ImGui::Button("Clear Results", ImVec2(120, 0))) {
+                        if (ImGui::Button("Clear Results", ImVec2(120.0f * dpi_scale, 0))) {
                             devices.clear();
                         }
                     }
@@ -285,9 +286,9 @@ public:
                 
                 // Create columns for the results table
                 if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 140.0f * dpi_scale);
                     ImGui::TableSetupColumn("Hostname", ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                    ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f * dpi_scale);
                     ImGui::TableHeadersRow();
                     
                     // Use a mutex to safely access the devices list
