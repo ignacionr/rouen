@@ -421,7 +421,7 @@ public:
                         } else {
                             for (size_t i = 0; i < matching_items.size(); ++i) {
                                 const auto& item = matching_items[i];
-                                ImGui::PushID(item.link.c_str());
+                                ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
 
                                 try {
                                     ImGui::BeginGroup();

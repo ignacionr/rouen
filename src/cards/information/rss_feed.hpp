@@ -459,7 +459,7 @@ namespace rouen::cards
                                 size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
                                 for (size_t i = 0; i < count; ++i) {
                                     auto& item = *filtered_items[i];
-                                    ImGui::PushID(item.link.c_str());
+                                    ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
                                     const ImVec2 row_start = ImGui::GetCursorScreenPos();
                                     
                                     try {
