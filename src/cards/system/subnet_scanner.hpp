@@ -285,8 +285,8 @@ public:
                 ImGui::Text("Discovered Devices: %zu", devices.size());
                 
                 // Create columns for the results table
-                if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 140.0f * dpi_scale);
+                if (ImGui::BeginTable("devices_table", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
+                    ImGui::TableSetupColumn("IP Address", ImGuiTableColumnFlags_WidthFixed, 160.0f * dpi_scale);
                     ImGui::TableSetupColumn("Hostname", ImGuiTableColumnFlags_WidthStretch);
                     ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 70.0f * dpi_scale);
                     ImGui::TableHeadersRow();
