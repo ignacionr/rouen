@@ -265,7 +265,7 @@ public:
                 ImGui::Dummy(ImVec2(0.0f, height + 4.0f));
             }
 
-            // Tag Filter Pills
+            // Tag Filter Pills (with wrapping layout to prevent overflow)
             {
                 std::vector<std::string> tags = rss_host->getAvailableTags();
                 tags.insert(tags.begin(), "All");
@@ -276,14 +276,43 @@ public:
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f); // Pill-shaped!
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 3.0f));
                 
+                const float tags_row_width = ImGui::GetContentRegionAvail().x;
+                float used_row_width = 0.0f;
+                const float tag_spacing = ImGui::GetStyle().ItemSpacing.x;
+                
                 for (size_t i = 0; i < tags.size(); ++i) {
                     const auto& tag = tags[i];
                     bool is_selected = (selected_tag_ == tag);
+                    const bool is_top_fresh = (tag != "All" && top_fresh_tags_.contains(tag));
+                    
+                    const float pill_width =
+                        ImGui::CalcTextSize(tag.c_str()).x +
+                        ImGui::GetStyle().FramePadding.x * 2.0f;
+                    
+                    const bool fits_same_line =
+                        i > 0 &&
+                        (used_row_width + tag_spacing + pill_width <= tags_row_width);
+                    
+                    if (fits_same_line) {
+                        ImGui::SameLine(0.0f, tag_spacing);
+                        used_row_width += tag_spacing + pill_width;
+                    } else {
+                        used_row_width = pill_width;
+                    }
                     
                     if (is_selected) {
                         ImGui::PushStyleColor(ImGuiCol_Button, colors[0]); // Primary theme color
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x * 1.1f, colors[0].y * 1.1f, colors[0].z * 1.1f, colors[0].w));
                         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x * 0.9f, colors[0].y * 0.9f, colors[0].z * 0.9f, colors[0].w));
+                    } else if (is_top_fresh) {
+                        // Distinctive styling for top 4 fresh tags: a warm rose/gold tone matching theme colors
+                        ImVec4 fresh_base = ImVec4(colors[0].x * 0.35f, colors[0].y * 0.15f, colors[0].z * 0.15f, 0.65f);
+                        ImVec4 fresh_hover = ImVec4(colors[0].x * 0.5f, colors[0].y * 0.22f, colors[0].z * 0.22f, 0.85f);
+                        ImVec4 fresh_active = ImVec4(colors[0].x * 0.3f, colors[0].y * 0.12f, colors[0].z * 0.12f, 0.95f);
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Button, fresh_base);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, fresh_hover);
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, fresh_active);
                     } else {
                         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.12f, 0.15f, 0.6f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.25f, 0.8f));
@@ -295,10 +324,6 @@ public:
                     }
                     
                     ImGui::PopStyleColor(3);
-                    
-                    if (i < tags.size() - 1) {
-                        ImGui::SameLine();
-                    }
                 }
                 ImGui::PopStyleVar(2);
                 ImGui::Spacing();
@@ -317,11 +342,32 @@ public:
             float input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
             ImGui::PushItemWidth(input_width);
             
-            ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
+            bool changed = ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
+            if (changed) {
+                last_search_type_time_ = std::chrono::system_clock::now();
+                search_pending_ = true;
+            }
+            
+            // Apply search immediately if Enter is pressed
+            if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+                debounced_search_query_ = search_buffer;
+                search_pending_ = false;
+            }
+            
+            // Debounce logic: update query after 1 second of inactivity
+            if (search_pending_) {
+                auto elapsed = std::chrono::system_clock::now() - last_search_type_time_;
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= 1000) {
+                    debounced_search_query_ = search_buffer;
+                    search_pending_ = false;
+                }
+            }
             
             // Handle ESC key to clear search while maintaining focus
             if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 search_buffer[0] = '\0';
+                debounced_search_query_ = "";
+                search_pending_ = false;
                 // Focus will naturally stay on the input field since we're not changing focus
             }
 
@@ -332,6 +378,8 @@ public:
             ImGui::SameLine();
             if (ImGui::SmallButton("×")) {
                 search_buffer[0] = '\0'; // Clear the search buffer
+                debounced_search_query_ = "";
+                search_pending_ = false;
                 ImGui::SetKeyboardFocusHere(-1); // Focus the previous item (the InputText)
             }
             
@@ -357,22 +405,113 @@ public:
             if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
                 auto all_feeds = rss_host->feeds();
                 
-                // Filter feeds based on selected_tag_
-                std::vector<std::shared_ptr<media::rss::feed>> feeds;
-                if (selected_tag_ == "All") {
-                    feeds = all_feeds;
+                // Check if we need to re-filter and re-sort feeds
+                bool needs_update = false;
+                if (selected_tag_ != last_selected_tag_ || 
+                    all_feeds.size() != last_all_feeds_size_ || 
+                    cached_feeds_.empty()) 
+                {
+                    needs_update = true;
                 } else {
-                    for (const auto& feed : all_feeds) {
-                        if (feed->tags.contains(selected_tag_)) {
-                            feeds.push_back(feed);
+                    for (const auto& f : all_feeds) {
+                        auto item_count = f->items.size();
+                        auto latest_time = f->items.empty() ? std::chrono::system_clock::time_point::min() : f->items.front().updated;
+                        
+                        auto it = feed_states_.find(f->source_link);
+                        if (it == feed_states_.end() || 
+                            it->second.item_count != item_count || 
+                            it->second.latest_item_time != latest_time ||
+                            it->second.tags != f->tags) 
+                        {
+                            needs_update = true;
+                            break;
                         }
                     }
                 }
+                
+                if (needs_update) {
+                    cached_feeds_.clear();
+                    if (selected_tag_ == "All") {
+                        cached_feeds_ = all_feeds;
+                    } else {
+                        for (const auto& feed : all_feeds) {
+                            if (feed->tags.contains(selected_tag_)) {
+                                cached_feeds_.push_back(feed);
+                            }
+                        }
+                    }
+                    
+                    std::sort(cached_feeds_.begin(), cached_feeds_.end(), [](const auto& a, const auto& b) {
+                        auto get_freshness = [](const auto& f) {
+                            if (f->items.empty()) {
+                                return std::chrono::system_clock::time_point::min();
+                            }
+                            auto newest = f->items.front().updated;
+                            for (const auto& item : f->items) {
+                                if (item.updated > newest) {
+                                    newest = item.updated;
+                                }
+                            }
+                            return newest;
+                        };
+                        auto freshness_a = get_freshness(a);
+                        auto freshness_b = get_freshness(b);
+                        if (freshness_a != freshness_b) {
+                            return freshness_a > freshness_b;
+                        }
+                        std::string title_a = a->feed_title.empty() ? a->source_link : a->feed_title;
+                        std::string title_b = b->feed_title.empty() ? b->source_link : b->feed_title;
+                        return title_a < title_b;
+                    });
+                    
+                    // Calculate top 4 fresh tags (excluding "All")
+                    std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> tag_freshness;
+                    std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
+                    
+                    for (const auto& tag : all_possible_tags) {
+                        if (tag == "All") continue;
+                        
+                        auto tag_newest = std::chrono::system_clock::time_point::min();
+                        for (const auto& feed : all_feeds) {
+                            if (feed->tags.contains(tag)) {
+                                for (const auto& item : feed->items) {
+                                    if (item.updated > tag_newest) {
+                                        tag_newest = item.updated;
+                                    }
+                                }
+                            }
+                        }
+                        if (tag_newest != std::chrono::system_clock::time_point::min()) {
+                            tag_freshness.push_back({tag, tag_newest});
+                        }
+                    }
+                    
+                    std::sort(tag_freshness.begin(), tag_freshness.end(), [](const auto& a, const auto& b) {
+                        return a.second > b.second;
+                    });
+                    
+                    top_fresh_tags_.clear();
+                    for (size_t t = 0; t < std::min(static_cast<size_t>(4), tag_freshness.size()); ++t) {
+                        top_fresh_tags_.insert(tag_freshness[t].first);
+                    }
+                    
+                    // Update cache tracking state
+                    feed_states_.clear();
+                    for (const auto& f : all_feeds) {
+                        auto item_count = f->items.size();
+                        auto latest_time = f->items.empty() ? std::chrono::system_clock::time_point::min() : f->items.front().updated;
+                        feed_states_[f->source_link] = FeedCacheState{item_count, latest_time, f->tags};
+                    }
+                    last_selected_tag_ = selected_tag_;
+                    last_all_feeds_size_ = all_feeds.size();
+                }
+                
+                const auto& feeds = cached_feeds_;
 
                 if (feeds.empty()) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No feeds in this category");
                 } else {
-                    std::string search_text = search_buffer;
+                    std::string search_text = debounced_search_query_;
                     if (search_text.empty()) {
                         bool has_matches = false;
                         render_feed_list(feeds, search_text, has_matches);
@@ -1115,6 +1254,23 @@ private:
 
     std::shared_ptr<hosts::RSSHost> rss_host;
     std::vector<std::string> feeds_to_delete;
+
+    // Cached feeds state to avoid filtering and sorting every frame
+    struct FeedCacheState {
+        size_t item_count = 0;
+        std::chrono::system_clock::time_point latest_item_time;
+        std::set<std::string> tags;
+    };
+    std::vector<std::shared_ptr<media::rss::feed>> cached_feeds_;
+    std::string last_selected_tag_ = "";
+    size_t last_all_feeds_size_ = 0;
+    std::unordered_map<std::string, FeedCacheState> feed_states_;
+    std::set<std::string> top_fresh_tags_;
+
+    // Search debouncing state
+    std::string debounced_search_query_ = "";
+    std::chrono::system_clock::time_point last_search_type_time_;
+    bool search_pending_ = false;
 
     SDL_Renderer* renderer = nullptr;
     std::shared_ptr<::helpers::ImageCache> image_cache;

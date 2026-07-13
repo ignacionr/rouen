@@ -176,7 +176,8 @@ namespace media::rss
                     "('Uruguay', 120),"
                     "('Thailand', 130),"
                     "('USA', 140),"
-                    "('Italy', 150)"
+                    "('Italy', 150),"
+                    "('Russia', 160)"
                 );
 
                 // Create indexes for faster lookups
@@ -711,3 +712,4 @@ namespace media::rss
         std::mutex mutex_;  // For thread-safe operations
     };
 }
+
