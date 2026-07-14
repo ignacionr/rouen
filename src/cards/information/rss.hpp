@@ -806,11 +806,6 @@ public:
         int visible_index = 0;
         for (const auto &feed : feeds)
         {
-            if (feed->items.empty())
-            {
-                continue; // Skip feeds with zero items
-            }
-
             ImGui::PushID(feed->source_link.c_str());
 
             std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
