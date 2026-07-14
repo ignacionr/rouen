@@ -11,6 +11,7 @@
 #include "cppgpt.hpp"
 #include "fetch.hpp"
 #include "api_keys.hpp"
+#include "llm_config.hpp"
 #include "../registrar.hpp"
 #include "../models/chess/chess.hpp"
 
@@ -95,18 +96,23 @@ namespace rouen::helpers {
             result.analysis_type = "commentary";
 
             try {
-                // Get API key
-                std::string api_key = ApiKeys::get_grok_api_key();
-                if (api_key.empty()) {
-                    result.error_message = "Grok API key not available";
+                if (!LLMConfig::is_configured()) {
+                    auto settings = LLMConfig::get_current_config();
+                    std::string env_name = LLMConfig::get_api_key_env_name(settings.provider);
+                    result.error_message = std::format("LLM not configured ({} is missing)", env_name);
                     return result;
                 }
 
-                // Create cppgpt instance
-                ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+                auto llm_instance = LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    result.error_message = "Failed to create LLM instance";
+                    return result;
+                }
+
+                auto settings = LLMConfig::get_current_config();
 
                 // Add system instructions for game commentary
-                gpt.add_instructions(
+                llm_instance->add_instructions(
                     "You are a chess expert and commentator. Your task is to provide detailed, engaging commentary "
                     "on the chess game provided. Analyze the moves, strategies, tactics, and key moments. "
                     "Discuss opening principles, middlegame plans, endgame techniques, and any critical blunders or brilliant moves. "
@@ -123,12 +129,12 @@ namespace rouen::helpers {
                 );
 
                 // Send request to AI
-                auto response = gpt.sendMessage(prompt, 
+                auto response = llm_instance->sendMessage(prompt, 
                     [this](const std::string& url, const std::string& data, auto header_client) {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-3-latest"
+                    settings.model_name
                 );
 
                 result.content = response.choices[0].message.content;
@@ -147,18 +153,23 @@ namespace rouen::helpers {
             result.analysis_type = "summary";
 
             try {
-                // Get API key
-                std::string api_key = ApiKeys::get_grok_api_key();
-                if (api_key.empty()) {
-                    result.error_message = "Grok API key not available";
+                if (!LLMConfig::is_configured()) {
+                    auto settings = LLMConfig::get_current_config();
+                    std::string env_name = LLMConfig::get_api_key_env_name(settings.provider);
+                    result.error_message = std::format("LLM not configured ({} is missing)", env_name);
                     return result;
                 }
 
-                // Create cppgpt instance
-                ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+                auto llm_instance = LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    result.error_message = "Failed to create LLM instance";
+                    return result;
+                }
+
+                auto settings = LLMConfig::get_current_config();
 
                 // Add system instructions for game summary
-                gpt.add_instructions(
+                llm_instance->add_instructions(
                     "You are a chess analyst. Your task is to provide a concise summary of the chess game "
                     "along with ONE key strategic insight. The summary should be 2-3 paragraphs maximum, "
                     "covering the opening, critical moments, and outcome. Then provide one important insight "
@@ -174,12 +185,12 @@ namespace rouen::helpers {
                 );
 
                 // Send request to AI
-                auto response = gpt.sendMessage(prompt, 
+                auto response = llm_instance->sendMessage(prompt, 
                     [this](const std::string& url, const std::string& data, auto header_client) {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-3-latest"
+                    settings.model_name
                 );
 
                 result.content = response.choices[0].message.content;
@@ -198,18 +209,23 @@ namespace rouen::helpers {
             result.analysis_type = "improvement";
 
             try {
-                // Get API key
-                std::string api_key = ApiKeys::get_grok_api_key();
-                if (api_key.empty()) {
-                    result.error_message = "Grok API key not available";
+                if (!LLMConfig::is_configured()) {
+                    auto settings = LLMConfig::get_current_config();
+                    std::string env_name = LLMConfig::get_api_key_env_name(settings.provider);
+                    result.error_message = std::format("LLM not configured ({} is missing)", env_name);
                     return result;
                 }
 
-                // Create cppgpt instance
-                ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+                auto llm_instance = LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    result.error_message = "Failed to create LLM instance";
+                    return result;
+                }
+
+                auto settings = LLMConfig::get_current_config();
 
                 // Add system instructions for improvement suggestions
-                gpt.add_instructions(
+                llm_instance->add_instructions(
                     "You are a chess coach. Your task is to analyze the specified player's performance "
                     "in the given chess game and suggest ONE specific area for improvement. "
                     "Focus on concrete, actionable advice such as: opening preparation, tactical awareness, "
@@ -234,12 +250,12 @@ namespace rouen::helpers {
                 );
 
                 // Send request to AI
-                auto response = gpt.sendMessage(prompt, 
+                auto response = llm_instance->sendMessage(prompt, 
                     [this](const std::string& url, const std::string& data, auto header_client) {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-3-latest"
+                    settings.model_name
                 );
 
                 result.content = response.choices[0].message.content;

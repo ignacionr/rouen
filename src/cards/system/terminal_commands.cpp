@@ -1,5 +1,6 @@
 #include "terminal_commands.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/llm_config.hpp"
 
 namespace rouen::cards {
 
@@ -9,7 +10,7 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
                                      std::atomic<bool>& is_command_running, bool use_interactive_bash,
                                      bool& show_sudo_prompt, std::string& sudo_command,
                                      std::string* out_actual_command) {
-    // If use_llm is true, generate a shell command using Grok
+    // If use_llm is true, generate a shell command using unified LLM
     std::string cmd_to_execute = command;
     
     if (use_llm) {
@@ -18,7 +19,7 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
             cmd_to_execute = generated_cmd;
         } else {
             // If command generation failed, fallback to original command
-            output.add_to_output("Failed to generate command with Grok. Using original command.", OutputType::StdErr);
+            output.add_to_output("Failed to generate command with AI. Using original command.", OutputType::StdErr);
         }
     }
     if (out_actual_command) {
@@ -65,38 +66,48 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
 }
 
 std::string TerminalCommands::generate_shell_command(const std::string& description, TerminalOutput& output) {
-    // Get Grok API key using our centralized API key manager
-    std::string api_key = rouen::helpers::ApiKeys::get_grok_api_key();
-    if (api_key.empty()) {
-        output.add_to_output("Error: GROK_API_KEY environment variable is not set.", OutputType::StdErr);
+    // Get global LLM configuration
+    if (!rouen::helpers::LLMConfig::is_configured()) {
+        auto settings = rouen::helpers::LLMConfig::get_current_config();
+        std::string env_name = rouen::helpers::LLMConfig::get_api_key_env_name(settings.provider);
+        output.add_to_output(std::format("Error: Global LLM is not configured. Please set the environment variable: {}", env_name), OutputType::StdErr);
+        return "";
+    }
+
+    auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
+    if (!llm_instance) {
+        output.add_to_output("Error: Failed to create LLM instance.", OutputType::StdErr);
         return "";
     }
     
+    auto settings = rouen::helpers::LLMConfig::get_current_config();
+    
     try {
         // Add a loader to indicate processing
-        output.add_to_output("Generating shell command with Grok AI...", OutputType::System);
-        
-        // Initialize Grok client
-        ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+        output.add_to_output(std::format("Generating shell command with {} AI...", rouen::helpers::LLMConfig::provider_to_string(settings.provider)), OutputType::System);
         
         // Add system instructions for the AI
-        gpt.add_instructions(
+        llm_instance->add_instructions(
             "You are a Linux shell command generator. Convert the user's natural language request into "
             "the most appropriate bash command. Respond ONLY with the exact command, without any explanations, "
             "backticks, markdown formatting or additional text. Only provide a bash command that can be executed "
             "directly in a Linux terminal. Ensure the command is safe and efficient."
         );
         
-        // Send the request to Grok
+        // Send the request to the configured LLM
         http::fetch fetcher;
-        auto response = gpt.sendMessage(
+        auto response = llm_instance->sendMessage(
             description,
             [&fetcher](const std::string& url, const std::string& data, auto header_client) {
                 return fetcher.post(url, data, header_client);
             },
             "user",
-            "grok-3-latest"
+            settings.model_name
         );
+        
+        if (response.choices.empty() || response.choices[0].message.content.empty()) {
+            return "";
+        }
         
         // Extract the command from the response
         std::string command = response.choices[0].message.content;

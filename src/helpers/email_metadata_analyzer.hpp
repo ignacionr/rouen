@@ -12,6 +12,7 @@
 #include "cppgpt.hpp"
 #include "fetch.hpp"
 #include "api_keys.hpp"
+#include "llm_config.hpp"
 #include "platform_utils.hpp"
 #include "../registrar.hpp"
 #include "../models/mail/metadata_repo.hpp"
@@ -40,15 +41,16 @@ namespace mail {
                     return json_result;
                 }
                 
-                // Use centralized API key manager instead of direct environment access
-                std::string api_key = rouen::helpers::ApiKeys::get_grok_api_key();
-                if (api_key.empty()) {
-                    "notify"_sfn("Warning: GROK_API_KEY environment variable not set");
+                // Get global LLM configuration
+                if (!rouen::helpers::LLMConfig::is_configured()) {
+                    auto settings = rouen::helpers::LLMConfig::get_current_config();
+                    std::string env_name = rouen::helpers::LLMConfig::get_api_key_env_name(settings.provider);
+                    "notify"_sfn(std::format("Warning: Global LLM is not configured ({} not set)", env_name));
                     
                     // Create and return basic metadata with error message
                     EmailMetadata metadata;
                     metadata.id = email_id;
-                    metadata.summary = "Email metadata could not be processed. Grok API key not provided.";
+                    metadata.summary = std::format("Email metadata could not be processed. Global LLM is not configured ({} not set).", env_name);
                     
                     // Store the basic metadata
                     repository_.store(metadata);
@@ -61,11 +63,23 @@ namespace mail {
                     return json_result;
                 }
                 
-                // Create cppgpt instance with API key and base URL
-                ignacionr::cppgpt gpt(api_key, ignacionr::cppgpt::grok_base);
+                auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
+                if (!llm_instance) {
+                    "notify"_sfn("Warning: Failed to create LLM instance");
+                    EmailMetadata metadata;
+                    metadata.id = email_id;
+                    metadata.summary = "Email metadata could not be processed. Failed to create LLM instance.";
+                    repository_.store(metadata);
+                    std::string json_result;
+                    auto write_result = glz::write_json(metadata, json_result);
+                    if (write_result) return "{}";
+                    return json_result;
+                }
+                
+                auto settings = rouen::helpers::LLMConfig::get_current_config();
                 
                 // Add system instructions for the AI
-                gpt.add_instructions(
+                llm_instance->add_instructions(
                     "You are an email analyzer. Your task is to analyze the email content and extract metadata. "
                     "Determine the urgency level (0-2, where 0 is not urgent, 1 is moderate, 2 is highly urgent), "
                     "categorize the email (work, personal, updates, promotions, etc.), "
@@ -83,13 +97,13 @@ namespace mail {
                     truncated_content = truncated_content.substr(0, 20000) + "... [content truncated]";
                 }
                 
-                // Send the message to the Grok model
-                auto response = gpt.sendMessage(truncated_content, 
+                // Send the message to the configured model
+                auto response = llm_instance->sendMessage(truncated_content, 
                     [this](const std::string& url, const std::string& data, auto header_client) {
                         return fetcher_.post(url, data, header_client);
                     }, 
                     "user", 
-                    "grok-3-latest"  // Use Grok's model
+                    settings.model_name
                 );
                 
                 // Extract the AI's response from the structured response
