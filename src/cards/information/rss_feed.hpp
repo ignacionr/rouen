@@ -42,10 +42,17 @@ namespace rouen::cards
             get_color(3, ImVec4(0.8f, 0.8f, 0.8f, 1.0f)); // Light gray for descriptions
             get_color(4, ImVec4(0.6f, 0.9f, 0.6f, 1.0f)); // Light green for links
 
+            std::string clean_feed_str = feed_id_str;
+            if (clean_feed_str.find(":play") != std::string::npos) {
+                play_on_load = true;
+                size_t colon_play = clean_feed_str.find(":play");
+                clean_feed_str = clean_feed_str.substr(0, colon_play);
+            }
+
             // Parse the feed ID
             try
             {
-                feed_id = std::stoll(feed_id_str);
+                feed_id = std::stoll(clean_feed_str);
             }
             catch (...)
             {
@@ -238,8 +245,25 @@ namespace rouen::cards
             if (items_loaded_.load())
             {
                 items_loaded_ = false;
-                std::lock_guard<std::mutex> lock(items_mutex_);
-                items = std::move(pending_items_);
+                {
+                    std::lock_guard<std::mutex> lock(items_mutex_);
+                    items = std::move(pending_items_);
+                }
+                
+                if (play_on_load) {
+                    play_on_load = false; // Only trigger once
+                    if (!items.empty()) {
+                        // Find the freshest item (the one with the latest publish_date)
+                        auto freshest_it = std::max_element(items.begin(), items.end(), [](const auto& a, const auto& b) {
+                            return a.publish_date < b.publish_date;
+                        });
+                        
+                        if (freshest_it != items.end()) {
+                            std::string item_uri = std::format("rss-item:{}|||{}|||{}|||play", feed_id, freshest_it->link, freshest_it->title);
+                            "create_card"_sfn(item_uri);
+                        }
+                    }
+                }
             }
             
             try
@@ -737,6 +761,7 @@ namespace rouen::cards
         inline static std::mutex speaking_mutex;
 
         long long feed_id = -1;
+        bool play_on_load = false;
         int items_limit = 20;
         char search_buffer[256] = "";
         std::string feed_title;

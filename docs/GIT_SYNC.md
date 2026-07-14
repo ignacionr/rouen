@@ -16,8 +16,8 @@ graph TD
     D -->|Import on Startup| E[Local Databases / Files]
 ```
 
-1. **On Startup**: If auto-sync is enabled, Rouen pulls from the remote Git repository, then deserializes and imports the text representations (Markdown notes, prettified JSON files) back into your local SQLite databases and config files.
-2. **On Shutdown**: Rouen exports your local databases to the Git cache directory as structured, sorted, and pretty-printed JSON/Markdown files, stages them, commits, and pushes them to your remote repository.
+1. **On Startup**: If auto-sync is enabled, Rouen performs a full Two-Way Sync (pulling and merging remote changes, importing them, and then exporting and pushing any local offline edits to the remote) to ensure local and remote are fully synchronized.
+2. **On Shutdown**: If auto-sync is enabled, Rouen performs a full Two-Way Sync (pulling and merging concurrent remote edits, importing them, and then exporting and pushing the merged local databases to the remote) to ensure no updates are lost.
 
 ---
 

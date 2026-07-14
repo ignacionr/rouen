@@ -343,9 +343,9 @@ namespace rouen::helpers {
         register_config("ROUEN_SYNC_CACHE_PATH", Category::GENERAL, false, false,
                        "Local cache path directory for sync repository");
         register_config("ROUEN_SYNC_AUTO_ON_STARTUP", Category::GENERAL, false, false,
-                       "Enable auto sync on application startup (1=true, 0=false)", "0");
+                       "Enable auto two-way sync on application startup (1=true, 0=false)", "0");
         register_config("ROUEN_SYNC_AUTO_ON_SHUTDOWN", Category::GENERAL, false, false,
-                       "Enable auto sync on application shutdown (1=true, 0=false)", "0");
+                       "Enable auto two-way sync on application shutdown (1=true, 0=false)", "0");
 
         CONFIG_INFO("Default configurations registered");
     }

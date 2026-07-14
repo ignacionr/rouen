@@ -33,15 +33,29 @@ public:
         get_color(4, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green for playing status
         get_color(5, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red for stop/error status
         
+        // Check for play hint suffix
+        std::string clean_info = item_info;
+        size_t play_pos = clean_info.rfind("|||play");
+        if (play_pos != std::string::npos && play_pos + 7 == clean_info.length()) {
+            auto_play = true;
+            clean_info = clean_info.substr(0, play_pos);
+        } else {
+            size_t comma_play_pos = clean_info.rfind(",play");
+            if (comma_play_pos != std::string::npos && comma_play_pos + 5 == clean_info.length()) {
+                auto_play = true;
+                clean_info = clean_info.substr(0, comma_play_pos);
+            }
+        }
+
         // Parse the feed_id,link,title info (separated by ||| or fallback to comma)
-        size_t first_delim = item_info.find("|||");
-        size_t second_delim = (first_delim != std::string::npos) ? item_info.find("|||", first_delim + 3) : std::string::npos;
+        size_t first_delim = clean_info.find("|||");
+        size_t second_delim = (first_delim != std::string::npos) ? clean_info.find("|||", first_delim + 3) : std::string::npos;
         
         if (first_delim != std::string::npos && second_delim != std::string::npos) {
             try {
-                feed_id = std::stoll(item_info.substr(0, first_delim));
-                item_link = item_info.substr(first_delim + 3, second_delim - (first_delim + 3));
-                item_title = item_info.substr(second_delim + 3);
+                feed_id = std::stoll(clean_info.substr(0, first_delim));
+                item_link = clean_info.substr(first_delim + 3, second_delim - (first_delim + 3));
+                item_title = clean_info.substr(second_delim + 3);
                 
                 // Get the RSS host controller
                 rss_host = rss::getHost();
@@ -53,11 +67,11 @@ public:
             }
         } else {
             // Fallback to comma parsing for compatibility with legacy URLs
-            size_t comma_pos = item_info.find(',');
+            size_t comma_pos = clean_info.find(',');
             if (comma_pos != std::string::npos) {
                 try {
-                    feed_id = std::stoll(item_info.substr(0, comma_pos));
-                    item_link = item_info.substr(comma_pos + 1);
+                    feed_id = std::stoll(clean_info.substr(0, comma_pos));
+                    item_link = clean_info.substr(comma_pos + 1);
                     rss_host = rss::getHost();
                     loadItem();
                 } catch (...) {
@@ -181,6 +195,27 @@ public:
                     if (!item_loaded) {
                         ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Failed to load item");
                         return;
+                    }
+
+                    // Auto-play trigger on first render frame
+                    std::string playable_url = get_playable_media_url();
+                    if (auto_play && !playable_url.empty()) {
+                        auto_play = false; // Only trigger once
+                        
+                        ImGui::PushID(playable_url.c_str());
+                        ImGuiID player_id = ImGui::GetID("MediaPlayer");
+                        auto& global_item = media_player::items()[player_id];
+                        ImGui::PopID();
+                        
+                        global_item.url = playable_url;
+                        global_item.feed_id = feed_id;
+                        global_item.item_link = item_link;
+                        global_item.item_title = item_title;
+                        global_item.watermark = item.watermark;
+                        
+                        media_player::stopAll();
+                        global_item.start_offset = global_item.watermark.value_or(0.0);
+                        global_item.playMedia();
                     }
                     
                     // Original URL link
@@ -390,11 +425,27 @@ private:
     std::string item_link;
     std::string item_title;
     bool item_loaded = false;
+    bool auto_play = false;
     std::shared_ptr<hosts::RSSHost> rss_host;
     hosts::RSSHost::FeedItem item; // Use the FeedItem from the controller
     
     // Use the media_player helper for media playback
     media_player::item media;
+
+    std::string get_playable_media_url() const {
+        if (!item.enclosure.empty()) {
+            return item.enclosure;
+        }
+        if (!item.extracted_media_urls.empty()) {
+            return item.extracted_media_urls[0].url;
+        }
+        if (item.link.find("youtube.com") != std::string::npos || 
+            item.link.find("youtu.be") != std::string::npos ||
+            item.link.find("vimeo.com") != std::string::npos) {
+            return item.link;
+        }
+        return "";
+    }
 
     SDL_Renderer* renderer = nullptr;
     std::shared_ptr<::helpers::ImageCache> image_cache;

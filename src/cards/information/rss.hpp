@@ -4,6 +4,7 @@
 #include <chrono>
 #include <format>
 #include "../../helpers/imgui_include.hpp"
+#include "../../external/IconsMaterialDesign.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -704,6 +705,27 @@ public:
                     ImGui::TextDisabled("Adjusts timeout dynamically (adds +20s per failure, up to 180s).");
                 }
             }
+
+            if (show_delete_confirm_) {
+                ImGui::OpenPopup("Delete Feed?");
+                show_delete_confirm_ = false;
+            }
+
+            if (ImGui::BeginPopupModal("Delete Feed?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("Are you sure you want to permanently delete the feed:\n\"%s\"?", feed_to_delete_title_.c_str());
+                ImGui::Separator();
+                
+                if (ImGui::Button("Delete", ImVec2(120, 0))) {
+                    feeds_to_delete.push_back(feed_to_delete_url_);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SetItemDefaultFocus();
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
         });
     }
 
@@ -895,16 +917,32 @@ public:
             ImGui::SameLine();
             ImGui::TextColored(text_color, "%s", freshness_text.c_str());
             
+            bool play_clicked = false;
+            bool delete_clicked = false;
+            
+            ImGui::SameLine(card_width - 54.0f * dpi_scale);
+            if (ImGui::SmallButton(std::format("{}##play_{}", ICON_MD_PLAY_ARROW, feed->repo_id).c_str())) {
+                play_clicked = true;
+            }
             ImGui::SameLine(card_width - 24.0f * dpi_scale);
             if (ImGui::SmallButton(std::format("×##del_{}", feed->repo_id).c_str())) {
-                feeds_to_delete.push_back(feed->source_link);
+                delete_clicked = true;
             }
             
             ImGui::EndGroup();
             
-            if (card_activated || cover_clicked) {
+            if ((card_activated || cover_clicked) && !play_clicked && !delete_clicked) {
                 std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
                 "create_card"_sfn(feed_uri);
+            }
+            if (play_clicked) {
+                std::string feed_uri = std::format("rss-feed:{}:play", feed->repo_id);
+                "create_card"_sfn(feed_uri);
+            }
+            if (delete_clicked) {
+                feed_to_delete_url_ = feed->source_link;
+                feed_to_delete_title_ = title;
+                show_delete_confirm_ = true;
             }
             
             // Reset cursor back to the start of the card box but advanced by width + spacing
@@ -1255,6 +1293,9 @@ private:
 
     std::shared_ptr<hosts::RSSHost> rss_host;
     std::vector<std::string> feeds_to_delete;
+    std::string feed_to_delete_url_;
+    std::string feed_to_delete_title_;
+    bool show_delete_confirm_ = false;
 
     // Cached feeds state to avoid filtering and sorting every frame
     struct FeedCacheState {

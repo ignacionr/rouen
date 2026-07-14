@@ -184,8 +184,8 @@ int main() {
     
     // Run startup synchronization if enabled
     if (config_service->get_env("ROUEN_SYNC_AUTO_ON_STARTUP") == "1") {
-        std::cout << "[INFO] Auto-sync on startup is enabled. Running Sync In...\n";
-        rouen::helpers::UniversalSyncService::instance().sync_in();
+        std::cout << "[INFO] Auto-sync on startup is enabled. Running Two-Way Sync...\n";
+        rouen::helpers::UniversalSyncService::instance().sync_twoway("Auto-sync startup update");
     }
     
     // Create and initialize the main window
@@ -204,8 +204,8 @@ int main() {
 
     // Run shutdown synchronization if enabled
     if (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1") {
-        std::cout << "[INFO] Auto-sync on shutdown is enabled. Running Sync Out...\n";
-        rouen::helpers::UniversalSyncService::instance().sync_out("Auto-sync shutdown push");
+        std::cout << "[INFO] Auto-sync on shutdown is enabled. Running Two-Way Sync...\n";
+        rouen::helpers::UniversalSyncService::instance().sync_twoway("Auto-sync shutdown update");
     }
 
     return 0;
