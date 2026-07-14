@@ -613,6 +613,7 @@ namespace rouen::cards {
                         
                         // Try to use function calling if we have a Gemini adapter directly
                         auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
+                        fetcher->set_max_retries(3);
                         auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
                             return adapter_ptr->sendMessageWithFunctionCalling(
                                 message,
@@ -707,6 +708,7 @@ namespace rouen::cards {
                 
                 // Create a shared fetcher instance for this request to avoid accessing member fetcher_
                 async_context->fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
+                async_context->fetcher->set_max_retries(3);
                 
                 // Create a new LLM instance for this async operation rather than copying the existing one
                 auto async_llm_instance = helpers::LLMConfig::create_llm_instance();

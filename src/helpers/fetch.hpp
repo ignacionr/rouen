@@ -12,6 +12,8 @@
 #include <filesystem>
 #include <unordered_map>
 #include <cctype>
+#include <thread>
+#include <chrono>
 
 #include "debug.hpp"
 
@@ -52,6 +54,30 @@ public:
     
 private:
     CURL* handle;
+};
+
+// RAII wrapper for curl_slist to ensure exception safety and prevent memory leaks
+class curl_slist_guard {
+public:
+    curl_slist_guard() = default;
+    ~curl_slist_guard() {
+        if (list_) {
+            curl_slist_free_all(list_);
+        }
+    }
+    
+    // Disable copy
+    curl_slist_guard(const curl_slist_guard&) = delete;
+    curl_slist_guard& operator=(const curl_slist_guard&) = delete;
+    
+    void append(const std::string& header) {
+        list_ = curl_slist_append(list_, header.c_str());
+    }
+    
+    struct curl_slist* get() const { return list_; }
+    
+private:
+    struct curl_slist* list_ = nullptr;
 };
 
 // Default callback function for CURL to write data
@@ -190,18 +216,18 @@ public:
     };
     
     // Constructor with default timeout
-    fetch() : timeout_(30), connect_timeout_(10), ssl_options_(get_ssl_options_from_env()) {
+    fetch() : timeout_(30), connect_timeout_(30), ssl_options_(get_ssl_options_from_env()) {
         initialize_curl();
     }
     
     // Constructor with custom timeout
-    explicit fetch(long timeout) : timeout_(timeout), connect_timeout_(timeout > 10 ? 10 : timeout), ssl_options_(get_ssl_options_from_env()) {
+    explicit fetch(long timeout) : timeout_(timeout), connect_timeout_(timeout > 30 ? 30 : timeout), ssl_options_(get_ssl_options_from_env()) {
         initialize_curl();
         HTTP_INFO_FMT("Created fetch client with timeout: {}s", timeout);
     }
     
     // Constructor with custom timeout and SSL options
-    fetch(long timeout, const SSLOptions& ssl_opts) : timeout_(timeout), connect_timeout_(timeout > 10 ? 10 : timeout), ssl_options_(ssl_opts) {
+    fetch(long timeout, const SSLOptions& ssl_opts) : timeout_(timeout), connect_timeout_(timeout > 30 ? 30 : timeout), ssl_options_(ssl_opts) {
         initialize_curl();
         HTTP_INFO_FMT("Created fetch client with timeout: {}s and custom SSL options", timeout);
         log_ssl_options();
@@ -216,6 +242,24 @@ public:
     // Get current SSL options
     const SSLOptions& get_ssl_options() const {
         return ssl_options_;
+    }
+    
+    // Set/Get max retries on failure
+    void set_max_retries(int max_retries) {
+        max_retries_ = max_retries;
+    }
+    
+    int get_max_retries() const {
+        return max_retries_;
+    }
+    
+    // Set/Get initial retry delay in seconds
+    void set_retry_delay_seconds(long delay) {
+        retry_delay_seconds_ = delay;
+    }
+    
+    long get_retry_delay_seconds() const {
+        return retry_delay_seconds_;
     }
     
     bool last_redirect_was_permanent() const {
@@ -246,11 +290,12 @@ public:
         void* custom_data = nullptr
     ) {
         std::lock_guard<std::mutex> request_lock(request_mutex_);
-        last_redirect_was_permanent_ = false;
-        header_redirect_flag = false;
-        redirect_was_permanent = false;
-        last_effective_url_ = url;
-        try {
+        return execute_with_retry(url, [&]() {
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_effective_url_ = url;
+            
             // Create a CURL handle
             curl_handle handle;
             
@@ -295,22 +340,17 @@ public:
             configure_ssl_options(handle.get());
             
             // Add custom headers if provided
-            struct curl_slist* curl_headers = nullptr;
+            curl_slist_guard headers_guard;
             if (!headers.empty()) {
                 for (const auto& header : headers) {
-                    curl_headers = curl_slist_append(curl_headers, header.c_str());
+                    headers_guard.append(header);
                 }
-                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, curl_headers);
+                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers_guard.get());
             }
             
             // Perform the request
             HTTP_INFO_FMT("Fetching URL: {}", url);
             CURLcode res = curl_easy_perform(handle.get());
-            
-            // Clean up headers if set
-            if (curl_headers) {
-                curl_slist_free_all(curl_headers);
-            }
             
             // Check for errors
             if (res != CURLE_OK) {
@@ -341,10 +381,7 @@ public:
             }
             
             return response;
-        } catch (const std::exception& e) {
-            HTTP_ERROR_FMT("Exception during fetch: {}", e.what());
-            throw;
-        }
+        });
     }
     
     // GET with lambda for header setup (used by existing code)
@@ -356,11 +393,12 @@ public:
         void* custom_data = nullptr
     ) {
         std::lock_guard<std::mutex> request_lock(request_mutex_);
-        last_redirect_was_permanent_ = false;
-        header_redirect_flag = false;
-        redirect_was_permanent = false;
-        last_effective_url_ = url;
-        try {
+        return execute_with_retry(url, [&]() {
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_effective_url_ = url;
+            
             // Create a CURL handle
             curl_handle handle;
             
@@ -405,26 +443,21 @@ public:
             configure_ssl_options(handle.get());
             
             // Setup headers using the provided setter
-            struct curl_slist* curl_headers = nullptr;
-            auto header_appender = [&curl_headers](const std::string& header) {
-                curl_headers = curl_slist_append(curl_headers, header.c_str());
+            curl_slist_guard headers_guard;
+            auto header_appender = [&headers_guard](const std::string& header) {
+                headers_guard.append(header);
             };
             
             // Call the header setter with our header_appender function
             header_setter(header_appender);
             
-            if (curl_headers) {
-                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, curl_headers);
+            if (headers_guard.get()) {
+                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers_guard.get());
             }
             
             // Perform the request
             HTTP_INFO_FMT("Fetching URL: {}", url);
             CURLcode res = curl_easy_perform(handle.get());
-            
-            // Clean up headers if set
-            if (curl_headers) {
-                curl_slist_free_all(curl_headers);
-            }
             
             // Check for errors
             if (res != CURLE_OK) {
@@ -455,10 +488,7 @@ public:
             }
             
             return response;
-        } catch (const std::exception& e) {
-            HTTP_ERROR_FMT("Exception during fetch: {}", e.what());
-            throw;
-        }
+        });
     }
     
     // Basic POST request with vector of headers
@@ -470,7 +500,7 @@ public:
         void* custom_data = nullptr
     ) {
         std::lock_guard<std::mutex> request_lock(request_mutex_);
-        try {
+        return execute_with_retry(url, [&]() {
             // Create a CURL handle
             curl_handle handle;
             
@@ -509,22 +539,17 @@ public:
             configure_ssl_options(handle.get());
             
             // Add custom headers if provided
-            struct curl_slist* curl_headers = nullptr;
+            curl_slist_guard headers_guard;
             if (!headers.empty()) {
                 for (const auto& header : headers) {
-                    curl_headers = curl_slist_append(curl_headers, header.c_str());
+                    headers_guard.append(header);
                 }
-                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, curl_headers);
+                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers_guard.get());
             }
             
             // Perform the request
             HTTP_INFO_FMT("Posting to URL: {}", url);
             CURLcode res = curl_easy_perform(handle.get());
-            
-            // Clean up headers if set
-            if (curl_headers) {
-                curl_slist_free_all(curl_headers);
-            }
             
             // Check for errors
             if (res != CURLE_OK) {
@@ -548,10 +573,7 @@ public:
             }
             
             return response;
-        } catch (const std::exception& e) {
-            HTTP_ERROR_FMT("Exception during POST: {}", e.what());
-            throw;
-        }
+        });
     }
     
     // POST with lambda for header setup (used by existing code)
@@ -564,7 +586,7 @@ public:
         void* custom_data = nullptr
     ) {
         std::lock_guard<std::mutex> request_lock(request_mutex_);
-        try {
+        return execute_with_retry(url, [&]() {
             // Create a CURL handle
             curl_handle handle;
             
@@ -603,26 +625,21 @@ public:
             configure_ssl_options(handle.get());
             
             // Setup headers using the provided setter
-            struct curl_slist* curl_headers = nullptr;
-            auto header_appender = [&curl_headers](const std::string& header) {
-                curl_headers = curl_slist_append(curl_headers, header.c_str());
+            curl_slist_guard headers_guard;
+            auto header_appender = [&headers_guard](const std::string& header) {
+                headers_guard.append(header);
             };
             
             // Call the header setter with our header_appender function
             header_setter(header_appender);
             
-            if (curl_headers) {
-                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, curl_headers);
+            if (headers_guard.get()) {
+                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers_guard.get());
             }
             
             // Perform the request
             HTTP_INFO_FMT("Posting to URL: {}", url);
             CURLcode res = curl_easy_perform(handle.get());
-            
-            // Clean up headers if set
-            if (curl_headers) {
-                curl_slist_free_all(curl_headers);
-            }
             
             // Check for errors
             if (res != CURLE_OK) {
@@ -656,10 +673,7 @@ public:
             }
             
             return response;
-        } catch (const std::exception& e) {
-            HTTP_ERROR_FMT("Exception during POST: {}", e.what());
-            throw;
-        }
+        });
     }
     
     // PUT request method
@@ -671,7 +685,7 @@ public:
         void* custom_data = nullptr
     ) {
         std::lock_guard<std::mutex> request_lock(request_mutex_);
-        try {
+        return execute_with_retry(url, [&]() {
             // Create a CURL handle
             curl_handle handle;
             
@@ -710,21 +724,16 @@ public:
             configure_ssl_options(handle.get());
             
             // Add custom headers if provided
-            struct curl_slist* curl_headers = nullptr;
+            curl_slist_guard headers_guard;
             if (!headers.empty()) {
                 for (const auto& header : headers) {
-                    curl_headers = curl_slist_append(curl_headers, header.c_str());
+                    headers_guard.append(header);
                 }
-                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, curl_headers);
+                curl_easy_setopt(handle.get(), CURLOPT_HTTPHEADER, headers_guard.get());
             }
             
             // Perform the request
             CURLcode res = curl_easy_perform(handle.get());
-            
-            // Clean up headers
-            if (curl_headers) {
-                curl_slist_free_all(curl_headers);
-            }
             
             // Check for errors
             if (res != CURLE_OK) {
@@ -749,21 +758,40 @@ public:
             }
             
             return response;
-        } catch (const std::exception& e) {
-            HTTP_ERROR_FMT("Exception during PUT: {}", e.what());
-            throw;
-        }
+        });
     }
     
 private:
     long timeout_;        // Request timeout in seconds
     long connect_timeout_; // Connection timeout in seconds
+    int max_retries_ = 0;       // Number of retries on failure
+    long retry_delay_seconds_ = 2; // Initial delay between retries in seconds
     SSLOptions ssl_options_; // SSL/TLS configuration options
     bool last_redirect_was_permanent_ = false;
     std::string last_effective_url_;
     long last_http_code_ = 0;
     std::unordered_map<std::string, std::string> last_response_headers_;
     mutable std::mutex request_mutex_;
+
+    template<typename Func>
+    std::string execute_with_retry(const std::string& url, Func&& request_func) {
+        int attempts = 0;
+        while (true) {
+            try {
+                return request_func();
+            } catch (const std::exception& e) {
+                attempts++;
+                if (attempts > max_retries_) {
+                    HTTP_ERROR_FMT("Request to {} failed after {} attempts: {}", url, attempts, e.what());
+                    throw;
+                }
+                long delay = retry_delay_seconds_ * (1 << (attempts - 1));
+                HTTP_WARN_FMT("Request to {} failed (attempt {}/{}): {}. Retrying in {}s...", 
+                              url, attempts, max_retries_, e.what(), delay);
+                std::this_thread::sleep_for(std::chrono::seconds(delay));
+            }
+        }
+    }
     
     // Initialize CURL globally
     void initialize_curl() {
