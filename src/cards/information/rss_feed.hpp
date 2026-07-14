@@ -236,6 +236,10 @@ namespace rouen::cards
 
         bool render() override
         {
+            if (should_close)
+            {
+                return false;
+            }
             if (feed_image_downloaded_.load())
             {
                 feed_image_downloaded_ = false;
@@ -438,6 +442,35 @@ namespace rouen::cards
                     // Show total item count
                     ImGui::Spacing();
                     ImGui::TextColored(colors[2], "Items: %zu", items.size());
+                    
+                    // Delete Feed Button
+                    ImGui::Spacing();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 0.8f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 0.9f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                    if (ImGui::Button("Delete Feed")) {
+                        ImGui::OpenPopup("Delete Feed?");
+                    }
+                    ImGui::PopStyleColor(3);
+                    
+                    if (ImGui::BeginPopupModal("Delete Feed?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                        ImGui::Text("Are you sure you want to permanently delete this feed?\n\"%s\"", feed_title.c_str());
+                        ImGui::Separator();
+                        
+                        if (ImGui::Button("Delete", ImVec2(120.0f * dpi_scale, 0))) {
+                            if (rss_host) {
+                                rss_host->deleteFeed(feed_url);
+                            }
+                            should_close = true;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::SetItemDefaultFocus();
+                        ImGui::SameLine();
+                        if (ImGui::Button("Cancel", ImVec2(120.0f * dpi_scale, 0))) {
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::EndPopup();
+                    }
                     
                     ImGui::EndGroup();
                     
@@ -762,6 +795,7 @@ namespace rouen::cards
 
         long long feed_id = -1;
         bool play_on_load = false;
+        bool should_close = false;
         int items_limit = 20;
         char search_buffer[256] = "";
         std::string feed_title;
