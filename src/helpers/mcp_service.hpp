@@ -107,6 +107,12 @@ private:
     
     // Helper to validate JSON parameters against schema
     bool validate_parameters(const std::string& params, const std::string& schema) const;
+    
+    // System information cached at startup
+    std::string cached_system_info_;
+    
+    // Detect OS type, version, and installed package managers
+    void detect_system_info();
 };
 
 } // namespace rouen::helpers

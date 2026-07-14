@@ -1,5 +1,6 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm>
+#include <fstream>
 #include <sstream>
 
 // 2. Libraries used in the project, in alphabetic order
@@ -18,10 +19,12 @@ struct local_command_request {
 };
 
 mcp_service::mcp_service() {
+    detect_system_info();
+
     // Register default run_local_command function associated with terminal
     function_definition run_cmd_def(
         "run_local_command",
-        "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl.",
+        "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl. Host system info: " + cached_system_info_,
         R"mcp({
             "type": "object",
             "properties": {
@@ -197,6 +200,100 @@ bool mcp_service::validate_parameters(const std::string& params, const std::stri
         DEBUG_WARN("MCP: Parameter validation error: " + std::string(e.what()));
         return false;
     }
+}
+
+void mcp_service::detect_system_info() {
+    std::string os_type;
+    std::string os_version;
+    
+#if defined(__APPLE__)
+    os_type = "macOS";
+    std::string sw_vers_out = ProcessHelper::executeCommand("sw_vers -productVersion");
+    if (!sw_vers_out.empty()) {
+        sw_vers_out.erase(sw_vers_out.find_last_not_of(" \t\r\n") + 1);
+        os_version = sw_vers_out;
+    } else {
+        os_version = "unknown";
+    }
+#elif defined(__linux__)
+    os_type = "Linux";
+    std::ifstream release_file("/etc/os-release");
+    if (release_file.is_open()) {
+        std::string line;
+        while (std::getline(release_file, line)) {
+            if (line.starts_with("PRETTY_NAME=")) {
+                std::string pretty = line.substr(12);
+                if (pretty.size() >= 2 && pretty.front() == '"' && pretty.back() == '"') {
+                    pretty = pretty.substr(1, pretty.size() - 2);
+                }
+                os_version = pretty;
+                break;
+            }
+        }
+    }
+    if (os_version.empty()) {
+        std::string uname_out = ProcessHelper::executeCommand("uname -r");
+        if (!uname_out.empty()) {
+            uname_out.erase(uname_out.find_last_not_of(" \t\r\n") + 1);
+            os_version = uname_out;
+        } else {
+            os_version = "unknown";
+        }
+    }
+#elif defined(_WIN32)
+    os_type = "Windows";
+    std::string ver_out = ProcessHelper::executeCommand("ver");
+    if (!ver_out.empty()) {
+        ver_out.erase(0, ver_out.find_first_not_of(" \t\r\n"));
+        ver_out.erase(ver_out.find_last_not_of(" \t\r\n") + 1);
+        os_version = ver_out;
+    } else {
+        os_version = "unknown";
+    }
+#else
+    os_type = "Unknown OS";
+    os_version = "unknown";
+#endif
+
+    std::vector<std::string> found;
+#if defined(__APPLE__) || defined(__linux__)
+    std::string cmd = "for cmd in brew nix apt dnf pacman yum zypper apk port; do command -v $cmd >/dev/null 2>&1 && echo $cmd; done";
+    std::string output = ProcessHelper::executeCommand(cmd);
+    std::stringstream ss(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (!line.empty()) {
+            found.push_back(line);
+        }
+    }
+#elif defined(_WIN32)
+    std::string cmd = "for %i in (winget choco scoop) do @where %i >nul 2>&1 && echo %i";
+    std::string output = ProcessHelper::executeCommand(cmd);
+    std::stringstream ss(output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        if (!line.empty()) {
+            found.push_back(line);
+        }
+    }
+#endif
+
+    std::string pkgs;
+    if (found.empty()) {
+        pkgs = "none detected";
+    } else {
+        for (size_t i = 0; i < found.size(); ++i) {
+            if (i > 0) pkgs += ", ";
+            pkgs += found[i];
+        }
+    }
+
+    cached_system_info_ = "OS: " + os_type + " (" + os_version + "), Installed Package Managers: " + pkgs;
+    DEBUG_TRACE("MCP: Cached system info: " + cached_system_info_);
 }
 
 } // namespace rouen::helpers

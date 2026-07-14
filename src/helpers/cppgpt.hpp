@@ -591,7 +591,7 @@ namespace ignacionr
             std::string final_text;
             bool keep_calling = true;
             int iterations = 0;
-            const int max_iterations = 5;
+            const int max_iterations = 10;
             
             while (keep_calling && iterations < max_iterations) {
                 iterations++;
@@ -664,6 +664,17 @@ namespace ignacionr
                 } else {
                     final_text = choice.message.content.value_or("");
                     keep_calling = false;
+                }
+            }
+            
+            // If the loop finished and final_text is still empty (e.g. because we hit the max iterations),
+            // fallback to the last assistant message content in the conversation history
+            if (final_text.empty()) {
+                for (auto it = chat_history.rbegin(); it != chat_history.rend(); ++it) {
+                    if (it->role == "assistant" && !it->content.empty()) {
+                        final_text = it->content;
+                        break;
+                    }
                 }
             }
             
