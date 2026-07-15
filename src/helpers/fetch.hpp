@@ -289,13 +289,12 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
-        std::lock_guard<std::mutex> request_lock(request_mutex_);
         return execute_with_retry(url, [&]() {
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
+            last_http_code_ = 0;
             last_effective_url_ = url;
-            
             // Create a CURL handle
             curl_handle handle;
             
@@ -360,6 +359,7 @@ public:
             // Check HTTP status code
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
+            last_http_code_ = http_code;
             
             last_redirect_was_permanent_ = redirect_was_permanent;
             char* eff_url = nullptr;
@@ -392,13 +392,12 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
-        std::lock_guard<std::mutex> request_lock(request_mutex_);
         return execute_with_retry(url, [&]() {
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
+            last_http_code_ = 0;
             last_effective_url_ = url;
-            
             // Create a CURL handle
             curl_handle handle;
             
@@ -467,6 +466,7 @@ public:
             // Check HTTP status code
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
+            last_http_code_ = http_code;
             
             last_redirect_was_permanent_ = redirect_was_permanent;
             char* eff_url = nullptr;
@@ -499,8 +499,12 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
-        std::lock_guard<std::mutex> request_lock(request_mutex_);
         return execute_with_retry(url, [&]() {
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_http_code_ = 0;
+            last_effective_url_ = url;
             // Create a CURL handle
             curl_handle handle;
             
@@ -531,6 +535,17 @@ public:
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
+            
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -559,6 +574,14 @@ public:
             // Check HTTP status code
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
+            last_http_code_ = http_code;
+            
+            last_redirect_was_permanent_ = redirect_was_permanent;
+            char* eff_url = nullptr;
+            curl_easy_getinfo(handle.get(), CURLINFO_EFFECTIVE_URL, &eff_url);
+            if (eff_url) {
+                last_effective_url_ = eff_url;
+            }
             
             if (http_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
@@ -585,8 +608,12 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
-        std::lock_guard<std::mutex> request_lock(request_mutex_);
         return execute_with_retry(url, [&]() {
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_http_code_ = 0;
+            last_effective_url_ = url;
             // Create a CURL handle
             curl_handle handle;
             
@@ -617,6 +644,17 @@ public:
             // Enable automatic redirect following
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
+            
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
@@ -649,6 +687,14 @@ public:
             // Check HTTP status code
             long http_code = 0;
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &http_code);
+            last_http_code_ = http_code;
+            
+            last_redirect_was_permanent_ = redirect_was_permanent;
+            char* eff_url = nullptr;
+            curl_easy_getinfo(handle.get(), CURLINFO_EFFECTIVE_URL, &eff_url);
+            if (eff_url) {
+                last_effective_url_ = eff_url;
+            }
             
             if (http_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
@@ -684,8 +730,12 @@ public:
         WriteCallback custom_callback = nullptr,
         void* custom_data = nullptr
     ) {
-        std::lock_guard<std::mutex> request_lock(request_mutex_);
         return execute_with_retry(url, [&]() {
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_http_code_ = 0;
+            last_effective_url_ = url;
             // Create a CURL handle
             curl_handle handle;
             
@@ -717,6 +767,17 @@ public:
             curl_easy_setopt(handle.get(), CURLOPT_FOLLOWLOCATION, 1L);
             curl_easy_setopt(handle.get(), CURLOPT_MAXREDIRS, 50L);
             
+            // Enable header callback to collect headers and detect permanent redirects
+            HeaderCollector hc;
+            hc.redirect_flag = &last_redirect_was_permanent_;
+            hc.headers = &last_response_headers_;
+            last_redirect_was_permanent_ = false;
+            header_redirect_flag = false;
+            redirect_was_permanent = false;
+            last_response_headers_.clear();
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
+            curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
+            
             // Set user agent
             curl_easy_setopt(handle.get(), CURLOPT_USERAGENT, "Rouen-HTTP/1.0");
             
@@ -743,6 +804,15 @@ public:
             // Check HTTP response code
             long response_code{0};
             curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &response_code);
+            last_http_code_ = response_code;
+            
+            last_redirect_was_permanent_ = redirect_was_permanent;
+            char* eff_url = nullptr;
+            curl_easy_getinfo(handle.get(), CURLINFO_EFFECTIVE_URL, &eff_url);
+            if (eff_url) {
+                last_effective_url_ = eff_url;
+            }
+            
             if (response_code >= 400) {
                 HTTP_ERROR_FMT("HTTP error: {} ({})", response_code, url);
                 throw std::runtime_error("HTTP error " + std::to_string(response_code));

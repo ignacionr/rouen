@@ -164,3 +164,14 @@ TEST_F(FetchSSLTest, UnknownSSLModeIgnored) {
     EXPECT_TRUE(opts.verify_host);
     EXPECT_TRUE(opts.check_revocation);
 }
+
+// Test HTTP response state initialization and reset behavior
+TEST_F(FetchSSLTest, ResponseStateInitAndReset) {
+    http::fetch client;
+    // Verify initial values are zero/false/empty
+    EXPECT_EQ(client.last_http_code(), 0);
+    EXPECT_FALSE(client.last_redirect_was_permanent());
+    EXPECT_FALSE(client.last_response_header("content-type").has_value());
+    EXPECT_EQ(client.last_effective_url(), "");
+}
+

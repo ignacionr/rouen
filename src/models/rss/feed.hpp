@@ -316,6 +316,7 @@ namespace media::rss {
         std::string language;
         std::set<std::string> tags;
         bool is_permanently_redirected = false;
+        bool is_placeholder = false;
     private:
         std::string feed_image_url;
     };

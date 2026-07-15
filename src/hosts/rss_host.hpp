@@ -459,7 +459,13 @@ public:
             init_thread_.join();
         }
         periodic_refresh_thread_.request_stop();
-        fetch_thread_.request_stop();
+        {
+            std::lock_guard<std::mutex> lock(fetch_threads_mutex_);
+            for (auto& t : active_fetch_threads_) {
+                t.request_stop();
+            }
+            active_fetch_threads_.clear(); // std::jthread destructor will join them
+        }
         RSS_INFO("RSSHost destructor completed");
     }
 
@@ -957,12 +963,16 @@ private:
         return size * nmemb;
     }
 
-    // Refresh feeds in a background thread with performance improvements
     void refreshFeeds(std::vector<std::string> urls) {
-        // Define how many feeds to process in parallel
-        const int BATCH_SIZE = 15;
+        std::lock_guard<std::mutex> threads_lock(fetch_threads_mutex_);
         
-        fetch_thread_ = std::jthread([this, url_list = std::move(urls)] (std::stop_token stoken) {
+        // Clean up any finished threads
+        active_fetch_threads_.erase(
+            std::remove_if(active_fetch_threads_.begin(), active_fetch_threads_.end(),
+                           [](const auto& t) { return !t.joinable(); }),
+            active_fetch_threads_.end());
+            
+        active_fetch_threads_.emplace_back([this, url_list = std::move(urls)] (std::stop_token stoken) {
             auto quit_job = [stoken]() -> bool {
                 return "quitting"_fnb() || stoken.stop_requested();
             };
@@ -970,6 +980,7 @@ private:
             // Track successful feeds for notification purposes
             int success_count = 0;
             int error_count = 0;
+            const int BATCH_SIZE = 15;
             
             // Process feeds in batches to balance performance
             for (size_t i = 0; i < url_list.size(); i += BATCH_SIZE) {
@@ -1064,11 +1075,46 @@ private:
 
     // Synchronously add a feed
     std::shared_ptr<media::rss::feed> addFeedSync(std::string_view url, auto quitting) {
+        std::string resolved_url;
         try {
-            std::string resolved_url = resolveYoutubeUrl(std::string(url));
-            
-            // Download and parse the feed
-            auto feed_ptr = std::make_shared<media::rss::feed>(getFeed(resolved_url));
+            resolved_url = resolveYoutubeUrl(std::string(url));
+        } catch (const std::exception& e) {
+            RSS_WARN_FMT("Failed to resolve YouTube URL {}: {}", url, e.what());
+            resolved_url = std::string(url);
+        }
+
+        try {
+            std::shared_ptr<media::rss::feed> feed_ptr;
+            try {
+                // Download and parse the feed
+                feed_ptr = std::make_shared<media::rss::feed>(getFeed(resolved_url));
+            } catch (const std::exception& e) {
+                // If this is a YouTube feed, create a placeholder instead of failing completely,
+                // since YouTube RSS endpoints frequently return 404/500 errors.
+                bool is_youtube = (resolved_url.find("youtube.com/feeds/videos.xml") != std::string::npos);
+                if (is_youtube) {
+                    RSS_WARN_FMT("YouTube feed fetch failed: {}. Creating placeholder feed.", e.what());
+                    feed_ptr = std::make_shared<media::rss::feed>();
+                    feed_ptr->source_link = resolved_url;
+                    feed_ptr->feed_link = resolved_url;
+                    feed_ptr->is_placeholder = true;
+                    
+                    // Extract channel name/handle for title
+                    std::string title = std::string(url);
+                    size_t at_pos = title.find("@");
+                    if (at_pos != std::string::npos) {
+                        title = title.substr(at_pos);
+                    } else {
+                        size_t ch_pos = title.find("channel_id=");
+                        if (ch_pos != std::string::npos) {
+                            title = "YouTube Channel: " + title.substr(ch_pos + 11);
+                        }
+                    }
+                    feed_ptr->feed_title = title;
+                } else {
+                    throw; // Rethrow for other feeds
+                }
+            }
             
             if (quitting()) return nullptr;
 
@@ -1090,11 +1136,15 @@ private:
             if (pos != feeds.end()) {
                 // Update the existing feed
                 feed_ptr->repo_id = (*pos)->repo_id;
-                (*pos)->feed_title = feed_ptr->feed_title;
-                (*pos)->feed_description = feed_ptr->feed_description;
-                (*pos)->feed_link = feed_ptr->feed_link;
-                (*pos)->source_link = feed_ptr->source_link; // Keep updated to final URL
-                (*pos)->set_image(feed_ptr->image_url());
+                
+                // Only update metadata if the fetched feed is NOT a placeholder
+                if (!feed_ptr->is_placeholder) {
+                    (*pos)->feed_title = feed_ptr->feed_title;
+                    (*pos)->feed_description = feed_ptr->feed_description;
+                    (*pos)->feed_link = feed_ptr->feed_link;
+                    (*pos)->source_link = feed_ptr->source_link; // Keep updated to final URL
+                    (*pos)->set_image(feed_ptr->image_url());
+                }
                 
                 // Merge new items, avoiding duplicates (matching by both link and title to support podcasts/Megaphone)
                 for (auto const& item : feed_ptr->items) {
@@ -1408,7 +1458,8 @@ private:
     std::mutex backoff_mutex_;
     
     // Declared last so it is stopped/joined first during destruction
-    std::jthread fetch_thread_;
+    std::vector<std::jthread> active_fetch_threads_;
+    std::mutex fetch_threads_mutex_;
     std::jthread periodic_refresh_thread_;
     std::jthread init_thread_;
 
