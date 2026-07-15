@@ -354,122 +354,190 @@ namespace rouen::cards
                     // Right Side: Language and Tags editor group
                     ImGui::BeginGroup();
                     
-                    // 1. Language Selector
-                    ImGui::TextColored(colors[2], "Language:");
-                    ImGui::SameLine();
+                    // Gear Icon (Edit Mode toggle) in the top-right corner of the group
+                    float const start_x = ImGui::GetCursorPosX();
+                    float const gear_width = ImGui::CalcTextSize(ICON_MD_SETTINGS).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    ImGui::SetCursorPosX(start_x + ImGui::GetContentRegionAvail().x - gear_width);
                     
-                    std::vector<std::pair<std::string, std::string>> languages = {
-                        {"", "Auto Detect"},
-                        {"en", "English"},
-                        {"es", "Spanish"},
-                        {"fr", "French"},
-                        {"de", "German"},
-                        {"it", "Italian"}
-                    };
-                    
-                    std::string current_lang = rss_host->getFeedLanguage(feed_id);
-                    std::string current_display = "Auto Detect";
-                    for (const auto& [code, label] : languages) {
-                        if (code == current_lang) {
-                            current_display = label;
-                            break;
-                        }
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.3f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.5f));
+                    if (ImGui::Button(ICON_MD_SETTINGS)) {
+                        editing_mode = !editing_mode;
                     }
-                    
-                    ImGui::SetNextItemWidth(130.0f);
-                    if (ImGui::BeginCombo("##feed_lang", current_display.c_str())) {
-                        for (const auto& [code, label] : languages) {
-                            bool is_selected = (code == current_lang);
-                            if (ImGui::Selectable(label.c_str(), is_selected)) {
-                                rss_host->setFeedLanguage(feed_id, code);
-                            }
-                            if (is_selected) {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-                        ImGui::EndCombo();
-                    }
-                    
-                    ImGui::Spacing();
-                    
-                    // 2. Tags Selector (with wrapping layout)
-                    ImGui::TextColored(colors[2], "Tags:");
-                    
-                    auto current_tags = rss_host->getFeedTags(feed_id);
-                    std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
-                    const float tags_row_width = ImGui::GetContentRegionAvail().x;
-                    float used_row_width = 0.0f;
-                    
-                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
-                    for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
-                        const auto& tag_name = all_possible_tags[t_idx];
-                        bool has_tag = current_tags.contains(tag_name);
-                        
-                        // Keep tags on one line when space allows; wrap to next line otherwise.
-                        const auto& style = ImGui::GetStyle();
-                        const float chk_width =
-                            ImGui::GetFrameHeight() +
-                            style.ItemInnerSpacing.x +
-                            ImGui::CalcTextSize(tag_name.c_str()).x +
-                            style.FramePadding.x * 2.0f;
-                        constexpr float tag_spacing = 12.0f;
-
-                        const bool fits_same_line =
-                            t_idx > 0 &&
-                            (used_row_width + tag_spacing + chk_width <= tags_row_width);
-                        if (fits_same_line) {
-                            ImGui::SameLine(0.0f, tag_spacing);
-                            used_row_width += tag_spacing + chk_width;
-                        } else if (t_idx > 0) {
-                            used_row_width = 0.0f;
-                        }
-                        
-                        std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
-                        if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
-                            if (has_tag) {
-                                rss_host->addFeedTag(feed_id, tag_name);
-                            } else {
-                                rss_host->removeFeedTag(feed_id, tag_name);
-                            }
-                        }
-
-                        if (!fits_same_line) {
-                            used_row_width = chk_width;
-                        }
-                    }
-                    ImGui::PopStyleVar();
-                    
-                    // Show total item count
-                    ImGui::Spacing();
-                    ImGui::TextColored(colors[2], "Items: %zu", items.size());
-                    
-                    // Delete Feed Button
-                    ImGui::Spacing();
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 0.8f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 0.9f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                    if (ImGui::Button("Delete Feed")) {
-                        ImGui::OpenPopup("Delete Feed?");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(editing_mode ? "Exit editing mode" : "Edit feed settings");
                     }
                     ImGui::PopStyleColor(3);
+                    ImGui::SetCursorPosX(start_x);
                     
-                    if (ImGui::BeginPopupModal("Delete Feed?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-                        ImGui::Text("Are you sure you want to permanently delete this feed?\n\"%s\"", feed_title.c_str());
-                        ImGui::Separator();
-                        
-                        if (ImGui::Button("Delete", ImVec2(120.0f * dpi_scale, 0))) {
-                            if (rss_host) {
-                                rss_host->deleteFeed(feed_url);
-                            }
-                            should_close = true;
-                            ImGui::CloseCurrentPopup();
-                        }
-                        ImGui::SetItemDefaultFocus();
+                    if (editing_mode) {
+                        // 1. Language Selector
+                        ImGui::TextColored(colors[2], "Language:");
                         ImGui::SameLine();
-                        if (ImGui::Button("Cancel", ImVec2(120.0f * dpi_scale, 0))) {
-                            ImGui::CloseCurrentPopup();
+                        
+                        std::vector<std::pair<std::string, std::string>> languages = {
+                            {"", "Auto Detect"},
+                            {"en", "English"},
+                            {"es", "Spanish"},
+                            {"fr", "French"},
+                            {"de", "German"},
+                            {"it", "Italian"}
+                        };
+                        
+                        std::string current_lang = rss_host->getFeedLanguage(feed_id);
+                        std::string current_display = "Auto Detect";
+                        for (const auto& [code, label] : languages) {
+                            if (code == current_lang) {
+                                current_display = label;
+                                break;
+                            }
                         }
-                        ImGui::EndPopup();
+                        
+                        ImGui::SetNextItemWidth(130.0f);
+                        if (ImGui::BeginCombo("##feed_lang", current_display.c_str())) {
+                            for (const auto& [code, label] : languages) {
+                                bool is_selected = (code == current_lang);
+                                if (ImGui::Selectable(label.c_str(), is_selected)) {
+                                    rss_host->setFeedLanguage(feed_id, code);
+                                }
+                                if (is_selected) {
+                                    ImGui::SetItemDefaultFocus();
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        
+                        ImGui::Spacing();
+                        
+                        // 2. Tags Selector (with wrapping layout)
+                        ImGui::TextColored(colors[2], "Tags:");
+                        
+                        auto current_tags = rss_host->getFeedTags(feed_id);
+                        std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
+                        const float tags_row_width = ImGui::GetContentRegionAvail().x;
+                        float used_row_width = 0.0f;
+                        
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
+                        for (size_t t_idx = 0; t_idx < all_possible_tags.size(); ++t_idx) {
+                            const auto& tag_name = all_possible_tags[t_idx];
+                            bool has_tag = current_tags.contains(tag_name);
+                            
+                            // Keep tags on one line when space allows; wrap to next line otherwise.
+                            const auto& style = ImGui::GetStyle();
+                            const float chk_width =
+                                ImGui::GetFrameHeight() +
+                                style.ItemInnerSpacing.x +
+                                ImGui::CalcTextSize(tag_name.c_str()).x +
+                                style.FramePadding.x * 2.0f;
+                            constexpr float tag_spacing = 12.0f;
+
+                            const bool fits_same_line =
+                                t_idx > 0 &&
+                                (used_row_width + tag_spacing + chk_width <= tags_row_width);
+                            if (fits_same_line) {
+                                ImGui::SameLine(0.0f, tag_spacing);
+                                used_row_width += tag_spacing + chk_width;
+                            } else if (t_idx > 0) {
+                                  used_row_width = 0.0f;
+                            }
+                            
+                            std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
+                            if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
+                                if (has_tag) {
+                                    rss_host->addFeedTag(feed_id, tag_name);
+                                } else {
+                                    rss_host->removeFeedTag(feed_id, tag_name);
+                                }
+                            }
+
+                            if (!fits_same_line) {
+                                used_row_width = chk_width;
+                            }
+                        }
+                        ImGui::PopStyleVar();
+                        
+                        // Show total item count
+                        ImGui::Spacing();
+                        ImGui::TextColored(colors[2], "Items: %zu", items.size());
+                        
+                        // Delete Feed Button
+                        ImGui::Spacing();
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 0.9f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                        if (ImGui::Button("Delete Feed")) {
+                            ImGui::OpenPopup("Delete Feed?");
+                        }
+                        ImGui::PopStyleColor(3);
+                        
+                        if (ImGui::BeginPopupModal("Delete Feed?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                            ImGui::Text("Are you sure you want to permanently delete this feed?\n\"%s\"", feed_title.c_str());
+                            ImGui::Separator();
+                            
+                            if (ImGui::Button("Delete", ImVec2(120.0f * dpi_scale, 0))) {
+                                if (rss_host) {
+                                    rss_host->deleteFeed(feed_url);
+                                }
+                                should_close = true;
+                                ImGui::CloseCurrentPopup();
+                            }
+                            ImGui::SetItemDefaultFocus();
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel", ImVec2(120.0f * dpi_scale, 0))) {
+                                ImGui::CloseCurrentPopup();
+                            }
+                            ImGui::EndPopup();
+                        }
+                    } else {
+                        // Non-editing mode: only associated tags appear as pills, no checkboxes, no Language selector, no delete feed button
+                        auto current_tags = rss_host->getFeedTags(feed_id);
+                        if (!current_tags.empty()) {
+                            ImGui::TextColored(colors[2], "Tags:");
+                            
+                            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f * dpi_scale); // Pill-shaped!
+                            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f * dpi_scale, 3.0f * dpi_scale));
+                            
+                            // Style button to not react to hover/active (flat pill design)
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.25f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.25f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.25f));
+                            ImGui::PushStyleColor(ImGuiCol_Text, colors[2]);
+                            
+                            const float tags_row_width = ImGui::GetContentRegionAvail().x;
+                            float used_row_width = 0.0f;
+                            const float tag_spacing = ImGui::GetStyle().ItemSpacing.x;
+                            
+                            size_t t_idx = 0;
+                            for (const auto& tag_name : current_tags) {
+                                const float pill_width =
+                                    ImGui::CalcTextSize(tag_name.c_str()).x +
+                                    ImGui::GetStyle().FramePadding.x * 2.0f;
+                                
+                                const bool fits_same_line =
+                                    t_idx > 0 &&
+                                    (used_row_width + tag_spacing + pill_width <= tags_row_width);
+                                
+                                if (fits_same_line) {
+                                    ImGui::SameLine(0.0f, tag_spacing);
+                                    used_row_width += tag_spacing + pill_width;
+                                } else {
+                                    used_row_width = pill_width;
+                                }
+                                
+                                std::string button_id = std::format("{}##pill_{}", tag_name, tag_name);
+                                ImGui::Button(button_id.c_str());
+                                
+                                t_idx++;
+                            }
+                            
+                            ImGui::PopStyleColor(4);
+                            ImGui::PopStyleVar(2);
+                        }
+                        
+                        // Show total item count
+                        ImGui::Spacing();
+                        ImGui::TextColored(colors[2], "Items: %zu", items.size());
                     }
                     
                     ImGui::EndGroup();
@@ -795,6 +863,7 @@ namespace rouen::cards
 
         long long feed_id = -1;
         bool play_on_load = false;
+        bool editing_mode = false;
         bool should_close = false;
         int items_limit = 20;
         char search_buffer[256] = "";
