@@ -117,9 +117,9 @@ private:
         ImGui::InputText("Personal Access Token (PAT)", token_buf_.data(), token_buf_.size(), ImGuiInputTextFlags_Password);
         ImGui::InputText("Local Cache Path", cache_path_buf_.data(), cache_path_buf_.size());
         
-        ImGui::Checkbox("Auto Two-Way Sync on Startup", &auto_startup_);
+        ImGui::Checkbox("Auto-Pull on Startup", &auto_startup_);
         ImGui::SameLine();
-        ImGui::Checkbox("Auto Two-Way Sync on Shutdown", &auto_shutdown_);
+        ImGui::Checkbox("Auto-Push (Two-Way Sync) on Shutdown", &auto_shutdown_);
 
         if (ImGui::Button("Save Configuration")) {
             save_config_values();

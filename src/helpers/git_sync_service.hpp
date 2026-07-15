@@ -138,6 +138,8 @@ namespace rouen::helpers {
             if (!run_shell(command)) {
                 status_message_ = "Git pull failed: " + status_message_;
                 GIT_SYNC_ERROR(status_message_);
+                // Abort the rebase if pull --rebase failed, leaving the working tree clean
+                run_shell(std::format("git -C {} rebase --abort", shell_escape(cache_path_)));
                 return false;
             }
 

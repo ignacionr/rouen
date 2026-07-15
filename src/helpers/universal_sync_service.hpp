@@ -45,7 +45,7 @@ namespace rouen::helpers {
         }
 
         // Pull from Git remote and import into local databases
-        bool sync_in() {
+        bool sync_in(bool import_config = true) {
             std::lock_guard<std::mutex> lock(mutex_);
             if (is_syncing_) return false;
             is_syncing_ = true;
@@ -111,12 +111,16 @@ namespace rouen::helpers {
                                     rouen::platform::get_user_data_path("kpis.json"));
 
                 // 6. Copy Configurations (Layout / Themes)
-                UNIV_SYNC_INFO("Sync In: Copying configurations...");
-                status_message_ = "Sync In: Copying Layout & Config...";
-                copy_file_if_exists(cache_dir / "config" / "rouen.ini", 
-                                    rouen::platform::get_user_config_directory() / "rouen.ini");
-                copy_file_if_exists(cache_dir / "config" / "themes.json", 
-                                    rouen::platform::get_user_config_directory() / "themes.json");
+                if (import_config) {
+                    UNIV_SYNC_INFO("Sync In: Copying configurations...");
+                    status_message_ = "Sync In: Copying Layout & Config...";
+                    copy_file_if_exists(cache_dir / "config" / "rouen.ini", 
+                                        rouen::platform::get_user_config_directory() / "rouen.ini");
+                    copy_file_if_exists(cache_dir / "config" / "themes.json", 
+                                        rouen::platform::get_user_config_directory() / "themes.json");
+                } else {
+                    UNIV_SYNC_INFO("Sync In: Skipping configuration import to keep local window state");
+                }
 
                 status_message_ = "Sync In: Complete";
                 UNIV_SYNC_INFO(status_message_);
@@ -234,11 +238,11 @@ namespace rouen::helpers {
         }
 
         // Two-way sync: Pull & Merge -> Export local additions -> Push
-        bool sync_twoway(const std::string& commit_message = "Two-way sync update") {
+        bool sync_twoway(const std::string& commit_message = "Two-way sync update", bool import_config = true) {
             UNIV_SYNC_INFO("Starting Two-Way Sync process...");
             
             // First Pull and merge remote edits
-            if (!sync_in()) {
+            if (!sync_in(import_config)) {
                 return false;
             }
 
