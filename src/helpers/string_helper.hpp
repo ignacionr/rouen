@@ -113,6 +113,39 @@ public:
     }
 
     /**
+     * URL decodes a string.
+     * 
+     * @param s The string to decode
+     * @return The URL-decoded string
+     */
+    static std::string url_decode(std::string_view s) {
+        std::string res;
+        res.reserve(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] == '%' && i + 2 < s.size()) {
+                auto hex_val = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                    return -1;
+                };
+                int high = hex_val(s[i+1]);
+                int low = hex_val(s[i+2]);
+                if (high != -1 && low != -1) {
+                    res.push_back(static_cast<char>((high << 4) | low));
+                    i += 2;
+                    continue;
+                }
+            } else if (s[i] == '+') {
+                res.push_back(' ');
+                continue;
+            }
+            res.push_back(s[i]);
+        }
+        return res;
+    }
+
+    /**
      * Strips HTML tags and decodes common HTML entities from a string.
      * Replaces multiple whitespace characters with a single space.
      * 

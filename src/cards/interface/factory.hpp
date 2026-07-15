@@ -13,6 +13,7 @@
 #include "card.hpp"
 #include "menu.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player_alarm.hpp"
 #include "../development/cmake.hpp"
 #include "../development/fs-directory.hpp"
@@ -136,12 +137,12 @@ namespace rouen::cards {
                     return std::make_shared<subnet_scanner>();
                 });
                 
-                instance.emplace("ai_chat", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<ai_chat>();
+                instance.emplace("ai_chat", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<ai_chat>(::helpers::StringHelper::url_decode(uri));
                 });
                 
-                instance.emplace("ai-chat", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<ai_chat>();
+                instance.emplace("ai-chat", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<ai_chat>(::helpers::StringHelper::url_decode(uri));
                 });
                 
                 instance.emplace("radio", [](std::string_view, SDL_Renderer*) {

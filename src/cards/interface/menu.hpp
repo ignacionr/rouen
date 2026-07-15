@@ -128,8 +128,25 @@ namespace rouen::cards {
                 }
                 
                 // Input with placeholder text
-                if (ui.input_text_with_placeholder("##search", search_buffer, static_cast<int>(sizeof(search_buffer)), "Search applications... (Type to filter)", true)) {
-                    enter_pressed = true;
+                bool input_submitted = ui.input_text_with_placeholder("##search", search_buffer, static_cast<int>(sizeof(search_buffer)), "Search applications... (Type to filter)", true);
+                
+                bool cmd_enter_pressed = false;
+                if (input_submitted) {
+                    if (ImGui::GetIO().KeySuper || ImGui::GetIO().KeyCtrl) {
+                        cmd_enter_pressed = true;
+                    } else {
+                        enter_pressed = true;
+                    }
+                }
+                
+                if (cmd_enter_pressed) {
+                    std::string query = search_buffer;
+                    if (!query.empty()) {
+                        std::string encoded_query = ::helpers::StringHelper::url_encode(query);
+                        "create_card"_sfn("ai-chat:" + encoded_query);
+                        search_buffer[0] = '\0';
+                        selected_index = 0;
+                    }
                 }
                 
                 ui.pop_item_width();

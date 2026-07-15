@@ -19,6 +19,7 @@
 #include "../../helpers/llm_config.hpp"
 #include "../../helpers/mcp_service.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../registrar.hpp"
@@ -28,7 +29,11 @@
 namespace rouen::cards {
     class ai_chat : public card {
     public:
-        ai_chat() {
+        ai_chat(std::string_view initial_query = "") {
+            if (!initial_query.empty()) {
+                initial_query_ = initial_query;
+                initial_message_ = initial_query;
+            }
             name("AI Chat");
             
             // Base colors (already in vector)
@@ -103,6 +108,12 @@ namespace rouen::cards {
         }
 
         bool render() override {
+            if (!initial_message_.empty()) {
+                std::string msg = std::move(initial_message_);
+                initial_message_.clear();
+                send_message(msg);
+            }
+            
             // Periodically refresh LLM configuration
             static float last_config_refresh = 0.0f;
             float current_time = static_cast<float>(ImGui::GetTime());
@@ -401,6 +412,9 @@ namespace rouen::cards {
         }
         
         std::string get_uri() const override {
+            if (!initial_query_.empty()) {
+                return std::format("ai-chat:{}", ::helpers::StringHelper::url_encode(initial_query_));
+            }
             return "ai-chat";
         }
 
@@ -451,6 +465,9 @@ namespace rouen::cards {
                 : bubble_height(h), content_width(cw), text_width(tw), 
                   child_id(std::move(id)), needs_recalc(false) {}
         };
+        
+        std::string initial_query_{};
+        std::string initial_message_{};
         
         // Use the new memory-safe LLM instance wrapper
         std::optional<helpers::LLMConfig::LLMInstance> llm_instance_{};
