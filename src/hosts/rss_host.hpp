@@ -358,7 +358,14 @@ public:
         } catch (...) {
             auto_timeout_enabled_ = true;
         }
-        RSS_INFO_FMT("RSSHost loaded settings: timeout={}s, auto_timeout={}", timeout_s_, auto_timeout_enabled_ ? "true" : "false");
+        try {
+            std::string interval_str = repo_.get_setting("refresh_interval", "3600");
+            refresh_interval_s_ = std::stoi(interval_str);
+        } catch (...) {
+            refresh_interval_s_ = 3600;
+        }
+        RSS_INFO_FMT("RSSHost loaded settings: timeout={}s, auto_timeout={}, refresh_interval={}s", 
+                     timeout_s_, auto_timeout_enabled_ ? "true" : "false", refresh_interval_s_);
 
         // Load feeds from database synchronously so they are available immediately
         std::vector<std::string> urls;
@@ -427,6 +434,19 @@ public:
             });
         } catch (const std::exception& e) {
             RSS_ERROR_FMT("Exception during RSSHost feed scanning: {}", e.what());
+        }
+
+        // Initialize staggered last refresh times to spread background updates evenly
+        {
+            std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+            auto now = std::chrono::system_clock::now();
+            for (const auto& url : urls) {
+                if (!url.empty()) {
+                    // Stagger between now and refresh_interval_s_ seconds in the past
+                    int offset_s = std::rand() % refresh_interval_s_;
+                    feed_last_refresh_times_[url] = now - std::chrono::seconds(offset_s);
+                }
+            }
         }
 
         // Load feeds and start background tasks in a background thread to prevent UI thread freezes
@@ -943,6 +963,10 @@ public:
             
             if (refreshed_feed) {
                 RSS_INFO_FMT("Successfully refreshed feed ID: {}", feed_id);
+                {
+                    std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+                    feed_last_refresh_times_[*feed_url] = std::chrono::system_clock::now();
+                }
                 return true;
             } else {
                 RSS_ERROR_FMT("Failed to refresh feed ID: {}", feed_id);
@@ -977,89 +1001,65 @@ private:
                 return "quitting"_fnb() || stoken.stop_requested();
             };
             
-            // Track successful feeds for notification purposes
             int success_count = 0;
             int error_count = 0;
-            const int BATCH_SIZE = 15;
             
-            // Process feeds in batches to balance performance
-            for (size_t i = 0; i < url_list.size(); i += BATCH_SIZE) {
-                // Create a batch of worker threads
-                std::vector<std::jthread> workers;
-                std::mutex results_mutex;
-                std::vector<std::shared_ptr<media::rss::feed>> batch_results;
+            // Process feeds sequentially with spacing to prevent rate-limiting and DB locking conflicts
+            for (size_t j = 0; j < url_list.size(); ++j) {
+                if (quit_job()) break;
                 
-                // Process up to BATCH_SIZE feeds in parallel
-                size_t end = std::min(i + BATCH_SIZE, url_list.size());
-                
-                for (size_t j = i; j < end; ++j) {
-                    if (quit_job()) break;
-                    
-                    workers.emplace_back([this, &url_list, j, &results_mutex, &batch_results, &success_count, 
-                                         &error_count, &quit_job](std::stop_token worker_stoken) {
-                        // Create a composite quit check that includes the worker thread's stop token
-                        auto worker_quit = [worker_stoken, &quit_job]() -> bool {
-                            return quit_job() || worker_stoken.stop_requested();
-                        };
-                        
-                        try {
-                            // Only attempt to add the feed if we're not quitting
-                            if (!worker_quit()) {
-                                RSS_INFO_FMT("Starting to process feed: {}", url_list[j]);
-
-                                // Respect per-feed backoff if set (e.g., after recent 429)
-                                {
-                                    std::lock_guard<std::mutex> lock(backoff_mutex_);
-                                    if (auto it = feed_backoff_until_.find(url_list[j]); it != feed_backoff_until_.end()) {
-                                        auto now = std::chrono::system_clock::now();
-                                        if (now < it->second) {
-                                            auto secs_left = std::chrono::duration_cast<std::chrono::seconds>(it->second - now).count();
-                                            RSS_WARN_FMT("Skipping feed {} due to backoff ({}s remaining)", url_list[j], secs_left);
-                                            // Count as an error for summary reporting
-                                            std::lock_guard<std::mutex> rlock(results_mutex);
-                                            ++error_count;
-                                            return;
-                                        } else {
-                                            // Backoff expired, remove entry
-                                            feed_backoff_until_.erase(it);
-                                        }
-                                    }
-                                }
-                                auto feed_ptr = addFeedSync(url_list[j], worker_quit);
-                                
-                                if (feed_ptr) {
-                                    RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
-                                    std::lock_guard<std::mutex> lock(results_mutex);
-                                    batch_results.push_back(feed_ptr);
-                                    ++success_count;
-                                    
-                                    // Update the UI periodically to show progress
-                                    if (success_count % 25 == 0) {
-                                        "notify"_sfn(std::format("Progress: {} RSS feeds loaded so far...", success_count));
-                                    }
-                                }
-                            }
-                        } catch (const std::exception& e) {
-                            RSS_ERROR_FMT("Failed to add feed {}: {}", url_list[j], e.what());
-                            "notify"_sfn(std::format("Failed to add feed {}", url_list[j]));
-                            
-                            std::lock_guard<std::mutex> lock(results_mutex);
-                            ++error_count;
-                        } catch (...) {
-                            RSS_ERROR_FMT("Failed to add feed {} with unknown error", url_list[j]);
-                            
-                            std::lock_guard<std::mutex> lock(results_mutex);
-                            ++error_count;
-                        }
-                    });
-                }
-                
-                // Wait for all workers in this batch to complete
-                for (auto& worker : workers) {
-                    worker.join();
+                // Add a polite spacing delay between requests (except the first request)
+                if (j > 0) {
+                    int delay_ms = 500 + (std::rand() % 500); // 500ms to 1000ms
+                    for (int d = 0; d < delay_ms; d += 50) {
+                        if (quit_job()) break;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    }
                 }
                 
                 if (quit_job()) break;
+                
+                try {
+                    RSS_INFO_FMT("Starting to process feed: {}", url_list[j]);
+
+                    // Respect per-feed backoff if set (e.g., after recent 429)
+                    {
+                        std::lock_guard<std::mutex> lock(backoff_mutex_);
+                        if (auto it = feed_backoff_until_.find(url_list[j]); it != feed_backoff_until_.end()) {
+                            auto now = std::chrono::system_clock::now();
+                            if (now < it->second) {
+                                auto secs_left = std::chrono::duration_cast<std::chrono::seconds>(it->second - now).count();
+                                RSS_WARN_FMT("Skipping feed {} due to backoff ({}s remaining)", url_list[j], secs_left);
+                                ++error_count;
+                                continue;
+                            } else {
+                                // Backoff expired, remove entry
+                                feed_backoff_until_.erase(it);
+                            }
+                        }
+                    }
+                    
+                    auto feed_ptr = addFeedSync(url_list[j], quit_job);
+                    
+                    if (feed_ptr) {
+                        RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
+                        ++success_count;
+                        
+                        // Update UI periodically to show progress
+                        if (success_count % 10 == 0) {
+                            "notify"_sfn(std::format("Progress: {} RSS feeds loaded so far...", success_count));
+                        }
+                    } else {
+                        ++error_count;
+                    }
+                } catch (const std::exception& e) {
+                    RSS_ERROR_FMT("Failed to add feed {}: {}", url_list[j], e.what());
+                    "notify"_sfn(std::format("Failed to add feed {}", url_list[j]));
+                    ++error_count;
+                } catch (...) {
+                    RSS_ERROR_FMT("Failed to add feed {} with unknown error", url_list[j]);
+                    ++error_count;
+                }
             }
             
             // Final notification
@@ -1163,6 +1163,11 @@ private:
             
             // Update the repository with feed info (using the redirected/final source link)
             feed_ptr->repo_id = repo_.upsert_feed(feed_ptr->source_link, feed_ptr->feed_title, feed_ptr->image_url());
+            
+            {
+                std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+                feed_last_refresh_times_[feed_ptr->source_link] = std::chrono::system_clock::now();
+            }
             
             // Prepare items for batch insert
             std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items_batch;
@@ -1457,6 +1462,10 @@ private:
     std::unordered_map<std::string, std::chrono::system_clock::time_point> feed_backoff_until_;
     std::mutex backoff_mutex_;
     
+    // Per-feed last refresh times to allow staggered scheduling
+    std::unordered_map<std::string, std::chrono::system_clock::time_point> feed_last_refresh_times_;
+    std::mutex last_refresh_mutex_;
+    
     // Declared last so it is stopped/joined first during destruction
     std::vector<std::jthread> active_fetch_threads_;
     std::mutex fetch_threads_mutex_;
@@ -1473,80 +1482,56 @@ private:
                 return "quitting"_fnb() || stoken.stop_requested();
             };
             
-            last_refresh_time_ = std::chrono::system_clock::now();
+            // Wait 5 seconds after startup to allow other initialization tasks to complete
+            std::this_thread::sleep_for(std::chrono::seconds(5));
             
             while (!quit_job()) {
-                // Sleep until next refresh interval, waking up periodically to check stop token/force refresh
-                auto next_refresh = last_refresh_time_ + std::chrono::seconds(refresh_interval_s_);
-                while (std::chrono::system_clock::now() < next_refresh && !quit_job()) {
-                    if (should_force_refresh_.load()) {
-                        break; // Break the sleep loop to refresh immediately
+                // Wake up every 30 seconds to check if any feed is due for refresh
+                for (int i = 0; i < 60; ++i) {
+                    if (quit_job() || should_force_refresh_.load()) {
+                        break;
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
                 
                 if (quit_job()) break;
                 
-                // Reset force refresh flag
-                should_force_refresh_ = false;
+                bool force = should_force_refresh_.exchange(false);
+                std::vector<std::string> urls_to_refresh;
+                auto now = std::chrono::system_clock::now();
                 
-                // Collect URLs of all currently loaded feeds
-                std::vector<std::string> urls;
                 {
-                    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
-                    for (const auto& feed : feeds_) {
-                        urls.push_back(feed->source_link);
-                    }
-                }
-                
-                if (!urls.empty()) {
-                    RSS_INFO_FMT("Starting periodic refresh of {} feeds...", urls.size());
+                    std::lock_guard<std::mutex> lock(feeds_mutex_);
+                    std::lock_guard<std::mutex> r_lock(last_refresh_mutex_);
                     
-                    int success_count = 0;
-                    int error_count = 0;
-                    const int BATCH_SIZE = 15;
-                    
-                    for (size_t i = 0; i < urls.size(); i += BATCH_SIZE) {
-                        std::vector<std::jthread> workers;
-                        std::mutex results_mutex;
-                        size_t end = std::min(i + BATCH_SIZE, urls.size());
-                        
-                        for (size_t j = i; j < end; ++j) {
-                            if (quit_job()) break;
-                            
-                            workers.emplace_back([this, &urls, j, &results_mutex, &success_count, 
-                                                 &error_count, &quit_job](std::stop_token worker_stoken) {
-                                auto worker_quit = [worker_stoken, &quit_job]() -> bool {
-                                    return quit_job() || worker_stoken.stop_requested();
-                                };
-                                
-                                try {
-                                    if (!worker_quit()) {
-                                        auto feed_ptr = addFeedSync(urls[j], worker_quit);
-                                        if (feed_ptr) {
-                                            std::lock_guard<std::mutex> lock(results_mutex);
-                                            ++success_count;
-                                        }
-                                    }
-                                } catch (...) {
-                                    std::lock_guard<std::mutex> lock(results_mutex);
-                                    ++error_count;
+                    for (auto const& f : feeds_) {
+                        bool due = false;
+                        if (force) {
+                            due = true;
+                        } else {
+                            auto it = feed_last_refresh_times_.find(f->source_link);
+                            if (it == feed_last_refresh_times_.end()) {
+                                due = true; // Never refreshed
+                            } else {
+                                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - it->second).count();
+                                if (elapsed >= refresh_interval_s_) {
+                                    due = true;
                                 }
-                            });
+                            }
                         }
                         
-                        for (auto& worker : workers) {
-                            worker.join();
+                        if (due) {
+                            urls_to_refresh.push_back(f->source_link);
+                            // Mark as updated now to prevent double scheduling
+                            feed_last_refresh_times_[f->source_link] = now;
                         }
-                        
-                        if (quit_job()) break;
                     }
-                    
-                    RSS_INFO_FMT("Periodic refresh done. Success: {}, Error: {}", success_count, error_count);
                 }
                 
-                // Update last refresh time after completing the refresh
-                last_refresh_time_ = std::chrono::system_clock::now();
+                if (!urls_to_refresh.empty()) {
+                    RSS_INFO_FMT("Starting periodic refresh of {} due feeds (staggered)...", urls_to_refresh.size());
+                    refreshFeeds(urls_to_refresh);
+                }
             }
         });
     }
