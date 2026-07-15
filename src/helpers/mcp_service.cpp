@@ -36,20 +36,7 @@ mcp_service::mcp_service() {
     function_definition run_cmd_def(
         "run_local_command",
         "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl. Host system info: " + cached_system_info_,
-        R"mcp({
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "description": "Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"
-                },
-                "working_directory": {
-                    "type": "string",
-                    "description": "Optional directory where the command should run"
-                }
-            },
-            "required": ["command"]
-        })mcp",
+        R"mcp({"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"},"working_directory":{"type":"string","description":"Optional directory where the command should run"}},"required":["command"]})mcp",
         [](const std::string& params) -> std::string {
             if (params.empty()) {
                 return "Error: Missing params. Expected JSON with a non-empty 'command' field.";
@@ -77,16 +64,7 @@ mcp_service::mcp_service() {
     function_definition create_card_def(
         "create_card",
         "Create and add a new card to Rouen by its URI (e.g. 'pomodoro', 'terminal', 'git', 'calendar'). Use 'pomodoro' to open/create a Pomodoro timer card.",
-        R"mcp({
-            "type": "object",
-            "properties": {
-                "uri": {
-                    "type": "string",
-                    "description": "The URI of the card to create (e.g. 'pomodoro')"
-                }
-            },
-            "required": ["uri"]
-        })mcp",
+        R"mcp({"type":"object","properties":{"uri":{"type":"string","description":"The URI of the card to create (e.g. 'pomodoro')"}},"required":["uri"]})mcp",
         [](const std::string& params) -> std::string {
             if (params.empty()) {
                 return R"({"status":"error","message":"Missing params"})";

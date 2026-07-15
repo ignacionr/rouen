@@ -567,13 +567,22 @@ namespace rouen::cards {
                 try {
                     auto functions = mcp_service_->get_available_functions();
                     for (const auto& func : functions) {
-                        // Convert MCP function to Gemini function schema
-                        std::string schema = std::format(
+                        std::string raw_schema = std::format(
                             "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
                             func.name, 
                             func.description.empty() ? "Repository operation" : func.description,
                             func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
                         );
+                        
+                        // Strip out control characters like newlines and tabs to ensure a clean JSON string
+                        std::string schema;
+                        schema.reserve(raw_schema.size());
+                        for (char c : raw_schema) {
+                            if (c != '\n' && c != '\r' && c != '\t') {
+                                schema.push_back(c);
+                            }
+                        }
+                        
                         function_schemas.push_back(schema);
                         DEBUG_DEBUG("AI Chat: Added function schema for: " + func.name);
                     }
@@ -618,6 +627,15 @@ namespace rouen::cards {
                             throw std::runtime_error("LLM configuration is incomplete");
                         }
                         auto& local_llm = *local_llm_opt;
+                        
+                        // Inject current local date and time so the model knows what "today" is
+                        auto now = std::chrono::system_clock::now();
+                        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                        std::tm now_tm = *std::localtime(&now_time_t);
+                        char time_buf[64];
+                        std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &now_tm);
+                        std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
+                        local_llm.add_instructions(time_instr);
 
                         // Create conversion from our message format to the format expected by sendMessage with mutex protection
                         std::vector<std::pair<std::string, std::string>> conversation_for_llm;

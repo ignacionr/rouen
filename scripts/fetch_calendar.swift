@@ -82,7 +82,11 @@ if CommandLine.arguments.count >= 3 {
         startDate = sDate
     }
     if let eDate = parseDate(CommandLine.arguments[2]) {
-        endDate = eDate
+        if CommandLine.arguments[2].count == 10 {
+            endDate = Calendar.current.date(bySettingHour: 23, minute: 59, second: 59, of: eDate) ?? eDate
+        } else {
+            endDate = eDate
+        }
     }
 }
 

@@ -27,6 +27,11 @@
 
 namespace rouen::cards
 {
+    struct mcp_get_events_params {
+        std::optional<std::string> start_date;
+        std::optional<std::string> end_date;
+    };
+
     class calendar : public card
     {
     public:
@@ -770,30 +775,13 @@ namespace rouen::cards
                 mcp_function(
                     "get_calendar_events",
                     "Get calendar events within a specified date range. Dates should be in 'YYYY-MM-DD' format. If start_date and end_date are not provided, it defaults to 7 days ago to 14 days in the future.",
-                    R"mcp({
-                        "type": "object",
-                        "properties": {
-                            "start_date": {
-                                "type": "string",
-                                "description": "Optional start date in YYYY-MM-DD format (inclusive)"
-                            },
-                            "end_date": {
-                                "type": "string",
-                                "description": "Optional end date in YYYY-MM-DD format (inclusive)"
-                            }
-                        }
-                    })mcp",
+                    R"mcp({"type":"object","properties":{"start_date":{"type":"string","description":"Optional start date in YYYY-MM-DD format (inclusive)"},"end_date":{"type":"string","description":"Optional end date in YYYY-MM-DD format (inclusive)"}}})mcp",
                     [this](const std::string& params) -> std::string {
                         std::string start_date;
                         std::string end_date;
                         
                         if (!params.empty()) {
-                            struct get_events_params {
-                                std::optional<std::string> start_date;
-                                std::optional<std::string> end_date;
-                            };
-                            
-                            get_events_params request{};
+                            mcp_get_events_params request{};
                             auto parse_result = glz::read_json(request, params);
                             if (!parse_result) {
                                 if (request.start_date) start_date = *request.start_date;

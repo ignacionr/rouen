@@ -236,16 +236,7 @@ namespace rouen::cards {
                 mcp_function(
                     "execute_menu_command",
                     "Execute one of the commands/applications from the menu by its exact name.",
-                    R"json({
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The exact name of the command/application to execute (e.g. 'Git', 'Pomodoro', 'Calendar')"
-                            }
-                        },
-                        "required": ["name"]
-                    })json",
+                    R"mcp({"type":"object","properties":{"name":{"type":"string","description":"The exact name of the command/application to execute (e.g. 'Git', 'Pomodoro', 'Calendar')"}},"required":["name"]})mcp",
                     [](const std::string& params) -> std::string {
                         std::string target_name;
                         auto start = params.find("\"name\"");

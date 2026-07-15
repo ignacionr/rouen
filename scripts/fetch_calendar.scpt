@@ -80,6 +80,31 @@ on parseISODate(dateStr)
     end try
 end parseISODate
 
+on parseISODateEnd(dateStr)
+    try
+        set y to text 1 thru 4 of dateStr as integer
+        set m to text 6 thru 7 of dateStr as integer
+        set d to text 9 thru 10 of dateStr as integer
+        
+        set dt to (current date)
+        set day of dt to 1
+        set year of dt to y
+        set month of dt to m
+        set day of dt to d
+        set time of dt to (23 * 3600 + 59 * 60 + 59)
+        
+        if (length of dateStr) >= 19 then
+            set h to text 12 thru 13 of dateStr as integer
+            set min to text 15 thru 16 of dateStr as integer
+            set s to text 18 thru 19 of dateStr as integer
+            set time of dt to (h * 3600 + min * 60 + s)
+        end if
+        return dt
+    on error
+        return (current date)
+    end try
+end parseISODateEnd
+
 on run argv
     set today to (current date)
     set startDate to today - (7 * 24 * 60 * 60)
@@ -87,7 +112,7 @@ on run argv
     
     if (count of argv) >= 2 then
         set startDate to my parseISODate(item 1 of argv)
-        set endDate to my parseISODate(item 2 of argv)
+        set endDate to my parseISODateEnd(item 2 of argv)
     end if
     
     set jsonOutput to "{\"items\":["

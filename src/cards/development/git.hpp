@@ -62,15 +62,7 @@ struct git: public card {
             mcp_function(
                 "get_repository_status",
                 "Get status of git repositories. Returns the current state of git repositories. Status values: 'clean' (no changes), 'modified' (uncommitted changes), 'untracked' (contains untracked files), 'staged' (changes ready to commit), 'conflict' (merge conflicts), 'detached' (detached HEAD), 'unknown' (status unclear). If repo_path is provided, returns status for that specific repo, otherwise returns status for all repositories.",
-                R"({
-                    "type": "object",
-                    "properties": {
-                        "repo_path": {
-                            "type": "string",
-                            "description": "Optional: specific repository path to check"
-                        }
-                    }
-                })",
+                R"({"type":"object","properties":{"repo_path":{"type":"string","description":"Optional: specific repository path to check"}}})",
                 [this](const std::string& params) { return get_repository_status_json(params); }
             ),
             mcp_function(
