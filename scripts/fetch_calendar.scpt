@@ -55,70 +55,102 @@ on dateToISO(dt)
     return yStr & "-" & mStr & "-" & dStr & "T" & hStr & ":" & minStr & ":" & sStr
 end dateToISO
 
-set today to (current date)
-set startDate to today - (7 * 24 * 60 * 60)
-set endDate to today + (14 * 24 * 60 * 60)
+on parseISODate(dateStr)
+    try
+        set y to text 1 thru 4 of dateStr as integer
+        set m to text 6 thru 7 of dateStr as integer
+        set d to text 9 thru 10 of dateStr as integer
+        
+        set dt to (current date)
+        set day of dt to 1
+        set year of dt to y
+        set month of dt to m
+        set day of dt to d
+        set time of dt to 0
+        
+        if (length of dateStr) >= 19 then
+            set h to text 12 thru 13 of dateStr as integer
+            set min to text 15 thru 16 of dateStr as integer
+            set s to text 18 thru 19 of dateStr as integer
+            set time of dt to (h * 3600 + min * 60 + s)
+        end if
+        return dt
+    on error
+        return (current date)
+    end try
+end parseISODate
 
-set jsonOutput to "{\"items\":["
-
-tell application "Calendar"
-    set firstEvent to true
-    repeat with aCal in calendars
-        try
-            set theEvents to (every event of aCal whose start date is greater than startDate and start date is less than endDate)
-            repeat with anEvent in theEvents
-                set evId to id of anEvent
-                set evSummary to summary of anEvent
-                set evDesc to description of anEvent
-                if evDesc is missing value then set evDesc to ""
-                set evLoc to location of anEvent
-                if evLoc is missing value then set evLoc to ""
-                set evStart to start date of anEvent
-                set evEnd to end date of anEvent
-                set evAllDay to allday event of anEvent
-                
-                set evStartISO to my dateToISO(evStart)
-                set evEndISO to my dateToISO(evEnd)
-                
-                if not firstEvent then
+on run argv
+    set today to (current date)
+    set startDate to today - (7 * 24 * 60 * 60)
+    set endDate to today + (14 * 24 * 60 * 60)
+    
+    if (count of argv) >= 2 then
+        set startDate to my parseISODate(item 1 of argv)
+        set endDate to my parseISODate(item 2 of argv)
+    end if
+    
+    set jsonOutput to "{\"items\":["
+    
+    tell application "Calendar"
+        set firstEvent to true
+        repeat with aCal in calendars
+            try
+                set theEvents to (every event of aCal whose start date is greater than startDate and start date is less than endDate)
+                repeat with anEvent in theEvents
+                    set evId to id of anEvent
+                    set evSummary to summary of anEvent
+                    set evDesc to description of anEvent
+                    if evDesc is missing value then set evDesc to ""
+                    set evLoc to location of anEvent
+                    if evLoc is missing value then set evLoc to ""
+                    set evStart to start date of anEvent
+                    set evEnd to end date of anEvent
+                    set evAllDay to allday event of anEvent
+                    
+                    set evStartISO to my dateToISO(evStart)
+                    set evEndISO to my dateToISO(evEnd)
+                    
+                    if not firstEvent then
+                        set jsonOutput to jsonOutput & ","
+                    else
+                        set firstEvent to false
+                    end if
+                    
+                    set jsonOutput to jsonOutput & "{\"id\":\"" & my escapeJSON(evId) & "\""
+                    set jsonOutput to jsonOutput & ",\"summary\":\"" & my escapeJSON(evSummary) & "\""
+                    set jsonOutput to jsonOutput & ",\"description\":\"" & my escapeJSON(evDesc) & "\""
+                    set jsonOutput to jsonOutput & ",\"location\":\"" & my escapeJSON(evLoc) & "\""
+                    
+                    if evAllDay then
+                        set evStartDateOnly to text 1 thru 10 of evStartISO
+                        set evEndDateOnly to text 1 thru 10 of evEndISO
+                        set jsonOutput to jsonOutput & ",\"start\":{\"date\":\"" & evStartDateOnly & "\"}"
+                        set jsonOutput to jsonOutput & ",\"end\":{\"date\":\"" & evEndDateOnly & "\"}"
+                    else
+                        set jsonOutput to jsonOutput & ",\"start\":{\"dateTime\":\"" & evStartISO & "\"}"
+                        set jsonOutput to jsonOutput & ",\"end\":{\"dateTime\":\"" & evEndISO & "\"}"
+                    end if
+                    set jsonOutput to jsonOutput & "}"
+                end repeat
+            end try
+        end repeat
+    end tell
+    
+    set jsonOutput to jsonOutput & "],\"calendars\":["
+    tell application "Calendar"
+        set firstCal to true
+        repeat with aCal in calendars
+            if writable of aCal is true then
+                if not firstCal then
                     set jsonOutput to jsonOutput & ","
                 else
-                    set firstEvent to false
+                    set firstCal to false
                 end if
-                
-                set jsonOutput to jsonOutput & "{\"id\":\"" & my escapeJSON(evId) & "\""
-                set jsonOutput to jsonOutput & ",\"summary\":\"" & my escapeJSON(evSummary) & "\""
-                set jsonOutput to jsonOutput & ",\"description\":\"" & my escapeJSON(evDesc) & "\""
-                set jsonOutput to jsonOutput & ",\"location\":\"" & my escapeJSON(evLoc) & "\""
-                
-                if evAllDay then
-                    set evStartDateOnly to text 1 thru 10 of evStartISO
-                    set evEndDateOnly to text 1 thru 10 of evEndISO
-                    set jsonOutput to jsonOutput & ",\"start\":{\"date\":\"" & evStartDateOnly & "\"}"
-                    set jsonOutput to jsonOutput & ",\"end\":{\"date\":\"" & evEndDateOnly & "\"}"
-                else
-                    set jsonOutput to jsonOutput & ",\"start\":{\"dateTime\":\"" & evStartISO & "\"}"
-                    set jsonOutput to jsonOutput & ",\"end\":{\"dateTime\":\"" & evEndISO & "\"}"
-                end if
-                set jsonOutput to jsonOutput & "}"
-            end repeat
-        end try
-    end repeat
-end tell
-
-set jsonOutput to jsonOutput & "],\"calendars\":["
-tell application "Calendar"
-    set firstCal to true
-    repeat with aCal in calendars
-        if writable of aCal is true then
-            if not firstCal then
-                set jsonOutput to jsonOutput & ","
-            else
-                set firstCal to false
+                set jsonOutput to jsonOutput & "\"" & my escapeJSON(name of aCal) & "\""
             end if
-            set jsonOutput to jsonOutput & "\"" & my escapeJSON(name of aCal) & "\""
-        end if
-    end repeat
-end tell
-set jsonOutput to jsonOutput & "]}"
-return jsonOutput
+        end repeat
+    end tell
+    set jsonOutput to jsonOutput & "]}"
+    return jsonOutput
+end run

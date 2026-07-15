@@ -220,11 +220,16 @@ namespace calendar {
 #endif
         }
 
-        // Fetch calendar events
-        std::vector<event> fetch_events() {
+        // Fetch calendar events with optional date range
+        std::vector<event> fetch_events(const std::string& start_date = "", const std::string& end_date = "") {
 #if defined(__APPLE__)
             std::lock_guard<std::mutex> lock(mutex_);
             last_error_.clear();
+            
+            std::string command_args;
+            if (!start_date.empty() && !end_date.empty()) {
+                command_args = " \"" + start_date + "\" \"" + end_date + "\"";
+            }
             
             // 1. Try the Swift/EventKit fetcher (fetch_calendar.swift) first
             auto swift_path = rouen::platform::get_resource_path("fetch_calendar.swift");
@@ -237,7 +242,7 @@ namespace calendar {
 
             if (std::filesystem::exists(swift_path)) {
                 try {
-                    std::string command = "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/swift \"" + swift_path.string() + "\"";
+                    std::string command = "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/swift \"" + swift_path.string() + "\"" + command_args;
                     std::string response = ProcessHelper::executeCommand(command);
                     if (!response.empty()) {
                         auto data = parse_response(response);
@@ -260,7 +265,7 @@ namespace calendar {
                     }
                 }
                 
-                std::string command = "osascript \"" + script_path.string() + "\"";
+                std::string command = "osascript \"" + script_path.string() + "\"" + command_args;
                 std::string response = ProcessHelper::executeCommand(command);
                 if (response.empty()) {
                     throw std::runtime_error("calendar fetch command returned empty response or failed");

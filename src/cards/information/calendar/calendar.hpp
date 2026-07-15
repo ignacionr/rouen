@@ -763,5 +763,80 @@ namespace rouen::cards
                 "create_card"_sfn(std::format("alarm:{}", time_str));
             }
         }
+        
+        // Override to provide MCP functions
+        std::vector<mcp_function> get_mcp_functions() const override {
+            return {
+                mcp_function(
+                    "get_calendar_events",
+                    "Get calendar events within a specified date range. Dates should be in 'YYYY-MM-DD' format. If start_date and end_date are not provided, it defaults to 7 days ago to 14 days in the future.",
+                    R"mcp({
+                        "type": "object",
+                        "properties": {
+                            "start_date": {
+                                "type": "string",
+                                "description": "Optional start date in YYYY-MM-DD format (inclusive)"
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "description": "Optional end date in YYYY-MM-DD format (inclusive)"
+                            }
+                        }
+                    })mcp",
+                    [this](const std::string& params) -> std::string {
+                        std::string start_date;
+                        std::string end_date;
+                        
+                        if (!params.empty()) {
+                            struct get_events_params {
+                                std::optional<std::string> start_date;
+                                std::optional<std::string> end_date;
+                            };
+                            
+                            get_events_params request{};
+                            auto parse_result = glz::read_json(request, params);
+                            if (!parse_result) {
+                                if (request.start_date) start_date = *request.start_date;
+                                if (request.end_date) end_date = *request.end_date;
+                            }
+                        }
+                        
+                        try {
+                            auto fetched_events = fetcher_->fetch_events(start_date, end_date);
+                            
+                            // Serialize events to JSON
+                            glz::json_t res;
+                            std::vector<glz::json_t> events_arr;
+                            
+                            for (const auto& ev : fetched_events) {
+                                glz::json_t ev_json;
+                                ev_json["id"] = ev.id;
+                                ev_json["summary"] = ev.summary;
+                                ev_json["description"] = ev.description;
+                                ev_json["location"] = ev.location;
+                                ev_json["start"] = ev.start;
+                                ev_json["end"] = ev.end;
+                                ev_json["all_day"] = ev.all_day;
+                                ev_json["creator"] = ev.creator;
+                                ev_json["organizer"] = ev.organizer;
+                                events_arr.push_back(std::move(ev_json));
+                            }
+                            
+                            res["events"] = std::move(events_arr);
+                            res["status"] = "success";
+                            
+                            std::string out;
+                            auto err = glz::write_json(res, out);
+                            if (err) {
+                                return R"({"status": "error", "message": "Failed to serialize events"})";
+                            }
+                            return out;
+                        } catch (const std::exception& e) {
+                            return std::format(R"({{"status": "error", "message": "{}"}})", e.what());
+                        }
+                    }
+                )
+            };
+        }
     };
 } // namespace rouen::cards

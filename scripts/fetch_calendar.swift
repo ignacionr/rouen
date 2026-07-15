@@ -68,9 +68,23 @@ guard accessGranted else {
 
 // ── Date range ───────────────────────────────────────────────────────────────
 
+func parseDate(_ s: String) -> Date? {
+    if let d = isoDate.date(from: s) { return d }
+    return iso.date(from: s)
+}
+
 let now = Date()
-let startDate = Calendar.current.date(byAdding: .day, value: -7, to: now)!
-let endDate   = Calendar.current.date(byAdding: .day, value: 14,  to: now)!
+var startDate = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+var endDate   = Calendar.current.date(byAdding: .day, value: 14,  to: now)!
+
+if CommandLine.arguments.count >= 3 {
+    if let sDate = parseDate(CommandLine.arguments[1]) {
+        startDate = sDate
+    }
+    if let eDate = parseDate(CommandLine.arguments[2]) {
+        endDate = eDate
+    }
+}
 
 // ── Fetch events (EventKit expands recurring occurrences automatically) ───────
 
