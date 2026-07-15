@@ -224,37 +224,43 @@ namespace calendar {
         std::vector<event> fetch_events() {
 #if defined(__APPLE__)
             std::lock_guard<std::mutex> lock(mutex_);
+            last_error_.clear();
+            
+            // 1. Try the Swift/EventKit fetcher (fetch_calendar.swift) first
+            auto swift_path = rouen::platform::get_resource_path("fetch_calendar.swift");
+            if (!std::filesystem::exists(swift_path)) {
+                auto dev_swift_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.swift";
+                if (std::filesystem::exists(dev_swift_path)) {
+                    swift_path = dev_swift_path;
+                }
+            }
+
+            if (std::filesystem::exists(swift_path)) {
+                try {
+                    std::string command = "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/swift \"" + swift_path.string() + "\"";
+                    std::string response = ProcessHelper::executeCommand(command);
+                    if (!response.empty()) {
+                        auto data = parse_response(response);
+                        return data;
+                    }
+                } catch (const std::exception&) {
+                    // Swift failed, proceed to AppleScript fallback
+                }
+            }
+
+            // 2. Fall back to the legacy AppleScript (fetch_calendar.scpt)
             try {
-                last_error_.clear();
+                auto script_path = rouen::platform::get_resource_path("fetch_calendar.scpt");
+                if (!std::filesystem::exists(script_path)) {
+                    auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.scpt";
+                    if (std::filesystem::exists(dev_script_path)) {
+                        script_path = dev_script_path;
+                    } else {
+                        throw std::runtime_error("fetch_calendar.swift / fetch_calendar.scpt not found in resources");
+                    }
+                }
                 
-                // Prefer the Swift/EventKit fetcher (fetch_calendar.swift) which properly
-                // expands recurring event occurrences.  Fall back to the legacy AppleScript
-                // if the Swift script cannot be found.
-                auto swift_path = rouen::platform::get_resource_path("fetch_calendar.swift");
-                if (!std::filesystem::exists(swift_path)) {
-                    auto dev_swift_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.swift";
-                    if (std::filesystem::exists(dev_swift_path)) {
-                        swift_path = dev_swift_path;
-                    }
-                }
-
-                std::string command;
-                if (std::filesystem::exists(swift_path)) {
-                    command = "swift \"" + swift_path.string() + "\"";
-                } else {
-                    // Legacy AppleScript fallback (does not expand recurring events)
-                    auto script_path = rouen::platform::get_resource_path("fetch_calendar.scpt");
-                    if (!std::filesystem::exists(script_path)) {
-                        auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.scpt";
-                        if (std::filesystem::exists(dev_script_path)) {
-                            script_path = dev_script_path;
-                        } else {
-                            throw std::runtime_error("fetch_calendar.swift / fetch_calendar.scpt not found in resources");
-                        }
-                    }
-                    command = "osascript \"" + script_path.string() + "\"";
-                }
-
+                std::string command = "osascript \"" + script_path.string() + "\"";
                 std::string response = ProcessHelper::executeCommand(command);
                 if (response.empty()) {
                     throw std::runtime_error("calendar fetch command returned empty response or failed");

@@ -48,6 +48,14 @@ namespace rouen::cards
                 }
             }
             
+            // Initialize current date to today's date
+            auto now = std::chrono::system_clock::now();
+            auto now_time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm now_tm = *std::localtime(&now_time_t);
+            char date_buf[11];
+            std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+            current_date_ = date_buf;
+
             // Initialize the calendar fetcher
             fetcher_ = std::make_shared<::calendar::calendar_fetcher>(calendar_url);
             
@@ -174,27 +182,21 @@ namespace rouen::cards
                 return;
             }
 
-            std::lock_guard<std::mutex> lock(events_mutex_);
-            
-            if (events_.empty()) {
-                ImGui::Text("No upcoming events found.");
-                return;
+            // Ensure current_date_ is initialized
+            if (current_date_.empty()) {
+                auto now = std::chrono::system_clock::now();
+                auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                std::tm now_tm = *std::localtime(&now_time_t);
+                char date_buf[11];
+                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+                current_date_ = date_buf;
             }
+
+            std::lock_guard<std::mutex> lock(events_mutex_);
             
             // View mode toggle
             if (ImGui::Button(use_day_view_ ? "Switch to List View" : "Switch to Day View")) {
                 use_day_view_ = !use_day_view_;
-                
-                // If switching to day view and no date is selected, use today's date
-                if (use_day_view_ && current_date_.empty()) {
-                    auto now = std::chrono::system_clock::now();
-                    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-                    std::tm now_tm = *std::localtime(&now_time_t);
-                    
-                    char date_buf[11];
-                    std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
-                    current_date_ = date_buf;
-                }
             }
             
             ImGui::SameLine();
@@ -205,6 +207,15 @@ namespace rouen::cards
                 ImGui::TextUnformatted("List view shows all upcoming events.\nDay view shows events for a specific day.");
                 ImGui::PopTextWrapPos();
                 ImGui::EndTooltip();
+            }
+            
+            if (events_.empty()) {
+                if (use_day_view_) {
+                    render_day_view();
+                } else {
+                    ImGui::Text("No upcoming events found.");
+                }
+                return;
             }
             
             if (show_event_details_) {

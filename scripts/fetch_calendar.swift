@@ -62,9 +62,8 @@ if #available(macOS 14.0, *) {
 sema.wait()
 
 guard accessGranted else {
-    // Return empty but valid JSON so the app doesn't crash
-    print("{\"items\":[],\"calendars\":[]}")
-    exit(0)
+    fputs("Permission denied to access calendars\n", stderr)
+    exit(1)
 }
 
 // ── Date range ───────────────────────────────────────────────────────────────
