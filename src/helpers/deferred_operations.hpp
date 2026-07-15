@@ -20,12 +20,16 @@ public:
     
     // Process all queued operations
     void process_queue(SDL_Renderer* /*renderer*/) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::queue<operation> ops_to_run;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            std::swap(ops_to_run, operations_);
+        }
         
-        while (!operations_.empty()) {            
+        while (!ops_to_run.empty()) {            
             // Execute the operation
-            operations_.front()();
-            operations_.pop();
+            ops_to_run.front()();
+            ops_to_run.pop();
         }
     }
     

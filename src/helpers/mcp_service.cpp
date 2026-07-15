@@ -113,6 +113,8 @@ mcp_service::mcp_service() {
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
     // Create a copy of the function with the card_type set
     function_definition func_copy(func.name, func.description, func.schema, func.handler, card_type);
     
@@ -126,6 +128,8 @@ void mcp_service::register_function(const std::string& card_type, const function
 }
 
 void mcp_service::unregister_card_functions(const std::string& card_type) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
     auto card_it = card_functions_.find(card_type);
     if (card_it == card_functions_.end()) {
         return;
@@ -142,6 +146,8 @@ void mcp_service::unregister_card_functions(const std::string& card_type) {
 }
 
 std::vector<mcp_service::function_definition> mcp_service::get_available_functions() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
     std::vector<function_definition> result;
     result.reserve(functions_.size());
     
@@ -153,6 +159,8 @@ std::vector<mcp_service::function_definition> mcp_service::get_available_functio
 }
 
 std::vector<mcp_service::function_definition> mcp_service::get_functions_for_card(const std::string& card_type) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
     std::vector<function_definition> result;
     
     auto card_it = card_functions_.find(card_type);
@@ -172,12 +180,15 @@ std::vector<mcp_service::function_definition> mcp_service::get_functions_for_car
 }
 
 mcp_service::execution_result mcp_service::execute_function(const std::string& name, const std::string& params) {
-    auto func_it = functions_.find(name);
-    if (func_it == functions_.end()) {
-        return execution_result(false, "", "Function '" + name + "' not found");
+    function_definition func;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto func_it = functions_.find(name);
+        if (func_it == functions_.end()) {
+            return execution_result(false, "", "Function '" + name + "' not found");
+        }
+        func = func_it->second; // Safe copy under lock
     }
-    
-    const auto& func = func_it->second;
     
     // Validate parameters if schema is provided
     if (!func.schema.empty() && !validate_parameters(params, func.schema)) {
@@ -201,10 +212,12 @@ mcp_service::execution_result mcp_service::execute_function(const std::string& n
 }
 
 bool mcp_service::has_function(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return functions_.find(name) != functions_.end();
 }
 
 std::string mcp_service::get_function_schema(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     auto func_it = functions_.find(name);
     if (func_it != functions_.end()) {
         return func_it->second.schema;
@@ -213,6 +226,7 @@ std::string mcp_service::get_function_schema(const std::string& name) const {
 }
 
 std::string mcp_service::get_functions_description() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (functions_.empty()) {
         return "No functions available.";
     }

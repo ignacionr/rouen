@@ -40,63 +40,7 @@ namespace rouen::cards {
         
         bool render(rouen::ui::ui_context& ui) override {
             return render_window([this, &ui]() {
-                // Define menu categories
-                struct MenuCategory {
-                    std::string name;
-                    std::vector<std::pair<std::string, std::function<void()>>> items;
-                };
-                
-                static std::vector<MenuCategory> menu_categories = {
-                    { "Development", {
-                        {"Git", []() { "create_card"_sfn("git"); }},
-                        {"GitHub", []() { "create_card"_sfn("github"); }},
-                        {"CMake", []() { "create_card"_sfn("cmake:" + std::filesystem::current_path().string() + "/CMakeLists.txt"); }},
-                        {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
-                        {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}
-                    }},
-                    { "Productivity", {
-                        {"Objectives", []() { "create_card"_sfn("objectives"); }},
-                        {"Sovereign KPIs", []() { "create_card"_sfn("kpis"); }},
-                        {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
-                        {"Alarm", []() { "create_card"_sfn("alarm"); }},
-                        {"Unit Converter", []() { "create_card"_sfn("converter"); }},
-                        {"Jira", []() { "create_card"_sfn("jira"); }},
-                        {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
-                        {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
-                        {"Trello", []() { "create_card"_sfn("trello"); }},
-                    }},
-                    { "Information", {
-                        {"Calendar", []() { "create_card"_sfn("calendar"); }},
-                        {"AI Chat", []() { "create_card"_sfn("ai-chat"); }},
-                        {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
-                        {"Travel Plans", []() { "create_card"_sfn("travel"); }},
-                        {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
-                        {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
-                        {"Weather & Time", []() { "create_card"_sfn("weather"); }},
-                        {"Email", []() { "create_card"_sfn("mail"); }},
-                        {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
-                        {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
-                        {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
-                    }},
-                    { "Media", {
-                        {"Radio", []() { "create_card"_sfn("radio"); }},
-                        {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
-                        {"Chess Replay", []() { "create_card"_sfn("chess"); }}
-                    }},
-                    { "System", {
-                        {"System Info", []() { "create_card"_sfn("sysinfo"); }},
-                        {"Notifications", []() { "create_card"_sfn("notifications"); }},
-                        {"Settings", []() { "create_card"_sfn("settings"); }},
-                        {"Universal Sync", []() { "create_card"_sfn("sync"); }},
-                        {"Theme Settings", []() { "create_card"_sfn("theme"); }},
-                        {"Terminal", []() { "create_card"_sfn("terminal"); }},
-                        {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
-                        {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},
-                        {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
-                        {"About", []() { "create_card"_sfn("about"); }},
-                        {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }} // Fixed: Use [[maybe_unused]] to suppress nodiscard warning
-                    }}
-                };
+                const auto& menu_categories = get_categories();
                 
                 // Flatten menu items for search
                 static std::vector<std::tuple<int, int, std::string>> all_menu_items;
@@ -266,6 +210,137 @@ namespace rouen::cards {
                     ui.end_child();
                 }
             });
+        }
+
+        // Override to provide MCP functions
+        std::vector<mcp_function> get_mcp_functions() const override {
+            return {
+                mcp_function(
+                    "get_menu_commands",
+                    "List all available commands and applications in the menu card that can be executed.",
+                    R"({"type": "object", "properties": {}})",
+                    [](const std::string&) -> std::string {
+                        std::string out = "{\n  \"commands\": [\n";
+                        bool first = true;
+                        for (const auto& cat : get_categories()) {
+                            for (const auto& item : cat.items) {
+                                if (!first) out += ",\n";
+                                out += std::format("    {{\"name\": \"{}\", \"category\": \"{}\"}}", item.first, cat.name);
+                                first = false;
+                            }
+                        }
+                        out += "\n  ]\n}";
+                        return out;
+                    }
+                ),
+                mcp_function(
+                    "execute_menu_command",
+                    "Execute one of the commands/applications from the menu by its exact name.",
+                    R"json({
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "The exact name of the command/application to execute (e.g. 'Git', 'Pomodoro', 'Calendar')"
+                            }
+                        },
+                        "required": ["name"]
+                    })json",
+                    [](const std::string& params) -> std::string {
+                        std::string target_name;
+                        auto start = params.find("\"name\"");
+                        if (start != std::string::npos) {
+                            start = params.find(":", start);
+                            if (start != std::string::npos) {
+                                start = params.find("\"", start);
+                                if (start != std::string::npos) {
+                                    start++;
+                                    auto end = params.find("\"", start);
+                                    if (end != std::string::npos) {
+                                        target_name = params.substr(start, end - start);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (target_name.empty()) {
+                            return R"({"status": "error", "message": "Missing 'name' parameter"})";
+                        }
+                        
+                        for (const auto& cat : get_categories()) {
+                            for (const auto& item : cat.items) {
+                                if (::helpers::StringHelper::to_lower(item.first) == ::helpers::StringHelper::to_lower(target_name)) {
+                                    item.second(); // Run the command function
+                                    return std::format(R"({{"status": "success", "message": "Executed command '{}'"}})", item.first);
+                                }
+                            }
+                        }
+                        
+                        return std::format(R"({{"status": "error", "message": "Command '{}' not found"}})", target_name);
+                    }
+                )
+            };
+        }
+
+    private:
+        struct MenuCategory {
+            std::string name;
+            std::vector<std::pair<std::string, std::function<void()>>> items;
+        };
+
+        static const std::vector<MenuCategory>& get_categories() {
+            static std::vector<MenuCategory> categories = {
+                { "Development", {
+                    {"Git", []() { "create_card"_sfn("git"); }},
+                    {"GitHub", []() { "create_card"_sfn("github"); }},
+                    {"CMake", []() { "create_card"_sfn("cmake:" + std::filesystem::current_path().string() + "/CMakeLists.txt"); }},
+                    {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
+                    {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}
+                }},
+                { "Productivity", {
+                    {"Objectives", []() { "create_card"_sfn("objectives"); }},
+                    {"Sovereign KPIs", []() { "create_card"_sfn("kpis"); }},
+                    {"Pomodoro", []() { "create_card"_sfn("pomodoro"); }},
+                    {"Alarm", []() { "create_card"_sfn("alarm"); }},
+                    {"Unit Converter", []() { "create_card"_sfn("converter"); }},
+                    {"Jira", []() { "create_card"_sfn("jira"); }},
+                    {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
+                    {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
+                    {"Trello", []() { "create_card"_sfn("trello"); }},
+                }},
+                { "Information", {
+                    {"Calendar", []() { "create_card"_sfn("calendar"); }},
+                    {"AI Chat", []() { "create_card"_sfn("ai-chat"); }},
+                    {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
+                    {"Travel Plans", []() { "create_card"_sfn("travel"); }},
+                    {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
+                    {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
+                    {"Weather & Time", []() { "create_card"_sfn("weather"); }},
+                    {"Email", []() { "create_card"_sfn("mail"); }},
+                    {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
+                    {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
+                    {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
+                }},
+                { "Media", {
+                    {"Radio", []() { "create_card"_sfn("radio"); }},
+                    {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
+                    {"Chess Replay", []() { "create_card"_sfn("chess"); }}
+                }},
+                { "System", {
+                    {"System Info", []() { "create_card"_sfn("sysinfo"); }},
+                    {"Notifications", []() { "create_card"_sfn("notifications"); }},
+                    {"Settings", []() { "create_card"_sfn("settings"); }},
+                    {"Universal Sync", []() { "create_card"_sfn("sync"); }},
+                    {"Theme Settings", []() { "create_card"_sfn("theme"); }},
+                    {"Terminal", []() { "create_card"_sfn("terminal"); }},
+                    {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
+                    {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},
+                    {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
+                    {"About", []() { "create_card"_sfn("about"); }},
+                    {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }}
+                }}
+            };
+            return categories;
         }
     };
 }

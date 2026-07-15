@@ -3,6 +3,7 @@
 // 1. Standard includes in alphabetic order
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -113,6 +114,9 @@ private:
     
     // Detect OS type, version, and installed package managers
     void detect_system_info();
+    
+    // Mutex to protect internal registry maps
+    mutable std::mutex mutex_;
 };
 
 } // namespace rouen::helpers
