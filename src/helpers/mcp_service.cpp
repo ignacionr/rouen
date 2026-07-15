@@ -29,6 +29,16 @@ struct mcp_create_card_params {
     };
 };
 
+struct mcp_create_alarm_params {
+    std::string datetime;
+    struct glaze {
+        using T = mcp_create_alarm_params;
+        static constexpr auto value = glz::object(
+            "datetime", &T::datetime
+        );
+    };
+};
+
 mcp_service::mcp_service() {
     detect_system_info();
 
@@ -88,6 +98,36 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", create_card_def);
+
+    // Register global create_alarm function
+    function_definition create_alarm_def(
+        "create_alarm",
+        "Create a new alarm card in the deck for a specific date and time. The datetime should be in ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. If only a relative time is requested (e.g., 'in 20 minutes'), calculate the target date and time based on the current local time first and pass it to this tool.",
+        R"mcp({"type":"object","properties":{"datetime":{"type":"string","description":"The target date and time. Can be full ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. For relative times (e.g. 'in 20 minutes') or natural language (e.g. '5pm'), calculate the exact future date/time first based on the current local time."}},"required":["datetime"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_create_alarm_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.datetime.empty()) {
+                return R"({"status":"error","message":"Invalid params"})";
+            }
+            
+            auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+            if (!create_card_fn) {
+                return R"({"status":"error","message":"create_card service is not currently available"})";
+            }
+            
+            std::string card_uri = "alarm:" + request.datetime;
+            (*create_card_fn)(card_uri);
+            return R"({"status":"success","message":"Alarm created successfully"})";
+        },
+        "deck"
+    );
+    
+    register_function("deck", create_alarm_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {

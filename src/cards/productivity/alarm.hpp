@@ -13,8 +13,12 @@
 #include "../../helpers/media_player.hpp"
 
 #include "../interface/card.hpp"
+#include <glaze/glaze.hpp>
 
 namespace rouen::cards {
+    struct mcp_create_alarm_params {
+        std::optional<std::string> datetime;
+    };
     class alarm : public card {
     public:
         alarm(std::string_view target_time_str = {}) {
@@ -257,6 +261,47 @@ namespace rouen::cards {
             }
         }
         void parse_time(const std::string& time_str) {
+            // Try to parse ISO date time format first (e.g. YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD HH:MM:SS)
+            if (time_str.length() >= 16 && time_str[4] == '-' && time_str[7] == '-') {
+                int year = 0, month = 0, day = 0, hours = 0, minutes = 0, seconds = 0;
+                char dash1{'\0'}, dash2{'\0'}, sep{'\0'}, colon1{'\0'}, colon2{'\0'};
+                std::stringstream ss(time_str);
+                if (ss >> year >> dash1 >> month >> dash2 >> day >> sep >> hours >> colon1 >> minutes) {
+                    if ((sep == 'T' || sep == ' ') && dash1 == '-' && dash2 == '-' && colon1 == ':') {
+                        // Optional seconds
+                        if (ss >> colon2 >> seconds && colon2 == ':') {
+                            // parsed seconds
+                        }
+                        
+                        // Validate and set target_time
+                        if (year >= 1970 && month >= 1 && month <= 12 && day >= 1 && day <= 31 &&
+                            hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60 && seconds >= 0 && seconds < 60) {
+                            
+                            std::tm target_tm{};
+                            target_tm.tm_year = year - 1900;
+                            target_tm.tm_mon = month - 1;
+                            target_tm.tm_mday = day;
+                            target_tm.tm_hour = hours;
+                            target_tm.tm_min = minutes;
+                            target_tm.tm_sec = seconds;
+                            target_tm.tm_isdst = -1; // Let system determine DST
+                            
+                            auto t_time = std::mktime(&target_tm);
+                            if (t_time != -1) {
+                                target_time = std::chrono::system_clock::from_time_t(t_time);
+                                update_time_string();
+                                alarm_active = true;
+                                if (alarm_playing) {
+                                    alarm_playing = false;
+                                    media_player_alarm_helper::stop_sound_loop();
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Handle several formats: "HH:MM", "HH:MM:SS", or just "HHMM"
             int hours = 0, minutes = 0;
             
@@ -311,8 +356,18 @@ namespace rouen::cards {
             auto time_t = std::chrono::system_clock::to_time_t(target_time);
             std::tm time_tm = *std::localtime(&time_t);
             
-            // Use std::format instead of std::snprintf for type safety and modern C++ style
-            std::string formatted = std::format("{:02d}:{:02d}", time_tm.tm_hour, time_tm.tm_min);
+            auto now = std::chrono::system_clock::now();
+            auto now_time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm now_tm = *std::localtime(&now_time_t);
+            
+            std::string formatted;
+            if (time_tm.tm_year != now_tm.tm_year || time_tm.tm_mon != now_tm.tm_mon || time_tm.tm_mday != now_tm.tm_mday) {
+                formatted = std::format("{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}", 
+                                        time_tm.tm_year + 1900, time_tm.tm_mon + 1, time_tm.tm_mday,
+                                        time_tm.tm_hour, time_tm.tm_min, time_tm.tm_sec);
+            } else {
+                formatted = std::format("{:02d}:{:02d}", time_tm.tm_hour, time_tm.tm_min);
+            }
             std::strncpy(time_buffer, formatted.c_str(), sizeof(time_buffer) - 1);
             time_buffer[sizeof(time_buffer) - 1] = '\0'; // Ensure null termination
         }
@@ -456,6 +511,41 @@ namespace rouen::cards {
             return "alarm";
         }
 
+        std::vector<mcp_function> get_mcp_functions() const override {
+            return {
+                mcp_function(
+                    "create_alarm",
+                    "Create a new alarm for a specific date and time. The datetime should be in ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. An alarm card will be automatically created in the deck.",
+                    R"mcp({"type":"object","properties":{"datetime":{"type":"string","description":"The target date and time. Can be full ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. For relative times (e.g. 'in 20 minutes') or natural language (e.g. '5pm'), calculate the exact future date/time first based on the current local time."}},"required":["datetime"]})mcp",
+                    [](const std::string& params) -> std::string {
+                        std::string datetime;
+                        
+                        if (!params.empty()) {
+                            mcp_create_alarm_params request{};
+                            auto parse_result = glz::read_json(request, params);
+                            if (!parse_result && request.datetime) {
+                                datetime = *request.datetime;
+                            }
+                        }
+                        
+                        if (datetime.empty()) {
+                            return R"({"status":"error","message":"Missing required 'datetime' parameter"})";
+                        }
+                        
+                        auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                        if (!create_card_fn) {
+                            return R"({"status":"error","message":"create_card service is not currently available"})";
+                        }
+                        
+                        std::string card_uri = "alarm:" + datetime;
+                        (*create_card_fn)(card_uri);
+                        
+                        return std::format(R"({{"status":"success","message":"Alarm successfully set for {}"}})", datetime);
+                    }
+                )
+            };
+        }
+
         ~alarm() override {
             media_player_alarm_helper::stop_sound_loop();
             alarm_playing = false;
@@ -463,7 +553,7 @@ namespace rouen::cards {
 
     private:
         std::chrono::system_clock::time_point target_time;
-        char time_buffer[16] = {0};
+        char time_buffer[32] = {0};
         bool alarm_playing = false;
         bool alarm_active = true;
         
