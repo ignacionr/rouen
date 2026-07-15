@@ -22,6 +22,7 @@ pkg_check_modules(SDL2 REQUIRED sdl2)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 
 # Include parent directories for access to source files
 include_directories(..)
@@ -165,6 +166,8 @@ add_executable(test_mcp
     ../src/models/git_process_helper.cpp
     ../src/models/git_scanner.cpp
     ../src/helpers/config_service.cpp
+    ../src/cards/interface/card.cpp
+    ../src/helpers/theme_manager.cpp
 )
 target_link_libraries(test_mcp 
     PRIVATE 
@@ -173,6 +176,7 @@ target_link_libraries(test_mcp
     GTest::gmock
     GTest::gmock_main
     CURL::libcurl
+    imgui::imgui
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES

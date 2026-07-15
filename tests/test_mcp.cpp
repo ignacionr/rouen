@@ -6,6 +6,7 @@
 #include "../src/helpers/mcp_service.hpp"
 #include "../src/helpers/process_helper.hpp"
 #include "../src/models/git.hpp"
+#include "../src/cards/productivity/pomodoro.hpp"
 
 using namespace rouen::helpers;
 
@@ -155,3 +156,67 @@ TEST(MCPTest, GitMCPJSONFormatting) {
     EXPECT_TRUE(repos_json.find("modified") != std::string::npos);
     EXPECT_TRUE(repos_json.find("clean") != std::string::npos);
 }
+
+TEST(MCPTest, PomodoroMCPIntegration) {
+    mcp_service mcp;
+    
+    // Create Pomodoro card
+    auto pomo = std::make_shared<rouen::cards::pomodoro>();
+    
+    // Simulate dynamic MCP registration by the deck
+    auto functions = pomo->get_mcp_functions();
+    EXPECT_EQ(functions.size(), 2u);
+    
+    for (const auto& func : functions) {
+        mcp_service::function_definition def(
+            func.name,
+            func.description,
+            func.schema,
+            func.handler,
+            "pomodoro"
+        );
+        mcp.register_function("pomodoro", def);
+    }
+    
+    // Verify tools are registered
+    EXPECT_TRUE(mcp.has_function("start_pomodoro"));
+    EXPECT_TRUE(mcp.has_function("get_pomodoro_status"));
+    
+    // Test get_pomodoro_status
+    auto status_res = mcp.execute_function("get_pomodoro_status", "{}");
+    EXPECT_TRUE(status_res.success);
+    EXPECT_TRUE(status_res.result.find("\"status\"") != std::string::npos);
+    EXPECT_TRUE(status_res.result.find("running") != std::string::npos || status_res.result.find("completed") != std::string::npos);
+    
+    // Test start_pomodoro
+    auto start_res = mcp.execute_function("start_pomodoro", "{}");
+    EXPECT_TRUE(start_res.success);
+    EXPECT_TRUE(start_res.result.find("Pomodoro started") != std::string::npos);
+}
+
+TEST(MCPTest, CreateCardMCP) {
+    mcp_service mcp;
+    
+    // The create_card tool should be registered by default
+    EXPECT_TRUE(mcp.has_function("create_card"));
+    
+    // Simulate registrar having the create_card service
+    std::string created_uri = "";
+    auto mock_create_card = std::make_shared<std::function<void(std::string const&)>>([&](std::string const& uri) {
+        created_uri = uri;
+    });
+    
+    registrar::add<std::function<void(std::string const&)>>("create_card", mock_create_card);
+    
+    // Test executing create_card
+    std::string params = R"({"uri":"pomodoro"})";
+    auto result = mcp.execute_function("create_card", params);
+    
+    EXPECT_TRUE(result.success);
+    EXPECT_TRUE(result.result.find("Card created successfully") != std::string::npos);
+    EXPECT_EQ(created_uri, "pomodoro");
+    
+    // Clean up registrar
+    registrar::remove<std::function<void(std::string const&)>>("create_card");
+}
+

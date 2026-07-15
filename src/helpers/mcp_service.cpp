@@ -10,12 +10,23 @@
 #include "debug.hpp"
 #include "mcp_service.hpp"
 #include "process_helper.hpp"
+#include "../registrar.hpp"
 
 namespace rouen::helpers {
 
 struct local_command_request {
     std::string command{};
     std::string working_directory{};
+};
+
+struct mcp_create_card_params {
+    std::string uri;
+    struct glaze {
+        using T = mcp_create_card_params;
+        static constexpr auto value = glz::object(
+            "uri", &T::uri
+        );
+    };
 };
 
 mcp_service::mcp_service() {
@@ -61,6 +72,44 @@ mcp_service::mcp_service() {
     );
     
     register_function("terminal", run_cmd_def);
+
+    // Register global create_card function
+    function_definition create_card_def(
+        "create_card",
+        "Create and add a new card to Rouen by its URI (e.g. 'pomodoro', 'terminal', 'git', 'calendar'). Use 'pomodoro' to open/create a Pomodoro timer card.",
+        R"mcp({
+            "type": "object",
+            "properties": {
+                "uri": {
+                    "type": "string",
+                    "description": "The URI of the card to create (e.g. 'pomodoro')"
+                }
+            },
+            "required": ["uri"]
+        })mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_create_card_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.uri.empty()) {
+                return R"({"status":"error","message":"Invalid params"})";
+            }
+            
+            auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+            if (!create_card_fn) {
+                return R"({"status":"error","message":"create_card service is not currently available"})";
+            }
+            
+            (*create_card_fn)(request.uri);
+            return R"({"status":"success","message":"Card created successfully"})";
+        },
+        "deck"
+    );
+    
+    register_function("deck", create_card_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {

@@ -346,6 +346,10 @@ namespace rouen::helpers {
                        "Enable auto two-way sync on application startup (1=true, 0=false)", "0");
         register_config("ROUEN_SYNC_AUTO_ON_SHUTDOWN", Category::GENERAL, false, false,
                        "Enable auto two-way sync on application shutdown (1=true, 0=false)", "0");
+        register_config("POMODORO_START_COMMAND", Category::GENERAL, false, false,
+                       "Command run when Pomodoro starts");
+        register_config("POMODORO_END_COMMAND", Category::GENERAL, false, false,
+                       "Command run when Pomodoro ends");
 
         CONFIG_INFO("Default configurations registered");
     }
