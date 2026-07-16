@@ -168,6 +168,7 @@ add_executable(test_mcp
     ../src/helpers/config_service.cpp
     ../src/cards/interface/card.cpp
     ../src/helpers/theme_manager.cpp
+    ../src/helpers/llm_config.cpp
 )
 target_link_libraries(test_mcp 
     PRIVATE 

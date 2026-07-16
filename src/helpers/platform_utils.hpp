@@ -104,7 +104,7 @@ namespace rouen::platform
     {
         #ifdef __APPLE__
             stop_speech();
-            std::jthread([text, voice, lang, cb = std::forward<Func>(on_complete)]() mutable {
+            std::thread([text, voice, lang, cb = std::forward<Func>(on_complete)]() mutable {
                 std::string clean_text = text;
                 size_t pos = 0;
                 while (true) {

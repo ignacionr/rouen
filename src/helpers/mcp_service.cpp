@@ -39,6 +39,10 @@ struct mcp_create_alarm_params {
     };
 };
 
+struct edit_file_request {
+    std::string path{};
+};
+
 mcp_service::mcp_service() {
     detect_system_info();
 
@@ -128,6 +132,43 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", create_alarm_def);
+
+    // Register default edit_file function associated with editor
+    function_definition edit_file_def(
+        "edit_file",
+        "Open a file in the Rouen internal text/image editor for viewing or editing. Accepts a file path.",
+        R"mcp({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The absolute or relative path of the file to open in the editor"
+                }
+            },
+            "required": ["path"]
+        })mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return "Error: Missing params. Expected JSON with a non-empty 'path' field.";
+            }
+            edit_file_request request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.path.empty()) {
+                return "Error: Invalid params. Expected JSON with a non-empty 'path' field.";
+            }
+            try {
+                auto edit_func = registrar::get<std::function<void(std::string const &)>>("edit");
+                if (edit_func) {
+                    (*edit_func)(request.path);
+                    return "Successfully opened " + request.path + " in the editor.";
+                }
+            } catch (...) {}
+            return "Error: Editor service is not available.";
+        },
+        "editor"
+    );
+    
+    register_function("editor", edit_file_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
