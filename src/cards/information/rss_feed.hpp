@@ -311,11 +311,11 @@ namespace rouen::cards
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.7f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.9f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 1.0f));
-                    if (ImGui::Button(ICON_MD_REFRESH)) {
+                    if (ImGui::Button(refresh_in_progress_.load() ? ICON_MD_REFRESH "..." : ICON_MD_REFRESH) && !refresh_in_progress_.load()) {
                         refreshFeed();
                     }
                     if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Refresh feed");
+                        ImGui::SetTooltip(refresh_in_progress_.load() ? "Refreshing feed..." : "Refresh feed");
                     }
                     ImGui::PopStyleColor(3);
                     
@@ -836,20 +836,32 @@ namespace rouen::cards
                     return;
                 }
 
-                // Trigger a refresh in the RSS host
-                if (rss_host->refreshFeed(feed_id))
-                {
-                    // Load the updated feed items
-                    loadFeed();
-                    RSS_INFO_FMT("Successfully refreshed RSS feed: {}", feed_title);
-                    
-                    // Notify all main RSS cards to invalidate their cache for this feed
-                    "invalidate_freshness_cache"_sfn(feed_url);
+                if (refresh_in_progress_.exchange(true)) {
+                    return;
                 }
-                else
-                {
-                    RSS_ERROR_FMT("Failed to refresh RSS feed: {}", feed_title);
-                }
+
+                std::jthread([this, f_id = feed_id, f_title = feed_title, f_url = feed_url]() {
+                    try {
+                        if (rss_host && rss_host->refreshFeed(f_id))
+                        {
+                            // Load the updated feed items
+                            loadFeed();
+                            RSS_INFO_FMT("Successfully refreshed RSS feed: {}", f_title);
+                            
+                            // Notify all main RSS cards to invalidate their cache for this feed
+                            "invalidate_freshness_cache"_sfn(f_url);
+                        }
+                        else
+                        {
+                            RSS_ERROR_FMT("Failed to refresh RSS feed: {}", f_title);
+                        }
+                    } catch (const std::exception &e) {
+                        RSS_ERROR_FMT("Exception while refreshing feed: {}", e.what());
+                    } catch (...) {
+                        RSS_ERROR("Unknown exception while refreshing feed");
+                    }
+                    refresh_in_progress_ = false;
+                }).detach();
             }
             catch (const std::exception &e)
             {
@@ -881,6 +893,7 @@ namespace rouen::cards
         std::shared_ptr<::helpers::ImageCache> image_cache;
         std::atomic<bool> feed_image_downloaded_{false};
         std::atomic<bool> items_loaded_{false};
+        std::atomic<bool> refresh_in_progress_{false};
         std::vector<rouen::hosts::RSSHost::FeedItem> pending_items_;
         std::mutex items_mutex_;
 

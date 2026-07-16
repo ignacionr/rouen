@@ -303,6 +303,7 @@ namespace rouen::cards {
                     {"Calendar", []() { "create_card"_sfn("calendar"); }},
                     {"AI Chat", []() { "create_card"_sfn("ai-chat"); }},
                     {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
+                    {"RSS Smart Lists", []() { "create_card"_sfn("rss-smart-list:Smart List"); }},
                     {"Travel Plans", []() { "create_card"_sfn("travel"); }},
                     {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
                     {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},

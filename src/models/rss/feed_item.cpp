@@ -7,9 +7,11 @@
 namespace media::rss {
     feed_item::feed_item(std::string_view title_param, std::string_view link_param, std::string_view description_param,
                  std::string_view enclosure_param, std::string_view image_url_param,
-                 std::chrono::system_clock::time_point updated_param)
+                 std::chrono::system_clock::time_point updated_param,
+                 std::optional<double> media_duration_param)
         : title(title_param), link(link_param), description(description_param),
-          enclosure(enclosure_param), image_url(image_url_param), updated(updated_param) {}
+          enclosure(enclosure_param), image_url(image_url_param), updated(updated_param),
+          media_duration_seconds(media_duration_param) {}
 
     void feed_item::refresh_summary() {
         try {

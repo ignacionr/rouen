@@ -131,7 +131,7 @@ namespace rouen::helpers {
 
             GIT_SYNC_INFO("Pulling latest changes from remote Git repository...");
             const std::string command = std::format(
-                "git -C {} pull --rebase",
+                "git -C {} pull --rebase --autostash",
                 shell_escape(cache_path_)
             );
 

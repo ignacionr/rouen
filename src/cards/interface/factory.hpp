@@ -27,6 +27,7 @@
 #include "../information/rss.hpp"
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
+#include "../information/rss_smart_list.hpp"
 #include "../information/travel.hpp"
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
@@ -204,6 +205,14 @@ namespace rouen::cards {
                 
                 instance.emplace("rss-item", [](std::string_view uri, SDL_Renderer* renderer) {
                     auto card = std::make_shared<rss_item>(std::string(uri));
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
+                });
+                
+                instance.emplace("rss-smart-list", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<rss_smart_list>(std::string(uri));
                     if (renderer) {
                         card->set_renderer(renderer);
                     }

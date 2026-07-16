@@ -188,6 +188,74 @@ namespace hosting::db
             DB_TRACE_FMT("SQL execution with callback complete on {}", db_path_);
         }
 
+        void exec_dynamic(const std::string &sql, stmt_callback_t callback, const std::vector<std::string>& params) {
+            DB_TRACE_FMT("Acquiring lock for exec SQL dynamic on DB {}: {}...", db_path_, sql.substr(0, 40));
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            DB_TRACE_FMT("Lock acquired, preparing statement for SQL on {}", db_path_);
+            
+            sqlite3_stmt *stmt = nullptr;
+            int prepare_retries = 0;
+            int prepare_rc = SQLITE_OK;
+            
+            while (prepare_retries < 5) {
+                prepare_rc = sqlite3_prepare_v2(db_, sql.c_str(), -1, &stmt, nullptr);
+                if (prepare_rc != SQLITE_BUSY && prepare_rc != SQLITE_LOCKED) break;
+                
+                DB_WARN_FMT("Database {} busy/locked during prepare, retry attempt {}", db_path_, prepare_retries+1);
+                std::this_thread::sleep_for(std::chrono::milliseconds(50 * (1 << prepare_retries)));
+                prepare_retries++;
+            }
+            
+            if (prepare_rc != SQLITE_OK) {
+                std::string error_msg = std::format("Failed to prepare statement on {}: {}", db_path_, sqlite3_errmsg(db_));
+                DB_ERROR(error_msg);
+                throw std::runtime_error(error_msg);
+            }
+            
+            try {
+                for (size_t i = 0; i < params.size(); ++i) {
+                    sqlite3_bind_text(stmt, static_cast<int>(i + 1), params[i].data(), static_cast<int>(params[i].size()), SQLITE_TRANSIENT);
+                }
+                
+                int step_retries = 0;
+                int step_rc = SQLITE_OK;
+                
+                while (true) {
+                    step_retries = 0;
+                    while (step_retries < 5) {
+                        step_rc = sqlite3_step(stmt);
+                        if (step_rc != SQLITE_BUSY && step_rc != SQLITE_LOCKED) break;
+                        
+                        DB_WARN_FMT("Database {} busy/locked during step, retry attempt {}", db_path_, step_retries+1);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50 * (1 << step_retries)));
+                        step_retries++;
+                    }
+                    
+                    if (step_rc == SQLITE_ROW && callback) {
+                        callback(stmt);
+                    } else {
+                        break;
+                    }
+                }
+                
+                if (step_rc != SQLITE_DONE && step_rc != SQLITE_ROW && step_rc != SQLITE_OK) {
+                    std::string error_msg = std::format("SQL error during step on {}: {}", db_path_, sqlite3_errmsg(db_));
+                    DB_ERROR(error_msg);
+                    throw std::runtime_error(error_msg);
+                }
+            } catch (...) {
+                sqlite3_finalize(stmt);
+                throw;
+            }
+            
+            if (sqlite3_finalize(stmt) != SQLITE_OK) {
+                std::string error_msg = std::format("SQL error during finalize on {}: {}", db_path_, sqlite3_errmsg(db_));
+                DB_ERROR(error_msg);
+                throw std::runtime_error(error_msg);
+            }
+            DB_TRACE_FMT("SQL execution dynamic complete on {}", db_path_);
+        }
+
         long long last_insert_rowid() const {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
             return sqlite3_last_insert_rowid(db_);

@@ -237,9 +237,52 @@ namespace rouen::helpers {
             }
         }
 
-        // Two-way sync: Pull & Merge -> Export local additions -> Push
+        // Two-way sync: Export local additions -> Pull & Merge -> Import merged -> Push
         bool sync_twoway(const std::string& commit_message = "Two-way sync update", bool import_config = true) {
             UNIV_SYNC_INFO("Starting Two-Way Sync process...");
+            
+            // Export local states first so they are not overwritten by sync_in
+            try {
+                auto& git = GitSyncService::instance();
+                if (git.is_configured() && git.initialize()) {
+                    auto cache_dir = git.get_cache_path();
+                    std::filesystem::create_directories(cache_dir / "notes");
+                    std::filesystem::create_directories(cache_dir / "travel");
+                    std::filesystem::create_directories(cache_dir / "rss");
+                    std::filesystem::create_directories(cache_dir / "objectives");
+                    std::filesystem::create_directories(cache_dir / "config");
+
+                    // 1. Export Notes
+                    models::notes::notes_repository notes_repo;
+                    notes_repo.export_to_directory(cache_dir / "notes");
+
+                    // 2. Export Travel Plans
+                    media::travel::sqliterepo travel_repo(rouen::platform::get_user_data_path("travel.db").string());
+                    travel_repo.export_to_directory(cache_dir / "travel");
+
+                    // 3. Export RSS subscriptions
+                    media::rss::sqliterepo rss_repo(rouen::platform::get_user_data_path("rss.db").string());
+                    rss_repo.export_to_directory(cache_dir / "rss");
+
+                    // 4. Copy Objectives
+                    copy_file_if_exists(rouen::platform::get_user_data_path("objectives") / "objectives.json",
+                                        cache_dir / "objectives" / "objectives.json");
+                    copy_file_if_exists(rouen::platform::get_user_data_path("objectives") / "ledger.json",
+                                        cache_dir / "objectives" / "ledger.json");
+
+                    // 5. Copy Sovereign KPIs
+                    copy_file_if_exists(rouen::platform::get_user_data_path("kpis.json"),
+                                        cache_dir / "kpis.json");
+
+                    // 6. Copy Configurations (Layout / Themes)
+                    copy_file_if_exists(rouen::platform::get_user_config_directory() / "rouen.ini",
+                                        cache_dir / "config" / "rouen.ini");
+                    copy_file_if_exists(rouen::platform::get_user_config_directory() / "themes.json",
+                                        cache_dir / "config" / "themes.json");
+                }
+            } catch (const std::exception& e) {
+                UNIV_SYNC_WARN_FMT("Failed to export local state before sync_in: {}", e.what());
+            }
             
             // First Pull and merge remote edits
             if (!sync_in(import_config)) {

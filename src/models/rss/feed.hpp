@@ -19,6 +19,52 @@
 #include "rss_date_parser.hpp"
 #include "feed_xml_parser.hpp"
 
+namespace {
+    inline double parse_duration_to_seconds(std::string_view dur_str) {
+        std::string s(dur_str);
+        s.erase(0, s.find_first_not_of(" \t\r\n"));
+        s.erase(s.find_last_not_of(" \t\r\n") + 1);
+        if (s.empty()) return 0.0;
+        
+        bool all_digits = true;
+        for (char c : s) {
+            if (!std::isdigit(static_cast<unsigned char>(c)) && c != '.') {
+                all_digits = false;
+                break;
+            }
+        }
+        if (all_digits) {
+            try {
+                return std::stod(s);
+            } catch (...) {
+                return 0.0;
+            }
+        }
+        
+        std::vector<std::string> parts;
+        std::stringstream ss(s);
+        std::string part;
+        while (std::getline(ss, part, ':')) {
+            parts.push_back(part);
+        }
+        
+        try {
+            if (parts.size() == 3) {
+                double hrs = std::stod(parts[0]);
+                double mins = std::stod(parts[1]);
+                double secs = std::stod(parts[2]);
+                return hrs * 3600.0 + mins * 60.0 + secs;
+            } else if (parts.size() == 2) {
+                double mins = std::stod(parts[0]);
+                double secs = std::stod(parts[1]);
+                return mins * 60.0 + secs;
+            }
+        } catch (...) {}
+        
+        return 0.0;
+    }
+}
+
 namespace media::rss {
     struct feed {
         void operator()(std::string_view partial_contents) {
@@ -170,6 +216,15 @@ namespace media::rss {
                             new_item.image_url = itunes_image->Attribute("href");
                         }
                         
+                        // look for an itunes:duration tag
+                        auto itunes_dur = xml_item->FirstChildElement("itunes:duration");
+                        if (itunes_dur && itunes_dur->GetText()) {
+                            double dur = parse_duration_to_seconds(itunes_dur->GetText());
+                            if (dur > 0.0) {
+                                new_item.media_duration_seconds = dur;
+                            }
+                        }
+                        
                         // Enhanced: Extract media URLs from description content
                         if (!new_item.description.empty()) {
                             new_item.extracted_media_urls = media::html::extract_media_urls(new_item.description);
@@ -268,6 +323,15 @@ namespace media::rss {
                             if (feed_image_url.empty()) {
                                 set_image(new_item.image_url);
                             }
+                        }
+                    }
+                    
+                    // look for an itunes:duration tag
+                    auto itunes_dur = xml_item->FirstChildElement("itunes:duration");
+                    if (itunes_dur && itunes_dur->GetText()) {
+                        double dur = parse_duration_to_seconds(itunes_dur->GetText());
+                        if (dur > 0.0) {
+                            new_item.media_duration_seconds = dur;
                         }
                     }
                     

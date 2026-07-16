@@ -330,6 +330,54 @@ public:
                 ImGui::Spacing();
             }
 
+            // Smart Lists section
+            {
+                auto smart_lists = rss_host->getSmartLists();
+                if (!smart_lists.empty()) {
+                    ImGui::TextColored(colors[0], "Your Smart Lists:");
+                    ImGui::Spacing();
+                    
+                    const float sl_row_width = ImGui::GetContentRegionAvail().x;
+                    float used_sl_width = 0.0f;
+                    const float sl_spacing = ImGui::GetStyle().ItemSpacing.x;
+                    
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 4.0f));
+                    
+                    for (size_t i = 0; i < smart_lists.size(); ++i) {
+                        const auto& sl = smart_lists[i];
+                        std::string label = ICON_MD_FILTER_LIST " " + sl.title;
+                        float btn_width = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                        
+                        const bool fits_same_line =
+                            i > 0 &&
+                            (used_sl_width + sl_spacing + btn_width <= sl_row_width);
+                        
+                        if (fits_same_line) {
+                            ImGui::SameLine(0.0f, sl_spacing);
+                            used_sl_width += sl_spacing + btn_width;
+                        } else {
+                            used_sl_width = btn_width;
+                        }
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.3f, 0.4f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 0.7f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.4f, 0.3f, 0.9f));
+                        
+                        std::string btn_id = std::format("{}##smart_list_btn_{}", label, sl.title);
+                        if (ImGui::Button(btn_id.c_str())) {
+                            "create_card"_sfn("rss-smart-list:" + sl.title);
+                        }
+                        
+                        ImGui::PopStyleColor(3);
+                    }
+                    ImGui::PopStyleVar(2);
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                }
+            }
+
             // Feeds section title
             ImGui::TextColored(colors[0], "Your RSS Feeds:");
             

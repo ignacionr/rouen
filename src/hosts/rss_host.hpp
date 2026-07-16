@@ -18,6 +18,9 @@
 #include <fstream>
 #include <filesystem>
 #include <regex>
+#include <array>
+#include <cstdio>
+#include <cmath>
 
 #include <chrono>
 
@@ -168,6 +171,76 @@ namespace {
         return out;
     }
 
+    inline bool is_youtube_media_url(const std::string& url) {
+        std::string lower = ::helpers::StringHelper::to_lower(url);
+        return lower.find("youtube.com") != std::string::npos || lower.find("youtu.be") != std::string::npos;
+    }
+
+    inline std::optional<std::string> extract_youtube_video_id(const std::string& url) {
+        std::smatch match;
+        static const std::regex watch_rx(R"raw([?&]v=([A-Za-z0-9_-]{11}))raw");
+        static const std::regex short_rx(R"raw(youtu\.be/([A-Za-z0-9_-]{11}))raw");
+        static const std::regex shorts_rx(R"raw(/shorts/([A-Za-z0-9_-]{11}))raw");
+        static const std::regex embed_rx(R"raw(/embed/([A-Za-z0-9_-]{11}))raw");
+
+        if (std::regex_search(url, match, watch_rx) && match.size() > 1) {
+            return match.str(1);
+        }
+        if (std::regex_search(url, match, short_rx) && match.size() > 1) {
+            return match.str(1);
+        }
+        if (std::regex_search(url, match, shorts_rx) && match.size() > 1) {
+            return match.str(1);
+        }
+        if (std::regex_search(url, match, embed_rx) && match.size() > 1) {
+            return match.str(1);
+        }
+        return std::nullopt;
+    }
+
+    inline std::optional<double> probe_youtube_duration(const std::string& url) {
+        auto video_id = extract_youtube_video_id(url);
+        if (!video_id.has_value()) {
+            return std::nullopt;
+        }
+
+        const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
+        try {
+            http::fetch client{4};
+            std::vector<std::string> headers = {
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            std::string html = client(watch_url, headers);
+            if (html.empty()) {
+                return std::nullopt;
+            }
+
+            std::smatch match;
+            static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
+            static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
+
+            if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
+                try {
+                    auto secs = std::stod(match.str(1));
+                    if (secs > 0.0 && std::isfinite(secs)) {
+                        return secs;
+                    }
+                } catch (...) {}
+            }
+            if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
+                try {
+                    auto ms = std::stod(match.str(1));
+                    if (ms > 0.0 && std::isfinite(ms)) {
+                        return ms / 1000.0;
+                    }
+                } catch (...) {}
+            }
+        } catch (const std::exception& e) {
+            HTTP_DEBUG_FMT("Failed to probe YouTube duration for {}: {}", url, e.what());
+        }
+        return std::nullopt;
+    }
+
     struct link_metadata {
         std::string title;
         std::string description;
@@ -251,6 +324,162 @@ namespace {
         md.image_url = trim_copy(md.image_url);
         return md;
     }
+
+    inline uint32_t read_u32_be(const unsigned char* p) {
+        return (static_cast<uint32_t>(p[0]) << 24) |
+               (static_cast<uint32_t>(p[1]) << 16) |
+               (static_cast<uint32_t>(p[2]) << 8)  |
+               static_cast<uint32_t>(p[3]);
+    }
+
+    inline uint64_t read_u64_be(const unsigned char* p) {
+        return (static_cast<uint64_t>(read_u32_be(p)) << 32) | read_u32_be(p + 4);
+    }
+
+    inline std::optional<double> parse_mp4_duration_bytes(const unsigned char* data, size_t size) {
+        size_t offset = 0;
+        while (offset + 8 <= size) {
+            uint64_t box_size = read_u32_be(data + offset);
+            std::string_view box_type(reinterpret_cast<const char*>(data + offset + 4), 4);
+            
+            size_t header_size = 8;
+            if (box_size == 1) {
+                if (offset + 16 > size) break;
+                box_size = read_u64_be(data + offset + 8);
+                header_size = 16;
+            } else if (box_size == 0) {
+                box_size = size - offset;
+            }
+            
+            if (box_size < header_size || offset + box_size > size) {
+                break;
+            }
+            
+            if (box_type == "moov") {
+                size_t sub_offset = offset + header_size;
+                size_t sub_limit = offset + box_size;
+                while (sub_offset + 8 <= sub_limit) {
+                    uint64_t sub_size = read_u32_be(data + sub_offset);
+                    std::string_view sub_type(reinterpret_cast<const char*>(data + sub_offset + 4), 4);
+                    
+                    size_t sub_header = 8;
+                    if (sub_size == 1) {
+                        if (sub_offset + 16 > sub_limit) break;
+                        sub_size = read_u64_be(data + sub_offset + 8);
+                        sub_header = 16;
+                    } else if (sub_size == 0) {
+                        sub_size = sub_limit - sub_offset;
+                    }
+                    
+                    if (sub_size < sub_header || sub_offset + sub_size > sub_limit) {
+                        break;
+                    }
+                    
+                    if (sub_type == "mvhd") {
+                        size_t mvhd_data_offset = sub_offset + sub_header;
+                        if (mvhd_data_offset + 4 > sub_limit) break;
+                        
+                        uint8_t version = data[mvhd_data_offset];
+                        if (version == 0) {
+                            if (mvhd_data_offset + 12 + 8 > sub_limit) break;
+                            uint32_t timescale = read_u32_be(data + mvhd_data_offset + 12);
+                            uint32_t duration = read_u32_be(data + mvhd_data_offset + 16);
+                            if (timescale > 0 && duration > 0 && duration != 0xFFFFFFFF) {
+                                return static_cast<double>(duration) / timescale;
+                            }
+                        } else if (version == 1) {
+                            if (mvhd_data_offset + 20 + 12 > sub_limit) break;
+                            uint32_t timescale = read_u32_be(data + mvhd_data_offset + 20);
+                            uint64_t duration = read_u64_be(data + mvhd_data_offset + 24);
+                            if (timescale > 0 && duration > 0 && duration != 0xFFFFFFFFFFFFFFFF) {
+                                return static_cast<double>(duration) / timescale;
+                            }
+                        }
+                    }
+                    sub_offset += sub_size;
+                }
+            }
+            offset += box_size;
+        }
+        return std::nullopt;
+    }
+
+    inline std::optional<double> probe_mp4_duration(const std::string& url) {
+        try {
+            http::fetch client{5}; // 5-second timeout for header probe
+            // Request the first 256KB
+            std::vector<std::string> headers = {
+                "Range: bytes=0-262144",
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            std::string buffer = client(url, headers);
+            if (!buffer.empty()) {
+                return parse_mp4_duration_bytes(reinterpret_cast<const unsigned char*>(buffer.data()), buffer.size());
+            }
+        } catch (const std::exception& e) {
+            HTTP_DEBUG_FMT("Failed to probe MP4 duration for {}: {}", url, e.what());
+        }
+        return std::nullopt;
+    }
+
+    inline std::string shell_quote(std::string_view value) {
+        std::string out;
+        out.reserve(value.size() + 2);
+        out.push_back('\'');
+        for (char c : value) {
+            if (c == '\'') {
+                out += "'\\''";
+            } else {
+                out.push_back(c);
+            }
+        }
+        out.push_back('\'');
+        return out;
+    }
+
+    inline std::optional<double> parse_duration_seconds(std::string value) {
+        value = trim_copy(std::move(value));
+        if (value.empty()) {
+            return std::nullopt;
+        }
+        try {
+            double parsed = std::stod(value);
+            if (parsed > 0.0 && std::isfinite(parsed)) {
+                return parsed;
+            }
+        } catch (...) {
+        }
+        return std::nullopt;
+    }
+
+    inline std::optional<double> probe_media_duration_ffprobe(const std::string& url) {
+        static const std::string ffprobe_path = rouen::platform::find_executable("ffprobe");
+        if (ffprobe_path.empty() || url.empty()) {
+            return std::nullopt;
+        }
+
+        const std::string command = std::format(
+            "{} -v error -show_entries format=duration "
+            "-of default=noprint_wrappers=1:nokey=1 "
+            "-rw_timeout 2000000 -i {} 2>/dev/null",
+            shell_quote(ffprobe_path),
+            shell_quote(url)
+        );
+
+        FILE* pipe = popen(command.c_str(), "r");
+        if (!pipe) {
+            return std::nullopt;
+        }
+
+        std::array<char, 256> buffer{};
+        std::string output;
+        while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+            output += buffer.data();
+        }
+        [[maybe_unused]] int close_rc = pclose(pipe);
+
+        return parse_duration_seconds(output);
+    }
 }
 
 /**
@@ -272,6 +501,7 @@ public:
         std::chrono::system_clock::time_point publish_date;
         std::vector<media::html::extracted_media> extracted_media_urls; // Enhanced: extracted media from content
         std::optional<double> watermark; // playback watermark
+        std::optional<double> media_duration_seconds; // media duration in seconds
         
         long long feed_id = -1;
         std::string feed_title;
@@ -385,7 +615,7 @@ public:
                 // Load existing items from database (only load latest 5 items to keep startup instant)
                 repo_.scan_items_limit(feed_id, 5, [feed_ptr](const char* item_link, const char* item_enclosure, const char* item_title, 
                                                  const char* item_desc, const char* item_pub_date, const char* item_img_url,
-                                                 std::optional<double> watermark) {
+                                                 std::optional<double> watermark, std::optional<double> media_duration_seconds) {
                     auto publish_date = parse_db_date(item_pub_date ? item_pub_date : "");
                     
                     media::rss::feed_item item(
@@ -394,7 +624,8 @@ public:
                         item_desc ? item_desc : "",
                         item_enclosure ? item_enclosure : "",
                         item_img_url ? item_img_url : "",
-                        publish_date
+                        publish_date,
+                        media_duration_seconds
                     );
                     item.watermark = watermark;
                     
@@ -521,7 +752,8 @@ public:
         std::vector<FeedItem> results;
         repo_.search_items(query, [&results](long long feed_id, const char* feed_title, const char* link,
                                             const char* enclosure, const char* title, const char* description,
-                                            const char* pub_date, const char* image_url, std::optional<double> watermark) {
+                                            const char* pub_date, const char* image_url, std::optional<double> watermark,
+                                            std::optional<double> media_duration_seconds) {
             FeedItem item;
             item.feed_id = feed_id;
             item.feed_title = feed_title ? feed_title : "";
@@ -531,6 +763,7 @@ public:
             item.description = description ? description : "";
             item.image_url = image_url ? image_url : "";
             item.watermark = watermark;
+            item.media_duration_seconds = media_duration_seconds;
             
             item.publish_date = media::rss::parse_rss_date(pub_date);
             
@@ -589,6 +822,64 @@ public:
             feeds_.erase(pos);
             repo_.delete_feed(url);
         }
+    }
+
+    void saveSmartList(const std::string& title, const media::rss::filter_group& filter) {
+        std::string filter_json = glz::write_json(filter).value_or("");
+        if (!filter_json.empty()) {
+            repo_.save_smart_list(title, filter_json);
+        }
+    }
+
+    void deleteSmartList(const std::string& title) {
+        repo_.delete_smart_list(title);
+    }
+
+    struct SmartListInfo {
+        std::string title;
+        media::rss::filter_group filter;
+    };
+
+    std::vector<SmartListInfo> getSmartLists() {
+        std::vector<SmartListInfo> result;
+        repo_.scan_smart_lists([&result](const std::string& title, const std::string& filter_json) {
+            SmartListInfo info;
+            info.title = title;
+            auto err = glz::read_json(info.filter, filter_json);
+            if (!err) {
+                result.push_back(std::move(info));
+            }
+        });
+        return result;
+    }
+
+    std::vector<FeedItem> getFilteredItems(const media::rss::filter_group& filter) {
+        std::vector<FeedItem> items;
+        repo_.scan_filtered_items(filter, [&items](long long feed_id, const std::string& feed_title,
+                                                  const std::string& link, const std::string& enclosure,
+                                                  const std::string& title, const std::string& description,
+                                                  const std::string& pub_date, const std::string& image_url,
+                                                  std::optional<double> watermark, std::optional<double> media_duration_seconds) {
+            auto publish_date = parse_db_date(pub_date);
+            FeedItem item{
+                .title = title,
+                .description = description,
+                .link = link,
+                .enclosure = enclosure,
+                .image_url = image_url,
+                .publish_date = publish_date,
+                .extracted_media_urls = {},
+                .watermark = watermark,
+                .media_duration_seconds = media_duration_seconds,
+                .feed_id = feed_id,
+                .feed_title = feed_title
+            };
+            if (!item.description.empty()) {
+                item.extracted_media_urls = media::html::extract_media_urls(item.description);
+            }
+            items.push_back(std::move(item));
+        });
+        return items;
     }
 
     std::set<std::string> getFeedTags(long long feed_id) {
@@ -677,7 +968,7 @@ public:
         
         repo_.scan_items_limit(feed_id, limit, [&items, feed_id](const char* link, const char* enclosure, const char* title, 
                                          const char* description, const char* pub_date, const char* image_url,
-                                         std::optional<double> watermark) {
+                                         std::optional<double> watermark, std::optional<double> media_duration_seconds) {
             // Mark unused parameters to avoid warnings
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
@@ -694,6 +985,7 @@ public:
                 .publish_date = publish_date,
                 .extracted_media_urls = {},
                 .watermark = watermark,
+                .media_duration_seconds = media_duration_seconds,
                 .feed_id = feed_id,
                 .feed_title = ""
             };
@@ -776,7 +1068,7 @@ public:
         
         repo_.scan_items(feed_id, [&result, &item_link, &item_title, feed_id](const char* link, const char* enclosure, const char* title, 
                                                      const char* description, const char* pub_date, const char* image_url,
-                                                     std::optional<double> watermark) {
+                                                     std::optional<double> watermark, std::optional<double> media_duration_seconds) {
             // Mark unused parameters to avoid warnings
             (void)link; (void)enclosure; (void)title;
             (void)description; (void)pub_date; (void)image_url;
@@ -793,6 +1085,7 @@ public:
                     .publish_date = publish_date,
                     .extracted_media_urls = {},
                     .watermark = watermark,
+                    .media_duration_seconds = media_duration_seconds,
                     .feed_id = feed_id,
                     .feed_title = ""
                 };
@@ -1123,6 +1416,62 @@ private:
                 repo_.update_feed_url(resolved_url, feed_ptr->source_link);
             }
 
+            // Resolve missing duration metadata before taking the feeds mutex to avoid
+            // blocking UI reads while running network/process probes.
+            constexpr size_t k_max_duration_probe_attempts_per_feed = 12;
+            constexpr auto k_duration_probe_budget_per_feed = std::chrono::milliseconds(2500);
+            const auto duration_probe_deadline = std::chrono::steady_clock::now() + k_duration_probe_budget_per_feed;
+            size_t duration_probe_attempts = 0;
+
+            for (auto & item : feed_ptr->items) {
+                if (quitting()) {
+                    break;
+                }
+                if (duration_probe_attempts >= k_max_duration_probe_attempts_per_feed ||
+                    std::chrono::steady_clock::now() >= duration_probe_deadline) {
+                    break;
+                }
+                if (!item.media_duration_seconds.has_value() || item.media_duration_seconds.value() <= 0.0) {
+                    std::string media_url = item.get_best_media_url();
+                    if (!media_url.empty() && is_youtube_media_url(media_url)) {
+                        if (quitting()) break;
+                        if (duration_probe_attempts >= k_max_duration_probe_attempts_per_feed ||
+                            std::chrono::steady_clock::now() >= duration_probe_deadline) {
+                            break;
+                        }
+                        ++duration_probe_attempts;
+                        auto probed = probe_youtube_duration(media_url);
+                        if (probed) {
+                            item.media_duration_seconds = *probed;
+                        }
+                    }
+                    if (!media_url.empty() && (media_url.find(".mp4") != std::string::npos || media_url.find(".MP4") != std::string::npos)) {
+                        if (quitting()) break;
+                        if (duration_probe_attempts >= k_max_duration_probe_attempts_per_feed ||
+                            std::chrono::steady_clock::now() >= duration_probe_deadline) {
+                            break;
+                        }
+                        ++duration_probe_attempts;
+                        auto probed = probe_mp4_duration(media_url);
+                        if (probed) {
+                            item.media_duration_seconds = *probed;
+                        }
+                    }
+                    if (!item.media_duration_seconds.has_value() || item.media_duration_seconds.value() <= 0.0) {
+                        if (quitting()) break;
+                        if (duration_probe_attempts >= k_max_duration_probe_attempts_per_feed ||
+                            std::chrono::steady_clock::now() >= duration_probe_deadline) {
+                            break;
+                        }
+                        ++duration_probe_attempts;
+                        auto probed = probe_media_duration_ffprobe(media_url);
+                        if (probed) {
+                            item.media_duration_seconds = *probed;
+                        }
+                    }
+                }
+            }
+
             std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
             auto& feeds = feeds_;
             
@@ -1170,10 +1519,10 @@ private:
             }
             
             // Prepare items for batch insert
-            std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>> items_batch;
+            std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::optional<double>>> items_batch;
             items_batch.reserve(feed_ptr->items.size());
             
-            for (auto const& item : feed_ptr->items) {
+            for (auto & item : feed_ptr->items) {
                 // Format the date time
                 auto const pub_date = std::format("{:%F %T}", item.updated, item.updated);
                 
@@ -1184,7 +1533,8 @@ private:
                     item.link,
                     item.description,
                     pub_date,
-                    item.image_url
+                    item.image_url,
+                    item.media_duration_seconds
                 );
             }
             
