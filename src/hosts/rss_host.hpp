@@ -182,6 +182,7 @@ namespace {
         static const std::regex short_rx(R"raw(youtu\.be/([A-Za-z0-9_-]{11}))raw");
         static const std::regex shorts_rx(R"raw(/shorts/([A-Za-z0-9_-]{11}))raw");
         static const std::regex embed_rx(R"raw(/embed/([A-Za-z0-9_-]{11}))raw");
+        static const std::regex v_path_rx(R"raw(/v/([A-Za-z0-9_-]{11}))raw");
 
         if (std::regex_search(url, match, watch_rx) && match.size() > 1) {
             return match.str(1);
@@ -193,6 +194,9 @@ namespace {
             return match.str(1);
         }
         if (std::regex_search(url, match, embed_rx) && match.size() > 1) {
+            return match.str(1);
+        }
+        if (std::regex_search(url, match, v_path_rx) && match.size() > 1) {
             return match.str(1);
         }
         return std::nullopt;
@@ -1966,6 +1970,11 @@ private:
                         repo_.update_item_duration(link, *dur);
                         ++total_updated;
                         RSS_INFO_FMT("Backfilled duration {:.0f}s for {}", *dur, link);
+                    } else {
+                        // Mark unavailable/deleted videos with 0 so they are excluded
+                        // from future backfill queries and don't cause an infinite retry loop.
+                        repo_.update_item_duration(link, 0.0);
+                        RSS_INFO_FMT("Marking unavailable video with duration=0 for {}", link);
                     }
 
                     // Rate-limit: one probe per second to avoid hammering YouTube.
