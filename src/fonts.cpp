@@ -17,6 +17,12 @@ namespace rouen::fonts {
     // Static variables to track DPI state
     static float last_dpi_scale = 1.0f;
     static bool fonts_need_rebuild = false;
+
+    // Loaded font pointers — null means "not found / use default as fallback".
+    static ImFont* s_default_font = nullptr;
+    static ImFont* s_mono_font    = nullptr;
+    static ImFont* s_bold_font    = nullptr;
+    static ImFont* s_italic_font  = nullptr;
     // Helper function to find font file
     std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
         for (const auto& base_path : search_paths) {
@@ -35,6 +41,7 @@ namespace rouen::fonts {
         #ifdef __APPLE__
         // macOS font paths
         paths.push_back("/System/Library/Fonts/");
+        paths.push_back("/System/Library/Fonts/Supplemental/");  // Arial, Georgia, Verdana variants
         paths.push_back("/Library/Fonts/");
         const char* home = std::getenv("HOME");
         if (home) {
@@ -154,9 +161,51 @@ namespace rouen::fonts {
             if (mono_font_path.empty()) {
                 mono_font_path = find_font_path("SFMono-Regular.otf", font_paths);  // Modern macOS
             }
+            if (mono_font_path.empty()) {
+                mono_font_path = find_font_path("SFNSMono.ttf", font_paths);
+            }
             #else
             // Additional Linux fallbacks if needed
             mono_font_path = find_font_path("FreeMono.ttf", font_paths);
+            #endif
+        }
+
+        // Find bold font
+        std::string bold_font_path = find_font_path("DejaVuSans-Bold.ttf", font_paths);
+        if (bold_font_path.empty()) {
+            #ifdef __APPLE__
+            bold_font_path = find_font_path("Arial Bold.ttf", font_paths);
+            if (bold_font_path.empty()) {
+                bold_font_path = find_font_path("ArialBD.ttf", font_paths);
+            }
+            if (bold_font_path.empty()) {
+                bold_font_path = find_font_path("Georgia Bold.ttf", font_paths);
+            }
+            #else
+            bold_font_path = find_font_path("FreeSansBold.ttf", font_paths);
+            if (bold_font_path.empty()) {
+                bold_font_path = find_font_path("LiberationSans-Bold.ttf", font_paths);
+            }
+            #endif
+        }
+
+        // Find italic font
+        std::string italic_font_path = find_font_path("DejaVuSans-Oblique.ttf", font_paths);
+        if (italic_font_path.empty()) {
+            #ifdef __APPLE__
+            // SF NS Italic is available on all modern macOS versions.
+            italic_font_path = find_font_path("SFNSItalic.ttf", font_paths);
+            if (italic_font_path.empty()) {
+                italic_font_path = find_font_path("Arial Italic.ttf", font_paths);
+            }
+            if (italic_font_path.empty()) {
+                italic_font_path = find_font_path("ArialI.ttf", font_paths);
+            }
+            #else
+            italic_font_path = find_font_path("FreeSansOblique.ttf", font_paths);
+            if (italic_font_path.empty()) {
+                italic_font_path = find_font_path("LiberationSans-Italic.ttf", font_paths);
+            }
             #endif
         }
         
@@ -181,6 +230,8 @@ namespace rouen::fonts {
         // Log found font paths
         std::cout << "Default font path: " << default_font_path << '\n';
         std::cout << "Monospace font path: " << mono_font_path << '\n';
+        std::cout << "Bold font path: " << bold_font_path << '\n';
+        std::cout << "Italic font path: " << italic_font_path << '\n';
         std::cout << "Material icons font path: " << material_icons_path << '\n';
         
         // Check if we found the fonts
@@ -190,7 +241,7 @@ namespace rouen::fonts {
             // This will prevent the assertion failure but won't have all the glyphs
         } else {
             // Load the default font first
-            io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Then merge Material Design Icons with the default font
             if (!material_icons_path.empty()) {
@@ -212,14 +263,14 @@ namespace rouen::fonts {
         
         // Add monospace font if found
         if (!mono_font_path.empty()) {
-            io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Also merge Material Design Icons with the monospace font if found
             if (!material_icons_path.empty()) {
                 ImFontConfig icons_config;
                 icons_config.MergeMode = true;
                 icons_config.PixelSnapH = true;
-                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);  // Match the vertical offset used for default font
+                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
                 icons_config.OversampleH = 3;
                 icons_config.OversampleV = 3;
                 strcpy(icons_config.Name, "Material Icons (Mono)");
@@ -229,6 +280,22 @@ namespace rouen::fonts {
             }
         } else {
             std::cerr << "WARNING: Could not find a suitable monospace font!" << '\n';
+        }
+
+        // Add bold font if found; null s_bold_font means callers fall back to default.
+        if (!bold_font_path.empty()) {
+            s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            std::cout << "Loaded bold font: " << bold_font_path << '\n';
+        } else {
+            std::cerr << "WARNING: Could not find a suitable bold font — markdown bold will use the default font.\n";
+        }
+
+        // Add italic font if found; null s_italic_font means callers fall back to default.
+        if (!italic_font_path.empty()) {
+            s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            std::cout << "Loaded italic font: " << italic_font_path << '\n';
+        } else {
+            std::cerr << "WARNING: Could not find a suitable italic font — markdown italic will use the default font.\n";
         }
         
         // Build the font atlas after loading all fonts
@@ -295,19 +362,23 @@ namespace rouen::fonts {
     ImFont* get_font(FontType type) {
         auto & io = ImGui::GetIO();
         
-        // Make sure we don't return null fonts
         if (io.Fonts->Fonts.empty()) {
-            return io.Fonts->Fonts.Size > 0 ? io.Fonts->Fonts[0] : nullptr;
+            return nullptr;
         }
+
+        // Helper: return the font pointer if non-null, else the default, else Fonts[0].
+        auto fallback = [&](ImFont* f) -> ImFont* {
+            if (f) return f;
+            if (s_default_font) return s_default_font;
+            return io.Fonts->Fonts[0];
+        };
         
         switch (type) {
-            case FontType::Default:
-                return io.Fonts->Fonts[0]; // Default font merged with icons
-            case FontType::Mono:
-                // Return monospace font if available, otherwise fallback to default
-                return (io.Fonts->Fonts.Size > 1) ? io.Fonts->Fonts[1] : io.Fonts->Fonts[0];
-            default:
-                return io.Fonts->Fonts[0];
+            case FontType::Default: return fallback(s_default_font);
+            case FontType::Mono:    return fallback(s_mono_font);
+            case FontType::Bold:    return fallback(s_bold_font);
+            case FontType::Italic:  return fallback(s_italic_font);
+            default:                return fallback(s_default_font);
         }
     }
 

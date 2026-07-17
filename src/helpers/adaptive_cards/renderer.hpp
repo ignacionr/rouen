@@ -10,9 +10,20 @@
 #include <vector>
 
 #include "../imgui_include.hpp"
+#include "markdown.hpp"
 #include "parser.hpp"
 
 namespace rouen::helpers::adaptive_cards {
+
+// Font pointers for markdown span rendering.
+// All fields are optional: null means "use the current (default) ImGui font".
+// Populated by the call site from rouen::fonts::get_font(); the renderer
+// itself has no dependency on fonts.hpp so the test binary stays link-clean.
+struct render_config {
+    ImFont* font_bold{nullptr};
+    ImFont* font_italic{nullptr};
+    ImFont* font_code{nullptr};
+};
 
 struct renderer_interface {
     virtual ~renderer_interface() = default;
@@ -34,16 +45,18 @@ public:
 
     void render(const card_document& card) const override {
         input_state state{};
-        render(card, state, {});
+        const render_config default_config{};
+        render(card, state, {}, default_config);
     }
 
     void render(
         const card_document& card,
         input_state& state,
-        const action_callbacks& callbacks
+        const action_callbacks& callbacks,
+        const render_config& config
     ) const {
-        render_elements(card.body, "adaptive", state);
-        render_actions(card.actions, state, callbacks);
+        render_elements(card.body, "adaptive", state, callbacks, config);
+        render_actions(card.actions, state, callbacks, config);
     }
 
     [[nodiscard]] static std::vector<std::string> collect_lines(const card_document& card) {
@@ -85,24 +98,26 @@ private:
     static void render_elements(
         const std::vector<element>& elements,
         const std::string& scope,
-        input_state& state
+        input_state& state,
+        const action_callbacks& callbacks,
+        const render_config& config
     ) {
         for (std::size_t index = 0; index < elements.size(); ++index) {
             const auto& node = elements[index];
             const std::string id = std::format("{}-{}-{}", scope, node.type, index);
             if (node.type == "TextBlock") {
-                render_text_block(node);
+                render_text_block(node, callbacks, config);
             } else if (node.type == "Container") {
                 // Render containers inline so repeated `$data` entries don't consume all remaining space.
                 ImGui::PushID(id.c_str());
                 ImGui::BeginGroup();
-                render_elements(node.items, id, state);
+                render_elements(node.items, id, state, callbacks, config);
                 ImGui::EndGroup();
                 ImGui::PopID();
             } else if (node.type == "ColumnSet") {
-                render_column_set(node, id, state);
+                render_column_set(node, id, state, callbacks, config);
             } else if (node.type == "Column") {
-                render_elements(node.items, id, state);
+                render_elements(node.items, id, state, callbacks, config);
             } else if (node.type == "FactSet") {
                 render_fact_set(node, id);
             } else if (node.type == "Input.Text") {
@@ -113,13 +128,19 @@ private:
         }
     }
 
-    static void render_column_set(const element& node, const std::string& scope, input_state& state) {
+    static void render_column_set(
+        const element& node,
+        const std::string& scope,
+        input_state& state,
+        const action_callbacks& callbacks,
+        const render_config& config
+    ) {
         if (node.columns.empty()) {
             return;
         }
         ImGui::Columns(static_cast<int>(node.columns.size()), nullptr, false);
         for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
-            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state);
+            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config);
             ImGui::NextColumn();
         }
         ImGui::Columns(1);
@@ -152,7 +173,7 @@ private:
         if (!node.placeholder.empty()) {
             label = std::format("{} ({})", label, node.placeholder);
         }
-        std::array<char, 512> buffer{};
+        std::array<char, 1024> buffer{};
         std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
         if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
             it->second = buffer.data();
@@ -188,26 +209,110 @@ private:
         return 1.0f;
     }
 
-    static void render_text_block(const element& node) {
+    static void render_text_block(const element& node, const action_callbacks& callbacks, const render_config& config) {
         ImVec4 color = color_for(node.color);
         const float boost = weight_boost(node.weight);
         color.x = std::min(1.0f, color.x * boost);
         color.y = std::min(1.0f, color.y * boost);
         color.z = std::min(1.0f, color.z * boost);
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
+
+        const auto spans = parse_inline_markdown(node.text);
+        const bool is_plain = spans.size() == 1 && spans[0].kind == span_kind::normal;
 
         if (node.size == "Large" || node.size == "ExtraLarge") {
-            ImGui::SeparatorText(node.text.c_str());
-        } else {
-            ImGui::TextWrapped("%s", node.text.c_str());
+            if (is_plain) {
+                // Plain large text: SeparatorText gives a nice header look.
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::SeparatorText(node.text.c_str());
+                ImGui::PopStyleColor();
+            } else {
+                // Markdown large text: render spans so bold/italic markers are visible,
+                // then add a separator line below for the header visual grouping.
+                render_markdown_spans(spans, color, callbacks, config);
+                ImGui::Separator();
+            }
+            return;
         }
-        ImGui::PopStyleColor();
+
+        if (is_plain) {
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextWrapped("%s", node.text.c_str());
+            ImGui::PopStyleColor();
+        } else {
+            // Markdown spans are rendered inline. Each span is styled independently;
+            // SameLine(0,0) keeps spans on the same visual line until the window clips.
+            render_markdown_spans(spans, color, callbacks, config);
+        }
+    }
+
+    // Renders a list of markdown text_spans inline with per-span font and color styling.
+    // When a render_config font pointer is non-null the corresponding TTF font is pushed
+    // via ImGui::PushFont/PopFont; otherwise the current (default) font is kept.
+    // Links open via callbacks.open_url when clicked and show the URL as a tooltip.
+    static void render_markdown_spans(
+        const std::vector<text_span>& spans,
+        const ImVec4& base_color,
+        const action_callbacks& callbacks,
+        const render_config& config
+    ) {
+        bool first = true;
+        for (const auto& span : spans) {
+            if (!first) {
+                ImGui::SameLine(0.0f, 0.0f);
+            }
+            first = false;
+
+            switch (span.kind) {
+            case span_kind::normal:
+                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
+                ImGui::TextUnformatted(span.text.c_str());
+                ImGui::PopStyleColor();
+                break;
+            case span_kind::bold:
+                if (config.font_bold) { ImGui::PushFont(config.font_bold); }
+                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
+                ImGui::TextUnformatted(span.text.c_str());
+                ImGui::PopStyleColor();
+                if (config.font_bold) { ImGui::PopFont(); }
+                break;
+            case span_kind::italic:
+                if (config.font_italic) { ImGui::PushFont(config.font_italic); }
+                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
+                ImGui::TextUnformatted(span.text.c_str());
+                ImGui::PopStyleColor();
+                if (config.font_italic) { ImGui::PopFont(); }
+                break;
+            case span_kind::code: {
+                if (config.font_code) { ImGui::PushFont(config.font_code); }
+                constexpr ImVec4 code_color{0.50f, 0.90f, 0.70f, 1.0f};
+                ImGui::PushStyleColor(ImGuiCol_Text, code_color);
+                ImGui::TextUnformatted(span.text.c_str());
+                ImGui::PopStyleColor();
+                if (config.font_code) { ImGui::PopFont(); }
+                break;
+            }
+            case span_kind::link: {
+                constexpr ImVec4 link_color{0.35f, 0.65f, 1.0f, 1.0f};
+                ImGui::PushStyleColor(ImGuiCol_Text, link_color);
+                ImGui::TextUnformatted(span.text.c_str());
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", span.url.c_str());
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                }
+                if (ImGui::IsItemClicked() && !span.url.empty()) {
+                    callbacks.open_url(span.url);
+                }
+                break;
+            }
+            }
+        }
     }
 
     static void collect_lines_recursive(const std::vector<element>& nodes, std::vector<std::string>& lines) {
         for (const auto& node : nodes) {
             if (node.type == "TextBlock" && !node.text.empty()) {
-                lines.push_back(node.text);
+                lines.push_back(strip_markdown(node.text));
             } else if (node.type == "FactSet") {
                 for (const auto& pair : node.facts) {
                     lines.push_back(std::format("{}: {}", pair.title, pair.value));
@@ -229,7 +334,8 @@ private:
     static void render_actions(
         const std::vector<action>& actions,
         input_state& state,
-        const action_callbacks& callbacks
+        const action_callbacks& callbacks,
+        const render_config& config
     ) {
         if (actions.empty()) {
             return;
@@ -256,7 +362,7 @@ private:
 
             if (card_action.type == "Action.ShowCard" && state.show_card_expanded[idx]) {
                 ImGui::Indent();
-                render_elements(card_action.card.body, std::format("showcard-{}", idx), state);
+                render_elements(card_action.card.body, std::format("showcard-{}", idx), state, callbacks, config);
                 ImGui::Unindent();
             }
         }

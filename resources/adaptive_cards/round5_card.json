@@ -1,0 +1,29 @@
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "**Status Update** for ${project}",
+      "size": "Large"
+    },
+    {
+      "type": "TextBlock",
+      "text": "Reported by _${author}_ on `${date}`"
+    },
+    {
+      "type": "TextBlock",
+      "text": "**Severity:** ${severity} — *${status}*"
+    },
+    {
+      "type": "TextBlock",
+      "text": "See [release notes](${release_url}) for full details."
+    },
+    {
+      "type": "FactSet",
+      "facts": [
+        { "title": "Build", "value": "${build}" },
+        { "title": "Region", "value": "${region}" }
+      ]
+    }
+  ]
+}

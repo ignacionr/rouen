@@ -9,6 +9,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../../fonts.hpp"
 #include "../../helpers/adaptive_cards/parser.hpp"
 #include "../../helpers/adaptive_cards/renderer.hpp"
 #include "../../helpers/adaptive_cards/templater.hpp"
@@ -55,15 +56,22 @@ public:
             render_preset_selector();
             if (ImGui::BeginTabBar("AdaptiveCardTabs")) {
                 if (ImGui::BeginTabItem("Rendered")) {
-                    renderer_.render(bound_, input_state_, {
-                        .open_url = [this](const std::string& url) {
-                            last_opened_url_ = url;
-                            static_cast<void>(rouen::platform::open_url(url));
+                    renderer_.render(bound_, input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [this](const std::string& url) {
+                                last_opened_url_ = url;
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                last_submit_payload_ = payload;
+                            }
                         },
-                        .on_submit = [this](const std::string& payload) {
-                            last_submit_payload_ = payload;
+                        helpers::adaptive_cards::render_config{
+                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
                         }
-                    });
+                    );
                     if (!last_opened_url_.empty()) {
                         ImGui::Separator();
                         ImGui::TextWrapped("Last opened URL: %s", last_opened_url_.c_str());
@@ -161,7 +169,8 @@ private:
             {"Round 1 - Text + Flat Binding", "round1_card.json", "round1_context.json"},
             {"Round 2 - Layouts + Nested Binding", "round2_card.json", "round2_context.json"},
             {"Round 3 - Inputs + OpenUrl", "round3_card.json", "round3_context.json"},
-            {"Round 4 - Repeat + Submit + ShowCard", "round4_card.json", "round4_context.json"}
+            {"Round 4 - Repeat + Submit + ShowCard", "round4_card.json", "round4_context.json"},
+            {"Round 5 - Markdown Text", "round5_card.json", "round5_context.json"}
         };
     }
 

@@ -16,7 +16,9 @@ namespace rouen::fonts {
     // The different font types available
     enum class FontType {
         Default,      // Default font
-        Mono          // Monospace font
+        Mono,         // Monospace font
+        Bold,         // Bold variant
+        Italic        // Italic variant
     };
 
     // Setup fonts for the application

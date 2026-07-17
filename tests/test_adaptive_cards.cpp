@@ -1,5 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <ranges>
+
+#include "../src/helpers/adaptive_cards/markdown.hpp"
 #include "../src/helpers/adaptive_cards/parser.hpp"
 #include "../src/helpers/adaptive_cards/renderer.hpp"
 #include "../src/helpers/adaptive_cards/templater.hpp"
@@ -392,4 +396,228 @@ TEST(AdaptiveCardsRound4, BindsShowCardNestedFacts) {
     ASSERT_EQ(bound.actions[0].card.body[0].facts.size(), 2U);
     EXPECT_EQ(bound.actions[0].card.body[0].facts[0].value, "3");
     EXPECT_EQ(bound.actions[0].card.body[0].facts[1].value, "1");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Round 5 – Basic Markdown Text Support
+// ──────────────────────────────────────────────────────────────────────────────
+
+TEST(AdaptiveCardsRound5, PlainTextProducesSingleNormalSpan) {
+    const auto spans = parse_inline_markdown("Hello world");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::normal);
+    EXPECT_EQ(spans[0].text, "Hello world");
+}
+
+TEST(AdaptiveCardsRound5, EmptyStringProducesNoSpans) {
+    const auto spans = parse_inline_markdown("");
+    EXPECT_TRUE(spans.empty());
+}
+
+TEST(AdaptiveCardsRound5, ParsesBoldSpan) {
+    const auto spans = parse_inline_markdown("**bold**");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::bold);
+    EXPECT_EQ(spans[0].text, "bold");
+}
+
+TEST(AdaptiveCardsRound5, ParsesItalicAsterisk) {
+    const auto spans = parse_inline_markdown("*italic*");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::italic);
+    EXPECT_EQ(spans[0].text, "italic");
+}
+
+TEST(AdaptiveCardsRound5, ParsesItalicUnderscore) {
+    const auto spans = parse_inline_markdown("_italic_");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::italic);
+    EXPECT_EQ(spans[0].text, "italic");
+}
+
+TEST(AdaptiveCardsRound5, ParsesCodeSpan) {
+    const auto spans = parse_inline_markdown("`inline code`");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::code);
+    EXPECT_EQ(spans[0].text, "inline code");
+}
+
+TEST(AdaptiveCardsRound5, ParsesLinkSpan) {
+    const auto spans = parse_inline_markdown("[Rouen](https://github.com/ignacionr/rouen)");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::link);
+    EXPECT_EQ(spans[0].text, "Rouen");
+    EXPECT_EQ(spans[0].url, "https://github.com/ignacionr/rouen");
+}
+
+TEST(AdaptiveCardsRound5, ParsesMixedSpans) {
+    // "Hello **world**!" → normal + bold + normal
+    const auto spans = parse_inline_markdown("Hello **world**!");
+    ASSERT_EQ(spans.size(), 3U);
+    EXPECT_EQ(spans[0].kind, span_kind::normal);
+    EXPECT_EQ(spans[0].text, "Hello ");
+    EXPECT_EQ(spans[1].kind, span_kind::bold);
+    EXPECT_EQ(spans[1].text, "world");
+    EXPECT_EQ(spans[2].kind, span_kind::normal);
+    EXPECT_EQ(spans[2].text, "!");
+}
+
+TEST(AdaptiveCardsRound5, ParsesAllKindsInSequence) {
+    // "a **b** *c* `d`" → normal + bold + normal + italic + normal + code
+    const auto spans = parse_inline_markdown("a **b** *c* `d`");
+    ASSERT_EQ(spans.size(), 6U);
+    EXPECT_EQ(spans[0].kind, span_kind::normal);  EXPECT_EQ(spans[0].text, "a ");
+    EXPECT_EQ(spans[1].kind, span_kind::bold);    EXPECT_EQ(spans[1].text, "b");
+    EXPECT_EQ(spans[2].kind, span_kind::normal);  EXPECT_EQ(spans[2].text, " ");
+    EXPECT_EQ(spans[3].kind, span_kind::italic);  EXPECT_EQ(spans[3].text, "c");
+    EXPECT_EQ(spans[4].kind, span_kind::normal);  EXPECT_EQ(spans[4].text, " ");
+    EXPECT_EQ(spans[5].kind, span_kind::code);    EXPECT_EQ(spans[5].text, "d");
+}
+
+TEST(AdaptiveCardsRound5, ParsesAllKindsNoGaps) {
+    const auto spans = parse_inline_markdown("**b***i*`c`[l](u)");
+    ASSERT_EQ(spans.size(), 4U);
+    EXPECT_EQ(spans[0].kind, span_kind::bold);    EXPECT_EQ(spans[0].text, "b");
+    EXPECT_EQ(spans[1].kind, span_kind::italic);  EXPECT_EQ(spans[1].text, "i");
+    EXPECT_EQ(spans[2].kind, span_kind::code);    EXPECT_EQ(spans[2].text, "c");
+    EXPECT_EQ(spans[3].kind, span_kind::link);    EXPECT_EQ(spans[3].text, "l");
+    EXPECT_EQ(spans[3].url, "u");
+}
+
+TEST(AdaptiveCardsRound5, EscapedCharacterIsLiteral) {
+    const auto spans = parse_inline_markdown("Hello \\*world\\*");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::normal);
+    EXPECT_EQ(spans[0].text, "Hello *world*");
+}
+
+TEST(AdaptiveCardsRound5, UnterminatedMarkerIsLiteral) {
+    // "*hello" — no closing *, so treated as literal normal text.
+    const auto spans = parse_inline_markdown("*hello");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::normal);
+    EXPECT_EQ(spans[0].text, "*hello");
+}
+
+TEST(AdaptiveCardsRound5, StripMarkdownPlainText) {
+    EXPECT_EQ(strip_markdown("Hello world"), "Hello world");
+}
+
+TEST(AdaptiveCardsRound5, StripMarkdownRemovesAllMarkers) {
+    EXPECT_EQ(strip_markdown("**bold** *italic* `code` [link](url)"), "bold italic code link");
+}
+
+TEST(AdaptiveCardsRound5, StripMarkdownEmptyString) {
+    EXPECT_EQ(strip_markdown(""), "");
+}
+
+TEST(AdaptiveCardsRound5, CollectLinesStripsMarkdown) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "**Status:** critical" },
+    { "type": "TextBlock", "text": "Reported by *ignacionr*" }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+    const auto lines = renderer::collect_lines(parsed);
+
+    ASSERT_EQ(lines.size(), 2U);
+    EXPECT_EQ(lines[0], "Status: critical");
+    EXPECT_EQ(lines[1], "Reported by ignacionr");
+}
+
+TEST(AdaptiveCardsRound5, TemplatingInsideMarkdownSpans) {
+    // Binding expressions work transparently inside markdown markers.
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "**${project}** by _${author}_" }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON({"project": "Rouen", "author": "ignacionr"})JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 1U);
+    const auto spans = parse_inline_markdown(bound.body[0].text);
+    ASSERT_EQ(spans.size(), 3U);
+    EXPECT_EQ(spans[0].kind, span_kind::bold);   EXPECT_EQ(spans[0].text, "Rouen");
+    EXPECT_EQ(spans[1].kind, span_kind::normal);
+    EXPECT_EQ(spans[2].kind, span_kind::italic);  EXPECT_EQ(spans[2].text, "ignacionr");
+}
+
+TEST(AdaptiveCardsRound5, FullRound5CardParsesAndBinds) {
+    // Smoke-test against the same JSON as the round5 preset sample.
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "**Status Update** for ${project}", "size": "Large" },
+    { "type": "TextBlock", "text": "Reported by _${author}_ on `${date}`" },
+    { "type": "TextBlock", "text": "**Severity:** ${severity} — *${status}*" },
+    { "type": "TextBlock", "text": "See [release notes](${release_url}) for full details." }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON({
+  "project": "Rouen",
+  "author": "ignacionr",
+  "date": "2026-07-17",
+  "severity": "low",
+  "status": "in progress",
+  "release_url": "https://github.com/ignacionr/rouen/releases"
+})JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 4U);
+
+    // Row 0: header — large text, stripped by collect_lines.
+    const auto lines = renderer::collect_lines(bound);
+    ASSERT_EQ(lines.size(), 4U);
+    EXPECT_EQ(lines[0], "Status Update for Rouen");
+
+    // Row 1: italic author + code date.
+    {
+        const auto spans = parse_inline_markdown(bound.body[1].text);
+        ASSERT_GE(spans.size(), 2U);
+        // Find the italic span (author).
+        const auto it = std::ranges::find_if(spans, [](const text_span& s) {
+            return s.kind == span_kind::italic;
+        });
+        ASSERT_NE(it, spans.end());
+        EXPECT_EQ(it->text, "ignacionr");
+    }
+
+    // Row 3: link points to the resolved URL.
+    {
+        const auto spans = parse_inline_markdown(bound.body[3].text);
+        const auto link_it = std::ranges::find_if(spans, [](const text_span& s) {
+            return s.kind == span_kind::link;
+        });
+        ASSERT_NE(link_it, spans.end());
+        EXPECT_EQ(link_it->text, "release notes");
+        EXPECT_EQ(link_it->url, "https://github.com/ignacionr/rouen/releases");
+    }
 }

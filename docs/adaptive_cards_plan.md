@@ -358,3 +358,74 @@ Use URI format:
   "summary": { "total": 3, "critical": 1 }
 }
 ```
+
+---
+
+## ✅ Round 5 Execution Notes (Implemented)
+
+Round 5 extends Round 4 with basic inline Markdown rendering inside `TextBlock` elements:
+
+- New `markdown.hpp` helper with `parse_inline_markdown()` and `strip_markdown()`.
+- Supported inline markers:
+  - `**text**` → **bold** (brighter text color)
+  - `*text*` and `_text_` → *italic* (lavender tint)
+  - `` `text` `` → inline code (green tint)
+  - `[label](url)` → clickable link (blue, tooltip shows URL, opens via `Action.OpenUrl` callback)
+  - `\char` → escaped literal character
+- Plain text `TextBlock` elements continue to use `ImGui::TextWrapped` (no overhead).
+- Formatted text blocks render spans inline using `ImGui::SameLine(0, 0)`.
+- Large/ExtraLarge headers render as `ImGui::SeparatorText` with markdown stripped.
+- `renderer::collect_lines()` now strips markdown markers from `TextBlock` text.
+- `Input.Text` buffer size increased from 512 to 1024 characters.
+- `Action.ShowCard` body elements now receive link-click callbacks.
+
+### Round 5 UI Test Procedure in Rouen
+
+1. Launch Rouen.
+2. Open **Application Menu** → **Information** → **Adaptive Card**.
+3. In the **Adaptive Card Test Set** dropdown, choose **Round 5 - Markdown Text**.
+4. In the **Rendered** tab verify:
+   - Header shows as a separator with plain text (markdown stripped).
+   - Author line renders in italic tint, date in code (green) tint.
+   - Severity/status line has a bold prefix and italic status.
+   - Release notes line shows a blue clickable link; hovering shows the resolved URL tooltip.
+
+### Round 5 UI Test with External JSON Files
+
+Use URI format:
+
+`adaptive-card:<card_json_path>|<context_json_path>`
+
+**Card JSON** (`round5_card.json`)
+```json
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "**Status Update** for ${project}", "size": "Large" },
+    { "type": "TextBlock", "text": "Reported by _${author}_ on `${date}`" },
+    { "type": "TextBlock", "text": "**Severity:** ${severity} — *${status}*" },
+    { "type": "TextBlock", "text": "See [release notes](${release_url}) for full details." },
+    {
+      "type": "FactSet",
+      "facts": [
+        { "title": "Build", "value": "${build}" },
+        { "title": "Region", "value": "${region}" }
+      ]
+    }
+  ]
+}
+```
+
+**Context JSON** (`round5_context.json`)
+```json
+{
+  "project": "Rouen",
+  "author": "ignacionr",
+  "date": "2026-07-17",
+  "severity": "low",
+  "status": "in progress",
+  "release_url": "https://github.com/ignacionr/rouen/releases",
+  "build": "abc1234",
+  "region": "LATAM"
+}
+```
