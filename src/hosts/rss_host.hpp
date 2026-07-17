@@ -198,49 +198,6 @@ namespace {
         return std::nullopt;
     }
 
-    inline std::optional<double> probe_youtube_duration(const std::string& url) {
-        auto video_id = extract_youtube_video_id(url);
-        if (!video_id.has_value()) {
-            return std::nullopt;
-        }
-
-        const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
-        try {
-            http::fetch client{4};
-            std::vector<std::string> headers = {
-                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            };
-            std::string html = client(watch_url, headers);
-            if (html.empty()) {
-                return std::nullopt;
-            }
-
-            std::smatch match;
-            static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
-            static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
-
-            if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
-                try {
-                    auto secs = std::stod(match.str(1));
-                    if (secs > 0.0 && std::isfinite(secs)) {
-                        return secs;
-                    }
-                } catch (...) {}
-            }
-            if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
-                try {
-                    auto ms = std::stod(match.str(1));
-                    if (ms > 0.0 && std::isfinite(ms)) {
-                        return ms / 1000.0;
-                    }
-                } catch (...) {}
-            }
-        } catch (const std::exception& e) {
-            HTTP_DEBUG_FMT("Failed to probe YouTube duration for {}: {}", url, e.what());
-        }
-        return std::nullopt;
-    }
-
     struct link_metadata {
         std::string title;
         std::string description;
@@ -448,6 +405,74 @@ namespace {
                 return parsed;
             }
         } catch (...) {
+        }
+        return std::nullopt;
+    }
+
+    inline std::optional<double> probe_youtube_duration(const std::string& url) {
+        auto video_id = extract_youtube_video_id(url);
+        if (!video_id.has_value()) {
+            return std::nullopt;
+        }
+
+        static const std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
+        if (!ytdlp_path.empty()) {
+            const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
+            const std::string command = std::format(
+                "{} --no-warnings --quiet --print duration {} 2>/dev/null",
+                shell_quote(ytdlp_path),
+                shell_quote(watch_url)
+            );
+
+            FILE* pipe = popen(command.c_str(), "r");
+            if (pipe) {
+                std::array<char, 64> buffer{};
+                std::string output;
+                while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+                    output += buffer.data();
+                }
+                [[maybe_unused]] int close_rc = pclose(pipe);
+                auto dur = parse_duration_seconds(output);
+                if (dur.has_value()) {
+                    return dur;
+                }
+            }
+        }
+
+        // Fallback: scrape YouTube watch page for lengthSeconds / approxDurationMs
+        const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
+        try {
+            http::fetch client{4};
+            std::vector<std::string> headers = {
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            std::string html = client(watch_url, headers);
+            if (html.empty()) {
+                return std::nullopt;
+            }
+
+            std::smatch match;
+            static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
+            static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
+
+            if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
+                try {
+                    auto secs = std::stod(match.str(1));
+                    if (secs > 0.0 && std::isfinite(secs)) {
+                        return secs;
+                    }
+                } catch (...) {}
+            }
+            if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
+                try {
+                    auto ms = std::stod(match.str(1));
+                    if (ms > 0.0 && std::isfinite(ms)) {
+                        return ms / 1000.0;
+                    }
+                } catch (...) {}
+            }
+        } catch (const std::exception& e) {
+            HTTP_DEBUG_FMT("Failed to probe YouTube duration for {}: {}", url, e.what());
         }
         return std::nullopt;
     }
@@ -708,6 +733,10 @@ public:
         init_thread_.request_stop();
         if (init_thread_.joinable()) {
             init_thread_.join();
+        }
+        duration_backfill_thread_.request_stop();
+        if (duration_backfill_thread_.joinable()) {
+            duration_backfill_thread_.join();
         }
         periodic_refresh_thread_.request_stop();
         {
@@ -1679,6 +1708,9 @@ private:
 
         // Start the periodic background refresh loop
         startRefreshLoop();
+
+        // Start background yt-dlp backfill for items with missing YouTube duration
+        startDurationBackfill();
         
         // Defer initial feed refresh to allow the startup phase to complete smoothly
         for (int i = 0; i < 30; ++i) {
@@ -1820,6 +1852,7 @@ private:
     std::vector<std::jthread> active_fetch_threads_;
     std::mutex fetch_threads_mutex_;
     std::jthread periodic_refresh_thread_;
+    std::jthread duration_backfill_thread_;
     std::jthread init_thread_;
 
     std::chrono::system_clock::time_point last_refresh_time_ = std::chrono::system_clock::now();
@@ -1881,6 +1914,65 @@ private:
                 if (!urls_to_refresh.empty()) {
                     RSS_INFO_FMT("Starting periodic refresh of {} due feeds (staggered)...", urls_to_refresh.size());
                     refreshFeeds(urls_to_refresh);
+                }
+            }
+        });
+    }
+
+    void startDurationBackfill() {
+        duration_backfill_thread_ = std::jthread([this](std::stop_token stoken) {
+            auto quit_job = [stoken]() -> bool {
+                return "quitting"_fnb() || stoken.stop_requested();
+            };
+
+            // Wait 30 seconds for initial feed load to settle before backfilling.
+            for (int i = 0; i < 60; ++i) {
+                if (quit_job()) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            }
+
+            static const std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
+            if (ytdlp_path.empty()) {
+                RSS_WARN("yt-dlp not found — YouTube duration backfill skipped");
+                return;
+            }
+
+            RSS_INFO("Starting YouTube duration backfill via yt-dlp...");
+            int total_updated = 0;
+
+            while (!quit_job()) {
+                // Fetch a small batch of items still missing duration.
+                std::vector<std::pair<std::string, std::string>> batch; // (link, enclosure)
+                repo_.scan_items_missing_youtube_duration(20, [&batch](const std::string& link, const std::string& enc) {
+                    batch.emplace_back(link, enc);
+                });
+
+                if (batch.empty()) {
+                    RSS_INFO_FMT("YouTube duration backfill complete — {} items updated", total_updated);
+                    return;
+                }
+
+                for (auto& [link, enclosure] : batch) {
+                    if (quit_job()) return;
+
+                    // Prefer the stored enclosure; fall back to deriving a watch URL from the item link.
+                    std::string probe_url = enclosure.empty() ? link : enclosure;
+                    auto dur = probe_youtube_duration(probe_url);
+                    if (!dur.has_value() && probe_url != link) {
+                        dur = probe_youtube_duration(link);
+                    }
+
+                    if (dur.has_value()) {
+                        repo_.update_item_duration(link, *dur);
+                        ++total_updated;
+                        RSS_INFO_FMT("Backfilled duration {:.0f}s for {}", *dur, link);
+                    }
+
+                    // Rate-limit: one probe per second to avoid hammering YouTube.
+                    for (int i = 0; i < 10; ++i) {
+                        if (quit_job()) return;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    }
                 }
             }
         });

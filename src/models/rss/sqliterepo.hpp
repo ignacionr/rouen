@@ -718,6 +718,40 @@ namespace media::rss
             }
         }
 
+        void update_item_duration(const std::string& link, double duration_seconds) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec("UPDATE item SET media_duration_seconds = ? WHERE link = ? AND media_duration_seconds IS NULL",
+                         {}, duration_seconds, link);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in update_item_duration: {}", e.what());
+            }
+        }
+
+        // Yields (link, enclosure) for items whose duration is still unknown and
+        // whose enclosure URL looks like a YouTube link. Callers use these to
+        // run yt-dlp and then call update_item_duration().
+        template<typename Sink>
+        void scan_items_missing_youtube_duration(int limit, Sink sink) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            try {
+                db_.exec(
+                    "SELECT link, enclosure FROM item "
+                    "WHERE media_duration_seconds IS NULL "
+                    "AND (enclosure LIKE '%youtube.com%' OR enclosure LIKE '%youtu.be%') "
+                    "LIMIT ?",
+                    [&sink](sqlite3_stmt* stmt) {
+                        const char* link = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+                        const char* enc  = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                        sink(link ? link : "", enc ? enc : "");
+                    },
+                    limit
+                );
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in scan_items_missing_youtube_duration: {}", e.what());
+            }
+        }
+
         void save_smart_list(const std::string& title, const std::string& filter_json) {
             std::lock_guard<std::mutex> lock(mutex_);
             try {
@@ -799,7 +833,20 @@ namespace media::rss
                         }
                         sql += ")";
                     } else {
-                        sql += col + op_sql;
+                        const bool is_numeric_field = (cond.field == "media_duration_seconds" || cond.field == "media_duration");
+                        if (is_numeric_field) {
+                            // All params are bound as TEXT via sqlite3_bind_text. SQLite's type ordering
+                            // places REAL < TEXT, so a bare ? would never compare correctly against a
+                            // numeric column. Force the parameter to REAL with an explicit cast.
+                            std::string numeric_op_sql = op_sql;
+                            if (auto pos = numeric_op_sql.rfind('?'); pos != std::string::npos) {
+                                numeric_op_sql.replace(pos, 1, "CAST(? AS REAL)");
+                            }
+                            sql += col + numeric_op_sql;
+                        } else {
+                            sql += col + op_sql;
+                        }
+
                         if (cond.field == "pub_date" || cond.field == "published_date") {
                             auto rel_time = parse_relative_time(cond.value);
                             if (rel_time.has_value()) {
