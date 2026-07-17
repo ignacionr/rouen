@@ -13,7 +13,9 @@
 
 #include <TextEditor.h>
 
+#include "../../fonts.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../models/notes/notes_repository.hpp"
 #include "../interface/card.hpp"
@@ -183,7 +185,24 @@ private:
         ImGui::BeginChild("MarkdownPreviewPane", ImVec2(preview_width, 0.0f), true);
         ImGui::TextColored(colors[2], "%s", "Live Preview");
         ImGui::Separator();
-        render_markdown_preview(editor_.GetText());
+        {
+            const rouen::helpers::markdown_render_config md_config{
+                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono),
+            };
+            rouen::helpers::render_markdown_block(
+                editor_.GetText(),
+                md_config,
+                [this](const std::string& url) {
+                    if (url.starts_with("notes:")) {
+                        handle_uri(url);
+                    } else {
+                        rouen::platform::open_url(url);
+                    }
+                }
+            );
+        }
         ImGui::Spacing();
 
         const auto links = models::notes::notes_repository::parse_wiki_links(editor_.GetText());
@@ -572,24 +591,6 @@ private:
             return d;
         }();
         return definition;
-    }
-
-    static void render_markdown_preview(const std::string& markdown_text) {
-        std::istringstream lines(markdown_text);
-        std::string line;
-        while (std::getline(lines, line)) {
-            if (line.rfind("### ", 0) == 0) {
-                ImGui::Text("%s", line.substr(4).c_str());
-            } else if (line.rfind("## ", 0) == 0) {
-                ImGui::SeparatorText(line.substr(3).c_str());
-            } else if (line.rfind("# ", 0) == 0) {
-                ImGui::TextColored(ImVec4{0.85f, 0.7f, 0.3f, 1.0f}, "%s", line.substr(2).c_str());
-            } else if (line.rfind("- ", 0) == 0 || line.rfind("* ", 0) == 0) {
-                ImGui::BulletText("%s", line.substr(2).c_str());
-            } else {
-                ImGui::TextWrapped("%s", line.c_str());
-            }
-        }
     }
 
     void handle_shortcuts() {

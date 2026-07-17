@@ -10,20 +10,15 @@
 #include <vector>
 
 #include "../imgui_include.hpp"
+#include "../markdown_renderer.hpp"
 #include "markdown.hpp"
 #include "parser.hpp"
 
 namespace rouen::helpers::adaptive_cards {
 
-// Font pointers for markdown span rendering.
-// All fields are optional: null means "use the current (default) ImGui font".
-// Populated by the call site from rouen::fonts::get_font(); the renderer
-// itself has no dependency on fonts.hpp so the test binary stays link-clean.
-struct render_config {
-    ImFont* font_bold{nullptr};
-    ImFont* font_italic{nullptr};
-    ImFont* font_code{nullptr};
-};
+// Type alias so existing call sites (adaptive_card.hpp) continue to compile
+// unchanged; the canonical definition lives in helpers::markdown_render_config.
+using render_config = rouen::helpers::markdown_render_config;
 
 struct renderer_interface {
     virtual ~renderer_interface() = default;
@@ -228,7 +223,7 @@ private:
             } else {
                 // Markdown large text: render spans so bold/italic markers are visible,
                 // then add a separator line below for the header visual grouping.
-                render_markdown_spans(spans, color, callbacks, config);
+                rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
                 ImGui::Separator();
             }
             return;
@@ -239,73 +234,8 @@ private:
             ImGui::TextWrapped("%s", node.text.c_str());
             ImGui::PopStyleColor();
         } else {
-            // Markdown spans are rendered inline. Each span is styled independently;
-            // SameLine(0,0) keeps spans on the same visual line until the window clips.
-            render_markdown_spans(spans, color, callbacks, config);
-        }
-    }
-
-    // Renders a list of markdown text_spans inline with per-span font and color styling.
-    // When a render_config font pointer is non-null the corresponding TTF font is pushed
-    // via ImGui::PushFont/PopFont; otherwise the current (default) font is kept.
-    // Links open via callbacks.open_url when clicked and show the URL as a tooltip.
-    static void render_markdown_spans(
-        const std::vector<text_span>& spans,
-        const ImVec4& base_color,
-        const action_callbacks& callbacks,
-        const render_config& config
-    ) {
-        bool first = true;
-        for (const auto& span : spans) {
-            if (!first) {
-                ImGui::SameLine(0.0f, 0.0f);
-            }
-            first = false;
-
-            switch (span.kind) {
-            case span_kind::normal:
-                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-                ImGui::TextUnformatted(span.text.c_str());
-                ImGui::PopStyleColor();
-                break;
-            case span_kind::bold:
-                if (config.font_bold) { ImGui::PushFont(config.font_bold); }
-                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-                ImGui::TextUnformatted(span.text.c_str());
-                ImGui::PopStyleColor();
-                if (config.font_bold) { ImGui::PopFont(); }
-                break;
-            case span_kind::italic:
-                if (config.font_italic) { ImGui::PushFont(config.font_italic); }
-                ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-                ImGui::TextUnformatted(span.text.c_str());
-                ImGui::PopStyleColor();
-                if (config.font_italic) { ImGui::PopFont(); }
-                break;
-            case span_kind::code: {
-                if (config.font_code) { ImGui::PushFont(config.font_code); }
-                constexpr ImVec4 code_color{0.50f, 0.90f, 0.70f, 1.0f};
-                ImGui::PushStyleColor(ImGuiCol_Text, code_color);
-                ImGui::TextUnformatted(span.text.c_str());
-                ImGui::PopStyleColor();
-                if (config.font_code) { ImGui::PopFont(); }
-                break;
-            }
-            case span_kind::link: {
-                constexpr ImVec4 link_color{0.35f, 0.65f, 1.0f, 1.0f};
-                ImGui::PushStyleColor(ImGuiCol_Text, link_color);
-                ImGui::TextUnformatted(span.text.c_str());
-                ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", span.url.c_str());
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                }
-                if (ImGui::IsItemClicked() && !span.url.empty()) {
-                    callbacks.open_url(span.url);
-                }
-                break;
-            }
-            }
+            // Delegate to the shared inline markdown renderer.
+            rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
         }
     }
 
