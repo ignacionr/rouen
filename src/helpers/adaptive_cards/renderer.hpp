@@ -93,9 +93,12 @@ private:
             if (node.type == "TextBlock") {
                 render_text_block(node);
             } else if (node.type == "Container") {
-                ImGui::BeginChild(id.c_str(), ImVec2(0.0f, 0.0f), true);
+                // Render containers inline so repeated `$data` entries don't consume all remaining space.
+                ImGui::PushID(id.c_str());
+                ImGui::BeginGroup();
                 render_elements(node.items, id, state);
-                ImGui::EndChild();
+                ImGui::EndGroup();
+                ImGui::PopID();
             } else if (node.type == "ColumnSet") {
                 render_column_set(node, id, state);
             } else if (node.type == "Column") {

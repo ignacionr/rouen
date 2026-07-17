@@ -25,6 +25,7 @@ gantt
     Milestone 2: Rich Elements & Layouts         : 3d
     Milestone 3: Interactive Inputs & Basic Actions : 3d
     Milestone 4: Loops & Complex Actions        : 3d
+    Milestone 5: Basic Markdown Text Support    : 3d
 ```
 
 ### Milestone 1: Minimal Vertical Slice (Static Text & Simple Binding)
@@ -87,6 +88,23 @@ gantt
 
 > [!TIP]
 > **Outcome 4:** You can display variable-length feeds (like an RSS or GitHub notifications list) where clicking items opens inline details or submits forms back to the host system.
+
+---
+
+### Milestone 5: Basic Markdown Text Support
+**Goal:** Support common inline Markdown formatting in text-bearing card elements.
+
+- **Parser:** Preserve markdown-capable text content in `TextBlock` and related text fields without stripping markdown markers.
+- **Templating:** Keep `${...}` binding compatible with markdown text so substitutions can appear inside formatted spans.
+- **Renderer:** Add basic markdown rendering for:
+  - bold (`**text**`)
+  - italics (`*text*` and `_text_`)
+  - inline code (`` `text` ``)
+  - links (`[label](url)`)
+  - escaped markdown characters for literal display
+
+> [!TIP]
+> **Outcome 5:** You can author card content with lightweight markdown emphasis and links, and see it render with readable formatting instead of raw markdown syntax.
 
 ---
 
