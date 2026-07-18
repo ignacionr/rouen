@@ -429,3 +429,61 @@ Use URI format:
   "region": "LATAM"
 }
 ```
+
+---
+
+## ✅ AI Chat Markdown Integration (Implemented)
+
+The `render_markdown_block()` function from `markdown_renderer.hpp` is now used to render assistant message bubbles in the **AI Chat** card (`ai_chat.hpp`).
+
+### What Changed
+
+- **Assistant bubbles** now render full block-level Markdown:
+  - `# H1`, `## H2`, `### H3` headings with visual hierarchy
+  - ```` ``` ```` code fences with monospace font and green tint
+  - `---` / `***` / `___` horizontal separators
+  - `- ` / `* ` unordered bullet lists
+  - `1. ` ordered numbered lists
+  - `> ` blockquotes (indented, dimmed)
+  - Inline: `**bold**`, `*italic*`, `` `code` ``, `[link](url)`
+- **User bubbles** remain plain `ImGui::TextWrapped` (no Markdown) since they contain raw user input.
+- **Fonts:** Bold, Italic, and Mono fonts from `fonts.hpp` are used via `markdown_render_config`.
+- **Links:** Clicking a Markdown link in an assistant bubble opens the URL via `platform::open_url`.
+- **Layout:** Bubble height calculation now accounts for extra vertical space from Markdown block elements (headings, separators, code fences, bullets, blockquotes).
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `src/cards/information/ai_chat.hpp` | Added `markdown_renderer.hpp` and `fonts.hpp` includes; replaced `TextWrapped` with `render_markdown_block` for assistant bubbles; added MD-aware height estimation |
+| `tests/test_markdown_renderer.cpp` | **New:** 18 Google Test cases covering inline parsing for block content, AI response patterns, block-level prefix classification, ordered-list detection, escape handling |
+| `tests/CMakeLists.txt` | Registered `test_markdown_renderer` binary and added it to `run_all_tests`, `run_gtest_only`, `run_ctest` targets |
+| `docs/adaptive_cards_plan.md` | This section |
+
+### Test Coverage
+
+The new `test_markdown_renderer.cpp` covers:
+
+1. **Heading content parsing** — inline Markdown inside heading lines
+2. **Bullet and numbered list content** — inline parsing of list item bodies
+3. **Blockquote content** — inline parsing within blockquotes
+4. **Code fence toggle detection** — ``` prefix matching
+5. **Horizontal rule variants** — `---`, `***`, `___`
+6. **Ordered list prefix parsing** — digit-dot-space heuristic
+7. **Escaped characters** — `\*`, `\_` survival through inline parser
+8. **Edge cases** — empty input, whitespace-only input
+9. **Real-world AI response patterns** — mixed bold/code/link spans typical of LLM output
+10. **Block-level line prefix classification** — all supported prefixes
+
+### UI Test Procedure
+
+1. Launch Rouen.
+2. Open the **AI Chat** card.
+3. Send a message that will elicit a Markdown-formatted response (e.g., "List the top 3 programming languages and explain why in a bulleted list with bold headers").
+4. Verify the assistant's reply renders with:
+   - Bold text for `**emphasis**`
+   - Code spans in green monospace for `` `inline code` ``
+   - Code blocks in green monospace for fenced code
+   - Bullet points for list items
+   - Clickable blue links for `[text](url)`
+

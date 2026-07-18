@@ -116,8 +116,8 @@ TEST_F(RSSWatermarkTest, InMemoryAndDatabaseWatermarkSync) {
         bool found = false;
         check_repo.scan_items(feed->repo_id, [&](const char* link, const char* enclosure, const char* title,
                                                  const char* description, const char* pub_date, const char* image_url,
-                                                 std::optional<double> watermark) {
-            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url;
+                                                 std::optional<double> watermark, std::optional<double> media_duration_seconds) {
+            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url; (void)media_duration_seconds;
             if (std::string(title) == "Episode 1") {
                 found = true;
                 ASSERT_TRUE(watermark.has_value());
@@ -201,8 +201,8 @@ TEST_F(RSSWatermarkTest, StopAllSavesPreviousItemWatermark) {
         bool found = false;
         check_repo.scan_items(feed_id, [&](const char* link, const char* enclosure, const char* title,
                                                  const char* description, const char* pub_date, const char* image_url,
-                                                 std::optional<double> watermark) {
-            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url;
+                                                 std::optional<double> watermark, std::optional<double> media_duration_seconds) {
+            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url; (void)media_duration_seconds;
             if (std::string(title) == "Episode 1") {
                 found = true;
                 ASSERT_TRUE(watermark.has_value());
@@ -271,8 +271,8 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnCompletion) {
         bool found = false;
         check_repo.scan_items(feed_id, [&](const char* link, const char* enclosure, const char* title,
                                                  const char* description, const char* pub_date, const char* image_url,
-                                                 std::optional<double> watermark) {
-            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url;
+                                                 std::optional<double> watermark, std::optional<double> media_duration_seconds) {
+            (void)link; (void)enclosure; (void)description; (void)pub_date; (void)image_url; (void)media_duration_seconds;
             if (std::string(title) == "Episode 1") {
                 found = true;
                 ASSERT_TRUE(watermark.has_value());

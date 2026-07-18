@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <functional>
 #include <sstream>
 #include <string>
@@ -97,6 +99,56 @@ inline void render_inline_markdown(
     }
 }
 
+// Helpers for parsing markdown tables
+inline std::vector<std::string> split_table_row(std::string_view line) {
+    std::vector<std::string> cells;
+    std::string_view s = line;
+    
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+    if (!s.empty() && s.front() == '|') s.remove_prefix(1);
+    
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
+    if (!s.empty() && s.back() == '|') s.remove_suffix(1);
+
+    std::string current;
+    for (char c : s) {
+        if (c == '|') {
+            std::string_view cell_view = current;
+            while (!cell_view.empty() && std::isspace(static_cast<unsigned char>(cell_view.front()))) cell_view.remove_prefix(1);
+            while (!cell_view.empty() && std::isspace(static_cast<unsigned char>(cell_view.back()))) cell_view.remove_suffix(1);
+            cells.emplace_back(cell_view);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    std::string_view cell_view = current;
+    while (!cell_view.empty() && std::isspace(static_cast<unsigned char>(cell_view.front()))) cell_view.remove_prefix(1);
+    while (!cell_view.empty() && std::isspace(static_cast<unsigned char>(cell_view.back()))) cell_view.remove_suffix(1);
+    cells.emplace_back(cell_view);
+    
+    return cells;
+}
+
+inline bool is_table_delimiter(std::string_view line) {
+    std::string_view s = line;
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.remove_prefix(1);
+    if (s.empty() || s.front() != '|') return false;
+    s.remove_prefix(1);
+    
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.remove_suffix(1);
+    if (s.empty() || s.back() != '|') return false;
+    s.remove_suffix(1);
+
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (c != '-' && c != ':' && c != '|' && c != ' ') {
+            return false;
+        }
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // render_markdown_block
 //
@@ -104,6 +156,7 @@ inline void render_inline_markdown(
 //
 //   Block:  # H1  ## H2  ### H3  --- separator  - * bullets  1. numbered
 //           > blockquote  ``` ... ``` code fence  (empty line = spacing)
+//           | ... | tables
 //   Inline: **bold**  *italic*  `code`  [link](url)
 //
 // Headings use font_bold (if available) and visual hierarchy via colors and
@@ -123,9 +176,23 @@ inline void render_markdown_block(
 
     std::istringstream stream{std::string(markdown_text)};
     std::string line;
+    std::string leftover_line;
+    bool has_leftover_line = false;
     bool in_code_block = false;
+    
+    std::string pending_header_line;
+    bool has_pending_header = false;
 
-    while (std::getline(stream, line)) {
+    while (true) {
+        if (has_leftover_line) {
+            line = leftover_line;
+            has_leftover_line = false;
+        } else {
+            if (!std::getline(stream, line)) {
+                break;
+            }
+        }
+
         // ── Code fence toggle ──────────────────────────────────────────────
         if (line.starts_with("```")) {
             in_code_block = !in_code_block;
@@ -138,6 +205,104 @@ inline void render_markdown_block(
             ImGui::TextUnformatted(line.c_str());
             ImGui::PopStyleColor();
             if (config.font_code) ImGui::PopFont();
+            continue;
+        }
+
+        // ── Table State Machine ───────────────────────────────────────────
+        if (has_pending_header) {
+            if (is_table_delimiter(line)) {
+                auto header_cells = split_table_row(pending_header_line);
+                int table_columns = static_cast<int>(header_cells.size());
+                
+                // Read ahead to collect all data rows belonging to this table
+                std::vector<std::vector<std::string>> table_rows;
+                table_rows.push_back(header_cells);
+                
+                std::string next_line;
+                while (std::getline(stream, next_line)) {
+                    std::string_view trimmed_next = next_line;
+                    while (!trimmed_next.empty() && std::isspace(static_cast<unsigned char>(trimmed_next.front()))) {
+                        trimmed_next.remove_prefix(1);
+                    }
+                    if (trimmed_next.starts_with('|')) {
+                        if (is_table_delimiter(next_line)) {
+                            continue; // skip duplicate delimiter lines
+                        }
+                        table_rows.push_back(split_table_row(next_line));
+                    } else {
+                        leftover_line = next_line;
+                        has_leftover_line = true;
+                        break;
+                    }
+                }
+                
+                // Calculate max text length per column to compute proportions
+                std::vector<size_t> max_lens(static_cast<size_t>(table_columns), 0);
+                for (const auto& row : table_rows) {
+                    for (int col = 0; col < table_columns; ++col) {
+                        if (static_cast<size_t>(col) < row.size()) {
+                            max_lens[static_cast<size_t>(col)] = std::max(max_lens[static_cast<size_t>(col)], row[static_cast<size_t>(col)].length());
+                        }
+                    }
+                }
+                
+                // Generate unique table ID
+                static int table_id_counter = 0;
+                std::string table_id = "markdown_table_" + std::to_string(++table_id_counter);
+                
+                if (ImGui::BeginTable(table_id.c_str(), table_columns, 
+                                      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
+                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                    
+                    // Set up columns with dynamic stretch weights based on content length
+                    for (int col = 0; col < table_columns; ++col) {
+                        float max_len = static_cast<float>(max_lens[static_cast<size_t>(col)]);
+                        float weight = std::clamp(std::sqrt(max_len), 1.0f, 10.0f);
+                        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch, weight);
+                    }
+                    
+                    // Render headers
+                    ImGui::TableNextRow();
+                    for (int col = 0; col < table_columns; ++col) {
+                        ImGui::TableSetColumnIndex(col);
+                        if (config.font_bold) ImGui::PushFont(config.font_bold);
+                        render_inline_markdown(table_rows[0][static_cast<size_t>(col)], default_color, config, open_url_cb);
+                        if (config.font_bold) ImGui::PopFont();
+                    }
+                    
+                    // Render rows
+                    for (size_t r = 1; r < table_rows.size(); ++r) {
+                        ImGui::TableNextRow();
+                        for (int col = 0; col < table_columns; ++col) {
+                            ImGui::TableSetColumnIndex(col);
+                            if (static_cast<size_t>(col) < table_rows[r].size()) {
+                                render_inline_markdown(table_rows[r][static_cast<size_t>(col)], default_color, config, open_url_cb);
+                            }
+                        }
+                    }
+                    
+                    ImGui::EndTable();
+                }
+                
+                has_pending_header = false;
+                pending_header_line.clear();
+                continue;
+            } else {
+                // Not a table! Flush the pending header first as a paragraph
+                render_inline_markdown(pending_header_line, default_color, config, open_url_cb);
+                has_pending_header = false;
+                pending_header_line.clear();
+            }
+        }
+
+        std::string_view trimmed_line = line;
+        while (!trimmed_line.empty() && std::isspace(static_cast<unsigned char>(trimmed_line.front()))) {
+            trimmed_line.remove_prefix(1);
+        }
+        
+        if (trimmed_line.starts_with('|')) {
+            pending_header_line = line;
+            has_pending_header = true;
             continue;
         }
 
@@ -208,6 +373,11 @@ inline void render_markdown_block(
 
         // ── Regular paragraph ─────────────────────────────────────────────
         render_inline_markdown(line, default_color, config, open_url_cb);
+    }
+    
+    // Clean up any remaining open blocks at EOF
+    if (has_pending_header) {
+        render_inline_markdown(pending_header_line, default_color, config, open_url_cb);
     }
 }
 

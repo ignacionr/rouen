@@ -134,6 +134,7 @@ add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
 add_gtest_executable(test_weather_glaze test_weather_glaze.cpp)
 add_gtest_executable(test_adaptive_cards test_adaptive_cards.cpp)
+add_gtest_executable(test_markdown_renderer test_markdown_renderer.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
@@ -230,6 +231,7 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_weather_glaze
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_adaptive_cards
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_markdown_renderer
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
@@ -241,7 +243,7 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -254,12 +256,13 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_math_operations
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_weather_glaze
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_adaptive_cards
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_markdown_renderer
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_media_extraction
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rt_media
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp
     COMMENT "Running Google Test suite only"
 )
 
@@ -321,7 +324,7 @@ add_custom_target(run_rt_media_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
     COMMENT "Running tests through CTest framework"
 )
 

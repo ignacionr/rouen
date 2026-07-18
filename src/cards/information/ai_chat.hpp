@@ -17,11 +17,13 @@
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/llm_config.hpp"
+#include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/mcp_service.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../fonts.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 #include "../../../external/IconsMaterialDesign.h"
@@ -232,7 +234,7 @@ namespace rouen::cards {
                         // Use pre-calculated child ID
                         ImGui::BeginChild(cache.child_id.c_str(), 
                             ImVec2(cache.content_width, cache.bubble_height), true, 
-                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoResize);
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoResize);
                         
                         // Set text color based on sender
                         ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
@@ -268,10 +270,29 @@ namespace rouen::cards {
                         
                         ImGui::Separator();
                         
-                        // Display message content with proper text wrapping
-                        ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + cache.text_width);
-                        ImGui::TextWrapped("%s", message.second.c_str());
-                        ImGui::PopTextWrapPos();
+                        // Display message content: use Markdown rendering for
+                        // assistant replies (which may contain MD formatting),
+                        // plain text for user messages.
+                        if (!is_user) {
+                            const helpers::markdown_render_config md_cfg{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono),
+                            };
+                            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + cache.text_width);
+                            helpers::render_markdown_block(
+                                message.second,
+                                md_cfg,
+                                [](const std::string& url) {
+                                    rouen::platform::open_url(url);
+                                }
+                            );
+                            ImGui::PopTextWrapPos();
+                        } else {
+                            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + cache.text_width);
+                            ImGui::TextWrapped("%s", message.second.c_str());
+                            ImGui::PopTextWrapPos();
+                        }
                         
                         // Add right-click context menu for copying message
                         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(1)) {
@@ -322,7 +343,7 @@ namespace rouen::cards {
                     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
                     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
                     
-                    ImGui::BeginChild("thinking_indicator", ImVec2(150, 40), true, ImGuiWindowFlags_NoScrollbar);
+                    ImGui::BeginChild("thinking_indicator", ImVec2(150, 40), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6]));
                     
                     // Animated thinking dots - pre-computed strings for performance
@@ -877,8 +898,8 @@ namespace rouen::cards {
             
             const ImVec2 padding(10.0f, 8.0f);
             // Make max width more conservative to prevent horizontal overflow
-            const float max_width = available_width * 0.75f;  // More conservative from 0.80f
-            const float min_width = available_width * 0.15f;  
+            const float max_width = available_width * 0.92f;  // Use 92% of available width to avoid wasted margin
+            const float min_width = available_width * 0.10f;  
             const float line_height = ImGui::GetTextLineHeightWithSpacing();
             const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
             
@@ -890,14 +911,37 @@ namespace rouen::cards {
                 
                 bool is_user = message.first == "user";
                 
-                // Calculate content width with extra margin for scrollbar
-                cache.content_width = is_user ? 
-                    std::min(max_width, std::max(min_width, max_width)) : max_width;
+                // Calculate dynamic bubble width based on actual text size
+                const float max_text_width = max_width - padding.x * 2.0f - 24.0f; // safe space for padding and copy button
+                ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, max_text_width);
+                
+                cache.content_width = std::clamp(text_size.x + padding.x * 2.0f + 24.0f, min_width, max_width);
                 cache.text_width = cache.content_width - padding.x * 2.0f;
                 
-                // Calculate message text height with proper wrapping
-                ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, cache.text_width);
-                const float message_height = std::max(text_size.y, line_height);
+                float message_height = std::max(text_size.y, line_height);
+                
+                // For assistant messages, add extra height to account for
+                // markdown block elements (headings, separators, code fences,
+                // bullets, blockquotes, tables) which take more vertical space than
+                // plain text when rendered via render_markdown_block.
+                if (!is_user) {
+                    std::istringstream lines_stream{message.second};
+                    std::string md_line;
+                    float extra_height = 0.0f;
+                    while (std::getline(lines_stream, md_line)) {
+                        if (md_line.starts_with("# ") || md_line.starts_with("## ") || md_line.starts_with("### "))
+                            extra_height += separator_height + ImGui::GetStyle().ItemSpacing.y;
+                        else if (md_line.starts_with("```"))
+                            extra_height += ImGui::GetStyle().ItemSpacing.y;
+                        else if (md_line.starts_with("- ") || md_line.starts_with("* ") || md_line.starts_with("> "))
+                            extra_height += ImGui::GetStyle().ItemSpacing.y * 0.5f;
+                        else if (md_line == "---" || md_line == "***" || md_line == "___")
+                            extra_height += separator_height;
+                        else if (md_line.starts_with("|"))
+                            extra_height += ImGui::GetStyle().CellPadding.y * 2.0f + 2.0f;
+                    }
+                    message_height += extra_height;
+                }
                 
                 // Calculate total bubble height
                 cache.bubble_height = line_height + separator_height + message_height + 

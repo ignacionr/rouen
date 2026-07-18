@@ -491,6 +491,16 @@ namespace media::rss
             }
         }
 
+        // Forward batch_upsert_items to maintain compatibility with existing 6-tuple code
+        void batch_upsert_items(long long feed_id, const std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>>& items) {
+            std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::optional<double>>> converted_items;
+            converted_items.reserve(items.size());
+            for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
+                converted_items.emplace_back(title, enclosure, link, description, pub_date, image_url, std::nullopt);
+            }
+            batch_upsert_items(feed_id, converted_items);
+        }
+
         // Forward batch_upsert_items to maintain compatibility with existing code
         void batch_upsert_items(long long feed_id, const std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::optional<double>>>& items) {
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety
