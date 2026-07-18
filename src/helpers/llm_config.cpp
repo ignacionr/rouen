@@ -75,7 +75,10 @@ std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
         if (settings.provider == Provider::GEMINI) {
             auto adapter = std::make_unique<GeminiAdapter>(settings.api_key);
             
-            adapter->add_instructions("You are a helpful AI assistant powered by Google's Gemini model. "
+            adapter->add_instructions("You are a helpful AI assistant powered by Google's Gemini model, integrated into Rouen, a card-based desktop application. "
+                                    "Rouen organizes its UI as cards - each feature (weather, git, terminal, etc.) is a visual card that can be opened, closed, and interacted with. "
+                                    "When users ask you to 'open', 'show', 'create', or 'display' something (e.g., 'show me the weather in Paris', 'open a weather card'), "
+                                    "use the appropriate create_* tool (like create_weather_card) to spawn a new card in the UI. "
                                     "You are knowledgeable, accurate, and provide helpful responses. "
                                     "You have access to tools that can run local commands (e.g. bash commands). "
                                     "If the user asks you to check repository status, files, find the current date/time, or execute any shell "
@@ -97,7 +100,10 @@ std::optional<LLMConfig::LLMInstance> LLMConfig::create_llm_instance() {
                        settings.api_key.length(), settings.base_url);
         
         // Add provider-specific instructions
-        std::string tool_instr = " You have access to tools that can run local commands (e.g. bash commands). "
+        std::string tool_instr = " You are integrated into Rouen, a card-based desktop application where each feature (weather, git, terminal, etc.) is a visual card. "
+                                 "When users ask you to 'open', 'show', 'create', or 'display' something (e.g., 'show me the weather in Paris', 'open a weather card'), "
+                                 "use the appropriate create_* tool (like create_weather_card) to spawn a new card in the UI. "
+                                 "You have access to tools that can run local commands (e.g. bash commands). "
                                  "If the user asks you to check repository status, files, find the current date/time, or execute any shell "
                                  "command (including curl), use the provided run_local_command tool to execute them instead of giving them instructions on how to run it themselves. "
                                  "IMPORTANT: Differentiate clearly between Pomodoro and general alarms. "

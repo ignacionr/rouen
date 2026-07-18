@@ -532,15 +532,15 @@ namespace rouen::cards {
                             return R"({"status":"error","message":"Missing required 'datetime' parameter"})";
                         }
                         
-                        auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                        if (!create_card_fn) {
-                            return R"({"status":"error","message":"create_card service is not currently available"})";
+                        try {
+                            auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                            std::string card_uri = "alarm:" + datetime;
+                            (*create_card_fn)(card_uri);
+                            
+                            return std::format(R"({{"status":"success","message":"Alarm successfully set for {}"}})", datetime);
+                        } catch (const std::exception& e) {
+                            return std::format(R"({{"status":"error","message":"create_card service is not available: {}"}})", e.what());
                         }
-                        
-                        std::string card_uri = "alarm:" + datetime;
-                        (*create_card_fn)(card_uri);
-                        
-                        return std::format(R"({{"status":"success","message":"Alarm successfully set for {}"}})", datetime);
                     }
                 )
             };

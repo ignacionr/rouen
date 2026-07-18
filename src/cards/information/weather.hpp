@@ -8,9 +8,11 @@
 #include <chrono>
 #include <ctime>
 #include <cmath>
+#include <sstream>
 
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/config_service.hpp"
 #include "../../hosts/weather_host.hpp"
 #include "../../registrar.hpp"
 
@@ -43,6 +45,180 @@ public:
     }
     
     ~weather() override = default;
+
+    std::vector<mcp_function> get_mcp_functions() const override {
+        std::vector<mcp_function> functions;
+        
+        // Function 1: Create a weather card for a specific city
+        functions.emplace_back(
+            "create_weather_card",
+            "Create a new weather card for a specific city. Format: City,CountryCode (e.g., 'London,uk' or 'Tokyo,jp')",
+            R"mcp({"type":"object","properties":{"city":{"type":"string","description":"City name and optional country code in format 'City,CountryCode' (e.g., 'London,uk', 'New York,us', 'Tokyo,jp')"}},"required":["city"]})mcp",
+            [](const std::string& params) -> std::string {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing params"})";
+                }
+                
+                // Parse the city parameter
+                struct create_weather_params {
+                    std::string city;
+                };
+                
+                create_weather_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (parse_result || request.city.empty()) {
+                    return R"({"status":"error","message":"Invalid params. Expected JSON with 'city' field."})";
+                }
+                
+                // Get the create_card function from the registrar
+                try {
+                    auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                    
+                    // Create the weather card with the specified city
+                    std::string card_uri = std::format("weather:{}", request.city);
+                    (*create_card_fn)(card_uri);
+                    
+                    return std::format(R"({{"status":"success","message":"Weather card created for {}","city":"{}"}})", 
+                                     request.city, request.city);
+                } catch (const std::exception& e) {
+                    return std::format(R"({{"status":"error","message":"create_card service is not available: {}"}})", e.what());
+                }
+            }
+        );
+        
+        // Function 2: Get current weather for a city
+        functions.emplace_back(
+            "get_current_weather",
+            "Get current weather information for a specific city. Returns temperature, conditions, humidity, wind speed, etc.",
+            R"mcp({"type":"object","properties":{"city":{"type":"string","description":"City name and optional country code in format 'City,CountryCode' (e.g., 'London,uk', 'Paris,fr')"}},"required":["city"]})mcp",
+            [](const std::string& params) -> std::string {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing params"})";
+                }
+                
+                struct weather_params {
+                    std::string city;
+                };
+                
+                weather_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (parse_result || request.city.empty()) {
+                    return R"({"status":"error","message":"Invalid params. Expected JSON with 'city' field."})";
+                }
+                
+                // Ensure config is loaded
+                auto config = rouen::helpers::ConfigService::instance();
+                std::string api_key = config->get_env("OPENWEATHER_KEY");
+                
+                if (api_key.empty()) {
+                    return R"({"status":"error","message":"OpenWeather API key not configured. Please set OPENWEATHER_KEY in your environment or .env file."})";
+                }
+                
+                // Create a temporary weather host to fetch data
+                auto temp_weather_host = std::make_shared<hosts::WeatherHost>();
+                temp_weather_host->setLocation(request.city);
+                temp_weather_host->refreshWeather();
+                
+                auto current_weather = temp_weather_host->getCurrentWeather();
+                if (!current_weather) {
+                    return std::format(R"({{"status":"error","message":"Failed to fetch weather data for {}. The API may be unavailable or the city name may be incorrect.","city":"{}"}})", 
+                                     request.city, request.city);
+                }
+                
+                // Build the response JSON
+                std::string weather_desc = !current_weather->weather.empty() ? 
+                    current_weather->weather[0].description : "Unknown";
+                std::string weather_main = !current_weather->weather.empty() ? 
+                    current_weather->weather[0].main : "Unknown";
+                
+                return std::format(
+                    R"({{"status":"success","city":"{}","country":"{}","temperature":{:.1f},"feels_like":{:.1f},"humidity":{},"pressure":{},"wind_speed":{:.1f},"clouds":{},"weather":"{}","description":"{}"}})",
+                    current_weather->name,
+                    current_weather->sys.country,
+                    current_weather->main.temp,
+                    current_weather->main.feels_like,
+                    current_weather->main.humidity,
+                    static_cast<int>(current_weather->main.pressure),
+                    current_weather->wind.speed,
+                    current_weather->clouds.all,
+                    weather_main,
+                    weather_desc
+                );
+            }
+        );
+        
+        // Function 3: Get weather forecast for a city
+        functions.emplace_back(
+            "get_weather_forecast",
+            "Get weather forecast for a specific city. Returns the next 5 forecast periods (typically 3-hour intervals).",
+            R"mcp({"type":"object","properties":{"city":{"type":"string","description":"City name and optional country code in format 'City,CountryCode' (e.g., 'London,uk', 'Berlin,de')"}},"required":["city"]})mcp",
+            [](const std::string& params) -> std::string {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing params"})";
+                }
+                
+                struct forecast_params {
+                    std::string city;
+                };
+                
+                forecast_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (parse_result || request.city.empty()) {
+                    return R"({"status":"error","message":"Invalid params. Expected JSON with 'city' field."})";
+                }
+                
+                // Ensure config is loaded
+                auto config = rouen::helpers::ConfigService::instance();
+                std::string api_key = config->get_env("OPENWEATHER_KEY");
+                
+                if (api_key.empty()) {
+                    return R"({"status":"error","message":"OpenWeather API key not configured. Please set OPENWEATHER_KEY in your environment or .env file."})";
+                }
+                
+                // Create a temporary weather host to fetch data
+                auto temp_weather_host = std::make_shared<hosts::WeatherHost>();
+                temp_weather_host->setLocation(request.city);
+                temp_weather_host->refreshWeather();
+                
+                auto forecast = temp_weather_host->getForecast();
+                if (!forecast) {
+                    return std::format(R"({{"status":"error","message":"Failed to fetch forecast data for {}. The API may be unavailable or the city name may be incorrect.","city":"{}"}})", 
+                                     request.city, request.city);
+                }
+                
+                // Build the forecast JSON array (limit to 5 items)
+                std::ostringstream forecast_json;
+                forecast_json << R"({"status":"success","city":")" << forecast->city.name 
+                             << R"(","country":")" << forecast->city.country 
+                             << R"(","forecast":[)";
+                
+                const size_t max_items = std::min(static_cast<size_t>(5), forecast->list.size());
+                for (size_t i = 0; i < max_items; ++i) {
+                    const auto& item = forecast->list[i];
+                    if (i > 0) forecast_json << ",";
+                    
+                    std::string weather_desc = !item.weather.empty() ? item.weather[0].description : "Unknown";
+                    std::string weather_main = !item.weather.empty() ? item.weather[0].main : "Unknown";
+                    
+                    forecast_json << std::format(
+                        R"({{"time":"{}","temperature":{:.1f},"humidity":{},"wind_speed":{:.1f},"weather":"{}","description":"{}","precipitation_probability":{:.0f}}})",
+                        item.dt_txt,
+                        item.main.temp,
+                        item.main.humidity,
+                        item.wind.speed,
+                        weather_main,
+                        weather_desc,
+                        item.pop * 100.0
+                    );
+                }
+                
+                forecast_json << "]}";
+                return forecast_json.str();
+            }
+        );
+        
+        return functions;
+    }
 
     bool render() override {
         return render_window([this]() {

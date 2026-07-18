@@ -26,6 +26,7 @@ find_package(imgui CONFIG REQUIRED)
 
 # Include parent directories for access to source files
 include_directories(..)
+include_directories(../external)
 include_directories(${SDL2_INCLUDE_DIRS})
 
 if(NOT COMMAND target_add_strict_warnings)

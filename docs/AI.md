@@ -61,6 +61,32 @@ Exposed dynamically by the [git card](file:///Users/ignaciorodriguez/src/rouen/s
 * **`get_repositories_needing_push`**: Lists repositories containing commits ahead of their remotes.
 * **`get_modified_repositories`**: Lists repositories with unstaged or modified files.
 
+### 3. Weather Operations (Dynamic)
+Exposed dynamically by the [weather card](file:///Users/ignaciorodriguez/src/rouen/src/cards/information/weather.hpp) when active in the workspace:
+* **`create_weather_card`**: Creates a new weather card for a specific city.
+  * **Parameters**:
+    ```json
+    {
+      "city": "string (City name with optional country code, e.g., 'London,uk', 'Tokyo,jp')"
+    }
+    ```
+* **`get_current_weather`**: Fetches current weather information for a city.
+  * **Returns**: JSON with temperature, feels_like, humidity, pressure, wind_speed, clouds, weather conditions, and description.
+  * **Parameters**:
+    ```json
+    {
+      "city": "string (City name with optional country code, e.g., 'Paris,fr')"
+    }
+    ```
+* **`get_weather_forecast`**: Fetches weather forecast for the next 5 periods (typically 3-hour intervals).
+  * **Returns**: JSON array with time, temperature, humidity, wind_speed, weather, description, and precipitation_probability.
+  * **Parameters**:
+    ```json
+    {
+      "city": "string (City name with optional country code, e.g., 'Berlin,de')"
+    }
+    ```
+
 ---
 
 ## Schema Presentation to AI Chat

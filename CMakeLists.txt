@@ -469,6 +469,7 @@ add_executable(${PROJECT_NAME}
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE 
+  ${CMAKE_SOURCE_DIR}/external
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CMAKE_SOURCE_DIR}/external/mongoose-7.15
   ${CMAKE_SOURCE_DIR}/src
