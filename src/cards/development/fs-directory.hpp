@@ -2,9 +2,9 @@
 
 #include <filesystem>
 #include <format>
+#include <regex>
 #include <string>
 #include <string_view>
-#include <regex>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -145,7 +145,15 @@ namespace rouen::cards
                 }
                 ImGui::PopStyleColor();
                 
-                for (const auto& entry : std::filesystem::directory_iterator(path_)) {
+                
+                std::vector<std::filesystem::directory_entry> entries{
+                	std::filesystem::directory_iterator(path_),
+                	std::filesystem::directory_iterator{}};
+                std::sort(entries.begin(), entries.end(), [] (const auto &a, const auto &b) {
+                	return a.path() < b.path();
+                });
+                
+                for (const auto& entry : entries) {
                     if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
                     // Set color based on file type
                         if (entry.is_directory()) {
@@ -209,3 +217,4 @@ namespace rouen::cards
         std::string filter_;
     };
 }
+
