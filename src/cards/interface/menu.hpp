@@ -309,6 +309,7 @@ namespace rouen::cards {
                     {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
                     {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                     {"Email", []() { "create_card"_sfn("mail"); }},
+                    {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},
                     {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
                     {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
                     {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
