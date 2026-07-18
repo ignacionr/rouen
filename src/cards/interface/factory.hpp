@@ -35,6 +35,7 @@
 #include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
 #include "../media/radiocut.hpp"
+#include "../media/youtube_search.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
@@ -157,6 +158,10 @@ namespace rouen::cards {
                         card->set_renderer(renderer);
                     }
                     return card;
+                });
+
+                instance.emplace("youtube", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<youtube_search>(uri);
                 });
                 
                 instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {

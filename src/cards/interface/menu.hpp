@@ -317,6 +317,7 @@ namespace rouen::cards {
                 { "Media", {
                     {"Radio", []() { "create_card"_sfn("radio"); }},
                     {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
+                    {"YouTube Search", []() { "create_card"_sfn("youtube"); }},
                     {"Chess Replay", []() { "create_card"_sfn("chess"); }}
                 }},
                 { "System", {

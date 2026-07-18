@@ -9,7 +9,10 @@
 // 3. All other includes
 #include "debug.hpp"
 #include "mcp_service.hpp"
+#include "platform_utils.hpp"
+#include "media_player.hpp"
 #include "process_helper.hpp"
+#include "string_helper.hpp"
 #include "../registrar.hpp"
 
 namespace rouen::helpers {
@@ -41,6 +44,56 @@ struct mcp_create_alarm_params {
 
 struct edit_file_request {
     std::string path{};
+};
+
+struct mcp_youtube_search_params {
+    std::string query{};
+    struct glaze {
+        using T = mcp_youtube_search_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query
+        );
+    };
+};
+
+struct mcp_youtube_play_params {
+    std::string url{};
+    std::string title{};
+    struct glaze {
+        using T = mcp_youtube_play_params;
+        static constexpr auto value = glz::object(
+            "url", &T::url,
+            "title", &T::title
+        );
+    };
+};
+
+struct mcp_youtube_create_card_params {
+    std::string query{};
+    struct glaze {
+        using T = mcp_youtube_create_card_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query
+        );
+    };
+};
+
+struct mcp_youtube_video {
+    std::string id{};
+    std::string title{};
+    std::string url{};
+    std::string duration{};
+    std::string channel{};
+    struct glaze {
+        using T = mcp_youtube_video;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "title", &T::title,
+            "url", &T::url,
+            "duration", &T::duration,
+            "channel", &T::channel
+        );
+    };
 };
 
 mcp_service::mcp_service() {
@@ -169,6 +222,148 @@ mcp_service::mcp_service() {
     );
     
     register_function("editor", edit_file_def);
+
+    // Register YouTube search videos function
+    function_definition youtube_search_def(
+        "youtube_search_videos",
+        "Search YouTube for videos using yt-dlp. Returns a list of video objects with id, title, url, duration, and channel.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query term (e.g. 'cpp tutorial' or 'lofi hip hop')"}},"required":["query"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_youtube_search_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.query.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'query' field."})";
+            }
+            
+            std::string escaped_query;
+            for (char c : request.query) {
+                if (c == '"' || c == '\\' || c == '$' || c == '`') {
+                    escaped_query += '\\';
+                }
+                escaped_query += c;
+            }
+            
+#ifdef __APPLE__
+            std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --flat-playlist --dump-json \"ytsearch10:{}\"", escaped_query);
+#else
+            std::string cmd = std::format("yt-dlp --flat-playlist --dump-json \"ytsearch10:{}\"", escaped_query);
+#endif
+            std::string output = ProcessHelper::executeCommand(cmd);
+            
+            std::stringstream ss(output);
+            std::string line;
+            std::vector<mcp_youtube_video> results;
+            
+            while (std::getline(ss, line)) {
+                if (line.empty()) continue;
+                try {
+                    glz::json_t resp;
+                    auto ec = glz::read_json(resp, line);
+                    if (!ec) {
+                        mcp_youtube_video video;
+                        if (resp.contains("id") && resp["id"].is_string()) {
+                            video.id = resp["id"].get<std::string>();
+                        }
+                        if (resp.contains("title") && resp["title"].is_string()) {
+                            video.title = resp["title"].get<std::string>();
+                        }
+                        if (resp.contains("url") && resp["url"].is_string()) {
+                            video.url = resp["url"].get<std::string>();
+                        } else if (!video.id.empty()) {
+                            video.url = "https://www.youtube.com/watch?v=" + video.id;
+                        }
+                        if (resp.contains("duration_string") && resp["duration_string"].is_string()) {
+                            video.duration = resp["duration_string"].get<std::string>();
+                        }
+                        if (resp.contains("channel") && resp["channel"].is_string()) {
+                            video.channel = resp["channel"].get<std::string>();
+                        } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
+                            video.channel = resp["uploader"].get<std::string>();
+                        }
+                        results.push_back(std::move(video));
+                    }
+                } catch (...) {}
+            }
+            
+            std::string response_str;
+            auto ec_write = glz::write_json(results, response_str);
+            (void)ec_write;
+            return response_str;
+        },
+        "deck"
+    );
+    
+    register_function("deck", youtube_search_def);
+
+    // Register YouTube play video function
+    function_definition youtube_play_def(
+        "youtube_play_video",
+        "Play a YouTube video in the media player and bring up the YouTube card.",
+        R"mcp({"type":"object","properties":{"url":{"type":"string","description":"The YouTube video URL to play"},"title":{"type":"string","description":"The title of the video"}},"required":["url","title"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_youtube_play_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.url.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'url' and 'title' fields."})";
+            }
+            
+            try {
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                if (create_card_fn) {
+                    std::string card_uri = "youtube:play:" + ::helpers::StringHelper::url_encode(request.url) + "|" + ::helpers::StringHelper::url_encode(request.title);
+                    (*create_card_fn)(card_uri);
+                    return R"({"status":"success","message":"Started playing video"})";
+                }
+                return R"({"status":"error","message":"create_card service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", youtube_play_def);
+
+    // Register YouTube create search card function
+    function_definition youtube_create_card_def(
+        "youtube_create_search_card",
+        "Create a new YouTube search card with the search query pre-filled.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query to pre-fill"}},"required":["query"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_youtube_create_card_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.query.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'query' field."})";
+            }
+            
+            try {
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                if (create_card_fn) {
+                    std::string card_uri = "youtube:" + ::helpers::StringHelper::url_encode(request.query);
+                    (*create_card_fn)(card_uri);
+                    return R"({"status":"success","message":"YouTube search card created successfully"})";
+                }
+                return R"({"status":"error","message":"create_card service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", youtube_create_card_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
