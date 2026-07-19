@@ -308,6 +308,7 @@ namespace rouen::cards {
                     {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
                     {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
                     {"Weather & Time", []() { "create_card"_sfn("weather"); }},
+                    {"Wikipedia", []() { "create_card"_sfn("wikipedia"); }},
                     {"Email", []() { "create_card"_sfn("mail"); }},
                     {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},
                     {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},

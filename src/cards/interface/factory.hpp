@@ -32,6 +32,7 @@
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
 #include "../information/whatsapp.hpp"
+#include "../information/wikipedia.hpp"
 #include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
 #include "../media/radiocut.hpp"
@@ -282,6 +283,14 @@ namespace rouen::cards {
 
                 instance.emplace("whatsapp", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<whatsapp>(uri);
+                });
+
+                instance.emplace("wikipedia", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<wikipedia>(uri);
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
                 });
 
                 instance.emplace("notes", [](std::string_view locator, SDL_Renderer*) {

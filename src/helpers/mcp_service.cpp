@@ -13,6 +13,7 @@
 #include "media_player.hpp"
 #include "process_helper.hpp"
 #include "string_helper.hpp"
+#include "fetch.hpp"
 #include "../registrar.hpp"
 
 namespace rouen::helpers {
@@ -20,6 +21,64 @@ namespace rouen::helpers {
 struct local_command_request {
     std::string command{};
     std::string working_directory{};
+};
+
+struct mcp_wikipedia_search_params {
+    std::string query{};
+    struct glaze {
+        using T = mcp_wikipedia_search_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query
+        );
+    };
+};
+
+struct mcp_wikipedia_get_article_params {
+    std::string title{};
+    struct glaze {
+        using T = mcp_wikipedia_get_article_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title
+        );
+    };
+};
+
+struct mcp_wikipedia_create_card_params {
+    std::string query{};
+    struct glaze {
+        using T = mcp_wikipedia_create_card_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query
+        );
+    };
+};
+
+struct mcp_wikipedia_result_item {
+    std::string title{};
+    int pageid{0};
+    std::string snippet{};
+    struct glaze {
+        using T = mcp_wikipedia_result_item;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "pageid", &T::pageid,
+            "snippet", &T::snippet
+        );
+    };
+};
+
+struct mcp_wikipedia_article_result {
+    std::string title{};
+    std::string content{};
+    std::string url{};
+    struct glaze {
+        using T = mcp_wikipedia_article_result;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "content", &T::content,
+            "url", &T::url
+        );
+    };
 };
 
 struct mcp_create_card_params {
@@ -364,6 +423,171 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", youtube_create_card_def);
+
+    // Register Wikipedia search concepts function
+    function_definition wikipedia_search_def(
+        "wikipedia_search_concepts",
+        "Search Wikipedia for articles/concepts and return a list of matching titles and snippets. Use this first when asked to summarize or answer questions about a topic to find the correct title.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query term (e.g. 'c++' or 'albert einstein')"}},"required":["query"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_wikipedia_search_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.query.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'query' field."})";
+            }
+            
+            try {
+                std::string encoded_query = ::helpers::StringHelper::url_encode(request.query);
+                std::string url = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encoded_query + "&format=json&utf8=";
+                
+                std::vector<std::string> headers = {
+                    "User-Agent: RouenWikipediaCard/1.0 (ignacionr@github.com; ignacionr) libcurl/8.x",
+                    "Accept: application/json"
+                };
+                
+                std::string response = http::fetch()(url, headers);
+                
+                glz::json_t resp;
+                auto ec = glz::read_json(resp, response);
+                std::vector<mcp_wikipedia_result_item> results;
+                
+                if (!ec && resp.contains("query") && resp["query"].contains("search") && resp["query"]["search"].is_array()) {
+                    auto& search_arr = resp["query"]["search"].get<glz::json_t::array_t>();
+                    for (auto& item : search_arr) {
+                        mcp_wikipedia_result_item res;
+                        if (item.contains("title") && item["title"].is_string()) {
+                            res.title = item["title"].get<std::string>();
+                        }
+                        if (item.contains("pageid") && item["pageid"].is_number()) {
+                            res.pageid = static_cast<int>(item["pageid"].get<double>());
+                        }
+                        if (item.contains("snippet") && item["snippet"].is_string()) {
+                            res.snippet = ::helpers::StringHelper::strip_html_tags(item["snippet"].get<std::string>());
+                        }
+                        results.push_back(std::move(res));
+                    }
+                }
+                
+                std::string response_str;
+                auto ec_write = glz::write_json(results, response_str);
+                (void)ec_write;
+                return response_str;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", wikipedia_search_def);
+
+    // Register Wikipedia get article text function
+    function_definition wikipedia_get_article_def(
+        "wikipedia_get_article_text",
+        "Obtain the full plain text content and URL of a Wikipedia article by its title. Use this to read the article contents to summarize or answer questions in the chat. DO NOT open a card on the screen unless the user explicitly requests to show/view the Wikipedia card.",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the Wikipedia page (e.g. 'C++' or 'Albert Einstein')"}},"required":["title"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_wikipedia_get_article_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'title' field."})";
+            }
+            
+            try {
+                std::string encoded_title = ::helpers::StringHelper::url_encode(request.title);
+                std::string url = "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=" + encoded_title + "&format=json";
+                
+                std::vector<std::string> headers = {
+                    "User-Agent: RouenWikipediaCard/1.0 (ignacionr@github.com; ignacionr) libcurl/8.x",
+                    "Accept: application/json"
+                };
+                
+                std::string response = http::fetch()(url, headers);
+                
+                glz::json_t resp;
+                auto ec = glz::read_json(resp, response);
+                std::string extract;
+                std::string found_title = request.title;
+                
+                if (!ec && resp.contains("query") && resp["query"].contains("pages") && resp["query"]["pages"].is_object()) {
+                    auto& pages = resp["query"]["pages"].get<glz::json_t::object_t>();
+                    for (auto& [page_id, page_data] : pages) {
+                        if (page_data.contains("extract") && page_data["extract"].is_string()) {
+                            extract = page_data["extract"].get<std::string>();
+                        }
+                        if (page_data.contains("title") && page_data["title"].is_string()) {
+                            found_title = page_data["title"].get<std::string>();
+                        }
+                    }
+                }
+                
+                if (extract.empty()) {
+                    return R"({"status":"error","message":"Article not found or empty"})";
+                }
+                
+                mcp_wikipedia_article_result res;
+                res.title = found_title;
+                res.content = extract;
+                
+                std::string title_under = found_title;
+                std::replace(title_under.begin(), title_under.end(), ' ', '_');
+                res.url = "https://en.wikipedia.org/wiki/" + ::helpers::StringHelper::url_encode(title_under);
+                
+                std::string response_str;
+                auto ec_write = glz::write_json(res, response_str);
+                (void)ec_write;
+                return response_str;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", wikipedia_get_article_def);
+
+    // Register Wikipedia create card function
+    function_definition wikipedia_create_card_def(
+        "wikipedia_create_card",
+        "Create a Wikipedia search and browsing card on the user's screen for them to browse. DO NOT use this if you need to summarize or answer questions in the chat - use wikipedia_get_article_text instead.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Optional search query or page title to display (e.g. 'c++' or 'title:C++')"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            std::string query;
+            if (!params.empty()) {
+                mcp_wikipedia_create_card_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (!parse_result) {
+                    query = request.query;
+                }
+            }
+            
+            try {
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                if (create_card_fn) {
+                    std::string card_uri = "wikipedia";
+                    if (!query.empty()) {
+                        card_uri += ":" + ::helpers::StringHelper::url_encode(query);
+                    }
+                    (*create_card_fn)(card_uri);
+                    return R"({"status":"success","message":"Wikipedia card created successfully"})";
+                }
+                return R"({"status":"error","message":"create_card service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", wikipedia_create_card_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
