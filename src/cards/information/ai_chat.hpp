@@ -664,7 +664,12 @@ namespace rouen::cards {
                             "1. If the user asks you to read, summarize, explain, or answer questions about a Wikipedia article or concept (for example: \"summarize 'The Garden of Forking Paths' by Borges\"), "
                             "you MUST use retrieval tools: first search using `wikipedia_search_concepts` if needed to find the exact title, and then retrieve the full article using `wikipedia_get_article_text`. "
                             "You must then summarize or answer directly in your chat response. DO NOT call `wikipedia_create_card` or `create_card` for this purpose!\n"
-                            "2. ONLY call `wikipedia_create_card` (or `create_card`) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").";
+                            "2. ONLY call `wikipedia_create_card` (or `create_card`) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").\n\n"
+                            "CRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n"
+                            "1. If the user asks you to build, show, or create a time series or number series visualization card using data that can be retrieved via other tools (such as weather forecasts, git repository metrics, calendar events, or wallet balances), you MUST follow a two-step process:\n"
+                            "   - Step 1: Call the appropriate retrieval tool first (e.g., `get_weather_forecast`, `get_current_weather`, or git/calendar tools) to obtain the real data. Do NOT generate placeholders or call `create_number_series_card` in this step.\n"
+                            "   - Step 2: Once you receive the real data from the tool execution, call `create_number_series_card` with the retrieved data points.\n"
+                            "2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch the actual data.";
                         local_llm.add_instructions(mcp_instr);
 
                         // Create conversion from our message format to the format expected by sendMessage with mutex protection

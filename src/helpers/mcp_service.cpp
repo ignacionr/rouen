@@ -155,6 +155,38 @@ struct mcp_youtube_video {
     };
 };
 
+struct mcp_time_series_point {
+    std::string label{};
+    float value{0.0f};
+    
+    struct glaze {
+        using T = mcp_time_series_point;
+        static constexpr auto value = glz::object(
+            "label", &T::label,
+            "value", &T::value
+        );
+    };
+};
+
+struct mcp_create_time_series_params {
+    std::string title{};
+    std::string unit{};
+    bool is_bar_chart{true};
+    int color_index{0};
+    std::vector<mcp_time_series_point> points{};
+
+    struct glaze {
+        using T = mcp_create_time_series_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "unit", &T::unit,
+            "is_bar_chart", &T::is_bar_chart,
+            "color_index", &T::color_index,
+            "points", &T::points
+        );
+    };
+};
+
 mcp_service::mcp_service() {
     detect_system_info();
 
@@ -214,6 +246,44 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", create_card_def);
+
+    // Register global create_number_series_card function
+    function_definition create_time_series_def(
+        "create_number_series_card",
+        "Create a card with a custom number series, category comparison, or time series visualization (e.g. monthly sales, country achievements, or system stats).",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"Title of the visualization"},"unit":{"type":"string","description":"Unit of measurement label (e.g. '$', '%', 'wins', 'C')"},"is_bar_chart":{"type":"boolean","description":"True for a bar chart, false for a line chart"},"color_index":{"type":"integer","description":"Accent color index: 0=Accent, 1=Secondary, 2=Error, 3=Success, 4=Warning, 5=Info, 6=Purple, 7=Pink, 8=Orange, 9=Gray"},"points":{"type":"array","description":"Array of data points","items":{"type":"object","properties":{"label":{"type":"string","description":"X-axis label (can be a date, name, country, or category, e.g. 'Jan', 'Brazil', 'To Do', 'Day 1')"},"value":{"type":"number","description":"Data value"}},"required":["label","value"]}}},"required":["title","points"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_create_time_series_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty() || request.points.empty()) {
+                return R"({"status":"error","message":"Invalid params"})";
+            }
+            
+            try {
+                // Re-serialize the request back to a JSON string
+                std::string json_locator;
+                auto write_res = glz::write_json(request, json_locator);
+                if (write_res) {
+                    return R"({"status":"error","message":"Failed to serialize data"})";
+                }
+                
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                std::string card_uri = std::format("number-series:{}", json_locator);
+                (*create_card_fn)(card_uri);
+                
+                return R"({"status":"success","message":"Number series card created successfully"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"create_card service is not available: {}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    
+    register_function("deck", create_time_series_def);
 
     // Register global create_alarm function
     function_definition create_alarm_def(

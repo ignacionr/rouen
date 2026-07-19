@@ -33,6 +33,7 @@
 #include "../information/weather.hpp"
 #include "../information/whatsapp.hpp"
 #include "../information/wikipedia.hpp"
+#include "../information/number_series.hpp"
 #include "../media/chess_replay.hpp"
 #include "../media/radio.hpp"
 #include "../media/radiocut.hpp"
@@ -237,6 +238,10 @@ namespace rouen::cards {
 
                 instance.emplace("adaptive-card", [](std::string_view locator, SDL_Renderer*) {
                     return std::make_shared<adaptive_card>(locator);
+                });
+                
+                instance.emplace("number-series", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<number_series_card>(locator);
                 });
                 
                 instance.emplace("mail", [](std::string_view uri, SDL_Renderer*) {

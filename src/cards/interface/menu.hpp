@@ -305,7 +305,6 @@ namespace rouen::cards {
                     {"Podcasts and News", []() { "create_card"_sfn("rss"); }},
                     {"RSS Smart Lists", []() { "create_card"_sfn("rss-smart-list:Smart List"); }},
                     {"Travel Plans", []() { "create_card"_sfn("travel"); }},
-                    {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
                     {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
                     {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                     {"Wikipedia", []() { "create_card"_sfn("wikipedia"); }},
@@ -320,6 +319,12 @@ namespace rouen::cards {
                     {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
                     {"YouTube Search", []() { "create_card"_sfn("youtube"); }},
                     {"Chess Replay", []() { "create_card"_sfn("chess"); }}
+                }},
+                { "Debug", {
+                    {"Adaptive Card", []() { "create_card"_sfn("adaptive-card"); }},
+                    {"Number Series: Monthly Sales", []() { "create_card"_sfn("number-series:sales"); }},
+                    {"Number Series: Temperature Forecast", []() { "create_card"_sfn("number-series:temps"); }},
+                    {"Number Series: CPU Load", []() { "create_card"_sfn("number-series:cpu"); }}
                 }},
                 { "System", {
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
