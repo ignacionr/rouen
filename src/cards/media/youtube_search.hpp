@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <format>
+#include <ctime>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
@@ -31,6 +33,7 @@ namespace rouen::cards {
             std::string duration_string;
             std::string channel;
             std::string description;
+            std::string published_time;
         };
 
         struct shared_state {
@@ -132,9 +135,9 @@ namespace rouen::cards {
                 }
 
 #ifdef __APPLE__
-                std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --flat-playlist --dump-json \"ytsearch15:{}\"", escaped_query);
+                std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
 #else
-                std::string cmd = std::format("yt-dlp --flat-playlist --dump-json \"ytsearch15:{}\"", escaped_query);
+                std::string cmd = std::format("yt-dlp --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
 #endif
                 std::string output = ProcessHelper::executeCommand(cmd);
 
@@ -174,6 +177,25 @@ namespace rouen::cards {
                             if (resp.contains("description") && resp["description"].is_string()) {
                                 res.description = resp["description"].get<std::string>();
                             }
+                            if (resp.contains("timestamp") && resp["timestamp"].is_number()) {
+                                double ts = resp["timestamp"].get<double>();
+                                res.published_time = format_relative_time(ts);
+                            } else if (resp.contains("upload_date") && resp["upload_date"].is_string()) {
+                                std::string date_str = resp["upload_date"].get<std::string>();
+                                if (date_str.length() == 8) {
+                                    try {
+                                        std::tm tm = {};
+                                        tm.tm_year = std::stoi(date_str.substr(0, 4)) - 1900;
+                                        tm.tm_mon = std::stoi(date_str.substr(4, 2)) - 1;
+                                        tm.tm_mday = std::stoi(date_str.substr(6, 2));
+                                        tm.tm_isdst = -1;
+                                        time_t t = std::mktime(&tm);
+                                        if (t != -1) {
+                                            res.published_time = format_relative_time(static_cast<double>(t));
+                                        }
+                                    } catch (...) {}
+                                }
+                            }
                             temp_results.push_back(std::move(res));
                         }
                     } catch (...) {}
@@ -204,6 +226,8 @@ namespace rouen::cards {
                     mp_item.item_title = play_title_trigger;
                     mp_item.start_offset = 0.0;
                     mp_item.playMedia();
+                    
+                    currently_playing_url = play_url_trigger;
                     
                     play_url_trigger.clear();
                     play_title_trigger.clear();
@@ -294,6 +318,52 @@ namespace rouen::cards {
                     results_copy = state->results;
                 }
                 
+                if (currently_playing_url.empty() && yt_playing) {
+                    for (const auto& item : results_copy) {
+                        if (item.url == active_url) {
+                            currently_playing_url = active_url;
+                            break;
+                        }
+                    }
+                }
+
+                // --- Auto-play next result ---
+                if (!currently_playing_url.empty()) {
+                    ImGui::PushID(currently_playing_url.c_str());
+                    ImGuiID item_id = ImGui::GetID("MediaPlayer");
+                    ImGui::PopID();
+                    
+                    auto it = media_player::items().find(item_id);
+                    if (it != media_player::items().end()) {
+                        auto& item = it->second;
+                        if (item.player_pid == 0 && item.duration > 0.0 && item.position >= item.duration - 3.0) {
+                            size_t next_idx = std::string::npos;
+                            for (size_t i = 0; i < results_copy.size(); ++i) {
+                                if (results_copy[i].url == currently_playing_url) {
+                                    if (i + 1 < results_copy.size()) {
+                                        next_idx = i + 1;
+                                    }
+                                    break;
+                                }
+                            }
+                            
+                            item.position = 0.0;
+                            item.duration = 0.0;
+                            
+                            if (next_idx != std::string::npos) {
+                                play_url_trigger = results_copy[next_idx].url;
+                                play_title_trigger = results_copy[next_idx].title;
+                            } else {
+                                currently_playing_url.clear();
+                            }
+                        } else if (item.player_pid == 0) {
+                            currently_playing_url.clear();
+                        }
+                    } else {
+                        currently_playing_url.clear();
+                    }
+                }
+                
                 if (searching) {
                     float time = static_cast<float>(ImGui::GetTime());
                     int dots = static_cast<int>(time * 3.0f) % 4;
@@ -324,27 +394,55 @@ namespace rouen::cards {
                         const auto& item = results_copy[i];
                         ImGui::PushID(static_cast<int>(i));
                         
+                        bool is_current = (yt_playing && item.url == active_url);
+                        
                         // Draw background manually to prevent child-scroll conflicts
                         ImVec2 p_min = ImGui::GetCursorScreenPos();
                         float item_height = 80.0f;
                         ImVec2 p_max = ImVec2(p_min.x + ImGui::GetContentRegionAvail().x, p_min.y + item_height);
                         
                         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-                        ImU32 bg_color = ImGui::GetColorU32(ImGuiCol_FrameBg);
+                        ImU32 bg_color = is_current ? ImGui::GetColorU32(ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.12f)) : ImGui::GetColorU32(ImGuiCol_FrameBg);
+                        ImU32 border_color = is_current ? ImGui::GetColorU32(colors[0]) : ImGui::GetColorU32(ImGuiCol_Border);
+                        float border_thickness = is_current ? 2.5f : 1.0f;
+                        
                         draw_list->AddRectFilled(p_min, p_max, bg_color, 8.0f);
-                        draw_list->AddRect(p_min, p_max, ImGui::GetColorU32(ImGuiCol_Border), 8.0f, 0, 1.0f);
+                        draw_list->AddRect(p_min, p_max, border_color, 8.0f, 0, border_thickness);
                         
                         ImGui::BeginGroup();
                         
                         // Set padding cursor position
                         ImGui::SetCursorScreenPos(ImVec2(p_min.x + 10.0f, p_min.y + 10.0f));
                         
-                        // Centered Play Button
+                        // Centered Play/Pause Button
                         ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[1]);
-                        if (ImGui::Button(ICON_MD_PLAY_ARROW, ImVec2(40, 40))) {
-                            play_url_trigger = item.url;
-                            play_title_trigger = item.title;
+                        
+                        bool is_playing_now = false;
+                        if (is_current) {
+                            ImGui::PushID(item.url.c_str());
+                            ImGuiID item_id = ImGui::GetID("MediaPlayer");
+                            ImGui::PopID();
+                            auto it = media_player::items().find(item_id);
+                            if (it != media_player::items().end() && !it->second.is_paused.load()) {
+                                is_playing_now = true;
+                            }
+                        }
+                        
+                        const char* btn_icon = is_playing_now ? ICON_MD_PAUSE : ICON_MD_PLAY_ARROW;
+                        if (ImGui::Button(btn_icon, ImVec2(40, 40))) {
+                            if (is_current) {
+                                ImGui::PushID(item.url.c_str());
+                                ImGuiID item_id = ImGui::GetID("MediaPlayer");
+                                ImGui::PopID();
+                                auto it = media_player::items().find(item_id);
+                                if (it != media_player::items().end()) {
+                                    it->second.togglePause();
+                                }
+                            } else {
+                                play_url_trigger = item.url;
+                                play_title_trigger = item.title;
+                            }
                         }
                         ImGui::PopStyleColor(2);
                         
@@ -359,12 +457,17 @@ namespace rouen::cards {
                             if (display_title.length() > 60) {
                                 display_title = display_title.substr(0, 57) + "...";
                             }
-                            ImGui::Text("%s", display_title.c_str());
+                            if (is_current) {
+                                ImGui::TextColored(colors[0], "%s %s", ICON_MD_VOLUME_UP, display_title.c_str());
+                            } else {
+                                ImGui::Text("%s", display_title.c_str());
+                            }
                         }
                         
-                        // Channel & Duration (High contrast)
+                        // Channel & Duration & Published Time (High contrast)
                         std::string duration_lbl = item.duration_string.empty() ? "" : "  (" + item.duration_string + ")";
-                        ImGui::TextColored(channel_color, "%s%s", item.channel.c_str(), duration_lbl.c_str());
+                        std::string published_lbl = item.published_time.empty() ? "" : "  •  " + item.published_time;
+                        ImGui::TextColored(channel_color, "%s%s%s", item.channel.c_str(), duration_lbl.c_str(), published_lbl.c_str());
                         
                         // Description snippet (High contrast)
                         if (!item.description.empty()) {
@@ -403,6 +506,39 @@ namespace rouen::cards {
 
         std::string play_url_trigger;
         std::string play_title_trigger;
+        std::string currently_playing_url;
+
+        static std::string format_relative_time(double timestamp_seconds) {
+            if (timestamp_seconds <= 0) return "";
+            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            double diff = static_cast<double>(static_cast<long long>(now) - static_cast<long long>(timestamp_seconds));
+            if (diff < 0) return "just now";
+            
+            const double minute = 60.0;
+            const double hour = minute * 60.0;
+            const double day = hour * 24.0;
+            const double month = day * 30.44;
+            const double year = day * 365.24;
+            
+            if (diff < minute) {
+                return "just now";
+            } else if (diff < hour) {
+                int mins = static_cast<int>(diff / minute);
+                return std::format("{} minute{} ago", mins, mins > 1 ? "s" : "");
+            } else if (diff < day) {
+                int hrs = static_cast<int>(diff / hour);
+                return std::format("{} hour{} ago", hrs, hrs > 1 ? "s" : "");
+            } else if (diff < month) {
+                int days = static_cast<int>(diff / day);
+                return std::format("{} day{} ago", days, days > 1 ? "s" : "");
+            } else if (diff < year) {
+                int mos = static_cast<int>(diff / month);
+                return std::format("{} month{} ago", mos, mos > 1 ? "s" : "");
+            } else {
+                int yrs = static_cast<int>(diff / year);
+                return std::format("{} year{} ago", yrs, yrs > 1 ? "s" : "");
+            }
+        }
     };
 
 } // namespace rouen::cards
