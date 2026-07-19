@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <algorithm>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/media_player.hpp"
@@ -148,6 +149,7 @@ namespace rouen::cards {
             }
 
             // Time setting interface - now vertical layout
+            float y_before = ImGui::GetCursorPosY();
             if (ImGui::CollapsingHeader("Set")) {
                 ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.9f);
                 
@@ -217,6 +219,8 @@ namespace rouen::cards {
                     }
                 }
             }
+            float y_after = ImGui::GetCursorPosY();
+            set_header_height = y_after - y_before;
             
         }
         
@@ -384,63 +388,79 @@ namespace rouen::cards {
             
             auto dd = ImGui::GetWindowDrawList();
             
+            // Let's find out the remaining available height for blocks.
+            // In ImGui, ImGui::GetContentRegionAvail().y gives the height from the current cursor position
+            // to the bottom of the window content area.
+            // But we must also leave room for the "Set" collapsing header, which is drawn after this!
+            // We know the height of the collapsing header from the last frame (stored in set_header_height).
+            float spacing = ImGui::GetStyle().ItemSpacing.y;
+            float blocks_avail_height = ImGui::GetContentRegionAvail().y - set_header_height - spacing - 5.0f;
+            
+            const float block_height = 24.0f;
+            const float block_padding = 4.0f;
+            
+            // Calculate how many blocks can fit in the available height (limited to range [3, 24])
+            int num_blocks = static_cast<int>(std::floor(blocks_avail_height / (block_height + block_padding)));
+            num_blocks = std::clamp(num_blocks, 3, 24);
+            
             // Adaptive block visualization based on remaining time
-            int num_blocks = 6;  // Default: 6 blocks of 10 minutes (1 hour)
-            int minutes_per_block = 10;
-            std::string label_suffix = "min";
+            struct BlockInterval {
+                double seconds;
+                std::string suffix;
+                double divisor;
+            };
+
+            static const std::vector<BlockInterval> intervals = {
+                // Seconds
+                { 1.0, "s", 1.0 },
+                { 2.0, "s", 1.0 },
+                { 5.0, "s", 1.0 },
+                { 10.0, "s", 1.0 },
+                { 15.0, "s", 1.0 },
+                { 30.0, "s", 1.0 },
+                // Minutes
+                { 60.0, "m", 60.0 },
+                { 120.0, "m", 60.0 },
+                { 300.0, "m", 60.0 },
+                { 600.0, "m", 60.0 },
+                { 900.0, "m", 60.0 },
+                { 1800.0, "m", 60.0 },
+                // Hours
+                { 3600.0, "h", 3600.0 },
+                { 7200.0, "h", 3600.0 },
+                { 10800.0, "h", 3600.0 },
+                { 14400.0, "h", 3600.0 },
+                { 21600.0, "h", 3600.0 },
+                { 43200.0, "h", 3600.0 },
+                { 86400.0, "h", 3600.0 }
+            };
+
+            double total_seconds = static_cast<double>(std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count());
             
-            auto total_minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count();
-            
-            if (total_minutes > 60) {
-                // For times > 1 hour, show in 1-hour blocks
-                num_blocks = std::min(static_cast<int>(total_minutes / 60) + 1, 8); // Limit to 8 blocks
-                minutes_per_block = 60;
-                label_suffix = "hr";
-            } else if (total_minutes <= 5) {
-                // For times <= 5 minutes, show in 1-minute blocks
-                num_blocks = 5;
-                minutes_per_block = 1;
-                label_suffix = "min";
-            } else if (total_minutes <= 30) {
-                num_blocks = std::min(6, static_cast<int>(total_minutes / 5) + 1); // Adapt to available time
-                minutes_per_block = 5;
-                label_suffix = "min";
-            } else {
-                // Default: 5-minute blocks
-                num_blocks = std::min(6, static_cast<int>(total_minutes / 6) + 1); // Adapt to available time
-                minutes_per_block = 10;
-                label_suffix = "min";
+            // Find the best interval
+            BlockInterval chosen_interval = intervals.front();
+            for (const auto& interval : intervals) {
+                chosen_interval = interval;
+                if (static_cast<double>(num_blocks) * interval.seconds >= total_seconds) {
+                    break;
+                }
             }
             
             // Draw blocks vertically
-            const float block_height = 24.0f;
             const float block_width = content_width * 0.9f;
-            const float block_padding = 4.0f;
             const float start_x = pos.x + (ImGui::GetWindowWidth() - block_width) * 0.5f;
             float start_y = ImGui::GetCursorScreenPos().y;
             
             // Calculate how many blocks to fill
-            float blocks_to_fill = 0.0f;
+            double blocks_to_fill = total_seconds / chosen_interval.seconds;
+            int complete_blocks = static_cast<int>(std::floor(blocks_to_fill));
+            float partial_block_pct = static_cast<float>(blocks_to_fill - complete_blocks);
             
-            if (minutes_per_block == 60) {
-                // For hour blocks
-                blocks_to_fill = static_cast<float>(total_minutes) / static_cast<float>(minutes_per_block);
-            } else if (minutes_per_block == 10) {
-                // For 5-minute blocks (only count up to 1 hour)
-                auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
-                blocks_to_fill = std::min(static_cast<float>(total_seconds), 3600.0f) / (static_cast<float>(minutes_per_block) * 60.0f);
-            } else if (minutes_per_block == 5) {
-                // For 5-minute blocks (only count up to 30 minutes)
-                auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
-                blocks_to_fill = std::min(static_cast<float>(total_seconds), 3600.0f) / (static_cast<float>(minutes_per_block) * 60.0f);
-            } else {
-                // For 1-minute blocks (only count up to 5 minutes)
-                auto total_seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count();
-                blocks_to_fill = std::min(static_cast<float>(total_seconds), 300.0f) / 60.0f;
+            // Cap complete blocks to num_blocks
+            if (complete_blocks >= num_blocks) {
+                complete_blocks = num_blocks;
+                partial_block_pct = 0.0f;
             }
-            
-            auto complete_blocks = static_cast<int>(blocks_to_fill);
-            auto partial_block_pct = blocks_to_fill - static_cast<float>(complete_blocks);
             
             // Reserve space for the blocks
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (block_height + block_padding) * static_cast<float>(num_blocks) + 5.0f);
@@ -481,16 +501,9 @@ namespace rouen::cards {
                 }
                 
                 // Add the block time label
-                std::string time_label;
-                int label_value = (i + 1) * minutes_per_block;
-                
-                if (minutes_per_block == 60) {
-                    // For hour blocks, show as "1hr", "2hr", etc.
-                    time_label = std::format("{}{}", (i + 1), label_suffix);
-                } else {
-                    // For minute blocks, show as "5", "10", etc.
-                    time_label = std::format("{}", label_value);
-                }
+                double label_val_raw = static_cast<double>(i + 1) * chosen_interval.seconds / chosen_interval.divisor;
+                int label_val = static_cast<int>(std::round(label_val_raw));
+                std::string time_label = std::format("{}{}", label_val, chosen_interval.suffix);
                 
                 // Center the text in the block
                 auto text_size = ImGui::CalcTextSize(time_label.c_str());
@@ -556,6 +569,7 @@ namespace rouen::cards {
         char time_buffer[32] = {0};
         bool alarm_playing = false;
         bool alarm_active = true;
+        float set_header_height = 30.0f; // Track the height of the "Set" collapsing header
         
         // Available alarm sounds
         std::vector<std::pair<std::string, std::string>> alarm_sounds = {
