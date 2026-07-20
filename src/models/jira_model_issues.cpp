@@ -93,8 +93,9 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                 if (issue_type.contains("description")) {
                     try {
                         issue.issue_type.description = issue_type["description"].get<std::string>();
-                    } catch (const std::exception&) {
+                    } catch (const std::exception& e) {
                         // Handle null or invalid description
+                        (void)e;
                     }
                 }
                 
@@ -111,8 +112,9 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                             assignee["avatarUrls"].contains("48x48")) {
                             issue.assignee.avatar_url = assignee["avatarUrls"]["48x48"].get<std::string>();
                         }
-                    } catch (const std::exception&) {
+                    } catch (const std::exception& e) {
                         // Handle null or invalid assignee
+                        (void)e;
                     }
                 }
                 
@@ -129,8 +131,9 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                             reporter["avatarUrls"].contains("48x48")) {
                             issue.reporter.avatar_url = reporter["avatarUrls"]["48x48"].get<std::string>();
                         }
-                    } catch (const std::exception&) {
+                    } catch (const std::exception& e) {
                         // Handle null or invalid reporter
+                        (void)e;
                     }
                 }
                 
@@ -140,8 +143,9 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                         for (const auto& label : fields["labels"].get<std::vector<glz::json_t>>()) {
                             issue.labels.push_back(label.get<std::string>());
                         }
-                    } catch (const std::exception&) {
+                    } catch (const std::exception& e) {
                         // Handle null or invalid labels
+                        (void)e;
                     }
                 }
             }

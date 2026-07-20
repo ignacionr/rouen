@@ -60,7 +60,7 @@ public:
     
     // Restart with sudo privileges
     void restart_with_sudo(const char* password, const std::string& prev_cwd, 
-                         const std::string& sudo_command, TerminalOutput& output,
+                         const std::string& sudo_cmd, TerminalOutput& output,
                          std::atomic<bool>& is_command_running);
                          
     // Check if interactive bash is being used

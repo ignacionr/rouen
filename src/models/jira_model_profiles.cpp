@@ -23,7 +23,7 @@ static void load_profiles_from_env() {
     jira_model::get_environment_profiles_ref().clear();
     
     // Get discovered JIRA profiles from configuration service
-    auto discovered_profiles = config_service->get_jira_profiles();
+    auto discovered_profiles = rouen::helpers::ConfigService::get_jira_profiles();
     
     for (const auto& profile_name : discovered_profiles) {
         // Get JIRA configuration for this profile

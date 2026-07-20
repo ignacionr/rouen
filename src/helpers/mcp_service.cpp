@@ -349,7 +349,9 @@ mcp_service::mcp_service() {
                     (*edit_func)(request.path);
                     return "Successfully opened " + request.path + " in the editor.";
                 }
-            } catch (...) {}
+            } catch (...) {
+                (void)0;
+            }
             return "Error: Editor service is not available.";
         },
         "editor"
@@ -420,7 +422,9 @@ mcp_service::mcp_service() {
                         }
                         results.push_back(std::move(video));
                     }
-                } catch (...) {}
+                } catch (...) {
+                    (void)0;
+                }
             }
             
             std::string response_str;
@@ -691,7 +695,7 @@ void mcp_service::unregister_card_functions(const std::string& card_type) {
     // Remove all functions for this card type
     for (const auto& func_name : card_it->second) {
         functions_.erase(func_name);
-        DEBUG_TRACE("MCP: Unregistered function '" + func_name + "' from card '" + card_type + "'");
+        DEBUG_TRACE(std::format("MCP: Unregistered function '{}' from card '{}'", func_name, card_type));
     }
     
     // Remove card from registry

@@ -146,9 +146,7 @@ std::filesystem::path jira_model::get_profiles_path() {
     return app_data_dir / "jira_profiles.json";
 }
 
-jira_model::jira_model() {
-    // Profile loading will be handled in jira_model_profiles.cpp
-}
+jira_model::jira_model() = default;
 
 jira_model::~jira_model() {
     // Save profiles if modified

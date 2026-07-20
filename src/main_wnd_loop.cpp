@@ -147,7 +147,7 @@ bool main_wnd::process_events() {
                                     (*clear_editor_func)();
                                 }
                             } catch (...) {
-                                // Ignore if service is not registered
+                                (void)0;
                             }
                             continue;
                         }
@@ -155,10 +155,11 @@ bool main_wnd::process_events() {
                         m_done = true;
                         return false;
                     }
+                    
                     // Handle window resize to refresh DPI settings
-                    else if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
-                             event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
-                             event.window.event == SDL_WINDOWEVENT_MOVED) {
+                    if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                        event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                        event.window.event == SDL_WINDOWEVENT_MOVED) {
                         
                         std::cout << "Window event detected, updating display settings..." << '\n';
                         
@@ -211,7 +212,7 @@ bool main_wnd::process_events() {
                                 (*clear_editor_func)();
                             }
                         } catch (...) {
-                            // Ignore if service is not registered
+                            (void)0;
                         }
                     }
                     else {

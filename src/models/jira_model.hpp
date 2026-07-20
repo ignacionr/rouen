@@ -383,7 +383,7 @@ private:
     // API request helpers
     std::string make_request(const std::string& endpoint, 
                             const std::string& method = "GET",
-                            const std::string& data = "") const;
+                            const std::string& payload = "") const;
     
     // Path to stored profiles
     static std::filesystem::path get_profiles_path();

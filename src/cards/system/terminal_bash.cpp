@@ -21,13 +21,12 @@ std::string ProcessCarriageReturns(const std::string& input) {
     if (last_r != std::string::npos) {
         if (last_r + 1 < input.size()) {
             return input.substr(last_r + 1);
-        }             size_t prev_r = input.find_last_of('\r', last_r - 1);
-            if (prev_r != std::string::npos) {
-                return input.substr(prev_r + 1, last_r - (prev_r + 1));
-            } else {
-                return input.substr(0, last_r);
-            }
-       
+        }
+        size_t prev_r = input.find_last_of('\r', last_r - 1);
+        if (prev_r != std::string::npos) {
+            return input.substr(prev_r + 1, last_r - (prev_r + 1));
+        }
+        return input.substr(0, last_r);
     }
     return input;
 }
@@ -153,13 +152,13 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         });
         
         // Customize bash environment - use PS1 that has the working directory (\w) followed by a newline for prompt tracking
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
+        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
         send_to_bash("set +H", true);
         
         // Ensure Nix and standard paths are loaded
         send_to_bash("export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
         send_to_bash("export NIXPKGS_ALLOW_UNFREE=1", true);
-        send_to_bash("if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e \"$HOME/.nix-profile/etc/profile.d/nix.sh\" ]; then . \"$HOME/.nix-profile/etc/profile.d/nix.sh\"; fi", true);
+        send_to_bash(R"(if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi)", true);
         
         // Change to initial directory
         send_to_bash(std::format("cd \"{}\"", initial_dir), true);
@@ -399,11 +398,11 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         std::string pass_str = std::string(password) + "\n";
         [[maybe_unused]] auto write_result = write(bash_master_fd, pass_str.c_str(), pass_str.length());
         
-        send_to_bash("export PS1=\"ROUEN_PROMPT|\\w|\\n\"", true);
+        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
         send_to_bash("set +H", true);
         send_to_bash("export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
         send_to_bash("export NIXPKGS_ALLOW_UNFREE=1", true);
-        send_to_bash("if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e \"$HOME/.nix-profile/etc/profile.d/nix.sh\" ]; then . \"$HOME/.nix-profile/etc/profile.d/nix.sh\"; fi", true);
+        send_to_bash(R"(if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi)", true);
         
         send_to_bash(std::format("cd \"{}\"", prev_cwd), true);
         
@@ -441,7 +440,7 @@ void TerminalBash::send_sigint() {
         // Also send SIGINT directly to direct child processes of the bash session
         // (This acts as a robust backup if process group propagation is hindered)
         std::string cmd = std::format("pgrep -P {}", bash_pid);
-        FILE* pipe = popen(cmd.c_str(), "r");
+        FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
         if (pipe) {
             char buffer[128];
             std::vector<pid_t> child_pids;
@@ -451,7 +450,9 @@ void TerminalBash::send_sigint() {
                     if (pid > 0) {
                         child_pids.push_back(pid);
                     }
-                } catch (...) {}
+                } catch (...) {
+                    (void)0;
+                }
             }
             pclose(pipe);
             
@@ -471,7 +472,7 @@ void TerminalBash::send_sigkill() {
     if (bash_pid > 0) {
         // Query child PIDs of bash_pid using pgrep -P
         std::string cmd = std::format("pgrep -P {}", bash_pid);
-        FILE* pipe = popen(cmd.c_str(), "r");
+        FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
         if (pipe) {
             char buffer[128];
             std::vector<pid_t> child_pids;
@@ -481,7 +482,9 @@ void TerminalBash::send_sigkill() {
                     if (pid > 0) {
                         child_pids.push_back(pid);
                     }
-                } catch (...) {}
+                } catch (...) {
+                    (void)0;
+                }
             }
             pclose(pipe);
             

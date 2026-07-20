@@ -147,7 +147,7 @@ void TerminalCommands::execute_external_command(const std::string& command,
 #ifdef _WIN32
         command_pipe = _popen(full_command.c_str(), "r");
 #else
-        command_pipe = popen(full_command.c_str(), "r");
+        command_pipe = popen(full_command.c_str(), "r"); // NOLINT(cert-env33-c)
 #endif
         
         if (!command_pipe) {

@@ -27,8 +27,9 @@ std::future<std::vector<jira_project>> jira_model::get_projects() {
                     if (json.contains("description")) {
                         try {
                             project.description = json["description"].get<std::string>();
-                        } catch (const std::exception&) {
+                        } catch (const std::exception& e) {
                             // Handle null or invalid description
+                            (void)e;
                         }
                     }
                     
@@ -67,8 +68,9 @@ std::future<jira_project> jira_model::get_project(const std::string& project_key
                 if (json.contains("description")) {
                     try {
                         project.description = json["description"].get<std::string>();
-                    } catch (const std::exception&) {
+                    } catch (const std::exception& e) {
                         // Handle null or invalid description
+                        (void)e;
                     }
                 }
                 
@@ -82,8 +84,9 @@ std::future<jira_project> jira_model::get_project(const std::string& project_key
                         if (type_json.contains("description")) {
                             try {
                                 type.description = type_json["description"].get<std::string>();
-                            } catch (const std::exception&) {
+                            } catch (const std::exception& e) {
                                 // Handle null or invalid description
+                                (void)e;
                             }
                         }
                         

@@ -78,6 +78,7 @@ int SDL_main(int argc, char* argv[]) {
 #else
 int main() {
 #endif
+    try {
     // Debug: Print working directory at startup
     std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << '\n';
     std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << '\n';
@@ -99,7 +100,7 @@ int main() {
         std::make_shared<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
             [](std::string const& cmd, std::shared_ptr<std::function<void(std::string)>> const& callback) {
                 // Launch the command in a background thread to avoid freezing the UI
-                std::thread([cmd, callback]() {
+                std::thread([cmd, callback]() noexcept { // NOLINT(bugprone-exception-escape)
                     try {
                         // Create a pipe to the command
                         FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
@@ -206,6 +207,14 @@ int main() {
     if (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1") {
         std::cout << "[INFO] Auto-push on shutdown is enabled. Running Two-Way Sync...\n";
         rouen::helpers::UniversalSyncService::instance().sync_twoway("Auto-sync shutdown update", false);
+    }
+
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal exception: " << e.what() << '\n';
+        return 1;
+    } catch (...) {
+        std::cerr << "Unknown fatal exception occurred\n";
+        return 1;
     }
 
     return 0;

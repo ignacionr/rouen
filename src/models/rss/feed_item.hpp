@@ -20,10 +20,10 @@ namespace media::rss {
         std::optional<double> media_duration_seconds; // media duration in seconds
         
         feed_item() = default;
-        feed_item(std::string_view title, std::string_view link, std::string_view description,
-                 std::string_view enclosure, std::string_view image_url,
-                 std::chrono::system_clock::time_point updated,
-                 std::optional<double> media_duration_seconds = std::nullopt);
+        feed_item(std::string_view title_param, std::string_view link_param, std::string_view description_param,
+                 std::string_view enclosure_param, std::string_view image_url_param,
+                 std::chrono::system_clock::time_point updated_param,
+                 std::optional<double> media_duration_param = std::nullopt);
         void refresh_summary();
         [[nodiscard]] std::string_view summary();
         

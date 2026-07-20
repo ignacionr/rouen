@@ -65,10 +65,10 @@ void converter::render_category_selector() {
     ImGui::SameLine();
     ImGui::SetNextItemWidth(200.0f);
     
-    if (ImGui::BeginCombo("##category", categories_[current_category_index_]->name().data())) {
+    if (ImGui::BeginCombo("##category", std::string(categories_[current_category_index_]->name()).c_str())) {
         for (size_t i = 0; i < categories_.size(); ++i) {
             const bool is_selected = (current_category_index_ == i);
-            if (ImGui::Selectable(categories_[i]->name().data(), is_selected)) {
+            if (ImGui::Selectable(std::string(categories_[i]->name()).c_str(), is_selected)) {
                 if (current_category_index_ != i) {
                     current_category_index_ = i;
                     reset_unit_selections();

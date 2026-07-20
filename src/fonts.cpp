@@ -14,15 +14,21 @@
 #include <SDL.h>  // For SDL DPI functions
 
 namespace rouen::fonts {
-    // Static variables to track DPI state
-    static float last_dpi_scale = 1.0f;
-    static bool fonts_need_rebuild = false;
+    namespace {
+        struct font_state {
+            float last_dpi_scale = 1.0f;
+            bool fonts_need_rebuild = false;
+            ImFont* s_default_font = nullptr;
+            ImFont* s_mono_font = nullptr;
+            ImFont* s_bold_font = nullptr;
+            ImFont* s_italic_font = nullptr;
+        };
 
-    // Loaded font pointers — null means "not found / use default as fallback".
-    static ImFont* s_default_font = nullptr;
-    static ImFont* s_mono_font    = nullptr;
-    static ImFont* s_bold_font    = nullptr;
-    static ImFont* s_italic_font  = nullptr;
+        font_state& get_state() noexcept {
+            static font_state state;
+            return state;
+        }
+    }
     // Helper function to find font file
     std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
         for (const auto& base_path : search_paths) {
@@ -101,7 +107,7 @@ namespace rouen::fonts {
         std::cout << "Using DPI scale: " << dpi_scale << ", Scaled font size: " << scaled_base_size << '\n';
         
         // Store the current DPI scale for change detection
-        last_dpi_scale = dpi_scale;
+        get_state().last_dpi_scale = dpi_scale;
         
         // Load font with Cyrillic support and symbols
         // Add default font with Cyrillic character range and geometric symbols
@@ -241,7 +247,7 @@ namespace rouen::fonts {
             // This will prevent the assertion failure but won't have all the glyphs
         } else {
             // Load the default font first
-            s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            get_state().s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Then merge Material Design Icons with the default font
             if (!material_icons_path.empty()) {
@@ -263,7 +269,7 @@ namespace rouen::fonts {
         
         // Add monospace font if found
         if (!mono_font_path.empty()) {
-            s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            get_state().s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
             
             // Also merge Material Design Icons with the monospace font if found
             if (!material_icons_path.empty()) {
@@ -284,7 +290,7 @@ namespace rouen::fonts {
 
         // Add bold font if found; null s_bold_font means callers fall back to default.
         if (!bold_font_path.empty()) {
-            s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            get_state().s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), scaled_base_size, nullptr, ranges);
             std::cout << "Loaded bold font: " << bold_font_path << '\n';
         } else {
             std::cerr << "WARNING: Could not find a suitable bold font — markdown bold will use the default font.\n";
@@ -292,7 +298,7 @@ namespace rouen::fonts {
 
         // Add italic font if found; null s_italic_font means callers fall back to default.
         if (!italic_font_path.empty()) {
-            s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            get_state().s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), scaled_base_size, nullptr, ranges);
             std::cout << "Loaded italic font: " << italic_font_path << '\n';
         } else {
             std::cerr << "WARNING: Could not find a suitable italic font — markdown italic will use the default font.\n";
@@ -339,9 +345,9 @@ namespace rouen::fonts {
                                  ", drawable: " << drawable_w << "x" << drawable_h << ")" << '\n';
                     
                     // Check if DPI scale has changed significantly
-                    if (std::abs(dpi_scale - last_dpi_scale) > 0.1f) {
-                        fonts_need_rebuild = true;
-                        std::cout << "DPI scale changed from " << last_dpi_scale << " to " << dpi_scale << 
+                    if (std::abs(dpi_scale - get_state().last_dpi_scale) > 0.1f) {
+                        get_state().fonts_need_rebuild = true;
+                        std::cout << "DPI scale changed from " << get_state().last_dpi_scale << " to " << dpi_scale << 
                                      ", fonts need rebuild" << '\n';
                     }
                 }
@@ -351,12 +357,12 @@ namespace rouen::fonts {
 
     // Check if fonts need to be rebuilt due to DPI changes
     bool needs_font_rebuild() {
-        return fonts_need_rebuild;
+        return get_state().fonts_need_rebuild;
     }
 
     // Clear the font rebuild flag (called after fonts are rebuilt)
     void clear_font_rebuild_flag() {
-        fonts_need_rebuild = false;
+        get_state().fonts_need_rebuild = false;
     }
 
     ImFont* get_font(FontType type) {
@@ -369,16 +375,16 @@ namespace rouen::fonts {
         // Helper: return the font pointer if non-null, else the default, else Fonts[0].
         auto fallback = [&](ImFont* f) -> ImFont* {
             if (f) return f;
-            if (s_default_font) return s_default_font;
+            if (get_state().s_default_font) return get_state().s_default_font;
             return io.Fonts->Fonts[0];
         };
         
         switch (type) {
-            case FontType::Default: return fallback(s_default_font);
-            case FontType::Mono:    return fallback(s_mono_font);
-            case FontType::Bold:    return fallback(s_bold_font);
-            case FontType::Italic:  return fallback(s_italic_font);
-            default:                return fallback(s_default_font);
+            case FontType::Default: return fallback(get_state().s_default_font);
+            case FontType::Mono:    return fallback(get_state().s_mono_font);
+            case FontType::Bold:    return fallback(get_state().s_bold_font);
+            case FontType::Italic:  return fallback(get_state().s_italic_font);
+            default:                return fallback(get_state().s_default_font);
         }
     }
 

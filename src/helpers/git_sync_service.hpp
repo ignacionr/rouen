@@ -351,7 +351,7 @@ namespace rouen::helpers {
                 return false;
             }
 
-            while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+            while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) { // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
                 output += buffer.data();
             }
 

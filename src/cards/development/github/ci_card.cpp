@@ -71,8 +71,9 @@ namespace rouen::cards::github {
                 run.event_type = json["event"].get<std::string>();
             }
             
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
             // Handle JSON parsing errors gracefully
+            (void)e;
         }
         
         return run;
@@ -81,20 +82,24 @@ namespace rouen::cards::github {
     WorkflowStatus WorkflowRun::parse_status(const std::string& status_str, const std::string& conclusion_str) {
         if (status_str == "queued") {
             return WorkflowStatus::Queued;
-        } if (status_str == "in_progress") {
+        } 
+        if (status_str == "in_progress") {
             return WorkflowStatus::InProgress;
-        } else if (status_str == "completed") {
+        } 
+        if (status_str == "completed") {
             if (conclusion_str == "success") {
                 return WorkflowStatus::Success;
-            } else if (conclusion_str == "failure") {
+            } 
+            if (conclusion_str == "failure") {
                 return WorkflowStatus::Failed;
-            } else if (conclusion_str == "cancelled") {
+            } 
+            if (conclusion_str == "cancelled") {
                 return WorkflowStatus::Cancelled;
-            } else if (conclusion_str == "skipped") {
+            } 
+            if (conclusion_str == "skipped") {
                 return WorkflowStatus::Skipped;
-            } else {
-                return WorkflowStatus::Completed;
-            }
+            } 
+            return WorkflowStatus::Completed;
         }
         return WorkflowStatus::Unknown;
     }
@@ -190,8 +195,9 @@ namespace rouen::cards::github {
             if (json.contains("html_url")) {
                 workflow.html_url = json["html_url"].get<std::string>();
             }
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
             // Handle JSON parsing errors gracefully
+            (void)e;
         }
         
         return workflow;
@@ -766,21 +772,29 @@ namespace rouen::cards::github {
 
         loading_workflows_ = true;
         auto host = host_;
-        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name]() {
-            FetchResult result;
-            result.kind = FetchKind::Workflows;
-            result.repo_full_name = repo_full_name;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name]() noexcept { // NOLINT(bugprone-exception-escape)
             try {
-                auto workflows_json = host->repo_workflows(repo_full_name);
-                if (workflows_json.contains("workflows") && workflows_json["workflows"].is_array()) {
-                    for (const auto& workflow_json : workflows_json["workflows"].get<std::vector<glz::json_t>>()) {
-                        result.workflows.push_back(Workflow::from_json(workflow_json));
+                FetchResult result;
+                result.kind = FetchKind::Workflows;
+                result.repo_full_name = repo_full_name;
+                try {
+                    auto workflows_json = host->repo_workflows(repo_full_name);
+                    if (workflows_json.contains("workflows") && workflows_json["workflows"].is_array()) {
+                        for (const auto& workflow_json : workflows_json["workflows"].get<std::vector<glz::json_t>>()) {
+                            result.workflows.push_back(Workflow::from_json(workflow_json));
+                        }
                     }
+                } catch (const std::exception& e) {
+                    result.error = std::format("Failed to fetch workflows: {}", e.what());
                 }
-            } catch (const std::exception& e) {
-                result.error = std::format("Failed to fetch workflows: {}", e.what());
+                return result;
+            } catch (...) {
+                FetchResult result;
+                result.kind = FetchKind::Workflows;
+                result.repo_full_name = repo_full_name;
+                result.error = "Fatal unknown exception occurred.";
+                return result;
             }
-            return result;
         });
     }
 
@@ -792,26 +806,35 @@ namespace rouen::cards::github {
         loading_runs_ = true;
         auto host = host_;
         auto repo_full_name = selected_repo_full_name_;
-        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, workflow_id]() {
-            FetchResult result;
-            result.kind = FetchKind::Runs;
-            result.repo_full_name = repo_full_name;
-            result.workflow_id = workflow_id;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, workflow_id]() noexcept { // NOLINT(bugprone-exception-escape)
             try {
-                std::string runs_url = std::format(
-                    "https://api.github.com/repos/{}/actions/workflows/{}/runs",
-                    repo_full_name, workflow_id);
+                FetchResult result;
+                result.kind = FetchKind::Runs;
+                result.repo_full_name = repo_full_name;
+                result.workflow_id = workflow_id;
+                try {
+                    std::string runs_url = std::format(
+                        "https://api.github.com/repos/{}/actions/workflows/{}/runs",
+                        repo_full_name, workflow_id);
 
-                auto runs_json = host->fetch(runs_url);
-                if (runs_json.contains("workflow_runs") && runs_json["workflow_runs"].is_array()) {
-                    for (const auto& run_json : runs_json["workflow_runs"].get<std::vector<glz::json_t>>()) {
-                        result.runs.push_back(WorkflowRun::from_json(run_json));
+                    auto runs_json = host->fetch(runs_url);
+                    if (runs_json.contains("workflow_runs") && runs_json["workflow_runs"].is_array()) {
+                        for (const auto& run_json : runs_json["workflow_runs"].get<std::vector<glz::json_t>>()) {
+                            result.runs.push_back(WorkflowRun::from_json(run_json));
+                        }
                     }
+                } catch (const std::exception& e) {
+                    result.error = std::format("Failed to fetch workflow runs: {}", e.what());
                 }
-            } catch (const std::exception& e) {
-                result.error = std::format("Failed to fetch workflow runs: {}", e.what());
+                return result;
+            } catch (...) {
+                FetchResult result;
+                result.kind = FetchKind::Runs;
+                result.repo_full_name = repo_full_name;
+                result.workflow_id = workflow_id;
+                result.error = "Fatal unknown exception occurred.";
+                return result;
             }
-            return result;
         });
     }
 
@@ -823,20 +846,29 @@ namespace rouen::cards::github {
         loading_jobs_ = true;
         auto host = host_;
         auto repo_full_name = selected_repo_full_name_;
-        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, run_id]() {
-            FetchResult result;
-            result.kind = FetchKind::Jobs;
-            result.repo_full_name = repo_full_name;
-            result.run_id = run_id;
+        pending_fetch_ = std::async(std::launch::async, [host, repo_full_name, run_id]() noexcept { // NOLINT(bugprone-exception-escape)
             try {
-                std::string jobs_url = std::format(
-                    "https://api.github.com/repos/{}/actions/runs/{}/jobs",
-                    repo_full_name, run_id);
-                result.jobs = host->fetch(jobs_url);
-            } catch (const std::exception& e) {
-                result.error = std::format("Failed to fetch workflow jobs: {}", e.what());
+                FetchResult result;
+                result.kind = FetchKind::Jobs;
+                result.repo_full_name = repo_full_name;
+                result.run_id = run_id;
+                try {
+                    std::string jobs_url = std::format(
+                        "https://api.github.com/repos/{}/actions/runs/{}/jobs",
+                        repo_full_name, run_id);
+                    result.jobs = host->fetch(jobs_url);
+                } catch (const std::exception& e) {
+                    result.error = std::format("Failed to fetch workflow jobs: {}", e.what());
+                }
+                return result;
+            } catch (...) {
+                FetchResult result;
+                result.kind = FetchKind::Jobs;
+                result.repo_full_name = repo_full_name;
+                result.run_id = run_id;
+                result.error = "Fatal unknown exception occurred.";
+                return result;
             }
-            return result;
         });
     }
 

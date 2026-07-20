@@ -60,13 +60,14 @@ bool api_server::initialize() {
         return true;
     }
 
-    mgr_ = new mg_mgr();
-    if (!mgr_) {
-        std::cerr << "Failed to allocate mongoose manager" << '\n';
+    try {
+        mgr_ = std::make_unique<mg_mgr>();
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to allocate mongoose manager: " << e.what() << '\n';
         return false;
     }
 
-    mg_mgr_init(mgr_);
+    mg_mgr_init(mgr_.get());
     initialized_ = true;
     return true;
 }
@@ -80,7 +81,7 @@ bool api_server::start(const std::string& address) {
         return true; // Already running
     }
 
-    conn_ = mg_http_listen(mgr_, address.c_str(), event_handler, this);
+    conn_ = mg_http_listen(mgr_.get(), address.c_str(), event_handler, this);
     if (!conn_) {
         std::cerr << "Failed to start HTTP server on " << address << '\n';
         return false;
@@ -88,7 +89,15 @@ bool api_server::start(const std::string& address) {
 
     // Start the server thread
     running_ = true;
-    server_thread_ = new std::thread(&api_server::server_loop, this);
+    try {
+        server_thread_ = std::make_unique<std::thread>(&api_server::server_loop, this);
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to start server thread: " << e.what() << '\n';
+        mg_http_listen(mgr_.get(), nullptr, nullptr, nullptr); // Cancel listening
+        conn_ = nullptr;
+        running_ = false;
+        return false;
+    }
 
     std::cout << "API server started on " << address << '\n';
     return true;
@@ -96,7 +105,7 @@ bool api_server::start(const std::string& address) {
 
 void api_server::server_loop() {
     while (running_) {
-        mg_mgr_poll(mgr_, 100); // Poll for events with 100ms timeout
+        mg_mgr_poll(mgr_.get(), 100); // Poll for events with 100ms timeout
     }
 }
 
@@ -106,8 +115,7 @@ void api_server::stop() {
         
         if (server_thread_ && server_thread_->joinable()) {
             server_thread_->join();
-            delete server_thread_;
-            server_thread_ = nullptr;
+            server_thread_.reset();
         }
     }
 
@@ -117,20 +125,17 @@ void api_server::stop() {
     }
 
     if (mgr_) {
-        mg_mgr_free(mgr_);
-        delete mgr_;
-        mgr_ = nullptr;
+        mg_mgr_free(mgr_.get());
+        mgr_.reset();
     }
 
     initialized_ = false;
 }
 
 void api_server::event_handler(struct mg_connection* c, int ev, void* ev_data) {
-    auto* server = static_cast<api_server*>(c->fn_data);
-    
     if (ev == MG_EV_HTTP_MSG) {
         auto* hm = static_cast<struct mg_http_message*>(ev_data);
-        server->handle_request(c, hm);
+        api_server::handle_request(c, hm);
     }
 }
 

@@ -20,11 +20,10 @@
 
 namespace rouen::hosts {
 
-// Global singleton instance
-static std::shared_ptr<trello_host> g_trello_host;
-static std::mutex g_trello_host_mutex;
-
 std::shared_ptr<trello_host> get_trello_host() {
+    static std::mutex g_trello_host_mutex;
+    static std::shared_ptr<trello_host> g_trello_host;
+
     std::lock_guard<std::mutex> lock(g_trello_host_mutex);
     if (!g_trello_host) {
         g_trello_host = std::make_shared<trello_host>();

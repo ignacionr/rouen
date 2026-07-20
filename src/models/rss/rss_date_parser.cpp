@@ -18,7 +18,7 @@ namespace media::rss {
                 char sign = match.str(1)[0];
                 int hours = std::stoi(match.str(2));
                 int minutes = std::stoi(match.str(3));
-                long offset_sec = ((hours * 3600) + (minutes * 60));
+                long offset_sec = (static_cast<long>(hours) * 3600L) + (static_cast<long>(minutes) * 60L);
                 return (sign == '-') ? -offset_sec : offset_sec;
             }
             
@@ -27,17 +27,17 @@ namespace media::rss {
             if (std::regex_search(s, match, alpha_tz_regex)) {
                 std::string tz = match.str(1);
                 if (tz == "GMT" || tz == "UTC" || tz == "UT" || tz == "Z") return 0;
-                if (tz == "EST") return -5 * 3600;
-                if (tz == "EDT") return -4 * 3600;
-                if (tz == "CST") return -6 * 3600;
-                if (tz == "CDT") return -5 * 3600;
-                if (tz == "MST") return -7 * 3600;
-                if (tz == "MDT") return -6 * 3600;
-                if (tz == "PST") return -8 * 3600;
-                if (tz == "PDT") return -7 * 3600;
-                if (tz == "BST") return 1 * 3600;
-                if (tz == "CET") return 1 * 3600;
-                if (tz == "CEST") return 2 * 3600;
+                if (tz == "EST") return -5 * 3600L;
+                if (tz == "EDT") return -4 * 3600L;
+                if (tz == "CST") return -6 * 3600L;
+                if (tz == "CDT") return -5 * 3600L;
+                if (tz == "MST") return -7 * 3600L;
+                if (tz == "MDT") return -6 * 3600L;
+                if (tz == "PST") return -8 * 3600L;
+                if (tz == "PDT") return -7 * 3600L;
+                if (tz == "BST") return 1 * 3600L;
+                if (tz == "CET") return 1 * 3600L;
+                if (tz == "CEST") return 2 * 3600L;
             }
             
             // Check if it ends with 'Z' (ISO 8601)

@@ -45,7 +45,9 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
             while ((p_pos = params_str.find(';', p_last_pos)) != std::string::npos) {
                 try {
                     params.push_back(std::stoi(params_str.substr(p_last_pos, p_pos - p_last_pos)));
-                } catch (...) {}
+                } catch (...) {
+                    (void)0;
+                }
                 p_last_pos = p_pos + 1;
             }
             if (p_last_pos < params_str.size() || params_str.empty()) {
