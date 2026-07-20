@@ -120,7 +120,7 @@ struct card {
     }
 
     void name(std::string_view name) {
-        window_title = std::format("{}##{}", name, static_cast<void*>(this));
+        window_title = std::format("{}###{}", name, static_cast<void*>(this));
     }
 
     // Get a color by index, bounds-checked against the fixed array size
