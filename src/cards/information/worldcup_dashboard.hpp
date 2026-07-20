@@ -134,7 +134,7 @@ public:
         load_data_cache_from_disk();
 
         if (!locator.empty()) {
-            handle_uri("worldcup:" + std::string(locator));
+            handle_uri_impl("worldcup:" + std::string(locator));
         }
 
         // Start Background Data Fetch
@@ -293,7 +293,7 @@ public:
         return uri == "worldcup" || uri.starts_with("worldcup:");
     }
 
-    void handle_uri(std::string_view uri) override {
+    void handle_uri_impl(std::string_view uri) {
         std::string_view locator = uri;
         auto colon_pos = uri.find(':');
         if (colon_pos != std::string_view::npos) {
@@ -308,6 +308,10 @@ public:
             set_match_center_selected = true;
             need_scroll_to_match = true;
         }
+    }
+
+    void handle_uri(std::string_view uri) override {
+        handle_uri_impl(uri);
     }
 
     SDL_Renderer* renderer = nullptr;

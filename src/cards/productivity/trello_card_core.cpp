@@ -3,6 +3,7 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <format>
 
 // 2. Libraries used in the project, in alphabetic order
@@ -23,10 +24,12 @@ trello_card::trello_card() : trello_host_(hosts::get_trello_host()) {
     auto token = helpers::ApiKeys::get_trello_token();
     
     if (!api_key.empty() && api_key.length() < sizeof(api_key_buffer_)) {
-        std::strcpy(api_key_buffer_, api_key.c_str());
+        std::strncpy(api_key_buffer_, api_key.c_str(), sizeof(api_key_buffer_) - 1);
+        api_key_buffer_[sizeof(api_key_buffer_) - 1] = '\0';
     }
     if (!token.empty() && token.length() < sizeof(token_buffer_)) {
-        std::strcpy(token_buffer_, token.c_str());
+        std::strncpy(token_buffer_, token.c_str(), sizeof(token_buffer_) - 1);
+        token_buffer_[sizeof(token_buffer_) - 1] = '\0';
     }
 }
 
@@ -52,10 +55,12 @@ trello_card::trello_card(const std::string& entity_id, card_context context)
     auto token = helpers::ApiKeys::get_trello_token();
     
     if (!api_key.empty() && api_key.length() < sizeof(api_key_buffer_)) {
-        std::strcpy(api_key_buffer_, api_key.c_str());
+        std::strncpy(api_key_buffer_, api_key.c_str(), sizeof(api_key_buffer_) - 1);
+        api_key_buffer_[sizeof(api_key_buffer_) - 1] = '\0';
     }
     if (!token.empty() && token.length() < sizeof(token_buffer_)) {
-        std::strcpy(token_buffer_, token.c_str());
+        std::strncpy(token_buffer_, token.c_str(), sizeof(token_buffer_) - 1);
+        token_buffer_[sizeof(token_buffer_) - 1] = '\0';
     }
     
     switch (context) {

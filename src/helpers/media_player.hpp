@@ -36,7 +36,7 @@ struct media_player {
 
     static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
         (void)info_color;
-        ImGui::PushID(url.data());
+        ImGui::PushID(url.data(), url.data() + url.size());
         try {
             auto &item {items()[ImGui::GetID("MediaPlayer")]};
             item.url = url;
@@ -55,7 +55,7 @@ struct media_player {
                 initial_watermark = item.watermark;
             }
             if (has_active_media) {
-                ImGui::TextUnformatted(title.data());
+                ImGui::TextUnformatted(title.data(), title.data() + title.size());
                 double current_pos, current_dur;
                 {
                     std::lock_guard<std::mutex> lock(item.data_mutex);
