@@ -43,6 +43,56 @@ namespace rouen::helpers {
         // Don't include optional fields - we'll handle unknown_key errors differently
     };
 
+} // namespace rouen::helpers
+
+// Glaze metadata for Gemini API response structures
+template <>
+struct glz::meta<rouen::helpers::GeminiPart> {
+    using T = rouen::helpers::GeminiPart;
+    static constexpr auto value = object(
+        "text", &T::text,
+        "functionCall", &T::functionCall
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiContent> {
+    using T = rouen::helpers::GeminiContent;
+    static constexpr auto value = object(
+        "parts", &T::parts,
+        "role", &T::role
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiFunctionCall> {
+    using T = rouen::helpers::GeminiFunctionCall;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "args", &T::args
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiCandidate> {
+    using T = rouen::helpers::GeminiCandidate;
+    static constexpr auto value = object(
+        "content", &T::content,
+        "finishReason", &T::finishReason,
+        "index", &T::index
+    );
+};
+
+template <>
+struct glz::meta<rouen::helpers::GeminiResponse> {
+    using T = rouen::helpers::GeminiResponse;
+    static constexpr auto value = object(
+        "candidates", &T::candidates
+    );
+};
+
+namespace rouen::helpers {
+
     /**
      * Gemini API Adapter
      * Template-compatible adapter for Google's Gemini API
@@ -579,49 +629,3 @@ namespace rouen::helpers {
     };
 
 } // namespace rouen::helpers
-
-// Glaze metadata for Gemini API response structures
-template <>
-struct glz::meta<rouen::helpers::GeminiPart> {
-    using T = rouen::helpers::GeminiPart;
-    static constexpr auto value = object(
-        "text", &T::text,
-        "functionCall", &T::functionCall
-    );
-};
-
-template <>
-struct glz::meta<rouen::helpers::GeminiContent> {
-    using T = rouen::helpers::GeminiContent;
-    static constexpr auto value = object(
-        "parts", &T::parts,
-        "role", &T::role
-    );
-};
-
-template <>
-struct glz::meta<rouen::helpers::GeminiFunctionCall> {
-    using T = rouen::helpers::GeminiFunctionCall;
-    static constexpr auto value = object(
-        "name", &T::name,
-        "args", &T::args
-    );
-};
-
-template <>
-struct glz::meta<rouen::helpers::GeminiCandidate> {
-    using T = rouen::helpers::GeminiCandidate;
-    static constexpr auto value = object(
-        "content", &T::content,
-        "finishReason", &T::finishReason,
-        "index", &T::index
-    );
-};
-
-template <>
-struct glz::meta<rouen::helpers::GeminiResponse> {
-    using T = rouen::helpers::GeminiResponse;
-    static constexpr auto value = object(
-        "candidates", &T::candidates
-    );
-};
