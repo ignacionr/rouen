@@ -17,6 +17,8 @@ namespace rouen::helpers {
         std::string description;
         std::vector<std::string> allowed_mcps;
         std::string system_prompt;
+        std::string llm_config_name;
+        bool enable_search{false};
 
         struct glaze {
             using T = Persona;
@@ -24,7 +26,9 @@ namespace rouen::helpers {
                 "name", &T::name,
                 "description", &T::description,
                 "allowed_mcps", &T::allowed_mcps,
-                "system_prompt", &T::system_prompt
+                "system_prompt", &T::system_prompt,
+                "llm_config_name", &T::llm_config_name,
+                "enable_search", &T::enable_search
             );
         };
     };
@@ -121,6 +125,8 @@ namespace rouen::helpers {
                 "You are a helpful AI assistant integrated into Rouen, a card-based desktop application. "
                 "Rouen organizes its UI as cards - each feature (weather, git, terminal, etc.) is a visual card that can be opened, closed, and interacted with.\n"
                 "You are knowledgeable, accurate, and provide helpful responses.";
+            default_p.llm_config_name = "Default";
+            default_p.enable_search = false;
             
             personas_.push_back(default_p);
             
@@ -132,6 +138,8 @@ namespace rouen::helpers {
             developer_p.system_prompt = 
                 "You are a terminal-focused utility bot. You speak in a minimal, tech-focused tone. "
                 "You have access to terminal commands, git, and editor tools to modify files and investigate the system.";
+            developer_p.llm_config_name = "Default";
+            developer_p.enable_search = false;
             
             personas_.push_back(developer_p);
         }

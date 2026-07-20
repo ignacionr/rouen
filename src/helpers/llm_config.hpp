@@ -4,9 +4,11 @@
 #include <memory>
 #include <optional>
 #include <variant>
+#include <vector>
 #include "config_service.hpp"
 #include "cppgpt.hpp"
 #include "gemini_adapter.hpp"
+#include "glaze_include.hpp"
 
 namespace rouen::helpers {
 
@@ -31,12 +33,13 @@ namespace rouen::helpers {
             std::string base_url{};
             std::string model_name{};
             bool is_configured{false};
+            std::string config_name{};
             
             // Constructor for aggregate initialization with defaults
             LLMSettings() = default;
-            LLMSettings(Provider p, std::string key, std::string url, std::string model, bool configured)
+            LLMSettings(Provider p, std::string key, std::string url, std::string model, bool configured, std::string name = "")
                 : provider(p), api_key(std::move(key)), base_url(std::move(url)), 
-                  model_name(std::move(model)), is_configured(configured) {}
+                  model_name(std::move(model)), is_configured(configured), config_name(std::move(name)) {}
         };
 
         // Forward declaration for the base class
@@ -119,16 +122,18 @@ namespace rouen::helpers {
         
         /**
          * Get the current LLM configuration
+         * @param config_name Optional configuration name. If empty, uses active persona's config or default config.
          * @return LLMSettings struct with current configuration
          */
-        static LLMSettings get_current_config();
+        static LLMSettings get_current_config(const std::string& config_name = "");
         
         /**
          * Get a configured LLM instance based on current settings
          * Returns a memory-safe wrapped LLM instance
+         * @param config_name Optional configuration name. If empty, uses active persona's config or default config.
          * @return LLMInstance containing the appropriate adapter
          */
-        static std::optional<LLMInstance> create_llm_instance();
+        static std::optional<LLMInstance> create_llm_instance(const std::string& config_name = "");
         
         /**
          * Template function to execute operations on any LLM type
@@ -179,9 +184,10 @@ namespace rouen::helpers {
         
         /**
          * Check if the current LLM configuration is valid and complete
+         * @param config_name Optional configuration name. If empty, uses active persona's config or default config.
          * @return true if configuration is complete and usable
          */
-        static bool is_configured();
+        static bool is_configured(const std::string& config_name = "");
         
         /**
          * Get the provider enum from string value
@@ -225,6 +231,117 @@ namespace rouen::helpers {
          * Initialize the config service instance
          */
         static void ensure_config_service();
+    };
+
+    struct LLMConfigEntry {
+        std::string name;
+        std::string provider{"grok"};
+        std::string api_key{};
+        std::string base_url{};
+        std::string model_name{};
+
+        struct glaze {
+            using T = LLMConfigEntry;
+            static constexpr auto value = glz::object(
+                "name", &T::name,
+                "provider", &T::provider,
+                "api_key", &T::api_key,
+                "base_url", &T::base_url,
+                "model_name", &T::model_name
+            );
+        };
+    };
+
+    struct LLMConfigSaveModel {
+        std::string default_config_name{"Default"};
+        std::vector<LLMConfigEntry> configs;
+
+        struct glaze {
+            using T = LLMConfigSaveModel;
+            static constexpr auto value = glz::object(
+                "default_config_name", &T::default_config_name,
+                "configs", &T::configs
+            );
+        };
+    };
+
+    class LLMConfigManager {
+    public:
+        static LLMConfigManager& instance() {
+            static LLMConfigManager mgr;
+            return mgr;
+        }
+
+        const std::vector<LLMConfigEntry>& get_configs() const {
+            return configs_;
+        }
+
+        const std::string& get_default_config_name() const {
+            return default_config_name_;
+        }
+
+        void set_default_config_name(const std::string& name) {
+            default_config_name_ = name;
+            save_configs();
+        }
+
+        const LLMConfigEntry* get_config(const std::string& name) const {
+            for (const auto& config : configs_) {
+                if (config.name == name) {
+                    return &config;
+                }
+            }
+            return nullptr;
+        }
+
+        void add_config(const LLMConfigEntry& config) {
+            configs_.push_back(config);
+            save_configs();
+        }
+
+        void update_config(const std::string& old_name, const LLMConfigEntry& config) {
+            for (auto& c : configs_) {
+                if (c.name == old_name) {
+                    c = config;
+                    if (default_config_name_ == old_name) {
+                        default_config_name_ = config.name;
+                    }
+                    save_configs();
+                    return;
+                }
+            }
+        }
+
+        void delete_config(const std::string& name) {
+            if (configs_.size() <= 1) {
+                return;
+            }
+            auto it = std::remove_if(configs_.begin(), configs_.end(), [&](const auto& c) {
+                return c.name == name;
+            });
+            if (it != configs_.end()) {
+                configs_.erase(it, configs_.end());
+                if (default_config_name_ == name) {
+                    default_config_name_ = configs_[0].name;
+                }
+                save_configs();
+            }
+        }
+
+        void reload() {
+            load_configs();
+        }
+
+    private:
+        LLMConfigManager();
+        ~LLMConfigManager() = default;
+
+        void setup_default_configs();
+        void load_configs();
+        void save_configs() const;
+
+        std::vector<LLMConfigEntry> configs_;
+        std::string default_config_name_{"Default"};
     };
 
 } // namespace rouen::helpers

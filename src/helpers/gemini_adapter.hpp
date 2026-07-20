@@ -327,8 +327,8 @@ namespace rouen::helpers {
                 
                 CONFIG_DEBUG_FMT("Cleaned JSON: {}", cleaned_response);
                 
-                CONFIG_DEBUG("Calling glz::read_json on cleaned response");
-                auto error = glz::read_json(gemini_response, cleaned_response);
+                CONFIG_DEBUG("Calling glz::read on cleaned response");
+                auto error = glz::read<glz::opts{.error_on_unknown_keys = false}>(gemini_response, cleaned_response);
                 
                 if (error) {
                     CONFIG_ERROR_FMT("Failed to parse cleaned Gemini JSON response: {}", glz::format_error(error, cleaned_response));

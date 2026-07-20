@@ -98,12 +98,7 @@ namespace rouen::cards {
                     ImGui::Text("Model: %s", settings.model_name.c_str());
                 }
                 
-                // whether to allow search (only for providers that support it)
-                if (settings.provider == helpers::LLMConfig::Provider::GROK || 
-                    settings.provider == helpers::LLMConfig::Provider::GEMINI) {
-                    ImGui::Checkbox("Allow Search", &allow_search_);
-                    ImGui::SameLine();
-                }
+
                 
                 // temperature slider
                 ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
@@ -133,6 +128,7 @@ namespace rouen::cards {
                             if (ImGui::Selectable(personas[i].name.c_str(), is_selected)) {
                                 pm.select_persona(i);
                                 populate_persona_buffers(i);
+                                refresh_llm_config();
                             }
                             if (is_selected) {
                                 ImGui::SetItemDefaultFocus();
@@ -161,6 +157,41 @@ namespace rouen::cards {
                     if (ImGui::InputText("##persona_desc", persona_desc_buf_.data(), persona_desc_buf_.size())) {
                         p.description = persona_desc_buf_.data();
                         changed = true;
+                    }
+                    
+                    // Bound LLM Config dropdown
+                    ImGui::Text("Bound LLM Config:");
+                    auto& lcm = helpers::LLMConfigManager::instance();
+                    const auto& llm_configs = lcm.get_configs();
+                    std::string current_bound = p.llm_config_name;
+                    if (current_bound.empty()) {
+                        current_bound = lcm.get_default_config_name();
+                    }
+                    
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::BeginCombo("##persona_llm_config", current_bound.c_str())) {
+                        for (const auto& config : llm_configs) {
+                            bool is_selected = (current_bound == config.name);
+                            if (ImGui::Selectable(config.name.c_str(), is_selected)) {
+                                p.llm_config_name = config.name;
+                                changed = true;
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+
+                    // Enable Web Search checkbox
+                    auto bound_settings = helpers::LLMConfig::get_current_config(p.llm_config_name);
+                    if (bound_settings.provider == helpers::LLMConfig::Provider::GROK ||
+                        bound_settings.provider == helpers::LLMConfig::Provider::GEMINI) {
+                        bool enable_search = p.enable_search;
+                        if (ImGui::Checkbox("Enable Web Search", &enable_search)) {
+                            p.enable_search = enable_search;
+                            changed = true;
+                        }
                     }
                     
                     // Allowed MCPs selection
@@ -196,6 +227,7 @@ namespace rouen::cards {
                     
                     if (changed) {
                         pm.update_persona(active_idx, p);
+                        refresh_llm_config();
                     }
                     
                     // New and Delete buttons
@@ -205,9 +237,11 @@ namespace rouen::cards {
                         new_p.description = "A custom AI assistant persona.";
                         new_p.allowed_mcps = {"deck"};
                         new_p.system_prompt = "You are a custom assistant.";
+                        new_p.llm_config_name = "Default";
                         pm.add_persona(new_p);
                         pm.select_persona(personas.size()); // select the newly added one
                         populate_persona_buffers(personas.size());
+                        refresh_llm_config();
                     }
                     
                     if (personas.size() > 1) {
@@ -216,6 +250,7 @@ namespace rouen::cards {
                             pm.delete_persona(active_idx);
                             size_t new_idx = pm.get_active_persona_index();
                             populate_persona_buffers(new_idx);
+                            refresh_llm_config();
                         }
                     }
                 }
@@ -662,7 +697,6 @@ namespace rouen::cards {
         
         // Configuration settings
         static constexpr long ai_request_timeout_seconds_ = 180;
-        bool allow_search_{false};
         float temperature_{0.45f};
 
         // Persona buffers
@@ -733,11 +767,9 @@ namespace rouen::cards {
                 llm_instance_.reset();
             }
             
-            // Update card name based on provider
+            // Update card name based on configuration name
             if (llm_configured_) {
-                std::string provider_name = helpers::LLMConfig::provider_to_string(current_llm_settings_.provider);
-                std::transform(provider_name.begin(), provider_name.end(), provider_name.begin(), ::toupper);
-                name("AI Chat (" + provider_name + ")");
+                name("AI Chat (" + current_llm_settings_.config_name + ")");
             } else {
                 name("AI Chat (Not Configured)");
             }
@@ -833,8 +865,9 @@ namespace rouen::cards {
                 // Determine model and search mode before launching the thread (thread-safe capture)
                 std::string model_name = current_llm_settings_.model_name;
                 std::string search_mode_str;
+                bool allow_search = helpers::PersonaManager::instance().get_active_persona().enable_search;
                 if ((current_llm_settings_.provider == helpers::LLMConfig::Provider::GROK || 
-                     current_llm_settings_.provider == helpers::LLMConfig::Provider::GEMINI) && allow_search_) {
+                     current_llm_settings_.provider == helpers::LLMConfig::Provider::GEMINI) && allow_search) {
                     search_mode_str = "on";
                 }
                 
@@ -964,7 +997,7 @@ namespace rouen::cards {
                 auto async_context = std::make_shared<AsyncRequestContext>();
                 async_context->user_message = message; // Copy the message safely
                 async_context->llm_settings = current_llm_settings_; // Copy settings
-                async_context->allow_search = allow_search_;
+                async_context->allow_search = helpers::PersonaManager::instance().get_active_persona().enable_search;
                 async_context->temperature = temperature_;
                 
                 // Copy conversation history safely for async operation

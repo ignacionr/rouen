@@ -86,6 +86,44 @@ private:
     char search_filter_[256] = "";
     int selected_category_ = -1; // -1 means all categories
     
+    // Named LLM Config state
+    std::string selected_llm_config_name_ = "";
+    std::string last_loaded_llm_config_name_ = "";
+    char llm_name_buf_[128] = "";
+    char llm_key_buf_[512] = "";
+    char llm_url_buf_[512] = "";
+    char llm_model_buf_[256] = "";
+    int selected_prov_idx_ = 0;
+
+    void populate_llm_config_buffers(const std::string& name) {
+        auto& lcm = helpers::LLMConfigManager::instance();
+        const auto* entry = lcm.get_config(name);
+        if (entry) {
+            strncpy(llm_name_buf_, entry->name.c_str(), sizeof(llm_name_buf_) - 1);
+            llm_name_buf_[sizeof(llm_name_buf_) - 1] = '\0';
+            
+            strncpy(llm_key_buf_, entry->api_key.c_str(), sizeof(llm_key_buf_) - 1);
+            llm_key_buf_[sizeof(llm_key_buf_) - 1] = '\0';
+            
+            strncpy(llm_url_buf_, entry->base_url.c_str(), sizeof(llm_url_buf_) - 1);
+            llm_url_buf_[sizeof(llm_url_buf_) - 1] = '\0';
+            
+            strncpy(llm_model_buf_, entry->model_name.c_str(), sizeof(llm_model_buf_) - 1);
+            llm_model_buf_[sizeof(llm_model_buf_) - 1] = '\0';
+            
+            // Populate provider index
+            std::string prov = entry->provider;
+            if (prov == "grok") selected_prov_idx_ = 0;
+            else if (prov == "openai") selected_prov_idx_ = 1;
+            else if (prov == "groq") selected_prov_idx_ = 2;
+            else if (prov == "gemini") selected_prov_idx_ = 3;
+            else if (prov == "custom") selected_prov_idx_ = 4;
+            else selected_prov_idx_ = 0;
+            
+            last_loaded_llm_config_name_ = name;
+        }
+    }
+    
     void refresh_config_data() {
         auto config_service = helpers::ConfigService::instance();
         
@@ -454,128 +492,170 @@ private:
     }
     
     void render_llm_config_editor() {
-        auto config_service = helpers::ConfigService::instance();
+        auto& lcm = helpers::LLMConfigManager::instance();
+        const auto& configs = lcm.get_configs();
         
-        ImGui::Text("LLM Provider Configuration");
+        if (selected_llm_config_name_.empty()) {
+            selected_llm_config_name_ = lcm.get_default_config_name();
+        }
+        if (last_loaded_llm_config_name_ != selected_llm_config_name_) {
+            populate_llm_config_buffers(selected_llm_config_name_);
+        }
+        
+        ImGui::Text("Named LLM Configurations");
         ImGui::Spacing();
         
-        // Get current provider
-        std::string current_provider = config_service->get_env_optional("LLM_PROVIDER").value_or("grok");
+        // 1. Selector combo
+        ImGui::Text("Select Config:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(250);
+        if (ImGui::BeginCombo("##llm_config_select", selected_llm_config_name_.c_str())) {
+            for (const auto& config : configs) {
+                bool is_selected = (selected_llm_config_name_ == config.name);
+                std::string display_name = config.name;
+                if (config.name == lcm.get_default_config_name()) {
+                    display_name += " [Default]";
+                }
+                if (ImGui::Selectable(display_name.c_str(), is_selected)) {
+                    selected_llm_config_name_ = config.name;
+                    populate_llm_config_buffers(selected_llm_config_name_);
+                }
+                if (is_selected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
         
-        // Provider selection
-        struct LLMProviderInfo {
-            const char* name;
-            const char* value;
-            const char* description;
-            const char* default_model;
-            const char* api_key_name;
-        };
+        ImGui::SameLine();
         
-        LLMProviderInfo providers[] = {
-            {"Grok (X.AI)", "grok", "X.AI's Grok models with web search capabilities", "grok-3-latest", "GROK_API_KEY"},
-            {"OpenAI", "openai", "OpenAI's GPT models including GPT-4", "gpt-4", "OPENAI_API_KEY"},
-            {"Groq", "groq", "Fast inference with open-source models", "llama3-8b-8192", "GROQ_API_KEY"},
-            {"Google Gemini", "gemini", "Google's Gemini models (fully native with function calling and search support)", "gemini-2.5-flash-lite", "GEMINI_API_KEY"},
-            {"Custom", "custom", "Custom LLM endpoint with configurable URL", "custom-model", "LLM_CUSTOM_API_KEY"}
-        };
-        
-        constexpr int provider_count = static_cast<int>(sizeof(providers) / sizeof(*providers));
-        
-        // Find current provider index
-        int current_provider_idx = 0;
-        for (int i = 0; i < provider_count; i++) {
-            if (current_provider == providers[i].value) {
-                current_provider_idx = i;
-                break;
+        // Button to set as default
+        bool is_default = (selected_llm_config_name_ == lcm.get_default_config_name());
+        if (is_default) {
+            ImGui::TextDisabled(" (Default Config) ");
+        } else {
+            if (ImGui::Button("Set as Default")) {
+                lcm.set_default_config_name(selected_llm_config_name_);
             }
         }
-        
-        static int selected_provider = current_provider_idx;
-        
-        // Create dropdown with provider names
-        const char* provider_names[provider_count];
-        for (int i = 0; i < provider_count; i++) {
-            provider_names[i] = providers[i].name;
-        }
-        
-        ImGui::Text("Provider:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(200);
-        if (ImGui::Combo("##llm_provider", &selected_provider, provider_names, provider_count)) {
-            // Update the provider setting
-            std::string new_provider = providers[selected_provider].value;
-            set_environment_variable("LLM_PROVIDER", new_provider.c_str(), 1);
-            config_service->refresh_cache();
-            CONFIG_INFO_FMT("LLM provider changed to: {}", new_provider);
-        }
-        
-        // Display description of current selection
-        ImGui::Spacing();
-        ImGui::Text("Description:");
-        ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-        ImGui::TextWrapped("%s", providers[selected_provider].description);
-        ImGui::PopStyleColor();
         
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
         
-        // Provider-specific configuration
-        const auto& selected_provider_info = providers[selected_provider];
-        
-        if (selected_provider == 4) { // Custom provider
-            render_custom_llm_config();
-        } else {
-            // Show API key requirement for standard providers
-            ImGui::Text("Required API Key: %s", selected_provider_info.api_key_name);
+        // Get the loaded entry to see current provider
+        const auto* entry = lcm.get_config(selected_llm_config_name_);
+        if (entry) {
+            // Provider field
+            struct LLMProviderInfo {
+                const char* name;
+                const char* value;
+            };
+            LLMProviderInfo providers[] = {
+                {"Grok (X.AI)", "grok"},
+                {"OpenAI", "openai"},
+                {"Groq", "groq"},
+                {"Google Gemini", "gemini"},
+                {"Custom", "custom"}
+            };
+            constexpr int provider_count = 5;
             
-            // Check if API key is set
-            std::string api_key = config_service->get_env_optional(selected_provider_info.api_key_name).value_or("");
+
             
-            // Text input buffer
-            static char standard_key_buffer[512] = "";
-            static std::string last_key_provider = "";
-            if (last_key_provider != selected_provider_info.api_key_name) {
-                strncpy(standard_key_buffer, api_key.c_str(), sizeof(standard_key_buffer) - 1);
-                standard_key_buffer[sizeof(standard_key_buffer) - 1] = '\0';
-                last_key_provider = selected_provider_info.api_key_name;
-            }
+            // Name field
+            ImGui::Text("Configuration Name:");
+            ImGui::SetNextItemWidth(300);
+            ImGui::InputText("##llm_config_name_input", llm_name_buf_, sizeof(llm_name_buf_));
             
-            ImGui::Text("Enter API Key:");
-            ImGui::SetNextItemWidth(400);
-            std::string input_label = std::format("##key_input_{}", selected_provider_info.api_key_name);
-            if (ImGui::InputText(input_label.c_str(), standard_key_buffer, sizeof(standard_key_buffer), 
-                                 ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue)) {
-                set_environment_variable(selected_provider_info.api_key_name, standard_key_buffer, 1);
-                config_service->refresh_cache();
-            }
+            ImGui::Text("Provider:");
             ImGui::SameLine();
-            std::string update_btn_label = std::format("Update##btn_{}", selected_provider_info.api_key_name);
-            if (ImGui::Button(update_btn_label.c_str())) {
-                set_environment_variable(selected_provider_info.api_key_name, standard_key_buffer, 1);
-                config_service->refresh_cache();
+            ImGui::SetNextItemWidth(200);
+            
+            if (ImGui::Combo("##llm_config_provider_combo", &selected_prov_idx_, 
+                             [](void* data, int idx, const char** out_text) {
+                                 auto* provs = static_cast<LLMProviderInfo*>(data);
+                                 *out_text = provs[idx].name;
+                                 return true;
+                             }, providers, provider_count)) {
+                // Auto-fill defaults if base_url or model_name are empty
+                auto prov_enum = helpers::LLMConfig::string_to_provider(providers[selected_prov_idx_].value);
+                std::string default_url = helpers::LLMConfig::get_base_url(prov_enum);
+                std::string default_model = helpers::LLMConfig::get_default_model(prov_enum);
+                
+                strncpy(llm_url_buf_, default_url.c_str(), sizeof(llm_url_buf_) - 1);
+                llm_url_buf_[sizeof(llm_url_buf_) - 1] = '\0';
+                strncpy(llm_model_buf_, default_model.c_str(), sizeof(llm_model_buf_) - 1);
+                llm_model_buf_[sizeof(llm_model_buf_) - 1] = '\0';
             }
+            
+            // API Key field (sensitive)
+            ImGui::Text("API Key:");
+            ImGui::SetNextItemWidth(400);
+            ImGui::InputText("##llm_config_key_input", llm_key_buf_, sizeof(llm_key_buf_), 
+                                 ImGuiInputTextFlags_Password);
+            
+            // Base URL field
+            ImGui::Text("API Base URL:");
+            ImGui::SetNextItemWidth(400);
+            ImGui::InputText("##llm_config_url_input", llm_url_buf_, sizeof(llm_url_buf_));
+            
+            // Model Name field
+            ImGui::Text("Model Name:");
+            ImGui::SetNextItemWidth(300);
+            ImGui::InputText("##llm_config_model_input", llm_model_buf_, sizeof(llm_model_buf_));
             
             ImGui::Spacing();
             
-            if (api_key.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, get_color(6)); // Red for missing
-                ImGui::Text("Status: Not configured");
+            // Check for changes
+            bool has_changes = (std::string(llm_name_buf_) != entry->name) ||
+                               (providers[selected_prov_idx_].value != entry->provider) ||
+                               (std::string(llm_key_buf_) != entry->api_key) ||
+                               (std::string(llm_url_buf_) != entry->base_url) ||
+                               (std::string(llm_model_buf_) != entry->model_name);
+            
+            if (has_changes) {
+                ImGui::PushStyleColor(ImGuiCol_Button, get_color(2));
+                if (ImGui::Button("Save Changes")) {
+                    helpers::LLMConfigEntry updated;
+                    updated.name = llm_name_buf_;
+                    updated.provider = providers[selected_prov_idx_].value;
+                    updated.api_key = llm_key_buf_;
+                    updated.base_url = llm_url_buf_;
+                    updated.model_name = llm_model_buf_;
+                    
+                    lcm.update_config(selected_llm_config_name_, updated);
+                    selected_llm_config_name_ = updated.name;
+                    last_loaded_llm_config_name_ = updated.name;
+                }
                 ImGui::PopStyleColor();
             } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, get_color(2)); // Green for configured
-                ImGui::Text("Status: Configured");
-                ImGui::PopStyleColor();
-                
-                // Show masked API key
-                std::string masked_key = api_key.substr(0, std::min(size_t(4), api_key.length())) + "..." + 
-                                         (api_key.length() > 4 ? api_key.substr(api_key.length() - 4) : "");
-                ImGui::Text("API Key: %s", masked_key.c_str());
+                ImGui::BeginDisabled();
+                ImGui::Button("Save Changes");
+                ImGui::EndDisabled();
             }
             
-            ImGui::Spacing();
-            ImGui::Text("Default Model: %s", selected_provider_info.default_model);
+            ImGui::SameLine();
+            
+            if (ImGui::Button("New Configuration")) {
+                helpers::LLMConfigEntry new_entry;
+                new_entry.name = std::format("LLM Config {}", configs.size() + 1);
+                new_entry.provider = "openai";
+                new_entry.base_url = "https://api.openai.com/v1";
+                new_entry.model_name = "gpt-4";
+                new_entry.api_key = "";
+                lcm.add_config(new_entry);
+                selected_llm_config_name_ = new_entry.name;
+                populate_llm_config_buffers(selected_llm_config_name_);
+            }
+            
+            if (configs.size() > 1) {
+                ImGui::SameLine();
+                if (ImGui::Button("Delete Configuration")) {
+                    lcm.delete_config(selected_llm_config_name_);
+                    selected_llm_config_name_ = lcm.get_default_config_name();
+                    populate_llm_config_buffers(selected_llm_config_name_);
+                }
+            }
         }
         
         ImGui::Spacing();
@@ -584,7 +664,6 @@ private:
         
         // Quick test button
         if (ImGui::Button("Test Configuration")) {
-            // This could trigger a test request to verify the configuration
             ImGui::OpenPopup("Test LLM Config");
         }
         
@@ -595,103 +674,6 @@ private:
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
-        }
-    }
-    
-    void render_custom_llm_config() {
-        auto config_service = helpers::ConfigService::instance();
-        
-        ImGui::Text("Custom LLM Configuration");
-        ImGui::Spacing();
-        
-        // Custom URL input
-        std::string current_url = config_service->get_env_optional("LLM_CUSTOM_URL").value_or("");
-        static char url_buffer[512];
-        strncpy(url_buffer, current_url.c_str(), sizeof(url_buffer) - 1);
-        url_buffer[sizeof(url_buffer) - 1] = '\0';
-        
-        ImGui::Text("API Base URL:");
-        ImGui::SetNextItemWidth(400);
-        if (ImGui::InputText("##custom_url", url_buffer, sizeof(url_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            set_environment_variable("LLM_CUSTOM_URL", url_buffer, 1);
-            config_service->refresh_cache();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Update##url")) {
-            set_environment_variable("LLM_CUSTOM_URL", url_buffer, 1);
-            config_service->refresh_cache();
-        }
-        
-        // Custom model input
-        std::string current_model = config_service->get_env_optional("LLM_CUSTOM_MODEL").value_or("gpt-3.5-turbo");
-        static char model_buffer[256];
-        strncpy(model_buffer, current_model.c_str(), sizeof(model_buffer) - 1);
-        model_buffer[sizeof(model_buffer) - 1] = '\0';
-        
-        ImGui::Text("Model Name:");
-        ImGui::SetNextItemWidth(300);
-        if (ImGui::InputText("##custom_model", model_buffer, sizeof(model_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-            set_environment_variable("LLM_CUSTOM_MODEL", model_buffer, 1);
-            config_service->refresh_cache();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Update##model")) {
-            set_environment_variable("LLM_CUSTOM_MODEL", model_buffer, 1);
-            config_service->refresh_cache();
-        }
-        
-        // Custom API key input
-        std::string current_key = config_service->get_env_optional("LLM_CUSTOM_API_KEY").value_or("");
-        static char key_buffer[512];
-        strncpy(key_buffer, current_key.c_str(), sizeof(key_buffer) - 1);
-        key_buffer[sizeof(key_buffer) - 1] = '\0';
-        
-        ImGui::Text("API Key:");
-        ImGui::SetNextItemWidth(400);
-        if (ImGui::InputText("##custom_key", key_buffer, sizeof(key_buffer), 
-                            ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue)) {
-            set_environment_variable("LLM_CUSTOM_API_KEY", key_buffer, 1);
-            config_service->refresh_cache();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Update##key")) {
-            set_environment_variable("LLM_CUSTOM_API_KEY", key_buffer, 1);
-            config_service->refresh_cache();
-        }
-        
-        ImGui::Spacing();
-        
-        // Configuration status
-        bool url_set = !current_url.empty();
-        bool model_set = !current_model.empty();
-        bool key_set = !current_key.empty();
-        
-        ImGui::Text("Configuration Status:");
-        ImGui::Bullet();
-        ImGui::PushStyleColor(ImGuiCol_Text, url_set ? get_color(2) : get_color(6));
-        ImGui::Text("URL: %s", url_set ? "Set" : "Not set");
-        ImGui::PopStyleColor();
-        
-        ImGui::Bullet();
-        ImGui::PushStyleColor(ImGuiCol_Text, model_set ? get_color(2) : get_color(6));
-        ImGui::Text("Model: %s", model_set ? "Set" : "Not set");
-        ImGui::PopStyleColor();
-        
-        ImGui::Bullet();
-        ImGui::PushStyleColor(ImGuiCol_Text, key_set ? get_color(2) : get_color(6));
-        ImGui::Text("API Key: %s", key_set ? "Set" : "Not set");
-        ImGui::PopStyleColor();
-        
-        if (url_set && model_set && key_set) {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, get_color(2));
-            ImGui::Text("✓ Custom LLM configuration is complete");
-            ImGui::PopStyleColor();
-        } else {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, get_color(6));
-            ImGui::Text("⚠ Please complete all required fields");
-            ImGui::PopStyleColor();
         }
     }
 };
