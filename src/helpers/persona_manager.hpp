@@ -65,7 +65,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"}, "You are a helpful assistant."};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"}, "You are a helpful assistant.", "Default", false};
             return fallback;
         }
 

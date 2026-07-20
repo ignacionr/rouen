@@ -767,9 +767,10 @@ namespace rouen::cards {
                 llm_instance_.reset();
             }
             
-            // Update card name based on configuration name
+            // Update card name based on active persona name
             if (llm_configured_) {
-                name("AI Chat (" + current_llm_settings_.config_name + ")");
+                auto& pm = helpers::PersonaManager::instance();
+                name("AI Chat (" + pm.get_active_persona().name + ")");
             } else {
                 name("AI Chat (Not Configured)");
             }

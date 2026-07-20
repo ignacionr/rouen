@@ -16,14 +16,28 @@ Rouen integrates AI capabilities across multiple cards and helpers:
 
 ---
 
-## Supported LLM Providers
+## LLM Configuration & Personas
 
-You can configure your preferred LLM provider via environment variables or a local `.env` file:
+Rouen supports multiple named LLM configurations and persona profiles. This allows you to define different models, API endpoints, and credentials, and bind each AI Persona to its own customized connection.
 
-* **Grok (x.ai)**: Enabled by setting `GROK_API_KEY`. Defaults to `grok-3-latest`. Supports grounding/web search.
-* **OpenAI (GPT)**: Enabled by setting `OPENAI_API_KEY`. Supports standard GPT-4/GPT-3.5 models.
-* **Groq**: Enabled by setting `GROQ_API_KEY`. Used for ultra-low latency completions.
-* **Gemini**: Supports native Gemini schemas and function calling adapter interfaces.
+### Named LLM Configurations
+
+Instead of relying solely on global environment variables, you can create and manage multiple named configurations. One of these configurations is designated as the **default** configuration.
+
+Configurations can be edited via the **Settings** card or directly in `~/Library/Application Support/Rouen/llm_configs.json`:
+* **Name**: Unique name for the configuration (e.g., "Gemini Fast", "Grok Search", "Local LLM").
+* **Provider**: One of `grok`, `openai`, `groq`, `gemini`, or `custom`.
+* **API Key**: The API token or key for that provider (masked in UI).
+* **API Base URL**: Customizable base URL (especially useful for custom OpenAI-compatible proxies, Ollama, MLX, Llama.cpp, etc.).
+* **Model Name**: The exact model identifier to request (e.g., `gemini-2.5-flash-lite`, `grok-3-latest`).
+
+*Note: If a configuration's API Key, Base URL, or Model Name is left blank, Rouen will fall back to the corresponding global environment variables (e.g. `GROK_API_KEY`, `OPENAI_API_KEY`) or default settings as a convenience.*
+
+### AI Personas & Bindings
+
+AI Personas define specific system prompts, UI capabilities (allowed MCP commands), and connections. Each Persona can be bound to:
+1. **Bound LLM Config**: The named LLM configuration that this persona should use. When you switch to a persona in the AI Chat, Rouen instantly reloads the LLM adapter using the bound configuration.
+2. **Enable Web Search**: A toggle inside the persona settings to turn on Google Search grounding (available only for Gemini and Grok configurations).
 
 ---
 
