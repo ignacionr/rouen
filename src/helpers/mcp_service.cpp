@@ -15,6 +15,7 @@
 #include "string_helper.hpp"
 #include "fetch.hpp"
 #include "../registrar.hpp"
+#include "../models/notes/notes_repository.hpp"
 
 namespace rouen::helpers {
 
@@ -183,6 +184,118 @@ struct mcp_create_time_series_params {
             "is_bar_chart", &T::is_bar_chart,
             "color_index", &T::color_index,
             "points", &T::points
+        );
+    };
+};
+
+struct mcp_notes_list_params {
+    std::string search;
+    std::string tag;
+    struct glaze {
+        using T = mcp_notes_list_params;
+        static constexpr auto value = glz::object(
+            "search", &T::search,
+            "tag", &T::tag
+        );
+    };
+};
+
+struct mcp_note_summary {
+    int id{0};
+    std::string title;
+    std::string tags;
+    std::string created_at;
+    std::string updated_at;
+    std::string preview;
+    struct glaze {
+        using T = mcp_note_summary;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "title", &T::title,
+            "tags", &T::tags,
+            "created_at", &T::created_at,
+            "updated_at", &T::updated_at,
+            "preview", &T::preview
+        );
+    };
+};
+
+struct mcp_notes_get_params {
+    std::string title;
+    struct glaze {
+        using T = mcp_notes_get_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title
+        );
+    };
+};
+
+struct mcp_note_detail {
+    int id{0};
+    std::string title;
+    std::string content;
+    std::string tags;
+    std::string created_at;
+    std::string updated_at;
+    struct glaze {
+        using T = mcp_note_detail;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "title", &T::title,
+            "content", &T::content,
+            "tags", &T::tags,
+            "created_at", &T::created_at,
+            "updated_at", &T::updated_at
+        );
+    };
+};
+
+struct mcp_notes_save_params {
+    std::string title;
+    std::string content;
+    std::string tags;
+    struct glaze {
+        using T = mcp_notes_save_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "content", &T::content,
+            "tags", &T::tags
+        );
+    };
+};
+
+struct mcp_notes_append_params {
+    std::string title;
+    std::string content_to_append;
+    struct glaze {
+        using T = mcp_notes_append_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "content_to_append", &T::content_to_append
+        );
+    };
+};
+
+struct mcp_notes_delete_params {
+    std::string title;
+    struct glaze {
+        using T = mcp_notes_delete_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title
+        );
+    };
+};
+
+struct mcp_notes_operation_result {
+    std::string status;
+    std::string message;
+    int id{0};
+    struct glaze {
+        using T = mcp_notes_operation_result;
+        static constexpr auto value = glz::object(
+            "status", &T::status,
+            "message", &T::message,
+            "id", &T::id
         );
     };
 };
@@ -667,6 +780,232 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", wikipedia_create_card_def);
+
+    // Register notes functions
+    function_definition notes_list_def(
+        "notes_list",
+        "Search and list markdown notes. Call this with empty parameters {} to list all note titles currently available. You can also filter by an optional search query or a specific tag. Returns title, tags, timestamps, and a brief preview of the content for each matching note.",
+        R"mcp({"type":"object","properties":{"search":{"type":"string","description":"Optional search term to match in note title or content"},"tag":{"type":"string","description":"Optional tag to filter notes by"}}})mcp",
+        [](const std::string& params) -> std::string {
+            std::string search;
+            std::string tag;
+            if (!params.empty()) {
+                mcp_notes_list_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (!parse_result) {
+                    search = request.search;
+                    tag = request.tag;
+                }
+            }
+
+            try {
+                models::notes::notes_repository repo;
+                auto notes = repo.list_notes(search, tag);
+                std::vector<mcp_note_summary> summaries;
+                summaries.reserve(notes.size());
+
+                for (const auto& note : notes) {
+                    mcp_note_summary summary;
+                    summary.id = note.id;
+                    summary.title = note.title;
+                    summary.tags = note.tags;
+                    summary.created_at = note.created_at;
+                    summary.updated_at = note.updated_at;
+                    
+                    // Create preview of first 120 chars
+                    if (note.content.length() > 120) {
+                        summary.preview = note.content.substr(0, 120) + "...";
+                    } else {
+                        summary.preview = note.content;
+                    }
+                    summaries.push_back(std::move(summary));
+                }
+
+                std::string response;
+                auto ec = glz::write_json(summaries, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize notes list"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "notes"
+    );
+    register_function("notes", notes_list_def);
+
+    // 2. notes_get
+    function_definition notes_get_def(
+        "notes_get",
+        "Retrieve the full markdown content, title, tags, and timestamps of a specific note by its title (for example, 'Personal Data').",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the note to retrieve"}},"required":["title"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+
+            mcp_notes_get_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'title' field."})";
+            }
+
+            try {
+                models::notes::notes_repository repo;
+                auto note = repo.get_note_by_title(request.title);
+                if (!note.has_value()) {
+                    return std::format(R"({{"status":"error","message":"Note with title '{}' not found"}})", request.title);
+                }
+
+                mcp_note_detail detail;
+                detail.id = note->id;
+                detail.title = note->title;
+                detail.content = note->content;
+                detail.tags = note->tags;
+                detail.created_at = note->created_at;
+                detail.updated_at = note->updated_at;
+
+                std::string response;
+                auto ec = glz::write_json(detail, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize note details"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "notes"
+    );
+    register_function("notes", notes_get_def);
+
+    // 3. notes_save
+    function_definition notes_save_def(
+        "notes_save",
+        "Create a new markdown note or overwrite an existing one with the specified title, content, and tags.",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The title of the note"},"content":{"type":"string","description":"The full markdown content of the note"},"tags":{"type":"string","description":"Optional comma-separated tags (e.g. 'work,notes')"}},"required":["title","content"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+
+            mcp_notes_save_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty() || request.content.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'title' and 'content' fields."})";
+            }
+
+            try {
+                models::notes::notes_repository repo;
+                int note_id = repo.save_note(request.title, request.content, request.tags);
+                
+                mcp_notes_operation_result result{"success", "Note saved successfully", note_id};
+                std::string response;
+                auto ec = glz::write_json(result, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize response"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "notes"
+    );
+    register_function("notes", notes_save_def);
+
+    // 4. notes_append
+    function_definition notes_append_def(
+        "notes_append",
+        "Append text content to the end of an existing note. If the note does not exist, an error is returned.",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The title of the note to append to"},"content_to_append":{"type":"string","description":"The text content to append to the end of the note"}},"required":["title","content_to_append"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+
+            mcp_notes_append_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty() || request.content_to_append.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'title' and 'content_to_append' fields."})";
+            }
+
+            try {
+                models::notes::notes_repository repo;
+                auto note = repo.get_note_by_title(request.title);
+                if (!note.has_value()) {
+                    return std::format(R"({{"status":"error","message":"Note with title '{}' not found"}})", request.title);
+                }
+
+                std::string new_content = note->content;
+                if (!new_content.empty() && new_content.back() != '\n') {
+                    new_content += "\n";
+                }
+                if (!new_content.empty()) {
+                    new_content += "\n";
+                }
+                new_content += request.content_to_append;
+
+                int note_id = repo.save_note(note->title, new_content, note->tags);
+                
+                mcp_notes_operation_result result{"success", "Content appended successfully", note_id};
+                std::string response;
+                auto ec = glz::write_json(result, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize response"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "notes"
+    );
+    register_function("notes", notes_append_def);
+
+    // 5. notes_delete
+    function_definition notes_delete_def(
+        "notes_delete",
+        "Delete a note by its title.",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the note to delete"}},"required":["title"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+
+            mcp_notes_delete_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty()) {
+                return R"({"status":"error","message":"Invalid params. Expected 'title' field."})";
+            }
+
+            try {
+                models::notes::notes_repository repo;
+                auto note = repo.get_note_by_title(request.title);
+                if (!note.has_value()) {
+                    return std::format(R"({{"status":"error","message":"Note with title '{}' not found"}})", request.title);
+                }
+
+                bool deleted = repo.delete_note(note->id);
+                if (!deleted) {
+                    return R"({"status":"error","message":"Failed to delete note"})";
+                }
+
+                mcp_notes_operation_result result{"success", "Note deleted successfully", note->id};
+                std::string response;
+                auto ec = glz::write_json(result, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize response"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "notes"
+    );
+    register_function("notes", notes_delete_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
