@@ -221,7 +221,7 @@ namespace calendar {
         }
 
         // Fetch calendar events with optional date range
-        std::vector<event> fetch_events(const std::string& start_date = "", const std::string& end_date = "") {
+        std::vector<event> fetch_events([[maybe_unused]] const std::string& start_date = "", [[maybe_unused]] const std::string& end_date = "") {
 #if defined(__APPLE__)
             std::lock_guard<std::mutex> lock(mutex_);
             last_error_.clear();
