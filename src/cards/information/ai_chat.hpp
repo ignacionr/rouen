@@ -586,15 +586,16 @@ namespace rouen::cards {
                 std::strncpy(input_buffer_.data(), input_text_.c_str(), copy_len);
                 input_buffer_[copy_len] = '\0';
                 
-                // Calculate space for the Send button to avoid it being cut off
+                // Calculate space for the Send and Clear buttons to avoid them being cut off
                 const float send_button_width = ImGui::CalcTextSize("Send").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
+                const float clear_button_width = ImGui::CalcTextSize("Clear").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
                 
                 // Focus on the input field initially
                 if (llm_configured_ && !waiting_for_response_.load() && ImGui::IsWindowAppearing()) {
                     ImGui::SetKeyboardFocusHere();
                 }
                 
-                ImGui::PushItemWidth(-send_button_width - ImGui::GetStyle().ItemSpacing.x);
+                ImGui::PushItemWidth(-send_button_width - clear_button_width - ImGui::GetStyle().ItemSpacing.x * 2.0f);
                 if (reclaim_focus_) {
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetItemDefaultFocus();
@@ -615,6 +616,14 @@ namespace rouen::cards {
                     send_message(input_text_);
                     input_text_.clear();
                     reclaim_focus_ = true;
+                }
+                
+                ImGui::SameLine();
+                if (ImGui::Button("Clear", ImVec2(clear_button_width, 0))) {
+                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    chat_history_.clear();
+                    message_cache_.clear();
+                    layout_dirty_ = true;
                 }
                 
                 ImGui::EndDisabled();
