@@ -67,45 +67,47 @@ namespace rouen::cards {
         }
 
         void render_llm_controls() {
-            // Provider information
-            auto settings = helpers::LLMConfig::get_current_config();
-            ImGui::Text("Provider: %s", helpers::LLMConfig::provider_to_string(settings.provider).c_str());
-            ImGui::SameLine();
-            if (ImGui::Button("Configure")) {
-                // This would open the settings card or configuration dialog
-                "create_card"_sfn("settings");
-            }
-            
-            // Configuration status
-            ImGui::SameLine();
-            if (settings.is_configured) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green
-                ImGui::Text("✓ Configured");
-                ImGui::PopStyleColor();
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red
-                ImGui::Text("✗ Not Configured");
-                ImGui::PopStyleColor();
-            }
-            
-            // Model name
-            if (settings.is_configured) {
-                ImGui::Text("Model: %s", settings.model_name.c_str());
-            }
-            
-            // whether to allow search (only for providers that support it)
-            if (settings.provider == helpers::LLMConfig::Provider::GROK || 
-                settings.provider == helpers::LLMConfig::Provider::GEMINI) {
-                ImGui::Checkbox("Allow Search", &allow_search_);
+            if (ImGui::CollapsingHeader("Configuration")) {
+                // Provider information
+                auto settings = helpers::LLMConfig::get_current_config();
+                ImGui::Text("Provider: %s", helpers::LLMConfig::provider_to_string(settings.provider).c_str());
                 ImGui::SameLine();
-            }
-            
-            // temperature slider
-            ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
-            
-            bool speak_replies = notify_service::spoken_notifications_enabled();
-            if (ImGui::Checkbox("Speak replies", &speak_replies)) {
-                notify_service::set_spoken_notifications_enabled(speak_replies);
+                if (ImGui::Button("Configure")) {
+                    // This would open the settings card or configuration dialog
+                    "create_card"_sfn("settings");
+                }
+                
+                // Configuration status
+                ImGui::SameLine();
+                if (settings.is_configured) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green
+                    ImGui::Text("✓ Configured");
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red
+                    ImGui::Text("✗ Not Configured");
+                    ImGui::PopStyleColor();
+                }
+                
+                // Model name
+                if (settings.is_configured) {
+                    ImGui::Text("Model: %s", settings.model_name.c_str());
+                }
+                
+                // whether to allow search (only for providers that support it)
+                if (settings.provider == helpers::LLMConfig::Provider::GROK || 
+                    settings.provider == helpers::LLMConfig::Provider::GEMINI) {
+                    ImGui::Checkbox("Allow Search", &allow_search_);
+                    ImGui::SameLine();
+                }
+                
+                // temperature slider
+                ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
+                
+                bool speak_replies = notify_service::spoken_notifications_enabled();
+                if (ImGui::Checkbox("Speak replies", &speak_replies)) {
+                    notify_service::set_spoken_notifications_enabled(speak_replies);
+                }
             }
         }
 
@@ -132,7 +134,7 @@ namespace rouen::cards {
                     reclaim_focus_ = true;
                 }
                 // Apply custom colors to various UI elements
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[12]));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // transparent chat area background
                 ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertFloat4ToU32(colors[7]));
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[8]));
@@ -142,20 +144,21 @@ namespace rouen::cards {
                 ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.4f, 0.6f, 0.5f))); // Text selection color
                 
                 // Calculate required space for the footer area
-                const float thinking_indicator_height = waiting_for_response_.load() ? ImGui::GetTextLineHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y : 0.0f;
+                const float thinking_indicator_height = 0.0f;
                 const float input_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
                 const float footer_height_to_reserve = thinking_indicator_height + input_height + ImGui::GetStyle().ItemSpacing.y;
                 
                 // Chat area
                 // Begin child with no horizontal scrollbar (use 0 width to auto-size without horizontal scroll)
-                if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), true)) {
+                if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false)) {
                     // Process any pending responses
                     process_pending_response();
                     
                     // Check if layout needs to be recalculated
                     float current_width = ImGui::GetContentRegionAvail().x;
                     if (layout_dirty_ || std::abs(last_width_ - current_width) > 1.0f) {
-                        recalculate_layout(current_width);
+                        bool force_all = std::abs(last_width_ - current_width) > 1.0f;
+                        recalculate_layout(current_width, force_all);
                         last_width_ = current_width;
                         layout_dirty_ = false;
                     }
@@ -170,7 +173,7 @@ namespace rouen::cards {
                     const ImVec4 chat_bg = get_color(12);
                     
                     const ImVec4 user_bg = ImVec4(raw_user_bg.x, raw_user_bg.y, raw_user_bg.z, 0.85f);
-                    const ImVec4 assistant_bg = ImVec4(raw_assistant_bg.x, raw_assistant_bg.y, raw_assistant_bg.z, 0.15f);
+                    const ImVec4 assistant_bg = ImVec4(raw_assistant_bg.x, raw_assistant_bg.y, raw_assistant_bg.z, 0.55f);
                     
                     const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(user_bg);
                     const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(assistant_bg);
@@ -234,7 +237,7 @@ namespace rouen::cards {
                         // Use pre-calculated child ID
                         ImGui::BeginChild(cache.child_id.c_str(), 
                             ImVec2(cache.content_width, cache.bubble_height), true, 
-                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoResize);
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                         
                         // Set text color based on sender
                         ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
@@ -325,45 +328,70 @@ namespace rouen::cards {
                         ImGui::Spacing();
                     }
                     
+                    if (waiting_for_response_.load()) {
+                        // Render a thinking preview bubble with a blinking cursor at the end
+                        float available_width = ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ScrollbarSize - 20.0f;
+                        if (available_width < 100.0f) available_width = last_width_ - 40.0f;
+                        
+                        const float max_width = available_width * 0.92f;
+                        const float min_width = available_width * 0.10f;
+                        const float line_height = ImGui::GetTextLineHeightWithSpacing();
+                        const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
+                        
+                        float time = static_cast<float>(ImGui::GetTime());
+                        bool show_cursor = (static_cast<int>(time * 2.0f) % 2) == 0;
+                        std::string cursor_str = show_cursor ? "█" : " ";
+                        
+                        // Bubble dimensions - 1 line of message height
+                        float content_width = std::clamp(32.0f + padding.x * 2.0f + 24.0f, min_width, max_width);
+                        float bubble_height = line_height + separator_height + line_height + 
+                                            padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + 6.0f;
+                                            
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, assistant_bg_color);
+                        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, bubble_rounding);
+                        ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+                        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+                        
+                        ImGui::BeginChild("msg_bubble_thinking", 
+                            ImVec2(content_width, bubble_height), true, 
+                            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                            
+                        ImGui::PushStyleColor(ImGuiCol_Text, assistant_text_color);
+                        
+                        std::string sender_name = get_assistant_name();
+                        ImGui::Text("%s", sender_name.c_str());
+                        
+                        // Transparent/subtle copy icon spacing alignment (disabled)
+                        ImGui::SameLine();
+                        float copy_btn_pos_x = content_width - padding.x * 2.0f - 18.0f;
+                        if (copy_btn_pos_x > ImGui::GetCursorPosX()) {
+                            ImGui::SetCursorPosX(copy_btn_pos_x);
+                        }
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 0, 0, 0));
+                        ImGui::Button(ICON_MD_CONTENT_COPY);
+                        ImGui::PopStyleColor(2);
+                        
+                        ImGui::Separator();
+                        
+                        ImGui::Text("%s", cursor_str.c_str());
+                        
+                        ImGui::PopStyleColor(); // assistant_text_color
+                        ImGui::EndChild();
+                        
+                        ImGui::PopStyleVar(3);
+                        ImGui::PopStyleColor(); // assistant_bg_color
+                        
+                        ImGui::Spacing();
+                        ImGui::Spacing();
+                    }
+                    
                     if (scroll_to_bottom_.load()) {
                         ImGui::SetScrollHereY(1.0f);
                         scroll_to_bottom_.store(false);
                     }
                 }
                 ImGui::EndChild();
-                
-                // Show a loading indicator if waiting for response
-                // Place the indicator outside the scrolling region
-                if (waiting_for_response_.load()) {
-                    ImGui::Separator();
-                    ImGui::Spacing();
-                    
-                    // Create a subtle "thinking" bubble
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertFloat4ToU32(colors[3]));
-                    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
-                    
-                    ImGui::BeginChild("thinking_indicator", ImVec2(150, 40), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6]));
-                    
-                    // Animated thinking dots - pre-computed strings for performance
-                    static const std::array<const char*, 4> thinking_frames = {
-                        "AI is thinking",
-                        "AI is thinking.",
-                        "AI is thinking..",
-                        "AI is thinking..."
-                    };
-                    
-                    float time = static_cast<float>(ImGui::GetTime());
-                    int dots = (static_cast<int>(time * 2) % 4);
-                    ImGui::Text("%s", thinking_frames[static_cast<size_t>(dots)]);
-                    
-                    ImGui::PopStyleColor();
-                    ImGui::EndChild();
-                    
-                    ImGui::PopStyleVar(2);
-                    ImGui::PopStyleColor();
-                }
                 
                 // API key input if not configured
                 if (!llm_configured_) {
@@ -627,6 +655,7 @@ namespace rouen::cards {
                 
                 // Add a new cache entry for the user message
                 message_cache_.emplace_back();
+                layout_dirty_ = true;
                 
                 waiting_for_response_.store(true);
                 scroll_to_bottom_.store(true);
@@ -715,6 +744,7 @@ namespace rouen::cards {
                                 std::lock_guard<std::mutex> lock(chat_history_mutex_);
                                 chat_history_.emplace_back("assistant", response);
                                 message_cache_.emplace_back();
+                                layout_dirty_ = true;
                             }
                             maybe_speak_reply(response);
                         }
@@ -726,6 +756,7 @@ namespace rouen::cards {
                             std::lock_guard<std::mutex> lock(chat_history_mutex_);
                             chat_history_.emplace_back("assistant", error_msg);
                             message_cache_.emplace_back();
+                            layout_dirty_ = true;
                         }
                     }
                     
@@ -739,6 +770,7 @@ namespace rouen::cards {
                 std::string error_msg = "Failed to send message: " + std::string(e.what());
                 chat_history_.emplace_back("assistant", error_msg);
                 message_cache_.emplace_back();
+                layout_dirty_ = true;
             }
         }        void send_message_to_llm(const std::string& message) {
             if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
@@ -890,7 +922,7 @@ namespace rouen::cards {
             }
         }
         
-        void recalculate_layout(float width_for_content) {
+        void recalculate_layout(float width_for_content, bool force_all = false) {
             std::lock_guard<std::mutex> lock(chat_history_mutex_);
             
             // Ensure cache matches history size with exception safety
@@ -921,45 +953,144 @@ namespace rouen::cards {
                 const auto& message = chat_history_[i];
                 auto& cache = message_cache_[i];
                 
+                if (force_all) {
+                    cache.needs_recalc = true;
+                }
+                
                 if (!cache.needs_recalc) continue;
                 
                 bool is_user = message.first == "user";
-                
-                // Calculate dynamic bubble width based on actual text size
-                const float max_text_width = max_width - padding.x * 2.0f - 24.0f; // safe space for padding and copy button
-                ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, max_text_width);
-                
-                cache.content_width = std::clamp(text_size.x + padding.x * 2.0f + 24.0f, min_width, max_width);
-                cache.text_width = cache.content_width - padding.x * 2.0f;
-                
-                float message_height = std::max(text_size.y, line_height);
-                
-                // For assistant messages, add extra height to account for
-                // markdown block elements (headings, separators, code fences,
-                // bullets, blockquotes, tables) which take more vertical space than
-                // plain text when rendered via render_markdown_block.
-                if (!is_user) {
+                float message_height = 0.0f;
+                if (is_user) {
+                    // For user messages, simple plain text CalcTextSize is perfectly accurate
+                    const float max_text_width = max_width - padding.x * 2.0f - 24.0f;
+                    ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, max_text_width);
+                    message_height = std::max(text_size.y, line_height);
+                    cache.content_width = std::clamp(text_size.x + padding.x * 2.0f + 24.0f, min_width, max_width);
+                } else {
+                    // For assistant messages, calculate height line-by-line to handle markdown features correctly
                     std::istringstream lines_stream{message.second};
                     std::string md_line;
-                    float extra_height = 0.0f;
+                    bool in_code_block = false;
+                    float accumulated_height = 0.0f;
+                    float max_line_width = 0.0f;
+                    
+                    const float max_text_width = max_width - padding.x * 2.0f - 24.0f;
+                    
                     while (std::getline(lines_stream, md_line)) {
-                        if (md_line.starts_with("# ") || md_line.starts_with("## ") || md_line.starts_with("### "))
-                            extra_height += separator_height + ImGui::GetStyle().ItemSpacing.y;
-                        else if (md_line.starts_with("```"))
-                            extra_height += ImGui::GetStyle().ItemSpacing.y;
-                        else if (md_line.starts_with("- ") || md_line.starts_with("* ") || md_line.starts_with("> "))
-                            extra_height += ImGui::GetStyle().ItemSpacing.y * 0.5f;
-                        else if (md_line == "---" || md_line == "***" || md_line == "___")
-                            extra_height += separator_height;
-                        else if (md_line.starts_with("|"))
-                            extra_height += ImGui::GetStyle().CellPadding.y * 2.0f + 2.0f;
+                        // 1. Code fence toggle
+                        if (md_line.starts_with("```")) {
+                            in_code_block = !in_code_block;
+                            accumulated_height += ImGui::GetStyle().ItemSpacing.y;
+                            continue;
+                        }
+                        
+                        if (in_code_block) {
+                            // Code lines are pre-formatted, but can still wrap if extremely long.
+                            // Usually they render as-is.
+                            ImVec2 size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
+                            accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
+                            max_line_width = std::max(max_line_width, size.x);
+                            continue;
+                        }
+                        
+                        // 2. Headings
+                        if (md_line.starts_with("# ")) {
+                            std::string_view content = std::string_view{md_line}.substr(2);
+                            ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
+                            accumulated_height += std::max(size.y, line_height) + separator_height + ImGui::GetStyle().ItemSpacing.y * 2.0f;
+                            max_line_width = std::max(max_line_width, size.x);
+                            continue;
+                        }
+                        if (md_line.starts_with("## ")) {
+                            // SeparatorText
+                            accumulated_height += line_height + ImGui::GetStyle().ItemSpacing.y * 3.0f;
+                            continue;
+                        }
+                        if (md_line.starts_with("### ")) {
+                            std::string_view content = std::string_view{md_line}.substr(4);
+                            ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
+                            accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
+                            max_line_width = std::max(max_line_width, size.x);
+                            continue;
+                        }
+                        
+                        // 3. Horizontal rule
+                        if (md_line == "---" || md_line == "***" || md_line == "___") {
+                            accumulated_height += separator_height + ImGui::GetStyle().ItemSpacing.y;
+                            continue;
+                        }
+                        
+                        // 4. Blockquotes
+                        if (md_line.starts_with("> ")) {
+                            std::string_view content = std::string_view{md_line}.substr(2);
+                            // Indent reduces available width by 20.0f
+                            float wrap_w = std::max(max_text_width - 20.0f, 50.0f);
+                            ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, wrap_w);
+                            accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
+                            max_line_width = std::max(max_line_width, size.x + 20.0f);
+                            continue;
+                        }
+                        
+                        // 5. Unordered / Ordered Bullets
+                        bool is_bullet = false;
+                        std::string_view bullet_content;
+                        if (md_line.starts_with("- ") || md_line.starts_with("* ")) {
+                            is_bullet = true;
+                            bullet_content = std::string_view{md_line}.substr(2);
+                        } else {
+                            // Check for ordered list "1. "
+                            const std::size_t dot = md_line.find(". ");
+                            if (dot != std::string::npos && dot > 0 && dot < 5) {
+                                bool all_digits = true;
+                                for (std::size_t idx = 0; idx < dot; ++idx) {
+                                    if (md_line[idx] < '0' || md_line[idx] > '9') { all_digits = false; break; }
+                                }
+                                if (all_digits) {
+                                    is_bullet = true;
+                                    bullet_content = std::string_view{md_line}.substr(dot + 2);
+                                }
+                            }
+                        }
+                        
+                        if (is_bullet) {
+                            // Bullet spacing reduces wrap width by 24.0f
+                            float wrap_w = std::max(max_text_width - 24.0f, 50.0f);
+                            ImVec2 size = ImGui::CalcTextSize(bullet_content.data(), bullet_content.data() + bullet_content.size(), true, wrap_w);
+                            accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
+                            max_line_width = std::max(max_line_width, size.x + 24.0f);
+                            continue;
+                        }
+                        
+                        // 6. Tables
+                        if (md_line.starts_with("|")) {
+                            // Delimiter rows don't add visible height, but table rows do.
+                            // CellPadding.y * 2 + border/spacing
+                            accumulated_height += line_height + ImGui::GetStyle().CellPadding.y * 2.0f + 4.0f;
+                            continue;
+                        }
+                        
+                        // 7. Empty line
+                        if (md_line.empty()) {
+                            accumulated_height += ImGui::GetStyle().ItemSpacing.y;
+                            continue;
+                        }
+                        
+                        // 8. Normal paragraph
+                        ImVec2 size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
+                        accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
+                        max_line_width = std::max(max_line_width, size.x);
                     }
-                    message_height += extra_height;
+                    
+                    message_height = accumulated_height;
+                    cache.content_width = std::clamp(max_line_width + padding.x * 2.0f + 24.0f, min_width, max_width);
                 }
+                
+                cache.text_width = cache.content_width - padding.x * 2.0f;
                 
                 // Calculate total bubble height
                 cache.bubble_height = line_height + separator_height + message_height + 
-                                    padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y;
+                                    padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + (is_user ? 0.0f : 6.0f);
                 
                 // Generate unique child ID using message index for better stability
                 cache.child_id = "msg_bubble_" + std::to_string(i);
