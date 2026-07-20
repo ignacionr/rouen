@@ -90,7 +90,7 @@ namespace rouen::helpers {
                 return;
             }
             if (index < personas_.size()) {
-                personas_.erase(personas_.begin() + index);
+                personas_.erase(personas_.begin() + static_cast<std::ptrdiff_t>(index));
                 if (active_persona_index_ >= personas_.size()) {
                     active_persona_index_ = personas_.size() - 1;
                 }

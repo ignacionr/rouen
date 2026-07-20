@@ -144,11 +144,11 @@ namespace rouen::cards
             }
 
             // Option 1 evaluation trigger on window focus transition
-            bool is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
-            if (is_focused && !was_focused && !is_editing) {
+            bool window_is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+            if (window_is_focused && !was_focused && !is_editing) {
                 loadSmartList();
             }
-            was_focused = is_focused;
+            was_focused = window_is_focused;
 
             if (is_editing) {
                 renderFilterBuilder();
