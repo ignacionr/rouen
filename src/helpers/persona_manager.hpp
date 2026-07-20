@@ -19,6 +19,7 @@ namespace rouen::helpers {
         std::string system_prompt;
         std::string llm_config_name;
         bool enable_search{false};
+        std::vector<std::string> allowed_personas;
 
         struct glaze {
             using T = Persona;
@@ -28,7 +29,8 @@ namespace rouen::helpers {
                 "allowed_mcps", &T::allowed_mcps,
                 "system_prompt", &T::system_prompt,
                 "llm_config_name", &T::llm_config_name,
-                "enable_search", &T::enable_search
+                "enable_search", &T::enable_search,
+                "allowed_personas", &T::allowed_personas
             );
         };
     };
@@ -83,7 +85,20 @@ namespace rouen::helpers {
 
         void update_persona(size_t index, const Persona& persona) {
             if (index < personas_.size()) {
+                std::string old_name = personas_[index].name;
+                std::string new_name = persona.name;
                 personas_[index] = persona;
+
+                // If name changed, update references in allowed_personas of other personas
+                if (old_name != new_name && !old_name.empty()) {
+                    for (auto& p : personas_) {
+                        for (auto& ref : p.allowed_personas) {
+                            if (ref == old_name) {
+                                ref = new_name;
+                            }
+                        }
+                    }
+                }
                 save_personas();
             }
         }
@@ -94,7 +109,17 @@ namespace rouen::helpers {
                 return;
             }
             if (index < personas_.size()) {
+                std::string name_to_remove = personas_[index].name;
                 personas_.erase(personas_.begin() + static_cast<std::ptrdiff_t>(index));
+
+                // Remove references to deleted persona
+                for (auto& p : personas_) {
+                    p.allowed_personas.erase(
+                        std::remove(p.allowed_personas.begin(), p.allowed_personas.end(), name_to_remove),
+                        p.allowed_personas.end()
+                    );
+                }
+
                 if (active_persona_index_ >= personas_.size()) {
                     active_persona_index_ = personas_.size() - 1;
                 }
@@ -120,13 +145,14 @@ namespace rouen::helpers {
             Persona default_p;
             default_p.name = "Rouen Assistant";
             default_p.description = "The default helpful assistant for Rouen with standard system prompt instructions.";
-            default_p.allowed_mcps = {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"};
+            default_p.allowed_mcps = {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes"};
             default_p.system_prompt = 
                 "You are a helpful AI assistant integrated into Rouen, a card-based desktop application. "
                 "Rouen organizes its UI as cards - each feature (weather, git, terminal, etc.) is a visual card that can be opened, closed, and interacted with.\n"
                 "You are knowledgeable, accurate, and provide helpful responses.";
             default_p.llm_config_name = "Default";
             default_p.enable_search = false;
+            default_p.allowed_personas = {};
             
             personas_.push_back(default_p);
             
@@ -140,6 +166,7 @@ namespace rouen::helpers {
                 "You have access to terminal commands, git, and editor tools to modify files and investigate the system.";
             developer_p.llm_config_name = "Default";
             developer_p.enable_search = false;
+            developer_p.allowed_personas = {};
             
             personas_.push_back(developer_p);
         }

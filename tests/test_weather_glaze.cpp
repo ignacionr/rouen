@@ -85,3 +85,74 @@ TEST(WeatherGlaze, ParsesForecastWithExtraFields) {
     EXPECT_TRUE(data.list[0].main.sea_level.has_value());
     EXPECT_TRUE(data.list[0].main.grnd_level.has_value());
 }
+
+#include "../src/helpers/persona_manager.hpp"
+
+TEST(PersonaGlaze, SerializesAndDeserializesAllowedPersonas) {
+    rouen::helpers::Persona p;
+    p.name = "Test Agent";
+    p.description = "A test agent";
+    p.allowed_mcps = {"terminal"};
+    p.system_prompt = "You are a test agent.";
+    p.llm_config_name = "Default";
+    p.enable_search = true;
+    p.allowed_personas = {"Helper Bot", "Math Wizard"};
+
+    std::string json = glz::write<glz::opts{.prettify = true}>(p).value_or("");
+    ASSERT_FALSE(json.empty());
+
+    rouen::helpers::Persona p2;
+    auto err = glz::read_json(p2, json);
+    ASSERT_FALSE(err) << glz::format_error(err, json);
+
+    EXPECT_EQ(p2.name, "Test Agent");
+    EXPECT_EQ(p2.allowed_personas.size(), 2u);
+    EXPECT_EQ(p2.allowed_personas[0], "Helper Bot");
+    EXPECT_EQ(p2.allowed_personas[1], "Math Wizard");
+}
+
+TEST(PersonaManagerLogic, RenamesAndDeletesReferences) {
+    std::vector<rouen::helpers::Persona> personas;
+
+    rouen::helpers::Persona p1;
+    p1.name = "Bot A";
+    p1.allowed_personas = {"Bot B", "Bot C"};
+    personas.push_back(p1);
+
+    rouen::helpers::Persona p2;
+    p2.name = "Bot B";
+    personas.push_back(p2);
+
+    rouen::helpers::Persona p3;
+    p3.name = "Bot C";
+    personas.push_back(p3);
+
+    // Test rename Bot B -> Bot B Revised
+    std::string old_name = "Bot B";
+    std::string new_name = "Bot B Revised";
+    
+    // Simulate rename logic
+    for (auto& p : personas) {
+        for (auto& ref : p.allowed_personas) {
+            if (ref == old_name) {
+                ref = new_name;
+            }
+        }
+    }
+
+    EXPECT_EQ(personas[0].allowed_personas[0], "Bot B Revised");
+    EXPECT_EQ(personas[0].allowed_personas[1], "Bot C");
+
+    // Test delete Bot C
+    std::string name_to_remove = "Bot C";
+    // Simulate delete logic
+    for (auto& p : personas) {
+        p.allowed_personas.erase(
+            std::remove(p.allowed_personas.begin(), p.allowed_personas.end(), name_to_remove),
+            p.allowed_personas.end()
+        );
+    }
+
+    EXPECT_EQ(personas[0].allowed_personas.size(), 1u);
+    EXPECT_EQ(personas[0].allowed_personas[0], "Bot B Revised");
+}

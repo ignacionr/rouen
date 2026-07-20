@@ -198,7 +198,7 @@ namespace rouen::cards {
                     ImGui::Text("Allowed MCPs:");
                     std::vector<std::string> mcp_options = {
                         "terminal", "editor", "deck", "wikipedia", "youtube", 
-                        "git", "calendar", "weather", "alarm", "pomodoro"
+                        "git", "calendar", "weather", "alarm", "pomodoro", "notes"
                     };
                     
                     // Render in 3 columns for space efficiency
@@ -217,6 +217,29 @@ namespace rouen::cards {
                         ImGui::NextColumn();
                     }
                     ImGui::Columns(1); // Restore columns
+
+                    // Allowed Personas selection
+                    if (personas.size() > 1) {
+                        ImGui::Text("Allowed Personas:");
+                        ImGui::Columns(2, "persona_columns", false);
+                        for (size_t i = 0; i < personas.size(); ++i) {
+                            if (i == active_idx) {
+                                continue; // Don't allow calling oneself directly
+                            }
+                            const auto& other_p = personas[i];
+                            bool is_allowed = std::find(p.allowed_personas.begin(), p.allowed_personas.end(), other_p.name) != p.allowed_personas.end();
+                            if (ImGui::Checkbox(other_p.name.c_str(), &is_allowed)) {
+                                if (is_allowed) {
+                                    p.allowed_personas.push_back(other_p.name);
+                                } else {
+                                    p.allowed_personas.erase(std::remove(p.allowed_personas.begin(), p.allowed_personas.end(), other_p.name), p.allowed_personas.end());
+                                }
+                                changed = true;
+                            }
+                            ImGui::NextColumn();
+                        }
+                        ImGui::Columns(1); // Restore columns
+                    }
                     
                     // System Prompt Instruction Text (multi-line)
                     ImGui::Text("System Prompt Additions:");
@@ -723,6 +746,184 @@ namespace rouen::cards {
             }
         }
 
+        struct CallPersonaArgs {
+            std::string message;
+            struct glaze {
+                using T = CallPersonaArgs;
+                static constexpr auto value = glz::object(
+                    "message", &T::message
+                );
+            };
+        };
+
+        static std::string sanitize_persona_name_for_tool(const std::string& name) {
+            std::string sanitized = "call_persona_";
+            for (char c : name) {
+                if (std::isalnum(static_cast<unsigned char>(c))) {
+                    sanitized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+                } else {
+                    sanitized.push_back('_');
+                }
+            }
+            std::string clean;
+            for (char c : sanitized) {
+                if (c == '_' && !clean.empty() && clean.back() == '_') {
+                    continue;
+                }
+                clean.push_back(c);
+            }
+            return clean;
+        }
+
+        static const helpers::Persona* find_persona_by_sanitized_name(const std::string& sanitized_name) {
+            const auto& personas = helpers::PersonaManager::instance().get_personas();
+            for (const auto& p : personas) {
+                if (sanitize_persona_name_for_tool(p.name) == sanitized_name) {
+                    return &p;
+                }
+            }
+            return nullptr;
+        }
+
+        std::string execute_persona_call(const std::string& function_name, const std::string& args_json, int depth) {
+            if (depth > 5) {
+                return "Error: Maximum inter-persona communication depth exceeded (potential circular dependency).";
+            }
+
+            const auto* target_persona = find_persona_by_sanitized_name(function_name);
+            if (!target_persona) {
+                return "Error: Target persona not found.";
+            }
+
+            CallPersonaArgs args;
+            auto err = glz::read_json(args, args_json);
+            if (err) {
+                return "Error: Failed to parse arguments for persona call. Expected JSON object with a 'message' field.";
+            }
+
+            if (args.message.empty()) {
+                return "Error: Message argument cannot be empty.";
+            }
+
+            auto target_llm_opt = helpers::LLMConfig::create_llm_instance(target_persona->llm_config_name);
+            if (!target_llm_opt) {
+                return "Error: Failed to initialize LLM for persona " + target_persona->name + ". Check config.";
+            }
+            auto target_llm = std::move(*target_llm_opt);
+
+            auto target_settings = helpers::LLMConfig::get_current_config(target_persona->llm_config_name);
+            std::string model_name = target_settings.model_name;
+            std::string search_mode_str;
+            if ((target_settings.provider == helpers::LLMConfig::Provider::GROK || 
+                 target_settings.provider == helpers::LLMConfig::Provider::GEMINI) && target_persona->enable_search) {
+                search_mode_str = "on";
+            }
+
+            auto now = std::chrono::system_clock::now();
+            auto now_time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm now_tm = *std::localtime(&now_time_t);
+            char time_buf[64];
+            std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &now_tm);
+            std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
+            target_llm.add_instructions(time_instr);
+
+            target_llm.add_instructions(target_persona->system_prompt);
+            std::string modular_instr = get_modular_mcp_instructions(target_persona->allowed_mcps);
+            if (!modular_instr.empty()) {
+                target_llm.add_instructions(modular_instr);
+            }
+
+            std::vector<std::string> function_schemas;
+            if (mcp_service_) {
+                try {
+                    auto has_mcp = [&](const std::string& cat) {
+                        return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), cat) != target_persona->allowed_mcps.end();
+                    };
+
+                    auto functions = mcp_service_->get_available_functions();
+                    for (const auto& func : functions) {
+                        std::string cat = get_function_category(func);
+                        if (!has_mcp(cat)) {
+                            continue;
+                        }
+
+                        std::string raw_schema = std::format(
+                            "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
+                            func.name, 
+                            func.description.empty() ? "Repository operation" : func.description,
+                            func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
+                        );
+                        
+                        std::string schema;
+                        schema.reserve(raw_schema.size());
+                        for (char c : raw_schema) {
+                            if (c != '\n' && c != '\r' && c != '\t') {
+                                schema.push_back(c);
+                            }
+                        }
+                        function_schemas.push_back(schema);
+                    }
+                } catch (const std::exception&) {
+                }
+            }
+
+            for (const auto& allowed_sub_name : target_persona->allowed_personas) {
+                const auto& personas = helpers::PersonaManager::instance().get_personas();
+                const helpers::Persona* sub_p = nullptr;
+                for (const auto& p : personas) {
+                    if (p.name == allowed_sub_name) {
+                        sub_p = &p;
+                        break;
+                    }
+                }
+                if (!sub_p) continue;
+
+                std::string sub_func_name = sanitize_persona_name_for_tool(sub_p->name);
+                std::string desc = "Delegates a task or asks a question to the Persona '" + sub_p->name + "'. Description: " + sub_p->description;
+                std::string schema = std::format(
+                    "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{{\"type\":\"object\",\"properties\":{{\"message\":{{\"type\":\"string\",\"description\":\"The message, query, or instruction to send to the persona.\"}}}},\"required\":[\"message\"]}}}}",
+                    sub_func_name, desc
+                );
+                function_schemas.push_back(schema);
+            }
+
+            auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
+            fetcher->set_max_retries(3);
+
+            try {
+                auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
+                    return adapter_ptr->sendMessageWithFunctionCalling(
+                        args.message,
+                        [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                            return fetcher->post(url, body, header_setter);
+                        },
+                        [this, depth](const std::string& func_name, const std::string& func_args_json) -> std::string {
+                            if (func_name.starts_with("call_persona_")) {
+                                return execute_persona_call(func_name, func_args_json, depth + 1);
+                            }
+                            if (mcp_service_) {
+                                try {
+                                    auto result = mcp_service_->execute_function(func_name, func_args_json);
+                                    return result.success ? result.result : "Error: " + result.error_message;
+                                } catch (const std::exception& e) {
+                                    return "Error executing function: " + std::string(e.what());
+                                }
+                            }
+                            return "Error: MCP service not available";
+                        },
+                        "user", model_name, search_mode_str, 0.45f, nullptr, &function_schemas
+                    );
+                }, target_llm.instance_);
+
+                if (!chat_completion.choices.empty()) {
+                    return chat_completion.choices[0].message.content;
+                }
+                return "Error: No response from target persona " + target_persona->name;
+            } catch (const std::exception& e) {
+                return "Error calling persona " + target_persona->name + ": " + std::string(e.what());
+            }
+        }
+
         static std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed_mcps) {
             std::string instr;
             auto has_mcp = [&](const std::string& name) {
@@ -743,6 +944,9 @@ namespace rouen::cards {
             }
             if (has_mcp("pomodoro")) {
                 instr += "\nPOMODORO INSTRUCTIONS:\nIMPORTANT: Differentiate clearly between Pomodoro and general alarms. Only use the Pomodoro tool (start_pomodoro) if the user explicitly mentions the word 'pomodoro'.\n";
+            }
+            if (has_mcp("notes")) {
+                instr += "\nNOTES INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create, update/append, or delete markdown notes. If the user wants to list/search notes, get a note's full text, write/save a new note, append information to a note, or delete a note, you MUST use the corresponding `notes_list`, `notes_get`, `notes_save`, `notes_append`, or `notes_delete` tool instead of guiding the user to do it manually.\n";
             }
             return instr;
         }
@@ -842,6 +1046,34 @@ namespace rouen::cards {
                     DEBUG_ERROR("AI Chat: Error getting MCP functions: " + std::string(e.what()));
                 }
             }
+
+            // Also add schemas for the active persona's allowed personas
+            try {
+                auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+                for (const auto& allowed_sub_name : active_persona.allowed_personas) {
+                    // Find the sub-persona to get its description
+                    const auto& personas = helpers::PersonaManager::instance().get_personas();
+                    const helpers::Persona* sub_p = nullptr;
+                    for (const auto& p : personas) {
+                        if (p.name == allowed_sub_name) {
+                            sub_p = &p;
+                            break;
+                        }
+                    }
+                    if (!sub_p) continue;
+
+                    std::string sub_func_name = sanitize_persona_name_for_tool(sub_p->name);
+                    std::string desc = "Delegates a task or asks a question to the Persona '" + sub_p->name + "'. Description: " + sub_p->description;
+                    std::string schema = std::format(
+                        "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{{\"type\":\"object\",\"properties\":{{\"message\":{{\"type\":\"string\",\"description\":\"The message, query, or instruction to send to the persona.\"}}}},\"required\":[\"message\"]}}}}",
+                        sub_func_name, desc
+                    );
+                    function_schemas.push_back(schema);
+                    DEBUG_DEBUG("AI Chat: Added function schema for persona: " + sub_p->name);
+                }
+            } catch (const std::exception& e) {
+                DEBUG_ERROR("AI Chat: Error getting allowed personas schemas: " + std::string(e.what()));
+            }
             
             DEBUG_DEBUG("AI Chat: Sending message with " + std::to_string(function_schemas.size()) + " function schemas");
             
@@ -919,6 +1151,9 @@ namespace rouen::cards {
                                     return fetcher->post(url, body, header_setter);
                                 },
                                 [this](const std::string& function_name, const std::string& args_json) -> std::string {
+                                    if (function_name.starts_with("call_persona_")) {
+                                        return execute_persona_call(function_name, args_json, 1);
+                                    }
                                     // Execute MCP function
                                     if (mcp_service_) {
                                         try {
