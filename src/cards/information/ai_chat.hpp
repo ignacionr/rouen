@@ -23,6 +23,8 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/persona_manager.hpp"
+#include <cstring>
 #include "../../fonts.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
@@ -64,6 +66,8 @@ namespace rouen::cards {
             
             // Get MCP service instance
             mcp_service_ = registrar::get<helpers::mcp_service>("mcp_service");
+            
+            populate_persona_buffers(helpers::PersonaManager::instance().get_active_persona_index());
         }
 
         void render_llm_controls() {
@@ -107,6 +111,113 @@ namespace rouen::cards {
                 bool speak_replies = notify_service::spoken_notifications_enabled();
                 if (ImGui::Checkbox("Speak replies", &speak_replies)) {
                     notify_service::set_spoken_notifications_enabled(speak_replies);
+                }
+
+                // Persona Configuration Section
+                ImGui::SeparatorText("Personas");
+                
+                auto& pm = helpers::PersonaManager::instance();
+                const auto& personas = pm.get_personas();
+                size_t active_idx = pm.get_active_persona_index();
+                
+                // Sync UI buffers if persona changed externally or wasn't loaded
+                if (last_edited_persona_index_ != active_idx) {
+                    populate_persona_buffers(active_idx);
+                }
+                
+                // Dropdown to select persona
+                if (active_idx < personas.size()) {
+                    if (ImGui::BeginCombo("Active Persona", personas[active_idx].name.c_str())) {
+                        for (size_t i = 0; i < personas.size(); ++i) {
+                            bool is_selected = (active_idx == i);
+                            if (ImGui::Selectable(personas[i].name.c_str(), is_selected)) {
+                                pm.select_persona(i);
+                                populate_persona_buffers(i);
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+                
+                // Show fields for editing active persona
+                if (active_idx < personas.size()) {
+                    auto p = personas[active_idx]; // Copy to update
+                    bool changed = false;
+                    
+                    // Name
+                    ImGui::Text("Persona Name:");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::InputText("##persona_name", persona_name_buf_.data(), persona_name_buf_.size())) {
+                        p.name = persona_name_buf_.data();
+                        changed = true;
+                    }
+                    
+                    // Description
+                    ImGui::Text("Description:");
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::InputText("##persona_desc", persona_desc_buf_.data(), persona_desc_buf_.size())) {
+                        p.description = persona_desc_buf_.data();
+                        changed = true;
+                    }
+                    
+                    // Allowed MCPs selection
+                    ImGui::Text("Allowed MCPs:");
+                    std::vector<std::string> mcp_options = {
+                        "terminal", "editor", "deck", "wikipedia", "youtube", 
+                        "git", "calendar", "weather", "alarm", "pomodoro"
+                    };
+                    
+                    // Render in 3 columns for space efficiency
+                    ImGui::Columns(3, "mcp_columns", false);
+                    for (size_t m = 0; m < mcp_options.size(); ++m) {
+                        const auto& mcp_name = mcp_options[m];
+                        bool is_allowed = std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp_name) != p.allowed_mcps.end();
+                        if (ImGui::Checkbox(mcp_name.c_str(), &is_allowed)) {
+                            if (is_allowed) {
+                                p.allowed_mcps.push_back(mcp_name);
+                            } else {
+                                p.allowed_mcps.erase(std::remove(p.allowed_mcps.begin(), p.allowed_mcps.end(), mcp_name), p.allowed_mcps.end());
+                            }
+                            changed = true;
+                        }
+                        ImGui::NextColumn();
+                    }
+                    ImGui::Columns(1); // Restore columns
+                    
+                    // System Prompt Instruction Text (multi-line)
+                    ImGui::Text("System Prompt Additions:");
+                    if (ImGui::InputTextMultiline("##persona_prompt", persona_prompt_buf_.data(), persona_prompt_buf_.size(), ImVec2(-1, 80))) {
+                        p.system_prompt = persona_prompt_buf_.data();
+                        changed = true;
+                    }
+                    
+                    if (changed) {
+                        pm.update_persona(active_idx, p);
+                    }
+                    
+                    // New and Delete buttons
+                    if (ImGui::Button("New Persona")) {
+                        helpers::Persona new_p;
+                        new_p.name = std::format("Custom Persona {}", personas.size() + 1);
+                        new_p.description = "A custom AI assistant persona.";
+                        new_p.allowed_mcps = {"deck"};
+                        new_p.system_prompt = "You are a custom assistant.";
+                        pm.add_persona(new_p);
+                        pm.select_persona(personas.size()); // select the newly added one
+                        populate_persona_buffers(personas.size());
+                    }
+                    
+                    if (personas.size() > 1) {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Delete Persona")) {
+                            pm.delete_persona(active_idx);
+                            size_t new_idx = pm.get_active_persona_index();
+                            populate_persona_buffers(new_idx);
+                        }
+                    }
                 }
             }
         }
@@ -553,6 +664,64 @@ namespace rouen::cards {
         static constexpr long ai_request_timeout_seconds_ = 180;
         bool allow_search_{false};
         float temperature_{0.45f};
+
+        // Persona buffers
+        std::array<char, 128> persona_name_buf_{};
+        std::array<char, 256> persona_desc_buf_{};
+        std::array<char, 4096> persona_prompt_buf_{};
+        size_t last_edited_persona_index_{static_cast<size_t>(-1)};
+
+        void populate_persona_buffers(size_t index) {
+            auto& pm = helpers::PersonaManager::instance();
+            if (index < pm.get_personas().size()) {
+                const auto& p = pm.get_personas()[index];
+                
+                std::strncpy(persona_name_buf_.data(), p.name.c_str(), persona_name_buf_.size() - 1);
+                persona_name_buf_[persona_name_buf_.size() - 1] = '\0';
+                
+                std::strncpy(persona_desc_buf_.data(), p.description.c_str(), persona_desc_buf_.size() - 1);
+                persona_desc_buf_[persona_desc_buf_.size() - 1] = '\0';
+                
+                std::strncpy(persona_prompt_buf_.data(), p.system_prompt.c_str(), persona_prompt_buf_.size() - 1);
+                persona_prompt_buf_[persona_prompt_buf_.size() - 1] = '\0';
+                
+                last_edited_persona_index_ = index;
+            }
+        }
+
+        static std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed_mcps) {
+            std::string instr;
+            auto has_mcp = [&](const std::string& name) {
+                return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
+            };
+
+            if (has_mcp("terminal")) {
+                instr += "\nTERMINAL INSTRUCTIONS:\nYou have access to tools that can run local commands (e.g. bash commands). If the user asks you to check repository status, files, find the current date/time, or execute any shell command (including curl), use the provided `run_local_command` tool to execute them instead of giving them instructions on how to run it themselves.\n";
+            }
+            if (has_mcp("deck")) {
+                instr += "\nDECK INSTRUCTIONS:\nWhen users ask you to 'open', 'show', 'create', or 'display' something, use the appropriate tool (like `create_card` or `create_number_series_card`) to spawn a new card in the UI.\nCRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n1. If the user asks you to build, show, or create a time series or number series visualization card using data that can be retrieved via other tools (such as weather forecasts, git repository metrics, calendar events, or wallet balances), you MUST follow a two-step process:\n- Step 1: Call the appropriate retrieval tool first (e.g., get_weather_forecast, get_current_weather, or git/calendar tools) to obtain the real data. Do NOT generate placeholders or call create_number_series_card in this step.\n- Step 2: Once you receive the real data from the tool execution, call create_number_series_card with the retrieved data points.\n2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch the actual data.\n";
+            }
+            if (has_mcp("wikipedia")) {
+                instr += "\nWIKIPEDIA INSTRUCTIONS:\nCRITICAL INSTRUCTIONS ON WIKIPEDIA TOOL USAGE:\n1. If the user asks you to read, summarize, explain, or answer questions about a Wikipedia article or concept (for example: \"summarize 'The Garden of Forking Paths' by Borges\"), you MUST use retrieval tools: first search using wikipedia_search_concepts if needed to find the exact title, and then retrieve the full article using wikipedia_get_article_text. You must then summarize or answer directly in your chat response. DO NOT call wikipedia_create_card or create_card for this purpose!\n2. ONLY call wikipedia_create_card (or create_card) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").\n";
+            }
+            if (has_mcp("alarm")) {
+                instr += "\nALARM INSTRUCTIONS:\nFor all other general alarms, timers, or reminders (e.g., 'set an alarm/timer for 20 minutes', 'alarm at 10 AM', 'remind me in 1 hour'), you MUST use the 'create_alarm' tool instead.\n";
+            }
+            if (has_mcp("pomodoro")) {
+                instr += "\nPOMODORO INSTRUCTIONS:\nIMPORTANT: Differentiate clearly between Pomodoro and general alarms. Only use the Pomodoro tool (start_pomodoro) if the user explicitly mentions the word 'pomodoro'.\n";
+            }
+            return instr;
+        }
+
+        std::string get_function_category(const helpers::mcp_service::function_definition& func) const {
+            if (func.name == "run_local_command") return "terminal";
+            if (func.name == "edit_file") return "editor";
+            if (func.name == "create_card" || func.name == "create_number_series_card") return "deck";
+            if (func.name.starts_with("wikipedia_")) return "wikipedia";
+            if (func.name.starts_with("youtube_")) return "youtube";
+            if (func.name == "create_alarm") return "alarm";
+            return func.card_type;
+        }
         
         void refresh_llm_config() {
             current_llm_settings_ = helpers::LLMConfig::get_current_config();
@@ -575,16 +744,7 @@ namespace rouen::cards {
         }
         
         std::string get_assistant_name() const {
-            if (!llm_configured_) return "AI";
-            
-            switch (current_llm_settings_.provider) {
-                case helpers::LLMConfig::Provider::GROK: return "Grok";
-                case helpers::LLMConfig::Provider::OPENAI: return "ChatGPT";
-                case helpers::LLMConfig::Provider::GROQ: return "Groq";
-                case helpers::LLMConfig::Provider::GEMINI: return "Gemini";
-                case helpers::LLMConfig::Provider::CUSTOM: return "AI";
-                default: return "AI";
-            }
+            return helpers::PersonaManager::instance().get_active_persona().name;
         }
         
         void send_message(const std::string& message) {
@@ -614,8 +774,18 @@ namespace rouen::cards {
             std::vector<std::string> function_schemas;
             if (mcp_service_) {
                 try {
+                    auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+                    auto has_mcp = [&](const std::string& cat) {
+                        return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), cat) != active_persona.allowed_mcps.end();
+                    };
+
                     auto functions = mcp_service_->get_available_functions();
                     for (const auto& func : functions) {
+                        std::string cat = get_function_category(func);
+                        if (!has_mcp(cat)) {
+                            continue;
+                        }
+
                         std::string raw_schema = std::format(
                             "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
                             func.name, 
@@ -687,19 +857,14 @@ namespace rouen::cards {
                         std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
                         local_llm.add_instructions(time_instr);
 
-                        // Inject guidelines on how to choose between retrieval and presentation tools
-                        std::string mcp_instr = 
-                            "CRITICAL INSTRUCTIONS ON WIKIPEDIA TOOL USAGE:\n"
-                            "1. If the user asks you to read, summarize, explain, or answer questions about a Wikipedia article or concept (for example: \"summarize 'The Garden of Forking Paths' by Borges\"), "
-                            "you MUST use retrieval tools: first search using `wikipedia_search_concepts` if needed to find the exact title, and then retrieve the full article using `wikipedia_get_article_text`. "
-                            "You must then summarize or answer directly in your chat response. DO NOT call `wikipedia_create_card` or `create_card` for this purpose!\n"
-                            "2. ONLY call `wikipedia_create_card` (or `create_card`) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").\n\n"
-                            "CRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n"
-                            "1. If the user asks you to build, show, or create a time series or number series visualization card using data that can be retrieved via other tools (such as weather forecasts, git repository metrics, calendar events, or wallet balances), you MUST follow a two-step process:\n"
-                            "   - Step 1: Call the appropriate retrieval tool first (e.g., `get_weather_forecast`, `get_current_weather`, or git/calendar tools) to obtain the real data. Do NOT generate placeholders or call `create_number_series_card` in this step.\n"
-                            "   - Step 2: Once you receive the real data from the tool execution, call `create_number_series_card` with the retrieved data points.\n"
-                            "2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch the actual data.";
-                        local_llm.add_instructions(mcp_instr);
+                        // Set system instructions based on persona and its allowed MCPs
+                        auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+                        local_llm.add_instructions(active_persona.system_prompt);
+                        
+                        std::string modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
+                        if (!modular_instr.empty()) {
+                            local_llm.add_instructions(modular_instr);
+                        }
 
                         // Create conversion from our message format to the format expected by sendMessage with mutex protection
                         std::vector<std::pair<std::string, std::string>> conversation_for_llm;
@@ -817,6 +982,15 @@ namespace rouen::cards {
                 if (!async_llm_instance) {
                     throw std::runtime_error("Failed to create LLM instance for async operation");
                 }
+                
+                // Add persona instructions
+                auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+                async_llm_instance->add_instructions(active_persona.system_prompt);
+                std::string modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
+                if (!modular_instr.empty()) {
+                    async_llm_instance->add_instructions(modular_instr);
+                }
+                
                 async_context->llm_instance_copy = std::move(*async_llm_instance);
                 
                 // Start async request with proper memory management

@@ -27,10 +27,15 @@ namespace ProcessHelper {
             }
         };
         
+        std::string command_to_run = command;
+#if !defined(_WIN32)
+        command_to_run = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:~/.nix-profile/bin\" && " + command;
+#endif
+
         // Open a pipe to read the command output using the custom deleter
-        std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command.c_str(), "r"), pipeDeleter);
+        std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command_to_run.c_str(), "r"), pipeDeleter);
         if (!pipe) {
-            PROCESS_ERROR_FMT("Error executing command: {}", command);
+            PROCESS_ERROR_FMT("Error executing command: {}", command_to_run);
             return "";
         }
         

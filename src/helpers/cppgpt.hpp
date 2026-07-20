@@ -369,17 +369,44 @@ namespace ignacionr
             // Build conversation history either from full_conversation or our local history
             std::vector<Message> current_conversation;
             
+            // Merge all system instructions into a single system prompt
+            std::string system_content;
+            for (const auto& local_msg : conversation) {
+                if (local_msg.role == "system") {
+                    if (!system_content.empty()) {
+                        system_content += "\n\n";
+                    }
+                    system_content += local_msg.content;
+                }
+            }
+
             if (full_conversation) {
-                // Use the provided full conversation history
-                current_conversation.reserve(full_conversation->size() + 1);
+                current_conversation.reserve(full_conversation->size() + 2);
+                if (!system_content.empty()) {
+                    Message sys_msg;
+                    sys_msg.role = "system";
+                    sys_msg.content = system_content;
+                    current_conversation.push_back(std::move(sys_msg));
+                }
                 for (const auto& [msg_role, msg_content] : *full_conversation) {
                     current_conversation.emplace_back(msg_role, msg_content);
                 }
-                // Add the new message
-                current_conversation.emplace_back(std::string(role), std::string(message));
+                if (current_conversation.empty() || current_conversation.back().content != message) {
+                    current_conversation.emplace_back(std::string(role), std::string(message));
+                }
             } else {
-                // Fallback to local conversation history + new message
-                current_conversation = conversation;
+                current_conversation.reserve(conversation.size() + 1);
+                if (!system_content.empty()) {
+                    Message sys_msg;
+                    sys_msg.role = "system";
+                    sys_msg.content = system_content;
+                    current_conversation.push_back(std::move(sys_msg));
+                }
+                for (const auto& msg : conversation) {
+                    if (msg.role != "system") {
+                        current_conversation.push_back(msg);
+                    }
+                }
                 current_conversation.emplace_back(std::string(role), std::string(message));
             }
 
@@ -507,25 +534,36 @@ namespace ignacionr
             // Build conversation history
             std::vector<OpenAIMessage> chat_history;
             
-            // Copy system instructions from local conversation first
+            // Merge all system instructions into a single system prompt
+            std::string system_content;
             for (const auto& local_msg : conversation) {
                 if (local_msg.role == "system") {
-                    chat_history.push_back({local_msg.role, local_msg.content});
+                    if (!system_content.empty()) {
+                        system_content += "\n\n";
+                    }
+                    system_content += local_msg.content;
                 }
+            }
+            if (!system_content.empty()) {
+                chat_history.push_back({"system", system_content});
             }
             
             if (full_conversation) {
                 for (const auto& [msg_role, msg_content] : *full_conversation) {
                     chat_history.push_back({msg_role, msg_content});
                 }
-                chat_history.push_back({std::string(role), std::string(message)});
+                if (chat_history.empty() || chat_history.back().content != message) {
+                    chat_history.push_back({std::string(role), std::string(message)});
+                }
             } else {
                 for (const auto& msg : conversation) {
                     if (msg.role != "system") {
                         chat_history.push_back({msg.role, msg.content});
                     }
                 }
-                chat_history.push_back({std::string(role), std::string(message)});
+                if (chat_history.empty() || chat_history.back().content != message) {
+                    chat_history.push_back({std::string(role), std::string(message)});
+                }
             }
             
             auto escape_json = [](const std::string& str) -> std::string {
@@ -611,7 +649,7 @@ namespace ignacionr
                     body += ",\"tool_choice\":\"auto\"";
                 }
                 body += "}";
-                
+
                 auto r = do_post(url, body, [this](auto header_setter){
                     header_setter("Authorization: Bearer " + api_key_);
                     header_setter("Content-Type: application/json");

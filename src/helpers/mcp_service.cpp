@@ -207,11 +207,16 @@ mcp_service::mcp_service() {
             }
 
             const std::string command_with_stderr = request.command + " 2>&1";
+            std::string output;
             if (!request.working_directory.empty()) {
-                return ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
+                output = ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
+            } else {
+                output = ProcessHelper::executeCommand(command_with_stderr);
             }
-
-            return ProcessHelper::executeCommand(command_with_stderr);
+            if (output.empty()) {
+                return "[Command returned no output]";
+            }
+            return output;
         },
         "terminal"
     );

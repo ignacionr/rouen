@@ -228,3 +228,114 @@ TEST(CppGptTest, ParsesToolCallsCorrectly) {
     EXPECT_EQ(result.choices[0].message.content, "The date is Mon Jul 12 15:22:00 UTC 2026");
 }
 
+TEST(CppGptTest, MergesSystemInstructionsCorrectly) {
+    ignacionr::cppgpt llm("key", "http://127.0.0.1:8098");
+    
+    // Add multiple system instructions
+    llm.add_instructions("System instruction part 1");
+    llm.add_instructions("System instruction part 2");
+    
+    std::vector<std::pair<std::string, std::string>> conversation;
+    conversation.push_back({"user", "hello"});
+    
+    // We mock the post call to capture the generated request body
+    std::string captured_body;
+    auto mock_post = [&](const std::string&, const std::string& body, auto) -> std::string {
+        captured_body = body;
+        return R"({
+           "choices" : [
+              {
+                 "finish_reason" : "stop",
+                 "index" : 0,
+                 "message" : {
+                    "content" : "hi",
+                    "role" : "assistant"
+                 }
+              }
+           ]
+        })";
+    };
+    
+    llm.sendMessage(
+        "hello",
+        mock_post,
+        "user",
+        "qwen",
+        "",
+        0.5f,
+        &conversation
+    );
+    
+    // Parse the captured JSON to verify system content was merged
+    glz::json_t doc;
+    auto err = glz::read_json(doc, captured_body);
+    ASSERT_FALSE(err) << glz::format_error(err, captured_body);
+    
+    ASSERT_TRUE(doc.contains("messages"));
+    auto messages = doc["messages"];
+    ASSERT_GE(messages.size(), 1u);
+    
+    // The first message must be the merged system message
+    auto first_msg = messages[0];
+    EXPECT_EQ(first_msg["role"].get<std::string>(), "system");
+    EXPECT_EQ(first_msg["content"].get<std::string>(), "System instruction part 1\n\nSystem instruction part 2");
+}
+
+TEST(CppGptTest, MergesSystemInstructionsInFunctionCallingCorrectly) {
+    ignacionr::cppgpt llm("key", "http://127.0.0.1:8098");
+    
+    llm.add_instructions("System prompt instruction 1");
+    llm.add_instructions("System prompt instruction 2");
+    
+    std::vector<std::pair<std::string, std::string>> conversation;
+    conversation.push_back({"user", "hello"});
+    
+    std::vector<std::string> function_schemas = {};
+    
+    std::string captured_body;
+    auto mock_post = [&](const std::string&, const std::string& body, auto) -> std::string {
+        captured_body = body;
+        return R"({
+           "choices" : [
+              {
+                 "finish_reason" : "stop",
+                 "index" : 0,
+                 "message" : {
+                    "content" : "hi",
+                    "role" : "assistant"
+                 }
+              }
+           ]
+        })";
+    };
+    
+    auto mock_executor = [](const std::string&, const std::string&) -> std::string {
+        return "";
+    };
+    
+    llm.sendMessageWithFunctionCalling(
+        "hello",
+        mock_post,
+        mock_executor,
+        "user",
+        "qwen",
+        "",
+        0.5f,
+        &conversation,
+        &function_schemas
+    );
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, captured_body);
+    ASSERT_FALSE(err) << glz::format_error(err, captured_body);
+    
+    ASSERT_TRUE(doc.contains("messages"));
+    auto messages = doc["messages"];
+    ASSERT_GE(messages.size(), 1u);
+    
+    auto first_msg = messages[0];
+    EXPECT_EQ(first_msg["role"].get<std::string>(), "system");
+    EXPECT_EQ(first_msg["content"].get<std::string>(), "System prompt instruction 1\n\nSystem prompt instruction 2");
+}
+
+

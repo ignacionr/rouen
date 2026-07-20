@@ -377,8 +377,10 @@ namespace rouen::helpers {
                 for (const auto& [msg_role, msg_content] : *full_conversation) {
                     current_conversation.emplace_back(msg_role, msg_content);
                 }
-                // Add the new message
-                current_conversation.emplace_back(std::string(role), std::string(message));
+                // Add the new message only if it's not already the last message in the history
+                if (current_conversation.empty() || current_conversation.back().content != message) {
+                    current_conversation.emplace_back(std::string(role), std::string(message));
+                }
             } else {
                 // Fallback to local conversation + new message
                 current_conversation = conversation_;
@@ -454,8 +456,10 @@ namespace rouen::helpers {
                 for (const auto& [msg_role, msg_content] : *full_conversation) {
                     current_conversation.emplace_back(msg_role, msg_content);
                 }
-                // Add the new message
-                current_conversation.emplace_back(std::string(role), std::string(message));
+                // Add the new message only if it's not already the last message in the history
+                if (current_conversation.empty() || current_conversation.back().content != message) {
+                    current_conversation.emplace_back(std::string(role), std::string(message));
+                }
             } else {
                 // Fallback to local conversation + new message
                 current_conversation = conversation_;

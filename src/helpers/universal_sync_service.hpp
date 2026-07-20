@@ -13,6 +13,7 @@
 #include "../models/travel/sqliterepo.hpp"
 #include "../models/rss/sqliterepo.hpp"
 #include "../models/notes/notes_repository.hpp"
+#include "persona_manager.hpp"
 
 // Logging macros for UniversalSyncService
 #define UNIV_SYNC_ERROR(message) LOG_COMPONENT("UNIV_SYNC", LOG_LEVEL_ERROR, message)
@@ -118,6 +119,9 @@ namespace rouen::helpers {
                                         rouen::platform::get_user_config_directory() / "rouen.ini");
                     copy_file_if_exists(cache_dir / "config" / "themes.json", 
                                         rouen::platform::get_user_config_directory() / "themes.json");
+                    copy_file_if_exists(cache_dir / "config" / "personas.json", 
+                                        rouen::platform::get_user_config_directory() / "personas.json");
+                    rouen::helpers::PersonaManager::instance().reload();
                 } else {
                     UNIV_SYNC_INFO("Sync In: Skipping configuration import to keep local window state");
                 }
@@ -205,6 +209,8 @@ namespace rouen::helpers {
                                     cache_dir / "config" / "rouen.ini");
                 copy_file_if_exists(rouen::platform::get_user_config_directory() / "themes.json",
                                     cache_dir / "config" / "themes.json");
+                copy_file_if_exists(rouen::platform::get_user_config_directory() / "personas.json",
+                                    cache_dir / "config" / "personas.json");
 
                 // Commit and Push
                 UNIV_SYNC_INFO("Sync Out: Committing and pushing changes...");
@@ -279,6 +285,8 @@ namespace rouen::helpers {
                                         cache_dir / "config" / "rouen.ini");
                     copy_file_if_exists(rouen::platform::get_user_config_directory() / "themes.json",
                                         cache_dir / "config" / "themes.json");
+                    copy_file_if_exists(rouen::platform::get_user_config_directory() / "personas.json",
+                                        cache_dir / "config" / "personas.json");
                 }
             } catch (const std::exception& e) {
                 UNIV_SYNC_WARN_FMT("Failed to export local state before sync_in: {}", e.what());
