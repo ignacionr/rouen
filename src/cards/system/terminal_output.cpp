@@ -58,7 +58,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
             
             // Apply parameters
             for (int p : params) {
-                if (p == 0) {
+                if (p == 0 || p == 39) {
                     current_color = default_color;
                     has_color_push = false;
                 } else if (p >= 30 && p <= 37) {
@@ -72,6 +72,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
                         case 35: current_color = ImVec4(0.9f, 0.3f, 0.9f, 1.0f); break;   // Magenta
                         case 36: current_color = ImVec4(0.3f, 0.9f, 0.9f, 1.0f); break;   // Cyan
                         case 37: current_color = ImVec4(0.9f, 0.9f, 0.9f, 1.0f); break;   // White
+                        default: break;
                     }
                 } else if (p >= 90 && p <= 97) {
                     has_color_push = true;
@@ -84,10 +85,8 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
                         case 95: current_color = ImVec4(1.0f, 0.5f, 1.0f, 1.0f); break;   // Bright Magenta
                         case 96: current_color = ImVec4(0.5f, 1.0f, 1.0f, 1.0f); break;   // Bright Cyan
                         case 97: current_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); break;   // Bright White
+                        default: break;
                     }
-                } else if (p == 39) {
-                    current_color = default_color;
-                    has_color_push = false;
                 }
             }
         }

@@ -20,8 +20,7 @@
 
 namespace media::rss
 {
-    namespace {
-        inline std::optional<std::chrono::system_clock::time_point> parse_relative_time(std::string_view val) {
+    inline std::optional<std::chrono::system_clock::time_point> parse_relative_time(std::string_view val) {
             std::string s(val);
             s.erase(0, s.find_first_not_of(" \t"));
             s.erase(s.find_last_not_of(" \t") + 1);
@@ -80,7 +79,6 @@ namespace media::rss
             if (op == "NOT IN") return " NOT IN ";
             return " = ?";
         }
-    }
 
     struct feed_subscription_dto
     {

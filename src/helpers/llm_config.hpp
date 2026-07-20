@@ -72,7 +72,14 @@ namespace rouen::helpers {
             LLMInstance& operator=(LLMInstance&&) = default;
             
             explicit operator bool() const noexcept { 
-                return std::visit([](const auto& ptr) { return static_cast<bool>(ptr); }, instance_);
+                if (instance_.index() == 0) {
+                    const auto* ptr = std::get_if<std::unique_ptr<ignacionr::cppgpt>>(&instance_);
+                    return ptr && *ptr;
+                } else if (instance_.index() == 1) {
+                    const auto* ptr = std::get_if<std::unique_ptr<GeminiAdapter>>(&instance_);
+                    return ptr && *ptr;
+                }
+                return false;
             }
             
             void add_instructions(std::string_view instructions, std::string_view role = "system") {

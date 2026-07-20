@@ -19,7 +19,7 @@
 #include "rss_date_parser.hpp"
 #include "feed_xml_parser.hpp"
 
-namespace {
+namespace media::rss {
     inline double parse_duration_to_seconds(std::string_view dur_str) {
         std::string s(dur_str);
         s.erase(0, s.find_first_not_of(" \t\r\n"));
@@ -63,9 +63,7 @@ namespace {
         
         return 0.0;
     }
-}
 
-namespace media::rss {
     struct feed {
         void operator()(std::string_view partial_contents) {
             contents += partial_contents;

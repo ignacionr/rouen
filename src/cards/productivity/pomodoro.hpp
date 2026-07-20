@@ -176,8 +176,14 @@ namespace rouen::cards {
                         // and now fill the percentage that corresponds to the time accrued
                         auto const angle = static_cast<float>(2 * M_PI * percentage + M_PI / 2) + animation_angle;
                         static constexpr double fifth_of_circle {2.0 * M_PI / 5.0};
-                        for (auto angle_to = static_cast<float>(M_PI / 2.0 + fifth_of_circle) + animation_angle; angle_to <= angle; angle_to += static_cast<float>(fifth_of_circle)) {
-                            auto const angle_from = angle_to - static_cast<float>(fifth_of_circle);
+                        
+                        auto const start_angle = static_cast<float>(M_PI / 2.0 + fifth_of_circle) + animation_angle;
+                        auto const step_val = static_cast<float>(fifth_of_circle);
+                        int const steps = static_cast<int>(std::floor((angle - start_angle) / step_val)) + 1;
+                        
+                        for (int i = 0; i < steps; ++i) {
+                            float const angle_to = start_angle + static_cast<float>(i) * step_val;
+                            auto const angle_from = angle_to - step_val;
                             double angle_from_d = static_cast<double>(angle_from);
                             double angle_to_d = static_cast<double>(angle_to);
                             auto const spike_from = ImVec2 {

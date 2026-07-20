@@ -39,7 +39,6 @@
 
 namespace rouen::hosts {
 
-namespace {
     inline std::chrono::system_clock::time_point parse_db_date(const std::string& date_str) {
         std::tm tm = {};
         std::istringstream ss(date_str);
@@ -509,7 +508,6 @@ namespace {
 
         return parse_duration_seconds(output);
     }
-}
 
 /**
  * RSS Host Controller
