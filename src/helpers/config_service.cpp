@@ -420,7 +420,7 @@ namespace rouen::helpers {
         return "";
     }
 
-    std::vector<std::string> ConfigService::get_jira_profiles() const {
+    std::vector<std::string> ConfigService::get_jira_profiles() {
         std::vector<std::string> profiles;
         
         // Common JIRA profile prefixes
@@ -835,7 +835,7 @@ std::string ConfigService::get_ping_path() const {
         return true;
     }
 
-    std::string ConfigService::get_env_file_path() const {
+    std::string ConfigService::get_env_file_path() {
         // Debug: Show what directories we're checking
         CONFIG_DEBUG("ConfigService: Looking for .env file...");
         CONFIG_DEBUG_FMT("ConfigService: Current working directory: {}", std::filesystem::current_path().string());

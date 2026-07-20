@@ -22,5 +22,5 @@ namespace {
     };
 
     // Create a static instance to register the card during initialization
-    static worldcup_card_registrar registrar;
+    worldcup_card_registrar registrar;
 }

@@ -21,14 +21,13 @@ std::string ProcessCarriageReturns(const std::string& input) {
     if (last_r != std::string::npos) {
         if (last_r + 1 < input.size()) {
             return input.substr(last_r + 1);
-        } else {
-            size_t prev_r = input.find_last_of('\r', last_r - 1);
+        }             size_t prev_r = input.find_last_of('\r', last_r - 1);
             if (prev_r != std::string::npos) {
                 return input.substr(prev_r + 1, last_r - (prev_r + 1));
             } else {
                 return input.substr(0, last_r);
             }
-        }
+       
     }
     return input;
 }
@@ -51,7 +50,7 @@ std::string StripAnsiSequences(const std::string& input) {
         if (next == '[') {
             i += 2;
             while (i < input.size()) {
-                const unsigned char ch = static_cast<unsigned char>(input[i]);
+                const auto ch = static_cast<unsigned char>(input[i]);
                 if (ch >= 0x40 && ch <= 0x7e) {
                     break;
                 }
@@ -129,7 +128,7 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         TERM_ERROR("Failed to fork PTY for bash session");
         use_interactive_bash = false;
         return;
-    } else if (bash_pid == 0) {
+    } if (bash_pid == 0) {
         // Child process (executes inside the PTY slave)
         setenv("TERM", "xterm-256color", 1);
         
@@ -210,7 +209,7 @@ void TerminalBash::terminate_bash_session() {
 #endif
 }
 
-void TerminalBash::send_to_bash(const std::string& command, bool raw) {
+void TerminalBash::send_to_bash(const std::string& command, bool raw) const {
 #ifndef _WIN32
     if (bash_master_fd >= 0) {
         std::string cmd_with_nl = command + "\n";
@@ -314,7 +313,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                             is_command_running.store(false);
                             command_running = false;
                             continue;
-                        } else if (!command_running && 
+                        } if (!command_running && 
                                   (clean_line.empty() || clean_line.find("bash") != std::string::npos || 
                                    clean_line.find("TERM=") != std::string::npos)) {
                             continue;
@@ -334,10 +333,9 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
             } else if (bytes_read < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                     continue;
-                } else {
-                    TERM_ERROR_FMT("Error reading from PTY: {}", strerror(errno));
+                }                     TERM_ERROR_FMT("Error reading from PTY: {}", strerror(errno));
                     break;
-                }
+               
             }
         } else if (poll_result < 0) {
             if (errno != EINTR) {
@@ -384,7 +382,7 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         output.add_to_output("Failed to start sudo session: PTY error", OutputType::StdErr);
         initialize_bash_session(prev_cwd, output, is_command_running);
         return;
-    } else if (bash_pid == 0) {
+    } if (bash_pid == 0) {
         setenv("TERM", "xterm-256color", 1);
         execl(sudo_path.c_str(), "sudo", "-S", bash_path.c_str(), "--norc", "-i", nullptr);
         perror("execl");

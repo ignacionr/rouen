@@ -31,5 +31,5 @@ namespace {
     };
 
     // Create a static instance to register the Trello cards during initialization
-    static trello_card_registrar registrar;
+    trello_card_registrar registrar;
 }

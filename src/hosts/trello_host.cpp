@@ -291,11 +291,11 @@ std::future<std::vector<models::trello::trello_card>> trello_host::search_cards(
 }
 
 // Utility methods
-std::string trello_host::get_board_url(const std::string& board_id) const {
+std::string trello_host::get_board_url(const std::string& board_id) {
     return std::format("https://trello.com/b/{}", board_id);
 }
 
-std::string trello_host::get_card_url(const std::string& card_id) const {
+std::string trello_host::get_card_url(const std::string& card_id) {
     return std::format("https://trello.com/c/{}", card_id);
 }
 

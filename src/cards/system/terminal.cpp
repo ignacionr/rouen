@@ -61,7 +61,7 @@ bool terminal::render() {
         rouen::fonts::with_font fnt{rouen::fonts::FontType::Mono};
         // Calculate window dimensions
         const float window_width = ImGui::GetContentRegionAvail().x;
-        const float footer_height = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+        const float footer_height = ImGui::GetFrameHeightWithSpacing() + (ImGui::GetStyle().ItemSpacing.y * 2);
         
         // Test for stderr - press F5 for a quick test
         if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
@@ -104,7 +104,7 @@ void terminal::render_sudo_prompt(float window_width) {
     // Password input (displayed as asterisks)
     static char password_buffer[128] = "";
     float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    ImGui::SetNextItemWidth(window_width - 70.0f * dpi_scale);
+    ImGui::SetNextItemWidth(window_width - (70.0f * dpi_scale));
     bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, static_cast<int>(sizeof(password_buffer)), 
                                         ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                                         nullptr, nullptr);
@@ -277,7 +277,7 @@ bool terminal::navigate_history(bool go_back, char* buffer, size_t buffer_size) 
             strncpy(buffer, command_history[history_index].c_str(), buffer_size - 1);
             buffer[buffer_size - 1] = '\0';
             return true;
-        } else if (history_index == command_history.size() - 1) {
+        } if (history_index == command_history.size() - 1) {
             // At the newest command, clear the input
             history_index = command_history.size();
             buffer[0] = '\0';
@@ -370,11 +370,11 @@ bool terminal::handle_slash_command(const std::string& cmd) {
             
             if (!agy_path.empty() && std::filesystem::exists(agy_path)) {
                 // Use standalone binary directly for speed and reliability
-                agy_cmd = std::format("(cd \"{}\" && \"{}\" --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, agy_path, current_working_dir, escaped_prompt);
+                agy_cmd = std::format(R"((cd "{}" && "{}" --add-dir "{}" --prompt "{}" < /dev/null))", current_working_dir, agy_path, current_working_dir, escaped_prompt);
             } else {
                 // Fallback to nix shell using the src directory flake
                 std::string src_path = home_dir.empty() ? "/Users/inz/src" : (std::filesystem::path(home_dir) / "src").string();
-                agy_cmd = std::format("(cd \"{}\" && NIXPKGS_ALLOW_UNFREE=1 nix shell \"{}\" -c agy --add-dir \"{}\" --prompt \"{}\" < /dev/null)", current_working_dir, src_path, current_working_dir, escaped_prompt);
+                agy_cmd = std::format(R"((cd "{}" && NIXPKGS_ALLOW_UNFREE=1 nix shell "{}" -c agy --add-dir "{}" --prompt "{}" < /dev/null))", current_working_dir, src_path, current_working_dir, escaped_prompt);
             }
             
             // Execute the command in the bash session

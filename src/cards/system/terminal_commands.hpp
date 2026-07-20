@@ -54,7 +54,7 @@ public:
     
 private:
     // Generate a shell command using LLM
-    std::string generate_shell_command(const std::string& description, TerminalOutput& output);
+    static std::string generate_shell_command(const std::string& description, TerminalOutput& output);
     
     // Command pipe for non-interactive mode
     FILE* command_pipe = nullptr;

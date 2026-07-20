@@ -18,7 +18,7 @@ std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& p
             // If no issues found, try with a more explicit query that includes all statuses
             if (search_result.issues.empty()) {
                 JIRA_INFO_FMT("No issues found with basic query, trying with expanded query for project {}", project_key);
-                jql = std::format("project = {} AND status in (Open, \"In Progress\", Reopened, \"To Do\", Backlog, \"Selected for Development\", New, \"In Review\", Done, Closed) ORDER BY updated DESC", project_key);
+                jql = std::format(R"(project = {} AND status in (Open, "In Progress", Reopened, "To Do", Backlog, "Selected for Development", New, "In Review", Done, Closed) ORDER BY updated DESC)", project_key);
                 search_result = search_issues(jql, 0, max_results).get();
             }
             
@@ -247,7 +247,7 @@ std::future<std::vector<jira_transition>> jira_model::get_transitions(const std:
                     transition.name = transition_json["name"].get<std::string>();
                     
                     // Extract to status
-                    auto& to = transition_json["to"];
+                    const auto& to = transition_json["to"];
                     transition.to_status.id = to["id"].get<std::string>();
                     transition.to_status.name = to["name"].get<std::string>();
                     if (to.contains("statusCategory")) {

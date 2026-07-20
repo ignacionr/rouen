@@ -53,7 +53,7 @@ public:
     void terminate_bash_session();
     
     // Send commands to bash
-    void send_to_bash(const std::string& command, bool raw = false);
+    void send_to_bash(const std::string& command, bool raw = false) const;
     
     // Get current working directory from bash
     std::string get_cwd();

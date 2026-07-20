@@ -44,7 +44,7 @@ trello_card::trello_card(const std::string& board_id) : trello_card() {
 }
 
 trello_card::trello_card(const std::string& entity_id, card_context context) 
-    : card(), trello_host_(hosts::get_trello_host()), context_(context) {
+    :  trello_host_(hosts::get_trello_host()), context_(context) {
     name("Trello");
     
     // Try to load existing credentials into form
@@ -106,27 +106,27 @@ bool trello_card::render() {
 }
 
 // Utility methods
-ImVec4 trello_card::get_label_color(const std::string& color_name) const {
+ImVec4 trello_card::get_label_color(const std::string& color_name) {
     // Trello label colors
-    if (color_name == "green") return ImVec4(0.0f, 0.7f, 0.2f, 1.0f);
-    if (color_name == "yellow") return ImVec4(0.9f, 0.8f, 0.0f, 1.0f);
-    if (color_name == "orange") return ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
-    if (color_name == "red") return ImVec4(0.9f, 0.2f, 0.2f, 1.0f);
-    if (color_name == "purple") return ImVec4(0.6f, 0.2f, 0.8f, 1.0f);
-    if (color_name == "blue") return ImVec4(0.2f, 0.5f, 0.9f, 1.0f);
-    if (color_name == "sky") return ImVec4(0.5f, 0.8f, 1.0f, 1.0f);
-    if (color_name == "lime") return ImVec4(0.5f, 1.0f, 0.0f, 1.0f);
-    if (color_name == "pink") return ImVec4(1.0f, 0.4f, 0.7f, 1.0f);
-    if (color_name == "black") return ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-    return ImVec4(0.5f, 0.5f, 0.5f, 1.0f); // Default gray
+    if (color_name == "green") return {0.0f, 0.7f, 0.2f, 1.0f};
+    if (color_name == "yellow") return {0.9f, 0.8f, 0.0f, 1.0f};
+    if (color_name == "orange") return {1.0f, 0.5f, 0.0f, 1.0f};
+    if (color_name == "red") return {0.9f, 0.2f, 0.2f, 1.0f};
+    if (color_name == "purple") return {0.6f, 0.2f, 0.8f, 1.0f};
+    if (color_name == "blue") return {0.2f, 0.5f, 0.9f, 1.0f};
+    if (color_name == "sky") return {0.5f, 0.8f, 1.0f, 1.0f};
+    if (color_name == "lime") return {0.5f, 1.0f, 0.0f, 1.0f};
+    if (color_name == "pink") return {1.0f, 0.4f, 0.7f, 1.0f};
+    if (color_name == "black") return {0.2f, 0.2f, 0.2f, 1.0f};
+    return {0.5f, 0.5f, 0.5f, 1.0f}; // Default gray
 }
 
-std::string trello_card::format_due_date(const std::string& due_date) const {
+std::string trello_card::format_due_date(const std::string& due_date) {
     // Simple date formatting - could be enhanced with proper date parsing
     return due_date.substr(0, 10); // Just return YYYY-MM-DD part
 }
 
-void trello_card::open_in_browser(const std::string& url) const {
+void trello_card::open_in_browser(const std::string& url) {
     rouen::platform::open_url(url);
 }
 

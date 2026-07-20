@@ -10,7 +10,7 @@ std::string base64_encode(const std::string& input);
 // Internal method to make JIRA API requests
 std::string jira_model::make_request(const std::string& endpoint, 
                                    const std::string& method, 
-                                   const std::string& payload) {
+                                   const std::string& payload) const {
     if (!connected_) {
         throw std::runtime_error("Not connected to JIRA");
     }

@@ -106,7 +106,7 @@ private:
     void render_card_overview();
     void render_card_edit_form();
     void render_card_actions();
-    void render_card_metadata();
+    void render_card_metadata() const;
     
     // Board management
     void render_boards_list();
@@ -125,8 +125,8 @@ private:
     void fetch_card_details();
     void update_card();
     void move_card_to_list();
-    void archive_card();
-    void delete_card();
+    static void archive_card();
+    static void delete_card();
     void populate_edit_form();
     void reset_edit_form();
     
@@ -145,16 +145,16 @@ private:
     // Utility methods
     void check_async_operations();
     void reset_ui_state();
-    ImVec4 get_label_color(const std::string& color_name) const;
-    std::string format_due_date(const std::string& due_date) const;
-    void open_in_browser(const std::string& url) const;
+    static ImVec4 get_label_color(const std::string& color_name) ;
+    static std::string format_due_date(const std::string& due_date) ;
+    static void open_in_browser(const std::string& url) ;
     
     // Error handling
     void show_error(const std::string& error);
     void clear_error();
     
     // Card tab management
-    void create_card_tab(const std::string& card_id);
+    static void create_card_tab(const std::string& card_id);
 };
 
 } // namespace rouen::cards

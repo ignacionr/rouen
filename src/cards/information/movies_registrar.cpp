@@ -24,5 +24,5 @@ namespace {
     };
 
     // Create a static instance to register the card during initialization
-    static movies_card_registrar registrar;
+    movies_card_registrar registrar;
 }

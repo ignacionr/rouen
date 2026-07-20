@@ -25,5 +25,5 @@ namespace {
     };
 
     // Create a static instance to register the Bybit card during initialization
-    static bybit_card_registrar registrar;
+    bybit_card_registrar registrar;
 }

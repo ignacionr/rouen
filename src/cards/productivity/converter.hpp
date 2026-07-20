@@ -257,12 +257,12 @@ private:
     void perform_encoding_conversion();
 
     // Encoding helper functions
-    std::string encode_base64(const std::string& input);
-    std::string decode_base64(const std::string& input);
-    std::string encode_hex(const std::string& input);
-    std::string decode_hex(const std::string& input);
-    std::string encode_url(const std::string& input);
-    std::string decode_url(const std::string& input);
+    static std::string encode_base64(const std::string& input);
+    static std::string decode_base64(const std::string& input);
+    static std::string encode_hex(const std::string& input);
+    static std::string decode_hex(const std::string& input);
+    static std::string encode_url(const std::string& input);
+    static std::string decode_url(const std::string& input);
 
     void reset_unit_selections();
     void clear_results();

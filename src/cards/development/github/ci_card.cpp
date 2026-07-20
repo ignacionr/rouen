@@ -81,7 +81,7 @@ namespace rouen::cards::github {
     WorkflowStatus WorkflowRun::parse_status(const std::string& status_str, const std::string& conclusion_str) {
         if (status_str == "queued") {
             return WorkflowStatus::Queued;
-        } else if (status_str == "in_progress") {
+        } if (status_str == "in_progress") {
             return WorkflowStatus::InProgress;
         } else if (status_str == "completed") {
             if (conclusion_str == "success") {
@@ -102,23 +102,23 @@ namespace rouen::cards::github {
     ImVec4 WorkflowRun::get_status_color(WorkflowStatus status) {
         switch (status) {
             case WorkflowStatus::Unknown:
-                return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);  // Dark gray
+                return {0.5f, 0.5f, 0.5f, 1.0f};  // Dark gray
             case WorkflowStatus::Success:
-                return ImVec4(0.0f, 0.8f, 0.2f, 1.0f);  // Green
+                return {0.0f, 0.8f, 0.2f, 1.0f};  // Green
             case WorkflowStatus::Failed:
-                return ImVec4(0.9f, 0.2f, 0.2f, 1.0f);  // Red
+                return {0.9f, 0.2f, 0.2f, 1.0f};  // Red
             case WorkflowStatus::InProgress:
-                return ImVec4(0.2f, 0.6f, 0.9f, 1.0f);  // Blue
+                return {0.2f, 0.6f, 0.9f, 1.0f};  // Blue
             case WorkflowStatus::Queued:
-                return ImVec4(0.9f, 0.7f, 0.2f, 1.0f);  // Yellow
+                return {0.9f, 0.7f, 0.2f, 1.0f};  // Yellow
             case WorkflowStatus::Cancelled:
-                return ImVec4(0.6f, 0.6f, 0.6f, 1.0f);  // Gray
+                return {0.6f, 0.6f, 0.6f, 1.0f};  // Gray
             case WorkflowStatus::Skipped:
-                return ImVec4(0.7f, 0.5f, 0.9f, 1.0f);  // Purple
+                return {0.7f, 0.5f, 0.9f, 1.0f};  // Purple
             case WorkflowStatus::Completed:
-                return ImVec4(0.2f, 0.8f, 0.8f, 1.0f);  // Cyan
+                return {0.2f, 0.8f, 0.8f, 1.0f};  // Cyan
             default:
-                return ImVec4(0.5f, 0.5f, 0.5f, 1.0f);  // Dark gray
+                return {0.5f, 0.5f, 0.5f, 1.0f};  // Dark gray
         }
     }
 

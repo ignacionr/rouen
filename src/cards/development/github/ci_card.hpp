@@ -89,8 +89,8 @@ namespace rouen::cards::github {
         void render_workflow_details(const Workflow& workflow);
         void render_run_details(const WorkflowRun& run);
         void render_ci_diagnostics();
-        void render_workflow_status_indicator(const Workflow& workflow);
-        void render_run_status_badge(const WorkflowRun& run);
+        static void render_workflow_status_indicator(const Workflow& workflow);
+        static void render_run_status_badge(const WorkflowRun& run);
         void render_timeline_view();
         void render_logs_preview(const WorkflowRun& run);
         

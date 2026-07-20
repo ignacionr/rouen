@@ -306,7 +306,7 @@ void trello_card::render_card_actions() {
     ImGui::PopStyleColor();
 }
 
-void trello_card::render_card_metadata() {
+void trello_card::render_card_metadata() const {
     if (!current_card_.idLabels.empty()) {
         ImGui::Text("Labels: %zu", current_card_.idLabels.size());
     }

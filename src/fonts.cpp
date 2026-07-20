@@ -320,11 +320,11 @@ namespace rouen::fonts {
             SDL_Window* window = SDL_RenderGetWindow(renderer);
             if (window) {
                 // Get the window size in points (logical size)
-                int window_w, window_h;
+                int window_w = 0, window_h = 0;
                 SDL_GetWindowSize(window, &window_w, &window_h);
                 
                 // Get the drawable size in pixels (actual framebuffer size)
-                int drawable_w, drawable_h;
+                int drawable_w = 0, drawable_h = 0;
                 SDL_GetRendererOutputSize(renderer, &drawable_w, &drawable_h);
                 
                 // Calculate the actual DPI scale factor
@@ -398,7 +398,7 @@ namespace rouen::fonts {
             return 0;
         }
         
-        const unsigned char* s = reinterpret_cast<const unsigned char*>(utf8_char);
+        const auto* s = reinterpret_cast<const unsigned char*>(utf8_char);
         char32_t codepoint = 0;
         
         if ((*s & 0x80) == 0) {
@@ -447,12 +447,11 @@ namespace rouen::fonts {
             SYS_DEBUG_FMT("Codepoint U+{:04X} available in requested font: {}", 
                     static_cast<unsigned int>(codepoint), available ? "yes" : "no");
             return available;
-        } else {
-            // For code points beyond Basic Multilingual Plane (BMP)
+        }             // For code points beyond Basic Multilingual Plane (BMP)
             SYS_INFO_FMT("Codepoint U+{:X} is beyond BMP, not supported by ImGui", 
                     static_cast<unsigned int>(codepoint));
             return false;
-        }
+       
     }
 
     with_font::with_font(FontType type) {

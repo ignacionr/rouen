@@ -207,7 +207,7 @@ namespace rouen::theme {
     void theme_manager::delete_theme(size_t index) {
         // Prevent deleting built-in/default themes if we're left with just those
         if (index < 4) {
-            std::cout << "[Theme] Cannot delete built-in theme." << std::endl;
+            std::cout << "[Theme] Cannot delete built-in theme." << '\n';
             return;
         }
         if (index < themes_.size()) {
@@ -280,7 +280,7 @@ namespace rouen::theme {
             theme_save_model model;
             auto err = glz::read_json(model, content);
             if (err) {
-                std::cerr << "[Theme] Failed to parse themes.json: " << glz::format_error(err, content) << std::endl;
+                std::cerr << "[Theme] Failed to parse themes.json: " << glz::format_error(err, content) << '\n';
                 return;
             }
 
@@ -304,7 +304,7 @@ namespace rouen::theme {
             }
         } 
         catch (const std::exception& e) {
-            std::cerr << "[Theme] Exception loading themes: " << e.what() << std::endl;
+            std::cerr << "[Theme] Exception loading themes: " << e.what() << '\n';
         }
     }
 
@@ -329,7 +329,7 @@ namespace rouen::theme {
             }
         } 
         catch (const std::exception& e) {
-            std::cerr << "[Theme] Exception saving themes: " << e.what() << std::endl;
+            std::cerr << "[Theme] Exception saving themes: " << e.what() << '\n';
         }
     }
 

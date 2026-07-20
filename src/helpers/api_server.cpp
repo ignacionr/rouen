@@ -126,7 +126,7 @@ void api_server::stop() {
 }
 
 void api_server::event_handler(struct mg_connection* c, int ev, void* ev_data) {
-    api_server* server = static_cast<api_server*>(c->fn_data);
+    auto* server = static_cast<api_server*>(c->fn_data);
     
     if (ev == MG_EV_HTTP_MSG) {
         auto* hm = static_cast<struct mg_http_message*>(ev_data);
@@ -141,35 +141,35 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
 
     if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
-            response = "{\"status\":\"ok\",\"message\":\"API server is running\"}";
+            response = R"({"status":"ok","message":"API server is running"})";
         } else {
             status_code = 405;
-            response = "{\"error\":\"Method not allowed\"}";
+            response = R"({"error":"Method not allowed"})";
         }
     } else if (mg_match(hm->uri, mg_str("/api/cards"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_card_creation(c, hm);
         } else {
             status_code = 405;
-            response = "{\"error\":\"Method not allowed\"}";
+            response = R"({"error":"Method not allowed"})";
         }
     } else if (mg_match(hm->uri, mg_str("/api/ai"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_ai_request(c, hm);
         } else {
             status_code = 405;
-            response = "{\"error\":\"Method not allowed\"}";
+            response = R"({"error":"Method not allowed"})";
         }
     } else if (mg_match(hm->uri, mg_str("/api/schemas"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_schemas_request(c, hm);
         } else {
             status_code = 405;
-            response = "{\"error\":\"Method not allowed\"}";
+            response = R"({"error":"Method not allowed"})";
         }
     } else {
         status_code = 404;
-        response = "{\"error\":\"Not found\"}";
+        response = R"({"error":"Not found"})";
     }
 
     mg_http_reply(c, status_code, ("Content-Type: " + content_type + "\r\n").c_str(), "%s", response.c_str());
@@ -181,7 +181,7 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
         auto create_card_func = registrar::get<std::function<void(std::string const&)>>("create_card");
         if (!create_card_func) {
             error_response response{"Card creation service not available"};
-            return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+            return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
         }
 
         // Parse JSON body using glaze with inline reflection
@@ -192,17 +192,17 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
             auto result = glz::read_json(request, body);
             if (!result) {
                 error_response response{"Invalid JSON format"};
-                return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+                return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
             }
         }
 
         // Create the card using the service
         (*create_card_func)(request.uri);
 
-        return "{\"success\":true,\"message\":\"Card created successfully\",\"uri\":\"" + request.uri + "\"}";
+        return R"({"success":true,"message":"Card created successfully","uri":")" + request.uri + "\"}";
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
-        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
     }
 }
 
@@ -212,7 +212,7 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
         auto mcp_service = registrar::get<std::shared_ptr<rouen::helpers::mcp_service>>("mcp_service");
         if (!mcp_service) {
             error_response response{"AI service not available"};
-            return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+            return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
         }
 
         // Parse JSON body using glaze with inline reflection
@@ -223,15 +223,15 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
             auto result = glz::read_json(request, body);
             if (!result) {
                 error_response response{"Invalid JSON format"};
-                return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+                return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
             }
         }
 
         // For now, return a simple response
-        return "{\"success\":true,\"message\":\"AI request processed\",\"model\":\"" + request.model + "\"}";
+        return R"({"success":true,"message":"AI request processed","model":")" + request.model + "\"}";
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
-        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
     }
 }
 
@@ -239,14 +239,15 @@ std::string api_server::handle_schemas_request(struct mg_connection* /*c*/, stru
     try {
         std::vector<std::string> schemas;
         const auto& dict = rouen::cards::factory::dictionary();
-        for (const auto& pair : dict) {
+        schemas.reserve(dict.size());
+for (const auto& pair : dict) {
             schemas.push_back(pair.first);
         }
         std::sort(schemas.begin(), schemas.end());
         return glz::write_json(schemas).value_or("[]");
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
-        return glz::write_json(response).value_or("{\"error\":\"Unknown error\"}");
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
     }
 }
 

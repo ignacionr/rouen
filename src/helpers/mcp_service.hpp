@@ -107,7 +107,7 @@ private:
     std::unordered_map<std::string, std::vector<std::string>> card_functions_;
     
     // Helper to validate JSON parameters against schema
-    bool validate_parameters(const std::string& params, const std::string& schema) const;
+    static bool validate_parameters(const std::string& params, const std::string& schema) ;
     
     // System information cached at startup
     std::string cached_system_info_;

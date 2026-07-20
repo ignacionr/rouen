@@ -1,3 +1,5 @@
+#include <utility>
+
 #include "main_wnd.hpp"
 #include "helpers/deferred_operations.hpp"
 #include "helpers/api_server.hpp"
@@ -27,7 +29,7 @@ main_wnd::main_wnd()
     registrar::add<std::function<void(std::string)>>(
         "set_keystrokes",
         std::make_shared<std::function<void(std::string)>>([this](std::string value) {
-            keystrokes_ = value;
+            keystrokes_ = std::move(value);
         }));
 }
 

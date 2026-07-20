@@ -36,5 +36,5 @@ namespace {
     };
 
     // Create a static instance to register the Jira cards during initialization
-    static jira_card_registrar registrar;
+    jira_card_registrar registrar;
 }

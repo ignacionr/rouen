@@ -19,12 +19,12 @@
 namespace rouen::helpers {
 
 struct local_command_request {
-    std::string command{};
-    std::string working_directory{};
+    std::string command;
+    std::string working_directory;
 };
 
 struct mcp_wikipedia_search_params {
-    std::string query{};
+    std::string query;
     struct glaze {
         using T = mcp_wikipedia_search_params;
         static constexpr auto value = glz::object(
@@ -34,7 +34,7 @@ struct mcp_wikipedia_search_params {
 };
 
 struct mcp_wikipedia_get_article_params {
-    std::string title{};
+    std::string title;
     struct glaze {
         using T = mcp_wikipedia_get_article_params;
         static constexpr auto value = glz::object(
@@ -44,7 +44,7 @@ struct mcp_wikipedia_get_article_params {
 };
 
 struct mcp_wikipedia_create_card_params {
-    std::string query{};
+    std::string query;
     struct glaze {
         using T = mcp_wikipedia_create_card_params;
         static constexpr auto value = glz::object(
@@ -54,9 +54,9 @@ struct mcp_wikipedia_create_card_params {
 };
 
 struct mcp_wikipedia_result_item {
-    std::string title{};
+    std::string title;
     int pageid{0};
-    std::string snippet{};
+    std::string snippet;
     struct glaze {
         using T = mcp_wikipedia_result_item;
         static constexpr auto value = glz::object(
@@ -68,9 +68,9 @@ struct mcp_wikipedia_result_item {
 };
 
 struct mcp_wikipedia_article_result {
-    std::string title{};
-    std::string content{};
-    std::string url{};
+    std::string title;
+    std::string content;
+    std::string url;
     struct glaze {
         using T = mcp_wikipedia_article_result;
         static constexpr auto value = glz::object(
@@ -102,11 +102,11 @@ struct mcp_create_alarm_params {
 };
 
 struct edit_file_request {
-    std::string path{};
+    std::string path;
 };
 
 struct mcp_youtube_search_params {
-    std::string query{};
+    std::string query;
     struct glaze {
         using T = mcp_youtube_search_params;
         static constexpr auto value = glz::object(
@@ -116,8 +116,8 @@ struct mcp_youtube_search_params {
 };
 
 struct mcp_youtube_play_params {
-    std::string url{};
-    std::string title{};
+    std::string url;
+    std::string title;
     struct glaze {
         using T = mcp_youtube_play_params;
         static constexpr auto value = glz::object(
@@ -128,7 +128,7 @@ struct mcp_youtube_play_params {
 };
 
 struct mcp_youtube_create_card_params {
-    std::string query{};
+    std::string query;
     struct glaze {
         using T = mcp_youtube_create_card_params;
         static constexpr auto value = glz::object(
@@ -138,11 +138,11 @@ struct mcp_youtube_create_card_params {
 };
 
 struct mcp_youtube_video {
-    std::string id{};
-    std::string title{};
-    std::string url{};
-    std::string duration{};
-    std::string channel{};
+    std::string id;
+    std::string title;
+    std::string url;
+    std::string duration;
+    std::string channel;
     struct glaze {
         using T = mcp_youtube_video;
         static constexpr auto value = glz::object(
@@ -156,7 +156,7 @@ struct mcp_youtube_video {
 };
 
 struct mcp_time_series_point {
-    std::string label{};
+    std::string label;
     float value{0.0f};
     
     struct glaze {
@@ -169,11 +169,11 @@ struct mcp_time_series_point {
 };
 
 struct mcp_create_time_series_params {
-    std::string title{};
-    std::string unit{};
+    std::string title;
+    std::string unit;
     bool is_bar_chart{true};
     int color_index{0};
-    std::vector<mcp_time_series_point> points{};
+    std::vector<mcp_time_series_point> points;
 
     struct glaze {
         using T = mcp_create_time_series_params;
@@ -203,7 +203,7 @@ mcp_service::mcp_service() {
             local_command_request request{};
             auto parse_result = glz::read_json(request, params);
             if (parse_result || request.command.empty()) {
-                return "Error: Invalid params. Expected JSON: {\"command\":\"...\",\"working_directory\":\"optional\"}.";
+                return R"(Error: Invalid params. Expected JSON: {"command":"...","working_directory":"optional"}.)";
             }
 
             const std::string command_with_stderr = request.command + " 2>&1";
@@ -738,29 +738,29 @@ mcp_service::execution_result mcp_service::execute_function(const std::string& n
         std::lock_guard<std::mutex> lock(mutex_);
         auto func_it = functions_.find(name);
         if (func_it == functions_.end()) {
-            return execution_result(false, "", "Function '" + name + "' not found");
+            return {false, "", "Function '" + name + "' not found"};
         }
         func = func_it->second; // Safe copy under lock
     }
     
     // Validate parameters if schema is provided
     if (!func.schema.empty() && !validate_parameters(params, func.schema)) {
-        return execution_result(false, "", "Invalid parameters for function '" + name + "'");
+        return {false, "", "Invalid parameters for function '" + name + "'"};
     }
     
     try {
         DEBUG_TRACE("MCP: Executing function '" + name + "' with params: " + params);
         std::string result = func.handler(params);
         DEBUG_TRACE("MCP: Function '" + name + "' completed successfully");
-        return execution_result(true, std::move(result));
+        return {true, std::move(result)};
     } catch (const std::exception& e) {
         std::string error = "Error executing function '" + name + "': " + e.what();
         DEBUG_ERROR(error);
-        return execution_result(false, "", std::move(error));
+        return {false, "", std::move(error)};
     } catch (...) {
         std::string error = "Unknown error executing function '" + name + "'";
         DEBUG_ERROR(error);
-        return execution_result(false, "", std::move(error));
+        return {false, "", std::move(error)};
     }
 }
 
@@ -794,7 +794,7 @@ std::string mcp_service::get_functions_description() const {
     return ss.str();
 }
 
-bool mcp_service::validate_parameters(const std::string& params, const std::string& schema) const {
+bool mcp_service::validate_parameters(const std::string& params, const std::string& schema) {
     // Basic validation - just check if params is valid JSON
     // In a full implementation, we'd validate against the JSON schema
     (void)schema; // Suppress unused parameter warning - schema validation not yet implemented

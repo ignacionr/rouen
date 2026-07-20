@@ -34,10 +34,10 @@ void main_wnd::run() {
         // Register a service to visit all cards of a given type by pointer
         registrar::add<std::function<void(std::string const&, std::function<void(card*)>)>>("for_each_card_ptr",
             std::make_shared<std::function<void(std::string const&, std::function<void(card*)>)>>(
-                [main_deck](std::string const& type, std::function<void(card*)> visitor) {
+                [main_deck](std::string const& type, const std::function<void(card*)>& visitor) {
                     for (const auto& c : main_deck->get_cards()) {
                         // Compare type prefix (e.g., "rss" for main RSS card)
-                        if (c && c->get_uri().rfind(type, 0) == 0) {
+                        if (c && c->get_uri().starts_with(type)) {
                             visitor(c.get());
                         }
                     }
@@ -132,7 +132,7 @@ bool main_wnd::process_events() {
                     m_done = true;
                     return false;
                 }
-                else if (event.type == SDL_WINDOWEVENT) {
+                if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
                         event.window.windowID == SDL_GetWindowID(m_window)) {
                         // Check if this close event was triggered by Cmd+W or Ctrl+W shortcut

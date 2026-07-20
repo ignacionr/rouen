@@ -18,7 +18,7 @@ namespace media::rss {
                 char sign = match.str(1)[0];
                 int hours = std::stoi(match.str(2));
                 int minutes = std::stoi(match.str(3));
-                long offset_sec = (hours * 3600 + minutes * 60);
+                long offset_sec = ((hours * 3600) + (minutes * 60));
                 return (sign == '-') ? -offset_sec : offset_sec;
             }
             

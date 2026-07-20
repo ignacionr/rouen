@@ -72,7 +72,7 @@ namespace rouen::helpers {
 
         // Specialized getters for common patterns
         std::string get_api_key(const std::string& service_name) const;
-        std::vector<std::string> get_jira_profiles() const;
+        static std::vector<std::string> get_jira_profiles() ;
         std::string get_jira_config(const std::string& profile, const std::string& key) const;
         
         // Bybit configuration helpers
@@ -111,7 +111,7 @@ namespace rouen::helpers {
         // .env file support
         bool load_env_file(const std::string& file_path = "");
         bool export_to_env_file(const std::string& file_path = "") const;
-        std::string get_env_file_path() const;
+        static std::string get_env_file_path() ;
 
     private:
         ConfigService() = default;

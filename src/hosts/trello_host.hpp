@@ -63,8 +63,8 @@ public:
     std::future<std::vector<models::trello::trello_card>> search_cards(const std::string& query, const std::string& board_id = "");
     
     // Utility methods for other parts of the program
-    std::string get_board_url(const std::string& board_id) const;
-    std::string get_card_url(const std::string& card_id) const;
+    static std::string get_board_url(const std::string& board_id) ;
+    static std::string get_card_url(const std::string& card_id) ;
     
     // Error handling
     std::string get_last_error() const { return last_error_; }

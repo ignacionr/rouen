@@ -16,13 +16,12 @@ namespace {
             dict["github"] = [](std::string_view uri, SDL_Renderer*) {
                 if (uri.empty()) {
                     return std::make_shared<rouen::cards::github_card>();
-                } else {
-                    return std::make_shared<rouen::cards::github_card>(uri);
-                }
+                }                     return std::make_shared<rouen::cards::github_card>(uri);
+               
             };
         }
     };
 
     // Create a static instance to register the GitHub card during initialization
-    static github_card_registrar registrar;
+    github_card_registrar registrar;
 }
