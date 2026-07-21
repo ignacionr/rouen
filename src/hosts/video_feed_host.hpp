@@ -255,6 +255,10 @@ public:
             video_imgui_ctx_ = ImGui::CreateContext(shared_fonts);
         }
 
+        // Copy backend data pointers so SDL2 renderer backend works in secondary context
+        video_imgui_ctx_->IO.BackendRendererUserData = orig_ctx->IO.BackendRendererUserData;
+        video_imgui_ctx_->IO.BackendPlatformUserData = orig_ctx->IO.BackendPlatformUserData;
+
         // Switch to secondary ImGui context
         ImGui::SetCurrentContext(video_imgui_ctx_);
 
