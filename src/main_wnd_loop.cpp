@@ -9,6 +9,7 @@
 #include "cards/interface/deck.hpp"
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
+#include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
 
@@ -84,6 +85,14 @@ void main_wnd::run() {
                 process_deferred_operations();
                 
                 SDL_RenderPresent(m_renderer);
+
+                // Render offscreen ImGui pass for video feed host if active
+                try {
+                    auto video_feed = rouen::hosts::VideoFeedHost::get_host();
+                    if (video_feed && video_feed->is_running()) {
+                        video_feed->render_video_frame(m_renderer);
+                    }
+                } catch (...) {}
             } catch (const std::exception& e) {
                 DB_ERROR_FMT("Error in main loop: {}", e.what());
                 // Continue to next iteration rather than crashing
