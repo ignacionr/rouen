@@ -18,6 +18,7 @@
 
 #ifndef _WIN32
 #include <csignal>
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -37,10 +38,6 @@ namespace rouen::hosts {
  * ImGui Offscreen Context Architecture:
  *   Maintains a secondary ImGuiContext (video_imgui_ctx_) that renders onto an
  *   offscreen target texture (1920x1080).
- *
- *   Active cards on the deck can render full ImGui widgets, vector graphics,
- *   rounded panels, progress bars, and custom themes by overriding:
- *       virtual void render_video_ui() override;
  *
  * Stream Endpoint:  http://127.0.0.1:8889
  *   Connect with:  ./scripts/play_videofeed.sh
@@ -134,6 +131,12 @@ public:
         const int read_fd  = pipe_fds[0];
         const int write_fd = pipe_fds[1];
         const int listen_port = port_.load();
+
+        // Set non-blocking mode on write_fd so pipe writes never freeze main UI thread
+        int flags = ::fcntl(write_fd, F_GETFL, 0);
+        if (flags >= 0) {
+            ::fcntl(write_fd, F_SETFL, flags | O_NONBLOCK);
+        }
 
         pid_t pid = ::fork();
         if (pid < 0) {
@@ -235,26 +238,18 @@ public:
             }
         }
 
-        // Lazy-initialize offscreen ImGui context & dummy window
+        // Lazy-initialize secondary offscreen ImGui context
         if (!video_imgui_ctx_) {
-            dummy_window_ = SDL_CreateWindow(
-                "VideoFeed Dummy Window",
-                SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                kWidth, kHeight,
-                SDL_WINDOW_HIDDEN
-            );
-            video_imgui_ctx_ = ImGui::CreateContext();
-            ImGui::SetCurrentContext(video_imgui_ctx_);
-
-            ImGuiIO& io = ImGui::GetIO();
-            io.DisplaySize = ImVec2(static_cast<float>(kWidth), static_cast<float>(kHeight));
-            io.DeltaTime = 1.0f / static_cast<float>(kFps);
-
-            ImGui_ImplSDL2_InitForSDLRenderer(dummy_window_, renderer);
-            ImGui_ImplSDLRenderer2_Init(renderer);
-        } else {
-            ImGui::SetCurrentContext(video_imgui_ctx_);
+            ImFontAtlas* shared_fonts = orig_ctx ? orig_ctx->IO.Fonts : nullptr;
+            video_imgui_ctx_ = ImGui::CreateContext(shared_fonts);
         }
+
+        // Switch to secondary ImGui context
+        ImGui::SetCurrentContext(video_imgui_ctx_);
+
+        ImGuiIO& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2(static_cast<float>(kWidth), static_cast<float>(kHeight));
+        io.DeltaTime = 1.0f / static_cast<float>(kFps);
 
         // Set render target to offscreen texture
         SDL_SetRenderTarget(renderer, offscreen_texture_);
@@ -262,8 +257,6 @@ public:
         SDL_RenderClear(renderer);
 
         // Start offscreen ImGui frame
-        ImGui_ImplSDLRenderer2_NewFrame();
-        ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
         // 1. Render Video Feed Header & Base UI
@@ -305,14 +298,17 @@ public:
 
         ++frame_number_;
 
-        // Write raw RGB24 frame to ffmpeg pipe
+        // Write raw RGB24 frame to non-blocking ffmpeg pipe
         const uint8_t* ptr = pixel_buffer_.data();
         size_t remaining = pixel_buffer_.size();
         while (remaining > 0 && running_.load()) {
             auto written = ::write(fd, ptr, remaining);
             if (written <= 0) {
+                if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    // Pipe buffer full or ffmpeg waiting for client connection; drop frame without blocking UI
+                    break;
+                }
                 if (written < 0 && errno == EINTR) continue;
-                VIDEOFEED_WARN_FMT("VideoFeedHost: pipe write failed (written={}, errno={})", written, errno);
                 break;
             }
             ptr += written;
@@ -425,18 +421,11 @@ private:
         std::lock_guard<std::mutex> lock(video_mutex_);
         if (video_imgui_ctx_) {
             ImGuiContext* orig_ctx = ImGui::GetCurrentContext();
-            ImGui::SetCurrentContext(video_imgui_ctx_);
-
-            ImGui_ImplSDLRenderer2_Shutdown();
-            ImGui_ImplSDL2_Shutdown();
-
-            ImGui::SetCurrentContext(orig_ctx);
+            if (orig_ctx == video_imgui_ctx_) {
+                ImGui::SetCurrentContext(nullptr);
+            }
             ImGui::DestroyContext(video_imgui_ctx_);
             video_imgui_ctx_ = nullptr;
-        }
-        if (dummy_window_) {
-            SDL_DestroyWindow(dummy_window_);
-            dummy_window_ = nullptr;
         }
         if (offscreen_texture_) {
             SDL_DestroyTexture(offscreen_texture_);
@@ -452,7 +441,6 @@ private:
 
     std::mutex            video_mutex_;
     ImGuiContext*         video_imgui_ctx_{nullptr};
-    SDL_Window*           dummy_window_{nullptr};
     SDL_Texture*          offscreen_texture_{nullptr};
     std::vector<uint8_t>  pixel_buffer_;
     uint32_t              frame_number_{0};
