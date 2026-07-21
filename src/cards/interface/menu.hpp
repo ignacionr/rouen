@@ -327,6 +327,7 @@ namespace rouen::cards {
                     {"Number Series: CPU Load", []() { "create_card"_sfn("number-series:cpu"); }}
                 }},
                 { "System", {
+                    {"Video Feed & Cast Control", []() { "create_card"_sfn("cast-control"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Notifications", []() { "create_card"_sfn("notifications"); }},
                     {"Settings", []() { "create_card"_sfn("settings"); }},

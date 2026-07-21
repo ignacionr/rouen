@@ -54,8 +54,13 @@ class VideoFeedHost {
 public:
     static constexpr int kWidth  = 1920;
     static constexpr int kHeight = 1080;
-    static constexpr int kFps    = 24;
+    static constexpr int kFps    = 30;
     static constexpr int kDefaultPort = 8889;
+
+    std::atomic<bool> show_header{true};
+    std::atomic<bool> show_footer{true};
+    std::atomic<bool> show_bg_animation{true};
+    std::atomic<bool> show_card_overlays{true};
 
     VideoFeedHost()
         : port_(kDefaultPort) {
@@ -139,6 +144,11 @@ public:
         const int read_fd  = pipe_fds[0];
         const int write_fd = pipe_fds[1];
         const int listen_port = port_.load();
+
+        // Clean up any leftover orphaned ffmpeg process listening on port from previous runs/crashes
+        std::string kill_cmd = std::format("pkill -9 -f 'ffmpeg.*listen.*{}' >/dev/null 2>&1", listen_port);
+        ::system(kill_cmd.c_str());
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         // Use posix_spawn instead of fork() to be 100% thread-safe and Cocoa-compliant on macOS
         posix_spawn_file_actions_t file_actions;
@@ -283,17 +293,19 @@ public:
         render_video_base_ui();
 
         // 2. Render Active Cards' Video UI
-        try {
-            auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
-            if (get_cards_fn && *get_cards_fn) {
-                auto active_cards = (*get_cards_fn)();
-                for (const auto& card_ptr : active_cards) {
-                    if (card_ptr) {
-                        card_ptr->render_video_ui();
+        if (show_card_overlays.load()) {
+            try {
+                auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                if (get_cards_fn && *get_cards_fn) {
+                    auto active_cards = (*get_cards_fn)();
+                    for (const auto& card_ptr : active_cards) {
+                        if (card_ptr) {
+                            card_ptr->render_video_ui();
+                        }
                     }
                 }
-            }
-        } catch (...) {}
+            } catch (...) {}
+        }
 
         // Render ImGui draw data onto offscreen_texture_
         ImGui::Render();
@@ -405,65 +417,74 @@ private:
     void render_video_base_ui() {
         ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
-        // Animated hue sweep background
-        const float hue = std::fmod(static_cast<float>(frame_number_) / 240.0f, 1.0f);
-        ImVec4 bg_col;
-        ImGui::ColorConvertHSVtoRGB(hue, 0.5f, 0.25f, bg_col.x, bg_col.y, bg_col.z);
-        bg_col.w = 1.0f;
-        draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), ImGui::GetColorU32(bg_col));
+        if (show_bg_animation.load()) {
+            // Animated hue sweep background
+            const float hue = std::fmod(static_cast<float>(frame_number_) / 240.0f, 1.0f);
+            ImVec4 bg_col;
+            ImGui::ColorConvertHSVtoRGB(hue, 0.5f, 0.25f, bg_col.x, bg_col.y, bg_col.z);
+            bg_col.w = 1.0f;
+            draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), ImGui::GetColorU32(bg_col));
 
-        // Animated bouncing indicator square
-        constexpr float sq = 120.0f;
-        const float range_x = kWidth - sq;
-        const float range_y = kHeight - sq;
-        float raw_x = std::fmod(static_cast<float>(frame_number_ * 6), range_x * 2.0f);
-        float raw_y = std::fmod(static_cast<float>(frame_number_ * 4), range_y * 2.0f);
-        float sx = raw_x < range_x ? raw_x : range_x * 2.0f - raw_x;
-        float sy = raw_y < range_y ? raw_y : range_y * 2.0f - raw_y;
+            // Animated bouncing indicator square
+            constexpr float sq = 120.0f;
+            const float range_x = kWidth - sq;
+            const float range_y = kHeight - sq;
+            float raw_x = std::fmod(static_cast<float>(frame_number_ * 6), range_x * 2.0f);
+            float raw_y = std::fmod(static_cast<float>(frame_number_ * 4), range_y * 2.0f);
+            float sx = raw_x < range_x ? raw_x : range_x * 2.0f - raw_x;
+            float sy = raw_y < range_y ? raw_y : range_y * 2.0f - raw_y;
 
-        draw_list->AddRectFilled(
-            ImVec2(sx, sy), ImVec2(sx + sq, sy + sq),
-            IM_COL32(255, 255, 255, 40), 16.0f
-        );
+            draw_list->AddRectFilled(
+                ImVec2(sx, sy), ImVec2(sx + sq, sy + sq),
+                IM_COL32(255, 255, 255, 40), 16.0f
+            );
+        } else {
+            // Clean dark slate static background
+            draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), IM_COL32(15, 20, 30, 255));
+        }
 
         // Top ImGui Header Window
-        ImGui::SetNextWindowPos(ImVec2(40, 30));
-        ImGui::SetNextWindowSize(ImVec2(700, 110));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
+        if (show_header.load()) {
+            ImGui::SetNextWindowPos(ImVec2(40, 30));
+            ImGui::SetNextWindowSize(ImVec2(700, 110));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
 
-        if (ImGui::Begin("##VideoHeader", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
-            ImGui::SetWindowFontScale(2.2f);
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "ROUEN MULTI-MODAL UI");
-            ImGui::SetWindowFontScale(1.4f);
-            ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.6f, 1.0f), "24 FPS LIVE STREAM  |  FULL HD 1920x1080");
+            if (ImGui::Begin("##VideoHeader", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
+                ImGui::SetWindowFontScale(2.2f);
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "ROUEN MULTI-MODAL UI");
+                ImGui::SetWindowFontScale(1.4f);
+                ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.6f, 1.0f), "30 FPS LIVE STREAM  |  FULL HD 1920x1080");
+            }
+            ImGui::End();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
         }
-        ImGui::End();
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
 
         // Bottom ImGui Footer Window
-        ImGui::SetNextWindowPos(ImVec2(40, kHeight - 110));
-        ImGui::SetNextWindowSize(ImVec2(650, 80));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
+        if (show_footer.load()) {
+            ImGui::SetNextWindowPos(ImVec2(40, kHeight - 110));
+            ImGui::SetNextWindowSize(ImVec2(650, 80));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
 
-        if (ImGui::Begin("##VideoFooter", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
-            auto now_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-            std::tm tm_buf{};
+            if (ImGui::Begin("##VideoFooter", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
+                auto now_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                std::tm tm_buf{};
 #ifdef _WIN32
-            localtime_s(&tm_buf, &now_t);
+                localtime_s(&tm_buf, &now_t);
 #else
-            localtime_r(&now_t, &tm_buf);
+                localtime_r(&now_t, &tm_buf);
 #endif
-            std::string status_str = std::format("FRAME: {:06d}   |   {:02d}:{:02d}:{:02d}",
-                                                 frame_number_, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
-            ImGui::SetWindowFontScale(1.6f);
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", status_str.c_str());
+                std::string status_str = std::format("FRAME: {:06d}   |   {:02d}:{:02d}:{:02d}",
+                                                     frame_number_, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+                ImGui::SetWindowFontScale(1.6f);
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", status_str.c_str());
+            }
+            ImGui::End();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
         }
-        ImGui::End();
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
     }
 
     void cleanup_imgui_context() {
@@ -473,6 +494,7 @@ private:
             if (orig_ctx == video_imgui_ctx_) {
                 ImGui::SetCurrentContext(nullptr);
             }
+            video_imgui_ctx_->IO.Fonts = nullptr;
             ImGui::DestroyContext(video_imgui_ctx_);
             video_imgui_ctx_ = nullptr;
         }

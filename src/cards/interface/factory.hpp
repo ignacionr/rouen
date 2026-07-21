@@ -47,6 +47,7 @@
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
 #include "../system/about.hpp"
+#include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
 #include "../system/envvars.hpp"
 #include "../system/notifications.hpp"
@@ -176,6 +177,10 @@ namespace rouen::cards {
 
                 instance.emplace("sync", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<sync_card>();
+                });
+
+                instance.emplace("cast-control", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<cast_control>();
                 });
 
                 instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {

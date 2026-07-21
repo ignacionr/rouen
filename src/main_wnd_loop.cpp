@@ -90,6 +90,7 @@ void main_wnd::run() {
                 try {
                     auto video_feed = rouen::hosts::VideoFeedHost::get_host();
                     if (video_feed && video_feed->is_running()) {
+                        m_requested_fps = std::max(m_requested_fps, 30);
                         video_feed->render_video_frame(m_renderer);
                     }
                 } catch (...) {}
@@ -101,6 +102,14 @@ void main_wnd::run() {
                 // Continue to next iteration rather than crashing
             }
         }
+
+        // Stop video feed host and cleanup offscreen ImGui context before SDL_Renderer destruction
+        try {
+            auto video_feed = rouen::hosts::VideoFeedHost::get_host();
+            if (video_feed) {
+                video_feed->stop();
+            }
+        } catch (...) {}
         
         // Cleanup - unregister services
         try {
