@@ -120,6 +120,13 @@
 #define MCP_DEBUG(message) LOG_COMPONENT("MCP", LOG_LEVEL_DEBUG, message)
 #define MCP_TRACE(message) LOG_COMPONENT("MCP", LOG_LEVEL_TRACE, message)
 
+// Video feed component logging macros
+#define VIDEOFEED_ERROR(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_ERROR, message)
+#define VIDEOFEED_WARN(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_WARN, message)
+#define VIDEOFEED_INFO(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_INFO, message)
+#define VIDEOFEED_DEBUG(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_DEBUG, message)
+#define VIDEOFEED_TRACE(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_TRACE, message)
+
 // Legacy macros for backward compatibility
 #define DEBUG_ERROR MCP_ERROR
 #define DEBUG_WARN MCP_WARN
@@ -264,3 +271,10 @@ namespace debug {
 #define CHESS_INFO_FMT(fmt, ...) CHESS_INFO(debug::format_log(fmt, __VA_ARGS__))
 #define CHESS_DEBUG_FMT(fmt, ...) CHESS_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 #define CHESS_TRACE_FMT(fmt, ...) CHESS_TRACE(debug::format_log(fmt, __VA_ARGS__))
+
+// Video feed component format macros
+#define VIDEOFEED_ERROR_FMT(fmt, ...) VIDEOFEED_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define VIDEOFEED_WARN_FMT(fmt, ...) VIDEOFEED_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define VIDEOFEED_INFO_FMT(fmt, ...) VIDEOFEED_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define VIDEOFEED_DEBUG_FMT(fmt, ...) VIDEOFEED_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define VIDEOFEED_TRACE_FMT(fmt, ...) VIDEOFEED_TRACE(debug::format_log(fmt, __VA_ARGS__))

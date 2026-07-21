@@ -64,6 +64,7 @@ void setup_windows_debug_console() {
 #include "helpers/config_service_init.hpp" // For configuration service initialization
 #include "helpers/process_helper.hpp" // Added this include for ProcessHelper
 #include "helpers/universal_sync_service.hpp"
+#include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
 
@@ -189,6 +190,11 @@ int main() {
         rouen::helpers::UniversalSyncService::instance().sync_in();
     }
     
+    // Start the video feed host (ffmpeg-based HTTP video stream)
+    auto video_feed = rouen::hosts::VideoFeedHost::get_host();
+    video_feed->start();
+    std::cout << "[INFO] Video feed started at " << video_feed->endpoint() << '\n';
+    
     // Create and initialize the main window
     std::cout << "Creating main window..." << '\n';
     main_wnd window;
@@ -202,6 +208,9 @@ int main() {
     
     // Run the main loop
     window.run();
+
+    // Stop the video feed host
+    video_feed->stop();
 
     // Run shutdown synchronization if enabled
     if (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1") {
