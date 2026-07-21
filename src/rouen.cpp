@@ -6,7 +6,7 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "helpers/imgui_include.hpp"
-#include <SDL.h>  // Changed from SDL2/SDL.h to SDL.h for macOS compatibility
+#include <SDL3/SDL.h>  // Changed from SDL2/SDL.h to SDL.h for macOS compatibility
 
 // Platform-specific includes for process status handling
 #ifdef _WIN32

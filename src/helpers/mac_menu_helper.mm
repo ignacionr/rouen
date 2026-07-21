@@ -1,8 +1,7 @@
 #import <Cocoa/Cocoa.h>
 #include "mac_menu_helper.hpp"
 #include "../registrar.hpp"
-#include <SDL.h>
-#include <SDL_syswm.h>
+#include <SDL3/SDL.h>
 #include <cmath>
 #include <iostream>
 
@@ -89,13 +88,7 @@ int get_mac_titlebar_height(SDL_Window* window) {
         return 0;
     }
 
-    SDL_SysWMinfo wm_info{};
-    SDL_VERSION(&wm_info.version);
-    if (!SDL_GetWindowWMInfo(window, &wm_info)) {
-        return 0;
-    }
-
-    NSWindow* ns_window = wm_info.info.cocoa.window;
+    NSWindow* ns_window = static_cast<NSWindow*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
     if (!ns_window) {
         return 0;
     }
@@ -111,13 +104,7 @@ float get_mac_backing_scale_factor(SDL_Window* window) {
         return 1.0f;
     }
 
-    SDL_SysWMinfo wm_info{};
-    SDL_VERSION(&wm_info.version);
-    if (!SDL_GetWindowWMInfo(window, &wm_info)) {
-        return 1.0f;
-    }
-
-    NSWindow* ns_window = wm_info.info.cocoa.window;
+    NSWindow* ns_window = static_cast<NSWindow*>(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
     if (!ns_window) {
         return 1.0f;
     }

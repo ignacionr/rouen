@@ -31,8 +31,8 @@
           buildInputs = [
             unstable.cmake
             unstable.ninja
-            unstable.SDL2
-            unstable.SDL2_image
+            unstable.sdl3
+            unstable.sdl3-image
             unstable.pkg-config
             unstable.curl
             unstable.openssl
@@ -105,11 +105,11 @@
             unstable.cacert 
           ];
           buildInputs = [ 
-            unstable.SDL2 
+            unstable.sdl3
             unstable.curl 
             unstable.openssl 
             unstable.sqlite 
-            unstable.SDL2_image 
+            unstable.sdl3-image
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)
@@ -192,11 +192,11 @@
             unstable.cacert 
           ];
           buildInputs = [ 
-            unstable.SDL2 
+            unstable.sdl3
             unstable.curl 
             unstable.openssl 
             unstable.sqlite 
-            unstable.SDL2_image 
+            unstable.sdl3-image
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)

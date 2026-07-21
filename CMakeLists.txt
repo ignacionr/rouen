@@ -132,8 +132,8 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   find_package(CURL REQUIRED)
   find_package(unofficial-sqlite3 CONFIG REQUIRED)
   find_package(OpenSSL REQUIRED)
-  find_package(SDL2 CONFIG REQUIRED)
-  find_package(SDL2_image CONFIG REQUIRED)
+  find_package(SDL3 CONFIG REQUIRED)
+  find_package(SDL3_image CONFIG REQUIRED)
   find_package(tinyxml2 CONFIG REQUIRED)
   find_package(glaze CONFIG REQUIRED)
   
@@ -150,26 +150,30 @@ else()
   find_package(OpenSSL REQUIRED)
   find_package(PkgConfig REQUIRED)
   
-  # Use pkg-config for SDL2 on system builds
-  pkg_check_modules(SDL2 REQUIRED sdl2)
-  pkg_check_modules(SDL2_IMAGE REQUIRED SDL2_image)
+  # Use pkg-config for SDL3 on system builds
+  pkg_check_modules(SDL3 REQUIRED sdl3)
+  pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
   
-  # Create imported targets for SDL2 if they don't exist
-  if(SDL2_FOUND AND NOT TARGET SDL2::SDL2)
-    add_library(SDL2::SDL2 INTERFACE IMPORTED)
-    set_target_properties(SDL2::SDL2 PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${SDL2_INCLUDE_DIRS}"
-      INTERFACE_LINK_LIBRARIES "${SDL2_LIBRARIES}"
-      INTERFACE_COMPILE_OPTIONS "${SDL2_CFLAGS_OTHER}"
+  # Create imported targets for SDL3 if they don't exist
+  if(SDL3_FOUND AND NOT TARGET SDL3::SDL3)
+    list(GET SDL3_INCLUDE_DIRS 0 FIRST_SDL_INCLUDE)
+    get_filename_component(SDL_INCLUDE_PARENT "${FIRST_SDL_INCLUDE}" DIRECTORY)
+    add_library(SDL3::SDL3 INTERFACE IMPORTED)
+    set_target_properties(SDL3::SDL3 PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${SDL3_INCLUDE_DIRS};${SDL_INCLUDE_PARENT}"
+      INTERFACE_LINK_LIBRARIES "${SDL3_LIBRARIES}"
+      INTERFACE_COMPILE_OPTIONS "${SDL3_CFLAGS_OTHER}"
     )
   endif()
   
-  if(SDL2_IMAGE_FOUND AND NOT TARGET SDL2_image::SDL2_image)
-    add_library(SDL2_image::SDL2_image INTERFACE IMPORTED)
-    set_target_properties(SDL2_image::SDL2_image PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${SDL2_IMAGE_INCLUDE_DIRS}"
-      INTERFACE_LINK_LIBRARIES "${SDL2_IMAGE_LIBRARIES}"
-      INTERFACE_COMPILE_OPTIONS "${SDL2_IMAGE_CFLAGS_OTHER}"
+  if(SDL3_IMAGE_FOUND AND NOT TARGET SDL3_image::SDL3_image)
+    list(GET SDL3_IMAGE_INCLUDE_DIRS 0 FIRST_IMG_INCLUDE)
+    get_filename_component(IMG_INCLUDE_PARENT "${FIRST_IMG_INCLUDE}" DIRECTORY)
+    add_library(SDL3_image::SDL3_image INTERFACE IMPORTED)
+    set_target_properties(SDL3_image::SDL3_image PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${SDL3_IMAGE_INCLUDE_DIRS};${IMG_INCLUDE_PARENT}"
+      INTERFACE_LINK_LIBRARIES "${SDL3_IMAGE_LIBRARIES}"
+      INTERFACE_COMPILE_OPTIONS "${SDL3_IMAGE_CFLAGS_OTHER}"
     )
   endif()
   
@@ -293,7 +297,7 @@ if(NOT TARGET imgui)
         FetchContent_Declare(
           imgui
           GIT_REPOSITORY https://github.com/ocornut/imgui.git
-          GIT_TAG v1.89.9
+          GIT_TAG v1.91.7
           GIT_SHALLOW TRUE
         )
         
@@ -310,9 +314,8 @@ if(NOT TARGET imgui)
         ${imgui_SOURCE_DIR}/imgui_draw.cpp
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp
       )
 
       target_include_directories(imgui PUBLIC 
@@ -330,9 +333,8 @@ endif()
 # Create backend library for system ImGui (when using Nix packages)
 if(TARGET imgui::imgui AND NOT TARGET imgui_backends)
   add_library(imgui_backends STATIC
-    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdl2.cpp
-    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_opengl3.cpp
-    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdlrenderer2.cpp
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdl3.cpp
+    ${CMAKE_SOURCE_DIR}/external/imgui_backends/imgui_impl_sdlgpu3.cpp
   )
   
   target_include_directories(imgui_backends PUBLIC 
@@ -342,8 +344,7 @@ if(TARGET imgui::imgui AND NOT TARGET imgui_backends)
   
   target_link_libraries(imgui_backends PUBLIC 
     imgui::imgui
-    SDL2::SDL2
-    ${OPENGL_LIBRARIES}
+    SDL3::SDL3
   )
   message(STATUS "Created local backends library for system ImGui")
 endif()
@@ -352,16 +353,14 @@ endif()
 if(TARGET imgui AND NOT TARGET imgui::imgui)
   # This is our FetchContent imgui target, we can link to it
   if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
-    # vcpkg SDL2 targets
+    # vcpkg SDL3 targets
     target_link_libraries(imgui PUBLIC 
-      $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-      ${OPENGL_LIBRARIES}
+      $<IF:$<TARGET_EXISTS:SDL3::SDL3>,SDL3::SDL3,SDL3::SDL3-static>
     )
   else()
-    # System SDL2 libraries
+    # System SDL3 libraries
     target_link_libraries(imgui PUBLIC 
-      SDL2::SDL2
-      ${OPENGL_LIBRARIES}
+      SDL3::SDL3
     )
   endif()
 endif()
@@ -498,7 +497,21 @@ if(NOT (DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg"))
     ${CURL_INCLUDE_DIRS}
     ${SQLite3_INCLUDE_DIRS}
     ${TINYXML2_INCLUDE_DIRS}
+    ${SDL3_INCLUDE_DIRS}
+    ${SDL3_IMAGE_INCLUDE_DIRS}
   )
+  if(SDL3_FOUND)
+    foreach(inc_dir IN LISTS SDL3_INCLUDE_DIRS)
+      get_filename_component(parent_dir "${inc_dir}" DIRECTORY)
+      target_include_directories(${PROJECT_NAME} PRIVATE "${parent_dir}")
+    endforeach()
+  endif()
+  if(SDL3_IMAGE_FOUND)
+    foreach(inc_dir IN LISTS SDL3_IMAGE_INCLUDE_DIRS)
+      get_filename_component(parent_dir "${inc_dir}" DIRECTORY)
+      target_include_directories(${PROJECT_NAME} PRIVATE "${parent_dir}")
+    endforeach()
+  endif()
 endif()
 
 # Link with dependencies (conditional based on vcpkg vs system)
@@ -511,9 +524,8 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     CURL::libcurl
     OpenSSL::SSL
     OpenSSL::Crypto
-    $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
-    $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
-    $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>
+    $<IF:$<TARGET_EXISTS:SDL3::SDL3>,SDL3::SDL3,SDL3::SDL3-static>
+    $<IF:$<TARGET_EXISTS:SDL3_image::SDL3_image>,SDL3_image::SDL3_image,SDL3_image::SDL3_image-static>
     tinyxml2::tinyxml2
     unofficial::sqlite3::sqlite3
     mongoose
@@ -535,8 +547,8 @@ else()
     OpenSSL::SSL
     OpenSSL::Crypto
     ${SQLite3_LIBRARIES}
-    SDL2::SDL2
-    SDL2_image::SDL2_image
+    SDL3::SDL3
+    SDL3_image::SDL3_image
     mongoose
   )
   

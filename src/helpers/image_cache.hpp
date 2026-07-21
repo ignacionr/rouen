@@ -6,8 +6,8 @@
 #include <mutex>
 #include <vector>
 #include <fstream>
-#include <SDL.h>
-#include <SDL_image.h>
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 
 #include "fetch.hpp"
 #include "sqlite.hpp"
@@ -63,16 +63,16 @@ public:
     }
     
     /**
-     * Get or download an image and convert it to an SDL_Texture
+     * Get or download an image and convert it to an SDL_GPUTexture
      * 
-     * @param renderer SDL_Renderer to use for texture creation
+     * @param device SDL_GPUDevice to use for texture creation
      * @param url URL of the image to retrieve
      * @param width Output parameter for image width
      * @param height Output parameter for image height
      * @param force_download Force download even if cached
-     * @return SDL_Texture pointer if successful, nullptr if failed
+     * @return SDL_GPUTexture pointer if successful, nullptr if failed
      */
-    SDL_Texture* getTexture(SDL_Renderer* renderer, const std::string& url,
+    RouenGPUTexture* getTexture(SDL_GPUDevice* device, const std::string& url,
                           int& width, int& height, bool force_download = false,
                           Variant variant = Variant::Color) {
 
@@ -82,7 +82,7 @@ public:
             auto cached_path = getImageFromCache(cache_key, width, height);
             if (cached_path) {
                 updateLastAccessed(cache_key);
-                return TextureHelper::loadTextureFromFile(renderer, cached_path->c_str(), width, height);
+                return TextureHelper::loadTextureFromFile(device, cached_path->c_str(), width, height);
             }
         }
 
@@ -102,7 +102,7 @@ public:
             width = base_width;
             height = base_height;
             updateLastAccessed(cache_key);
-            return TextureHelper::loadTextureFromFile(renderer, grayscale_path->c_str(), width, height);
+            return TextureHelper::loadTextureFromFile(device, grayscale_path->c_str(), width, height);
         }
 
         auto color_path = ensureVariantCached(url, Variant::Color, width, height, force_download);
@@ -111,7 +111,7 @@ public:
         }
 
         updateLastAccessed(cache_key);
-        return TextureHelper::loadTextureFromFile(renderer, color_path->c_str(), width, height);
+        return TextureHelper::loadTextureFromFile(device, color_path->c_str(), width, height);
     }
 
     /**
@@ -278,7 +278,7 @@ private:
 
             width = surface->w;
             height = surface->h;
-            SDL_FreeSurface(surface);
+            SDL_DestroySurface(surface);
 
             if (std::filesystem::exists(final_path)) {
                 std::filesystem::remove(final_path);
@@ -300,8 +300,8 @@ private:
             return false;
         }
 
-        SDL_Surface* rgba_surface = SDL_ConvertSurfaceFormat(source_surface, SDL_PIXELFORMAT_RGBA32, 0);
-        SDL_FreeSurface(source_surface);
+        SDL_Surface* rgba_surface = SDL_ConvertSurface(source_surface, SDL_PIXELFORMAT_RGBA32);
+        SDL_DestroySurface(source_surface);
         if (!rgba_surface) {
             return false;
         }
@@ -309,19 +309,19 @@ private:
         width = rgba_surface->w;
         height = rgba_surface->h;
 
-        if (SDL_LockSurface(rgba_surface) != 0) {
-            SDL_FreeSurface(rgba_surface);
+        if (!SDL_LockSurface(rgba_surface)) {
+            SDL_DestroySurface(rgba_surface);
             return false;
         }
 
         auto* pixels = static_cast<Uint32*>(rgba_surface->pixels);
         const int pixel_count = rgba_surface->w * rgba_surface->h;
-        SDL_PixelFormat* format = rgba_surface->format;
+        const SDL_PixelFormatDetails* format_details = SDL_GetPixelFormatDetails(rgba_surface->format);
         for (int i = 0; i < pixel_count; ++i) {
             Uint8 r = 0, g = 0, b = 0, a = 0;
-            SDL_GetRGBA(pixels[i], format, &r, &g, &b, &a);
+            SDL_GetRGBA(pixels[i], format_details, nullptr, &r, &g, &b, &a);
             const Uint8 gray = static_cast<Uint8>((77 * r + 150 * g + 29 * b) / 256);
-            pixels[i] = SDL_MapRGBA(format, gray, gray, gray, a);
+            pixels[i] = SDL_MapRGBA(format_details, nullptr, gray, gray, gray, a);
         }
 
         SDL_UnlockSurface(rgba_surface);
@@ -330,8 +330,8 @@ private:
             std::filesystem::remove(grayscale_path);
         }
 
-        const bool saved = IMG_SavePNG(rgba_surface, grayscale_path.c_str()) == 0;
-        SDL_FreeSurface(rgba_surface);
+        const bool saved = IMG_SavePNG(rgba_surface, grayscale_path.c_str());
+        SDL_DestroySurface(rgba_surface);
         return saved;
     }
 

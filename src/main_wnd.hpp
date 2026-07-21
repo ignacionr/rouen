@@ -8,8 +8,8 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "helpers/imgui_include.hpp"
-#include <SDL.h>
-#include <SDL_image.h>
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 
 // 3. All other includes
 #include "helpers/deferred_operations.hpp"
@@ -33,7 +33,7 @@ public:
     void run();
     bool is_done() const { return m_done; }
     void set_done(bool done) { m_done = done; }
-    SDL_Renderer* get_renderer() const { return m_renderer; }
+    SDL_GPUDevice* get_device() const { return m_device; }
     SDL_Window* get_window() const { return m_window; }
 
     static void setup_dark_theme();
@@ -52,7 +52,7 @@ private:
     void process_deferred_operations();
 
     SDL_Window* m_window = nullptr;
-    SDL_Renderer* m_renderer = nullptr;
+    SDL_GPUDevice* m_device = nullptr;
     std::shared_ptr<deferred_operations> m_deferred_ops;
     bool m_done = false;
     bool m_immediate = false;

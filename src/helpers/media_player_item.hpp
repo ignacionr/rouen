@@ -1,5 +1,6 @@
 #pragma once
 
+#include "sdl_compat.hpp"
 #include <algorithm>
 #include <string>
 #include <atomic>
@@ -27,7 +28,7 @@ extern char **environ;
 #include <process.h>
 #endif
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include "./imgui_include.hpp"
 #include "texture_utils.hpp"
 #include "platform_utils.hpp"
@@ -82,6 +83,7 @@ struct media_player_item {
     bool user_tall_layout_set{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
     static inline std::function<void(const uint8_t*, size_t)> push_audio_cb;
+    static inline std::function<void()> reset_sync_cb;
 
     // FFmpeg Engine Members
     int pipe_read_fd{-1};
@@ -93,7 +95,8 @@ struct media_player_item {
     std::mutex frame_mutex;
     std::vector<uint8_t> back_pixels;
     std::atomic<bool> new_frame_ready{false};
-    SDL_Texture* video_texture{nullptr};
+    RouenGPUTexture* video_texture{nullptr};
+    SDL_GPUTransferBuffer* upload_buffer{nullptr};
     std::mutex texture_mutex;
     media_player_item() = default;
     media_player_item(const media_player_item&) = delete;
@@ -116,23 +119,38 @@ struct media_player_item {
     bool togglePause();
     bool setPaused(bool paused);
 
-    ImTextureID get_texture_id(SDL_Renderer* renderer = nullptr) {
-        if (!renderer) {
+    ImTextureID get_texture_id(SDL_GPUDevice* device = nullptr) {
+        if (!device) {
             try {
-                auto r_ptr = registrar::get<SDL_Renderer*>("main_renderer");
-                if (r_ptr && *r_ptr) renderer = *r_ptr;
+                auto r_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
+                if (r_ptr && *r_ptr) device = *r_ptr;
             } catch (...) {}
         }
-        if (!renderer) return ImTextureID{};
+        if (!device) return ImTextureID{};
 
         std::lock_guard<std::mutex> lock(texture_mutex);
         if (!video_texture) {
-            video_texture = SDL_CreateTexture(
-                renderer,
-                SDL_PIXELFORMAT_RGB24,
-                SDL_TEXTUREACCESS_STREAMING,
-                kWidth, kHeight
-            );
+            SDL_GPUTextureCreateInfo texture_info = {};
+            texture_info.type = SDL_GPU_TEXTURETYPE_2D;
+            texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            texture_info.width = kWidth;
+            texture_info.height = kHeight;
+            texture_info.layer_count_or_depth = 1;
+            texture_info.num_levels = 1;
+            SDL_GPUTexture* raw_texture = SDL_CreateGPUTexture(device, &texture_info);
+            if (raw_texture) {
+                video_texture = new RouenGPUTexture();
+                video_texture->binding.texture = raw_texture;
+                video_texture->binding.sampler = TextureHelper::getDefaultSampler(device);
+                video_texture->width = kWidth;
+                video_texture->height = kHeight;
+            }
+
+            SDL_GPUTransferBufferCreateInfo transfer_info = {};
+            transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            transfer_info.size = kHeight * kWidth * 4;
+            upload_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         }
         if (new_frame_ready.load()) {
             std::vector<uint8_t> local_pixels;
@@ -141,12 +159,44 @@ struct media_player_item {
                 local_pixels = back_pixels;
                 new_frame_ready.store(false);
             }
-            if (!local_pixels.empty()) {
-                SDL_UpdateTexture(video_texture, nullptr, local_pixels.data(), kWidth * 3);
-                has_video = true;
+            if (!local_pixels.empty() && video_texture && upload_buffer) {
+                Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, upload_buffer, false));
+                if (map) {
+                    const uint8_t* src = local_pixels.data();
+                    uint8_t* dst = map;
+                    for (int i = 0; i < kWidth * kHeight; ++i) {
+                        dst[0] = src[0];
+                        dst[1] = src[1];
+                        dst[2] = src[2];
+                        dst[3] = 255;
+                        src += 3;
+                        dst += 4;
+                    }
+                    SDL_UnmapGPUTransferBuffer(device, upload_buffer);
+                    SDL_GPUCommandBuffer* cmd_buf = SDL_AcquireGPUCommandBuffer(device);
+                    if (cmd_buf) {
+                        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
+                        if (copy_pass) {
+                            SDL_GPUTextureTransferInfo transfer_info_gpu = {};
+                            transfer_info_gpu.transfer_buffer = upload_buffer;
+                            transfer_info_gpu.offset = 0;
+                            transfer_info_gpu.pixels_per_row = kWidth;
+                            transfer_info_gpu.rows_per_layer = kHeight;
+                            SDL_GPUTextureRegion region = {};
+                            region.texture = video_texture->binding.texture;
+                            region.w = kWidth;
+                            region.h = kHeight;
+                            region.d = 1;
+                            SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
+                            SDL_EndGPUCopyPass(copy_pass);
+                        }
+                        SDL_SubmitGPUCommandBuffer(cmd_buf);
+                    }
+                    has_video = true;
+                }
             }
         }
-        return rouen::helpers::sdl_texture_cast(video_texture);
+        return rouen::helpers::texture_id_cast(video_texture);
     }
 };
 
@@ -202,6 +252,9 @@ inline void media_player_item::stopMedia() {
     ffmpeg_running.store(false);
     vu_level_l.store(0.0f);
     vu_level_r.store(0.0f);
+    if (reset_sync_cb) {
+        reset_sync_cb();
+    }
 
     if (pipe_read_fd >= 0) {
         ::close(pipe_read_fd);
@@ -252,9 +305,17 @@ inline void media_player_item::stopMedia() {
 
     {
         std::lock_guard<std::mutex> lock(texture_mutex);
+        SDL_GPUDevice* device = nullptr;
+        try {
+            auto r_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
+            if (r_ptr && *r_ptr) device = *r_ptr;
+        } catch (...) {}
         if (video_texture) {
-            SDL_DestroyTexture(video_texture);
-            video_texture = nullptr;
+            TextureHelper::destroyTexture(video_texture);
+        }
+        if (device && upload_buffer) {
+            SDL_ReleaseGPUTransferBuffer(device, upload_buffer);
+            upload_buffer = nullptr;
         }
     }
 
@@ -452,6 +513,9 @@ inline bool media_player_item::playMedia() {
     ffmpeg_running.store(true);
     is_playing = true;
     position.store(start_offset);
+    if (reset_sync_cb) {
+        reset_sync_cb();
+    }
 
     // Spawn background reader thread to process video frames from ffmpeg stdout pipe
     ffmpeg_thread = std::thread([this]() {
@@ -585,6 +649,9 @@ inline bool media_player_item::setPaused(bool paused) {
     }
     is_paused = paused;
     is_playing = !paused;
+    if (reset_sync_cb) {
+        reset_sync_cb();
+    }
     return true;
 #else
     return false;

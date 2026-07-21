@@ -10,6 +10,7 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/sdl_compat.hpp"
 
 // 3. All other includes
 #include "../../registrar.hpp"

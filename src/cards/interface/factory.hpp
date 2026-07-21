@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 // 2. Libraries used in the project, in alphabetic order
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 // 3. All other includes
 #include "card.hpp"

@@ -4,7 +4,7 @@
 #include <queue>
 #include <mutex>
 #include <memory>
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include "./imgui_include.hpp"
 
 // A service that queues operations to be executed after the ImGui frame is completed
@@ -19,7 +19,7 @@ public:
     }
     
     // Process all queued operations
-    void process_queue(SDL_Renderer* /*renderer*/) {
+    void process_queue(SDL_GPUDevice* /*device*/) {
         std::queue<operation> ops_to_run;
         {
             std::lock_guard<std::mutex> lock(mutex_);

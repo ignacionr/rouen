@@ -9,8 +9,8 @@
 #include <memory>
 
 #include "../../helpers/imgui_include.hpp"
-#include <SDL.h>
-#include <SDL_image.h>
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/llm_config.hpp"

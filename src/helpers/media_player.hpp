@@ -8,11 +8,7 @@
 #include "../../external/IconsMaterialDesign.h"
 #include <algorithm>
 
-extern "C" {
-struct SDL_Window;
-void SDL_GetWindowPosition(SDL_Window* window, int* x, int* y);
-int SDL_GetWindowBordersSize(SDL_Window* window, int* top, int* left, int* bottom, int* right);
-}
+
 
 struct media_player {
     using item = media_player_item;

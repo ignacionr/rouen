@@ -113,6 +113,22 @@ private:
             host->show_card_overlays.store(show_cards);
         }
 
+        bool noise_enabled = host->enable_pink_noise.load();
+        if (ImGui::Checkbox("Enable Ambient Pink Noise Fallback", &noise_enabled)) {
+            host->enable_pink_noise.store(noise_enabled);
+        }
+
+        bool fs_media = host->full_screen_media.load();
+        if (ImGui::Checkbox("Full Screen Media Playback", &fs_media)) {
+            host->full_screen_media.store(fs_media);
+        }
+
+        int delay = host->audio_delay_ms.load();
+        if (ImGui::SliderInt("Audio Sync Offset (ms)", &delay, -2000, 2000, "%d ms")) {
+            host->audio_delay_ms.store(delay);
+        }
+        ImGui::TextDisabled("Slide left (negative) to delay video; slide right (positive) to delay audio.");
+
         ui.spacing();
         ui.separator();
         ui.spacing();

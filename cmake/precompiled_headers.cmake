@@ -46,7 +46,7 @@ function(setup_precompiled_headers TARGET_NAME)
     # Define library headers (Tier 2 - External dependencies, change occasionally)
     set(LIBRARY_PCH_HEADERS
         # SDL headers (used throughout the application)
-        <SDL.h>
+        <SDL3/SDL.h>
         
         # Project-specific wrapper headers (use relative paths from src/)
         "src/helpers/imgui_include.hpp"

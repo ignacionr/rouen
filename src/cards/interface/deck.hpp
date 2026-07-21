@@ -15,8 +15,7 @@
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "../../helpers/imgui_include.hpp"  // Updated path for ImGui
-#include <SDL_image.h> // Updated path for SDL_image on macOS
+#include "../../helpers/sdl_compat.hpp"
 
 // 3. All other includes
 #include "../../helpers/capture_helper.hpp"
@@ -224,8 +223,8 @@ struct deck {
                                 SDL_GetWindowSize(window, &current_width, &current_height);
                                 
                                 // Check if window is maximized and skip if so
-                                Uint32 flags = SDL_GetWindowFlags(window);
-                                if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_FULLSCREEN_DESKTOP)) {
+                                SDL_WindowFlags flags = SDL_GetWindowFlags(window);
+                                if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN)) {
                                     // Don't resize if maximized or fullscreen
                                     return;
                                 }
@@ -274,49 +273,31 @@ struct deck {
                         int height = static_cast<int>(450.0f); // Use the standard card height
                         
                         // Use our capture helper to get a texture with the card contents
-                        SDL_Texture* snapshot_texture = rouen::helpers::capture_imgui(
+                        RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
                             width, height, render_function, renderer);
                         
                         if (snapshot_texture) {
-                            // Read the pixel data from the texture
-                            int texture_width{0}, texture_height{0};
-                            SDL_QueryTexture(snapshot_texture, nullptr, nullptr, &texture_width, &texture_height);
-                            
                             // Create a surface to store the pixel data
-                            SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormat(
-                                0, texture_width, texture_height, 32, SDL_PIXELFORMAT_RGBA32);
+                            SDL_Surface* surface = rouen::helpers::download_gpu_texture(
+                                renderer, snapshot_texture, width, height);
                             
                             if (surface) {
-                                // We can't directly lock a render target texture, so we need to use SDL_RenderReadPixels
-                                // Make sure we're rendering to the texture we want to capture
-                                SDL_SetRenderTarget(renderer, snapshot_texture);
-                                
-                                // Read pixels directly into the surface
-                                SDL_Rect rect = { 0, 0, texture_width, texture_height };
-                                if (SDL_RenderReadPixels(renderer, &rect, 
-                                                        surface->format->format, 
-                                                        surface->pixels, 
-                                                        surface->pitch) == 0) {
-                                    // Save the surface as PNG
-                                    if (IMG_SavePNG(surface, filename.c_str()) == 0) {
-                                        // Success - show a message or notification if desired
-                                        std::cout << "Card snapshot saved to " << filename << '\n';
-                                    } else {
-                                        std::cerr << "Failed to save snapshot: " << IMG_GetError() << '\n';
-                                    }
+                                // Save the surface as PNG
+                                if (IMG_SavePNG(surface, filename.c_str())) {
+                                    // Success - show a message or notification if desired
+                                    std::cout << "Card snapshot saved to " << filename << '\n';
                                 } else {
-                                    std::cerr << "Failed to read pixels from texture: " << SDL_GetError() << '\n';
+                                    std::cerr << "Failed to save snapshot: " << SDL_GetError() << '\n';
                                 }
                                 
-                                // Restore the default render target
-                                SDL_SetRenderTarget(renderer, nullptr);
-                                
                                 // Clean up the surface
-                                SDL_FreeSurface(surface);
+                                SDL_DestroySurface(surface);
+                            } else {
+                                std::cerr << "Failed to download GPU texture to surface\n";
                             }
                             
                             // Clean up the texture
-                            SDL_DestroyTexture(snapshot_texture);
+                            TextureHelper::destroyTexture(snapshot_texture);
                         }
                     }
             }
@@ -478,6 +459,8 @@ struct deck {
     };
 
     [[nodiscard]] render_status render() {
+        cards_to_cleanup_.clear();
+        TextureHelper::cleanupFrame();
         // Dynamic window title merging: when there's only 1 card, merge its name with the OS frame window
         auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
         if (get_window_service) {
@@ -548,6 +531,11 @@ struct deck {
                 y += row_height;
             }
 
+            // Defer cleanup to prevent use-after-free crashes during the current frame rendering
+            for (const auto& c : cards_to_remove) {
+                cards_to_cleanup_.push_back(c);
+            }
+
             auto cards_to_remove_main = std::remove_if(cards_.begin(), cards_.end(),
                 [&cards_to_remove] (auto &c) {
                     return cards_to_remove.find(c) != cards_to_remove.end();
@@ -590,6 +578,11 @@ struct deck {
                     }
                     return !render(*c, x, y, result.requested_fps, 0.0f, override_width);
                 });
+            
+            // Defer cleanup to prevent use-after-free crashes during the current frame rendering
+            for (auto it = cards_to_remove; it != cards_.end(); ++it) {
+                cards_to_cleanup_.push_back(*it);
+            }
             
             // Unregister MCP functions for cards being removed
             for (auto it = cards_to_remove; it != cards_.end(); ++it) {
@@ -639,6 +632,7 @@ struct deck {
         auto focused_card = std::find_if(cards_.begin(), cards_.end(),
             [](const auto& card) { return card->is_focused; });
         if (focused_card != cards_.end()) {
+            cards_to_cleanup_.push_back(*focused_card);
             cards_.erase(focused_card);
             return true;
         }
@@ -648,6 +642,7 @@ struct deck {
 private:
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
+    std::vector<std::shared_ptr<card>> cards_to_cleanup_;
     ImVec4 background_color;
     ImVec4 editor_background_color;
     ImVec4 text_color;

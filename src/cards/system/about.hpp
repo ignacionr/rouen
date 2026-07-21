@@ -5,7 +5,7 @@
 #include <format>
 #include <iostream>
 #include <filesystem>
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include "../interface/card.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/glaze_include.hpp"
@@ -32,8 +32,9 @@ struct about_card : public card {
     SDL_Texture* icon_texture = nullptr;
     int icon_width = 0;
     int icon_height = 0;
+    SDL_Renderer* m_renderer = nullptr;
 
-    explicit about_card(SDL_Renderer* renderer) {
+    explicit about_card(SDL_Renderer* renderer) : m_renderer(renderer) {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f};     // Blue primary color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f};   // Turquoise secondary color (second_color)
         
@@ -107,7 +108,7 @@ struct about_card : public card {
             
             ui.begin_group();
             ui.text("Rouen Dashboard Application");
-            ui.text("A productivity tool built with C++, SDL2, and ImGui.");
+            ui.text("A productivity tool built with C++, SDL3, and ImGui.");
             ui.end_group();
             
             ui.separator();
@@ -132,6 +133,30 @@ struct about_card : public card {
                 } else {
                     ui.text_colored(ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "Your local build is DIFFERENT from ignacionr/rouen main branch.");
                 }
+            }
+            ui.unindent(10.0f);
+            ui.separator();
+
+            ui.text_colored(colors[0], "Graphics Information (GPU Accelerated)");
+            ui.indent(10.0f);
+            if (m_renderer) {
+                const char* gpu_driver = SDL_GetGPUDeviceDriver(m_renderer);
+                SDL_GPUShaderFormat formats = SDL_GetGPUShaderFormats(m_renderer);
+                std::string shader_str = "";
+                if (formats & SDL_GPU_SHADERFORMAT_PRIVATE) shader_str += "Private, ";
+                if (formats & SDL_GPU_SHADERFORMAT_SPIRV) shader_str += "SPIR-V (Vulkan), ";
+                if (formats & SDL_GPU_SHADERFORMAT_DXBC) shader_str += "DXBC (Direct3D 11), ";
+                if (formats & SDL_GPU_SHADERFORMAT_DXIL) shader_str += "DXIL (Direct3D 12), ";
+                if (formats & SDL_GPU_SHADERFORMAT_MSL) shader_str += "MSL (Metal), ";
+                if (!shader_str.empty()) {
+                    shader_str = shader_str.substr(0, shader_str.length() - 2);
+                } else {
+                    shader_str = "None";
+                }
+                ui.text(std::format("GPU Backend Driver: {}", gpu_driver ? gpu_driver : "Unknown"));
+                ui.text(std::format("Shader Formats: {}", shader_str));
+            } else {
+                ui.text("GPU Information not available");
             }
             ui.unindent(10.0f);
             ui.separator();

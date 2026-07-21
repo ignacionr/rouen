@@ -6,7 +6,7 @@
 #include <cctype>
 
 #include "../helpers/imgui_include.hpp"
-#include <SDL.h>
+#include "../helpers/sdl_compat.hpp"
 
 #include "../registrar.hpp"
 #include "editor_interface.hpp"

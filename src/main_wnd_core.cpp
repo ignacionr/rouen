@@ -5,10 +5,11 @@
 #include "helpers/api_server.hpp"
 #include "helpers/debug.hpp"
 #include "registrar.hpp"
+#include "helpers/texture_helper.hpp"
 
 main_wnd::main_wnd()
     : m_window(nullptr)
-    , m_renderer(nullptr)
+    , m_device(nullptr)
     , m_deferred_ops(std::make_shared<deferred_operations>())
     , m_done(false)
     , m_immediate(false)
@@ -36,19 +37,19 @@ main_wnd::main_wnd()
 main_wnd::~main_wnd() {
     // Cleanup ImGui only if it was properly initialized
     if (m_imgui_renderer_initialized) {
-        ImGui_ImplSDLRenderer2_Shutdown();
+        ImGui_ImplSDLGPU3_Shutdown();
     }
 
     if (m_imgui_sdl_initialized) {
-        ImGui_ImplSDL2_Shutdown();
+        ImGui_ImplSDL3_Shutdown();
     }
 
     if (m_imgui_context_created) {
         ImGui::DestroyContext();
     }
 
-    // Remove renderer from registrar before destroying it
-    registrar::remove<SDL_Renderer*>("main_renderer");
+    // Remove device from registrar before destroying it
+    registrar::remove<SDL_GPUDevice*>("main_gpu_device");
 
     // Stop API server before cleanup
     if (m_api_server) {
@@ -56,8 +57,9 @@ main_wnd::~main_wnd() {
     }
 
     // Clean up SDL
-    if (m_renderer) {
-        SDL_DestroyRenderer(m_renderer);
+    if (m_device) {
+        TextureHelper::shutdown();
+        SDL_DestroyGPUDevice(m_device);
     }
     if (m_window) {
         SDL_DestroyWindow(m_window);
@@ -67,7 +69,7 @@ main_wnd::~main_wnd() {
 
 void main_wnd::process_deferred_operations() {
     if (m_deferred_ops && m_deferred_ops->has_operations()) {
-        m_deferred_ops->process_queue(m_renderer);
+        m_deferred_ops->process_queue(m_device);
         m_immediate = true;
     }
 }
@@ -77,8 +79,7 @@ void main_wnd::resize_window(int width, int height) {
         SDL_SetWindowSize(m_window, width, height);
         
         // Update viewport if needed
-        if (m_renderer) {
-            // SDL handles the renderer viewport automatically
+        if (m_device) {
             std::cout << "Window resized to " << width << "x" << height << '\n';
         }
     }

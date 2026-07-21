@@ -8,6 +8,7 @@ echo "[INFO] Connecting mpv to Rouen video feed at ${URL}..."
 
 exec mpv \
     --profile=low-latency \
-    --audio-buffer=0.4 \
-    --demuxer-readahead-secs=0.4 \
+    --no-cache \
+    --framedrop=vo \
+    --demuxer-lavf-o=fflags=nobuffer \
     "${URL}"

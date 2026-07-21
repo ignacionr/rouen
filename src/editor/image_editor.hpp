@@ -3,8 +3,7 @@
 #include <string>
 #include "../helpers/imgui_include.hpp"
 #include "../helpers/texture_utils.hpp"
-#include <SDL.h>
-#include <SDL_image.h>
+#include "../helpers/sdl_compat.hpp"
 
 #include "editor_interface.hpp"
 #include "../helpers/texture_helper.hpp"

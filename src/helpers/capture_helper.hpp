@@ -2,7 +2,7 @@
 
 #include <functional>
 #include "./imgui_include.hpp"
-#include <SDL.h>
+#include "sdl_compat.hpp"
 
 #include "../registrar.hpp"
 #include "debug.hpp"
@@ -16,20 +16,27 @@
 namespace rouen::helpers {
 
 /**
- * Takes a snapshot of ImGui rendering operations and returns them as a texture
+ * Takes a snapshot of ImGui rendering operations and returns them as a GPU texture
  * 
  * @param width Width of the capture texture
  * @param height Height of the capture texture
  * @param render_callback Callable that performs ImGui rendering operations
- * @param renderer Optional SDL renderer (if not provided, the main renderer will be used)
- * @return SDL_Texture* containing the captured rendering, or nullptr on failure
- *         Note: The caller is responsible for destroying this texture with SDL_DestroyTexture
+ * @param device Optional SDL GPU device (if not provided, the main device will be used)
+ * @return RouenGPUTexture* containing the captured rendering, or nullptr on failure
+ *         Note: The caller is responsible for destroying this texture using TextureHelper::destroyTexture
  */
-SDL_Texture* capture_imgui(
+RouenGPUTexture* capture_imgui(
     int width, 
     int height, 
     const std::function<void()>& render_callback,
-    SDL_Renderer* renderer = nullptr
+    SDL_GPUDevice* device = nullptr
+);
+
+SDL_Surface* download_gpu_texture(
+    SDL_GPUDevice* device,
+    RouenGPUTexture* texture,
+    int width,
+    int height
 );
 
 } // namespace rouen::helpers

@@ -24,31 +24,11 @@ bool main_wnd::initialize() {
         
         // Initialize SDL
         std::cout << "DEBUG: Initializing SDL..." << '\n';
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) != 0) {
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
             DB_ERROR_FMT("SDL initialization error: {}", SDL_GetError());
             return false;
         }
         std::cout << "DEBUG: SDL initialized successfully" << '\n';
-        
-        // Initialize SDL_image
-        std::cout << "DEBUG: Initializing SDL_image..." << '\n';
-        int img_flags = IMG_INIT_JPG | IMG_INIT_PNG;
-        int img_init_result = IMG_Init(img_flags);
-        
-        // Check if at least PNG support is available (minimum requirement)
-        if (!(img_init_result & IMG_INIT_PNG)) {
-            DB_ERROR_FMT("Error initializing SDL_image PNG support: {}", IMG_GetError());
-            SDL_Quit();
-            return false;
-        }
-        std::cout << "DEBUG: SDL_image initialized successfully" << '\n';
-        
-        // Log warning if JPEG support is not available
-        if (!(img_init_result & IMG_INIT_JPG)) {
-            DB_WARN("JPEG support not available in SDL_image - some features may be limited");
-        }
-        
-        DB_INFO_FMT("SDL_image initialized successfully with flags: 0x{:X}", img_init_result);
 
 #ifdef __APPLE__
         // On macOS, prevent system from intercepting Cmd+W and other shortcuts
@@ -59,12 +39,10 @@ bool main_wnd::initialize() {
 
         // Create window with SDL - properly configure for high DPI
         std::cout << "DEBUG: Creating SDL window..." << '\n';
-        const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+        const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
         
         m_window = SDL_CreateWindow(
             "Rouen",
-            SDL_WINDOWPOS_CENTERED,
-            SDL_WINDOWPOS_CENTERED,
             800, 600,
             window_flags
         );
@@ -79,20 +57,32 @@ bool main_wnd::initialize() {
         rouen::platform::disable_mac_cmd_w_menu_item();
 #endif
 
-        // Create renderer
-        std::cout << "DEBUG: Creating SDL renderer..." << '\n';
-        m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
-        if (!m_renderer) {
-            DB_ERROR_FMT("Error creating renderer: {}", SDL_GetError());
+        // Create GPU device
+        std::cout << "DEBUG: Creating SDL GPU device..." << '\n';
+        m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, true, nullptr);
+        if (!m_device) {
+            DB_ERROR_FMT("Error creating GPU device: {}", SDL_GetError());
             SDL_DestroyWindow(m_window);
             SDL_Quit();
             return false;
         }
-        std::cout << "DEBUG: SDL renderer created successfully" << '\n';
+        std::cout << "DEBUG: SDL GPU device created successfully" << '\n';
 
-        // Register renderer in the registrar
-        std::cout << "DEBUG: Registering renderer and services..." << '\n';
-        registrar::add<SDL_Renderer*>("main_renderer", std::make_shared<SDL_Renderer*>(m_renderer));
+        // Claim window for GPU device
+        if (!SDL_ClaimWindowForGPUDevice(m_device, m_window)) {
+            DB_ERROR_FMT("Error claiming window for GPU device: {}", SDL_GetError());
+            SDL_DestroyGPUDevice(m_device);
+            SDL_DestroyWindow(m_window);
+            SDL_Quit();
+            return false;
+        }
+        std::cout << "DEBUG: Claimed window for GPU device successfully" << '\n';
+
+        // Register GPU device and services
+        std::cout << "DEBUG: Registering GPU device and services..." << '\n';
+        registrar::add<SDL_GPUDevice*>("main_gpu_device", std::make_shared<SDL_GPUDevice*>(m_device));
+        registrar::add<SDL_GPUDevice*>("main_renderer", std::make_shared<SDL_GPUDevice*>(m_device));
+        TextureHelper::g_gpu_device = m_device;
         
         // Register the deferred operations service
         registrar::add<deferred_operations>("deferred_ops", m_deferred_ops);
@@ -166,16 +156,21 @@ bool main_wnd::initialize() {
         setup_dark_theme();
         rouen::theme::theme_manager::get().apply_theme_to_imgui();
 
-        // Initialize ImGui SDL2 backend
-        if (!ImGui_ImplSDL2_InitForSDLRenderer(m_window, m_renderer)) {
-            DB_ERROR("Failed to initialize ImGui SDL2 backend!");
+        // Initialize ImGui SDL3 backend
+        if (!ImGui_ImplSDL3_InitForSDLGPU(m_window)) {
+            DB_ERROR("Failed to initialize ImGui SDL3 backend!");
             return false;
         }
         m_imgui_sdl_initialized = true;
 
-        // Initialize ImGui SDL Renderer backend
-        if (!ImGui_ImplSDLRenderer2_Init(m_renderer)) {
-            DB_ERROR("Failed to initialize ImGui SDL Renderer backend!");
+        // Initialize ImGui SDL GPU3 backend
+        SDL_GPUTextureFormat swapchain_format = SDL_GetGPUSwapchainTextureFormat(m_device, m_window);
+        ImGui_ImplSDLGPU3_InitInfo init_info = {};
+        init_info.GpuDevice = m_device;
+        init_info.ColorTargetFormat = swapchain_format;
+        init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+        if (!ImGui_ImplSDLGPU3_Init(&init_info)) {
+            DB_ERROR("Failed to initialize ImGui SDL GPU3 backend!");
             return false;
         }
         m_imgui_renderer_initialized = true;
@@ -193,12 +188,12 @@ bool main_wnd::initialize() {
         
         // Clean up ImGui components that were initialized
         if (m_imgui_renderer_initialized) {
-            ImGui_ImplSDLRenderer2_Shutdown();
+            ImGui_ImplSDLGPU3_Shutdown();
             m_imgui_renderer_initialized = false;
         }
         
         if (m_imgui_sdl_initialized) {
-            ImGui_ImplSDL2_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
             m_imgui_sdl_initialized = false;
         }
         
@@ -208,9 +203,9 @@ bool main_wnd::initialize() {
         }
         
         // Clean up any resources that may have been allocated
-        if (m_renderer) {
-            SDL_DestroyRenderer(m_renderer);
-            m_renderer = nullptr;
+        if (m_device) {
+            SDL_DestroyGPUDevice(m_device);
+            m_device = nullptr;
         }
         
         if (m_window) {
@@ -218,7 +213,6 @@ bool main_wnd::initialize() {
             m_window = nullptr;
         }
         
-        IMG_Quit();
         SDL_Quit();
         
         return false;
@@ -227,12 +221,12 @@ bool main_wnd::initialize() {
         
         // Clean up ImGui components that were initialized
         if (m_imgui_renderer_initialized) {
-            ImGui_ImplSDLRenderer2_Shutdown();
+            ImGui_ImplSDLGPU3_Shutdown();
             m_imgui_renderer_initialized = false;
         }
         
         if (m_imgui_sdl_initialized) {
-            ImGui_ImplSDL2_Shutdown();
+            ImGui_ImplSDL3_Shutdown();
             m_imgui_sdl_initialized = false;
         }
         
@@ -242,9 +236,9 @@ bool main_wnd::initialize() {
         }
         
         // Clean up any resources that may have been allocated
-        if (m_renderer) {
-            SDL_DestroyRenderer(m_renderer);
-            m_renderer = nullptr;
+        if (m_device) {
+            SDL_DestroyGPUDevice(m_device);
+            m_device = nullptr;
         }
         
         if (m_window) {
@@ -252,7 +246,6 @@ bool main_wnd::initialize() {
             m_window = nullptr;
         }
         
-        IMG_Quit();
         SDL_Quit();
         
         return false;

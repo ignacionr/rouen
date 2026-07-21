@@ -19,8 +19,8 @@
 
 void main_wnd::run() {
     try {
-        // Create deck
-        auto main_deck = std::make_shared<deck>(m_renderer);
+        // Create deck (m_device is passed as the renderer context, mapped via macro/typedef in imgui_include.hpp)
+        auto main_deck = std::make_shared<deck>(m_device);
 
         // Register the deck as a service for window close handling
         registrar::add<deck>("deck", main_deck);
@@ -54,56 +54,66 @@ void main_wnd::run() {
                 }
 
                 // Start a new ImGui frame
-                ImGui_ImplSDLRenderer2_NewFrame();
-                ImGui_ImplSDL2_NewFrame();
+                ImGui_ImplSDLGPU3_NewFrame();
+                ImGui_ImplSDL3_NewFrame();
                 ImGui::NewFrame();
 
                 // Reset the card close handled flag for this frame
                 m_card_close_handled_this_frame = false;
-
-                // Display the font character checker tool
-                // m_main_window.render_font_check();
 
                 // Render the deck and get requested fps
                 try {
                     m_requested_fps = main_deck->render().requested_fps;
                 } catch (const std::exception& e) {
                     DB_ERROR_FMT("Error during deck rendering: {}", e.what());
-                    // Continue execution rather than crashing
                 } catch (...) {
                     DB_ERROR("Unknown error during deck rendering");
-                    // Continue execution rather than crashing
                 }
 
                 // Render ImGui
                 ImGui::Render();
-                SDL_SetRenderDrawColor(m_renderer, 40, 40, 40, 255);  // Changed to dark gray background
-                SDL_RenderClear(m_renderer);
-                ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+
+                // Acquire command buffer and swapchain texture to render onto the window
+                SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
+                if (cmdbuf) {
+                    // Prepare draw data (required in SDL_GPU backend before render pass)
+                    Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
+                    SDL_GPUColorTargetInfo color_target = {};
+                    SDL_AcquireGPUSwapchainTexture(cmdbuf, m_window, &color_target.texture, nullptr, nullptr);
+                    
+                    if (color_target.texture) {
+                        color_target.clear_color = SDL_FColor{ 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f }; // Dark gray background
+                        color_target.load_op = SDL_GPU_LOADOP_CLEAR;
+                        color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+                        SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
+                        if (render_pass) {
+                            ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
+                            SDL_EndGPURenderPass(render_pass);
+                        }
+                    }
+                    SDL_SubmitGPUCommandBuffer(cmdbuf);
+                }
                 
                 // Process any deferred operations
                 process_deferred_operations();
-                
-                SDL_RenderPresent(m_renderer);
 
                 // Render offscreen ImGui pass for video feed host if active
                 try {
                     auto video_feed = rouen::hosts::VideoFeedHost::get_host();
                     if (video_feed && video_feed->is_running()) {
                         m_requested_fps = std::max(m_requested_fps, 30);
-                        video_feed->render_video_frame(m_renderer);
+                        video_feed->render_video_frame(m_device);
                     }
                 } catch (...) {}
             } catch (const std::exception& e) {
                 DB_ERROR_FMT("Error in main loop: {}", e.what());
-                // Continue to next iteration rather than crashing
             } catch (...) {
                 DB_ERROR("Unknown error in main loop");
-                // Continue to next iteration rather than crashing
             }
         }
 
-        // Stop all active media players and video feed host before SDL_Renderer destruction
+        // Stop all active media players and video feed host before SDL destruction
         try {
             media_player::stopAll();
             auto video_feed = rouen::hosts::VideoFeedHost::get_host();
@@ -146,85 +156,84 @@ bool main_wnd::process_events() {
         
         while (SDL_PollEvent(&event)) {
             try {
-                ImGui_ImplSDL2_ProcessEvent(&event);
-                if (event.type == SDL_QUIT) {
+                ImGui_ImplSDL3_ProcessEvent(&event);
+                
+                if (event.type == SDL_EVENT_QUIT) {
                     m_done = true;
                     return false;
                 }
-                if (event.type == SDL_WINDOWEVENT) {
-                    if (event.window.event == SDL_WINDOWEVENT_CLOSE && 
-                        event.window.windowID == SDL_GetWindowID(m_window)) {
-                        // Check if this close event was triggered by Cmd+W or Ctrl+W shortcut
-                        SDL_Keymod mod = SDL_GetModState();
-                        bool modifier_down = (mod & (KMOD_CTRL | KMOD_GUI));
-                        
-                        if (modifier_down) {
-                            // Do not close the app; clear the editor instead
-                            try {
-                                auto clear_editor_func = registrar::get<std::function<void()>>("clear_editor");
-                                if (clear_editor_func) {
-                                    (*clear_editor_func)();
-                                }
-                            } catch (...) {
-                                (void)0;
+                
+                // SDL3 Window close event
+                if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && 
+                    event.window.windowID == SDL_GetWindowID(m_window)) {
+                    // Check if this close event was triggered by Cmd+W or Ctrl+W shortcut
+                    SDL_Keymod mod = SDL_GetModState();
+                    bool modifier_down = (mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI));
+                    
+                    if (modifier_down) {
+                        // Do not close the app; clear the editor instead
+                        try {
+                            auto clear_editor_func = registrar::get<std::function<void()>>("clear_editor");
+                            if (clear_editor_func) {
+                                (*clear_editor_func)();
                             }
-                            continue;
+                        } catch (...) {
+                            (void)0;
                         }
-                        
-                        m_done = true;
-                        return false;
+                        continue;
                     }
                     
-                    // Handle window resize to refresh DPI settings
-                    if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
-                        event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
-                        event.window.event == SDL_WINDOWEVENT_MOVED) {
+                    m_done = true;
+                    return false;
+                }
+                
+                // Handle window resize/move/pixel size change to refresh DPI settings
+                if (event.type == SDL_EVENT_WINDOW_RESIZED ||
+                    event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+                    event.type == SDL_EVENT_WINDOW_MOVED) {
+                    
+                    std::cout << "Window event detected, updating display settings..." << '\n';
+                    
+                    // Update ImGui display settings immediately
+                    update_imgui_display_settings();
+                    
+                    // Check if we moved to a different display with different DPI
+                    rouen::fonts::refresh_dpi();
+                    
+                    // Only rebuild fonts if there's a significant DPI change
+                    if (rouen::fonts::needs_font_rebuild()) {
+                        std::cout << "Significant DPI change detected, rebuilding fonts..." << '\n';
+                        // Clear current fonts and rebuild
+                        ImGui::GetIO().Fonts->Clear();
+                        rouen::fonts::setup();
                         
-                        std::cout << "Window event detected, updating display settings..." << '\n';
+                        // Clear the rebuild flag
+                        rouen::fonts::clear_font_rebuild_flag();
                         
-                        // Update ImGui display settings immediately
-                        update_imgui_display_settings();
-                        
-                        // Check if we moved to a different display with different DPI
-                        rouen::fonts::refresh_dpi();
-                        
-                        // Only rebuild fonts if there's a significant DPI change
-                        if (rouen::fonts::needs_font_rebuild()) {
-                            std::cout << "Significant DPI change detected, rebuilding fonts..." << '\n';
-                            // Clear current fonts and rebuild
-                            ImGui::GetIO().Fonts->Clear();
-                            rouen::fonts::setup();
-                            
-                            // Clear the rebuild flag
-                            rouen::fonts::clear_font_rebuild_flag();
-                            
-                            // Rebuild ImGui font atlas
-                            ImGui_ImplSDLRenderer2_DestroyFontsTexture();
-                            ImGui_ImplSDLRenderer2_CreateFontsTexture();
-                        }
+                        // Font atlas is managed automatically in SDL3 GPU backend
                     }
                 }
                 // run shortcut key handlers
-                else if (event.type == SDL_KEYDOWN) {
+                else if (event.type == SDL_EVENT_KEY_DOWN) {
                     // F11 toggles fullscreen
-                    if (event.key.keysym.sym == SDLK_F11) {
-                        Uint32 flags = SDL_GetWindowFlags(m_window);
-                        if (flags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
-                            SDL_SetWindowFullscreen(m_window, 0);
+                    if (event.key.key == SDLK_F11) {
+                        Uint64 flags = SDL_GetWindowFlags(m_window);
+                        if (flags & SDL_WINDOW_FULLSCREEN) {
+                            SDL_SetWindowFullscreen(m_window, false);
                         } else {
-                            SDL_SetWindowFullscreen(m_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                            SDL_SetWindowFullscreen(m_window, true);
                         }
                     }
                     // ctrl+shift+q (or cmd+shift+q on macOS) exits the application
-                    else if (event.key.keysym.sym == SDLK_q && 
-                        event.key.keysym.mod & KMOD_SHIFT &&
-                        (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+                    else if (event.key.key == SDLK_Q && 
+                        event.key.mod & SDL_KMOD_SHIFT &&
+                        (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
                         m_done = true;
                         return false;
                     }
                     // ctrl+w (or cmd+w on macOS) clears/closes the editor
-                    else if (event.key.keysym.sym == SDLK_w && 
-                        (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+                    else if (event.key.key == SDLK_W && 
+                        (event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
                         try {
                             auto clear_editor_func = registrar::get<std::function<void()>>("clear_editor");
                             if (clear_editor_func) {
@@ -236,26 +245,24 @@ bool main_wnd::process_events() {
                     }
                     else {
                         // Store keystrokes
-                        if (event.key.keysym.sym < 256) {
-                            keystrokes_ += static_cast<char>(event.key.keysym.sym);
+                        if (event.key.key < 256) {
+                            keystrokes_ += static_cast<char>(event.key.key);
                         }
                     }
                 }
             } catch (const std::exception& e) {
                 DB_ERROR_FMT("Error processing event: {}", e.what());
-                // Continue to the next event rather than crashing
             } catch (...) {
                 DB_ERROR("Unknown error processing event");
-                // Continue to the next event rather than crashing
             }
         }
         
         return true;
     } catch (const std::exception& e) {
         DB_ERROR_FMT("Error in process_events: {}", e.what());
-        return true; // Continue execution rather than stopping
+        return true;
     } catch (...) {
         DB_ERROR("Unknown error in process_events");
-        return true; // Continue execution rather than stopping
+        return true;
     }
 }

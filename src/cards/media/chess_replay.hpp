@@ -16,8 +16,8 @@
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_utils.hpp"
-#include <SDL.h>
-#include <SDL_image.h>
+#include <SDL3/SDL.h>
+#include <SDL3_image/SDL_image.h>
 
 #include "../interface/card.hpp"
 #include "../../models/chess/chess.hpp"

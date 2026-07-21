@@ -18,7 +18,7 @@ find_package(GTest CONFIG REQUIRED)
 find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL2 REQUIRED sdl2)
+pkg_check_modules(SDL3 REQUIRED sdl3)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
@@ -27,7 +27,7 @@ find_package(imgui CONFIG REQUIRED)
 # Include parent directories for access to source files
 include_directories(..)
 include_directories(../external)
-include_directories(${SDL2_INCLUDE_DIRS})
+include_directories(${SDL3_INCLUDE_DIRS})
 
 if(NOT COMMAND target_add_strict_warnings)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)

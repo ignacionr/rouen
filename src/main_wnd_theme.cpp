@@ -80,7 +80,7 @@ void main_wnd::configure_highdpi_settings() {
     int drawable_h = 0;
     
     SDL_GetWindowSize(m_window, &window_w, &window_h);
-    SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);
+    SDL_GetWindowSizeInPixels(m_window, &drawable_w, &drawable_h);
     
     float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
     float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
@@ -108,7 +108,7 @@ void main_wnd::update_imgui_display_settings() {
     int drawable_h = 0;
     
     SDL_GetWindowSize(m_window, &window_w, &window_h);
-    SDL_GetRendererOutputSize(m_renderer, &drawable_w, &drawable_h);
+    SDL_GetWindowSizeInPixels(m_window, &drawable_w, &drawable_h);
     
     // Update display size to logical window size
     io.DisplaySize.x = static_cast<float>(window_w);

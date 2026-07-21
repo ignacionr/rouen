@@ -18,16 +18,14 @@
 #include <imgui_internal.h>
 
 // Backend headers - try both system and local paths
-#if __has_include(<backends/imgui_impl_sdl2.h>)
+#if __has_include(<backends/imgui_impl_sdl3.h>)
 // FetchContent ImGui with built-in backends
-#include <backends/imgui_impl_sdl2.h>
-#include <backends/imgui_impl_opengl3.h>
-#include <backends/imgui_impl_sdlrenderer2.h>
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_sdlgpu3.h>
 #else
 // System ImGui with local backends
-#include "../../external/imgui_backends/imgui_impl_sdl2.h"
-#include "../../external/imgui_backends/imgui_impl_opengl3.h"
-#include "../../external/imgui_backends/imgui_impl_sdlrenderer2.h"
+#include "../../external/imgui_backends/imgui_impl_sdl3.h"
+#include "../../external/imgui_backends/imgui_impl_sdlgpu3.h"
 #endif
 
 #ifdef __clang__

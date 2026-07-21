@@ -11,7 +11,7 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "../../helpers/ui_context.hpp"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 // 3. All other includes
 #include "../../helpers/string_helper.hpp"

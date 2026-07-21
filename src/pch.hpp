@@ -66,7 +66,7 @@
 // Only include the most stable and commonly used ones.
 
 // SDL2 - Used for windowing, input, and graphics context
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 // Conditionally include SDL2_image if available
 #ifdef SDL_IMAGE_H_

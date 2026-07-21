@@ -194,27 +194,27 @@ namespace rouen::cards {
                     flash_state = !flash_state;
                     last_flash = std::chrono::steady_clock::now();
                 }
-                bg_color = flash_state ? SDL_MapRGB(surface->format, 220, 40, 40) : SDL_MapRGB(surface->format, 150, 20, 20);
+                bg_color = flash_state ? SDL_MapSurfaceRGB(surface, 220, 40, 40) : SDL_MapSurfaceRGB(surface, 150, 20, 20);
             } else if (alarm_active) {
                 // Deep navy container when counting down
-                bg_color = SDL_MapRGB(surface->format, 20, 30, 50);
+                bg_color = SDL_MapSurfaceRGB(surface, 20, 30, 50);
             } else {
                 // Dark grey container when stopped
-                bg_color = SDL_MapRGB(surface->format, 35, 35, 35);
+                bg_color = SDL_MapSurfaceRGB(surface, 35, 35, 35);
             }
 
-            SDL_FillRect(surface, &box_rect, bg_color);
+            SDL_FillSurfaceRect(surface, &box_rect, bg_color);
 
             // Draw 2px border around card box
-            uint32_t border_color = is_ringing ? SDL_MapRGB(surface->format, 255, 255, 100) : SDL_MapRGB(surface->format, 255, 140, 40);
+            uint32_t border_color = is_ringing ? SDL_MapSurfaceRGB(surface, 255, 255, 100) : SDL_MapSurfaceRGB(surface, 255, 140, 40);
             SDL_Rect top_b{card_x - 2, card_y - 2, card_w + 4, 2};
             SDL_Rect bot_b{card_x - 2, card_y + card_h, card_w + 4, 2};
             SDL_Rect left_b{card_x - 2, card_y - 2, 2, card_h + 4};
             SDL_Rect right_b{card_x + card_w, card_y - 2, 2, card_h + 4};
-            SDL_FillRect(surface, &top_b, border_color);
-            SDL_FillRect(surface, &bot_b, border_color);
-            SDL_FillRect(surface, &left_b, border_color);
-            SDL_FillRect(surface, &right_b, border_color);
+            SDL_FillSurfaceRect(surface, &top_b, border_color);
+            SDL_FillSurfaceRect(surface, &bot_b, border_color);
+            SDL_FillSurfaceRect(surface, &left_b, border_color);
+            SDL_FillSurfaceRect(surface, &right_b, border_color);
         }
 
         void render_alarm_content() {

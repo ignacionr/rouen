@@ -11,7 +11,7 @@
 #include "helpers/debug.hpp"  // For logging
 #include "helpers/platform_utils.hpp"  // For resource path utilities
 #include "registrar.hpp"  // For accessing registered services
-#include <SDL.h>  // For SDL DPI functions
+#include <SDL3/SDL.h>  // For SDL DPI functions
 
 namespace rouen::fonts {
     namespace {
@@ -315,34 +315,35 @@ namespace rouen::fonts {
     void refresh_dpi() {
         auto & io = ImGui::GetIO();
         
-        // Get the current renderer to query actual DPI information
-        auto renderer_ptr = registrar::get<SDL_Renderer*>("main_renderer");
-        SDL_Renderer* renderer = renderer_ptr ? *renderer_ptr : nullptr;
+        SDL_Window* window = nullptr;
+        try {
+            auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
+            if (get_window_fn && *get_window_fn) {
+                window = (*get_window_fn)();
+            }
+        } catch (...) {}
         
         float dpi_scale = 1.0f;
         
-        if (renderer) {
-            // Get the window from the renderer
-            SDL_Window* window = SDL_RenderGetWindow(renderer);
-            if (window) {
-                // Get the window size in points (logical size)
-                int window_w = 0, window_h = 0;
-                SDL_GetWindowSize(window, &window_w, &window_h);
+        if (window) {
+            // Get the window size in points (logical size)
+            int window_w = 0, window_h = 0;
+            SDL_GetWindowSize(window, &window_w, &window_h);
+            
+            // Get the drawable size in pixels (actual framebuffer size)
+            int drawable_w = 0, drawable_h = 0;
+            SDL_GetWindowSizeInPixels(window, &drawable_w, &drawable_h);
+            
+            // Calculate the actual DPI scale factor
+            if (window_w > 0 && drawable_w > 0) {
+                dpi_scale = static_cast<float>(drawable_w) / static_cast<float>(window_w);
                 
-                // Get the drawable size in pixels (actual framebuffer size)
-                int drawable_w = 0, drawable_h = 0;
-                SDL_GetRendererOutputSize(renderer, &drawable_w, &drawable_h);
+                // Update ImGui's display scale
+                io.DisplayFramebufferScale = ImVec2(dpi_scale, dpi_scale);
                 
-                // Calculate the actual DPI scale factor
-                if (window_w > 0 && drawable_w > 0) {
-                    dpi_scale = static_cast<float>(drawable_w) / static_cast<float>(window_w);
-                    
-                    // Update ImGui's display scale
-                    io.DisplayFramebufferScale = ImVec2(dpi_scale, dpi_scale);
-                    
-                    std::cout << "Refreshed DPI scale: " << dpi_scale << 
-                                 " (window: " << window_w << "x" << window_h << 
-                                 ", drawable: " << drawable_w << "x" << drawable_h << ")" << '\n';
+                std::cout << "Refreshed DPI scale: " << dpi_scale << 
+                             " (window: " << window_w << "x" << window_h << 
+                             ", drawable: " << drawable_w << "x" << drawable_h << ")" << '\n';
                     
                     // Check if DPI scale has changed significantly
                     if (std::abs(dpi_scale - get_state().last_dpi_scale) > 0.1f) {
@@ -353,7 +354,6 @@ namespace rouen::fonts {
                 }
             }
         }
-    }
 
     // Check if fonts need to be rebuilt due to DPI changes
     bool needs_font_rebuild() {

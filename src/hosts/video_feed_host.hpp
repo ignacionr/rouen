@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../helpers/sdl_compat.hpp"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -26,7 +27,7 @@
 extern char **environ;
 #endif
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include "../helpers/imgui_include.hpp"
 #include "../helpers/debug.hpp"
 #include "../helpers/texture_utils.hpp"
@@ -62,6 +63,9 @@ public:
     std::atomic<bool> show_footer{true};
     std::atomic<bool> show_bg_animation{true};
     std::atomic<bool> show_card_overlays{true};
+    std::atomic<bool> enable_pink_noise{true};
+    std::atomic<bool> full_screen_media{false};
+    std::atomic<int> audio_delay_ms{100};
 
     VideoFeedHost()
         : port_(kDefaultPort) {
@@ -87,6 +91,10 @@ public:
                 auto h = get_host();
                 if (h) h->push_audio_pcm(data, size);
             };
+            media_player_item::reset_sync_cb = []() {
+                auto h = get_host();
+                if (h) h->reset_sync_queues();
+            };
         }
         return instance;
     }
@@ -111,32 +119,62 @@ public:
     void push_audio_pcm(const uint8_t* data, size_t size) {
         if (!running_.load() || !data || size == 0) return;
         std::lock_guard<std::mutex> lock(audio_mutex_);
-        constexpr size_t kMaxAudioQueueBytes = 1764000; // ~10 sec stereo PCM at 44.1kHz
-        if (audio_queue_.size() + size > kMaxAudioQueueBytes) {
-            size_t overflow = (audio_queue_.size() + size) - kMaxAudioQueueBytes;
-            if (overflow < audio_queue_.size()) {
-                audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + overflow);
-            } else {
-                audio_queue_.clear();
+        
+        int delay_ms = audio_delay_ms.load();
+        if (delay_ms <= 0) {
+            audio_queue_.insert(audio_queue_.end(), data, data + size);
+            audio_delay_queue_.clear();
+        } else {
+            delayed_audio_block block;
+            block.timestamp = std::chrono::steady_clock::now();
+            block.data.assign(data, data + size);
+            audio_delay_queue_.push_back(std::move(block));
+        }
+
+        // Drain aged blocks if audio delay is active
+        auto now = std::chrono::steady_clock::now();
+        if (delay_ms > 0) {
+            auto it = audio_delay_queue_.begin();
+            while (it != audio_delay_queue_.end()) {
+                auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->timestamp).count();
+                if (age >= delay_ms) {
+                    audio_queue_.insert(audio_queue_.end(), it->data.begin(), it->data.end());
+                    it = audio_delay_queue_.erase(it);
+                } else {
+                    break;
+                }
             }
         }
-        audio_queue_.insert(audio_queue_.end(), data, data + size);
+
+        // Cap audio queue to ~5 seconds max to prevent memory leakage
+        constexpr size_t kMaxAudioQueueBytes = 882000; 
+        if (audio_queue_.size() > kMaxAudioQueueBytes) {
+            audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + (audio_queue_.size() - kMaxAudioQueueBytes));
+        }
+        if (audio_delay_queue_.size() > 500) {
+            audio_delay_queue_.erase(audio_delay_queue_.begin());
+        }
+    }
+
+    void reset_sync_queues() {
+        {
+            std::lock_guard<std::mutex> lock(audio_mutex_);
+            audio_queue_.clear();
+            audio_delay_queue_.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(frame_mutex_);
+            video_delay_queue_.clear();
+            new_frame_ready_ = false;
+        }
+        VIDEOFEED_INFO("VideoFeedHost: Reset sync queues");
     }
 
     /// Return an ImTextureID usable directly inside Rouen's main desktop ImGui windows
-    ImTextureID get_texture_id(SDL_Renderer* renderer = nullptr) {
+    ImTextureID get_texture_id(SDL_GPUDevice* /*device*/ = nullptr) {
         std::lock_guard<std::mutex> lock(video_mutex_);
         if (offscreen_texture_) {
-            return rouen::helpers::sdl_texture_cast(offscreen_texture_);
-        }
-        if (!renderer) {
-            try {
-                auto r_ptr = registrar::get<SDL_Renderer*>("main_renderer");
-                if (r_ptr && *r_ptr) renderer = *r_ptr;
-            } catch (...) {}
-        }
-        if (renderer && offscreen_texture_) {
-            return rouen::helpers::sdl_texture_cast(offscreen_texture_);
+            return rouen::helpers::texture_id_cast(offscreen_texture_);
         }
         return ImTextureID{};
     }
@@ -202,10 +240,10 @@ public:
         char* argv[] = {
             const_cast<char*>("ffmpeg"),
             const_cast<char*>("-loglevel"), const_cast<char*>("warning"),
-            const_cast<char*>("-threads"), const_cast<char*>("4"),
+            const_cast<char*>("-threads"), const_cast<char*>("6"),
             // Raw Video Input on pipe:0
             const_cast<char*>("-f"), const_cast<char*>("rawvideo"),
-            const_cast<char*>("-pixel_format"), const_cast<char*>("rgb24"),
+            const_cast<char*>("-pixel_format"), const_cast<char*>("rgba"),
             const_cast<char*>("-video_size"), const_cast<char*>(input_size.c_str()),
             const_cast<char*>("-framerate"), const_cast<char*>(framerate.c_str()),
             const_cast<char*>("-i"), const_cast<char*>("pipe:0"),
@@ -220,6 +258,7 @@ public:
             const_cast<char*>("-c:v"), const_cast<char*>("libx264"),
             const_cast<char*>("-preset"), const_cast<char*>("ultrafast"),
             const_cast<char*>("-tune"), const_cast<char*>("zerolatency"),
+            const_cast<char*>("-crf"), const_cast<char*>("28"),
             const_cast<char*>("-pix_fmt"), const_cast<char*>("yuv420p"),
             const_cast<char*>("-g"), const_cast<char*>("4"),
             // Audio Encoding
@@ -280,7 +319,7 @@ public:
         // Pre-fill initial audio and video buffers so FFmpeg stream demuxers open immediately
         std::vector<uint8_t> init_audio(60000, 0);
         generate_pink_noise(reinterpret_cast<int16_t*>(init_audio.data()), init_audio.size() / 2);
-        std::vector<uint8_t> init_video(static_cast<size_t>(kWidth * kHeight * 3), 0);
+        std::vector<uint8_t> init_video(static_cast<size_t>(kWidth * kHeight * 4), 0);
         write_full_frame(audio_write_fd, init_audio.data(), init_audio.size(), running_);
         write_full_frame(write_fd, init_video.data(), init_video.size(), running_);
 
@@ -298,9 +337,21 @@ public:
 #endif  // _WIN32
     }
 
+    bool has_active_media_player_video() {
+        try {
+            std::lock_guard<std::recursive_mutex> map_lock(media_player::items_mutex());
+            for (auto& [id, item_ptr] : media_player::items()) {
+                if (item_ptr && item_ptr->is_playing && item_ptr->has_video) {
+                    return true;
+                }
+            }
+        } catch (...) {}
+        return false;
+    }
+
     /// Perform an offscreen ImGui render pass on the main thread and queue the frame.
-    void render_video_frame(SDL_Renderer* renderer) {
-        if (!running_.load() || !renderer) return;
+    void render_video_frame(SDL_GPUDevice* device) {
+        if (!running_.load() || !device) return;
 
         // Rate limit to 24 fps (41ms interval)
         auto now = std::chrono::steady_clock::now();
@@ -312,20 +363,28 @@ public:
 
         std::lock_guard<std::mutex> lock(video_mutex_);
 
-        // Save original context and render target
+        // Save original context
         ImGuiContext* orig_ctx = ImGui::GetCurrentContext();
         if (!orig_ctx) return;
-        SDL_Texture* orig_target = SDL_GetRenderTarget(renderer);
 
         // Lazy-initialize offscreen target texture
         if (!offscreen_texture_) {
-            offscreen_texture_ = SDL_CreateTexture(
-                renderer,
-                SDL_PIXELFORMAT_RGBA8888,
-                SDL_TEXTUREACCESS_TARGET,
-                kWidth, kHeight
-            );
-            if (!offscreen_texture_) {
+            SDL_GPUTextureCreateInfo texture_info = {};
+            texture_info.type = SDL_GPU_TEXTURETYPE_2D;
+            texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            texture_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            texture_info.width = kWidth;
+            texture_info.height = kHeight;
+            texture_info.layer_count_or_depth = 1;
+            texture_info.num_levels = 1;
+            SDL_GPUTexture* raw_texture = SDL_CreateGPUTexture(device, &texture_info);
+            if (raw_texture) {
+                offscreen_texture_ = new RouenGPUTexture();
+                offscreen_texture_->binding.texture = raw_texture;
+                offscreen_texture_->binding.sampler = TextureHelper::getDefaultSampler(device);
+                offscreen_texture_->width = kWidth;
+                offscreen_texture_->height = kHeight;
+            } else {
                 VIDEOFEED_ERROR_FMT("Failed to create offscreen_texture_: {}", SDL_GetError());
                 return;
             }
@@ -337,7 +396,7 @@ public:
             video_imgui_ctx_ = ImGui::CreateContext(shared_fonts);
         }
 
-        // Copy backend data pointers so SDL2 renderer backend works in secondary context
+        // Copy backend data pointers so SDL3 GPU backend works in secondary context
         video_imgui_ctx_->IO.BackendRendererUserData = orig_ctx->IO.BackendRendererUserData;
         video_imgui_ctx_->IO.BackendPlatformUserData = orig_ctx->IO.BackendPlatformUserData;
 
@@ -353,38 +412,46 @@ public:
             io.Fonts->TexID = orig_ctx->IO.Fonts->TexID;
         }
 
-        // Set render target to offscreen texture
-        SDL_SetRenderTarget(renderer, offscreen_texture_);
-        SDL_SetRenderDrawColor(renderer, 15, 20, 30, 255);
-        SDL_RenderClear(renderer);
-
         // Start offscreen ImGui frame
         ImGui::NewFrame();
 
         // 1. Render Video Feed Header & Base UI
-        render_video_base_ui();
+        bool fs_media_active = full_screen_media.load() && has_active_media_player_video();
+        if (!fs_media_active) {
+            render_video_base_ui();
+        }
 
         // 2. Render Active Cards' Video UI
-        if (show_card_overlays.load()) {
-            try {
-                auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
-                if (get_cards_fn && *get_cards_fn) {
-                    auto active_cards = (*get_cards_fn)();
-                    for (const auto& card_ptr : active_cards) {
-                        if (card_ptr) {
-                            card_ptr->render_video_ui();
+        if (!fs_media_active) {
+            if (show_card_overlays.load()) {
+                try {
+                    auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                    if (get_cards_fn && *get_cards_fn) {
+                        auto active_cards = (*get_cards_fn)();
+                        for (const auto& card_ptr : active_cards) {
+                            if (card_ptr) {
+                                card_ptr->render_video_ui();
+                            }
                         }
                     }
-                }
-            } catch (...) {}
+                } catch (...) {}
+            }
+        }
 
-            // Render Active Media Player Video Stream on Cast
-            try {
-                std::lock_guard<std::recursive_mutex> map_lock(media_player::items_mutex());
-                for (auto& [id, item_ptr] : media_player::items()) {
-                    if (item_ptr && item_ptr->is_playing && item_ptr->has_video) {
-                        ImTextureID media_tex = item_ptr->get_texture_id(renderer);
-                        if (media_tex) {
+        // 3. Render Active Media Player Video Stream on Cast
+        try {
+            std::lock_guard<std::recursive_mutex> map_lock(media_player::items_mutex());
+            for (auto& [id, item_ptr] : media_player::items()) {
+                if (item_ptr && item_ptr->is_playing && item_ptr->has_video) {
+                    ImTextureID media_tex = item_ptr->get_texture_id(device);
+                    if (media_tex) {
+                        if (full_screen_media.load()) {
+                            ImGui::GetBackgroundDrawList()->AddImage(
+                                media_tex,
+                                ImVec2(0.0f, 0.0f),
+                                ImVec2(static_cast<float>(kWidth), static_cast<float>(kHeight))
+                            );
+                        } else if (show_card_overlays.load()) {
                             ImGui::SetNextWindowPos(ImVec2(100, 160));
                             ImGui::SetNextWindowSize(ImVec2(1280, 720));
                             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
@@ -397,41 +464,114 @@ public:
                             ImGui::End();
                             ImGui::PopStyleColor();
                             ImGui::PopStyleVar();
-                            break;
                         }
+                        break;
                     }
                 }
-            } catch (...) {}
-        }
+            }
+        } catch (...) {}
 
-        // Render ImGui draw data onto offscreen_texture_
+        // Render ImGui draw data
         ImGui::Render();
-        ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
-        // Read pixels back to RAM buffer (RGB24 format for ffmpeg)
-        if (render_buffer_.size() != static_cast<size_t>(kWidth * kHeight * 3)) {
-            render_buffer_.resize(static_cast<size_t>(kWidth * kHeight * 3));
+        SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
+        if (cmdbuf) {
+            Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
+            SDL_GPUColorTargetInfo color_target = {};
+            color_target.texture = offscreen_texture_->binding.texture;
+            color_target.clear_color = SDL_FColor{ 15.0f/255.0f, 20.0f/255.0f, 30.0f/255.0f, 1.0f };
+            color_target.load_op = SDL_GPU_LOADOP_CLEAR;
+            color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+            SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
+            if (render_pass) {
+                ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
+                SDL_EndGPURenderPass(render_pass);
+            }
+
+            if (!download_buffer_) {
+                SDL_GPUTransferBufferCreateInfo transferInfo = {};
+                transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+                transferInfo.size = kWidth * kHeight * 4;
+                download_buffer_ = SDL_CreateGPUTransferBuffer(device, &transferInfo);
+            }
+
+            if (download_buffer_) {
+                SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
+                if (copyPass) {
+                    SDL_GPUTextureRegion sourceRegion = {};
+                    sourceRegion.texture = offscreen_texture_->binding.texture;
+                    sourceRegion.w = kWidth;
+                    sourceRegion.h = kHeight;
+                    sourceRegion.d = 1;
+
+                    SDL_GPUTextureTransferInfo destInfo = {};
+                    destInfo.transfer_buffer = download_buffer_;
+                    destInfo.offset = 0;
+                    destInfo.pixels_per_row = kWidth;
+                    destInfo.rows_per_layer = kHeight;
+
+                    SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
+                    SDL_EndGPUCopyPass(copyPass);
+                }
+            }
+
+            SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+            if (fence) {
+                SDL_WaitForGPUFences(device, true, &fence, 1);
+                SDL_ReleaseGPUFence(device, fence);
+            }
+
+            if (download_buffer_) {
+                void* map = SDL_MapGPUTransferBuffer(device, download_buffer_, false);
+                if (map) {
+                    if (render_buffer_.size() != static_cast<size_t>(kWidth * kHeight * 4)) {
+                        render_buffer_.resize(static_cast<size_t>(kWidth * kHeight * 4));
+                    }
+                    std::memcpy(render_buffer_.data(), map, kWidth * kHeight * 4);
+                    SDL_UnmapGPUTransferBuffer(device, download_buffer_);
+                }
+            }
         }
 
-        SDL_RenderReadPixels(
-            renderer,
-            nullptr,
-            SDL_PIXELFORMAT_RGB24,
-            render_buffer_.data(),
-            kWidth * 3
-        );
-
-        // Restore original render target and ImGui context
-        SDL_SetRenderTarget(renderer, orig_target);
+        // Restore original ImGui context
         ImGui::SetCurrentContext(orig_ctx);
 
         ++frame_number_;
 
-        // Push frame to double-buffered queue and notify background writer thread
+        // Push frame to double-buffered queue or delay queue based on offset direction using 0-copy swap/move
         {
             std::lock_guard<std::mutex> frame_lock(frame_mutex_);
-            stream_buffer_ = render_buffer_;
-            new_frame_ready_ = true;
+            int delay_ms = audio_delay_ms.load();
+            if (delay_ms >= 0) {
+                std::swap(stream_buffer_, render_buffer_);
+                new_frame_ready_ = true;
+                video_delay_queue_.clear();
+            } else {
+                delayed_video_block block;
+                block.timestamp = now;
+                block.data = std::move(render_buffer_);
+                video_delay_queue_.push_back(std::move(block));
+
+                // Drain aged video blocks
+                int abs_delay = -delay_ms;
+                auto it = video_delay_queue_.begin();
+                while (it != video_delay_queue_.end()) {
+                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->timestamp).count();
+                    if (age >= abs_delay) {
+                        stream_buffer_ = std::move(it->data);
+                        new_frame_ready_ = true;
+                        it = video_delay_queue_.erase(it);
+                    } else {
+                        break;
+                    }
+                }
+
+                // Cap video delay queue to prevent memory leak (e.g. max 150 frames = 5 seconds)
+                if (video_delay_queue_.size() > 150) {
+                    video_delay_queue_.erase(video_delay_queue_.begin());
+                }
+            }
         }
         frame_cv_.notify_one();
     }
@@ -548,6 +688,25 @@ private:
             size_t copied = 0;
             {
                 std::lock_guard<std::mutex> lock(audio_mutex_);
+                
+                // Drain aged delay blocks if active
+                auto now_t = clock::now();
+                int delay_ms = audio_delay_ms.load();
+                if (delay_ms > 0) {
+                    auto it = audio_delay_queue_.begin();
+                    while (it != audio_delay_queue_.end()) {
+                        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now_t - it->timestamp).count();
+                        if (age >= delay_ms) {
+                            audio_queue_.insert(audio_queue_.end(), it->data.begin(), it->data.end());
+                            it = audio_delay_queue_.erase(it);
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    audio_delay_queue_.clear();
+                }
+
                 if (!audio_queue_.empty()) {
                     copied = std::min(audio_queue_.size(), kAudioBytesPerFrame);
                     std::copy(audio_queue_.begin(), audio_queue_.begin() + copied, audio_chunk.begin());
@@ -558,7 +717,11 @@ private:
             if (copied < kAudioBytesPerFrame) {
                 int16_t* fill_ptr = reinterpret_cast<int16_t*>(audio_chunk.data() + copied);
                 size_t fill_samples = (kAudioBytesPerFrame - copied) / sizeof(int16_t);
-                generate_pink_noise(fill_ptr, fill_samples);
+                if (enable_pink_noise.load()) {
+                    generate_pink_noise(fill_ptr, fill_samples);
+                } else {
+                    std::fill_n(fill_ptr, fill_samples, 0);
+                }
             }
 
             if (audio_fd >= 0) {
@@ -689,9 +852,19 @@ private:
             ImGui::DestroyContext(video_imgui_ctx_);
             video_imgui_ctx_ = nullptr;
         }
-        if (offscreen_texture_) {
-            SDL_DestroyTexture(offscreen_texture_);
-            offscreen_texture_ = nullptr;
+        if (offscreen_texture_ || download_buffer_) {
+            SDL_GPUDevice* device = nullptr;
+            try {
+                auto device_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
+                if (device_ptr && *device_ptr) device = *device_ptr;
+            } catch (...) {}
+            if (offscreen_texture_) {
+                TextureHelper::destroyTexture(offscreen_texture_);
+            }
+            if (device && download_buffer_) {
+                SDL_ReleaseGPUTransferBuffer(device, download_buffer_);
+                download_buffer_ = nullptr;
+            }
         }
     }
 
@@ -704,7 +877,8 @@ private:
 
     std::mutex            video_mutex_;
     ImGuiContext*         video_imgui_ctx_{nullptr};
-    SDL_Texture*          offscreen_texture_{nullptr};
+    RouenGPUTexture*      offscreen_texture_{nullptr};
+    SDL_GPUTransferBuffer* download_buffer_{nullptr};
     std::vector<uint8_t>  render_buffer_;
 
     std::mutex            frame_mutex_;
@@ -714,6 +888,18 @@ private:
 
     std::mutex            audio_mutex_;
     std::vector<uint8_t>  audio_queue_;
+
+    struct delayed_audio_block {
+        std::chrono::steady_clock::time_point timestamp;
+        std::vector<uint8_t> data;
+    };
+    std::vector<delayed_audio_block> audio_delay_queue_;
+
+    struct delayed_video_block {
+        std::chrono::steady_clock::time_point timestamp;
+        std::vector<uint8_t> data;
+    };
+    std::vector<delayed_video_block> video_delay_queue_;
 
     std::thread           video_writer_thread_;
     std::thread           audio_writer_thread_;
