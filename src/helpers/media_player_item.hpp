@@ -20,26 +20,41 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <spawn.h>
+extern char **environ;
 #else
 #include <windows.h>
 #include <process.h>
 #endif
 
+#include <SDL.h>
 #include "./imgui_include.hpp"
-#include "mpv_socket.hpp"
+#include "texture_utils.hpp"
 #include "platform_utils.hpp"
 #include "config_service.hpp"
+#include "process_helper.hpp"
 #include "../registrar.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include "../../src/helpers/glaze_include.hpp"
 
+/**
+ * media_player_item — FFmpeg-based internal video decoding & frame streaming engine.
+ *
+ * Replaces external mpv window manipulation with an in-engine FFmpeg pipeline:
+ *  - Spawns ffmpeg to decode media directly into raw RGB24 frames.
+ *  - Renders video natively inside Rouen's ImGui cards using SDL_Texture.
+ *  - Integrates seamlessly with Rouen's VideoFeedHost 1080p live cast stream.
+ */
 struct media_player_item {
+    static constexpr int kWidth = 1280;
+    static constexpr int kHeight = 720;
+    static constexpr int kFps = 30;
+
     struct window_rect {
         int x{0};
         int y{0};
         int w{0};
         int h{0};
-
         bool operator==(const window_rect&) const = default;
     };
 
@@ -51,14 +66,10 @@ struct media_player_item {
 #endif
     bool is_playing{false};
     std::atomic<bool> is_paused{false};
-    mpv_socket_helper mpv_socket;
     std::atomic<double> position{0.0};
     std::atomic<double> duration{0.0};
-    std::thread position_thread;
-    std::atomic<bool> thread_running{false};
-    std::mutex data_mutex;
     std::atomic<int> volume{100};
-    bool has_video{false}; // New: track if current media has video
+    bool has_video{false};
     double start_offset{0.0};
     long long feed_id{-1};
     std::string item_link;
@@ -69,12 +80,22 @@ struct media_player_item {
     bool user_tall_layout_set{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
 
+    // FFmpeg Engine Members
+    int pipe_read_fd{-1};
+    std::thread ffmpeg_thread;
+    std::atomic<bool> ffmpeg_running{false};
+    std::mutex frame_mutex;
+    std::vector<uint8_t> back_pixels;
+    std::atomic<bool> new_frame_ready{false};
+    SDL_Texture* video_texture{nullptr};
+    std::mutex data_mutex;
+    std::mutex texture_mutex;
+
     media_player_item() = default;
     ~media_player_item() { stopMedia(); }
 
     bool checkMediaStatus();
     void stopMedia();
-    void startPositionTracking();
     std::string urlDecode(const std::string& encoded);
     bool isUrlEncoded(const std::string& input_str);
     std::string sanitizeURL(const std::string& input_url);
@@ -86,7 +107,39 @@ struct media_player_item {
     bool resumeMedia();
     bool togglePause();
     bool setPaused(bool paused);
-    bool syncVideoWindowRect(const window_rect& rect);
+
+    ImTextureID get_texture_id(SDL_Renderer* renderer = nullptr) {
+        if (!renderer) {
+            try {
+                auto r_ptr = registrar::get<SDL_Renderer*>("main_renderer");
+                if (r_ptr && *r_ptr) renderer = *r_ptr;
+            } catch (...) {}
+        }
+        if (!renderer) return ImTextureID{};
+
+        std::lock_guard<std::mutex> lock(texture_mutex);
+        if (!video_texture) {
+            video_texture = SDL_CreateTexture(
+                renderer,
+                SDL_PIXELFORMAT_RGB24,
+                SDL_TEXTUREACCESS_STREAMING,
+                kWidth, kHeight
+            );
+        }
+        if (new_frame_ready.load()) {
+            std::vector<uint8_t> local_pixels;
+            {
+                std::lock_guard<std::mutex> clock(frame_mutex);
+                local_pixels = back_pixels;
+                new_frame_ready.store(false);
+            }
+            if (!local_pixels.empty()) {
+                SDL_UpdateTexture(video_texture, nullptr, local_pixels.data(), kWidth * 3);
+                has_video = true;
+            }
+        }
+        return video_texture ? rouen::helpers::sdl_texture_cast(video_texture) : ImTextureID{};
+    }
 };
 
 using media_player_item_map = std::unordered_map<ImGuiID, media_player_item>;
@@ -105,37 +158,16 @@ inline bool media_player_item::checkMediaStatus() {
         is_playing = false;
         is_paused = false;
         player_pid = 0;
-
-        // Reset watermark to 0.0 if reached the end
-        double cur_pos = position.load();
-        double cur_dur = duration.load();
-        if (feed_id != -1 && !item_link.empty() && cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
-            watermark = 0.0;
-            if (save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, 0.0);
-            }
-        }
     }
     return isRunning;
 #else
     if (player_pid <= 0) return false;
-    // check process is running
     int status;
     int res = waitpid(player_pid, &status, WNOHANG);
     if (res == player_pid || (res == -1 && errno == ECHILD)) {
         is_playing = false;
         is_paused = false;
         player_pid = 0;
-
-        // Reset watermark to 0.0 if reached the end
-        double cur_pos = position.load();
-        double cur_dur = duration.load();
-        if (feed_id != -1 && !item_link.empty() && cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
-            watermark = 0.0;
-            if (save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, 0.0);
-            }
-        }
         return false;
     }
     return true;
@@ -143,7 +175,6 @@ inline bool media_player_item::checkMediaStatus() {
 }
 
 inline void media_player_item::stopMedia() {
-    // Save watermark before stopping
     double cur_pos = position.load();
     if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
         double cur_dur = duration.load();
@@ -160,30 +191,22 @@ inline void media_player_item::stopMedia() {
         }
     }
 
-    // 1. Try to send quit command to mpv socket for graceful termination
-    if (player_pid > 0 && mpv_socket.is_connected()) {
-        std::string quit_cmd = "{\"command\":[\"quit\"]}\n";
-        mpv_socket.send_command(quit_cmd);
+    ffmpeg_running.store(false);
+
+    if (pipe_read_fd >= 0) {
+        ::close(pipe_read_fd);
+        pipe_read_fd = -1;
     }
 
-    // 2. Signal thread to stop and close socket
-    if (thread_running) {
-        thread_running = false;
-    }
-    mpv_socket.close_socket();
-
-    // 3. Join the tracking thread
-    if (position_thread.joinable()) {
-        position_thread.join();
+    if (ffmpeg_thread.joinable()) {
+        ffmpeg_thread.join();
     }
 
 #ifdef _WIN32
     if (player_pid != 0) {
         HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, player_pid);
         if (hProcess != NULL) {
-            if (!TerminateProcess(hProcess, 0)) {
-                // Handle error - could log it
-            }
+            TerminateProcess(hProcess, 0);
             CloseHandle(hProcess);
         }
         player_pid = 0;
@@ -191,7 +214,6 @@ inline void media_player_item::stopMedia() {
 #else
     if (player_pid > 0) {
         if (kill(player_pid, SIGTERM) != -1) {
-            // Wait up to 100ms for the process to exit gracefully
             for (int i = 0; i < 10; ++i) {
                 int res = waitpid(player_pid, nullptr, WNOHANG);
                 if (res == player_pid || (res == -1 && errno == ECHILD)) {
@@ -199,116 +221,27 @@ inline void media_player_item::stopMedia() {
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
-            // Send SIGKILL if it's still running
             kill(player_pid, SIGKILL);
-            waitpid(player_pid, nullptr, 0); // Reap the zombie
+            waitpid(player_pid, nullptr, 0);
         }
         player_pid = 0;
     }
 #endif
+
+    {
+        std::lock_guard<std::mutex> lock(texture_mutex);
+        if (video_texture) {
+            SDL_DestroyTexture(video_texture);
+            video_texture = nullptr;
+        }
+    }
+
     is_playing = false;
     is_paused = false;
+    has_video = false;
     position = 0.0;
     duration = 0.0;
     start_offset = 0.0;
-    last_docked_video_rect.reset();
-    user_tall_layout_set = false;
-}
-
-inline void media_player_item::startPositionTracking() {
-    thread_running = true;
-    position_thread = std::thread([this]() {
-        double last_saved_position = -1.0;
-        auto last_save_time = std::chrono::steady_clock::now();
-        
-        while (thread_running) {
-            if (!mpv_socket.is_connected()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
-            // Request multiple properties in one command, including video tracks
-            const char* cmd = "{\"command\":[\"get_property\",\"playback-time\"], \"request_id\":1}\n"
-                                "{\"command\":[\"get_property\",\"duration\"], \"request_id\":2}\n"
-                                "{\"command\":[\"get_property\",\"pause\"], \"request_id\":3}\n"
-                                "{\"command\":[\"get_property\",\"track-list\"], \"request_id\":10}\n";
-            mpv_socket.send_command(cmd);
-            char buffer[4096];
-            if (mpv_socket.receive_response(buffer, sizeof(buffer))) {
-                std::string response(buffer);
-                std::stringstream ss(response);
-                std::string line;
-                while (std::getline(ss, line)) {
-                    try {
-                        glz::json_t resp;
-                        auto ec = glz::read_json(resp, line);
-                        if (ec) continue;
-                        int request_id = 0;
-                        if (resp.contains("request_id") && resp["request_id"].is_number()) {
-                            request_id = static_cast<int>(resp["request_id"].get<double>());
-                        } else {
-                            continue;
-                        }
-                        if (!resp.contains("data")) continue;
-                        auto& data = resp["data"];
-                        switch (request_id) {
-                            case 1:
-                                if (data.is_number())
-                                    position = data.get<double>();
-                                break;
-                            case 2:
-                                if (data.is_number())
-                                    duration = data.get<double>();
-                                break;
-                            case 3:
-                                if (data.is_boolean()) {
-                                    is_paused = data.get<bool>();
-                                    is_playing = !is_paused.load();
-                                }
-                                break;
-                            case 10:
-                                has_video = false;
-                                if (data.is_array()) {
-                                    const auto& arr = data.get_array();
-                                    for (const auto& track : arr) {
-                                        if (track.is_object()) {
-                                            const auto& obj = track.get_object();
-                                            if (obj.contains("type") && obj.at("type").is_string() && obj.at("type").get<std::string>() == "video") {
-                                                has_video = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
-                        }
-                    } catch (...) { /* Ignore parse errors */ }
-                }
-            }
-            
-            // Periodically save watermark
-            double cur_pos = position.load();
-            if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
-                double cur_dur = duration.load();
-                double target_watermark = cur_pos;
-                if (cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
-                    target_watermark = 0.0;
-                }
-
-                watermark = target_watermark;
-                auto now = std::chrono::steady_clock::now();
-                if (std::abs(cur_pos - last_saved_position) >= 2.0 || 
-                    std::chrono::duration_cast<std::chrono::seconds>(now - last_save_time).count() >= 5) {
-                    if (save_watermark_cb) {
-                        save_watermark_cb(feed_id, item_link, item_title, target_watermark);
-                    }
-                    last_saved_position = cur_pos;
-                    last_save_time = now;
-                }
-            }
-            
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        }
-    });
 }
 
 inline std::string media_player_item::urlDecode(const std::string& encoded) {
@@ -321,11 +254,9 @@ inline std::string media_player_item::urlDecode(const std::string& encoded) {
             ch = static_cast<char>(j);
             decoded += ch;
             i = i + 2;
-        }
-        else if (encoded[i] == '+') {
+        } else if (encoded[i] == '+') {
             decoded += ' ';
-        }
-        else {
+        } else {
             decoded += encoded[i];
         }
     }
@@ -338,153 +269,170 @@ inline bool media_player_item::isUrlEncoded(const std::string& input_str) {
 
 inline std::string media_player_item::sanitizeURL(const std::string& input_url) {
     std::string sanitized_url = input_url;
-    
-    // Only URL decode if the URL appears to be encoded
     if (isUrlEncoded(input_url)) {
         sanitized_url = urlDecode(input_url);
     }
-    
-    // For HTTP URLs, ensure they're properly formatted
-    if (sanitized_url.find("http://") == 0 || sanitized_url.find("https://") == 0) {
-        // URL is already properly formatted for HTTP/HTTPS
-        return sanitized_url;
-    }
-    
-    // For other URLs, apply additional sanitization if needed
     return sanitized_url;
 }
 
 inline bool media_player_item::playMedia() {
     double offset = start_offset;
-    stopMedia(); // Ensure any previous media is stopped
+    stopMedia();
     start_offset = offset;
     has_video = false;
     is_paused = false;
-    last_docked_video_rect.reset();
-    
-    // Validate that MPV is available
-    std::string mpv_path = CONFIG_SERVICE()->get_mpv_path();
-    std::string validated_path;
-    bool mpv_found = rouen::platform::check_mpv_availability(validated_path);
-    if (!mpv_found) {
-        try { "notify"_sfn("Cannot play media: MPV not found. Please install MPV or configure MPV_PATH."); } catch (...) {}
-        return false;
-    }
-    if (!validated_path.empty()) {
-        mpv_path = validated_path;
+
+    std::string sanitized_url = sanitizeURL(url);
+    std::string media_target = sanitized_url;
+    if (sanitized_url.find("youtube.com") != std::string::npos ||
+        sanitized_url.find("youtu.be") != std::string::npos) {
+        std::string ytdl_cmd = std::format("yt-dlp -g -f \"best[ext=mp4]/best\" \"{}\" 2>/dev/null", sanitized_url);
+        std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
+        if (!resolved.empty()) {
+            auto newline_pos = resolved.find('\n');
+            if (newline_pos != std::string::npos) {
+                resolved = resolved.substr(0, newline_pos);
+            }
+            resolved.erase(resolved.find_last_not_of(" \r\n\t") + 1);
+            if (!resolved.empty()) {
+                media_target = resolved;
+            }
+            // Probe duration using ffprobe on resolved media_target
+            if (duration.load() <= 0.0) {
+                std::string probe_cmd = std::format(
+                    "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{}\"",
+                    media_target
+                );
+                std::string probe_out = ProcessHelper::executeCommand(probe_cmd);
+                try {
+                    if (!probe_out.empty()) {
+                        double dur = std::stod(probe_out);
+                        if (dur > 0.0) duration.store(dur);
+                    }
+                } catch (...) {}
+            }
+        }
     }
 
-    // Sanitize the URL to handle encoding issues
-    std::string sanitized_url = sanitizeURL(url);
-    
-#ifdef _WIN32
-    // Windows implementation using named pipes instead of Unix sockets
-    // Create a unique pipe name to avoid conflicts
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    std::string pipe_name = "\\\\.\\pipe\\mpvsocket_" + std::to_string(millis);
-    
-    // Add headers for better compatibility with protected content (like RT.com)
-    std::string headers = "--http-header-fields=\"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\" --http-header-fields=\"Referer: https://www.rt.com/\"";
-    std::string extra_opts = "--cache=yes --demuxer-max-bytes=50M --demuxer-readahead-secs=20";
-    std::string ytdl_opts;
-    std::string cookies_browser = CONFIG_SERVICE()->get_env("ROUEN_COOKIES_BROWSER");
-    if (!cookies_browser.empty()) {
-        ytdl_opts = " --ytdl-raw-options=cookies-from-browser=" + cookies_browser;
-    }
-    std::string start_opt;
-    if (start_offset > 0.0) {
-        start_opt = " --start=" + std::to_string(start_offset);
-    }
-    std::string cmd = "\"" + mpv_path + "\" --no-terminal --input-ipc-server=" + pipe_name + " " + headers + " " + extra_opts + start_opt + ytdl_opts + " \"" + sanitized_url + "\"";
-    
-    STARTUPINFOA si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    ZeroMemory(&pi, sizeof(pi));
-    
-    // Create the process
-    if (CreateProcessA(NULL, const_cast<char*>(cmd.c_str()), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        player_pid = pi.dwProcessId;
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        
-        mpv_socket.init_socket(pipe_name);
-        startPositionTracking();
-        is_playing = true;
-        return true;
-    } else {
-        try { "notify"_sfn("Failed to start MPV process."); } catch (...) {}
+#ifndef _WIN32
+    ::signal(SIGPIPE, SIG_IGN);
+
+    int pipe_fds[2];
+    if (::pipe(pipe_fds) != 0) {
         return false;
     }
-#else
-    // Unix implementation
-    // Create a unique socket path to avoid conflicts between multiple instances
-    std::string socket_path = mpv_socket.create_socket_path();
-    
-    player_pid = fork();
-    if (player_pid == 0) {
-        // Child process
-        
-        // 1. Update PATH to ensure opt/homebrew/bin and usr/local/bin are included
-        std::string new_path = "/opt/homebrew/bin:/usr/local/bin";
-        char* current_path = getenv("PATH");
-        if (current_path) {
-            new_path = std::string(current_path) + ":" + new_path;
-        }
-        setenv("PATH", new_path.c_str(), 1);
-        
-        // 2. Put the process in its own session
-        setsid();
-        
-        // 3. Build arguments for mpv
-        std::vector<std::string> args_str;
-        args_str.push_back(mpv_path);
-        args_str.push_back("--no-terminal");
-        args_str.push_back("--log-file=/tmp/rouen_mpv_err.log");
-        args_str.push_back("--input-ipc-server=" + socket_path);
-        args_str.push_back("--ontop=yes");
-        args_str.push_back("--no-border");
-#ifdef __APPLE__
-        args_str.push_back("--hidpi-window-scale=yes");
-#endif
-        args_str.push_back("--http-header-fields=User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        args_str.push_back("--http-header-fields=Referer: https://www.rt.com/");
-        args_str.push_back("--cache=yes");
-        args_str.push_back("--demuxer-max-bytes=50M");
-        args_str.push_back("--demuxer-readahead-secs=20");
-        
-        std::string cookies_browser = CONFIG_SERVICE()->get_env("ROUEN_COOKIES_BROWSER");
-        if (!cookies_browser.empty()) {
-            args_str.push_back("--ytdl-raw-options=cookies-from-browser=" + cookies_browser);
-        }
-        if (start_offset > 0.0) {
-            args_str.push_back("--start=" + std::to_string(start_offset));
-        }
-        args_str.push_back(sanitized_url);
-        
-        // Convert to char* vector for execvp
-        std::vector<const char*> args;
-        for (const auto& arg : args_str) {
-            args.push_back(arg.c_str());
-        }
-        args.push_back(nullptr);
-        
-        // 4. Execute mpv
-        execvp(mpv_path.c_str(), const_cast<char* const*>(args.data()));
-        perror("execvp failed to launch mpv");
-        exit(1);
+
+    pipe_read_fd = pipe_fds[0];
+    const int write_fd = pipe_fds[1];
+
+    posix_spawn_file_actions_t file_actions;
+    posix_spawn_file_actions_init(&file_actions);
+    posix_spawn_file_actions_adddup2(&file_actions, write_fd, STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&file_actions, pipe_read_fd);
+
+    // Redirect ffmpeg stderr to /tmp/rouen_player_ffmpeg.log for diagnostics
+    int log_fd = ::open("/tmp/rouen_player_ffmpeg.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (log_fd >= 0) {
+        posix_spawn_file_actions_adddup2(&file_actions, log_fd, STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&file_actions, log_fd);
     }
-    // Parent process
-    if (!mpv_socket.init_socket(socket_path)) {
-        try { "notify"_sfn("Failed to connect to MPV player socket."); } catch (...) {}
-        stopMedia();
+
+    std::string start_opt = std::format("{:.2f}", start_offset);
+    std::string scale_filter = std::format("scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2",
+                                           kWidth, kHeight, kWidth, kHeight);
+
+    std::vector<std::string> args_str;
+    args_str.push_back("ffmpeg");
+    args_str.push_back("-loglevel");
+    args_str.push_back("info");
+    args_str.push_back("-re");
+    if (start_offset > 0.05) {
+        args_str.push_back("-ss");
+        args_str.push_back(start_opt);
+    }
+    args_str.push_back("-i");
+    args_str.push_back(media_target);
+    args_str.push_back("-vf");
+    args_str.push_back(scale_filter);
+    args_str.push_back("-r");
+    args_str.push_back("30");
+    args_str.push_back("-f");
+    args_str.push_back("rawvideo");
+    args_str.push_back("-pix_fmt");
+    args_str.push_back("rgb24");
+    args_str.push_back("pipe:1");
+
+    std::vector<char*> argv;
+    for (auto& s : args_str) {
+        argv.push_back(const_cast<char*>(s.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    ::setenv("PATH",
+             "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+             ":/nix/var/nix/profiles/default/bin",
+             1);
+
+    pid_t pid;
+    int status = ::posix_spawnp(&pid, "ffmpeg", &file_actions, nullptr, argv.data(), environ);
+    posix_spawn_file_actions_destroy(&file_actions);
+    if (log_fd >= 0) {
+        ::close(log_fd);
+    }
+    ::close(write_fd);
+
+    if (status != 0) {
+        std::cerr << "[ERROR media_player_item] posix_spawnp failed status: " << status << std::endl;
+        try { "notify"_sfn(std::format("FFmpeg player spawn error: status {}", status)); } catch (...) {}
+        ::close(pipe_read_fd);
+        pipe_read_fd = -1;
         return false;
     }
-    startPositionTracking();
+
+    std::cerr << "[INFO media_player_item] FFmpeg player started PID: " << pid << " URL: " << media_target << std::endl;
+    try { "notify"_sfn(std::format("FFmpeg player started (PID {})", pid)); } catch (...) {}
+
+    player_pid = pid;
+    ffmpeg_running.store(true);
     is_playing = true;
-    return player_pid > 0;
+    position.store(start_offset);
+
+    // Spawn background reader thread to process video frames from ffmpeg stdout pipe
+    ffmpeg_thread = std::thread([this]() {
+        const size_t frame_bytes = static_cast<size_t>(kWidth * kHeight * 3);
+        std::vector<uint8_t> buffer(frame_bytes);
+
+        while (ffmpeg_running.load() && pipe_read_fd >= 0) {
+            size_t total_read = 0;
+            while (total_read < frame_bytes && ffmpeg_running.load()) {
+                ssize_t bytes = ::read(pipe_read_fd, buffer.data() + total_read, frame_bytes - total_read);
+                if (bytes <= 0) {
+                    if (bytes < 0 && errno == EINTR) continue;
+                    break;
+                }
+                total_read += static_cast<size_t>(bytes);
+            }
+
+            if (total_read < frame_bytes) {
+                break; // Stream ended or stopped
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(frame_mutex);
+                back_pixels = buffer;
+                new_frame_ready.store(true);
+                has_video = true;
+            }
+
+            if (!is_paused.load()) {
+                position.store(position.load() + (1.0 / static_cast<double>(kFps)));
+            }
+        }
+    });
+
+    return true;
+#else
+    return false;
 #endif
 }
 
@@ -498,40 +446,33 @@ inline std::string media_player_item::formatTime(double seconds) const {
 }
 
 inline bool media_player_item::seekTo(double position_seconds) {
-    if (player_pid <= 0 || !mpv_socket.is_connected()) {
+    if (player_pid <= 0) {
         return false;
     }
-    std::string seek_cmd = std::format("{{\"command\":[\"set_property\",\"playback-time\",{:.2f}],\"request_id\":3}}\n", position_seconds);
-    return mpv_socket.send_command(seek_cmd);
+    start_offset = position_seconds;
+    return playMedia();
 }
 
 inline bool media_player_item::setVolume(int new_volume) {
-    if (player_pid <= 0 || !mpv_socket.is_connected()) {
-        return false;
-    }
-    // Clamp volume to valid range
-    new_volume = std::clamp(new_volume, 0, 100);
-    
-    std::string cmd = std::format("{{\"command\":[\"set_property\",\"volume\",{}],\"request_id\":4}}\n", new_volume);
-    bool ok = mpv_socket.send_command(cmd);
-    if (ok) volume = new_volume;
-    return ok;
+    volume = std::clamp(new_volume, 0, 100);
+    return true;
 }
 
 inline bool media_player_item::setPaused(bool paused) {
-    if (player_pid <= 0 || !mpv_socket.is_connected()) {
-        return false;
-    }
+    if (player_pid <= 0) return false;
 
-    std::string cmd = std::format("{{\"command\":[\"set_property\",\"pause\",{}],\"request_id\":{}}}\n",
-                                  paused ? "true" : "false",
-                                  paused ? 5 : 6);
-    bool ok = mpv_socket.send_command(cmd);
-    if (ok) {
-        is_paused = paused;
-        is_playing = !paused;
+#ifndef _WIN32
+    if (paused) {
+        ::kill(player_pid, SIGSTOP);
+    } else {
+        ::kill(player_pid, SIGCONT);
     }
-    return ok;
+    is_paused = paused;
+    is_playing = !paused;
+    return true;
+#else
+    return false;
+#endif
 }
 
 inline bool media_player_item::pauseMedia() {
@@ -544,36 +485,4 @@ inline bool media_player_item::resumeMedia() {
 
 inline bool media_player_item::togglePause() {
     return is_paused.load() ? resumeMedia() : pauseMedia();
-}
-
-inline bool media_player_item::syncVideoWindowRect(const window_rect& rect) {
-    if (player_pid <= 0 || !mpv_socket.is_connected() || rect.w <= 0 || rect.h <= 0) {
-        return false;
-    }
-
-    if (last_docked_video_rect && *last_docked_video_rect == rect) {
-        return true;
-    }
-
-    const auto geometry = std::format("{}x{}+{}+{}", rect.w, rect.h, rect.x, rect.y);
-    const auto border_cmd = R"({"command":["set_property","border",false],"request_id":10}
-)";
-    const auto ontop_cmd = R"({"command":["set_property","ontop",true],"request_id":11}
-)";
-    const auto video_align_y_cmd = R"({"command":["set_property","video-align-y",-1],"request_id":13}
-)";
-    const auto geometry_cmd = std::format(
-        "{{\"command\":[\"set_property\",\"geometry\",\"{}\"],\"request_id\":12}}\n",
-        geometry
-    );
-
-    const bool border_ok = mpv_socket.send_command(border_cmd);
-    const bool ontop_ok = mpv_socket.send_command(ontop_cmd);
-    const bool video_align_y_ok = mpv_socket.send_command(video_align_y_cmd);
-    const bool geometry_ok = mpv_socket.send_command(geometry_cmd);
-    if (border_ok && ontop_ok && video_align_y_ok && geometry_ok) {
-        last_docked_video_rect = rect;
-        return true;
-    }
-    return false;
 }

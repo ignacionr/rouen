@@ -27,6 +27,7 @@ struct media_player {
         for (auto &[k,v]: items()) {
             v.stopMedia();
         }
+        items().clear();
     }
 
     static std::optional<double>& get_dummy_watermark() noexcept {
@@ -36,6 +37,7 @@ struct media_player {
 
     static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
         (void)info_color;
+        (void)prefer_tall_layout;
         ImGui::PushID(url.data(), url.data() + url.size());
         try {
             auto &item {items()[ImGui::GetID("MediaPlayer")]};
@@ -99,93 +101,13 @@ struct media_player {
                 } else {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
-                // --- Video support ---
-                if (item.has_video) {
-                    ImGui::Spacing();
-                    if (ImGui::Button("Show Video Window")) {
-                        // Send MPV command to show video window (if hidden)
-                        std::string show_cmd = "{\"command\":[\"set_property\",\"vid\",1]}\n";
-                        item.mpv_socket.send_command(show_cmd);
-                        item.last_docked_video_rect.reset();
-                    }
-                    ImGui::SameLine();
-                    
-                    bool is_tall = item.user_tall_layout_set ? item.user_tall_layout : prefer_tall_layout;
-                    if (ImGui::Button(is_tall ? "Make Shorter" : "Make Taller")) {
-                        item.user_tall_layout = !is_tall;
-                        item.user_tall_layout_set = true;
-                        item.last_docked_video_rect.reset(); // Reset to force MPV window resync on new height
-                    }
-
+                // --- Video rendering via FFmpeg Engine ---
+                ImTextureID tex = item.get_texture_id();
+                if (tex && item.has_video) {
                     ImGui::Spacing();
                     const float dock_width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
-                    float dock_height = 0.0f;
-                    if (is_tall) {
-                        // Expand all the way to the lower available border
-                        dock_height = std::max(140.0f, ImGui::GetContentRegionAvail().y);
-                    } else {
-                        const float max_dock_height = 360.0f;
-                        dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, max_dock_height);
-                    }
-                    const ImVec2 dock_size{dock_width, dock_height};
-                    const ImVec2 dock_min = ImGui::GetCursorScreenPos();
-
-                    ImGui::Dummy(dock_size);
-
-                    const ImVec2 dock_max = ImGui::GetItemRectMax();
-                    auto* draw_list = ImGui::GetWindowDrawList();
-                    const auto fill_color = ImGui::GetColorU32(ImGuiCol_FrameBg);
-                    const auto border_color = ImGui::GetColorU32(ImGuiCol_Border);
-                    const auto text_color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-                    draw_list->AddRectFilled(dock_min, dock_max, fill_color, 10.0f);
-                    draw_list->AddRect(dock_min, dock_max, border_color, 10.0f, 0, 2.0f);
-
-                    constexpr const char* dock_label = "Docked MPV video window";
-                    const ImVec2 label_size = ImGui::CalcTextSize(dock_label);
-                    draw_list->AddText(
-                        ImVec2(
-                            dock_min.x + std::max(0.0f, (dock_size.x - label_size.x) * 0.5f),
-                            dock_min.y + std::max(0.0f, (dock_size.y - label_size.y) * 0.5f)
-                        ),
-                        text_color,
-                        dock_label
-                    );
-
-                    auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
-                    if (get_window_service) {
-                        if (SDL_Window* window = (*get_window_service)()) {
-                            int window_x = 0;
-                            int window_y = 0;
-                            SDL_GetWindowPosition(window, &window_x, &window_y);
-
-                            int content_origin_x = window_x;
-                            int content_origin_y = window_y;
-#ifdef __APPLE__
-                            content_origin_y -= rouen::platform::get_mac_titlebar_height(window);
-#else
-                            int border_top = 0;
-                            int border_left = 0;
-                            int border_bottom = 0;
-                            int border_right = 0;
-                            if (SDL_GetWindowBordersSize(window, &border_top, &border_left, &border_bottom, &border_right) == 0) {
-                                content_origin_x += border_left;
-                                content_origin_y += border_top;
-                            }
-#endif
-
-                            float scale = 1.0f;
-#ifdef __APPLE__
-                            scale = rouen::platform::get_mac_backing_scale_factor(window);
-#endif
-
-                            item.syncVideoWindowRect({
-                                static_cast<int>(static_cast<float>(content_origin_x) * scale + dock_min.x),
-                                static_cast<int>(static_cast<float>(content_origin_y) * scale + dock_min.y - 3.0f * scale),
-                                std::max(1, static_cast<int>(dock_size.x)),
-                                std::max(1, static_cast<int>(dock_size.y))
-                            });
-                        }
-                    }
+                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, 480.0f);
+                    ImGui::Image(tex, ImVec2(dock_width, dock_height));
                 }
             } else {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));

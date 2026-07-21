@@ -103,8 +103,9 @@ void main_wnd::run() {
             }
         }
 
-        // Stop video feed host and cleanup offscreen ImGui context before SDL_Renderer destruction
+        // Stop all active media players and video feed host before SDL_Renderer destruction
         try {
+            media_player::stopAll();
             auto video_feed = rouen::hosts::VideoFeedHost::get_host();
             if (video_feed) {
                 video_feed->stop();

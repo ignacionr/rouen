@@ -209,7 +209,8 @@ int main() {
     // Run the main loop
     window.run();
 
-    // Stop the video feed host
+    // Stop all media players and video feed host
+    media_player::stopAll();
     video_feed->stop();
 
     // Run shutdown synchronization if enabled

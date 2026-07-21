@@ -30,6 +30,7 @@ extern char **environ;
 #include "../helpers/imgui_include.hpp"
 #include "../helpers/debug.hpp"
 #include "../helpers/texture_utils.hpp"
+#include "../helpers/media_player.hpp"
 #include "../cards/interface/card.hpp"
 #include "../registrar.hpp"
 
@@ -305,6 +306,30 @@ public:
                     }
                 }
             } catch (...) {}
+
+            // Render Active Media Player Video Stream on Cast
+            try {
+                for (auto& [id, item] : media_player::items()) {
+                    if (item.is_playing && item.has_video) {
+                        ImTextureID media_tex = item.get_texture_id(renderer);
+                        if (media_tex) {
+                            ImGui::SetNextWindowPos(ImVec2(100, 160));
+                            ImGui::SetNextWindowSize(ImVec2(1280, 720));
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
+                            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.08f, 0.95f));
+
+                            std::string win_title = std::format("Media Stream: {}##CastMediaWin", item.item_title.empty() ? "Video" : item.item_title);
+                            if (ImGui::Begin(win_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse)) {
+                                ImGui::Image(media_tex, ImVec2(1250, 650));
+                            }
+                            ImGui::End();
+                            ImGui::PopStyleColor();
+                            ImGui::PopStyleVar();
+                            break;
+                        }
+                    }
+                }
+            } catch (...) {}
         }
 
         // Render ImGui draw data onto offscreen_texture_
@@ -379,6 +404,8 @@ public:
             "notify"_sfn("Video feed stopped");
         } catch (...) {}
 #endif
+
+        cleanup_imgui_context();
     }
 
 private:
@@ -494,7 +521,7 @@ private:
             if (orig_ctx == video_imgui_ctx_) {
                 ImGui::SetCurrentContext(nullptr);
             }
-            video_imgui_ctx_->IO.Fonts = nullptr;
+            video_imgui_ctx_->FontAtlasOwnedByContext = false;
             ImGui::DestroyContext(video_imgui_ctx_);
             video_imgui_ctx_ = nullptr;
         }
