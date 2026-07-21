@@ -19,8 +19,10 @@
 #ifndef _WIN32
 #include <csignal>
 #include <fcntl.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+extern char **environ;
 #endif
 
 #include <SDL.h>
@@ -107,7 +109,7 @@ public:
         return ImTextureID{};
     }
 
-    /// Start the ffmpeg process.
+    /// Start the ffmpeg process safely using posix_spawn.
     bool start() {
         if (running_.load()) {
             VIDEOFEED_WARN("VideoFeedHost: Already running");
@@ -138,62 +140,53 @@ public:
             ::fcntl(write_fd, F_SETFL, flags | O_NONBLOCK);
         }
 
-        pid_t pid = ::fork();
-        if (pid < 0) {
-            VIDEOFEED_ERROR("VideoFeedHost: fork() failed");
-            ::close(read_fd);
+        // Use posix_spawn instead of fork() to be 100% thread-safe and Cocoa-compliant on macOS
+        posix_spawn_file_actions_t file_actions;
+        posix_spawn_file_actions_init(&file_actions);
+        posix_spawn_file_actions_adddup2(&file_actions, read_fd, STDIN_FILENO);
+        posix_spawn_file_actions_addclose(&file_actions, write_fd);
+
+        std::string input_size = std::format("{}x{}", kWidth, kHeight);
+        std::string framerate  = std::to_string(kFps);
+        std::string listen_url = std::format("http://127.0.0.1:{}", listen_port);
+
+        char* argv[] = {
+            const_cast<char*>("ffmpeg"),
+            const_cast<char*>("-loglevel"), const_cast<char*>("warning"),
+            const_cast<char*>("-f"), const_cast<char*>("rawvideo"),
+            const_cast<char*>("-pixel_format"), const_cast<char*>("rgb24"),
+            const_cast<char*>("-video_size"), const_cast<char*>(input_size.c_str()),
+            const_cast<char*>("-framerate"), const_cast<char*>(framerate.c_str()),
+            const_cast<char*>("-i"), const_cast<char*>("pipe:0"),
+            const_cast<char*>("-c:v"), const_cast<char*>("libx264"),
+            const_cast<char*>("-preset"), const_cast<char*>("ultrafast"),
+            const_cast<char*>("-tune"), const_cast<char*>("zerolatency"),
+            const_cast<char*>("-pix_fmt"), const_cast<char*>("yuv420p"),
+            const_cast<char*>("-g"), const_cast<char*>("4"),
+            const_cast<char*>("-f"), const_cast<char*>("mpegts"),
+            const_cast<char*>("-listen"), const_cast<char*>("1"),
+            const_cast<char*>(listen_url.c_str()),
+            nullptr
+        };
+
+        pid_t pid;
+        int status = ::posix_spawnp(&pid, "ffmpeg", &file_actions, nullptr, argv, environ);
+        posix_spawn_file_actions_destroy(&file_actions);
+        ::close(read_fd);
+
+        if (status != 0) {
+            VIDEOFEED_ERROR_FMT("VideoFeedHost: posix_spawnp failed with status {}", status);
             ::close(write_fd);
-            try { "notify"_sfn("Video Feed error: Failed to fork process"); } catch (...) {}
+            try { "notify"_sfn("Video Feed error: Failed to spawn ffmpeg"); } catch (...) {}
             return false;
         }
-
-        if (pid == 0) {
-            // ── child: exec ffmpeg ──────────────────────────────────
-            ::close(write_fd);
-
-            if (read_fd != STDIN_FILENO) {
-                ::dup2(read_fd, STDIN_FILENO);
-                ::close(read_fd);
-            }
-
-            std::string input_size = std::format("{}x{}", kWidth, kHeight);
-            std::string framerate  = std::to_string(kFps);
-            std::string listen_url = std::format("http://127.0.0.1:{}", listen_port);
-
-            ::setenv("PATH",
-                     "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-                     ":/nix/var/nix/profiles/default/bin",
-                     1);
-
-            ::execlp("ffmpeg", "ffmpeg",
-                     "-loglevel", "warning",
-                     "-f", "rawvideo",
-                     "-pixel_format", "rgb24",
-                     "-video_size", input_size.c_str(),
-                     "-framerate", framerate.c_str(),
-                     "-i", "pipe:0",
-                     "-c:v", "libx264",
-                     "-preset", "ultrafast",
-                     "-tune", "zerolatency",
-                     "-pix_fmt", "yuv420p",
-                     "-g", "4",
-                     "-f", "mpegts",
-                     "-listen", "1",
-                     listen_url.c_str(),
-                     static_cast<char*>(nullptr));
-
-            ::_exit(1);
-        }
-
-        // ── parent ──────────────────────────────────────────────────
-        ::close(read_fd);
 
         ffmpeg_pid_.store(pid);
         write_fd_.store(write_fd);
         running_.store(true);
         frame_number_ = 0;
 
-        VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started (PID {}, port {})", pid, listen_port);
+        VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started via posix_spawn (PID {}, port {})", pid, listen_port);
 
         try {
             "notify"_sfn(std::format("Video feed started at {}", endpoint()));
@@ -222,6 +215,7 @@ public:
 
         // Save original context and render target
         ImGuiContext* orig_ctx = ImGui::GetCurrentContext();
+        if (!orig_ctx) return;
         SDL_Texture* orig_target = SDL_GetRenderTarget(renderer);
 
         // Lazy-initialize offscreen target texture
@@ -238,9 +232,9 @@ public:
             }
         }
 
-        // Lazy-initialize secondary offscreen ImGui context
+        // Lazy-initialize secondary offscreen ImGui context sharing main font atlas
         if (!video_imgui_ctx_) {
-            ImFontAtlas* shared_fonts = orig_ctx ? orig_ctx->IO.Fonts : nullptr;
+            ImFontAtlas* shared_fonts = orig_ctx->IO.Fonts;
             video_imgui_ctx_ = ImGui::CreateContext(shared_fonts);
         }
 
@@ -250,6 +244,11 @@ public:
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(static_cast<float>(kWidth), static_cast<float>(kHeight));
         io.DeltaTime = 1.0f / static_cast<float>(kFps);
+
+        // Ensure font texture ID matches main context's SDL texture
+        if (orig_ctx->IO.Fonts && orig_ctx->IO.Fonts->TexID) {
+            io.Fonts->TexID = orig_ctx->IO.Fonts->TexID;
+        }
 
         // Set render target to offscreen texture
         SDL_SetRenderTarget(renderer, offscreen_texture_);
