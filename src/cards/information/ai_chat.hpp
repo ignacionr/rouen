@@ -29,6 +29,7 @@
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 #include "../../../external/IconsMaterialDesign.h"
+#include "../../hosts/dictation_host.hpp"
 
 namespace rouen::cards {
     class ai_chat : public card {
@@ -100,13 +101,16 @@ namespace rouen::cards {
                 
 
                 
-                // temperature slider
-                ImGui::SliderFloat("Temperature", &temperature_, 0.0f, 1.0f);
-                
                 bool speak_replies = notify_service::spoken_notifications_enabled();
                 if (ImGui::Checkbox("Speak replies", &speak_replies)) {
                     notify_service::set_spoken_notifications_enabled(speak_replies);
                 }
+
+                ImGui::SameLine();
+                ImGui::Checkbox("Debug Mode", &debug_mode_);
+
+                ImGui::SameLine();
+                ImGui::Checkbox("Log Requests", &log_requests_);
 
                 // Persona Configuration Section
                 ImGui::SeparatorText("Personas");
@@ -192,6 +196,15 @@ namespace rouen::cards {
                             p.enable_search = enable_search;
                             changed = true;
                         }
+                    }
+                    
+                    // Temperature
+                    ImGui::Text("Temperature:");
+                    float temp = p.temperature;
+                    ImGui::SetNextItemWidth(-1);
+                    if (ImGui::SliderFloat("##persona_temp", &temp, 0.0f, 1.0f, "%.2f")) {
+                        p.temperature = temp;
+                        changed = true;
                     }
                     
                     // Allowed MCPs selection
@@ -370,6 +383,10 @@ namespace rouen::cards {
                     const ImU32 user_text_color = pick_text_color(blend_colors(user_bg, chat_bg));
                     const ImU32 assistant_text_color = pick_text_color(blend_colors(assistant_bg, chat_bg));
                     
+                    const ImVec4 debug_bg = ImVec4(0.12f, 0.15f, 0.22f, 0.85f);
+                    const ImU32 debug_bg_color = ImGui::ColorConvertFloat4ToU32(debug_bg);
+                    const ImU32 debug_text_color = pick_text_color(blend_colors(debug_bg, chat_bg));
+                    
                     // Display chat history using cached values
                     // Create a safe snapshot of the chat history for rendering
                     std::vector<std::pair<std::string, std::string>> chat_snapshot;
@@ -388,9 +405,11 @@ namespace rouen::cards {
                         const auto& message = chat_snapshot[i];
                         const auto& cache = cache_snapshot[i];
                         bool is_user = message.first == "user";
+                        bool is_debug = message.first == "debug";
                         
                         // Set background color for message bubbles
-                        ImGui::PushStyleColor(ImGuiCol_ChildBg, is_user ? user_bg_color : assistant_bg_color);
+                        ImU32 bg_color = is_user ? user_bg_color : (is_debug ? debug_bg_color : assistant_bg_color);
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
                         
                         // Position user messages to the right
                         if (is_user) {
@@ -409,10 +428,18 @@ namespace rouen::cards {
                             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                         
                         // Set text color based on sender
-                        ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
+                        ImU32 txt_color = is_user ? user_text_color : (is_debug ? debug_text_color : assistant_text_color);
+                        ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                         
                         // Display sender name
-                        std::string sender_name = is_user ? "You" : get_assistant_name();
+                        std::string sender_name;
+                        if (is_user) {
+                            sender_name = "You";
+                        } else if (is_debug) {
+                            sender_name = "Debug Info";
+                        } else {
+                            sender_name = get_assistant_name();
+                        }
                         ImGui::Text("%s", sender_name.c_str());
                         
                         // Copy button aligned to the right inside the balloon
@@ -426,7 +453,7 @@ namespace rouen::cards {
                         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
-                        ImGui::PushStyleColor(ImGuiCol_Text, is_user ? user_text_color : assistant_text_color);
+                        ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
                         
                         std::string copy_btn_id = std::format("{}##copy_{}", ICON_MD_CONTENT_COPY, i);
@@ -509,7 +536,7 @@ namespace rouen::cards {
                         
                         float time = static_cast<float>(ImGui::GetTime());
                         bool show_cursor = (static_cast<int>(time * 2.0f) % 2) == 0;
-                        std::string cursor_str = show_cursor ? "█" : " ";
+                        std::string cursor_str = show_cursor ? ">" : " ";
                         
                         // Bubble dimensions - 1 line of message height
                         float content_width = std::clamp(32.0f + padding.x * 2.0f + 24.0f, min_width, max_width);
@@ -577,16 +604,38 @@ namespace rouen::cards {
                 // Input area
                 ImGui::Separator();
                 reclaim_focus_ = false;
+
+                // Process pending dictation transcription if available
+                std::string dictation_result;
+                {
+                    std::lock_guard<std::mutex> lock(dictation_mutex_);
+                    if (pending_dictation_result_.has_value()) {
+                        dictation_result = std::move(*pending_dictation_result_);
+                        pending_dictation_result_.reset();
+                    }
+                }
+                if (!dictation_result.empty()) {
+                    input_text_ = dictation_result;
+                    send_message(input_text_);
+                    input_text_.clear();
+                    input_buffer_.fill('\0');
+                    reclaim_focus_ = true;
+                }
                 
-                // Only allow input if LLM is configured and not waiting for a response
-                ImGui::BeginDisabled(!llm_configured_ || waiting_for_response_.load());
-                
+                // Get dictation host status
+                auto host = rouen::hosts::dictation_host::get_host();
+                auto dict_state = host->get_state();
+                if (dict_state != rouen::hosts::dictation_host::State::Idle) {
+                    requested_fps = 30; // Boost FPS for smooth UI color updates
+                }
+
                 // Copy current input to buffer with bounds checking
                 const size_t copy_len = std::min(input_text_.length(), input_buffer_.size() - 1);
                 std::strncpy(input_buffer_.data(), input_text_.c_str(), copy_len);
                 input_buffer_[copy_len] = '\0';
                 
-                // Calculate space for the Send and Clear buttons to avoid them being cut off
+                // Calculate space for Dictation, Send and Clear buttons
+                const float dict_button_width = ImGui::CalcTextSize(ICON_MD_MIC " Dictate").x + ImGui::GetStyle().FramePadding.x * 2.0f + 16.0f;
                 const float send_button_width = ImGui::CalcTextSize("Send").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
                 const float clear_button_width = ImGui::CalcTextSize("Clear").x + ImGui::GetStyle().FramePadding.x * 2.0f + 20.0f;
                 
@@ -595,7 +644,12 @@ namespace rouen::cards {
                     ImGui::SetKeyboardFocusHere();
                 }
                 
-                ImGui::PushItemWidth(-send_button_width - clear_button_width - ImGui::GetStyle().ItemSpacing.x * 2.0f);
+                bool disable_text_input = !llm_configured_ || waiting_for_response_.load();
+                if (disable_text_input) {
+                    ImGui::BeginDisabled();
+                }
+
+                ImGui::PushItemWidth(-dict_button_width - send_button_width - clear_button_width - ImGui::GetStyle().ItemSpacing.x * 3.0f);
                 if (reclaim_focus_) {
                     ImGui::SetKeyboardFocusHere();
                     ImGui::SetItemDefaultFocus();
@@ -610,6 +664,71 @@ namespace rouen::cards {
                     reclaim_focus_ = true;
                 }
                 ImGui::PopItemWidth();
+
+                if (disable_text_input) {
+                    ImGui::EndDisabled();
+                }
+                
+                // Dictation Button - Always active
+                ImGui::SameLine();
+                std::string dict_label;
+                ImVec4 dict_normal_col, dict_hover_col, dict_active_col;
+                bool disable_dict_button = (dict_state == rouen::hosts::dictation_host::State::Transcribing);
+
+                if (dict_state == rouen::hosts::dictation_host::State::Recording) {
+                    // Recording state -> Bright Red color
+                    dict_label = ICON_MD_MIC " Recording...";
+                    dict_normal_col = ImVec4(0.85f, 0.18f, 0.18f, 1.0f);
+                    dict_hover_col  = ImVec4(0.95f, 0.28f, 0.28f, 1.0f);
+                    dict_active_col = ImVec4(0.75f, 0.12f, 0.12f, 1.0f);
+                } else if (dict_state == rouen::hosts::dictation_host::State::Transcribing) {
+                    // Transcribing state -> Third color (Amber / Gold)
+                    dict_label = ICON_MD_HOURGLASS_EMPTY " Processing...";
+                    dict_normal_col = ImVec4(0.90f, 0.58f, 0.12f, 1.0f);
+                    dict_hover_col  = ImVec4(0.98f, 0.68f, 0.22f, 1.0f);
+                    dict_active_col = ImVec4(0.80f, 0.48f, 0.08f, 1.0f);
+                } else if (dict_state == rouen::hosts::dictation_host::State::Starting) {
+                    // Starting state -> Standard button color (recording process launching...)
+                    dict_label = ICON_MD_MIC " Starting...";
+                    dict_normal_col = get_color(8);
+                    dict_hover_col  = get_color(9);
+                    dict_active_col = get_color(10);
+                } else {
+                    // Idle state -> Standard button color
+                    dict_label = ICON_MD_MIC " Dictate";
+                    dict_normal_col = get_color(8);
+                    dict_hover_col  = get_color(9);
+                    dict_active_col = get_color(10);
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Button, dict_normal_col);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, dict_hover_col);
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, dict_active_col);
+
+                if (disable_dict_button) {
+                    ImGui::BeginDisabled();
+                }
+
+                if (ImGui::Button(dict_label.c_str(), ImVec2(dict_button_width, 0))) {
+                    if (dict_state == rouen::hosts::dictation_host::State::Idle || dict_state == rouen::hosts::dictation_host::State::Error) {
+                        host->start_recording();
+                    } else if (dict_state == rouen::hosts::dictation_host::State::Recording || dict_state == rouen::hosts::dictation_host::State::Starting) {
+                        host->stop_recording([this](std::string text) {
+                            std::lock_guard<std::mutex> lock(dictation_mutex_);
+                            pending_dictation_result_ = text;
+                        });
+                    }
+                }
+
+                if (disable_dict_button) {
+                    ImGui::EndDisabled();
+                }
+
+                ImGui::PopStyleColor(3);
+
+                if (disable_text_input) {
+                    ImGui::BeginDisabled();
+                }
                 
                 ImGui::SameLine();
                 if (ImGui::Button("Send", ImVec2(send_button_width, 0)) && !input_text_.empty()) {
@@ -626,7 +745,9 @@ namespace rouen::cards {
                     layout_dirty_ = true;
                 }
                 
-                ImGui::EndDisabled();
+                if (disable_text_input) {
+                    ImGui::EndDisabled();
+                }
                 
                 // Update input_text from buffer if it changed
                 std::string new_input_text = input_buffer_.data();
@@ -715,6 +836,10 @@ namespace rouen::cards {
         std::atomic<bool> clear_input_on_response_{false};
         std::mutex chat_history_mutex_; // Protect chat_history_ and message_cache_ from concurrent access
         
+        // Dictation state management
+        std::mutex dictation_mutex_;
+        std::optional<std::string> pending_dictation_result_{std::nullopt};
+        
         // MCP service for function calling
         std::shared_ptr<helpers::mcp_service> mcp_service_{nullptr};
         
@@ -729,7 +854,8 @@ namespace rouen::cards {
         
         // Configuration settings
         static constexpr long ai_request_timeout_seconds_ = 180;
-        float temperature_{0.45f};
+        bool debug_mode_{false};
+        bool log_requests_{false};
 
         // Persona buffers
         std::array<char, 128> persona_name_buf_{};
@@ -792,6 +918,40 @@ namespace rouen::cards {
                 }
             }
             return nullptr;
+        }
+
+        std::string execute_function_with_debug(const std::string& function_name, const std::string& args_json, int depth) {
+            if (debug_mode_) {
+                std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                chat_history_.emplace_back("debug", std::format("🔧 **Tool Call**: `{}` (depth: {})\n\nArguments:\n```json\n{}\n```", function_name, depth, args_json));
+                message_cache_.emplace_back();
+                layout_dirty_ = true;
+                scroll_to_bottom_.store(true);
+            }
+
+            std::string result;
+            if (function_name.starts_with("call_persona_")) {
+                result = execute_persona_call(function_name, args_json, depth);
+            } else if (mcp_service_) {
+                try {
+                    auto res = mcp_service_->execute_function(function_name, args_json);
+                    result = res.success ? res.result : "Error: " + res.error_message;
+                } catch (const std::exception& e) {
+                    result = "Error executing function: " + std::string(e.what());
+                }
+            } else {
+                result = "Error: MCP service not available";
+            }
+
+            if (debug_mode_) {
+                std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                chat_history_.emplace_back("debug", std::format("📤 **Tool Result**: `{}`\n\n```\n{}\n```", function_name, result));
+                message_cache_.emplace_back();
+                layout_dirty_ = true;
+                scroll_to_bottom_.store(true);
+            }
+
+            return result;
         }
 
         std::string execute_persona_call(const std::string& function_name, const std::string& args_json, int depth) {
@@ -903,24 +1063,20 @@ namespace rouen::cards {
                 auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
                     return adapter_ptr->sendMessageWithFunctionCalling(
                         args.message,
-                        [fetcher](const std::string& url, const std::string& body, auto header_setter) {
-                            return fetcher->post(url, body, header_setter);
+                        [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
+                            if (log_requests) {
+                                std::cerr << "[LLM Request] URL: " << url << "\n[LLM Request Body]: " << body << "\n";
+                            }
+                            auto response = fetcher->post(url, body, header_setter);
+                            if (log_requests) {
+                                std::cerr << "[LLM Response]: " << response << "\n";
+                            }
+                            return response;
                         },
                         [this, depth](const std::string& func_name, const std::string& func_args_json) -> std::string {
-                            if (func_name.starts_with("call_persona_")) {
-                                return execute_persona_call(func_name, func_args_json, depth + 1);
-                            }
-                            if (mcp_service_) {
-                                try {
-                                    auto result = mcp_service_->execute_function(func_name, func_args_json);
-                                    return result.success ? result.result : "Error: " + result.error_message;
-                                } catch (const std::exception& e) {
-                                    return "Error executing function: " + std::string(e.what());
-                                }
-                            }
-                            return "Error: MCP service not available";
+                            return execute_function_with_debug(func_name, func_args_json, depth + 1);
                         },
-                        "user", model_name, search_mode_str, 0.45f, nullptr, &function_schemas
+                        "user", model_name, search_mode_str, target_persona->temperature, nullptr, &function_schemas
                     );
                 }, target_llm.instance_);
 
@@ -1146,7 +1302,9 @@ namespace rouen::cards {
                         {
                             std::lock_guard<std::mutex> lock(chat_history_mutex_);
                             for (const auto& chat_msg : chat_history_) {
-                                conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                                if (chat_msg.first == "user" || chat_msg.first == "assistant") {
+                                    conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
+                                }
                             }
                         }
                         
@@ -1156,25 +1314,20 @@ namespace rouen::cards {
                         auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
                             return adapter_ptr->sendMessageWithFunctionCalling(
                                 message,
-                                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
-                                    return fetcher->post(url, body, header_setter);
+                                [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
+                                    if (log_requests) {
+                                        std::cerr << "[LLM Request] URL: " << url << "\n[LLM Request Body]: " << body << "\n";
+                                    }
+                                    auto response = fetcher->post(url, body, header_setter);
+                                    if (log_requests) {
+                                        std::cerr << "[LLM Response]: " << response << "\n";
+                                    }
+                                    return response;
                                 },
                                 [this](const std::string& function_name, const std::string& args_json) -> std::string {
-                                    if (function_name.starts_with("call_persona_")) {
-                                        return execute_persona_call(function_name, args_json, 1);
-                                    }
-                                    // Execute MCP function
-                                    if (mcp_service_) {
-                                        try {
-                                            auto result = mcp_service_->execute_function(function_name, args_json);
-                                            return result.success ? result.result : "Error: " + result.error_message;
-                                        } catch (const std::exception& e) {
-                                            return "Error executing function: " + std::string(e.what());
-                                        }
-                                    }
-                                    return "Error: MCP service not available";
+                                    return execute_function_with_debug(function_name, args_json, 1);
                                 },
-                                "user", model_name, search_mode_str, 0.45f, &conversation_for_llm, &function_schemas
+                                "user", model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas
                             );
                         }, local_llm.instance_);
                         
@@ -1243,12 +1396,14 @@ namespace rouen::cards {
                 async_context->user_message = message; // Copy the message safely
                 async_context->llm_settings = current_llm_settings_; // Copy settings
                 async_context->allow_search = helpers::PersonaManager::instance().get_active_persona().enable_search;
-                async_context->temperature = temperature_;
+                async_context->temperature = helpers::PersonaManager::instance().get_active_persona().temperature;
                 
                 // Copy conversation history safely for async operation
                 async_context->conversation_snapshot.reserve(chat_history_.size());
                 for (const auto& msg : chat_history_) {
-                    async_context->conversation_snapshot.emplace_back(msg.first, msg.second);
+                    if (msg.first == "user" || msg.first == "assistant") {
+                        async_context->conversation_snapshot.emplace_back(msg.first, msg.second);
+                    }
                 }
                 
                 // Create a shared fetcher instance for this request to avoid accessing member fetcher_
@@ -1284,12 +1439,18 @@ namespace rouen::cards {
                             search_mode_str = "on";
                         }
                         
-                        // Use the copied LLM instance and context data
                         auto response = context->llm_instance_copy.sendMessage(
                             context->user_message, 
-                            [fetcher = context->fetcher](const std::string& url, const std::string& data, auto header_client) {
+                            [fetcher = context->fetcher, log_requests = log_requests_](const std::string& url, const std::string& data, auto header_client) {
+                                if (log_requests) {
+                                    std::cerr << "[LLM Request] URL: " << url << "\n[LLM Request Body]: " << data << "\n";
+                                }
                                 // Capture fetcher by value to ensure it stays alive
-                                return fetcher->post(url, data, header_client);
+                                auto res = fetcher->post(url, data, header_client);
+                                if (log_requests) {
+                                    std::cerr << "[LLM Response]: " << res << "\n";
+                                }
+                                return res;
                             },
                             "user", 
                             context->llm_settings.model_name, 
