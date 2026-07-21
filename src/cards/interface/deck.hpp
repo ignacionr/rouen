@@ -49,6 +49,14 @@ struct deck {
                 [this]() { return cards_.size(); }
             )
         );
+
+        // Register to get active card instances (for video feed surface painting)
+        registrar::add<std::function<std::vector<std::shared_ptr<card>>()>>(
+            "get_active_cards",
+            std::make_shared<std::function<std::vector<std::shared_ptr<card>>()>>(
+                [this]() { return cards_; }
+            )
+        );
         
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
@@ -61,6 +69,7 @@ struct deck {
         // Unregister the services
         registrar::remove<std::function<void(std::string const&)>>("create_card");
         registrar::remove<std::function<size_t()>>("get_card_count");
+        registrar::remove<std::function<std::vector<std::shared_ptr<card>>>>("get_active_cards");
     }
 
     void create_card(std::string_view uri, bool move_first = false) {

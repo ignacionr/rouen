@@ -76,6 +76,9 @@ struct card {
 
     virtual void handle_uri(std::string_view /*uri*/) {}
 
+    /// Optional virtual method for cards to paint themselves onto the video feed surface
+    virtual void paint_video_surface(SDL_Surface* /*surface*/, int /*surface_w*/, int /*surface_h*/) {}
+
     bool run_focused_handlers() {
         is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
         if (is_focused) {

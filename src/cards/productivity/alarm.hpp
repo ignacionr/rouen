@@ -14,6 +14,7 @@
 #include "../../helpers/media_player.hpp"
 
 #include "../interface/card.hpp"
+#include "../../hosts/video_feed_host.hpp"
 #include <glaze/glaze.hpp>
 
 namespace rouen::cards {
@@ -95,6 +96,74 @@ namespace rouen::cards {
             return render_window([this]() {
                 render_alarm_content();
             });
+        }
+
+        void paint_video_surface(SDL_Surface* surface, int surface_w, int surface_h) override {
+            if (!surface) return;
+            (void)surface_h;
+
+            auto now = std::chrono::system_clock::now();
+            auto time_remaining = get_time_remaining(now);
+            bool is_ringing = alarm_active && time_remaining <= std::chrono::seconds(0);
+
+            // Card position & dimensions on the 1080p video feed (top right overlay box)
+            int card_w = 480;
+            int card_h = 160;
+            int card_x = surface_w - card_w - 40;
+            int card_y = 40;
+
+            // Draw card background box
+            SDL_Rect box_rect{card_x, card_y, card_w, card_h};
+            uint32_t bg_color;
+
+            if (is_ringing) {
+                // Flashing red container when ringing
+                static auto last_flash = std::chrono::steady_clock::now();
+                static bool flash_state = false;
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - last_flash).count() > 250) {
+                    flash_state = !flash_state;
+                    last_flash = std::chrono::steady_clock::now();
+                }
+                bg_color = flash_state ? SDL_MapRGB(surface->format, 220, 40, 40) : SDL_MapRGB(surface->format, 150, 20, 20);
+            } else if (alarm_active) {
+                // Deep navy container when counting down
+                bg_color = SDL_MapRGB(surface->format, 20, 30, 50);
+            } else {
+                // Dark grey container when stopped
+                bg_color = SDL_MapRGB(surface->format, 35, 35, 35);
+            }
+
+            SDL_FillRect(surface, &box_rect, bg_color);
+
+            // Draw 2px border around card box
+            uint32_t border_color = is_ringing ? SDL_MapRGB(surface->format, 255, 255, 100) : SDL_MapRGB(surface->format, 255, 140, 40);
+            SDL_Rect top_b{card_x - 2, card_y - 2, card_w + 4, 2};
+            SDL_Rect bot_b{card_x - 2, card_y + card_h, card_w + 4, 2};
+            SDL_Rect left_b{card_x - 2, card_y - 2, 2, card_h + 4};
+            SDL_Rect right_b{card_x + card_w, card_y - 2, 2, card_h + 4};
+            SDL_FillRect(surface, &top_b, border_color);
+            SDL_FillRect(surface, &bot_b, border_color);
+            SDL_FillRect(surface, &left_b, border_color);
+            SDL_FillRect(surface, &right_b, border_color);
+
+            // Draw Card Header Title
+            rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 16, "ALARM CARD", 255, 180, 60, 3);
+
+            if (is_ringing) {
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 55, "*** ALARM RINGING! ***", 255, 255, 255, 3);
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 98, "TIME'S UP!", 255, 230, 100, 4);
+            } else if (alarm_active) {
+                auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
+                auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
+                auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
+                std::string timer_str = std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
+
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 50, "COUNTDOWN ACTIVE", 100, 240, 150, 2);
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 82, timer_str, 255, 255, 255, 5);
+            } else {
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 55, "ALARM INACTIVE", 180, 180, 180, 3);
+                rouen::hosts::VideoFeedHost::draw_string_on_surface(surface, card_x + 20, card_y + 98, "STOPPED", 140, 140, 140, 3);
+            }
         }
 
         void render_alarm_content() {
