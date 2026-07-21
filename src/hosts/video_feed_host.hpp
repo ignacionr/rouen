@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -40,6 +41,11 @@ namespace rouen::hosts {
  * ImGui Offscreen Context Architecture:
  *   Maintains a secondary ImGuiContext (video_imgui_ctx_) that renders onto an
  *   offscreen target texture (1920x1080).
+ *
+ * Multithreaded Frame Streaming:
+ *   Offscreen ImGui rendering runs safely on the main thread.
+ *   Rendered frames are pushed to a double-buffered queue and streamed to ffmpeg
+ *   via a background worker thread.
  *
  * Stream Endpoint:  http://127.0.0.1:8889
  *   Connect with:  ./scripts/play_videofeed.sh
@@ -134,12 +140,6 @@ public:
         const int write_fd = pipe_fds[1];
         const int listen_port = port_.load();
 
-        // Set non-blocking mode on write_fd so pipe writes never freeze main UI thread
-        int flags = ::fcntl(write_fd, F_GETFL, 0);
-        if (flags >= 0) {
-            ::fcntl(write_fd, F_SETFL, flags | O_NONBLOCK);
-        }
-
         // Use posix_spawn instead of fork() to be 100% thread-safe and Cocoa-compliant on macOS
         posix_spawn_file_actions_t file_actions;
         posix_spawn_file_actions_init(&file_actions);
@@ -169,9 +169,25 @@ public:
             nullptr
         };
 
+        // Ensure PATH includes Homebrew, Nix, and standard system paths for posix_spawnp
+        ::setenv("PATH",
+                 "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+                 ":/nix/var/nix/profiles/default/bin",
+                 1);
+
+        // Redirect ffmpeg stderr to /tmp/rouen_ffmpeg.log for diagnostic logging
+        int log_fd = ::open("/tmp/rouen_ffmpeg.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (log_fd >= 0) {
+            posix_spawn_file_actions_adddup2(&file_actions, log_fd, STDERR_FILENO);
+            posix_spawn_file_actions_addclose(&file_actions, log_fd);
+        }
+
         pid_t pid;
         int status = ::posix_spawnp(&pid, "ffmpeg", &file_actions, nullptr, argv, environ);
         posix_spawn_file_actions_destroy(&file_actions);
+        if (log_fd >= 0) {
+            ::close(log_fd);
+        }
         ::close(read_fd);
 
         if (status != 0) {
@@ -185,6 +201,10 @@ public:
         write_fd_.store(write_fd);
         running_.store(true);
         frame_number_ = 0;
+        new_frame_ready_ = false;
+
+        // Spawn background writer thread
+        writer_thread_ = std::thread(&VideoFeedHost::writer_loop, this, write_fd);
 
         VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started via posix_spawn (PID {}, port {})", pid, listen_port);
 
@@ -196,12 +216,9 @@ public:
 #endif  // _WIN32
     }
 
-    /// Perform an offscreen ImGui render pass and stream the frame to ffmpeg.
+    /// Perform an offscreen ImGui render pass on the main thread and queue the frame.
     void render_video_frame(SDL_Renderer* renderer) {
         if (!running_.load() || !renderer) return;
-
-        int fd = write_fd_.load();
-        if (fd < 0) return;
 
         // Rate limit to 24 fps (41ms interval)
         auto now = std::chrono::steady_clock::now();
@@ -279,15 +296,15 @@ public:
         ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
 
         // Read pixels back to RAM buffer (RGB24 format for ffmpeg)
-        if (pixel_buffer_.size() != static_cast<size_t>(kWidth * kHeight * 3)) {
-            pixel_buffer_.resize(static_cast<size_t>(kWidth * kHeight * 3));
+        if (render_buffer_.size() != static_cast<size_t>(kWidth * kHeight * 3)) {
+            render_buffer_.resize(static_cast<size_t>(kWidth * kHeight * 3));
         }
 
         SDL_RenderReadPixels(
             renderer,
             nullptr,
             SDL_PIXELFORMAT_RGB24,
-            pixel_buffer_.data(),
+            render_buffer_.data(),
             kWidth * 3
         );
 
@@ -297,22 +314,13 @@ public:
 
         ++frame_number_;
 
-        // Write raw RGB24 frame to non-blocking ffmpeg pipe
-        const uint8_t* ptr = pixel_buffer_.data();
-        size_t remaining = pixel_buffer_.size();
-        while (remaining > 0 && running_.load()) {
-            auto written = ::write(fd, ptr, remaining);
-            if (written <= 0) {
-                if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    // Pipe buffer full or ffmpeg waiting for client connection; drop frame without blocking UI
-                    break;
-                }
-                if (written < 0 && errno == EINTR) continue;
-                break;
-            }
-            ptr += written;
-            remaining -= static_cast<size_t>(written);
+        // Push frame to double-buffered queue and notify background writer thread
+        {
+            std::lock_guard<std::mutex> frame_lock(frame_mutex_);
+            stream_buffer_ = render_buffer_;
+            new_frame_ready_ = true;
         }
+        frame_cv_.notify_one();
     }
 
     /// Stop the feed gracefully.
@@ -323,12 +331,18 @@ public:
 
         VIDEOFEED_INFO("VideoFeedHost: Stopping...");
 
-#ifndef _WIN32
+        frame_cv_.notify_all();
+
         int fd = write_fd_.exchange(-1);
         if (fd >= 0) {
             ::close(fd);
         }
 
+        if (writer_thread_.joinable()) {
+            writer_thread_.join();
+        }
+
+#ifndef _WIN32
         pid_t pid = ffmpeg_pid_.exchange(0);
         if (pid > 0) {
             int status = 0;
@@ -352,6 +366,38 @@ public:
     }
 
 private:
+    void writer_loop(int fd) {
+        std::vector<uint8_t> local_buffer;
+        while (running_.load()) {
+            {
+                std::unique_lock<std::mutex> lock(frame_mutex_);
+                frame_cv_.wait(lock, [this]() {
+                    return !running_.load() || new_frame_ready_;
+                });
+
+                if (!running_.load()) break;
+
+                local_buffer = stream_buffer_;
+                new_frame_ready_ = false;
+            }
+
+            if (local_buffer.empty()) continue;
+
+            const uint8_t* ptr = local_buffer.data();
+            size_t remaining = local_buffer.size();
+
+            while (remaining > 0 && running_.load()) {
+                auto written = ::write(fd, ptr, remaining);
+                if (written <= 0) {
+                    if (written < 0 && errno == EINTR) continue;
+                    break;
+                }
+                ptr += written;
+                remaining -= static_cast<size_t>(written);
+            }
+        }
+    }
+
     void render_video_base_ui() {
         ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
@@ -441,7 +487,14 @@ private:
     std::mutex            video_mutex_;
     ImGuiContext*         video_imgui_ctx_{nullptr};
     SDL_Texture*          offscreen_texture_{nullptr};
-    std::vector<uint8_t>  pixel_buffer_;
+    std::vector<uint8_t>  render_buffer_;
+
+    std::mutex            frame_mutex_;
+    std::condition_variable frame_cv_;
+    std::vector<uint8_t>  stream_buffer_;
+    bool                  new_frame_ready_{false};
+
+    std::thread           writer_thread_;
     uint32_t              frame_number_{0};
     std::chrono::steady_clock::time_point last_frame_time_;
 };
