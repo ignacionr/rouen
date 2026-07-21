@@ -44,8 +44,8 @@ namespace rouen::hosts {
  */
 class VideoFeedHost {
 public:
-    static constexpr int kWidth  = 160;
-    static constexpr int kHeight = 120;
+    static constexpr int kWidth  = 1920;
+    static constexpr int kHeight = 1080;
     static constexpr int kFps    = 24;
     static constexpr int kDefaultPort = 8889;
 
@@ -363,12 +363,12 @@ private:
             }
         }
 
-        // Bouncing white square
-        constexpr int sq = 16;
+        // Bouncing white square (120x120 px)
+        constexpr int sq = 120;
         const int range_x = kWidth - sq;
         const int range_y = kHeight - sq;
-        int raw_x = static_cast<int>(frame_number) % (range_x * 2);
-        int raw_y = static_cast<int>(frame_number * 2) % (range_y * 2);
+        int raw_x = static_cast<int>(frame_number * 6) % (range_x * 2);
+        int raw_y = static_cast<int>(frame_number * 4) % (range_y * 2);
         int sx = raw_x < range_x ? raw_x : range_x * 2 - raw_x;
         int sy = raw_y < range_y ? raw_y : range_y * 2 - raw_y;
 
@@ -376,10 +376,10 @@ private:
         uint32_t white_pixel = SDL_MapRGB(surface->format, 255, 255, 255);
         SDL_FillRect(surface, &square_rect, white_pixel);
 
-        // Vertical gradient bars on side edges
+        // Vertical gradient bars on side edges (8 px wide)
         for (int y = 0; y < kHeight; ++y) {
             auto v = static_cast<uint8_t>((y * 255) / kHeight);
-            for (int x = 0; x < 2; ++x) {
+            for (int x = 0; x < 8; ++x) {
                 int idx1 = y * pitch + x * 3;
                 pixels[idx1 + 0] = v; pixels[idx1 + 1] = 0; pixels[idx1 + 2] = 255 - v;
                 int idx2 = y * pitch + (kWidth - 1 - x) * 3;
@@ -387,9 +387,9 @@ private:
             }
         }
 
-        // Draw crisp text overlays directly onto the SDL_Surface
-        draw_string_on_surface(surface, 6, 6, "ROUEN STREAM", 255, 255, 255);
-        draw_string_on_surface(surface, 6, 18, "24 FPS | LIVE", 50, 255, 100);
+        // Draw high-definition text overlays directly onto the 1080p SDL_Surface
+        draw_string_on_surface(surface, 40, 40, "ROUEN 1080p LIVE STREAM", 255, 255, 255, 5);
+        draw_string_on_surface(surface, 40, 95, "24 FPS | FULL HD 1920x1080", 50, 255, 100, 3);
 
         auto now_t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         std::tm tm_buf{};
@@ -398,16 +398,16 @@ private:
 #else
         localtime_r(&now_t, &tm_buf);
 #endif
-        std::string frame_str = std::format("F:{:06d}", frame_number);
+        std::string frame_str = std::format("FRAME: {:06d}", frame_number);
         std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
 
-        draw_string_on_surface(surface, 6, kHeight - 14, frame_str, 255, 220, 100);
-        draw_string_on_surface(surface, 85, kHeight - 14, time_str, 100, 220, 255);
+        draw_string_on_surface(surface, 40, kHeight - 70, frame_str, 255, 220, 100, 4);
+        draw_string_on_surface(surface, kWidth - 360, kHeight - 70, time_str, 100, 220, 255, 4);
     }
 
-    // ── 8x8 bitmap font drawer for SDL_Surface ──────────────────────
+    // ── Scalable 8x8 bitmap font drawer for SDL_Surface ──────────────
 
-    static void draw_char_on_surface(SDL_Surface* surface, int start_x, int start_y, char c, uint8_t r, uint8_t g, uint8_t b) {
+    static void draw_char_on_surface(SDL_Surface* surface, int start_x, int start_y, char c, uint8_t r, uint8_t g, uint8_t b, int scale = 4) {
         if (!surface || c < 32 || c > 126) return;
 
         static const uint8_t font8x8[95][8] = {
@@ -513,27 +513,31 @@ private:
         int pitch = surface->pitch;
 
         for (int row = 0; row < 8; ++row) {
-            int py = start_y + row;
-            if (py < 0 || py >= surface->h) continue;
             uint8_t bits = glyph[row];
             for (int col = 0; col < 8; ++col) {
-                int px = start_x + col;
-                if (px < 0 || px >= surface->w) continue;
                 if (bits & (0x80 >> col)) {
-                    int idx = py * pitch + px * 3;
-                    pixels[idx + 0] = r;
-                    pixels[idx + 1] = g;
-                    pixels[idx + 2] = b;
+                    for (int sy = 0; sy < scale; ++sy) {
+                        int py = start_y + row * scale + sy;
+                        if (py < 0 || py >= surface->h) continue;
+                        for (int sx = 0; sx < scale; ++sx) {
+                            int px = start_x + col * scale + sx;
+                            if (px < 0 || px >= surface->w) continue;
+                            int idx = py * pitch + px * 3;
+                            pixels[idx + 0] = r;
+                            pixels[idx + 1] = g;
+                            pixels[idx + 2] = b;
+                        }
+                    }
                 }
             }
         }
     }
 
-    static void draw_string_on_surface(SDL_Surface* surface, int x, int y, std::string_view str, uint8_t r, uint8_t g, uint8_t b) {
+    static void draw_string_on_surface(SDL_Surface* surface, int x, int y, std::string_view str, uint8_t r, uint8_t g, uint8_t b, int scale = 4) {
         int cur_x = x;
         for (char c : str) {
-            draw_char_on_surface(surface, cur_x, y, c, r, g, b);
-            cur_x += 8;
+            draw_char_on_surface(surface, cur_x, y, c, r, g, b, scale);
+            cur_x += 8 * scale;
         }
     }
 
