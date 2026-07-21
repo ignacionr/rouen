@@ -88,7 +88,6 @@ struct media_player_item {
     std::vector<uint8_t> back_pixels;
     std::atomic<bool> new_frame_ready{false};
     SDL_Texture* video_texture{nullptr};
-    std::mutex data_mutex;
     std::mutex texture_mutex;
     media_player_item() = default;
     media_player_item(const media_player_item&) = delete;

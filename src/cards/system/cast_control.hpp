@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../hosts/video_feed_host.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
@@ -56,10 +57,24 @@ private:
             }
             ImGui::SameLine();
             if (ImGui::Button("Launch Player (mpv)", ImVec2(200, 32))) {
-                auto run_cmd = registrar::get<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>("run_command");
-                if (run_cmd && *run_cmd) {
-                    (*run_cmd)("./scripts/play_videofeed.sh", nullptr);
+                std::string mpv_bin = "mpv";
+                rouen::platform::check_mpv_availability(mpv_bin);
+                std::string ep = host->endpoint();
+#ifndef _WIN32
+                ::setenv("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", 1);
+                char* argv[] = {
+                    const_cast<char*>(mpv_bin.c_str()),
+                    const_cast<char*>(ep.c_str()),
+                    const_cast<char*>("--title=Rouen Live Video Cast"),
+                    nullptr
+                };
+                pid_t pid;
+                if (::posix_spawnp(&pid, mpv_bin.c_str(), nullptr, nullptr, argv, environ) == 0) {
+                    try { "notify"_sfn(std::format("Launched MPV player for cast stream (PID {})", pid)); } catch (...) {}
+                } else {
+                    try { "notify"_sfn("Failed to launch MPV player"); } catch (...) {}
                 }
+#endif
             }
         } else {
             ui.text_colored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "○ STREAM STOPPED");

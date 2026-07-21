@@ -309,6 +309,7 @@ public:
 
             // Render Active Media Player Video Stream on Cast
             try {
+                std::lock_guard<std::recursive_mutex> map_lock(media_player::items_mutex());
                 for (auto& [id, item_ptr] : media_player::items()) {
                     if (item_ptr && item_ptr->is_playing && item_ptr->has_video) {
                         ImTextureID media_tex = item_ptr->get_texture_id(renderer);

@@ -18,16 +18,21 @@ struct media_player {
     using item = media_player_item;
     using item_map = media_player_item_map;
 
+    static std::recursive_mutex & items_mutex() {
+        static std::recursive_mutex mtx;
+        return mtx;
+    }
+
     static item_map & items() {
         static item_map items_;
         return items_;
     }
 
     static void stopAll() {
+        std::lock_guard<std::recursive_mutex> lock(items_mutex());
         for (auto &[k,v]: items()) {
             if (v) v->stopMedia();
         }
-        items().clear();
     }
 
     static std::optional<double>& get_dummy_watermark() noexcept {
@@ -36,6 +41,7 @@ struct media_player {
     }
 
     static media_player_item& get_item(ImGuiID id) {
+        std::lock_guard<std::recursive_mutex> lock(items_mutex());
         auto& item_ptr = items()[id];
         if (!item_ptr) {
             item_ptr = std::make_shared<media_player_item>();
@@ -66,12 +72,8 @@ struct media_player {
             }
             if (has_active_media) {
                 ImGui::TextUnformatted(title.data(), title.data() + title.size());
-                double current_pos, current_dur;
-                {
-                    std::lock_guard<std::mutex> lock(item.data_mutex);
-                    current_pos = item.position;
-                    current_dur = item.duration;
-                }
+                double current_pos = item.position.load();
+                double current_dur = item.duration.load();
                 if (current_pos > 0 && current_dur > 0) {
                     ImGui::TextColored(info_color, "%s: %s / %s",
                         item.is_paused.load() ? "Paused" : "Playing",
