@@ -2,6 +2,7 @@
 
 #include "../helpers/sdl_compat.hpp"
 #include "../helpers/config_service.hpp"
+#include "../helpers/stream_encoder.hpp"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -190,162 +191,37 @@ public:
         return ImTextureID{};
     }
 
-    /// Start the ffmpeg process safely using posix_spawn.
+    /// Start the video feed natively.
     bool start() {
         if (running_.load()) {
             VIDEOFEED_WARN("VideoFeedHost: Already running");
             return false;
         }
 
-#ifdef _WIN32
-        VIDEOFEED_ERROR("VideoFeedHost: Not supported on Windows");
-        return false;
-#else
-        // Ignore SIGPIPE globally to prevent process crash on pipe disconnect
-        ::signal(SIGPIPE, SIG_IGN);
-
-        int pipe_fds[2];
-        if (::pipe(pipe_fds) != 0) {
-            VIDEOFEED_ERROR("VideoFeedHost: pipe() failed");
-            try { "notify"_sfn("Video Feed error: Failed to create pipe"); } catch (...) {}
-            return false;
-        }
-
-        int audio_pipe_fds[2];
-        if (::pipe(audio_pipe_fds) != 0) {
-            VIDEOFEED_ERROR("VideoFeedHost: audio pipe() failed");
-            ::close(pipe_fds[0]);
-            ::close(pipe_fds[1]);
-            try { "notify"_sfn("Video Feed error: Failed to create audio pipe"); } catch (...) {}
-            return false;
-        }
-
-        const int read_fd        = pipe_fds[0];
-        const int write_fd       = pipe_fds[1];
-        const int audio_read_fd  = audio_pipe_fds[0];
-        const int audio_write_fd = audio_pipe_fds[1];
-        const int listen_port    = port_.load();
-
-        // Clean up any leftover orphaned ffmpeg process listening on port from previous runs/crashes
-        std::string kill_cmd = std::format("pkill -9 -f 'ffmpeg.*listen.*{}' >/dev/null 2>&1", listen_port);
-        ::system(kill_cmd.c_str());
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // Use posix_spawn file actions to map read_fd -> 0 (STDIN) and audio_read_fd -> 3
-        posix_spawn_file_actions_t file_actions;
-        posix_spawn_file_actions_init(&file_actions);
-        posix_spawn_file_actions_adddup2(&file_actions, read_fd, STDIN_FILENO);
-        posix_spawn_file_actions_adddup2(&file_actions, audio_read_fd, 3);
-
-        if (write_fd != STDIN_FILENO && write_fd != 3) {
-            posix_spawn_file_actions_addclose(&file_actions, write_fd);
-        }
-        if (audio_write_fd != STDIN_FILENO && audio_write_fd != 3) {
-            posix_spawn_file_actions_addclose(&file_actions, audio_write_fd);
-        }
-
-        std::string input_size = std::format("{}x{}", kWidth, kHeight);
-        std::string framerate  = std::to_string(kFps);
+        const int listen_port = port_.load();
         std::string udp_url = std::format("udp://127.0.0.1:{}?pkt_size=1316", listen_port);
 
-        char* argv[] = {
-            const_cast<char*>("ffmpeg"),
-            const_cast<char*>("-loglevel"), const_cast<char*>("warning"),
-            const_cast<char*>("-threads"), const_cast<char*>("6"),
-            // Raw Video Input on pipe:0
-            const_cast<char*>("-f"), const_cast<char*>("rawvideo"),
-            const_cast<char*>("-pixel_format"), const_cast<char*>("rgba"),
-            const_cast<char*>("-video_size"), const_cast<char*>(input_size.c_str()),
-            const_cast<char*>("-framerate"), const_cast<char*>(framerate.c_str()),
-            const_cast<char*>("-i"), const_cast<char*>("pipe:0"),
-            // Raw Stereo PCM Audio Input on pipe:3
-            const_cast<char*>("-f"), const_cast<char*>("s16le"),
-            const_cast<char*>("-ac"), const_cast<char*>("2"),
-            const_cast<char*>("-ar"), const_cast<char*>("44100"),
-            const_cast<char*>("-analyzeduration"), const_cast<char*>("100000"),
-            const_cast<char*>("-probesize"), const_cast<char*>("10000"),
-            const_cast<char*>("-i"), const_cast<char*>("pipe:3"),
-            // Video Encoding
-            const_cast<char*>("-c:v"), const_cast<char*>("libx264"),
-            const_cast<char*>("-preset"), const_cast<char*>("ultrafast"),
-            const_cast<char*>("-tune"), const_cast<char*>("zerolatency"),
-            const_cast<char*>("-crf"), const_cast<char*>("28"),
-            const_cast<char*>("-pix_fmt"), const_cast<char*>("yuv420p"),
-            const_cast<char*>("-g"), const_cast<char*>("4"),
-            // Audio Encoding
-            const_cast<char*>("-c:a"), const_cast<char*>("aac"),
-            const_cast<char*>("-b:a"), const_cast<char*>("128k"),
-            const_cast<char*>("-ac"), const_cast<char*>("2"),
-            const_cast<char*>("-ar"), const_cast<char*>("44100"),
-            // Output MPEG-TS via UDP
-            const_cast<char*>("-f"), const_cast<char*>("mpegts"),
-            const_cast<char*>(udp_url.c_str()),
-            nullptr
-        };
-
-        // Ensure PATH includes Homebrew, Nix, and standard system paths for posix_spawnp
-        ::setenv("PATH",
-                 "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-                 ":/nix/var/nix/profiles/default/bin",
-                 1);
-
-        // Redirect ffmpeg stderr to /tmp/rouen_ffmpeg.log for diagnostic logging
-        int log_fd = ::open("/tmp/rouen_ffmpeg.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
-        if (log_fd >= 0) {
-            posix_spawn_file_actions_adddup2(&file_actions, log_fd, STDERR_FILENO);
-            posix_spawn_file_actions_addclose(&file_actions, log_fd);
-        }
-
-        pid_t pid;
-        int status = ::posix_spawnp(&pid, "ffmpeg", &file_actions, nullptr, argv, environ);
-        posix_spawn_file_actions_destroy(&file_actions);
-        if (log_fd >= 0) {
-            ::close(log_fd);
-        }
-        ::close(read_fd);
-        ::close(audio_read_fd);
-
-        if (status != 0) {
-            VIDEOFEED_ERROR_FMT("VideoFeedHost: posix_spawnp failed with status {}", status);
-            ::close(write_fd);
-            ::close(audio_write_fd);
-            try { "notify"_sfn("Video Feed error: Failed to spawn ffmpeg"); } catch (...) {}
+        if (!streamer_.init(udp_url, kWidth, kHeight, kFps)) {
+            VIDEOFEED_ERROR("VideoFeedHost: Failed to initialize NativeStreamEncoder");
+            try { "notify"_sfn("Video Feed error: Failed to initialize native stream encoder"); } catch (...) {}
             return false;
         }
 
-        ffmpeg_pid_.store(pid);
-#ifndef _WIN32
-        ::setpriority(PRIO_PROCESS, pid, -10);
-#endif
-        write_fd_.store(write_fd);
-        audio_write_fd_.store(audio_write_fd);
         running_.store(true);
         frame_number_ = 0;
         new_frame_ready_ = false;
 
-        // Set pipe write descriptors to O_NONBLOCK to prevent OS pipe deadlock between dual streams
-        fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, 0) | O_NONBLOCK);
-        fcntl(audio_write_fd, F_SETFL, fcntl(audio_write_fd, F_GETFL, 0) | O_NONBLOCK);
-
-        // Pre-fill initial audio and video buffers so FFmpeg stream demuxers open immediately
-        std::vector<uint8_t> init_audio(60000, 0);
-        generate_pink_noise(reinterpret_cast<int16_t*>(init_audio.data()), init_audio.size() / 2);
-        std::vector<uint8_t> init_video(static_cast<size_t>(kWidth * kHeight * 4), 0);
-        write_full_frame(audio_write_fd, init_audio.data(), init_audio.size(), running_);
-        write_full_frame(write_fd, init_video.data(), init_video.size(), running_);
-
         // Spawn dedicated background writer threads for video and audio
-        video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this, write_fd);
-        audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this, audio_write_fd);
+        video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this);
+        audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this);
 
-        VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started via posix_spawn (PID {}, port {})", pid, listen_port);
+        VIDEOFEED_INFO_FMT("VideoFeedHost: NativeStreamEncoder started on port {}", listen_port);
 
         try {
             "notify"_sfn(std::format("Video feed started at {}", endpoint()));
         } catch (...) {}
 
         return true;
-#endif  // _WIN32
     }
 
     bool has_active_media_player_video() {
@@ -592,15 +468,6 @@ public:
 
         frame_cv_.notify_all();
 
-        int fd = write_fd_.exchange(-1);
-        if (fd >= 0) {
-            ::close(fd);
-        }
-        int afd = audio_write_fd_.exchange(-1);
-        if (afd >= 0) {
-            ::close(afd);
-        }
-
         if (video_writer_thread_.joinable()) {
             video_writer_thread_.join();
         }
@@ -608,55 +475,13 @@ public:
             audio_writer_thread_.join();
         }
 
-#ifndef _WIN32
-        pid_t pid = ffmpeg_pid_.exchange(0);
-        if (pid > 0) {
-            int status = 0;
-            if (::waitpid(pid, &status, WNOHANG) == 0) {
-                ::kill(pid, SIGTERM);
-                for (int i = 0; i < 10 && ::waitpid(pid, &status, WNOHANG) == 0; ++i) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                }
-                if (::waitpid(pid, &status, WNOHANG) == 0) {
-                    ::kill(pid, SIGKILL);
-                    ::waitpid(pid, &status, 0);
-                }
-            }
-            VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg (PID {}) stopped", pid);
-        }
+        streamer_.close();
 
         try {
             "notify"_sfn("Video feed stopped");
         } catch (...) {}
-#endif
 
         cleanup_imgui_context();
-    }
-
-    static bool write_full_frame(int fd, const uint8_t* data, size_t size, std::atomic<bool>& running) {
-        if (fd < 0 || !data || size == 0) return false;
-        size_t remaining = size;
-        const uint8_t* ptr = data;
-        constexpr size_t kChunkSize = 65536; // 64KB chunks matching kernel pipe capacity
-
-        while (remaining > 0 && running.load()) {
-            size_t to_write = std::min(remaining, kChunkSize);
-            ssize_t written = ::write(fd, ptr, to_write);
-            if (written > 0) {
-                ptr += written;
-                remaining -= static_cast<size_t>(written);
-            } else if (written < 0) {
-                if (errno == EINTR) continue;
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(100));
-                    continue;
-                }
-                return false;
-            } else {
-                return false;
-            }
-        }
-        return remaining == 0;
     }
 
     static void generate_pink_noise(int16_t* samples, size_t num_samples) {
@@ -680,7 +505,7 @@ public:
     }
 
 private:
-    void audio_writer_loop(int audio_fd) {
+    void audio_writer_loop() {
         using clock = std::chrono::steady_clock;
         constexpr auto kAudioFrameDuration = std::chrono::microseconds(1000000 / kFps);
         constexpr size_t kAudioBytesPerFrame = (44100 * 2 * 2) / kFps; // 5880 bytes
@@ -730,9 +555,7 @@ private:
                 }
             }
 
-            if (audio_fd >= 0) {
-                write_full_frame(audio_fd, audio_chunk.data(), audio_chunk.size(), running_);
-            }
+            streamer_.encode_audio(audio_chunk.data(), audio_chunk.size());
 
             auto now = clock::now();
             if (next_frame > now) {
@@ -743,7 +566,7 @@ private:
         }
     }
 
-    void video_writer_loop(int video_fd) {
+    void video_writer_loop() {
         using clock = std::chrono::steady_clock;
         constexpr auto kVideoFrameDuration = std::chrono::microseconds(1000000 / kFps);
         std::vector<uint8_t> local_buffer;
@@ -761,8 +584,8 @@ private:
                 }
             }
 
-            if (video_fd >= 0 && !local_buffer.empty()) {
-                write_full_frame(video_fd, local_buffer.data(), local_buffer.size(), running_);
+            if (!local_buffer.empty()) {
+                streamer_.encode_video(local_buffer.data());
             }
 
             auto now = clock::now();
@@ -881,9 +704,7 @@ private:
     // ── member data ─────────────────────────────────────────────────
     std::atomic<bool>     running_{false};
     std::atomic<int>      port_;
-    std::atomic<pid_t>    ffmpeg_pid_{0};
-    std::atomic<int>      write_fd_{-1};
-    std::atomic<int>      audio_write_fd_{-1};
+    NativeStreamEncoder   streamer_;
 
     std::mutex            video_mutex_;
     ImGuiContext*         video_imgui_ctx_{nullptr};

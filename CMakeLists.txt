@@ -153,6 +153,11 @@ else()
   # Use pkg-config for SDL3 on system builds
   pkg_check_modules(SDL3 REQUIRED sdl3)
   pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
+  pkg_check_modules(AVFORMAT REQUIRED libavformat)
+  pkg_check_modules(AVCODEC REQUIRED libavcodec)
+  pkg_check_modules(AVUTIL REQUIRED libavutil)
+  pkg_check_modules(SWSCALE REQUIRED libswscale)
+  pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
   
   # Create imported targets for SDL3 if they don't exist
   if(SDL3_FOUND AND NOT TARGET SDL3::SDL3)
@@ -499,6 +504,11 @@ if(NOT (DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg"))
     ${TINYXML2_INCLUDE_DIRS}
     ${SDL3_INCLUDE_DIRS}
     ${SDL3_IMAGE_INCLUDE_DIRS}
+    ${AVFORMAT_INCLUDE_DIRS}
+    ${AVCODEC_INCLUDE_DIRS}
+    ${AVUTIL_INCLUDE_DIRS}
+    ${SWSCALE_INCLUDE_DIRS}
+    ${SWRESAMPLE_INCLUDE_DIRS}
   )
   if(SDL3_FOUND)
     foreach(inc_dir IN LISTS SDL3_INCLUDE_DIRS)
@@ -550,6 +560,11 @@ else()
     SDL3::SDL3
     SDL3_image::SDL3_image
     mongoose
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
   )
   
   # Always link with imgui_backends when using system ImGui

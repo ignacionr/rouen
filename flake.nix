@@ -33,6 +33,7 @@
             unstable.ninja
             unstable.sdl3
             unstable.sdl3-image
+            unstable.ffmpeg
             unstable.pkg-config
             unstable.curl
             unstable.openssl
@@ -110,6 +111,7 @@
             unstable.openssl 
             unstable.sqlite 
             unstable.sdl3-image
+            unstable.ffmpeg
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)
@@ -197,6 +199,7 @@
             unstable.openssl 
             unstable.sqlite 
             unstable.sdl3-image
+            unstable.ffmpeg
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)
