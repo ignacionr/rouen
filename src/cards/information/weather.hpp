@@ -240,6 +240,128 @@ public:
         });
     }
 
+    void render_video_ui() override {
+        auto current_weather = weather_host->getCurrentWeather();
+        if (!current_weather) return;
+
+        ImGui::SetNextWindowPos(ImVec2(40.0f, 40.0f));
+        ImGui::SetNextWindowSize(ImVec2(520.0f, 350.0f));
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.15f, 0.85f)); 
+        ImGui::PushStyleColor(ImGuiCol_Border, colors[0]); 
+
+        if (ImGui::Begin("##WeatherVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
+            // Title & Time/Date
+            auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+            auto timezone_offset = std::chrono::seconds(current_weather->timezone);
+            now += timezone_offset;
+            
+            std::string time_str = std::format("{:%H:%M:%S}", now);
+            std::string date_str = std::format("{:%d/%m/%Y}", now);
+
+            ImGui::SetWindowFontScale(1.5f);
+            ImGui::TextColored(colors[2], "%s  %s", ICON_MD_CLOUD_QUEUE, current_weather->name.c_str());
+            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
+            ImGui::SetWindowFontScale(1.1f);
+            ImGui::TextColored(colors[5], "%s | %s", time_str.c_str(), date_str.c_str());
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Temp and Feels Like
+            ImGui::SetWindowFontScale(2.5f);
+            auto temp_color = colors[0]; 
+            if (current_weather->main.temp >= 25.0) {
+                temp_color = ImVec4(1.0f, 0.4f, 0.2f, 1.0f);
+            } else if (current_weather->main.temp >= 15.0) {
+                temp_color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+            } else if (current_weather->main.temp <= 0.0) {
+                temp_color = ImVec4(0.6f, 0.8f, 1.0f, 1.0f);
+            }
+            ImGui::TextColored(temp_color, "%.1f°C", current_weather->main.temp);
+            ImGui::SameLine();
+            ImGui::SetWindowFontScale(1.2f);
+            ImGui::TextColored(colors[5], "(Feels: %.1f°C)", current_weather->main.feels_like);
+
+            if (!current_weather->weather.empty()) {
+                std::string description = current_weather->weather[0].description;
+                std::string weather_main = current_weather->weather[0].main;
+                if (!description.empty()) {
+                    description[0] = static_cast<char>(std::toupper(description[0]));
+                }
+                const char* weather_icon = get_weather_icon(weather_main);
+                ImGui::TextColored(colors[3], "%s %s", weather_icon, description.c_str());
+            }
+
+            ImGui::Spacing();
+            ImGui::Columns(2, "weather_details_video", false);
+            
+            // Humid / Press
+            auto humidity_color = colors[0];
+            if (current_weather->main.humidity > 80) humidity_color = ImVec4(0.2f, 0.8f, 1.0f, 1.0f);
+            else if (current_weather->main.humidity < 30) humidity_color = ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+            else humidity_color = ImVec4(0.2f, 1.0f, 0.4f, 1.0f);
+
+            ImGui::TextColored(humidity_color, "Humidity: %d%%", current_weather->main.humidity);
+            ImGui::TextColored(colors[5], "Pressure: %d hPa", static_cast<int>(current_weather->main.pressure));
+
+            ImGui::NextColumn();
+            // Wind / Cloud
+            auto wind_color = colors[0];
+            if (current_weather->wind.speed > 10.0) wind_color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            else if (current_weather->wind.speed > 5.0) wind_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+            else wind_color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+
+            ImGui::TextColored(wind_color, "Wind: %.1f m/s", current_weather->wind.speed);
+            
+            auto cloud_color = colors[5];
+            if (current_weather->clouds.all > 80) cloud_color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+            else if (current_weather->clouds.all > 50) cloud_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+            else cloud_color = ImVec4(0.7f, 0.9f, 1.0f, 1.0f);
+            ImGui::TextColored(cloud_color, "Clouds: %d%%", current_weather->clouds.all);
+
+            ImGui::Columns(1);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Forecast block (Compact 3 items)
+            auto forecast = weather_host->getForecast();
+            if (forecast) {
+                const size_t forecast_items_to_show = std::min(static_cast<size_t>(3), forecast->list.size());
+                if (ImGui::BeginTable("forecast_table_video", 3, ImGuiTableFlags_BordersInnerV)) {
+                    for (const auto& item : forecast->list | std::views::take(forecast_items_to_show)) {
+                        std::string f_time_str = item.dt_txt;
+                        size_t pos = f_time_str.find(' ');
+                        if (pos != std::string::npos) {
+                            f_time_str = f_time_str.substr(pos + 1, 5); // HH:MM
+                        }
+                        
+                        std::string condition;
+                        if (!item.weather.empty()) {
+                            condition = item.weather[0].main;
+                        }
+
+                        ImGui::TableNextRow();
+                        ImGui::TableNextColumn();
+                        ImGui::TextColored(colors[5], "%s", f_time_str.c_str());
+                        ImGui::TableNextColumn();
+                        ImGui::Text("%.1f°C", item.main.temp);
+                        ImGui::TableNextColumn();
+                        const char* f_icon = get_weather_icon(condition);
+                        ImGui::TextColored(colors[3], "%s %s", f_icon, condition.c_str());
+                    }
+                    ImGui::EndTable();
+                }
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+    }
+
     std::string get_uri() const override {
         return std::format("weather:{}", weather_host->getLocation());
     }
