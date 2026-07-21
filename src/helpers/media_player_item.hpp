@@ -69,6 +69,8 @@ struct media_player_item {
     std::atomic<double> position{0.0};
     std::atomic<double> duration{0.0};
     std::atomic<int> volume{100};
+    std::atomic<float> vu_level_l{0.0f};
+    std::atomic<float> vu_level_r{0.0f};
     bool has_video{false};
     double start_offset{0.0};
     long long feed_id{-1};
@@ -79,10 +81,14 @@ struct media_player_item {
     bool user_tall_layout{false};
     bool user_tall_layout_set{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
+    static inline std::function<void(const uint8_t*, size_t)> push_audio_cb;
 
     // FFmpeg Engine Members
     int pipe_read_fd{-1};
+    int audio_pipe_read_fd{-1};
     std::thread ffmpeg_thread;
+    std::thread ffmpeg_audio_thread;
+    SDL_AudioDeviceID audio_device{0};
     std::atomic<bool> ffmpeg_running{false};
     std::mutex frame_mutex;
     std::vector<uint8_t> back_pixels;
@@ -194,14 +200,28 @@ inline void media_player_item::stopMedia() {
     }
 
     ffmpeg_running.store(false);
+    vu_level_l.store(0.0f);
+    vu_level_r.store(0.0f);
 
     if (pipe_read_fd >= 0) {
         ::close(pipe_read_fd);
         pipe_read_fd = -1;
     }
+    if (audio_pipe_read_fd >= 0) {
+        ::close(audio_pipe_read_fd);
+        audio_pipe_read_fd = -1;
+    }
 
     if (ffmpeg_thread.joinable()) {
         ffmpeg_thread.join();
+    }
+    if (ffmpeg_audio_thread.joinable()) {
+        ffmpeg_audio_thread.join();
+    }
+
+    if (audio_device != 0) {
+        SDL_CloseAudioDevice(audio_device);
+        audio_device = 0;
     }
 
 #ifdef _WIN32
@@ -323,14 +343,25 @@ inline bool media_player_item::playMedia() {
     if (::pipe(pipe_fds) != 0) {
         return false;
     }
+    int audio_pipe_fds[2];
+    if (::pipe(audio_pipe_fds) != 0) {
+        ::close(pipe_fds[0]);
+        ::close(pipe_fds[1]);
+        return false;
+    }
 
     pipe_read_fd = pipe_fds[0];
     const int write_fd = pipe_fds[1];
 
+    audio_pipe_read_fd = audio_pipe_fds[0];
+    const int audio_write_fd = audio_pipe_fds[1];
+
     posix_spawn_file_actions_t file_actions;
     posix_spawn_file_actions_init(&file_actions);
     posix_spawn_file_actions_adddup2(&file_actions, write_fd, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&file_actions, audio_write_fd, 3);
     posix_spawn_file_actions_addclose(&file_actions, pipe_read_fd);
+    posix_spawn_file_actions_addclose(&file_actions, audio_pipe_read_fd);
 
     // Redirect ffmpeg stderr to /tmp/rouen_player_ffmpeg.log for diagnostics
     int log_fd = ::open("/tmp/rouen_player_ffmpeg.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -354,6 +385,9 @@ inline bool media_player_item::playMedia() {
     }
     args_str.push_back("-i");
     args_str.push_back(media_target);
+    // Video output stream -> rawvideo rgb24 on pipe:1 (stdout)
+    args_str.push_back("-map");
+    args_str.push_back("0:v:0?");
     args_str.push_back("-vf");
     args_str.push_back(scale_filter);
     args_str.push_back("-r");
@@ -363,6 +397,16 @@ inline bool media_player_item::playMedia() {
     args_str.push_back("-pix_fmt");
     args_str.push_back("rgb24");
     args_str.push_back("pipe:1");
+    // Stereo audio output stream -> s16le 44100Hz on pipe:3
+    args_str.push_back("-map");
+    args_str.push_back("0:a:0?");
+    args_str.push_back("-f");
+    args_str.push_back("s16le");
+    args_str.push_back("-ac");
+    args_str.push_back("2");
+    args_str.push_back("-ar");
+    args_str.push_back("44100");
+    args_str.push_back("pipe:3");
 
     std::vector<char*> argv;
     for (auto& s : args_str) {
@@ -382,12 +426,15 @@ inline bool media_player_item::playMedia() {
         ::close(log_fd);
     }
     ::close(write_fd);
+    ::close(audio_write_fd);
 
     if (status != 0) {
         std::cerr << "[ERROR media_player_item] posix_spawnp failed status: " << status << std::endl;
         try { "notify"_sfn(std::format("FFmpeg player spawn error: status {}", status)); } catch (...) {}
         ::close(pipe_read_fd);
+        ::close(audio_pipe_read_fd);
         pipe_read_fd = -1;
+        audio_pipe_read_fd = -1;
         return false;
     }
 
@@ -428,6 +475,66 @@ inline bool media_player_item::playMedia() {
 
             if (!is_paused.load()) {
                 position.store(position.load() + (1.0 / static_cast<double>(kFps)));
+            }
+        }
+    });
+
+    // Spawn background reader thread to process stereo audio PCM from ffmpeg audio pipe
+    ffmpeg_audio_thread = std::thread([this]() {
+        constexpr size_t chunk_size = 4096;
+        std::vector<uint8_t> buffer(chunk_size);
+
+        while (ffmpeg_running.load() && audio_pipe_read_fd >= 0) {
+            ssize_t bytes = ::read(audio_pipe_read_fd, buffer.data(), chunk_size);
+            if (bytes <= 0) {
+                if (bytes < 0 && errno == EINTR) continue;
+                break;
+            }
+
+            if (is_paused.load()) {
+                vu_level_l.store(0.0f);
+                vu_level_r.store(0.0f);
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                continue;
+            }
+
+            std::vector<uint8_t> pcm_chunk(buffer.begin(), buffer.begin() + bytes);
+            int vol = volume.load();
+            if (vol < 100 && !pcm_chunk.empty()) {
+                int16_t* samples = reinterpret_cast<int16_t*>(pcm_chunk.data());
+                size_t sample_count = pcm_chunk.size() / sizeof(int16_t);
+                float scale = static_cast<float>(vol) / 100.0f;
+                for (size_t i = 0; i < sample_count; ++i) {
+                    samples[i] = static_cast<int16_t>(
+                        std::clamp(static_cast<float>(samples[i]) * scale, -32768.0f, 32767.0f)
+                    );
+                }
+            }
+
+            // Calculate stereo peak VU meter levels
+            if (!pcm_chunk.empty()) {
+                const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_chunk.data());
+                size_t frame_count = pcm_chunk.size() / (2 * sizeof(int16_t));
+                int32_t max_l = 0;
+                int32_t max_r = 0;
+                for (size_t i = 0; i < frame_count; ++i) {
+                    int32_t l = std::abs(static_cast<int32_t>(samples[i * 2]));
+                    int32_t r = std::abs(static_cast<int32_t>(samples[i * 2 + 1]));
+                    if (l > max_l) max_l = l;
+                    if (r > max_r) max_r = r;
+                }
+                float peak_l = static_cast<float>(max_l) / 32768.0f;
+                float peak_r = static_cast<float>(max_r) / 32768.0f;
+
+                float old_l = vu_level_l.load();
+                float old_r = vu_level_r.load();
+                vu_level_l.store(std::max(peak_l, old_l * 0.85f));
+                vu_level_r.store(std::max(peak_r, old_r * 0.85f));
+            }
+
+            // Push original content's stereo audio solely into Rouen's constant broadcast feed (not repeated locally)
+            if (push_audio_cb) {
+                push_audio_cb(pcm_chunk.data(), pcm_chunk.size());
             }
         }
     });

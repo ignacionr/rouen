@@ -49,6 +49,49 @@ struct media_player {
         return *item_ptr;
     }
 
+    static void draw_stereo_vu_meter(float level_l, float level_r, float width, float height) {
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+
+        float bar_w = (width - 4.0f) / 2.0f;
+        if (bar_w < 3.0f) bar_w = 3.0f;
+
+        level_l = std::clamp(level_l, 0.0f, 1.0f);
+        level_r = std::clamp(level_r, 0.0f, 1.0f);
+
+        // Left Channel Container
+        ImVec2 l_min = pos;
+        ImVec2 l_max = ImVec2(pos.x + bar_w, pos.y + height);
+        draw_list->AddRectFilled(l_min, l_max, IM_COL32(20, 24, 30, 255), 2.0f);
+        draw_list->AddRect(l_min, l_max, IM_COL32(45, 55, 65, 255), 2.0f);
+
+        if (level_l > 0.01f) {
+            float fill_h = (height - 2.0f) * level_l;
+            ImVec2 f_min = ImVec2(l_min.x + 1.0f, l_max.y - 1.0f - fill_h);
+            ImVec2 f_max = ImVec2(l_max.x - 1.0f, l_max.y - 1.0f);
+            ImU32 col = (level_l > 0.85f) ? IM_COL32(231, 76, 60, 255) :
+                        (level_l > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
+            draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
+        }
+
+        // Right Channel Container
+        ImVec2 r_min = ImVec2(pos.x + bar_w + 4.0f, pos.y);
+        ImVec2 r_max = ImVec2(r_min.x + bar_w, pos.y + height);
+        draw_list->AddRectFilled(r_min, r_max, IM_COL32(20, 24, 30, 255), 2.0f);
+        draw_list->AddRect(r_min, r_max, IM_COL32(45, 55, 65, 255), 2.0f);
+
+        if (level_r > 0.01f) {
+            float fill_h = (height - 2.0f) * level_r;
+            ImVec2 f_min = ImVec2(r_min.x + 1.0f, r_max.y - 1.0f - fill_h);
+            ImVec2 f_max = ImVec2(r_max.x - 1.0f, r_max.y - 1.0f);
+            ImU32 col = (level_r > 0.85f) ? IM_COL32(231, 76, 60, 255) :
+                        (level_r > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
+            draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
+        }
+
+        ImGui::Dummy(ImVec2(width, height));
+    }
+
     static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
         (void)info_color;
         (void)prefer_tall_layout;
@@ -111,14 +154,19 @@ struct media_player {
                 } else {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
-                // --- Video rendering via FFmpeg Engine ---
+
+                // --- Small Video Thumbnail & Stereo Vertical VU Meter ---
                 ImTextureID tex = item.get_texture_id();
+                constexpr float thumb_w = 120.0f;
+                constexpr float thumb_h = 67.5f;
+
+                ImGui::Spacing();
                 if (tex && item.has_video) {
-                    ImGui::Spacing();
-                    const float dock_width = std::max(ImGui::GetContentRegionAvail().x, 160.0f);
-                    const float dock_height = std::clamp(dock_width * 9.0f / 16.0f, 140.0f, 480.0f);
-                    ImGui::Image(tex, ImVec2(dock_width, dock_height));
+                    ImGui::Image(tex, ImVec2(thumb_w, thumb_h));
+                    ImGui::SameLine();
                 }
+
+                draw_stereo_vu_meter(item.vu_level_l.load(), item.vu_level_r.load(), 18.0f, thumb_h);
             } else {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
                 bool has_bookmark = item.watermark.has_value() && *item.watermark > 0.0;

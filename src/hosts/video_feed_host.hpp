@@ -83,6 +83,10 @@ public:
             try {
                 registrar::add("video_feed_host", instance);
             } catch (...) {}
+            media_player_item::push_audio_cb = [](const uint8_t* data, size_t size) {
+                auto h = get_host();
+                if (h) h->push_audio_pcm(data, size);
+            };
         }
         return instance;
     }
@@ -101,6 +105,22 @@ public:
         if (!running_.load()) {
             port_.store(p);
         }
+    }
+
+    /// Push raw stereo 16-bit 44.1kHz PCM audio into the video feed stream
+    void push_audio_pcm(const uint8_t* data, size_t size) {
+        if (!running_.load() || !data || size == 0) return;
+        std::lock_guard<std::mutex> lock(audio_mutex_);
+        constexpr size_t kMaxAudioQueueBytes = 352800; // ~2 sec stereo PCM at 44.1kHz
+        if (audio_queue_.size() + size > kMaxAudioQueueBytes) {
+            size_t overflow = (audio_queue_.size() + size) - kMaxAudioQueueBytes;
+            if (overflow < audio_queue_.size()) {
+                audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + overflow);
+            } else {
+                audio_queue_.clear();
+            }
+        }
+        audio_queue_.insert(audio_queue_.end(), data, data + size);
     }
 
     /// Return an ImTextureID usable directly inside Rouen's main desktop ImGui windows
@@ -142,20 +162,38 @@ public:
             return false;
         }
 
-        const int read_fd  = pipe_fds[0];
-        const int write_fd = pipe_fds[1];
-        const int listen_port = port_.load();
+        int audio_pipe_fds[2];
+        if (::pipe(audio_pipe_fds) != 0) {
+            VIDEOFEED_ERROR("VideoFeedHost: audio pipe() failed");
+            ::close(pipe_fds[0]);
+            ::close(pipe_fds[1]);
+            try { "notify"_sfn("Video Feed error: Failed to create audio pipe"); } catch (...) {}
+            return false;
+        }
+
+        const int read_fd        = pipe_fds[0];
+        const int write_fd       = pipe_fds[1];
+        const int audio_read_fd  = audio_pipe_fds[0];
+        const int audio_write_fd = audio_pipe_fds[1];
+        const int listen_port    = port_.load();
 
         // Clean up any leftover orphaned ffmpeg process listening on port from previous runs/crashes
         std::string kill_cmd = std::format("pkill -9 -f 'ffmpeg.*listen.*{}' >/dev/null 2>&1", listen_port);
         ::system(kill_cmd.c_str());
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        // Use posix_spawn instead of fork() to be 100% thread-safe and Cocoa-compliant on macOS
+        // Use posix_spawn file actions to map read_fd -> 0 (STDIN) and audio_read_fd -> 3
         posix_spawn_file_actions_t file_actions;
         posix_spawn_file_actions_init(&file_actions);
         posix_spawn_file_actions_adddup2(&file_actions, read_fd, STDIN_FILENO);
-        posix_spawn_file_actions_addclose(&file_actions, write_fd);
+        posix_spawn_file_actions_adddup2(&file_actions, audio_read_fd, 3);
+
+        if (write_fd != STDIN_FILENO && write_fd != 3) {
+            posix_spawn_file_actions_addclose(&file_actions, write_fd);
+        }
+        if (audio_write_fd != STDIN_FILENO && audio_write_fd != 3) {
+            posix_spawn_file_actions_addclose(&file_actions, audio_write_fd);
+        }
 
         std::string input_size = std::format("{}x{}", kWidth, kHeight);
         std::string framerate  = std::to_string(kFps);
@@ -164,16 +202,31 @@ public:
         char* argv[] = {
             const_cast<char*>("ffmpeg"),
             const_cast<char*>("-loglevel"), const_cast<char*>("warning"),
+            // Raw Video Input on pipe:0
             const_cast<char*>("-f"), const_cast<char*>("rawvideo"),
             const_cast<char*>("-pixel_format"), const_cast<char*>("rgb24"),
             const_cast<char*>("-video_size"), const_cast<char*>(input_size.c_str()),
             const_cast<char*>("-framerate"), const_cast<char*>(framerate.c_str()),
             const_cast<char*>("-i"), const_cast<char*>("pipe:0"),
+            // Raw Stereo PCM Audio Input on pipe:3
+            const_cast<char*>("-f"), const_cast<char*>("s16le"),
+            const_cast<char*>("-ac"), const_cast<char*>("2"),
+            const_cast<char*>("-ar"), const_cast<char*>("44100"),
+            const_cast<char*>("-analyzeduration"), const_cast<char*>("100000"),
+            const_cast<char*>("-probesize"), const_cast<char*>("10000"),
+            const_cast<char*>("-i"), const_cast<char*>("pipe:3"),
+            // Video Encoding
             const_cast<char*>("-c:v"), const_cast<char*>("libx264"),
             const_cast<char*>("-preset"), const_cast<char*>("ultrafast"),
             const_cast<char*>("-tune"), const_cast<char*>("zerolatency"),
             const_cast<char*>("-pix_fmt"), const_cast<char*>("yuv420p"),
             const_cast<char*>("-g"), const_cast<char*>("4"),
+            // Audio Encoding
+            const_cast<char*>("-c:a"), const_cast<char*>("aac"),
+            const_cast<char*>("-b:a"), const_cast<char*>("128k"),
+            const_cast<char*>("-ac"), const_cast<char*>("2"),
+            const_cast<char*>("-ar"), const_cast<char*>("44100"),
+            // Output MPEG-TS
             const_cast<char*>("-f"), const_cast<char*>("mpegts"),
             const_cast<char*>("-listen"), const_cast<char*>("1"),
             const_cast<char*>(listen_url.c_str()),
@@ -200,22 +253,36 @@ public:
             ::close(log_fd);
         }
         ::close(read_fd);
+        ::close(audio_read_fd);
 
         if (status != 0) {
             VIDEOFEED_ERROR_FMT("VideoFeedHost: posix_spawnp failed with status {}", status);
             ::close(write_fd);
+            ::close(audio_write_fd);
             try { "notify"_sfn("Video Feed error: Failed to spawn ffmpeg"); } catch (...) {}
             return false;
         }
 
         ffmpeg_pid_.store(pid);
         write_fd_.store(write_fd);
+        audio_write_fd_.store(audio_write_fd);
         running_.store(true);
         frame_number_ = 0;
         new_frame_ready_ = false;
 
+        // Set pipe write descriptors to O_NONBLOCK to prevent OS pipe deadlock between dual streams
+        fcntl(write_fd, F_SETFL, fcntl(write_fd, F_GETFL, 0) | O_NONBLOCK);
+        fcntl(audio_write_fd, F_SETFL, fcntl(audio_write_fd, F_GETFL, 0) | O_NONBLOCK);
+
+        // Pre-fill initial audio and video buffers so FFmpeg stream demuxers open immediately
+        std::vector<uint8_t> init_audio(60000, 0);
+        generate_pink_noise(reinterpret_cast<int16_t*>(init_audio.data()), init_audio.size() / 2);
+        std::vector<uint8_t> init_video(static_cast<size_t>(kWidth * kHeight * 3), 0);
+        write_nonblocking(audio_write_fd, init_audio.data(), init_audio.size(), running_);
+        write_nonblocking(write_fd, init_video.data(), init_video.size(), running_);
+
         // Spawn background writer thread
-        writer_thread_ = std::thread(&VideoFeedHost::writer_loop, this, write_fd);
+        writer_thread_ = std::thread(&VideoFeedHost::writer_loop, this, write_fd, audio_write_fd);
 
         VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started via posix_spawn (PID {}, port {})", pid, listen_port);
 
@@ -379,6 +446,10 @@ public:
         if (fd >= 0) {
             ::close(fd);
         }
+        int afd = audio_write_fd_.exchange(-1);
+        if (afd >= 0) {
+            ::close(afd);
+        }
 
         if (writer_thread_.joinable()) {
             writer_thread_.join();
@@ -409,17 +480,63 @@ public:
         cleanup_imgui_context();
     }
 
+    static bool write_nonblocking(int fd, const uint8_t* data, size_t size, std::atomic<bool>& running) {
+        if (fd < 0 || !data || size == 0) return false;
+        size_t remaining = size;
+        const uint8_t* ptr = data;
+        while (remaining > 0 && running.load()) {
+            ssize_t written = ::write(fd, ptr, remaining);
+            if (written > 0) {
+                ptr += written;
+                remaining -= static_cast<size_t>(written);
+            } else if (written < 0) {
+                if (errno == EINTR) continue;
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    continue;
+                }
+                return false;
+            } else {
+                return false;
+            }
+        }
+        return remaining == 0;
+    }
+
+    static void generate_pink_noise(int16_t* samples, size_t num_samples) {
+        static float b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+        static uint32_t seed = 12345;
+        for (size_t i = 0; i < num_samples; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            float white = (static_cast<float>(seed >> 16) / 32768.0f) - 1.0f;
+            b0 = 0.99886f * b0 + white * 0.0555179f;
+            b1 = 0.99332f * b1 + white * 0.0750759f;
+            b2 = 0.96900f * b2 + white * 0.1538520f;
+            b3 = 0.86650f * b3 + white * 0.3104856f;
+            b4 = 0.55000f * b4 + white * 0.5329522f;
+            b5 = -0.7616f * b5 - white * 0.0168980f;
+            float pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362f;
+            b6 = white * 0.115926f;
+            pink *= 0.04f; // Soft ambient volume
+            int32_t val = static_cast<int32_t>(pink * 32767.0f);
+            samples[i] = static_cast<int16_t>(std::clamp<int32_t>(val, -32768, 32767));
+        }
+    }
+
 private:
-    void writer_loop(int fd) {
+    void writer_loop(int fd, int audio_fd) {
         using clock = std::chrono::steady_clock;
         constexpr auto kFrameDuration = std::chrono::microseconds(1000000 / kFps);
         auto next_frame = clock::now();
 
         std::vector<uint8_t> local_buffer;
+        constexpr size_t kAudioBytesPerFrame = (44100 * 2 * 2) / kFps; // 5880 bytes per 30fps frame
+        std::vector<uint8_t> audio_chunk(kAudioBytesPerFrame, 0);
 
         while (running_.load()) {
             next_frame += kFrameDuration;
 
+            bool frame_to_write = false;
             {
                 std::unique_lock<std::mutex> lock(frame_mutex_);
                 frame_cv_.wait_until(lock, next_frame, [this]() {
@@ -431,22 +548,32 @@ private:
                 if (new_frame_ready_) {
                     local_buffer = stream_buffer_;
                     new_frame_ready_ = false;
+                    frame_to_write = true;
                 }
             }
 
-            if (!local_buffer.empty()) {
-                const uint8_t* ptr = local_buffer.data();
-                size_t remaining = local_buffer.size();
-
-                while (remaining > 0 && running_.load()) {
-                    auto written = ::write(fd, ptr, remaining);
-                    if (written <= 0) {
-                        if (written < 0 && errno == EINTR) continue;
-                        break;
+            // Write audio and video strictly non-blocking and synchronously per frame
+            if (frame_to_write && !local_buffer.empty()) {
+                // 1. Prepare and write stereo PCM audio chunk first (5.8KB)
+                {
+                    std::lock_guard<std::mutex> lock(audio_mutex_);
+                    if (!audio_queue_.empty()) {
+                        size_t to_copy = std::min(audio_queue_.size(), kAudioBytesPerFrame);
+                        std::copy(audio_queue_.begin(), audio_queue_.begin() + to_copy, audio_chunk.begin());
+                        audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + to_copy);
+                    } else {
+                        // Default to soft pink noise when no media content audio is playing
+                        generate_pink_noise(reinterpret_cast<int16_t*>(audio_chunk.data()), audio_chunk.size() / 2);
                     }
-                    ptr += written;
-                    remaining -= static_cast<size_t>(written);
                 }
+                if (audio_fd >= 0) {
+                    write_nonblocking(audio_fd, audio_chunk.data(), audio_chunk.size(), running_);
+                }
+
+                // 2. Write raw video frame (RGB24 6.2MB)
+                write_nonblocking(fd, local_buffer.data(), local_buffer.size(), running_);
+
+                local_buffer.clear();
             }
 
             std::this_thread::sleep_until(next_frame);
@@ -485,7 +612,7 @@ private:
         // Top ImGui Header Window
         if (show_header.load()) {
             ImGui::SetNextWindowPos(ImVec2(40, 30));
-            ImGui::SetNextWindowSize(ImVec2(700, 110));
+            ImGui::SetNextWindowSize(ImVec2(800, 110));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
 
@@ -493,7 +620,7 @@ private:
                 ImGui::SetWindowFontScale(2.2f);
                 ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "ROUEN MULTI-MODAL UI");
                 ImGui::SetWindowFontScale(1.4f);
-                ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.6f, 1.0f), "30 FPS LIVE STREAM  |  FULL HD 1920x1080");
+                ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.6f, 1.0f), "30 FPS LIVE STREAM  |  FULL HD 1920x1080  |  STEREO AUDIO");
             }
             ImGui::End();
             ImGui::PopStyleColor();
@@ -548,6 +675,7 @@ private:
     std::atomic<int>      port_;
     std::atomic<pid_t>    ffmpeg_pid_{0};
     std::atomic<int>      write_fd_{-1};
+    std::atomic<int>      audio_write_fd_{-1};
 
     std::mutex            video_mutex_;
     ImGuiContext*         video_imgui_ctx_{nullptr};
@@ -558,6 +686,9 @@ private:
     std::condition_variable frame_cv_;
     std::vector<uint8_t>  stream_buffer_;
     bool                  new_frame_ready_{false};
+
+    std::mutex            audio_mutex_;
+    std::vector<uint8_t>  audio_queue_;
 
     std::thread           writer_thread_;
     uint32_t              frame_number_{0};

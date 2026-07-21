@@ -24,7 +24,7 @@ bool main_wnd::initialize() {
         
         // Initialize SDL
         std::cout << "DEBUG: Initializing SDL..." << '\n';
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) != 0) {
             DB_ERROR_FMT("SDL initialization error: {}", SDL_GetError());
             return false;
         }
