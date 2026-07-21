@@ -411,34 +411,45 @@ public:
 
 private:
     void writer_loop(int fd) {
+        using clock = std::chrono::steady_clock;
+        constexpr auto kFrameDuration = std::chrono::microseconds(1000000 / kFps);
+        auto next_frame = clock::now();
+
         std::vector<uint8_t> local_buffer;
+
         while (running_.load()) {
+            next_frame += kFrameDuration;
+
             {
                 std::unique_lock<std::mutex> lock(frame_mutex_);
-                frame_cv_.wait(lock, [this]() {
+                frame_cv_.wait_until(lock, next_frame, [this]() {
                     return !running_.load() || new_frame_ready_;
                 });
 
                 if (!running_.load()) break;
 
-                local_buffer = stream_buffer_;
-                new_frame_ready_ = false;
-            }
-
-            if (local_buffer.empty()) continue;
-
-            const uint8_t* ptr = local_buffer.data();
-            size_t remaining = local_buffer.size();
-
-            while (remaining > 0 && running_.load()) {
-                auto written = ::write(fd, ptr, remaining);
-                if (written <= 0) {
-                    if (written < 0 && errno == EINTR) continue;
-                    break;
+                if (new_frame_ready_) {
+                    local_buffer = stream_buffer_;
+                    new_frame_ready_ = false;
                 }
-                ptr += written;
-                remaining -= static_cast<size_t>(written);
             }
+
+            if (!local_buffer.empty()) {
+                const uint8_t* ptr = local_buffer.data();
+                size_t remaining = local_buffer.size();
+
+                while (remaining > 0 && running_.load()) {
+                    auto written = ::write(fd, ptr, remaining);
+                    if (written <= 0) {
+                        if (written < 0 && errno == EINTR) continue;
+                        break;
+                    }
+                    ptr += written;
+                    remaining -= static_cast<size_t>(written);
+                }
+            }
+
+            std::this_thread::sleep_until(next_frame);
         }
     }
 
