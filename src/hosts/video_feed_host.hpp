@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../helpers/sdl_compat.hpp"
+#include "../helpers/config_service.hpp"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -65,10 +66,20 @@ public:
     std::atomic<bool> show_card_overlays{true};
     std::atomic<bool> enable_pink_noise{true};
     std::atomic<bool> full_screen_media{false};
-    std::atomic<int> audio_delay_ms{100};
+    std::atomic<int> audio_delay_ms{0};
 
     VideoFeedHost()
         : port_(kDefaultPort) {
+        try {
+            auto config = rouen::helpers::ConfigService::instance();
+            show_header.store(config->get_typed<bool>("CAST_SHOW_HEADER").value_or(true));
+            show_footer.store(config->get_typed<bool>("CAST_SHOW_FOOTER").value_or(true));
+            show_bg_animation.store(config->get_typed<bool>("CAST_SHOW_BG_ANIMATION").value_or(true));
+            show_card_overlays.store(config->get_typed<bool>("CAST_SHOW_CARD_OVERLAYS").value_or(true));
+            enable_pink_noise.store(config->get_typed<bool>("CAST_ENABLE_PINK_NOISE").value_or(true));
+            full_screen_media.store(config->get_typed<bool>("CAST_FULL_SCREEN_MEDIA").value_or(false));
+            audio_delay_ms.store(config->get_typed<int>("CAST_AUDIO_DELAY_MS").value_or(0));
+        } catch (...) {}
         VIDEOFEED_INFO("VideoFeedHost: Initialized");
     }
 
@@ -416,26 +427,21 @@ public:
         ImGui::NewFrame();
 
         // 1. Render Video Feed Header & Base UI
-        bool fs_media_active = full_screen_media.load() && has_active_media_player_video();
-        if (!fs_media_active) {
-            render_video_base_ui();
-        }
+        render_video_base_ui();
 
         // 2. Render Active Cards' Video UI
-        if (!fs_media_active) {
-            if (show_card_overlays.load()) {
-                try {
-                    auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
-                    if (get_cards_fn && *get_cards_fn) {
-                        auto active_cards = (*get_cards_fn)();
-                        for (const auto& card_ptr : active_cards) {
-                            if (card_ptr) {
-                                card_ptr->render_video_ui();
-                            }
+        if (show_card_overlays.load()) {
+            try {
+                auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                if (get_cards_fn && *get_cards_fn) {
+                    auto active_cards = (*get_cards_fn)();
+                    for (const auto& card_ptr : active_cards) {
+                        if (card_ptr) {
+                            card_ptr->render_video_ui();
                         }
                     }
-                } catch (...) {}
-            }
+                }
+            } catch (...) {}
         }
 
         // 3. Render Active Media Player Video Stream on Cast
@@ -771,30 +777,34 @@ private:
     void render_video_base_ui() {
         ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
-        if (show_bg_animation.load()) {
-            // Animated hue sweep background
-            const float hue = std::fmod(static_cast<float>(frame_number_) / 240.0f, 1.0f);
-            ImVec4 bg_col;
-            ImGui::ColorConvertHSVtoRGB(hue, 0.5f, 0.25f, bg_col.x, bg_col.y, bg_col.z);
-            bg_col.w = 1.0f;
-            draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), ImGui::GetColorU32(bg_col));
+        bool fs_media_active = full_screen_media.load() && has_active_media_player_video();
 
-            // Animated bouncing indicator square
-            constexpr float sq = 120.0f;
-            const float range_x = kWidth - sq;
-            const float range_y = kHeight - sq;
-            float raw_x = std::fmod(static_cast<float>(frame_number_ * 6), range_x * 2.0f);
-            float raw_y = std::fmod(static_cast<float>(frame_number_ * 4), range_y * 2.0f);
-            float sx = raw_x < range_x ? raw_x : range_x * 2.0f - raw_x;
-            float sy = raw_y < range_y ? raw_y : range_y * 2.0f - raw_y;
+        if (!fs_media_active) {
+            if (show_bg_animation.load()) {
+                // Animated hue sweep background
+                const float hue = std::fmod(static_cast<float>(frame_number_) / 240.0f, 1.0f);
+                ImVec4 bg_col;
+                ImGui::ColorConvertHSVtoRGB(hue, 0.5f, 0.25f, bg_col.x, bg_col.y, bg_col.z);
+                bg_col.w = 1.0f;
+                draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), ImGui::GetColorU32(bg_col));
 
-            draw_list->AddRectFilled(
-                ImVec2(sx, sy), ImVec2(sx + sq, sy + sq),
-                IM_COL32(255, 255, 255, 40), 16.0f
-            );
-        } else {
-            // Clean dark slate static background
-            draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), IM_COL32(15, 20, 30, 255));
+                // Animated bouncing indicator square
+                constexpr float sq = 120.0f;
+                const float range_x = kWidth - sq;
+                const float range_y = kHeight - sq;
+                float raw_x = std::fmod(static_cast<float>(frame_number_ * 6), range_x * 2.0f);
+                float raw_y = std::fmod(static_cast<float>(frame_number_ * 4), range_y * 2.0f);
+                float sx = raw_x < range_x ? raw_x : range_x * 2.0f - raw_x;
+                float sy = raw_y < range_y ? raw_y : range_y * 2.0f - raw_y;
+
+                draw_list->AddRectFilled(
+                    ImVec2(sx, sy), ImVec2(sx + sq, sy + sq),
+                    IM_COL32(255, 255, 255, 40), 16.0f
+                );
+            } else {
+                // Clean dark slate static background
+                draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(kWidth, kHeight), IM_COL32(15, 20, 30, 255));
+            }
         }
 
         // Top ImGui Header Window

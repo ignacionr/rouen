@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/config_service.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../hosts/video_feed_host.hpp"
 #include "../../registrar.hpp"
@@ -96,36 +97,43 @@ private:
         bool show_hdr = host->show_header.load();
         if (ImGui::Checkbox("Top Header Banner ('ROUEN MULTI-MODAL UI')", &show_hdr)) {
             host->show_header.store(show_hdr);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_SHOW_HEADER", show_hdr ? "true" : "false", true);
         }
 
         bool show_ftr = host->show_footer.load();
         if (ImGui::Checkbox("Bottom Footer Bar (Live Clock & Frame Count)", &show_ftr)) {
             host->show_footer.store(show_ftr);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_SHOW_FOOTER", show_ftr ? "true" : "false", true);
         }
 
         bool show_bg = host->show_bg_animation.load();
         if (ImGui::Checkbox("Background Animation (Hue Sweep & Bouncing Square)", &show_bg)) {
             host->show_bg_animation.store(show_bg);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_SHOW_BG_ANIMATION", show_bg ? "true" : "false", true);
         }
 
         bool show_cards = host->show_card_overlays.load();
         if (ImGui::Checkbox("Active Card Overlays (e.g. Alarm Card HUD)", &show_cards)) {
             host->show_card_overlays.store(show_cards);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_SHOW_CARD_OVERLAYS", show_cards ? "true" : "false", true);
         }
 
         bool noise_enabled = host->enable_pink_noise.load();
         if (ImGui::Checkbox("Enable Ambient Pink Noise Fallback", &noise_enabled)) {
             host->enable_pink_noise.store(noise_enabled);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_ENABLE_PINK_NOISE", noise_enabled ? "true" : "false", true);
         }
 
         bool fs_media = host->full_screen_media.load();
         if (ImGui::Checkbox("Full Screen Media Playback", &fs_media)) {
             host->full_screen_media.store(fs_media);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_FULL_SCREEN_MEDIA", fs_media ? "true" : "false", true);
         }
 
         int delay = host->audio_delay_ms.load();
         if (ImGui::SliderInt("Audio Sync Offset (ms)", &delay, -2000, 2000, "%d ms")) {
             host->audio_delay_ms.store(delay);
+            rouen::helpers::ConfigService::instance()->set_env_value("CAST_AUDIO_DELAY_MS", std::to_string(delay), true);
         }
         ImGui::TextDisabled("Slide left (negative) to delay video; slide right (positive) to delay audio.");
 
