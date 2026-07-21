@@ -20,6 +20,7 @@ namespace rouen::helpers {
     struct GeminiFunctionCall {
         std::string name;
         glz::json_t args; // Use glz::json_t to dynamically parse any JSON structure
+        std::string id;
     };
 
     struct GeminiPart {
@@ -69,7 +70,8 @@ struct glz::meta<rouen::helpers::GeminiFunctionCall> {
     using T = rouen::helpers::GeminiFunctionCall;
     static constexpr auto value = object(
         "name", &T::name,
-        "args", &T::args
+        "args", &T::args,
+        "id", &T::id
     );
 };
 
@@ -104,11 +106,13 @@ namespace rouen::helpers {
             struct FunctionCall {
                 std::string name;
                 std::string args; // JSON string of arguments
+                std::string id;
             };
 
             struct FunctionResponse {
                 std::string name;
                 std::string response; // JSON string of response
+                std::string id;
             };
 
             std::string role;
@@ -218,8 +222,13 @@ namespace rouen::helpers {
                 for (const auto& fc : msg.function_calls) {
                     if (!first_part) json += ",";
                     std::string args_json = fc.args.empty() ? "{}" : fc.args;
-                    json += std::format("{{\"functionCall\":{{\"name\":\"{}\",\"args\":{}}}}}", 
-                                       fc.name, args_json);
+                    if (!fc.id.empty()) {
+                        json += std::format("{{\"functionCall\":{{\"name\":\"{}\",\"args\":{},\"id\":\"{}\"}}}}", 
+                                           fc.name, args_json, fc.id);
+                    } else {
+                        json += std::format("{{\"functionCall\":{{\"name\":\"{}\",\"args\":{}}}}}", 
+                                           fc.name, args_json);
+                    }
                     first_part = false;
                 }
                 
@@ -228,10 +237,19 @@ namespace rouen::helpers {
                     if (!first_part) json += ",";
                     std::string resp_json;
                     if (!fr.response.empty() && fr.response.front() == '{') {
-                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
+                        if (!fr.id.empty()) {
+                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{},\"id\":\"{}\"}}", fr.name, fr.response, fr.id);
+                        } else {
+                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
+                        }
                     } else {
-                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
-                                               fr.name, escape_json(fr.response));
+                        if (!fr.id.empty()) {
+                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}},\"id\":\"{}\"}}", 
+                                                   fr.name, escape_json(fr.response), fr.id);
+                        } else {
+                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
+                                                   fr.name, escape_json(fr.response));
+                        }
                     }
                     json += std::format("{{\"functionResponse\":{}}}", resp_json);
                     first_part = false;
@@ -569,7 +587,7 @@ namespace rouen::helpers {
                             args_json = "{}";
                         }
                         
-                        current_calls.push_back({fc.name, args_json});
+                        current_calls.push_back({fc.name, args_json, fc.id});
                     }
                     if (!part.text.empty()) {
                         turn_text += part.text;
@@ -596,7 +614,7 @@ namespace rouen::helpers {
                         } catch (const std::exception& e) {
                             result = std::format("{{\"error\":\"{}\"}}", e.what());
                         }
-                        response_msg.function_responses.push_back({call.name, result});
+                        response_msg.function_responses.push_back({call.name, result, call.id});
                     }
                     
                     // 3. Add function response turn to history

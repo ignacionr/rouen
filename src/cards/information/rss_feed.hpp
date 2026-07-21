@@ -10,6 +10,9 @@
 #include <thread>
 #include <set>
 #include <mutex>
+#include <sstream>
+#include "../../helpers/llm_config.hpp"
+#include "../../helpers/fetch.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../external/IconsMaterialDesign.h" // Added icon header
@@ -270,6 +273,20 @@ namespace rouen::cards
                 }
             }
             
+            {
+                std::lock_guard<std::mutex> lock(ai_tags_mutex_);
+                if (!pending_ai_tags_.empty()) {
+                    auto current = rss_host->getFeedTags(feed_id);
+                    for (const auto& t : current) {
+                        rss_host->removeFeedTag(feed_id, t);
+                    }
+                    for (const auto& t : pending_ai_tags_) {
+                        rss_host->addFeedTag(feed_id, t);
+                    }
+                    pending_ai_tags_.clear();
+                }
+            }
+            
             try
             {
                 return render_window([this]()
@@ -320,6 +337,9 @@ namespace rouen::cards
                     ImGui::PopStyleColor(3);
                     
                     ImGui::EndGroup();
+                    
+                    ImGui::Checkbox("Continuous Play", &continuous_play);
+                    ImGui::Spacing();
                     
                     // Display the feed image (or placeholder) and tags to the side of it
                     ImGui::BeginGroup();
@@ -415,6 +435,7 @@ namespace rouen::cards
                         
                         auto current_tags = rss_host->getFeedTags(feed_id);
                         std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
+                        std::sort(all_possible_tags.begin(), all_possible_tags.end());
                         const float tags_row_width = ImGui::GetContentRegionAvail().x;
                         float used_row_width = 0.0f;
                         
@@ -456,6 +477,40 @@ namespace rouen::cards
                             }
                         }
                         ImGui::PopStyleVar();
+                        
+                        // Add new tag input field
+                        ImGui::Spacing();
+                        ImGui::PushItemWidth(120.0f * dpi_scale);
+                        bool add_tag_enter = ImGui::InputText("##new_tag", new_tag_buffer, sizeof(new_tag_buffer), ImGuiInputTextFlags_EnterReturnsTrue);
+                        ImGui::PopItemWidth();
+                        ImGui::SameLine();
+                        bool add_tag_btn = ImGui::Button("Add Tag");
+                        if ((add_tag_enter || add_tag_btn) && new_tag_buffer[0] != '\0') {
+                            std::string tag_to_add = new_tag_buffer;
+                            tag_to_add.erase(tag_to_add.begin(), std::find_if(tag_to_add.begin(), tag_to_add.end(), [](unsigned char ch) {
+                                return !std::isspace(ch);
+                            }));
+                            tag_to_add.erase(std::find_if(tag_to_add.rbegin(), tag_to_add.rend(), [](unsigned char ch) {
+                                return !std::isspace(ch);
+                            }).base(), tag_to_add.end());
+                            if (!tag_to_add.empty()) {
+                                rss_host->addFeedTag(feed_id, tag_to_add);
+                                new_tag_buffer[0] = '\0';
+                            }
+                        }
+
+                        ImGui::SameLine();
+                        if (ai_tagging_in_progress_) {
+                            ImGui::Text("AI Thinking...");
+                        } else {
+                            if (ImGui::Button(ICON_MD_AUTO_AWESOME " AI Suggest")) {
+                                suggestTagsWithAI();
+                            }
+                        }
+                        if (!ai_tagging_error_.empty()) {
+                            ImGui::Spacing();
+                            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "AI Error: %s", ai_tagging_error_.c_str());
+                        }
                         
                         // Show total item count
                         ImGui::Spacing();
@@ -801,6 +856,94 @@ namespace rouen::cards
                             ImGui::EndChild();
 
                         }
+                        // Continuous Play logic
+                        {
+                            bool found_playing = false;
+                            std::string active_url = "";
+                            double active_pos = 0.0;
+                            double active_dur = 0.0;
+                            
+                            for (const auto* item_ptr : filtered_items) {
+                                if (!item_ptr) continue;
+                                const auto& item = *item_ptr;
+                                std::string media_url = get_item_media_url(item);
+                                if (media_url.empty()) continue;
+                                
+                                // Look up in media_player::items()
+                                for (const auto& [id, player_item] : media_player::items()) {
+                                    if (player_item.url == media_url) {
+                                        if (player_item.player_pid > 0 && !player_item.is_paused.load()) {
+                                            found_playing = true;
+                                            active_url = media_url;
+                                            active_pos = player_item.position.load();
+                                            active_dur = player_item.duration.load();
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (found_playing) break;
+                            }
+                            
+                            if (found_playing) {
+                                last_playing_url = active_url;
+                                was_playing = true;
+                                last_pos = active_pos;
+                                last_dur = active_dur;
+
+                                // Auto-expand items_limit if the playing item is beyond it
+                                for (size_t i = 0; i < filtered_items.size(); ++i) {
+                                    if (filtered_items[i] && get_item_media_url(*filtered_items[i]) == active_url) {
+                                        if (static_cast<int>(i) >= items_limit) {
+                                            items_limit = static_cast<int>(i) + 1;
+                                        }
+                                        break;
+                                    }
+                                }
+                            } else if (was_playing) {
+                                was_playing = false;
+                                bool finished_naturally = (last_dur > 0.0 && last_pos >= last_dur - 4.0);
+                                if (finished_naturally && continuous_play) {
+                                    size_t found_idx = filtered_items.size();
+                                    for (size_t i = 0; i < filtered_items.size(); ++i) {
+                                        if (filtered_items[i] && get_item_media_url(*filtered_items[i]) == last_playing_url) {
+                                            found_idx = i;
+                                            break;
+                                        }
+                                    }
+                                    if (found_idx != filtered_items.size()) {
+                                        // Look for the next item in filtered_items that has playable media
+                                        for (size_t next_idx = found_idx + 1; next_idx < filtered_items.size(); ++next_idx) {
+                                            if (!filtered_items[next_idx]) continue;
+                                            const auto& next_item_ref = *filtered_items[next_idx];
+                                            std::string next_url = get_item_media_url(next_item_ref);
+                                            if (!next_url.empty()) {
+                                                media_player::stopAll();
+                                                
+                                                // Compute ImGui ID for next_url using correct ID stack (with std::format)
+                                                std::string id_str = std::format("{}##{}", next_item_ref.link, next_idx);
+                                                ImGui::PushID(id_str.c_str());
+                                                ImGui::PushID(next_url.data(), next_url.data() + next_url.size());
+                                                ImGuiID next_id = ImGui::GetID("MediaPlayer");
+                                                ImGui::PopID();
+                                                ImGui::PopID();
+                                                
+                                                auto& next_item = media_player::items()[next_id];
+                                                next_item.url = next_url;
+                                                next_item.feed_id = next_item_ref.feed_id;
+                                                next_item.item_link = next_item_ref.link;
+                                                next_item.item_title = next_item_ref.title;
+                                                next_item.watermark = next_item_ref.watermark;
+                                                next_item.start_offset = next_item_ref.watermark.value_or(0.0);
+                                                next_item.playMedia();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                last_playing_url.clear();
+                            }
+                        }
+
                         render_manual_add_item_section();
                     }
                     catch (const std::exception& e) {
@@ -885,6 +1028,117 @@ namespace rouen::cards
         std::shared_ptr<rouen::hosts::RSSHost> rss_host;
         std::vector<rouen::hosts::RSSHost::FeedItem> items;
 
+        char new_tag_buffer[256] = "";
+        bool continuous_play = false;
+        std::string last_playing_url;
+        bool was_playing = false;
+        double last_pos = 0.0;
+        double last_dur = 0.0;
+
+        bool ai_tagging_in_progress_ = false;
+        std::string ai_tagging_error_;
+        std::vector<std::string> pending_ai_tags_;
+        std::mutex ai_tags_mutex_;
+
+        void suggestTagsWithAI() {
+            if (ai_tagging_in_progress_) return;
+
+            if (!helpers::LLMConfig::is_configured()) {
+                ai_tagging_error_ = "LLM not configured";
+                return;
+            }
+
+            ai_tagging_in_progress_ = true;
+            ai_tagging_error_.clear();
+
+            std::jthread([this]() {
+                try {
+                    auto llm_instance = helpers::LLMConfig::create_llm_instance();
+                    if (!llm_instance) {
+                        ai_tagging_error_ = "Failed to create LLM";
+                        ai_tagging_in_progress_ = false;
+                        return;
+                    }
+
+                    std::string feed_info = std::format("Feed Title: {}\nFeed URL: {}\n", feed_title, feed_url);
+                    feed_info += "Sample Feed Items:\n";
+                    {
+                        std::vector<rouen::hosts::RSSHost::FeedItem> items_copy;
+                        {
+                            std::lock_guard<std::mutex> lock(items_mutex_);
+                            items_copy = items;
+                        }
+                        for (size_t i = 0; i < std::min(static_cast<size_t>(5), items_copy.size()); ++i) {
+                            std::string desc = ::helpers::StringHelper::strip_html_tags(items_copy[i].description);
+                            if (desc.length() > 150) {
+                                desc = desc.substr(0, 150) + "...";
+                            }
+                            feed_info += std::format("- Title: {}\n  Description: {}\n", items_copy[i].title, desc);
+                        }
+                    }
+
+                    std::string prompt = std::format(
+                        "You are an expert content classifier. Please analyze this RSS feed and suggest exactly 5 classification tags for it.\n\n"
+                        "{}\n"
+                        "Here are the existing candidate tags that you should prefer if they are relevant:\n",
+                        feed_info
+                    );
+                    
+                    std::vector<std::string> all_tags = rss_host->getAvailableTags();
+                    for (const auto& tag : all_tags) {
+                        prompt += std::format("- {}\n", tag);
+                    }
+                    prompt += "\n"
+                              "Choose exactly 5 tags. You can select relevant tags from the existing ones, or generate new ones if they fit better.\n"
+                              "Return the tags as a comma-separated list on a single line (e.g. 'News, Tech, Podcasts, Uruguay, Apple').\n"
+                              "Return ONLY the comma-separated list of tags and absolutely nothing else. Do not use quotes or prefixes.";
+
+                    auto settings = helpers::LLMConfig::get_current_config();
+                    auto fetcher = std::make_shared<http::fetch>();
+
+                    auto response = llm_instance->sendMessage(
+                        prompt,
+                        [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                            return fetcher->post(url, data, header_client);
+                        },
+                        "user",
+                        settings.model_name,
+                        "",
+                        0.5f
+                    );
+
+                    if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                        std::string generated = response.choices[0].message.content;
+                        generated.erase(0, generated.find_first_not_of(" \t\r\n\"'"));
+                        generated.erase(generated.find_last_not_of(" \t\r\n\"'") + 1);
+
+                        std::vector<std::string> suggested_tags;
+                        std::stringstream ss(generated);
+                        std::string token;
+                        while (std::getline(ss, token, ',')) {
+                            token.erase(0, token.find_first_not_of(" \t\r\n\"'"));
+                            token.erase(token.find_last_not_of(" \t\r\n\"'") + 1);
+                            if (!token.empty()) {
+                                suggested_tags.push_back(token);
+                            }
+                        }
+
+                        if (!suggested_tags.empty()) {
+                            std::lock_guard<std::mutex> lock(ai_tags_mutex_);
+                            pending_ai_tags_ = std::move(suggested_tags);
+                        } else {
+                            ai_tagging_error_ = "Failed to parse tags from AI response";
+                        }
+                    } else {
+                        ai_tagging_error_ = "Empty response from AI";
+                    }
+                } catch (const std::exception& e) {
+                    ai_tagging_error_ = e.what();
+                }
+                ai_tagging_in_progress_ = false;
+            }).detach();
+        }
+
         // Image handling
         SDL_Renderer *renderer = nullptr;
         SDL_Texture *feed_image_texture = nullptr;
@@ -951,6 +1205,22 @@ namespace rouen::cards
                     : ImVec4(0.95f, 0.4f, 0.4f, 1.0f);
                 ImGui::TextColored(feedback_color, "%s", add_item_feedback.c_str());
             }
+        }
+
+        static std::string get_item_media_url(const rouen::hosts::RSSHost::FeedItem& item) {
+            if (!item.enclosure.empty()) {
+                return item.enclosure;
+            }
+            std::string best = item.get_best_media_url();
+            if (!best.empty()) {
+                return best;
+            }
+            if (item.link.find("youtube.com") != std::string::npos || 
+                item.link.find("youtu.be") != std::string::npos ||
+                item.link.find("vimeo.com") != std::string::npos) {
+                return item.link;
+            }
+            return "";
         }
 
         std::pair<std::string, std::string> detect_language_and_select_voice(std::string_view text, std::string_view url) {

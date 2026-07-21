@@ -204,18 +204,12 @@ struct mcp_note_summary {
     int id{0};
     std::string title;
     std::string tags;
-    std::string created_at;
-    std::string updated_at;
-    std::string preview;
     struct glaze {
         using T = mcp_note_summary;
         static constexpr auto value = glz::object(
             "id", &T::id,
             "title", &T::title,
-            "tags", &T::tags,
-            "created_at", &T::created_at,
-            "updated_at", &T::updated_at,
-            "preview", &T::preview
+            "tags", &T::tags
         );
     };
 };
@@ -784,7 +778,7 @@ mcp_service::mcp_service() {
     // Register notes functions
     function_definition notes_list_def(
         "notes_list",
-        "Search and list markdown notes. Call this with empty parameters {} to list all note titles currently available. You can also filter by an optional search query or a specific tag. Returns title, tags, timestamps, and a brief preview of the content for each matching note.",
+        "Search and list markdown notes. Call this with empty parameters {} to list all note titles currently available. You can also filter by an optional search query or a specific tag. Returns title and tags for each matching note.",
         R"mcp({"type":"object","properties":{"search":{"type":"string","description":"Optional search term to match in note title or content"},"tag":{"type":"string","description":"Optional tag to filter notes by"}}})mcp",
         [](const std::string& params) -> std::string {
             std::string search;
@@ -809,15 +803,6 @@ mcp_service::mcp_service() {
                     summary.id = note.id;
                     summary.title = note.title;
                     summary.tags = note.tags;
-                    summary.created_at = note.created_at;
-                    summary.updated_at = note.updated_at;
-                    
-                    // Create preview of first 120 chars
-                    if (note.content.length() > 120) {
-                        summary.preview = note.content.substr(0, 120) + "...";
-                    } else {
-                        summary.preview = note.content;
-                    }
                     summaries.push_back(std::move(summary));
                 }
 

@@ -10,6 +10,8 @@ card_*.png
 **/.DS_Store
 vcpkg_installed
 vcpkg/
+models/
+.whisper_server.pid
 
 # Nix build artifacts
 result

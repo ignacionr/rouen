@@ -325,6 +325,7 @@ namespace media::rss
         {
             std::lock_guard<std::mutex> lock(mutex_);
             try {
+                db_.exec("INSERT OR IGNORE INTO rss_tag_definition (tag, sort_order) VALUES (?, ?)", [](sqlite3_stmt*){}, tag, 999);
                 db_.exec("INSERT OR IGNORE INTO feed_tag (feed_id, tag) VALUES (?, ?)", [](sqlite3_stmt*){}, feed_id, tag);
             } catch (const std::exception& e) {
                 RSS_ERROR_FMT("Error adding feed tag: {}", e.what());

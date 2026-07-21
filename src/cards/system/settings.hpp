@@ -6,9 +6,15 @@
 #include <algorithm>
 #include <optional>
 #include <cstdlib> // For setenv on Unix platforms
+#include <mutex>
+#include <thread>
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/fetch.hpp"
+#include "../../helpers/gemini_adapter.hpp"
+#include "../../helpers/cppgpt.hpp"
 #include "../interface/card.hpp"
 
 // Cross-platform environment variable helper
@@ -29,6 +35,61 @@ namespace {
 }
 
 namespace rouen::cards {
+
+struct GeminiModelInfo {
+    std::string name;
+    std::string displayName;
+};
+
+struct GeminiModelsResponse {
+    std::vector<GeminiModelInfo> models;
+};
+
+struct OpenAIModelInfo {
+    std::string id;
+};
+
+struct OpenAIModelsResponse {
+    std::vector<OpenAIModelInfo> data;
+};
+
+} // namespace rouen::cards
+
+template <>
+struct glz::meta<rouen::cards::GeminiModelInfo> {
+    using T = rouen::cards::GeminiModelInfo;
+    static constexpr auto value = object(
+        "name", &T::name,
+        "displayName", &T::displayName
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::GeminiModelsResponse> {
+    using T = rouen::cards::GeminiModelsResponse;
+    static constexpr auto value = object(
+        "models", &T::models
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::OpenAIModelInfo> {
+    using T = rouen::cards::OpenAIModelInfo;
+    static constexpr auto value = object(
+        "id", &T::id
+    );
+};
+
+template <>
+struct glz::meta<rouen::cards::OpenAIModelsResponse> {
+    using T = rouen::cards::OpenAIModelsResponse;
+    static constexpr auto value = object(
+        "data", &T::data
+    );
+};
+
+namespace rouen::cards {
+
 
 struct settings_card : public card {
     settings_card() {
@@ -95,6 +156,32 @@ private:
     char llm_model_buf_[256] = "";
     int selected_prov_idx_ = 0;
 
+    struct AsyncState {
+        std::mutex mutex;
+        
+        // Test state
+        enum class TestStatus {
+            IDLE,
+            TESTING,
+            SUCCESS,
+            FAILED
+        };
+        TestStatus test_status = TestStatus::IDLE;
+        std::string test_result = "";
+        
+        // Models state
+        enum class FetchStatus {
+            IDLE,
+            FETCHING,
+            SUCCESS,
+            FAILED
+        };
+        FetchStatus fetch_status = FetchStatus::IDLE;
+        std::string fetch_result = "";
+        std::vector<std::string> fetched_models;
+    };
+    std::shared_ptr<AsyncState> async_state_ = std::make_shared<AsyncState>();
+
     void populate_llm_config_buffers(const std::string& name) {
         auto& lcm = helpers::LLMConfigManager::instance();
         const auto* entry = lcm.get_config(name);
@@ -121,6 +208,16 @@ private:
             else selected_prov_idx_ = 0;
             
             last_loaded_llm_config_name_ = name;
+
+            // Reset async test/fetch states when switching configs
+            {
+                std::lock_guard<std::mutex> lock(async_state_->mutex);
+                async_state_->test_status = AsyncState::TestStatus::IDLE;
+                async_state_->test_result = "";
+                async_state_->fetch_status = AsyncState::FetchStatus::IDLE;
+                async_state_->fetch_result = "";
+                async_state_->fetched_models.clear();
+            }
         }
     }
     
@@ -492,6 +589,19 @@ private:
     }
     
     void render_llm_config_editor() {
+        struct LLMProviderInfo {
+            const char* name;
+            const char* value;
+        };
+        LLMProviderInfo providers[] = {
+            {"Grok (X.AI)", "grok"},
+            {"OpenAI", "openai"},
+            {"Groq", "groq"},
+            {"Google Gemini", "gemini"},
+            {"Custom", "custom"}
+        };
+        constexpr int provider_count = 5;
+
         auto& lcm = helpers::LLMConfigManager::instance();
         const auto& configs = lcm.get_configs();
         
@@ -546,22 +656,6 @@ private:
         // Get the loaded entry to see current provider
         const auto* entry = lcm.get_config(selected_llm_config_name_);
         if (entry) {
-            // Provider field
-            struct LLMProviderInfo {
-                const char* name;
-                const char* value;
-            };
-            LLMProviderInfo providers[] = {
-                {"Grok (X.AI)", "grok"},
-                {"OpenAI", "openai"},
-                {"Groq", "groq"},
-                {"Google Gemini", "gemini"},
-                {"Custom", "custom"}
-            };
-            constexpr int provider_count = 5;
-            
-
-            
             // Name field
             ImGui::Text("Configuration Name:");
             ImGui::SetNextItemWidth(300);
@@ -603,6 +697,125 @@ private:
             ImGui::Text("Model Name:");
             ImGui::SetNextItemWidth(300);
             ImGui::InputText("##llm_config_model_input", llm_model_buf_, sizeof(llm_model_buf_));
+            ImGui::SameLine();
+            
+            AsyncState::FetchStatus current_fetch_status;
+            std::string current_fetch_result;
+            std::vector<std::string> current_models;
+            {
+                std::lock_guard<std::mutex> lock(async_state_->mutex);
+                current_fetch_status = async_state_->fetch_status;
+                current_fetch_result = async_state_->fetch_result;
+                current_models = async_state_->fetched_models;
+            }
+            
+            if (current_fetch_status == AsyncState::FetchStatus::FETCHING) {
+                ImGui::BeginDisabled();
+                ImGui::Button("Fetching...");
+                ImGui::EndDisabled();
+            } else {
+                if (ImGui::Button("Fetch Models")) {
+                    auto prov_enum = helpers::LLMConfig::string_to_provider(providers[selected_prov_idx_].value);
+                    std::string api_key = llm_key_buf_;
+                    std::string base_url = llm_url_buf_;
+                    
+                    {
+                        std::lock_guard<std::mutex> lock(async_state_->mutex);
+                        async_state_->fetch_status = AsyncState::FetchStatus::FETCHING;
+                        async_state_->fetch_result = "Fetching models...";
+                        async_state_->fetched_models.clear();
+                    }
+                    
+                    std::thread([state_weak = std::weak_ptr<AsyncState>(async_state_), prov_enum, api_key, base_url]() {
+                        try {
+                            http::fetch fetcher;
+                            std::vector<std::string> models;
+                            
+                            if (prov_enum == helpers::LLMConfig::Provider::GEMINI) {
+                                std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", api_key);
+                                std::string response_json = fetcher(url);
+                                
+                                GeminiModelsResponse g_response;
+                                auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(g_response, response_json);
+                                if (read_error) {
+                                    throw std::runtime_error("Failed to parse Gemini models JSON: " + glz::format_error(read_error, response_json));
+                                }
+                                
+                                for (const auto& m : g_response.models) {
+                                    std::string m_name = m.name;
+                                    if (m_name.rfind("models/", 0) == 0) {
+                                        m_name = m_name.substr(7);
+                                    }
+                                    models.push_back(m_name);
+                                }
+                            } else {
+                                std::string url = std::format("{}/models", base_url);
+                                std::vector<std::string> headers = {
+                                    "Authorization: Bearer " + api_key
+                                };
+                                std::string response_json = fetcher(url, headers);
+                                
+                                OpenAIModelsResponse o_response;
+                                auto read_error = glz::read<glz::opts{.error_on_unknown_keys=false}>(o_response, response_json);
+                                if (read_error) {
+                                    throw std::runtime_error("Failed to parse models JSON: " + glz::format_error(read_error, response_json));
+                                }
+                                
+                                for (const auto& m : o_response.data) {
+                                    models.push_back(m.id);
+                                }
+                            }
+                            
+                            std::sort(models.begin(), models.end());
+                            
+                            if (auto state = state_weak.lock()) {
+                                std::lock_guard<std::mutex> lock(state->mutex);
+                                state->fetched_models = std::move(models);
+                                state->fetch_status = AsyncState::FetchStatus::SUCCESS;
+                                state->fetch_result = std::format("Fetched {} models.", state->fetched_models.size());
+                            }
+                        } catch (const std::exception& e) {
+                            if (auto state = state_weak.lock()) {
+                                std::lock_guard<std::mutex> lock(state->mutex);
+                                state->fetch_status = AsyncState::FetchStatus::FAILED;
+                                state->fetch_result = std::string("Failed: ") + e.what();
+                            }
+                        }
+                    }).detach();
+                }
+            }
+            
+            if (!current_fetch_result.empty()) {
+                ImGui::SameLine();
+                if (current_fetch_status == AsyncState::FetchStatus::SUCCESS) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // green
+                } else if (current_fetch_status == AsyncState::FetchStatus::FAILED) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // red
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f)); // gray
+                }
+                ImGui::Text("%s", current_fetch_result.c_str());
+                ImGui::PopStyleColor();
+            }
+            
+            // Show dropdown of available models under it
+            if (!current_models.empty()) {
+                ImGui::Text("Select From Fetched List:");
+                ImGui::SetNextItemWidth(300);
+                if (ImGui::BeginCombo("##llm_config_model_combo_select", llm_model_buf_)) {
+                    for (const auto& model : current_models) {
+                        bool is_selected = (std::string(llm_model_buf_) == model);
+                        if (ImGui::Selectable(model.c_str(), is_selected)) {
+                            strncpy(llm_model_buf_, model.c_str(), sizeof(llm_model_buf_) - 1);
+                            llm_model_buf_[sizeof(llm_model_buf_) - 1] = '\0';
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
             
             ImGui::Spacing();
             
@@ -664,12 +877,100 @@ private:
         
         // Quick test button
         if (ImGui::Button("Test Configuration")) {
+            auto prov_enum = helpers::LLMConfig::string_to_provider(providers[selected_prov_idx_].value);
+            std::string api_key = llm_key_buf_;
+            std::string base_url = llm_url_buf_;
+            std::string model_name = llm_model_buf_;
+            
+            {
+                std::lock_guard<std::mutex> lock(async_state_->mutex);
+                async_state_->test_status = AsyncState::TestStatus::TESTING;
+                async_state_->test_result = "Testing connection...";
+            }
+            
+            std::thread([state_weak = std::weak_ptr<AsyncState>(async_state_), prov_enum, api_key, base_url, model_name]() {
+                try {
+                    auto fetcher = std::make_shared<http::fetch>();
+                    ignacionr::ChatCompletion response;
+                    if (prov_enum == helpers::LLMConfig::Provider::GEMINI) {
+                        helpers::GeminiAdapter adapter(api_key);
+                        response = adapter.sendMessage("Say 'hello' in exactly one word.",
+                            [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                return fetcher->post(url, data, header_client);
+                            },
+                            "user",
+                            model_name
+                        );
+                    } else {
+                        ignacionr::cppgpt llm(api_key, base_url);
+                        response = llm.sendMessage("Say 'hello' in exactly one word.",
+                            [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                return fetcher->post(url, data, header_client);
+                            },
+                            "user",
+                            model_name
+                        );
+                    }
+                    
+                    std::string reply;
+                    if (!response.choices.empty()) {
+                        reply = response.choices[0].message.content;
+                        // Trim reply
+                        auto first = reply.find_first_not_of(" \t\r\n");
+                        if (first != std::string::npos) {
+                            auto last = reply.find_last_not_of(" \t\r\n");
+                            reply = reply.substr(first, last - first + 1);
+                        }
+                    } else {
+                        throw std::runtime_error("Received empty response from API.");
+                    }
+                    
+                    if (auto state = state_weak.lock()) {
+                        std::lock_guard<std::mutex> lock(state->mutex);
+                        state->test_status = AsyncState::TestStatus::SUCCESS;
+                        state->test_result = "Connection successful!\nResponse from model: \"" + reply + "\"";
+                    }
+                } catch (const std::exception& e) {
+                    if (auto state = state_weak.lock()) {
+                        std::lock_guard<std::mutex> lock(state->mutex);
+                        state->test_status = AsyncState::TestStatus::FAILED;
+                        state->test_result = std::string("Connection failed!\nError: ") + e.what();
+                    }
+                }
+            }).detach();
+            
             ImGui::OpenPopup("Test LLM Config");
         }
         
         if (ImGui::BeginPopupModal("Test LLM Config", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            AsyncState::TestStatus current_status;
+            std::string current_result;
+            {
+                std::lock_guard<std::mutex> lock(async_state_->mutex);
+                current_status = async_state_->test_status;
+                current_result = async_state_->test_result;
+            }
+            
             ImGui::Text("Testing LLM configuration...");
-            ImGui::Text("This feature will be implemented to send a test request.");
+            ImGui::Spacing();
+            
+            if (current_status == AsyncState::TestStatus::TESTING) {
+                ImGui::Text("Connecting to the endpoint...");
+                ImGui::TextDisabled("(this may take a few seconds)");
+            } else if (current_status == AsyncState::TestStatus::SUCCESS) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // green
+                ImGui::TextWrapped("%s", current_result.c_str());
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // red
+                ImGui::TextWrapped("%s", current_result.c_str());
+                ImGui::PopStyleColor();
+            }
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
             if (ImGui::Button("OK")) {
                 ImGui::CloseCurrentPopup();
             }

@@ -20,6 +20,7 @@ namespace rouen::helpers {
         std::string llm_config_name;
         bool enable_search{false};
         std::vector<std::string> allowed_personas;
+        float temperature{0.7f};
 
         struct glaze {
             using T = Persona;
@@ -30,7 +31,8 @@ namespace rouen::helpers {
                 "system_prompt", &T::system_prompt,
                 "llm_config_name", &T::llm_config_name,
                 "enable_search", &T::enable_search,
-                "allowed_personas", &T::allowed_personas
+                "allowed_personas", &T::allowed_personas,
+                "temperature", &T::temperature
             );
         };
     };
@@ -67,7 +69,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"}, "You are a helpful assistant.", "Default", false};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"}, "You are a helpful assistant.", "Default", false, {}, 0.7f};
             return fallback;
         }
 
@@ -153,6 +155,7 @@ namespace rouen::helpers {
             default_p.llm_config_name = "Default";
             default_p.enable_search = false;
             default_p.allowed_personas = {};
+            default_p.temperature = 0.7f;
             
             personas_.push_back(default_p);
             
@@ -167,6 +170,7 @@ namespace rouen::helpers {
             developer_p.llm_config_name = "Default";
             developer_p.enable_search = false;
             developer_p.allowed_personas = {};
+            developer_p.temperature = 0.2f;
             
             personas_.push_back(developer_p);
         }

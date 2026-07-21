@@ -269,6 +269,28 @@ public:
             // Tag Filter Pills (with wrapping layout to prevent overflow)
             {
                 std::vector<std::string> tags = rss_host->getAvailableTags();
+                
+                // Count occurrences of each tag in all feeds
+                auto all_feeds = rss_host->feeds();
+                std::unordered_map<std::string, int> tag_counts;
+                for (const auto& feed : all_feeds) {
+                    if (feed) {
+                        for (const auto& tag : feed->tags) {
+                            tag_counts[tag]++;
+                        }
+                    }
+                }
+                
+                // Sort tags (excluding "All") in order of count (most first)
+                std::sort(tags.begin(), tags.end(), [&tag_counts](const std::string& a, const std::string& b) {
+                    int count_a = tag_counts.contains(a) ? tag_counts.at(a) : 0;
+                    int count_b = tag_counts.contains(b) ? tag_counts.at(b) : 0;
+                    if (count_a != count_b) {
+                        return count_a > count_b;
+                    }
+                    return a < b;
+                });
+                
                 tags.insert(tags.begin(), "All");
                 if (std::find(tags.begin(), tags.end(), selected_tag_) == tags.end()) {
                     selected_tag_ = "All";

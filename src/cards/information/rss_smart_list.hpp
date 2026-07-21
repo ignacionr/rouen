@@ -192,6 +192,8 @@ namespace rouen::cards
             ImGui::PopStyleColor(3);
 
             ImGui::EndGroup();
+            
+            ImGui::Checkbox("Continuous Play", &continuous_play);
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
@@ -346,6 +348,90 @@ namespace rouen::cards
             // Lazy scroll page expansion
             if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 50.0f && count < displayed_items.size()) {
                 items_limit += 20;
+            }
+
+            // Continuous Play logic
+            {
+                bool found_playing = false;
+                std::string active_url = "";
+                double active_pos = 0.0;
+                double active_dur = 0.0;
+                
+                for (const auto& item : displayed_items) {
+                    std::string media_url = get_item_media_url(item);
+                    if (media_url.empty()) continue;
+                    
+                    // Look up in media_player::items()
+                    for (const auto& [id, player_item] : media_player::items()) {
+                        if (player_item.url == media_url) {
+                            if (player_item.player_pid > 0 && !player_item.is_paused.load()) {
+                                found_playing = true;
+                                active_url = media_url;
+                                active_pos = player_item.position.load();
+                                active_dur = player_item.duration.load();
+                                break;
+                            }
+                        }
+                    }
+                    if (found_playing) break;
+                }
+                
+                if (found_playing) {
+                    last_playing_url = active_url;
+                    was_playing = true;
+                    last_pos = active_pos;
+                    last_dur = active_dur;
+                    
+                    // Auto-expand items_limit if the playing item is beyond it
+                    for (size_t i = 0; i < displayed_items.size(); ++i) {
+                        if (get_item_media_url(displayed_items[i]) == active_url) {
+                            if (static_cast<int>(i) >= items_limit) {
+                                items_limit = static_cast<int>(i) + 1;
+                            }
+                            break;
+                        }
+                    }
+                } else if (was_playing) {
+                    was_playing = false;
+                    bool finished_naturally = (last_dur > 0.0 && last_pos >= last_dur - 4.0);
+                    if (finished_naturally && continuous_play) {
+                        size_t found_idx = displayed_items.size();
+                        for (size_t i = 0; i < displayed_items.size(); ++i) {
+                            if (get_item_media_url(displayed_items[i]) == last_playing_url) {
+                                        found_idx = i;
+                                        break;
+                            }
+                        }
+                        if (found_idx != displayed_items.size()) {
+                            // Look for the next item in displayed_items that has playable media
+                            for (size_t next_idx = found_idx + 1; next_idx < displayed_items.size(); ++next_idx) {
+                                const auto& next_item_ref = displayed_items[next_idx];
+                                std::string next_url = get_item_media_url(next_item_ref);
+                                if (!next_url.empty()) {
+                                    media_player::stopAll();
+                                    
+                                    // Compute ImGui ID for next_url using correct ID stack (with index next_idx)
+                                    ImGui::PushID(static_cast<int>(next_idx));
+                                    ImGui::PushID(next_url.data(), next_url.data() + next_url.size());
+                                    ImGuiID next_id = ImGui::GetID("MediaPlayer");
+                                    ImGui::PopID();
+                                    ImGui::PopID();
+                                    
+                                    auto& next_item = media_player::items()[next_id];
+                                    next_item.url = next_url;
+                                    next_item.feed_id = next_item_ref.feed_id;
+                                    next_item.item_link = next_item_ref.link;
+                                    next_item.item_title = next_item_ref.title;
+                                    next_item.watermark = next_item_ref.watermark;
+                                    next_item.start_offset = next_item_ref.watermark.value_or(0.0);
+                                    next_item.playMedia();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    last_playing_url.clear();
+                }
             }
 
             ImGui::EndChild();
@@ -544,6 +630,22 @@ namespace rouen::cards
         }
 
     private:
+        static std::string get_item_media_url(const rouen::hosts::RSSHost::FeedItem& item) {
+            if (!item.enclosure.empty()) {
+                return item.enclosure;
+            }
+            std::string best = item.get_best_media_url();
+            if (!best.empty()) {
+                return best;
+            }
+            if (item.link.find("youtube.com") != std::string::npos || 
+                item.link.find("youtu.be") != std::string::npos ||
+                item.link.find("vimeo.com") != std::string::npos) {
+                return item.link;
+            }
+            return "";
+        }
+
         std::string smart_list_title;
         media::rss::filter_group filter;
         std::vector<hosts::RSSHost::FeedItem> items_;
@@ -555,6 +657,12 @@ namespace rouen::cards
         bool is_editing = false;
         bool should_close = false;
         char search_buffer[256] = "";
+
+        bool continuous_play = false;
+        std::string last_playing_url;
+        bool was_playing = false;
+        double last_pos = 0.0;
+        double last_dur = 0.0;
 
         std::shared_ptr<hosts::RSSHost> rss_host;
         std::shared_ptr<::helpers::ImageCache> image_cache;
