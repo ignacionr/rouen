@@ -98,7 +98,7 @@ public:
     int port() const { return port_.load(); }
 
     std::string endpoint() const {
-        return std::format("http://127.0.0.1:{}", port_.load());
+        return std::format("udp://127.0.0.1:{}", port_.load());
     }
 
     void set_port(int p) {
@@ -111,7 +111,7 @@ public:
     void push_audio_pcm(const uint8_t* data, size_t size) {
         if (!running_.load() || !data || size == 0) return;
         std::lock_guard<std::mutex> lock(audio_mutex_);
-        constexpr size_t kMaxAudioQueueBytes = 352800; // ~2 sec stereo PCM at 44.1kHz
+        constexpr size_t kMaxAudioQueueBytes = 1764000; // ~10 sec stereo PCM at 44.1kHz
         if (audio_queue_.size() + size > kMaxAudioQueueBytes) {
             size_t overflow = (audio_queue_.size() + size) - kMaxAudioQueueBytes;
             if (overflow < audio_queue_.size()) {
@@ -197,11 +197,12 @@ public:
 
         std::string input_size = std::format("{}x{}", kWidth, kHeight);
         std::string framerate  = std::to_string(kFps);
-        std::string listen_url = std::format("http://127.0.0.1:{}", listen_port);
+        std::string udp_url = std::format("udp://127.0.0.1:{}?pkt_size=1316", listen_port);
 
         char* argv[] = {
             const_cast<char*>("ffmpeg"),
             const_cast<char*>("-loglevel"), const_cast<char*>("warning"),
+            const_cast<char*>("-threads"), const_cast<char*>("4"),
             // Raw Video Input on pipe:0
             const_cast<char*>("-f"), const_cast<char*>("rawvideo"),
             const_cast<char*>("-pixel_format"), const_cast<char*>("rgb24"),
@@ -226,10 +227,9 @@ public:
             const_cast<char*>("-b:a"), const_cast<char*>("128k"),
             const_cast<char*>("-ac"), const_cast<char*>("2"),
             const_cast<char*>("-ar"), const_cast<char*>("44100"),
-            // Output MPEG-TS
+            // Output MPEG-TS via UDP
             const_cast<char*>("-f"), const_cast<char*>("mpegts"),
-            const_cast<char*>("-listen"), const_cast<char*>("1"),
-            const_cast<char*>(listen_url.c_str()),
+            const_cast<char*>(udp_url.c_str()),
             nullptr
         };
 
@@ -264,6 +264,9 @@ public:
         }
 
         ffmpeg_pid_.store(pid);
+#ifndef _WIN32
+        ::setpriority(PRIO_PROCESS, pid, -10);
+#endif
         write_fd_.store(write_fd);
         audio_write_fd_.store(audio_write_fd);
         running_.store(true);
@@ -278,11 +281,12 @@ public:
         std::vector<uint8_t> init_audio(60000, 0);
         generate_pink_noise(reinterpret_cast<int16_t*>(init_audio.data()), init_audio.size() / 2);
         std::vector<uint8_t> init_video(static_cast<size_t>(kWidth * kHeight * 3), 0);
-        write_nonblocking(audio_write_fd, init_audio.data(), init_audio.size(), running_);
-        write_nonblocking(write_fd, init_video.data(), init_video.size(), running_);
+        write_full_frame(audio_write_fd, init_audio.data(), init_audio.size(), running_);
+        write_full_frame(write_fd, init_video.data(), init_video.size(), running_);
 
-        // Spawn background writer thread
-        writer_thread_ = std::thread(&VideoFeedHost::writer_loop, this, write_fd, audio_write_fd);
+        // Spawn dedicated background writer threads for video and audio
+        video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this, write_fd);
+        audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this, audio_write_fd);
 
         VIDEOFEED_INFO_FMT("VideoFeedHost: ffmpeg started via posix_spawn (PID {}, port {})", pid, listen_port);
 
@@ -451,8 +455,11 @@ public:
             ::close(afd);
         }
 
-        if (writer_thread_.joinable()) {
-            writer_thread_.join();
+        if (video_writer_thread_.joinable()) {
+            video_writer_thread_.join();
+        }
+        if (audio_writer_thread_.joinable()) {
+            audio_writer_thread_.join();
         }
 
 #ifndef _WIN32
@@ -480,19 +487,22 @@ public:
         cleanup_imgui_context();
     }
 
-    static bool write_nonblocking(int fd, const uint8_t* data, size_t size, std::atomic<bool>& running) {
+    static bool write_full_frame(int fd, const uint8_t* data, size_t size, std::atomic<bool>& running) {
         if (fd < 0 || !data || size == 0) return false;
         size_t remaining = size;
         const uint8_t* ptr = data;
+        constexpr size_t kChunkSize = 65536; // 64KB chunks matching kernel pipe capacity
+
         while (remaining > 0 && running.load()) {
-            ssize_t written = ::write(fd, ptr, remaining);
+            size_t to_write = std::min(remaining, kChunkSize);
+            ssize_t written = ::write(fd, ptr, to_write);
             if (written > 0) {
                 ptr += written;
                 remaining -= static_cast<size_t>(written);
             } else if (written < 0) {
                 if (errno == EINTR) continue;
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    std::this_thread::sleep_for(std::chrono::microseconds(200));
+                    std::this_thread::sleep_for(std::chrono::microseconds(100));
                     continue;
                 }
                 return false;
@@ -524,59 +534,74 @@ public:
     }
 
 private:
-    void writer_loop(int fd, int audio_fd) {
+    void audio_writer_loop(int audio_fd) {
         using clock = std::chrono::steady_clock;
-        constexpr auto kFrameDuration = std::chrono::microseconds(1000000 / kFps);
-        auto next_frame = clock::now();
-
-        std::vector<uint8_t> local_buffer;
-        constexpr size_t kAudioBytesPerFrame = (44100 * 2 * 2) / kFps; // 5880 bytes per 30fps frame
+        constexpr auto kAudioFrameDuration = std::chrono::microseconds(1000000 / kFps);
+        constexpr size_t kAudioBytesPerFrame = (44100 * 2 * 2) / kFps; // 5880 bytes
         std::vector<uint8_t> audio_chunk(kAudioBytesPerFrame, 0);
 
+        auto next_frame = clock::now();
+
         while (running_.load()) {
-            next_frame += kFrameDuration;
+            next_frame += kAudioFrameDuration;
 
-            bool frame_to_write = false;
+            size_t copied = 0;
             {
-                std::unique_lock<std::mutex> lock(frame_mutex_);
-                frame_cv_.wait_until(lock, next_frame, [this]() {
-                    return !running_.load() || new_frame_ready_;
-                });
+                std::lock_guard<std::mutex> lock(audio_mutex_);
+                if (!audio_queue_.empty()) {
+                    copied = std::min(audio_queue_.size(), kAudioBytesPerFrame);
+                    std::copy(audio_queue_.begin(), audio_queue_.begin() + copied, audio_chunk.begin());
+                    audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + copied);
+                }
+            }
 
-                if (!running_.load()) break;
+            if (copied < kAudioBytesPerFrame) {
+                int16_t* fill_ptr = reinterpret_cast<int16_t*>(audio_chunk.data() + copied);
+                size_t fill_samples = (kAudioBytesPerFrame - copied) / sizeof(int16_t);
+                generate_pink_noise(fill_ptr, fill_samples);
+            }
 
+            if (audio_fd >= 0) {
+                write_full_frame(audio_fd, audio_chunk.data(), audio_chunk.size(), running_);
+            }
+
+            auto now = clock::now();
+            if (next_frame > now) {
+                std::this_thread::sleep_for(next_frame - now);
+            } else {
+                next_frame = now;
+            }
+        }
+    }
+
+    void video_writer_loop(int video_fd) {
+        using clock = std::chrono::steady_clock;
+        constexpr auto kVideoFrameDuration = std::chrono::microseconds(1000000 / kFps);
+        std::vector<uint8_t> local_buffer;
+
+        auto next_frame = clock::now();
+
+        while (running_.load()) {
+            next_frame += kVideoFrameDuration;
+
+            {
+                std::lock_guard<std::mutex> lock(frame_mutex_);
                 if (new_frame_ready_) {
                     local_buffer = stream_buffer_;
                     new_frame_ready_ = false;
-                    frame_to_write = true;
                 }
             }
 
-            // Write audio and video strictly non-blocking and synchronously per frame
-            if (frame_to_write && !local_buffer.empty()) {
-                // 1. Prepare and write stereo PCM audio chunk first (5.8KB)
-                {
-                    std::lock_guard<std::mutex> lock(audio_mutex_);
-                    if (!audio_queue_.empty()) {
-                        size_t to_copy = std::min(audio_queue_.size(), kAudioBytesPerFrame);
-                        std::copy(audio_queue_.begin(), audio_queue_.begin() + to_copy, audio_chunk.begin());
-                        audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + to_copy);
-                    } else {
-                        // Default to soft pink noise when no media content audio is playing
-                        generate_pink_noise(reinterpret_cast<int16_t*>(audio_chunk.data()), audio_chunk.size() / 2);
-                    }
-                }
-                if (audio_fd >= 0) {
-                    write_nonblocking(audio_fd, audio_chunk.data(), audio_chunk.size(), running_);
-                }
-
-                // 2. Write raw video frame (RGB24 6.2MB)
-                write_nonblocking(fd, local_buffer.data(), local_buffer.size(), running_);
-
-                local_buffer.clear();
+            if (video_fd >= 0 && !local_buffer.empty()) {
+                write_full_frame(video_fd, local_buffer.data(), local_buffer.size(), running_);
             }
 
-            std::this_thread::sleep_until(next_frame);
+            auto now = clock::now();
+            if (next_frame > now) {
+                std::this_thread::sleep_for(next_frame - now);
+            } else {
+                next_frame = now;
+            }
         }
     }
 
@@ -690,7 +715,8 @@ private:
     std::mutex            audio_mutex_;
     std::vector<uint8_t>  audio_queue_;
 
-    std::thread           writer_thread_;
+    std::thread           video_writer_thread_;
+    std::thread           audio_writer_thread_;
     uint32_t              frame_number_{0};
     std::chrono::steady_clock::time_point last_frame_time_;
 };

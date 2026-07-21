@@ -378,6 +378,8 @@ inline bool media_player_item::playMedia() {
     args_str.push_back("ffmpeg");
     args_str.push_back("-loglevel");
     args_str.push_back("info");
+    args_str.push_back("-threads");
+    args_str.push_back("4");
     args_str.push_back("-re");
     if (start_offset > 0.05) {
         args_str.push_back("-ss");
@@ -442,6 +444,11 @@ inline bool media_player_item::playMedia() {
     try { "notify"_sfn(std::format("FFmpeg player started (PID {})", pid)); } catch (...) {}
 
     player_pid = pid;
+#ifndef _WIN32
+    if (pid > 0) {
+        ::setpriority(PRIO_PROCESS, pid, -10);
+    }
+#endif
     ffmpeg_running.store(true);
     is_playing = true;
     position.store(start_offset);
