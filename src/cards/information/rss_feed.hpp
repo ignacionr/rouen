@@ -871,12 +871,12 @@ namespace rouen::cards
                                 
                                 // Look up in media_player::items()
                                 for (const auto& [id, player_item] : media_player::items()) {
-                                    if (player_item.url == media_url) {
-                                        if (player_item.player_pid > 0 && !player_item.is_paused.load()) {
+                                    if (player_item && player_item->url == media_url) {
+                                        if (player_item->player_pid > 0 && !player_item->is_paused.load()) {
                                             found_playing = true;
                                             active_url = media_url;
-                                            active_pos = player_item.position.load();
-                                            active_dur = player_item.duration.load();
+                                            active_pos = player_item->position.load();
+                                            active_dur = player_item->duration.load();
                                             break;
                                         }
                                     }
@@ -927,7 +927,7 @@ namespace rouen::cards
                                                 ImGui::PopID();
                                                 ImGui::PopID();
                                                 
-                                                auto& next_item = media_player::items()[next_id];
+                                                auto& next_item = media_player::get_item(next_id);
                                                 next_item.url = next_url;
                                                 next_item.feed_id = next_item_ref.feed_id;
                                                 next_item.item_link = next_item_ref.link;

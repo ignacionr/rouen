@@ -25,7 +25,7 @@ struct media_player {
 
     static void stopAll() {
         for (auto &[k,v]: items()) {
-            v.stopMedia();
+            if (v) v->stopMedia();
         }
         items().clear();
     }
@@ -35,12 +35,20 @@ struct media_player {
         return dummy;
     }
 
+    static media_player_item& get_item(ImGuiID id) {
+        auto& item_ptr = items()[id];
+        if (!item_ptr) {
+            item_ptr = std::make_shared<media_player_item>();
+        }
+        return *item_ptr;
+    }
+
     static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
         (void)info_color;
         (void)prefer_tall_layout;
         ImGui::PushID(url.data(), url.data() + url.size());
         try {
-            auto &item {items()[ImGui::GetID("MediaPlayer")]};
+            auto &item = get_item(ImGui::GetID("MediaPlayer"));
             item.url = url;
             if (feed_id != -1) {
                 item.feed_id = feed_id;

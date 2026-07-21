@@ -178,8 +178,8 @@ namespace rouen::cards {
                             ImGui::PushID(playlist_url.c_str());
                             player_id = ImGui::GetID("MediaPlayer");
                             auto it = media_player::items().find(player_id);
-                            if (it != media_player::items().end()) {
-                                is_playing = it->second.checkMediaStatus();
+                            if (it != media_player::items().end() && it->second) {
+                                is_playing = it->second->checkMediaStatus();
                             }
                             ImGui::PopID();
                         }
@@ -188,6 +188,25 @@ namespace rouen::cards {
                         if (is_playing) {
                             ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
                             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+                            ImGui::BeginGroup();
+                        }
+                        
+                        // Handle auto-play if flagged
+                        if (cut.should_autoplay && cut.resolved) {
+                            // Find and update item to clear flag
+                            auto it = std::find_if(cuts.begin(), cuts.end(), [&](const auto& c) { return c.id == cut.id; });
+                            if (it != cuts.end()) {
+                                it->should_autoplay = false;
+                            }
+                            
+                            media_player::stopAll();
+                            
+                            ImGui::PushID(playlist_url.c_str());
+                            auto &item = media_player::get_item(ImGui::GetID("MediaPlayer"));
+                            item.url = playlist_url;
+                            item.start_offset = cut.start_offset;
+                            item.playMedia();
+                            ImGui::PopID();
                         }
                         
                         ImGui::BeginGroup();
@@ -270,7 +289,7 @@ namespace rouen::cards {
                                 media_player::stopAll();
                                 
                                 ImGui::PushID(playlist_url.c_str());
-                                auto &item = media_player::items()[ImGui::GetID("MediaPlayer")];
+                                auto &item = media_player::get_item(ImGui::GetID("MediaPlayer"));
                                 item.url = playlist_url;
                                 item.start_offset = cut.start_offset;
                                 item.playMedia();

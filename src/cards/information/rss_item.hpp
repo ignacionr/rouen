@@ -204,7 +204,7 @@ public:
                         
                         ImGui::PushID(playable_url.c_str());
                         ImGuiID player_id = ImGui::GetID("MediaPlayer");
-                        auto& global_item = media_player::items()[player_id];
+                        auto& global_item = media_player::get_item(player_id);
                         ImGui::PopID();
                         
                         global_item.url = playable_url;

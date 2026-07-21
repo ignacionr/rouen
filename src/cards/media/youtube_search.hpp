@@ -221,7 +221,7 @@ namespace rouen::cards {
                     ImGui::PopID();
                     
                     media_player::stopAll();
-                    auto& mp_item = media_player::items()[item_id];
+                    auto& mp_item = media_player::get_item(item_id);
                     mp_item.url = play_url_trigger;
                     mp_item.item_title = play_title_trigger;
                     mp_item.start_offset = 0.0;
@@ -284,10 +284,10 @@ namespace rouen::cards {
                 std::string active_title;
                 bool yt_playing = false;
                 
-                for (auto& [id, item] : media_player::items()) {
-                    if (item.player_pid > 0 && (item.url.find("youtube.com") != std::string::npos || item.url.find("youtu.be") != std::string::npos)) {
-                        active_url = item.url;
-                        active_title = item.item_title;
+                for (auto& [id, item_ptr] : media_player::items()) {
+                    if (item_ptr && item_ptr->player_pid > 0 && (item_ptr->url.find("youtube.com") != std::string::npos || item_ptr->url.find("youtu.be") != std::string::npos)) {
+                        active_url = item_ptr->url;
+                        active_title = item_ptr->item_title;
                         yt_playing = true;
                         break;
                     }
@@ -299,7 +299,12 @@ namespace rouen::cards {
                     ImGui::PopStyleColor();
                     ImGui::Separator();
                     
-                    media_player::player(active_url, colors[0], active_title);
+                    ImGui::TextWrapped("%s", active_title.c_str());
+                    
+                    ImGui::Spacing();
+                    
+                    // Unified In-Card Media Player Control Area
+                    media_player::player(active_url, colors[0], "Now Playing Player", -1, "", active_title);
                     
                     ImGui::Spacing();
                     ImGui::Separator();
@@ -334,8 +339,8 @@ namespace rouen::cards {
                     ImGui::PopID();
                     
                     auto it = media_player::items().find(item_id);
-                    if (it != media_player::items().end()) {
-                        auto& item = it->second;
+                    if (it != media_player::items().end() && it->second) {
+                        auto& item = *it->second;
                         if (item.player_pid == 0 && item.duration > 0.0 && item.position >= item.duration - 3.0) {
                             size_t next_idx = std::string::npos;
                             for (size_t i = 0; i < results_copy.size(); ++i) {
@@ -424,7 +429,7 @@ namespace rouen::cards {
                             ImGuiID item_id = ImGui::GetID("MediaPlayer");
                             ImGui::PopID();
                             auto it = media_player::items().find(item_id);
-                            if (it != media_player::items().end() && !it->second.is_paused.load()) {
+                            if (it != media_player::items().end() && it->second && !it->second->is_paused.load()) {
                                 is_playing_now = true;
                             }
                         }
@@ -436,8 +441,8 @@ namespace rouen::cards {
                                 ImGuiID item_id = ImGui::GetID("MediaPlayer");
                                 ImGui::PopID();
                                 auto it = media_player::items().find(item_id);
-                                if (it != media_player::items().end()) {
-                                    it->second.togglePause();
+                                if (it != media_player::items().end() && it->second) {
+                                    it->second->togglePause();
                                 }
                             } else {
                                 play_url_trigger = item.url;

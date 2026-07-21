@@ -90,8 +90,11 @@ struct media_player_item {
     SDL_Texture* video_texture{nullptr};
     std::mutex data_mutex;
     std::mutex texture_mutex;
-
     media_player_item() = default;
+    media_player_item(const media_player_item&) = delete;
+    media_player_item& operator=(const media_player_item&) = delete;
+    media_player_item(media_player_item&&) = delete;
+    media_player_item& operator=(media_player_item&&) = delete;
     ~media_player_item() { stopMedia(); }
 
     bool checkMediaStatus();
@@ -138,11 +141,11 @@ struct media_player_item {
                 has_video = true;
             }
         }
-        return video_texture ? rouen::helpers::sdl_texture_cast(video_texture) : ImTextureID{};
+        return rouen::helpers::sdl_texture_cast(video_texture);
     }
 };
 
-using media_player_item_map = std::unordered_map<ImGuiID, media_player_item>;
+using media_player_item_map = std::unordered_map<ImGuiID, std::shared_ptr<media_player_item>>;
 
 // --- Implementation ---
 
