@@ -58,6 +58,7 @@ private:
     bool m_immediate = false;
     int m_requested_fps = 1;
     std::string keystrokes_;
+    std::chrono::steady_clock::time_point m_last_main_render_time{};
     
     // Flag to track if Cmd+W was handled at card level this frame
     bool m_card_close_handled_this_frame = false;

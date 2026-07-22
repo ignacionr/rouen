@@ -106,6 +106,14 @@ public:
                 auto h = get_host();
                 if (h) h->reset_sync_queues();
             };
+            media_player_item::get_cast_queue_size_cb = []() -> size_t {
+                auto h = get_host();
+                return h ? h->get_cast_queued_bytes() : 0;
+            };
+            media_player_item::is_offscreen_ctx_cb = []() -> bool {
+                auto h = get_host();
+                return h ? (ImGui::GetCurrentContext() == h->video_imgui_ctx_) : false;
+            };
         }
         return instance;
     }
@@ -141,6 +149,20 @@ public:
         }
     }
 
+    size_t get_audio_queue_size() {
+        std::lock_guard<std::mutex> lock(audio_mutex_);
+        return audio_queue_.size();
+    }
+
+    size_t get_cast_queued_bytes() {
+        size_t q = 0;
+        {
+            std::lock_guard<std::mutex> lock(audio_mutex_);
+            q = audio_queue_.size();
+        }
+        return q + streamer_.get_audio_buf_size();
+    }
+
     void reset_sync_queues() {
         {
             std::lock_guard<std::mutex> lock(audio_mutex_);
@@ -153,6 +175,8 @@ public:
         }
         prebuffer_established_.store(false);
         audio_prebuffer_established_.store(false);
+        first_media_video_pts_time.store(-1.0);
+        audio_aligned_to_video.store(false);
         streamer_.reset_audio_buffers();
         VIDEOFEED_INFO("VideoFeedHost: Reset sync queues");
     }
@@ -192,6 +216,8 @@ public:
             starting_.store(false);
             frame_number_ = 0;
             new_frame_ready_ = false;
+            stream_start_time_ = std::chrono::steady_clock::now();
+            last_frame_time_ = stream_start_time_;
 
             video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this);
             audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this);
@@ -401,6 +427,12 @@ public:
 
         ++frame_number_;
 
+        if (has_active_media_player_video()) {
+            if (first_media_video_pts_time.load() < 0.0) {
+                first_media_video_pts_time.store(streamer_.get_video_pts_seconds());
+            }
+        }
+
         // Push frame to pre-buffer queue
         {
             std::lock_guard<std::mutex> frame_lock(frame_mutex_);
@@ -489,20 +521,18 @@ private:
             if (has_active_media) {
                 std::lock_guard<std::mutex> lock(audio_mutex_);
                 if (audio_queue_.size() >= kAudioBytesPerFrame) {
-                    // Catch up if backlog exists (drain up to 2 frames at once)
-                    size_t bytes_to_read = kAudioBytesPerFrame;
-                    if (audio_queue_.size() >= 4 * kAudioBytesPerFrame) {
-                        bytes_to_read = 2 * kAudioBytesPerFrame;
-                    }
-                    size_t copied = std::min(audio_queue_.size(), bytes_to_read);
-                    audio_chunk.assign(audio_queue_.begin(), audio_queue_.begin() + copied);
-                    audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + copied);
+                    audio_chunk.assign(audio_queue_.begin(), audio_queue_.begin() + kAudioBytesPerFrame);
+                    audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + kAudioBytesPerFrame);
                     
+                    if (!audio_aligned_to_video.load()) {
+                        streamer_.sync_audio_pts_with_video_pts();
+                        audio_aligned_to_video.store(true);
+                    }
+
                     streamer_.encode_audio(audio_chunk.data(), audio_chunk.size());
                     last_real_audio_time = now;
                 } else {
-                    // Queue is temporarily low: check if we are buffering/paused
-                    if (now - last_real_audio_time >= std::chrono::milliseconds(150)) {
+                    if (audio_aligned_to_video.load() && (now - last_real_audio_time >= std::chrono::milliseconds(150))) {
                         encode_silence = true;
                     }
                 }
@@ -542,6 +572,7 @@ private:
         using clock = std::chrono::steady_clock;
         constexpr auto kVideoFrameDuration = std::chrono::microseconds(1000000 / kFps);
         std::vector<uint8_t> local_buffer;
+        std::vector<uint8_t> last_frame(kWidth * kHeight * 4, 0);
 
         while (running_.load()) {
             auto frame_start = clock::now();
@@ -551,6 +582,9 @@ private:
                 if (!video_frame_queue_.empty()) {
                     local_buffer = std::move(video_frame_queue_.front());
                     video_frame_queue_.pop_front();
+                    last_frame = local_buffer;
+                } else {
+                    local_buffer = last_frame;
                 }
             }
 
@@ -620,7 +654,7 @@ private:
         // Bottom ImGui Footer Window
         if (show_footer.load()) {
             ImGui::SetNextWindowPos(ImVec2(40, kHeight - 110));
-            ImGui::SetNextWindowSize(ImVec2(650, 80));
+            ImGui::SetNextWindowSize(ImVec2(1100, 80));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.85f));
 
@@ -632,8 +666,15 @@ private:
 #else
                 localtime_r(&now_t, &tm_buf);
 #endif
-                std::string status_str = std::format("FRAME: {:06d}   |   {:02d}:{:02d}:{:02d}",
-                                                     frame_number_, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec);
+                auto elapsed = std::chrono::steady_clock::now() - stream_start_time_;
+                double elapsed_sec = std::chrono::duration<double>(elapsed).count();
+                int elapsed_min = static_cast<int>(elapsed_sec) / 60;
+                int elapsed_rem_sec = static_cast<int>(elapsed_sec) % 60;
+                double avg_fps = elapsed_sec > 0.1 ? (static_cast<double>(frame_number_) / elapsed_sec) : 0.0;
+
+                std::string status_str = std::format("FRAME: {:06d}   |   {:02d}:{:02d}:{:02d}   |   ELAPSED: {:02d}:{:02d}   |   FPS: {:.2f}",
+                                                     frame_number_, tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+                                                     elapsed_min, elapsed_rem_sec, avg_fps);
                 ImGui::SetWindowFontScale(1.6f);
                 ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", status_str.c_str());
             }
@@ -691,6 +732,8 @@ private:
     std::vector<uint8_t>  audio_queue_;
     std::atomic<bool>     prebuffer_established_{false};
     std::atomic<bool>     audio_prebuffer_established_{false};
+    std::atomic<double>   first_media_video_pts_time{-1.0};
+    std::atomic<bool>     audio_aligned_to_video{false};
 
 
 
@@ -698,6 +741,7 @@ private:
     std::thread           audio_writer_thread_;
     uint32_t              frame_number_{0};
     std::chrono::steady_clock::time_point last_frame_time_;
+    std::chrono::steady_clock::time_point stream_start_time_{};
 };
 
 }  // namespace rouen::hosts

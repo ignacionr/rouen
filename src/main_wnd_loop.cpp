@@ -48,6 +48,12 @@ void main_wnd::run() {
 
         while (!m_done) {
             try {
+                auto video_feed = rouen::hosts::VideoFeedHost::get_host();
+                bool is_casting = (video_feed && video_feed->is_running());
+                if (is_casting) {
+                    m_requested_fps = std::max(m_requested_fps, 30);
+                }
+
                 // Process events
                 if (!process_events()) {
                     break;
@@ -70,29 +76,46 @@ void main_wnd::run() {
                     DB_ERROR("Unknown error during deck rendering");
                 }
 
+                if (is_casting) {
+                    m_requested_fps = std::max(m_requested_fps, 30);
+                }
+
                 // Render ImGui
                 ImGui::Render();
 
-                // Acquire command buffer and swapchain texture to render onto the window
-                SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
-                if (cmdbuf) {
-                    // Prepare draw data (required in SDL_GPU backend before render pass)
-                    Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
-                    SDL_GPUColorTargetInfo color_target = {};
-                    SDL_AcquireGPUSwapchainTexture(cmdbuf, m_window, &color_target.texture, nullptr, nullptr);
-                    
-                    if (color_target.texture) {
-                        color_target.clear_color = SDL_FColor{ 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f }; // Dark gray background
-                        color_target.load_op = SDL_GPU_LOADOP_CLEAR;
-                        color_target.store_op = SDL_GPU_STOREOP_STORE;
-
-                        SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
-                        if (render_pass) {
-                            ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
-                            SDL_EndGPURenderPass(render_pass);
-                        }
+                bool should_draw_main = true;
+                if (is_casting) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_main_render_time).count();
+                    if (elapsed_ms < 1000) {
+                        should_draw_main = false;
+                    } else {
+                        m_last_main_render_time = now;
                     }
-                    SDL_SubmitGPUCommandBuffer(cmdbuf);
+                }
+
+                if (should_draw_main) {
+                    // Acquire command buffer and swapchain texture to render onto the window
+                    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
+                    if (cmdbuf) {
+                        // Prepare draw data (required in SDL_GPU backend before render pass)
+                        Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
+                        SDL_GPUColorTargetInfo color_target = {};
+                        SDL_AcquireGPUSwapchainTexture(cmdbuf, m_window, &color_target.texture, nullptr, nullptr);
+                        
+                        if (color_target.texture) {
+                            color_target.clear_color = SDL_FColor{ 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f }; // Dark gray background
+                            color_target.load_op = SDL_GPU_LOADOP_CLEAR;
+                            color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+                            SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
+                            if (render_pass) {
+                                ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
+                                SDL_EndGPURenderPass(render_pass);
+                            }
+                        }
+                        SDL_SubmitGPUCommandBuffer(cmdbuf);
+                    }
                 }
                 
                 // Process any deferred operations
@@ -100,7 +123,6 @@ void main_wnd::run() {
 
                 // Render offscreen ImGui pass for video feed host if active
                 try {
-                    auto video_feed = rouen::hosts::VideoFeedHost::get_host();
                     if (video_feed && video_feed->is_running()) {
                         m_requested_fps = std::max(m_requested_fps, 30);
                         video_feed->render_video_frame(m_device);

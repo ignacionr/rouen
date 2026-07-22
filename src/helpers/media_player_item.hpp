@@ -79,6 +79,8 @@ struct media_player_item {
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
     static inline std::function<void(const uint8_t*, size_t)> push_audio_cb;
     static inline std::function<void()> reset_sync_cb;
+    static inline std::function<size_t()> get_cast_queue_size_cb;
+    static inline std::function<bool()> is_offscreen_ctx_cb;
 
     // FFmpeg Engine Members
     std::thread ffmpeg_thread;
@@ -167,16 +169,25 @@ struct media_player_item {
             upload_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         }
         {
-            double current_audio_time = 0.0;
-            if (local_audio_stream && !is_cast_active.load()) {
-                double queued_seconds = static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / (44100.0 * 4.0);
-                current_audio_time = last_audio_pts.load() - queued_seconds;
-            } else {
-                current_audio_time = position.load();
-            }
-
             std::vector<uint8_t> frame_to_present;
-            {
+            if (is_cast_active.load()) {
+                bool is_offscreen = is_offscreen_ctx_cb ? is_offscreen_ctx_cb() : false;
+                if (is_offscreen) {
+                    std::lock_guard<std::mutex> q_lock(video_queue_mutex);
+                    if (!decoded_video_queue.empty()) {
+                        frame_to_present = std::move(decoded_video_queue.front().pixels);
+                        decoded_video_queue.pop_front();
+                    }
+                }
+            } else {
+                double current_audio_time = 0.0;
+                if (local_audio_stream) {
+                    double queued_seconds = static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0;
+                    current_audio_time = last_audio_pts.load() - queued_seconds;
+                } else {
+                    current_audio_time = position.load();
+                }
+
                 std::lock_guard<std::mutex> q_lock(video_queue_mutex);
                 while (!decoded_video_queue.empty()) {
                     const auto& front = decoded_video_queue.front();
@@ -357,16 +368,17 @@ inline bool media_player_item::playMedia() {
     std::string media_target = sanitized_url;
     if (sanitized_url.find("youtube.com") != std::string::npos ||
         sanitized_url.find("youtu.be") != std::string::npos) {
-        std::string ytdl_cmd = std::format("yt-dlp -g -f \"best\" \"{}\" 2>/dev/null", sanitized_url);
+        std::string ytdl_cmd = std::format("yt-dlp -g -f \"best[ext=mp4]/b[ext=mp4]/best\" \"{}\" 2>/dev/null", sanitized_url);
         std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
         if (!resolved.empty()) {
-            auto newline_pos = resolved.find('\n');
-            if (newline_pos != std::string::npos) {
-                resolved = resolved.substr(0, newline_pos);
-            }
-            resolved.erase(resolved.find_last_not_of(" \r\n\t") + 1);
-            if (!resolved.empty()) {
-                media_target = resolved;
+            std::stringstream ss(resolved);
+            std::string line;
+            while (std::getline(ss, line)) {
+                line.erase(line.find_last_not_of(" \r\n\t") + 1);
+                if (line.starts_with("http://") || line.starts_with("https://")) {
+                    media_target = line;
+                    break;
+                }
             }
         }
     }
@@ -613,12 +625,25 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
             continue;
         }
 
-        // Backpressure pacing: if local audio stream has too much data queued, wait.
+        // Backpressure pacing: if audio or video streams have too much data queued, wait.
         // This naturally rate-limits decoding to real-time play speed.
         if (local_audio_stream && !is_cast_active.load()) {
             int queued = SDL_GetAudioStreamQueued(local_audio_stream);
             if (queued > 44100) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+        } else if (is_cast_active.load()) {
+            bool video_full = false;
+            {
+                std::lock_guard<std::mutex> lock(video_queue_mutex);
+                if (decoded_video_queue.size() >= 10) {
+                    video_full = true;
+                }
+            }
+            size_t queued = get_cast_queue_size_cb ? get_cast_queue_size_cb() : 0;
+            if (video_full || queued > 44100) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 continue;
             }
         }
@@ -660,12 +685,24 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
                             std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
                             pts_time
                         });
-                        if (decoded_video_queue.size() > 15) {
+                        if (!is_cast_active.load() && decoded_video_queue.size() > 15) {
                             decoded_video_queue.pop_front();
                         }
                     }
                     has_video = true;
                     position.store(pts_time);
+
+                    if (is_cast_active.load()) {
+                        double target_elapsed = pts_time - pts_offset;
+                        if (target_elapsed > 0.0) {
+                            auto now = std::chrono::steady_clock::now();
+                            double actual_elapsed = std::chrono::duration<double>(now - start_time).count();
+                            double sleep_dur = target_elapsed - actual_elapsed;
+                            if (sleep_dur > 0.0 && sleep_dur < 1.0) {
+                                std::this_thread::sleep_for(std::chrono::duration<double>(sleep_dur));
+                            }
+                        }
+                    }
                 }
             }
         } else if (packet->stream_index == audio_stream_idx && audio_codec_ctx && swr_ctx) {

@@ -327,6 +327,24 @@ public:
         audio_buf.clear();
     }
 
+    size_t get_audio_buf_size() {
+        std::lock_guard<std::mutex> lock(audio_buf_mutex);
+        return audio_buf.size();
+    }
+
+    double get_video_pts_seconds() const {
+        return static_cast<double>(video_pts) / 30.0;
+    }
+
+    void set_audio_pts_seconds(double sec) {
+        audio_pts = static_cast<int64_t>(sec * 44100.0);
+    }
+
+    void sync_audio_pts_with_video_pts() {
+        double current_vid_sec = static_cast<double>(video_pts) / 30.0;
+        audio_pts = static_cast<int64_t>(current_vid_sec * 44100.0);
+    }
+
 private:
     AVFormatContext* fmt_ctx{nullptr};
     AVCodecContext* video_enc_ctx{nullptr};

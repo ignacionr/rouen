@@ -24,6 +24,8 @@
 // 3. All other includes
 #include "../registrar.hpp"
 #include "mcp_service.hpp"
+#include "media_player.hpp"
+#include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
 
@@ -35,6 +37,11 @@ struct card_creation_request {
 struct ai_request {
     std::string prompt;
     std::string model = "default";
+};
+
+struct cast_play_request {
+    std::string url;
+    std::string uri;
 };
 
 struct error_response {
@@ -172,6 +179,27 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/cast/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_cast_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/cast/start"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_cast_start(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/cast/play"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_cast_play(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -195,8 +223,8 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
 
         if (!body.empty()) {
             auto result = glz::read_json(request, body);
-            if (!result) {
-                error_response response{"Invalid JSON format"};
+            if (result) {
+                error_response response{"Invalid JSON format: " + std::string(glz::format_error(result, body))};
                 return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
             }
         }
@@ -226,8 +254,8 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
 
         if (!body.empty()) {
             auto result = glz::read_json(request, body);
-            if (!result) {
-                error_response response{"Invalid JSON format"};
+            if (result) {
+                error_response response{"Invalid JSON format: " + std::string(glz::format_error(result, body))};
                 return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
             }
         }
@@ -253,6 +281,89 @@ for (const auto& pair : dict) {
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
         return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto host = rouen::hosts::VideoFeedHost::get_host();
+        bool is_casting = host ? host->is_running() : false;
+        size_t audio_queued = host ? host->get_cast_queued_bytes() : 0;
+        
+        bool is_playing = false;
+        double pos = 0.0;
+        double dur = 0.0;
+        std::string media_url;
+        
+        {
+            std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+            for (auto& [id, item_ptr] : media_player::items()) {
+                if (item_ptr && item_ptr->is_playing) {
+                    is_playing = true;
+                    pos = item_ptr->position.load();
+                    dur = item_ptr->duration.load();
+                    media_url = item_ptr->url;
+                    break;
+                }
+            }
+        }
+        
+        bool eof_reached = (dur > 0.0 && pos >= dur - 0.3);
+        
+        return std::format(
+            R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.2f},"duration":{:.2f},"audio_queued_bytes":{},"eof_reached":{}}})",
+            is_casting ? "true" : "false",
+            is_playing ? "true" : "false",
+            media_url,
+            pos,
+            dur,
+            audio_queued,
+            eof_reached ? "true" : "false"
+        );
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_cast_start(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto host = rouen::hosts::VideoFeedHost::get_host();
+        if (host) {
+            host->start();
+            return R"({"success":true,"message":"Video feed service started","endpoint":"tcp://127.0.0.1:8889"})";
+        }
+        return R"({"error":"VideoFeedHost unavailable"})";
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_cast_play(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto host = rouen::hosts::VideoFeedHost::get_host();
+        if (host) {
+            host->start();
+        }
+        
+        std::string body(hm->body.buf, hm->body.len);
+        cast_play_request request;
+        if (!body.empty()) {
+            (void)glz::read_json(request, body);
+        }
+        
+        std::string target_url = request.url.empty() ? request.uri : request.url;
+        if (target_url.empty()) {
+            return R"({"error":"No media URL/URI provided"})";
+        }
+        
+        unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(target_url));
+        auto& item = media_player::get_item(id);
+        item.url = target_url;
+        item.playMedia();
+        
+        return std::format(R"({{"success":true,"message":"Media playback started","url":"{}"}})", target_url);
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
     }
 }
 

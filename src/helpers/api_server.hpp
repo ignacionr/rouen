@@ -29,6 +29,9 @@ private:
     static std::string handle_card_creation(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_ai_request(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_schemas_request(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_cast_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_cast_start(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_cast_play(struct mg_connection* c, struct mg_http_message* hm);
 
     std::unique_ptr<struct mg_mgr> mgr_;
     struct mg_connection* conn_;

@@ -15,6 +15,8 @@
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player_alarm.hpp"
+#include "../../helpers/media_player.hpp"
+#include "../../hosts/video_feed_host.hpp"
 #include "../development/cmake.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/git.hpp"
@@ -181,6 +183,34 @@ namespace rouen::cards {
 
                 instance.emplace("cast-control", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<cast_control>();
+                });
+
+                instance.emplace("cast-start", [](std::string_view, SDL_Renderer*) {
+                    auto h = rouen::hosts::VideoFeedHost::get_host();
+                    if (h) h->start();
+                    return std::make_shared<menu>();
+                });
+
+                instance.emplace("media-play", [](std::string_view locator, SDL_Renderer*) {
+                    std::string url = ::helpers::StringHelper::url_decode(locator);
+                    unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(url));
+                    auto& item = media_player::get_item(id);
+                    item.url = url;
+                    item.playMedia();
+                    return std::make_shared<menu>();
+                });
+
+                instance.emplace("cast-play", [](std::string_view locator, SDL_Renderer*) {
+                    auto h = rouen::hosts::VideoFeedHost::get_host();
+                    if (h) h->start();
+                    std::string url = ::helpers::StringHelper::url_decode(locator);
+                    if (!url.empty()) {
+                        unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(url));
+                        auto& item = media_player::get_item(id);
+                        item.url = url;
+                        item.playMedia();
+                    }
+                    return std::make_shared<menu>();
                 });
 
                 instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {
