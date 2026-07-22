@@ -214,6 +214,15 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/camera/layout"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_camera_layout_get(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_camera_layout_set(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -400,6 +409,43 @@ std::string api_server::handle_camera_snapshot(struct mg_connection*, struct mg_
             return (*fn)("/tmp/camera_snapshot.ppm");
         }
         return R"({"success":false,"error":"Camera card snapshot service not available"})";
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_camera_layout_get(struct mg_connection*, struct mg_http_message*) {
+    try {
+        auto fn = registrar::get<std::function<std::string()>>("camera_get_layout");
+        if (fn && *fn) {
+            return (*fn)();
+        }
+        return R"({"error":"Camera layout service not available"})";
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+struct camera_layout_request {
+    std::string layout;
+    int preset = -1;
+};
+
+std::string api_server::handle_camera_layout_set(struct mg_connection*, struct mg_http_message* hm) {
+    try {
+        auto fn = registrar::get<std::function<std::string(const std::string&)>>("camera_set_layout");
+        if (!fn || !*fn) {
+            return R"({"error":"Camera layout service not available"})";
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        camera_layout_request req;
+        if (!body.empty()) {
+            (void)glz::read_json(req, body);
+        }
+
+        std::string target = !req.layout.empty() ? req.layout : (req.preset >= 0 ? std::to_string(req.preset) : "0");
+        return (*fn)(target);
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }

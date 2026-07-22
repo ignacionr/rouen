@@ -25,6 +25,16 @@ struct camera_device_info {
     std::string name;
 };
 
+enum class camera_layout_preset {
+    full_screen = 0,
+    bottom_right_pip,
+    bottom_left_pip,
+    top_right_pip,
+    top_left_pip,
+    center_circle,
+    side_bar_right
+};
+
 class camera_card : public card {
 public:
     camera_card() {
@@ -43,7 +53,7 @@ public:
     }
 
     std::string get_uri() const override {
-        return "camera";
+        return std::format("camera:{}:{}", selected_index_, static_cast<int>(layout_preset_));
     }
 
     bool matches_uri(std::string_view uri) const override {
@@ -52,12 +62,44 @@ public:
 
     void handle_uri(std::string_view uri) override {
         if (uri.starts_with("camera:")) {
-            std::string arg(uri.substr(7));
-            try {
-                int index = std::stoi(arg);
-                select_camera(index);
-            } catch (...) {}
+            std::string args_str(uri.substr(7));
+            size_t colon_pos = args_str.find(':');
+            if (colon_pos != std::string::npos) {
+                std::string cam_arg = args_str.substr(0, colon_pos);
+                std::string layout_arg = args_str.substr(colon_pos + 1);
+                try {
+                    select_camera(std::stoi(cam_arg));
+                } catch (...) {}
+                set_layout_from_string(layout_arg);
+            } else {
+                try {
+                    select_camera(std::stoi(args_str));
+                } catch (...) {}
+            }
         }
+    }
+
+    void set_layout_from_string(const std::string& arg) {
+        if (arg == "full_screen" || arg == "0") layout_preset_ = camera_layout_preset::full_screen;
+        else if (arg == "bottom_right_pip" || arg == "1") layout_preset_ = camera_layout_preset::bottom_right_pip;
+        else if (arg == "bottom_left_pip" || arg == "2") layout_preset_ = camera_layout_preset::bottom_left_pip;
+        else if (arg == "top_right_pip" || arg == "3") layout_preset_ = camera_layout_preset::top_right_pip;
+        else if (arg == "top_left_pip" || arg == "4") layout_preset_ = camera_layout_preset::top_left_pip;
+        else if (arg == "center_circle" || arg == "5") layout_preset_ = camera_layout_preset::center_circle;
+        else if (arg == "side_bar_right" || arg == "6") layout_preset_ = camera_layout_preset::side_bar_right;
+    }
+
+    std::string layout_preset_to_string() const {
+        switch (layout_preset_) {
+            case camera_layout_preset::full_screen: return "full_screen";
+            case camera_layout_preset::bottom_right_pip: return "bottom_right_pip";
+            case camera_layout_preset::bottom_left_pip: return "bottom_left_pip";
+            case camera_layout_preset::top_right_pip: return "top_right_pip";
+            case camera_layout_preset::top_left_pip: return "top_left_pip";
+            case camera_layout_preset::center_circle: return "center_circle";
+            case camera_layout_preset::side_bar_right: return "side_bar_right";
+        }
+        return "full_screen";
     }
 
     void register_api_services() {
@@ -70,11 +112,24 @@ public:
             return save_snapshot_json(path);
         });
         registrar::add("camera_save_snapshot", snapshot_fn);
+
+        auto layout_get_fn = std::make_shared<std::function<std::string()>>([this]() {
+            return std::format(R"({{"layout":"{}","preset_index":{}}})", layout_preset_to_string(), static_cast<int>(layout_preset_));
+        });
+        registrar::add("camera_get_layout", layout_get_fn);
+
+        auto layout_set_fn = std::make_shared<std::function<std::string(const std::string&)>>([this](const std::string& preset_str) {
+            set_layout_from_string(preset_str);
+            return std::format(R"({{"success":true,"layout":"{}","preset_index":{}}})", layout_preset_to_string(), static_cast<int>(layout_preset_));
+        });
+        registrar::add("camera_set_layout", layout_set_fn);
     }
 
     void unregister_api_services() {
         registrar::remove<std::function<std::string()>>("camera_get_status");
         registrar::remove<std::function<std::string(const std::string&)>>("camera_save_snapshot");
+        registrar::remove<std::function<std::string()>>("camera_get_layout");
+        registrar::remove<std::function<std::string(const std::string&)>>("camera_set_layout");
     }
 
     std::string get_status_json() {
@@ -83,12 +138,13 @@ public:
             ? cameras_[static_size_cast(selected_index_)].name : "-Off-";
 
         return std::format(
-            R"({{"active":{},"camera_name":"{}","width":{},"height":{},"has_frame":{}}})",
+            R"({{"active":{},"camera_name":"{}","width":{},"height":{},"has_frame":{},"layout":"{}"}})",
             active ? "true" : "false",
             cam_name,
             frame_width_,
             frame_height_,
-            has_frame_ ? "true" : "false"
+            has_frame_ ? "true" : "false",
+            layout_preset_to_string()
         );
     }
 
@@ -174,6 +230,7 @@ public:
 
         if (index <= 0 || index >= static_cast<int>(cameras_.size())) {
             selected_index_ = 0;
+            requested_fps = 1;
             error_message_.clear();
             return;
         }
@@ -362,9 +419,9 @@ public:
         }
 
         return render_window([this]() {
-            // Header / Controls Bar
+            // Camera Device Combo Row
             ImGui::AlignTextToFramePadding();
-            ImGui::Text(ICON_MD_VIDEOCAM " Camera:");
+            ImGui::Text(ICON_MD_VIDEOCAM " Device:");
             ImGui::SameLine();
 
             std::string combo_label = (selected_index_ >= 0 && selected_index_ < static_cast<int>(cameras_.size()))
@@ -390,6 +447,37 @@ public:
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Scan for connected cameras");
+            }
+
+            // Video Feed Layout Preset Selector Combo Row
+            ImGui::Spacing();
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text(ICON_MD_ASPECT_RATIO " Feed Layout:");
+            ImGui::SameLine();
+
+            const char* layout_names[] = {
+                "Full Screen",
+                "Bottom-Right PiP (Rounded)",
+                "Bottom-Left PiP (Rounded)",
+                "Top-Right PiP (Rounded)",
+                "Top-Left PiP (Rounded)",
+                "Centered Circle (Avatar)",
+                "Right Side Bar"
+            };
+
+            int current_layout = static_cast<int>(layout_preset_);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            if (ImGui::BeginCombo("##VideoLayoutCombo", layout_names[current_layout])) {
+                for (int i = 0; i < 7; ++i) {
+                    bool is_selected = (current_layout == i);
+                    if (ImGui::Selectable(layout_names[i], is_selected)) {
+                        layout_preset_ = static_cast<camera_layout_preset>(i);
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
             }
 
             ImGui::Separator();
@@ -446,7 +534,7 @@ public:
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4{0.4f, 0.9f, 0.4f, 1.0f}, ICON_MD_FIBER_MANUAL_RECORD " LIVE");
                 ImGui::SameLine();
-                ImGui::TextDisabled("| Resolution: %dx%d @ 30 FPS", frame_width_, frame_height_);
+                ImGui::TextDisabled("| %dx%d @ 30 FPS | Layout: %s", frame_width_, frame_height_, layout_names[current_layout]);
             }
 
             return true;
@@ -454,19 +542,80 @@ public:
     }
 
     void render_video_ui() override {
-        if (selected_index_ <= 0 || !has_frame_) return;
+        if (selected_index_ <= 0 || !has_frame_ || !rouen_gpu_texture_) return;
 
         ImVec2 display_size = ImGui::GetIO().DisplaySize;
         float aspect = (frame_height_ > 0) ? static_cast<float>(frame_width_) / static_cast<float>(frame_height_) : 16.0f / 9.0f;
+
         float display_w = display_size.x;
         float display_h = display_w / aspect;
-        if (display_h > display_size.y) {
-            display_h = display_size.y;
-            display_w = display_h * aspect;
-        }
+        float pos_x = 0.0f;
+        float pos_y = 0.0f;
+        float rounding = 0.0f;
 
-        float pos_x = (display_size.x - display_w) * 0.5f;
-        float pos_y = (display_size.y - display_h) * 0.5f;
+        switch (layout_preset_) {
+            case camera_layout_preset::full_screen: {
+                display_w = display_size.x;
+                display_h = display_w / aspect;
+                if (display_h > display_size.y) {
+                    display_h = display_size.y;
+                    display_w = display_h * aspect;
+                }
+                pos_x = (display_size.x - display_w) * 0.5f;
+                pos_y = (display_size.y - display_h) * 0.5f;
+                rounding = 0.0f;
+                break;
+            }
+            case camera_layout_preset::bottom_right_pip: {
+                display_w = std::clamp(display_size.x * 0.30f, 220.0f, 540.0f);
+                display_h = display_w / aspect;
+                pos_x = display_size.x - display_w - 28.0f;
+                pos_y = display_size.y - display_h - 28.0f;
+                rounding = 22.0f;
+                break;
+            }
+            case camera_layout_preset::bottom_left_pip: {
+                display_w = std::clamp(display_size.x * 0.30f, 220.0f, 540.0f);
+                display_h = display_w / aspect;
+                pos_x = 28.0f;
+                pos_y = display_size.y - display_h - 28.0f;
+                rounding = 22.0f;
+                break;
+            }
+            case camera_layout_preset::top_right_pip: {
+                display_w = std::clamp(display_size.x * 0.30f, 220.0f, 540.0f);
+                display_h = display_w / aspect;
+                pos_x = display_size.x - display_w - 28.0f;
+                pos_y = 28.0f;
+                rounding = 22.0f;
+                break;
+            }
+            case camera_layout_preset::top_left_pip: {
+                display_w = std::clamp(display_size.x * 0.30f, 220.0f, 540.0f);
+                display_h = display_w / aspect;
+                pos_x = 28.0f;
+                pos_y = 28.0f;
+                rounding = 22.0f;
+                break;
+            }
+            case camera_layout_preset::center_circle: {
+                float side = std::min(display_size.x, display_size.y) * 0.42f;
+                display_w = side;
+                display_h = side;
+                pos_x = (display_size.x - side) * 0.5f;
+                pos_y = (display_size.y - side) * 0.5f;
+                rounding = side * 0.5f;
+                break;
+            }
+            case camera_layout_preset::side_bar_right: {
+                display_w = display_size.x * 0.28f;
+                display_h = display_size.y;
+                pos_x = display_size.x - display_w;
+                pos_y = 0.0f;
+                rounding = 0.0f;
+                break;
+            }
+        }
 
         ImGui::SetNextWindowPos(ImVec2(pos_x, pos_y));
         ImGui::SetNextWindowSize(ImVec2(display_w, display_h));
@@ -474,9 +623,24 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
         if (ImGui::Begin("##CameraCastWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground)) {
-            if (rouen_gpu_texture_) {
-                ImTextureID tex_id = rouen::helpers::texture_id_cast(rouen_gpu_texture_);
-                ImGui::Image(tex_id, ImVec2(display_w, display_h));
+            ImTextureID tex_id = rouen::helpers::texture_id_cast(rouen_gpu_texture_);
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 p_min = ImGui::GetCursorScreenPos();
+            ImVec2 p_max = ImVec2(p_min.x + display_w, p_min.y + display_h);
+
+            // Draw shadow / background glow
+            if (rounding > 0.0f) {
+                draw_list->AddRectFilled(ImVec2(p_min.x - 3, p_min.y - 3), ImVec2(p_max.x + 3, p_max.y + 3),
+                                         IM_COL32(0, 0, 0, 160), rounding + 3.0f);
+            }
+
+            // Draw rounded camera frame texture
+            draw_list->AddImageRounded(tex_id, p_min, p_max, ImVec2(0, 0), ImVec2(1, 1),
+                                       IM_COL32(255, 255, 255, 255), rounding);
+
+            // Draw sleek accent border ring
+            if (rounding > 0.0f) {
+                draw_list->AddRect(p_min, p_max, IM_COL32(46, 115, 184, 230), rounding, 0, 3.0f);
             }
         }
         ImGui::End();
@@ -490,6 +654,7 @@ private:
 
     std::vector<camera_device_info> cameras_;
     int selected_index_{0};
+    camera_layout_preset layout_preset_{camera_layout_preset::full_screen};
     SDL_Camera* camera_device_{nullptr};
     std::string error_message_;
     std::chrono::steady_clock::time_point permission_granted_time_{};
