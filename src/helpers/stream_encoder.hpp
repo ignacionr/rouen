@@ -33,8 +33,11 @@ public:
             return false;
         }
 
-        // 2. Add H.264 Video Stream
-        const AVCodec* video_codec = avcodec_find_encoder_by_name("libx264");
+        // 2. Add H.264 Video Stream (h264_videotoolbox on Mac, fallback to libx264/h264)
+        const AVCodec* video_codec = avcodec_find_encoder_by_name("h264_videotoolbox");
+        if (!video_codec) {
+            video_codec = avcodec_find_encoder_by_name("libx264");
+        }
         if (!video_codec) {
             video_codec = avcodec_find_encoder(AV_CODEC_ID_H264);
         }
@@ -57,10 +60,15 @@ public:
         video_enc_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
         video_enc_ctx->gop_size = 4;
         
-        // H.264 specific tuning: ultrafast, zerolatency, crf 28
-        av_opt_set(video_enc_ctx->priv_data, "preset", "ultrafast", 0);
-        av_opt_set(video_enc_ctx->priv_data, "tune", "zerolatency", 0);
-        av_opt_set(video_enc_ctx->priv_data, "crf", "28", 0);
+        if (std::string(video_codec->name) == "h264_videotoolbox") {
+            video_enc_ctx->bit_rate = 12000000; // 12 Mbps target bitrate for crystal-clear local stream
+            av_opt_set(video_enc_ctx->priv_data, "realtime", "1", 0); // Zero-latency realtime profile
+        } else {
+            // libx264 software fallback settings: visually lossless CRF 18
+            av_opt_set(video_enc_ctx->priv_data, "preset", "superfast", 0);
+            av_opt_set(video_enc_ctx->priv_data, "tune", "zerolatency", 0);
+            av_opt_set(video_enc_ctx->priv_data, "crf", "18", 0);
+        }
 
         if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {
             video_enc_ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;

@@ -112,6 +112,14 @@ struct media_player_item {
     bool resumeMedia();
     bool togglePause();
     bool setPaused(bool paused);
+    static int decode_interrupt_cb(void* ctx) {
+        auto* player = static_cast<media_player_item*>(ctx);
+        if (player && !player->ffmpeg_running.load()) {
+            return 1;
+        }
+        return 0;
+    }
+
     void decode_loop(std::string media_target, double start_offset);
 
     ImTextureID get_texture_id(SDL_GPUDevice* device = nullptr) {
@@ -231,6 +239,7 @@ inline void media_player_item::stopMedia() {
         } catch (...) {}
         if (video_texture) {
             TextureHelper::destroyTexture(video_texture);
+            video_texture = nullptr;
         }
         if (device && upload_buffer) {
             SDL_ReleaseGPUTransferBuffer(device, upload_buffer);
@@ -289,7 +298,7 @@ inline bool media_player_item::playMedia() {
     std::string media_target = sanitized_url;
     if (sanitized_url.find("youtube.com") != std::string::npos ||
         sanitized_url.find("youtu.be") != std::string::npos) {
-        std::string ytdl_cmd = std::format("yt-dlp -g -f \"best[ext=mp4]/best\" \"{}\" 2>/dev/null", sanitized_url);
+        std::string ytdl_cmd = std::format("yt-dlp -g -f \"best\" \"{}\" 2>/dev/null", sanitized_url);
         std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
         if (!resolved.empty()) {
             auto newline_pos = resolved.find('\n');
@@ -364,9 +373,19 @@ inline bool media_player_item::togglePause() {
 inline void media_player_item::decode_loop(std::string media_target, double offset) {
     avformat_network_init();
 
-    AVFormatContext* format_ctx = nullptr;
+    AVFormatContext* format_ctx = avformat_alloc_context();
+    if (!format_ctx) {
+        is_playing = false;
+        ffmpeg_running.store(false);
+        player_pid = 0;
+        return;
+    }
+    format_ctx->interrupt_callback.callback = decode_interrupt_cb;
+    format_ctx->interrupt_callback.opaque = this;
+
     if (avformat_open_input(&format_ctx, media_target.c_str(), nullptr, nullptr) < 0) {
         std::cerr << "[NativePlayer] Failed to open input: " << media_target << std::endl;
+        avformat_free_context(format_ctx);
         is_playing = false;
         ffmpeg_running.store(false);
         player_pid = 0;
@@ -397,6 +416,11 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
     SwsContext* sws_ctx = nullptr;
     SwrContext* swr_ctx = nullptr;
 
+    int dst_w = kWidth;
+    int dst_h = kHeight;
+    int offset_x = 0;
+    int offset_y = 0;
+
     if (video_stream_idx >= 0) {
         const AVCodec* video_codec = avcodec_find_decoder(format_ctx->streams[video_stream_idx]->codecpar->codec_id);
         if (video_codec) {
@@ -404,9 +428,22 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
             avcodec_parameters_to_context(video_codec_ctx, format_ctx->streams[video_stream_idx]->codecpar);
             video_codec_ctx->thread_count = 4;
             if (avcodec_open2(video_codec_ctx, video_codec, nullptr) >= 0) {
+                double aspect_ratio = static_cast<double>(video_codec_ctx->width) / static_cast<double>(video_codec_ctx->height);
+                if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
+                    dst_w = kWidth;
+                    dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
+                } else {
+                    dst_h = kHeight;
+                    dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
+                }
+                dst_w = (dst_w / 2) * 2;
+                dst_h = (dst_h / 2) * 2;
+                offset_x = (kWidth - dst_w) / 2;
+                offset_y = (kHeight - dst_h) / 2;
+
                 sws_ctx = sws_getContext(
                     video_codec_ctx->width, video_codec_ctx->height, video_codec_ctx->pix_fmt,
-                    kWidth, kHeight, AV_PIX_FMT_RGBA,
+                    dst_w, dst_h, AV_PIX_FMT_RGBA,
                     SWS_BILINEAR, nullptr, nullptr, nullptr
                 );
             }
@@ -447,10 +484,11 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
     AVFrame* frame = av_frame_alloc();
     AVFrame* rgba_frame = av_frame_alloc();
 
-    int size = av_image_get_buffer_size(AV_PIX_FMT_RGBA, kWidth, kHeight, 1);
+    int size = kWidth * kHeight * 4;
     uint8_t* rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(size)));
-    av_image_fill_arrays(rgba_frame->data, rgba_frame->linesize, rgba_buffer,
-                         AV_PIX_FMT_RGBA, kWidth, kHeight, 1);
+    std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+
+    rgba_frame->linesize[0] = kWidth * 4;
 
     // Initial seek if requested
     if (offset > 0.05) {
@@ -533,7 +571,13 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
                         }
                     }
 
-                    // Perform scaling and format conversion directly to RGBA
+                    // Clear the buffer to black to prevent trail rendering from different aspect ratios/seeks
+                    std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+
+                    // Offset destination data pointer into the centered sub-region
+                    rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+
+                    // Perform scaling and format conversion directly to RGBA offset
                     sws_scale(
                         sws_ctx, frame->data, frame->linesize, 0, video_codec_ctx->height,
                         rgba_frame->data, rgba_frame->linesize
@@ -541,7 +585,7 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
 
                     {
                         std::lock_guard<std::mutex> lock(frame_mutex);
-                        back_pixels.assign(rgba_frame->data[0], rgba_frame->data[0] + kWidth * kHeight * 4);
+                        back_pixels.assign(rgba_buffer, rgba_buffer + size);
                         new_frame_ready.store(true);
                         has_video = true;
                     }

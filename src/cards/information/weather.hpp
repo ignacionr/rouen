@@ -244,14 +244,30 @@ public:
         auto current_weather = weather_host->getCurrentWeather();
         if (!current_weather) return;
 
+        // Dynamic Accent Color depending on weather condition
+        ImVec4 accent_color = colors[0]; // Default blue
+        std::string weather_main = current_weather->weather.empty() ? "Clear" : current_weather->weather[0].main;
+        
+        if (weather_main == "Clear") {
+            accent_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f); // Warm sun orange
+        } else if (weather_main == "Clouds") {
+            accent_color = ImVec4(0.55f, 0.65f, 0.75f, 1.0f); // Soft slate gray/blue
+        } else if (weather_main == "Rain" || weather_main == "Drizzle") {
+            accent_color = ImVec4(0.2f, 0.7f, 1.0f, 1.0f); // Rain cyan/blue
+        } else if (weather_main == "Thunderstorm") {
+            accent_color = ImVec4(0.6f, 0.4f, 1.0f, 1.0f); // Storm purple
+        } else if (weather_main == "Snow") {
+            accent_color = ImVec4(0.85f, 0.95f, 1.0f, 1.0f); // Frosty ice white
+        }
+
         ImGui::SetNextWindowPos(ImVec2(40.0f, 40.0f));
         ImGui::SetNextWindowSize(ImVec2(520.0f, 350.0f));
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
 
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.15f, 0.85f)); 
-        ImGui::PushStyleColor(ImGuiCol_Border, colors[0]); 
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.10f, 0.88f)); // Premium dark translucent backing
+        ImGui::PushStyleColor(ImGuiCol_Border, accent_color); 
 
         if (ImGui::Begin("##WeatherVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
             // Title & Time/Date
@@ -262,37 +278,27 @@ public:
             std::string time_str = std::format("{:%H:%M:%S}", now);
             std::string date_str = std::format("{:%d/%m/%Y}", now);
 
-            ImGui::SetWindowFontScale(1.5f);
-            ImGui::TextColored(colors[2], "%s  %s", ICON_MD_CLOUD_QUEUE, current_weather->name.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
-            ImGui::SetWindowFontScale(1.1f);
+            ImGui::SetWindowFontScale(1.4f);
+            ImGui::TextColored(accent_color, "%s  %s", get_weather_icon(weather_main), current_weather->name.c_str());
+            ImGui::SameLine(ImGui::GetWindowWidth() - 170.0f);
+            ImGui::SetWindowFontScale(1.05f);
             ImGui::TextColored(colors[5], "%s | %s", time_str.c_str(), date_str.c_str());
             ImGui::Separator();
             ImGui::Spacing();
 
             // Temp and Feels Like
-            ImGui::SetWindowFontScale(2.5f);
-            auto temp_color = colors[0]; 
-            if (current_weather->main.temp >= 25.0) {
-                temp_color = ImVec4(1.0f, 0.4f, 0.2f, 1.0f);
-            } else if (current_weather->main.temp >= 15.0) {
-                temp_color = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
-            } else if (current_weather->main.temp <= 0.0) {
-                temp_color = ImVec4(0.6f, 0.8f, 1.0f, 1.0f);
-            }
-            ImGui::TextColored(temp_color, "%.1f°C", current_weather->main.temp);
+            ImGui::SetWindowFontScale(2.4f);
+            ImGui::TextColored(accent_color, "%.1f°C", current_weather->main.temp);
             ImGui::SameLine();
-            ImGui::SetWindowFontScale(1.2f);
+            ImGui::SetWindowFontScale(1.15f);
             ImGui::TextColored(colors[5], "(Feels: %.1f°C)", current_weather->main.feels_like);
 
             if (!current_weather->weather.empty()) {
                 std::string description = current_weather->weather[0].description;
-                std::string weather_main = current_weather->weather[0].main;
                 if (!description.empty()) {
                     description[0] = static_cast<char>(std::toupper(description[0]));
                 }
-                const char* weather_icon = get_weather_icon(weather_main);
-                ImGui::TextColored(colors[3], "%s %s", weather_icon, description.c_str());
+                ImGui::TextColored(colors[3], "%s", description.c_str());
             }
 
             ImGui::Spacing();
@@ -304,8 +310,8 @@ public:
             else if (current_weather->main.humidity < 30) humidity_color = ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
             else humidity_color = ImVec4(0.2f, 1.0f, 0.4f, 1.0f);
 
-            ImGui::TextColored(humidity_color, "Humidity: %d%%", current_weather->main.humidity);
-            ImGui::TextColored(colors[5], "Pressure: %d hPa", static_cast<int>(current_weather->main.pressure));
+            ImGui::TextColored(humidity_color, "%s Humidity: %d%%", ICON_MD_OPACITY, current_weather->main.humidity);
+            ImGui::TextColored(colors[5], "%s Pressure: %d hPa", ICON_MD_SPEED, static_cast<int>(current_weather->main.pressure));
 
             ImGui::NextColumn();
             // Wind / Cloud
@@ -314,13 +320,13 @@ public:
             else if (current_weather->wind.speed > 5.0) wind_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
             else wind_color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
 
-            ImGui::TextColored(wind_color, "Wind: %.1f m/s", current_weather->wind.speed);
+            ImGui::TextColored(wind_color, "%s Wind: %.1f m/s", ICON_MD_AIR, current_weather->wind.speed);
             
             auto cloud_color = colors[5];
             if (current_weather->clouds.all > 80) cloud_color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
             else if (current_weather->clouds.all > 50) cloud_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
             else cloud_color = ImVec4(0.7f, 0.9f, 1.0f, 1.0f);
-            ImGui::TextColored(cloud_color, "Clouds: %d%%", current_weather->clouds.all);
+            ImGui::TextColored(cloud_color, "%s Clouds: %d%%", ICON_MD_CLOUD, current_weather->clouds.all);
 
             ImGui::Columns(1);
             ImGui::Spacing();
