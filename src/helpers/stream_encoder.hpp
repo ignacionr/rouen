@@ -61,13 +61,19 @@ public:
         video_enc_ctx->gop_size = 4;
         
         if (std::string(video_codec->name) == "h264_videotoolbox") {
-            video_enc_ctx->bit_rate = 12000000; // 12 Mbps target bitrate for crystal-clear local stream
-            av_opt_set(video_enc_ctx->priv_data, "realtime", "1", 0); // Zero-latency realtime profile
+            // Near-lossless high-bitrate streaming profile for localhost loopback
+            video_enc_ctx->bit_rate = 50000000; // 50 Mbps target
+            video_enc_ctx->rc_max_rate = 60000000;
+            video_enc_ctx->rc_buffer_size = 12000000;
+            
+            av_opt_set(video_enc_ctx->priv_data, "profile", "high", 0);
+            av_opt_set(video_enc_ctx->priv_data, "coder", "cabac", 0);
+            av_opt_set(video_enc_ctx->priv_data, "realtime", "1", 0);
         } else {
-            // libx264 software fallback settings: visually lossless CRF 18
+            // libx264 software fallback: near-lossless CRF 10
             av_opt_set(video_enc_ctx->priv_data, "preset", "superfast", 0);
             av_opt_set(video_enc_ctx->priv_data, "tune", "zerolatency", 0);
-            av_opt_set(video_enc_ctx->priv_data, "crf", "18", 0);
+            av_opt_set(video_enc_ctx->priv_data, "crf", "10", 0);
         }
 
         if (fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {

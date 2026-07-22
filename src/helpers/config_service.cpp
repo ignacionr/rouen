@@ -351,6 +351,22 @@ namespace rouen::helpers {
         register_config("POMODORO_END_COMMAND", Category::GENERAL, false, false,
                        "Command run when Pomodoro ends");
 
+        // Video Cast Settings
+        register_config("CAST_SHOW_HEADER", Category::GENERAL, false, false,
+                       "Show Video Cast Header (true/false)", "true");
+        register_config("CAST_SHOW_FOOTER", Category::GENERAL, false, false,
+                       "Show Video Cast Footer (true/false)", "true");
+        register_config("CAST_SHOW_BG_ANIMATION", Category::GENERAL, false, false,
+                       "Show Video Cast Background Animations (true/false)", "true");
+        register_config("CAST_SHOW_CARD_OVERLAYS", Category::GENERAL, false, false,
+                       "Show Active Card Overlays on Stream (true/false)", "true");
+        register_config("CAST_ENABLE_PINK_NOISE", Category::GENERAL, false, false,
+                       "Enable Video Cast Pink Noise (true/false)", "true");
+        register_config("CAST_FULL_SCREEN_MEDIA", Category::GENERAL, false, false,
+                       "Show Media Streams Full Screen on Video Cast (true/false)", "false");
+        register_config("CAST_AUDIO_DELAY_MS", Category::GENERAL, false, false,
+                       "Video Cast Audio sync delay offset in milliseconds", "0");
+
         CONFIG_INFO("Default configurations registered");
     }
 

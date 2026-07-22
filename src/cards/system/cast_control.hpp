@@ -12,6 +12,12 @@
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
+#ifndef _WIN32
+#include <fcntl.h>
+#include <spawn.h>
+#include <unistd.h>
+#endif
+
 namespace rouen::cards {
 
 class cast_control : public card {
@@ -67,13 +73,31 @@ private:
                     const_cast<char*>(mpv_bin.c_str()),
                     const_cast<char*>(ep.c_str()),
                     const_cast<char*>("--title=Rouen Live Video Cast"),
+                    const_cast<char*>("--profile=low-latency"),
+                    const_cast<char*>("--no-cache"),
+                    const_cast<char*>("--demuxer-readahead-secs=0"),
+                    const_cast<char*>("--demuxer-max-bytes=131072"),
+                    const_cast<char*>("--video-sync=audio"),
+                    const_cast<char*>("--hwdec=auto"),
+                    const_cast<char*>("--framedrop=vo"),
+                    const_cast<char*>("--ytdl=no"),
+                    const_cast<char*>("--no-config"),
                     nullptr
                 };
+
+                posix_spawn_file_actions_t actions;
+                posix_spawn_file_actions_init(&actions);
+                posix_spawn_file_actions_addopen(&actions, 1, "/tmp/rouen_mpv_spawn.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                posix_spawn_file_actions_adddup2(&actions, 1, 2);
+
                 pid_t pid;
-                if (::posix_spawnp(&pid, mpv_bin.c_str(), nullptr, nullptr, argv, environ) == 0) {
+                int res = ::posix_spawnp(&pid, mpv_bin.c_str(), &actions, nullptr, argv, environ);
+                posix_spawn_file_actions_destroy(&actions);
+
+                if (res == 0) {
                     try { "notify"_sfn(std::format("Launched MPV player for cast stream (PID {})", pid)); } catch (...) {}
                 } else {
-                    try { "notify"_sfn("Failed to launch MPV player"); } catch (...) {}
+                    try { "notify"_sfn(std::format("Failed to launch MPV (POSIX error {})", res)); } catch (...) {}
                 }
 #endif
             }

@@ -596,6 +596,31 @@ inline void media_player_item::decode_loop(std::string media_target, double offs
         } else if (packet->stream_index == audio_stream_idx && audio_codec_ctx && swr_ctx) {
             if (avcodec_send_packet(audio_codec_ctx, packet) >= 0) {
                 while (avcodec_receive_frame(audio_codec_ctx, frame) >= 0) {
+                    // Pacing for audio-only streams
+                    if (video_stream_idx < 0) {
+                        double pts_time = 0.0;
+                        if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                            pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(format_ctx->streams[audio_stream_idx]->time_base);
+                        } else {
+                            pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
+                        }
+
+                        double target_elapsed = pts_time - pts_offset;
+                        if (target_elapsed > 0.0) {
+                            auto now = std::chrono::steady_clock::now();
+                            double actual_elapsed = std::chrono::duration<double>(now - start_time).count();
+                            double sleep_dur = target_elapsed - actual_elapsed;
+                            if (sleep_dur > 0.0) {
+                                if (sleep_dur > 5.0) {
+                                    start_time = now - std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(target_elapsed));
+                                } else {
+                                    std::this_thread::sleep_for(std::chrono::duration<double>(sleep_dur));
+                                }
+                            }
+                        }
+                        position.store(pts_time);
+                    }
+
                     const uint8_t* input_data[8];
                     for (int i = 0; i < 8; ++i) {
                         input_data[i] = frame->data[i];

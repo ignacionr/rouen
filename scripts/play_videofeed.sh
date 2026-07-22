@@ -7,7 +7,7 @@ URL="udp://127.0.0.1:${PORT}"
 echo "[INFO] Connecting mpv to Rouen video feed at ${URL}..."
 
 exec mpv \
-    --profile=low-latency \
+    --profile=high-quality \
     --no-cache \
     --framedrop=vo \
     --demuxer-lavf-o=fflags=nobuffer \

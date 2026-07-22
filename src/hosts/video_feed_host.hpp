@@ -118,7 +118,7 @@ public:
     int port() const { return port_.load(); }
 
     std::string endpoint() const {
-        return std::format("udp://127.0.0.1:{}", port_.load());
+        return std::format("udp://239.0.0.1:{}", port_.load());
     }
 
     void set_port(int p) {
@@ -199,7 +199,7 @@ public:
         }
 
         const int listen_port = port_.load();
-        std::string udp_url = std::format("udp://127.0.0.1:{}?pkt_size=1316", listen_port);
+        std::string udp_url = std::format("udp://239.0.0.1:{}?pkt_size=1316", listen_port);
 
         if (!streamer_.init(udp_url, kWidth, kHeight, kFps)) {
             VIDEOFEED_ERROR("VideoFeedHost: Failed to initialize NativeStreamEncoder");
@@ -421,7 +421,7 @@ public:
 
         ++frame_number_;
 
-        // Push frame to double-buffered queue or delay queue based on offset direction using 0-copy swap/move
+        // Push frame to double-buffered queue or delay queue based on offset direction
         {
             std::lock_guard<std::mutex> frame_lock(frame_mutex_);
             int delay_ms = audio_delay_ms.load();
@@ -432,20 +432,18 @@ public:
             } else {
                 delayed_video_block block;
                 block.timestamp = now;
-                block.data = std::move(render_buffer_);
+                block.data = render_buffer_; // Copy instead of move, preserves render_buffer_ capacity
                 video_delay_queue_.push_back(std::move(block));
 
-                // Drain aged video blocks
+                // Drain only the oldest frame if it has aged enough to maintain smooth 30fps playback pacing
                 int abs_delay = -delay_ms;
-                auto it = video_delay_queue_.begin();
-                while (it != video_delay_queue_.end()) {
-                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->timestamp).count();
+                if (!video_delay_queue_.empty()) {
+                    auto& oldest = video_delay_queue_.front();
+                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - oldest.timestamp).count();
                     if (age >= abs_delay) {
-                        stream_buffer_ = std::move(it->data);
+                        stream_buffer_ = std::move(oldest.data);
                         new_frame_ready_ = true;
-                        it = video_delay_queue_.erase(it);
-                    } else {
-                        break;
+                        video_delay_queue_.erase(video_delay_queue_.begin());
                     }
                 }
 
