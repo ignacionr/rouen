@@ -190,10 +190,8 @@ int main() {
         rouen::helpers::UniversalSyncService::instance().sync_in();
     }
     
-    // Start the video feed host (ffmpeg-based HTTP video stream)
+    // Get the video feed host instance (do not auto-start)
     auto video_feed = rouen::hosts::VideoFeedHost::get_host();
-    video_feed->start();
-    std::cout << "[INFO] Video feed started at " << video_feed->endpoint() << '\n';
     
     // Create and initialize the main window
     std::cout << "Creating main window..." << '\n';

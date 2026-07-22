@@ -151,10 +151,17 @@ struct media_player {
                     ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
                 }
 
-                // --- Small Video Thumbnail & Stereo Vertical VU Meter ---
+                // --- Video Thumbnail & Stereo Vertical VU Meter ---
                 ImTextureID tex = item.get_texture_id();
-                constexpr float thumb_w = 120.0f;
-                constexpr float thumb_h = 67.5f;
+                bool cast_active = media_player_item::is_cast_active.load();
+                float thumb_w = 120.0f;
+                float thumb_h = 67.5f;
+
+                if (!cast_active) {
+                    float avail_w = ImGui::GetContentRegionAvail().x;
+                    thumb_w = std::max(120.0f, avail_w - 26.0f);
+                    thumb_h = thumb_w * 9.0f / 16.0f;
+                }
 
                 ImGui::Spacing();
                 if (tex && item.has_video) {

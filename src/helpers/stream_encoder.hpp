@@ -257,6 +257,11 @@ public:
         }
     }
 
+    void reset_audio_buffers() {
+        std::lock_guard<std::mutex> lock(audio_buf_mutex);
+        audio_buf.clear();
+    }
+
     void close() {
         if (video_enc_ctx && video_stream) {
             avcodec_send_frame(video_enc_ctx, nullptr);

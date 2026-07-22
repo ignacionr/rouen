@@ -48,6 +48,7 @@ private:
         }
 
         bool running = host->is_running();
+        bool starting = host->is_starting();
 
         // Status Header
         ui.text_colored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "📹 ROUEN CAST & VIDEO FEED");
@@ -55,8 +56,12 @@ private:
         ui.spacing();
 
         // Stream Status Badge & Controls
-        if (running) {
-            ui.text_colored(ImVec4(0.3f, 0.95f, 0.4f, 1.0f), "● STREAM LIVE (30 FPS)");
+        if (running || starting) {
+            if (running) {
+                ui.text_colored(ImVec4(0.3f, 0.95f, 0.4f, 1.0f), "● STREAM LIVE (TCP)");
+            } else {
+                ui.text_colored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "● WAITING FOR CLIENT (TCP)...");
+            }
             ui.text(std::format("Endpoint: {}", host->endpoint()));
 
             if (ImGui::Button("Stop Video Stream", ImVec2(200, 32))) {
@@ -73,15 +78,12 @@ private:
                     const_cast<char*>(mpv_bin.c_str()),
                     const_cast<char*>(ep.c_str()),
                     const_cast<char*>("--title=Rouen Live Video Cast"),
-                    const_cast<char*>("--profile=low-latency"),
-                    const_cast<char*>("--no-cache"),
-                    const_cast<char*>("--demuxer-readahead-secs=0"),
-                    const_cast<char*>("--demuxer-max-bytes=131072"),
-                    const_cast<char*>("--video-sync=audio"),
                     const_cast<char*>("--hwdec=auto"),
-                    const_cast<char*>("--framedrop=vo"),
                     const_cast<char*>("--ytdl=no"),
-                    const_cast<char*>("--no-config"),
+                    const_cast<char*>("--cache=yes"),
+                    const_cast<char*>("--cache-secs=5"),
+                    const_cast<char*>("--demuxer-readahead-secs=5"),
+                    const_cast<char*>("--demuxer-max-bytes=104857600"),
                     nullptr
                 };
 
@@ -154,12 +156,7 @@ private:
             rouen::helpers::ConfigService::instance()->set_env_value("CAST_FULL_SCREEN_MEDIA", fs_media ? "true" : "false", true);
         }
 
-        int delay = host->audio_delay_ms.load();
-        if (ImGui::SliderInt("Audio Sync Offset (ms)", &delay, -2000, 2000, "%d ms")) {
-            host->audio_delay_ms.store(delay);
-            rouen::helpers::ConfigService::instance()->set_env_value("CAST_AUDIO_DELAY_MS", std::to_string(delay), true);
-        }
-        ImGui::TextDisabled("Slide left (negative) to delay video; slide right (positive) to delay audio.");
+
 
         ui.spacing();
         ui.separator();

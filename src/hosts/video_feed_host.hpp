@@ -19,6 +19,7 @@
 #include <thread>
 #include <vector>
 #include <ctime>
+#include <deque>
 
 #ifndef _WIN32
 #include <csignal>
@@ -67,8 +68,7 @@ public:
     std::atomic<bool> show_card_overlays{true};
     std::atomic<bool> enable_pink_noise{true};
     std::atomic<bool> full_screen_media{false};
-    std::atomic<int> audio_delay_ms{0};
-
+ 
     VideoFeedHost()
         : port_(kDefaultPort) {
         try {
@@ -79,7 +79,6 @@ public:
             show_card_overlays.store(config->get_typed<bool>("CAST_SHOW_CARD_OVERLAYS").value_or(true));
             enable_pink_noise.store(config->get_typed<bool>("CAST_ENABLE_PINK_NOISE").value_or(true));
             full_screen_media.store(config->get_typed<bool>("CAST_FULL_SCREEN_MEDIA").value_or(false));
-            audio_delay_ms.store(config->get_typed<int>("CAST_AUDIO_DELAY_MS").value_or(0));
         } catch (...) {}
         VIDEOFEED_INFO("VideoFeedHost: Initialized");
     }
@@ -114,11 +113,12 @@ public:
     // ── public API ──────────────────────────────────────────────────
 
     bool is_running() const { return running_.load(); }
+    bool is_starting() const { return starting_.load(); }
 
     int port() const { return port_.load(); }
 
     std::string endpoint() const {
-        return std::format("udp://239.0.0.1:{}", port_.load());
+        return std::format("tcp://127.0.0.1:{}", port_.load());
     }
 
     void set_port(int p) {
@@ -132,39 +132,12 @@ public:
         if (!running_.load() || !data || size == 0) return;
         std::lock_guard<std::mutex> lock(audio_mutex_);
         
-        int delay_ms = audio_delay_ms.load();
-        if (delay_ms <= 0) {
-            audio_queue_.insert(audio_queue_.end(), data, data + size);
-            audio_delay_queue_.clear();
-        } else {
-            delayed_audio_block block;
-            block.timestamp = std::chrono::steady_clock::now();
-            block.data.assign(data, data + size);
-            audio_delay_queue_.push_back(std::move(block));
-        }
-
-        // Drain aged blocks if audio delay is active
-        auto now = std::chrono::steady_clock::now();
-        if (delay_ms > 0) {
-            auto it = audio_delay_queue_.begin();
-            while (it != audio_delay_queue_.end()) {
-                auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->timestamp).count();
-                if (age >= delay_ms) {
-                    audio_queue_.insert(audio_queue_.end(), it->data.begin(), it->data.end());
-                    it = audio_delay_queue_.erase(it);
-                } else {
-                    break;
-                }
-            }
-        }
+        audio_queue_.insert(audio_queue_.end(), data, data + size);
 
         // Cap audio queue to ~5 seconds max to prevent memory leakage
         constexpr size_t kMaxAudioQueueBytes = 882000; 
         if (audio_queue_.size() > kMaxAudioQueueBytes) {
             audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + (audio_queue_.size() - kMaxAudioQueueBytes));
-        }
-        if (audio_delay_queue_.size() > 500) {
-            audio_delay_queue_.erase(audio_delay_queue_.begin());
         }
     }
 
@@ -172,13 +145,15 @@ public:
         {
             std::lock_guard<std::mutex> lock(audio_mutex_);
             audio_queue_.clear();
-            audio_delay_queue_.clear();
         }
         {
             std::lock_guard<std::mutex> lock(frame_mutex_);
-            video_delay_queue_.clear();
+            video_frame_queue_.clear();
             new_frame_ready_ = false;
         }
+        prebuffer_established_.store(false);
+        audio_prebuffer_established_.store(false);
+        streamer_.reset_audio_buffers();
         VIDEOFEED_INFO("VideoFeedHost: Reset sync queues");
     }
 
@@ -191,35 +166,40 @@ public:
         return ImTextureID{};
     }
 
-    /// Start the video feed natively.
     bool start() {
-        if (running_.load()) {
-            VIDEOFEED_WARN("VideoFeedHost: Already running");
+        if (running_.load() || starting_.load()) {
+            VIDEOFEED_WARN("VideoFeedHost: Already running or starting");
             return false;
         }
 
+        starting_.store(true);
         const int listen_port = port_.load();
-        std::string udp_url = std::format("udp://239.0.0.1:{}?pkt_size=1316", listen_port);
 
-        if (!streamer_.init(udp_url, kWidth, kHeight, kFps)) {
-            VIDEOFEED_ERROR("VideoFeedHost: Failed to initialize NativeStreamEncoder");
-            try { "notify"_sfn("Video Feed error: Failed to initialize native stream encoder"); } catch (...) {}
-            return false;
-        }
+        std::thread([this, listen_port]() {
+            std::string tcp_listen_url = std::format("tcp://0.0.0.0:{}?listen=1", listen_port);
+            VIDEOFEED_INFO_FMT("VideoFeedHost: Listening for TCP connection on {}", tcp_listen_url);
+            
+            if (!streamer_.init(tcp_listen_url, kWidth, kHeight, kFps)) {
+                VIDEOFEED_ERROR("VideoFeedHost: Failed to initialize NativeStreamEncoder on TCP");
+                starting_.store(false);
+                try { "notify"_sfn("Video Feed error: Failed to initialize TCP stream"); } catch (...) {}
+                return;
+            }
 
-        running_.store(true);
-        frame_number_ = 0;
-        new_frame_ready_ = false;
+            VIDEOFEED_INFO("VideoFeedHost: TCP Client connected! Starting loops.");
+            media_player_item::is_cast_active.store(true);
+            running_.store(true);
+            starting_.store(false);
+            frame_number_ = 0;
+            new_frame_ready_ = false;
 
-        // Spawn dedicated background writer threads for video and audio
-        video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this);
-        audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this);
+            video_writer_thread_ = std::thread(&VideoFeedHost::video_writer_loop, this);
+            audio_writer_thread_ = std::thread(&VideoFeedHost::audio_writer_loop, this);
 
-        VIDEOFEED_INFO_FMT("VideoFeedHost: NativeStreamEncoder started on port {}", listen_port);
-
-        try {
-            "notify"_sfn(std::format("Video feed started at {}", endpoint()));
-        } catch (...) {}
+            try {
+                "notify"_sfn(std::format("Video feed active at {}", endpoint()));
+            } catch (...) {}
+        }).detach();
 
         return true;
     }
@@ -421,48 +401,25 @@ public:
 
         ++frame_number_;
 
-        // Push frame to double-buffered queue or delay queue based on offset direction
+        // Push frame to pre-buffer queue
         {
             std::lock_guard<std::mutex> frame_lock(frame_mutex_);
-            int delay_ms = audio_delay_ms.load();
-            if (delay_ms >= 0) {
-                std::swap(stream_buffer_, render_buffer_);
-                new_frame_ready_ = true;
-                video_delay_queue_.clear();
-            } else {
-                delayed_video_block block;
-                block.timestamp = now;
-                block.data = render_buffer_; // Copy instead of move, preserves render_buffer_ capacity
-                video_delay_queue_.push_back(std::move(block));
-
-                // Drain only the oldest frame if it has aged enough to maintain smooth 30fps playback pacing
-                int abs_delay = -delay_ms;
-                if (!video_delay_queue_.empty()) {
-                    auto& oldest = video_delay_queue_.front();
-                    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - oldest.timestamp).count();
-                    if (age >= abs_delay) {
-                        stream_buffer_ = std::move(oldest.data);
-                        new_frame_ready_ = true;
-                        video_delay_queue_.erase(video_delay_queue_.begin());
-                    }
-                }
-
-                // Cap video delay queue to prevent memory leak (e.g. max 150 frames = 5 seconds)
-                if (video_delay_queue_.size() > 150) {
-                    video_delay_queue_.erase(video_delay_queue_.begin());
-                }
+            video_frame_queue_.push_back(render_buffer_);
+            if (video_frame_queue_.size() > 75) {
+                video_frame_queue_.pop_front();
             }
+            new_frame_ready_ = true;
         }
         frame_cv_.notify_one();
     }
 
-    /// Stop the feed gracefully.
     void stop() {
-        if (!running_.exchange(false)) {
+        if (!running_.exchange(false) && !starting_.exchange(false)) {
             return;
         }
 
         VIDEOFEED_INFO("VideoFeedHost: Stopping...");
+        media_player_item::is_cast_active.store(false);
 
         frame_cv_.notify_all();
 
@@ -509,53 +466,70 @@ private:
         constexpr size_t kAudioBytesPerFrame = (44100 * 2 * 2) / kFps; // 5880 bytes
         std::vector<uint8_t> audio_chunk(kAudioBytesPerFrame, 0);
 
+        auto last_real_audio_time = clock::now();
         auto next_frame = clock::now();
 
         while (running_.load()) {
             next_frame += kAudioFrameDuration;
 
-            size_t copied = 0;
-            {
-                std::lock_guard<std::mutex> lock(audio_mutex_);
-                
-                // Drain aged delay blocks if active
-                auto now_t = clock::now();
-                int delay_ms = audio_delay_ms.load();
-                if (delay_ms > 0) {
-                    auto it = audio_delay_queue_.begin();
-                    while (it != audio_delay_queue_.end()) {
-                        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now_t - it->timestamp).count();
-                        if (age >= delay_ms) {
-                            audio_queue_.insert(audio_queue_.end(), it->data.begin(), it->data.end());
-                            it = audio_delay_queue_.erase(it);
-                        } else {
-                            break;
-                        }
+            bool has_active_media = false;
+            try {
+                std::lock_guard<std::recursive_mutex> map_lock(media_player::items_mutex());
+                for (const auto& [id, item_ptr] : media_player::items()) {
+                    if (item_ptr && item_ptr->is_playing) {
+                        has_active_media = true;
+                        break;
                     }
-                } else {
-                    audio_delay_queue_.clear();
                 }
+            } catch (...) {}
 
-                if (!audio_queue_.empty()) {
-                    copied = std::min(audio_queue_.size(), kAudioBytesPerFrame);
-                    std::copy(audio_queue_.begin(), audio_queue_.begin() + copied, audio_chunk.begin());
+            auto now = clock::now();
+            bool encode_silence = false;
+
+            if (has_active_media) {
+                std::lock_guard<std::mutex> lock(audio_mutex_);
+                if (audio_queue_.size() >= kAudioBytesPerFrame) {
+                    // Catch up if backlog exists (drain up to 2 frames at once)
+                    size_t bytes_to_read = kAudioBytesPerFrame;
+                    if (audio_queue_.size() >= 4 * kAudioBytesPerFrame) {
+                        bytes_to_read = 2 * kAudioBytesPerFrame;
+                    }
+                    size_t copied = std::min(audio_queue_.size(), bytes_to_read);
+                    audio_chunk.assign(audio_queue_.begin(), audio_queue_.begin() + copied);
                     audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + copied);
+                    
+                    streamer_.encode_audio(audio_chunk.data(), audio_chunk.size());
+                    last_real_audio_time = now;
+                } else {
+                    // Queue is temporarily low: check if we are buffering/paused
+                    if (now - last_real_audio_time >= std::chrono::milliseconds(150)) {
+                        encode_silence = true;
+                    }
                 }
+            } else {
+                // No active media: clear queue and send silence
+                {
+                    std::lock_guard<std::mutex> lock(audio_mutex_);
+                    audio_queue_.clear();
+                }
+                encode_silence = true;
             }
 
-            if (copied < kAudioBytesPerFrame) {
-                int16_t* fill_ptr = reinterpret_cast<int16_t*>(audio_chunk.data() + copied);
-                size_t fill_samples = (kAudioBytesPerFrame - copied) / sizeof(int16_t);
-                if (enable_pink_noise.load()) {
+            if (encode_silence) {
+                audio_chunk.resize(kAudioBytesPerFrame);
+                int16_t* fill_ptr = reinterpret_cast<int16_t*>(audio_chunk.data());
+                size_t fill_samples = kAudioBytesPerFrame / sizeof(int16_t);
+
+                if (!has_active_media && enable_pink_noise.load()) {
                     generate_pink_noise(fill_ptr, fill_samples);
                 } else {
                     std::fill_n(fill_ptr, fill_samples, 0);
                 }
+                streamer_.encode_audio(audio_chunk.data(), audio_chunk.size());
             }
 
-            streamer_.encode_audio(audio_chunk.data(), audio_chunk.size());
-
-            auto now = clock::now();
+            // Lock-step pacing sleep
+            now = clock::now();
             if (next_frame > now) {
                 std::this_thread::sleep_for(next_frame - now);
             } else {
@@ -569,16 +543,14 @@ private:
         constexpr auto kVideoFrameDuration = std::chrono::microseconds(1000000 / kFps);
         std::vector<uint8_t> local_buffer;
 
-        auto next_frame = clock::now();
-
         while (running_.load()) {
-            next_frame += kVideoFrameDuration;
+            auto frame_start = clock::now();
 
             {
                 std::lock_guard<std::mutex> lock(frame_mutex_);
-                if (new_frame_ready_) {
-                    local_buffer = stream_buffer_;
-                    new_frame_ready_ = false;
+                if (!video_frame_queue_.empty()) {
+                    local_buffer = std::move(video_frame_queue_.front());
+                    video_frame_queue_.pop_front();
                 }
             }
 
@@ -586,11 +558,10 @@ private:
                 streamer_.encode_video(local_buffer.data());
             }
 
-            auto now = clock::now();
-            if (next_frame > now) {
-                std::this_thread::sleep_for(next_frame - now);
-            } else {
-                next_frame = now;
+            auto elapsed = clock::now() - frame_start;
+            auto sleep_dur = kVideoFrameDuration - elapsed;
+            if (sleep_dur > std::chrono::nanoseconds(0)) {
+                std::this_thread::sleep_for(sleep_dur);
             }
         }
     }
@@ -701,6 +672,7 @@ private:
 
     // ── member data ─────────────────────────────────────────────────
     std::atomic<bool>     running_{false};
+    std::atomic<bool>     starting_{false};
     std::atomic<int>      port_;
     NativeStreamEncoder   streamer_;
 
@@ -712,23 +684,15 @@ private:
 
     std::mutex            frame_mutex_;
     std::condition_variable frame_cv_;
-    std::vector<uint8_t>  stream_buffer_;
+    std::deque<std::vector<uint8_t>> video_frame_queue_;
     bool                  new_frame_ready_{false};
 
     std::mutex            audio_mutex_;
     std::vector<uint8_t>  audio_queue_;
+    std::atomic<bool>     prebuffer_established_{false};
+    std::atomic<bool>     audio_prebuffer_established_{false};
 
-    struct delayed_audio_block {
-        std::chrono::steady_clock::time_point timestamp;
-        std::vector<uint8_t> data;
-    };
-    std::vector<delayed_audio_block> audio_delay_queue_;
 
-    struct delayed_video_block {
-        std::chrono::steady_clock::time_point timestamp;
-        std::vector<uint8_t> data;
-    };
-    std::vector<delayed_video_block> video_delay_queue_;
 
     std::thread           video_writer_thread_;
     std::thread           audio_writer_thread_;

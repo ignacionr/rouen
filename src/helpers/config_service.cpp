@@ -364,8 +364,7 @@ namespace rouen::helpers {
                        "Enable Video Cast Pink Noise (true/false)", "true");
         register_config("CAST_FULL_SCREEN_MEDIA", Category::GENERAL, false, false,
                        "Show Media Streams Full Screen on Video Cast (true/false)", "false");
-        register_config("CAST_AUDIO_DELAY_MS", Category::GENERAL, false, false,
-                       "Video Cast Audio sync delay offset in milliseconds", "0");
+
 
         CONFIG_INFO("Default configurations registered");
     }
