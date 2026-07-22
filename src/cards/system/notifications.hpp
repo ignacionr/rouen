@@ -44,6 +44,9 @@ private:
 
     void render_content() {
         auto notifications = notify_service::history_snapshot();
+        std::sort(notifications.begin(), notifications.end(), [](const auto& a, const auto& b) {
+            return a.id > b.id;
+        });
         reconcile_selection(notifications);
 
         render_header(notifications.size());
@@ -106,7 +109,7 @@ private:
             ImGui::PushID(static_cast<int>(entry.id));
 
             bool selected = selected_notification_id_.has_value() && selected_notification_id_.value() == entry.id;
-            std::string label = std::format("{}  {}", entry.timestamp, entry.preview);
+            std::string label = entry.preview;
             if (ImGui::Selectable(label.c_str(), selected)) {
                 selected_notification_id_ = entry.id;
             }
@@ -168,6 +171,111 @@ private:
             status_message_ = "Failed to save notification preference";
         }
         status_message_expires_at_ = ImGui::GetTime() + 4.0;
+    }
+
+private:
+    float anim_y = 1080.0f;
+    float scroll_x = 1920.0f;
+    double last_time = 0.0;
+    std::uint64_t last_seen_notification_id = 0;
+
+    void render_video_ui() override {
+        auto now_system = std::chrono::system_clock::now();
+        std::vector<notify_service::notification_entry> active_notifications;
+        auto history = notify_service::history_snapshot();
+        for (const auto& entry : history) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(now_system - entry.created_at).count();
+            if (age <= 60) {
+                active_notifications.push_back(entry);
+            }
+        }
+        std::reverse(active_notifications.begin(), active_notifications.end());
+
+        double current_time = ImGui::GetTime();
+        float dt = (last_time == 0.0) ? 0.016f : static_cast<float>(current_time - last_time);
+        last_time = current_time;
+
+        std::string ticker_text;
+        for (size_t i = 0; i < active_notifications.size(); ++i) {
+            if (i > 0) ticker_text += "    " ICON_MD_FIBER_MANUAL_RECORD "    ";
+            ticker_text += active_notifications[i].preview;
+        }
+
+        std::uint64_t newest_id = active_notifications.empty() ? 0 : active_notifications.back().id;
+        if (newest_id > last_seen_notification_id) {
+            last_seen_notification_id = newest_id;
+            scroll_x = 1920.0f; // Scroll in new notification from the right side
+        }
+
+        float target_y = active_notifications.empty() ? 1080.0f : 980.0f; // 980.0f target y (leaves 100px height band)
+        
+        // Slide up/down animation
+        anim_y += (target_y - anim_y) * 8.0f * dt;
+        if (active_notifications.empty()) {
+            if (anim_y > 1079.5f) {
+                anim_y = 1080.0f;
+                scroll_x = 1920.0f;
+            }
+        } else {
+            if (anim_y < 980.5f) anim_y = 980.0f;
+        }
+
+        if (anim_y < 1080.0f) {
+            // Calculate text scrolling offset
+            float text_width = ImGui::CalcTextSize(ticker_text.c_str()).x;
+            scroll_x -= 150.0f * dt; // 150 pixels per second speed
+            
+            // Allow buffer space before resetting scroll
+            if (scroll_x < -(text_width + 100.0f)) {
+                scroll_x = 1920.0f;
+            }
+
+            ImGui::SetNextWindowPos(ImVec2(0.0f, anim_y));
+            ImGui::SetNextWindowSize(ImVec2(1920.0f, 100.0f));
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f, 15.0f));
+
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.04f, 0.06f, 0.94f));
+
+            if (ImGui::Begin("##NotificationVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse)) {
+                // Top border accent line using the notification card's primary theme color
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                draw_list->AddLine(
+                    ImVec2(0.0f, anim_y),
+                    ImVec2(1920.0f, anim_y),
+                    ImGui::ColorConvertFloat4ToU32(colors[0]),
+                    4.0f
+                );
+
+                // Badge + Ticker Area
+                ImGui::SetCursorPos(ImVec2(24.0f, 32.0f));
+                ImGui::SetWindowFontScale(1.4f);
+                ImGui::TextColored(colors[0], "%s NOTIFICATIONS", ICON_MD_NOTIFICATIONS_ACTIVE);
+
+                // Elegant vertical divider line separating the static badge from the moving news text
+                draw_list->AddLine(
+                    ImVec2(250.0f, anim_y + 16.0f),
+                    ImVec2(250.0f, anim_y + 84.0f),
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.4f, 0.4f, 0.5f, 0.4f)),
+                    2.0f
+                );
+
+                // News ticker clip region
+                ImGui::PushClipRect(ImVec2(270.0f, anim_y), ImVec2(1900.0f, anim_y + 100.0f), true);
+
+                ImGui::SetCursorPos(ImVec2(scroll_x, 32.0f));
+                ImGui::SetWindowFontScale(2.2f); // Double-size text ticker font scale
+                ImGui::TextUnformatted(ticker_text.c_str());
+
+                ImGui::PopClipRect();
+            }
+            ImGui::End();
+
+            ImGui::PopStyleColor(1);
+            ImGui::PopStyleVar(3);
+        }
     }
 };
 

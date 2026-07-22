@@ -25,6 +25,7 @@ struct notify_service {
         std::string timestamp;
         std::string preview;
         std::string message;
+        std::chrono::system_clock::time_point created_at;
     };
 
     static constexpr std::size_t max_history = 200;
@@ -66,7 +67,8 @@ private:
             .id = next_id_.fetch_add(1, std::memory_order_relaxed),
             .timestamp = std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::system_clock::now()),
             .preview = make_preview(message),
-            .message = message
+            .message = message,
+            .created_at = std::chrono::system_clock::now()
         };
 
         std::lock_guard<std::mutex> lock(history_mutex_);

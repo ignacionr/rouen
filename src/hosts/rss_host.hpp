@@ -1368,17 +1368,11 @@ private:
                     if (feed_ptr) {
                         RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
                         ++success_count;
-                        
-                        // Update UI periodically to show progress
-                        if (success_count % 10 == 0) {
-                            "notify"_sfn(std::format("Progress: {} RSS feeds loaded so far...", success_count));
-                        }
                     } else {
                         ++error_count;
                     }
                 } catch (const std::exception& e) {
                     RSS_ERROR_FMT("Failed to add feed {}: {}", url_list[j], e.what());
-                    "notify"_sfn(std::format("Failed to add feed {}", url_list[j]));
                     ++error_count;
                 } catch (...) {
                     RSS_ERROR_FMT("Failed to add feed {} with unknown error", url_list[j]);
@@ -1598,8 +1592,7 @@ private:
                     
             return feed_ptr;
         } catch (const std::exception& e) {
-            // Log the error and rethrow for handling in the caller
-            "notify"_sfn(std::format("Error processing feed {}: {}", url, e.what()));
+            RSS_ERROR_FMT("Error processing feed {}: {}", url, e.what());
             throw;
         }
     }
