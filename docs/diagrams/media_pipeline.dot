@@ -1,0 +1,56 @@
+digraph MediaPipeline {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_demux {
+        label="Demuxing & Decoding Thread";
+        color=darkblue;
+        style=filled;
+        fillcolor=aliceblue;
+
+        avformat [label="FFmpeg Demuxer\n(libavformat)", fillcolor=lightblue];
+        audio_decoder [label="Audio Decoder\n(libavcodec & swresample)", fillcolor=lightcyan];
+        video_decoder [label="Video Decoder\n(libavcodec & swscale)", fillcolor=lightcyan];
+    }
+
+    subgraph cluster_audio_clock {
+        label="Audio Master Clock Subsystem";
+        color=darkgreen;
+        style=filled;
+        fillcolor=lightgreen;
+
+        sdl_stream [label="SDL3 AudioStream Queue\n(Continuous Hardware Flow)", fillcolor=aquamarine];
+        audio_clock [label="Audio Master Clock\n(t_audio = t_last_pts - queued_duration)", fillcolor=gold];
+        backpressure [label="Queue Backpressure Control\n(Pause if > 250ms / 44100 bytes)", fillcolor=lightyellow];
+    }
+
+    subgraph cluster_rendering {
+        label="Main Loop Rendering Tick";
+        color=darkorange;
+        style=filled;
+        fillcolor=peachpuff;
+
+        frame_selector [label="Video Frame Selector\n(Compare Video PTS to Audio Clock)", fillcolor=orange];
+        frame_drop [label="Late Frame Drop (> 15ms late)\n(Skip Swscale & GPU upload)", fillcolor=pink];
+        frame_hold [label="Future Frame Hold (> 30ms early)\n(Retain in Queue)", fillcolor=pink];
+        frame_present [label="On-Time Frame Present\n(GPU Texture Upload & ImGui Draw)", fillcolor=gold];
+    }
+
+    avformat -> audio_decoder [label="Audio Packets"];
+    avformat -> video_decoder [label="Video Packets"];
+
+    audio_decoder -> sdl_stream [label="Resampled Audio PCM"];
+    sdl_stream -> audio_clock [label="Reports Queued Playback Bytes"];
+    sdl_stream -> backpressure [label="Monitors Buffer Level"];
+    backpressure -> avformat [label="Throttles Demuxer Read"];
+
+    video_decoder -> frame_selector [label="Decoded YUV/RGB Frames"];
+    audio_clock -> frame_selector [label="Current Audio Clock PTS"];
+
+    frame_selector -> frame_drop [label="Frame is Late (> 15ms)"];
+    frame_selector -> frame_hold [label="Frame is Early (> 30ms)"];
+    frame_selector -> frame_present [label="Frame is On-Time"];
+}

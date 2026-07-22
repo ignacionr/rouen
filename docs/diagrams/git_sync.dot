@@ -1,0 +1,61 @@
+digraph GitSyncArchitecture {
+    rankdir=LR;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_local_db {
+        label="Local Rouen Databases & Files";
+        color=darkblue;
+        style=filled;
+        fillcolor=aliceblue;
+
+        notes_db [label="notes.db\n(SQLite Notes)", fillcolor=lightblue];
+        travel_db [label="travel.db\n(SQLite Travel)", fillcolor=lightblue];
+        rss_db [label="rss.db\n(SQLite RSS Feeds)", fillcolor=lightblue];
+        config_ini [label="rouen.ini\n(Workspace Layout)", fillcolor=lightblue];
+    }
+
+    subgraph cluster_engine {
+        label="Git Serialization Gateway";
+        color=orange;
+        style=filled;
+        fillcolor=lightyellow;
+
+        sync_card [label="Universal Sync Card\n(universal_sync.hpp)", fillcolor=gold];
+        exporter [label="Database Exporter / Importer\n(Prettified JSON & Markdown)", fillcolor=orange];
+    }
+
+    subgraph cluster_git_cache {
+        label="Local Git Cache Repository";
+        color=purple;
+        style=filled;
+        fillcolor=lavender;
+
+        git_cache [label="Git Working Tree\n(notes/*.md, travel/*.json, rss/feeds.json)", fillcolor=plum];
+    }
+
+    subgraph cluster_remote {
+        label="Private Remote Repository";
+        color=darkgreen;
+        style=filled;
+        fillcolor=lightgreen;
+
+        git_remote [label="Git Remote Server\n(GitHub / GitLab / Self-Hosted)", fillcolor=aquamarine, shape=ellipse];
+    }
+
+    notes_db -> exporter [label="Export on Save/Close"];
+    travel_db -> exporter;
+    rss_db -> exporter;
+    config_ini -> exporter;
+
+    exporter -> git_cache [label="Writes Markdown & Prettified JSON"];
+    git_cache -> git_remote [label="Git Push (--rebase)"];
+    git_remote -> git_cache [label="Git Pull (Auto-sync on Startup)"];
+    git_cache -> exporter [label="Reads remote changes"];
+    exporter -> notes_db [label="Import / Merge on Startup"];
+    exporter -> travel_db;
+    exporter -> rss_db;
+    exporter -> config_ini;
+}

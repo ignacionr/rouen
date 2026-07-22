@@ -15,9 +15,10 @@ The primary building block of Rouen's interface is the **Card**. Each card repre
   - Defines the core interface for rendering, focus, sizing, and event handling.
   - Manages card-specific styling, colors, and refresh/fps throttling for rendering efficiency.
   - Provides utility window helpers like `render_window` to standardize wrapper UI frames.
+  - Exposes `virtual void render_video_ui()` to allow cards to paint custom vector graphics, telemetry badges, or layout overlays on offscreen video streams.
 
 * **Card Registration and Creation**:
-  - Registered dynamic cards are constructed via the **Card Factory** ([factory.hpp](file:///Users/ignaciorodriguez/src/rouen/src/cards/interface/factory.hpp)) using a URI-based scheme (e.g., `git`, `rss`, `notes`).
+  - Registered dynamic cards are constructed via the **Card Factory** ([factory.hpp](file:///Users/ignaciorodriguez/src/rouen/src/cards/interface/factory.hpp)) using a URI-based scheme (e.g., `camera:1:1`, `number-series:sales`, `git`, `rss`).
 
 ---
 
@@ -29,50 +30,52 @@ The **Deck** ([deck.hpp](file:///Users/ignaciorodriguez/src/rouen/src/interface/
 
 ---
 
-### 3. Helper Libraries
+### 3. HTTP REST API Server
+The **API Server** ([api_server.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/api_server.hpp)) exposes a lightweight embedded Mongoose HTTP server on port `8081`:
+- **Card Lifecycle API**: `GET /api/cards`, `POST /api/cards`, `DELETE /api/cards?uri=...`.
+- **Camera Layout API**: `GET /api/camera/layout`, `POST /api/camera/layout` (switches between 7 video feed presets dynamically), `GET /api/camera/status`, `POST /api/camera/snapshot`.
+- **Video Feed & Cast API**: `POST /api/cast/start`, `POST /api/cast/play`, `GET /api/cast/status`.
+- **Schema Discovery API**: `GET /api/schemas` (returns JSON schemas for AI Chat and external integrations).
+
+---
+
+### 4. Helper Libraries
 To support application logic, Rouen provides several static/service helper modules in `src/helpers/`:
 
 * **Configuration Service** ([config_service.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/config_service.hpp)):
   - Manages environment variables and local `.env` keys.
-  - Supports category groupings, fallback defaults, and import/export of configuration maps.
 * **HTTP Client** ([fetch.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/fetch.hpp)):
-  - A thread-safe wrapper around `libcurl` providing SSL/TLS modes (strict, relaxed, compatible, insecure) for robust corporate proxy support.
+  - A thread-safe wrapper around `libcurl` providing SSL/TLS modes (`strict`, `relaxed`, `compatible`, `insecure`).
 * **LLM Integration** ([llm_config.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/llm_config.hpp)):
-  - An adapter layer facilitating switches between LLM API providers (Grok, OpenAI, Groq, custom endpoints).
+  - Adapter facilitating switches between LLM API providers (Grok, OpenAI, Groq, Gemini, custom endpoints).
 * **Media Player** ([media_player.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/media_player.hpp)):
-  - Performs native, in-process decoding of multimedia files (audio/video) using FFmpeg (`libavcodec`, `libavformat`, `libswscale`, `libswresample`).
+  - Performs native, in-process decoding of multimedia files using FFmpeg (`libavcodec`, `libavformat`, `libswscale`, `libswresample`).
   - Supports local playback with hardware audio output via SDL3 Audio Streams.
-  - Dynamically routes audio and video to the local interface or to the cast stream.
+* **Stream Encoder** ([stream_encoder.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/stream_encoder.hpp)):
+  - In-process H.264 video and AAC stereo audio encoding engine feeding TCP socket streams.
 * **Database Access** ([sqlite.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/sqlite.hpp)):
   - Thread-safe key-value store wrapper around SQLite3 for config/state caching.
 
 ---
 
-### 4. Host Infrastructure
-Hosts in `src/hosts/` manage background data synchronization and caching for card states:
-- **Video Cast Host (`VideoFeedHost`)**: A TCP unicast streaming server that encodes and casts the current desktop / media view to remote network players (e.g. `mpv`, VLC) using TCP sockets.
+### 5. Host Infrastructure & Multi-Modal Streaming
+Hosts in `src/hosts/` manage background data synchronization and caching:
+- **Video Cast Host (`VideoFeedHost`)**: Offscreen 1080p ImGui renderer and TCP unicast streaming server (`tcp://127.0.0.1:8889`).
 - **RSS Host**: Fetches XML feeds, parses enclosures, extracts podcast watermarks, and caches local feed models.
 - **Weather Host**: Fetches meteorological reports and caches forecast results.
 - **Trello Host**: Manages board queries, card listings, and CRUD synchronization.
 
 ---
 
-## Design Patterns
-
-* **Factory Pattern**: Dynamically instantiates card classes from URI-like parameters.
-* **Template Metaprogramming & Concepts**: Enables compile-time optimization, such as type-safe texture pointer casts in `texture_utils.hpp`.
-* **Observer/Registrar Pattern**: Facilitates loose coupling between cards, allowing cards to register interests and receive lifecycle events.
-* **RAII (Resource Acquisition Is Initialization)**: Standardized resource wrappers around files, sockets, curl sessions, and sqlite transaction handles.
-
----
-
 ## Media Synchronization Model (Audio-Master Clock)
 
-For local playback, Rouen implements an **Audio-Master Clock** model to ensure perfect video and audio alignment:
+![Media Pipeline Diagram](diagrams/media_pipeline.png)
+
+For local playback, Rouen implements an **Audio-Master Clock** model to ensure video and audio alignment:
 * **Continuous Audio Flow:** Audio is decoded and written directly to an `SDL_AudioStream` which plays continuously at a fixed hardware sample rate.
-* **Rate-limiting via Backpressure:** The demuxer thread pauses reading packets if the audio queue has more than `250ms` of buffered playback (`44100 bytes`), preventing infinite buffer growth and keeping processing aligned to real-time playback.
-* **Video Frame Selection & Dropping:** Video frames are decoded as fast as possible and stored in a queue. During each ImGui rendering tick, the main thread calculates the current audio clock ($t_{\text{audio}} = t_{\text{last\_audio\_pts}} - \text{duration of queued audio}$) and queries the queue:
-  - If a frame is late by more than **15ms**, it is **dropped** (skipping color space conversion, scaling, memory copying, and GPU upload).
-  - If a frame is in the future by more than **30ms**, it is skipped/held in the queue.
-  - If a frame is on time, it is uploaded and rendered on screen.
-* **Zero Pacing Sleeps:** No sleeps or delays block the video presentation path inside the decoding thread, ensuring that audio decoding and playback never experience underflow stuttering.
+* **Rate-limiting via Backpressure:** The demuxer thread pauses reading packets if the audio queue has more than `250ms` of buffered playback (`44100 bytes`).
+* **Video Frame Selection & Dropping:** During each ImGui rendering tick, the main thread calculates current audio clock ($t_{\text{audio}} = t_{\text{last\_audio\_pts}} - \text{duration of queued audio}$):
+  - Late frames (> **15ms**) are **dropped** (skipping color space conversion, scaling, memory copying, and GPU upload).
+  - Early frames (> **30ms**) are held in queue.
+  - On-time frames are uploaded and rendered.
+* **Zero Pacing Sleeps:** Ensures audio decoding and playback never experience underflow stuttering.

@@ -13,7 +13,7 @@ digraph RouenArchitecture {
     
     // Main Application Layer
     subgraph cluster_main {
-        label="Main Application";
+        label="Main Application & Server Layer";
         color=blue;
         style=filled;
         fillcolor=lightcyan;
@@ -24,6 +24,7 @@ digraph RouenArchitecture {
         main_wnd_init [label="main_wnd_init.cpp\n(Initialization)", shape=box, fillcolor=lightsteelblue];
         main_wnd_loop [label="main_wnd_loop.cpp\n(Event Loop)", shape=box, fillcolor=lightsteelblue];
         main_wnd_theme [label="main_wnd_theme.cpp\n(Theme Setup)", shape=box, fillcolor=lightsteelblue];
+        api_server [label="api_server\n(HTTP REST API :8081)", shape=box, fillcolor=gold];
         registrar [label="registrar.hpp\n(Service Registry)", shape=box, fillcolor=orange];
     }
     
@@ -41,10 +42,10 @@ digraph RouenArchitecture {
             style=filled;
             fillcolor=aliceblue;
             
-            card_base [label="card\n(Base Class)", shape=ellipse, fillcolor=yellow];
+            card_base [label="card\n(Base Class with render_video_ui)", shape=ellipse, fillcolor=yellow];
             deck [label="deck\n(Card Container)", shape=box, fillcolor=wheat];
             factory [label="factory\n(Card Factory)", shape=diamond, fillcolor=lightpink];
-            menu [label="menu\n(Menu Card)", shape=box, fillcolor=lightcyan];
+            menu [label="menu\n(Launcher Card)", shape=box, fillcolor=lightcyan];
         }
         
         // Helper Systems
@@ -62,7 +63,9 @@ digraph RouenArchitecture {
             capture_helper [label="capture_helper", shape=box];
             sqlite_service [label="sqlite", shape=box];
             fetch_service [label="fetch", shape=box];
-            media_player [label="media_player", shape=box];
+            media_player [label="media_player\n(FFmpeg Decoder & SDL3 Audio)", shape=box, fillcolor=aquamarine];
+            stream_encoder [label="stream_encoder\n(H.264 Video & AAC Audio)", shape=box, fillcolor=aquamarine];
+            ffmpeg_helper [label="ffmpeg_helper\n(Subprocess Probe)", shape=box];
             process_helper [label="process_helper", shape=box];
         }
     }
@@ -88,16 +91,20 @@ digraph RouenArchitecture {
         style=filled;
         fillcolor=peachpuff;
         
-        grok_card [label="grok\n(AI Assistant)", shape=box];
-        rss_card [label="rss\n(RSS Reader)", shape=box];
-        rss_feed [label="rss_feed\n(Feed Display)", shape=box];
-        rss_item [label="rss_item\n(Item Display)", shape=box];
-        weather_card [label="weather\n(Weather Info)", shape=box];
-        mail_card [label="mail\n(Email Client)", shape=box];
-        calendar_card [label="calendar\n(Calendar)", shape=box];
-        travel_card [label="travel\n(Travel Info)", shape=box];
-        travel_plan [label="travel_plan\n(Trip Planning)", shape=box];
-        bybit_assets [label="bybit_assets\n(Crypto Assets)", shape=box];
+        ai_chat_card [label="ai_chat\n(AI Assistant & MCP Tools)", shape=box, fillcolor=gold];
+        number_series [label="number_series\n(Animated Graph Broadcast)", shape=box, fillcolor=gold];
+        rss_card [label="rss\n(RSS Dashboard)", shape=box];
+        rss_feed [label="rss_feed\n(Feed Reader)", shape=box];
+        rss_item [label="rss_item\n(Article Player)", shape=box];
+        rss_smart_list [label="rss_smart_list\n(Smart Filter)", shape=box];
+        weather_card [label="weather\n(Weather Forecast)", shape=box];
+        mail_card [label="mail\n(IMAP/SMTP Mail)", shape=box];
+        calendar_card [label="calendar\n(Calendar Sync)", shape=box];
+        travel_card [label="travel\n(Travel Guides)", shape=box];
+        travel_plan [label="travel_plan\n(Trip Itinerary)", shape=box];
+        bybit_assets [label="bybit_assets\n(Crypto Portfolio)", shape=box];
+        movies_card [label="movies\n(Movie Database)", shape=box];
+        worldcup_card [label="worldcup_dashboard\n(Tournament Stats)", shape=box];
     }
     
     subgraph cluster_productivity_cards {
@@ -106,25 +113,27 @@ digraph RouenArchitecture {
         style=filled;
         fillcolor=plum;
         
-        pomodoro_card [label="pomodoro\n(Time Management)", shape=box];
-        alarm_card [label="alarm\n(Alarms)", shape=box];
-        jira_card [label="jira_card\n(JIRA Integration)", shape=box];
-        trello_card [label="trello_card\n(Trello Boards)", shape=box];
+        pomodoro_card [label="pomodoro\n(Timer)", shape=box];
+        alarm_card [label="alarm\n(Alarm & Timer Overlay)", shape=box];
+        jira_card [label="jira_card\n(Jira Boards)", shape=box];
+        trello_card [label="trello_card\n(Trello Columns)", shape=box];
         converter_card [label="converter\n(Unit Converter)", shape=box];
+        notes_card [label="markdown_notes\n(Wiki Notes)", shape=box];
     }
     
     subgraph cluster_media_cards {
-        label="Media Cards";
+        label="Media & Camera Cards";
         color=darkmagenta;
         style=filled;
         fillcolor=thistle;
         
+        camera_card [label="camera\n(Live Video & 7 Layout Presets)", shape=box, fillcolor=gold];
         radio_card [label="radio\n(Internet Radio)", shape=box];
         chess_replay [label="chess_replay\n(Chess Games)", shape=box];
     }
     
     subgraph cluster_system_cards {
-        label="System Cards";
+        label="System & Sync Cards";
         color=darkcyan;
         style=filled;
         fillcolor=lightcyan;
@@ -132,39 +141,22 @@ digraph RouenArchitecture {
         sysinfo_card [label="sysinfo\n(System Info)", shape=box];
         settings_card [label="settings\n(Configuration)", shape=box];
         envvars_card [label="envvars\n(Environment Vars)", shape=box];
-        terminal_card [label="terminal\n(Terminal)", shape=box];
+        terminal_card [label="terminal\n(PTY Shell)", shape=box];
         dbrepair_card [label="dbrepair\n(Database Repair)", shape=box];
         subnet_scanner [label="subnet_scanner\n(Network Scanner)", shape=box];
-    }
-    
-    // Data Models Layer
-    subgraph cluster_models {
-        label="Data Models";
-        color=darkgoldenrod;
-        style=filled;
-        fillcolor=wheat;
-        
-        git_model [label="git\n(Git Data)", shape=ellipse];
-        github_model [label="github\n(GitHub Data)", shape=ellipse];
-        jira_model [label="jira_model\n(JIRA Data)", shape=ellipse];
-        trello_model [label="trello_model\n(Trello Data)", shape=ellipse];
-        calendar_model [label="calendar\n(Calendar Data)", shape=ellipse];
-        mail_model [label="mail\n(Email Data)", shape=ellipse];
-        rss_model [label="rss\n(RSS Data)", shape=ellipse];
-        travel_model [label="travel\n(Travel Data)", shape=ellipse];
-        radio_model [label="radio\n(Radio Data)", shape=ellipse];
-        chess_model [label="chess\n(Chess Data)", shape=ellipse];
+        universal_sync [label="universal_sync\n(Native Git Sync)", shape=box];
     }
     
     // Host Integration Layer
     subgraph cluster_hosts {
-        label="External Host Integration";
+        label="External Host & Stream Layer";
         color=darkslategray;
         style=filled;
         fillcolor=lightslategray;
         
+        video_feed_host [label="VideoFeedHost\n(TCP Unicast Streamer :8889)", shape=hexagon, fillcolor=aquamarine];
         bybit_host [label="bybit_host\n(Bybit API)", shape=hexagon];
-        rss_host [label="rss_host\n(RSS Feeds)", shape=hexagon];
+        rss_host [label="rss_host\n(RSS Aggregator)", shape=hexagon];
         travel_host [label="travel_host\n(Travel APIs)", shape=hexagon];
         trello_host [label="trello_host\n(Trello API)", shape=hexagon];
         weather_host [label="weather_host\n(Weather API)", shape=hexagon];
@@ -172,179 +164,121 @@ digraph RouenArchitecture {
     
     // UI Framework Layer
     subgraph cluster_ui {
-        label="UI Framework";
+        label="UI & Audio Framework";
         color=darkslateblue;
         style=filled;
         fillcolor=lightsteelblue;
         
-        imgui [label="ImGui\n(UI Library)", shape=box, fillcolor=lightblue];
-        sdl2 [label="SDL2\n(Window/Input)", shape=box, fillcolor=lightblue];
-        opengl [label="OpenGL\n(Rendering)", shape=box, fillcolor=lightblue];
+        imgui [label="ImGui\n(UI Engine)", shape=box, fillcolor=lightblue];
+        sdl3 [label="SDL3\n(Audio Stream & Windowing)", shape=box, fillcolor=lightblue];
+        opengl [label="OpenGL\n(GPU Rendering)", shape=box, fillcolor=lightblue];
         fonts [label="fonts\n(Font Management)", shape=box, fillcolor=lightsteelblue];
     }
     
     // External Dependencies
     subgraph cluster_dependencies {
-        label="External Dependencies";
+        label="External Libraries";
         color=brown;
         style=filled;
         fillcolor=lightyellow;
         
-        curl [label="CURL\n(HTTP Client)", shape=ellipse];
-        sqlite [label="SQLite\n(Database)", shape=ellipse];
-        openssl [label="OpenSSL\n(Crypto/SSL)", shape=ellipse];
+        curl [label="libcurl\n(SSL/TLS HTTP Client)", shape=ellipse];
+        sqlite [label="SQLite3\n(Embedded DB)", shape=ellipse];
+        openssl [label="OpenSSL\n(Crypto & TLS)", shape=ellipse];
         tinyxml2 [label="TinyXML2\n(XML Parser)", shape=ellipse];
-        glaze [label="Glaze\n(JSON Parser)", shape=ellipse];
-        mpv [label="MPV\n(Media Player)", shape=ellipse];
+        glaze [label="Glaze\n(Fast JSON Parser)", shape=ellipse];
+        ffmpeg [label="FFmpeg Libraries\n(avcodec, avformat, swscale, swresample)", shape=ellipse, fillcolor=gold];
     }
     
     // Build System
     subgraph cluster_build {
-        label="Build System";
+        label="Build Environment";
         color=saddlebrown;
         style=filled;
         fillcolor=antiquewhite;
         
-        cmake [label="CMake\n(Build System)", shape=box, fillcolor=tan];
-        vcpkg [label="vcpkg\n(Package Manager)", shape=box, fillcolor=tan];
-        nix [label="Nix\n(Environment)", shape=box, fillcolor=tan];
+        cmake [label="CMake 3.31+", shape=box, fillcolor=tan];
+        nix [label="Nix Flake & Nix-Shell", shape=box, fillcolor=tan];
     }
     
-    // Main connections
+    // Connections
     main_cpp -> main_wnd [label="creates"];
     main_wnd -> main_wnd_core;
     main_wnd -> main_wnd_init;
     main_wnd -> main_wnd_loop;
     main_wnd -> main_wnd_theme;
+    main_wnd -> api_server [label="initializes"];
     main_wnd -> deck [label="manages"];
-    main_wnd -> registrar [label="uses"];
+    main_wnd -> registrar [label="registers services"];
+    api_server -> deck [label="dispatches API requests"];
     
     // Card system connections
     deck -> factory [label="uses"];
-    deck -> card_base [label="contains"];
-    factory -> card_base [label="creates"];
+    deck -> card_base [label="contains active cards"];
+    factory -> card_base [label="instantiates"];
     
     // Card inheritance relationships
-    card_base -> git_card [style=dashed, label="inherits"];
-    card_base -> github_card [style=dashed, label="inherits"];
-    card_base -> github_ci_card [style=dashed, label="inherits"];
-    card_base -> cmake_card [style=dashed, label="inherits"];
-    card_base -> fs_directory [style=dashed, label="inherits"];
-    card_base -> editor_card [style=dashed, label="inherits"];
-    card_base -> grok_card [style=dashed, label="inherits"];
-    card_base -> rss_card [style=dashed, label="inherits"];
-    card_base -> rss_feed [style=dashed, label="inherits"];
-    card_base -> rss_item [style=dashed, label="inherits"];
-    card_base -> weather_card [style=dashed, label="inherits"];
-    card_base -> mail_card [style=dashed, label="inherits"];
-    card_base -> calendar_card [style=dashed, label="inherits"];
-    card_base -> travel_card [style=dashed, label="inherits"];
-    card_base -> travel_plan [style=dashed, label="inherits"];
-    card_base -> bybit_assets [style=dashed, label="inherits"];
-    card_base -> pomodoro_card [style=dashed, label="inherits"];
-    card_base -> alarm_card [style=dashed, label="inherits"];
-    card_base -> jira_card [style=dashed, label="inherits"];
-    card_base -> trello_card [style=dashed, label="inherits"];
-    card_base -> converter_card [style=dashed, label="inherits"];
-    card_base -> radio_card [style=dashed, label="inherits"];
-    card_base -> chess_replay [style=dashed, label="inherits"];
-    card_base -> sysinfo_card [style=dashed, label="inherits"];
-    card_base -> settings_card [style=dashed, label="inherits"];
-    card_base -> envvars_card [style=dashed, label="inherits"];
-    card_base -> terminal_card [style=dashed, label="inherits"];
-    card_base -> dbrepair_card [style=dashed, label="inherits"];
-    card_base -> subnet_scanner [style=dashed, label="inherits"];
-    card_base -> menu [style=dashed, label="inherits"];
+    card_base -> git_card [style=dashed];
+    card_base -> github_card [style=dashed];
+    card_base -> github_ci_card [style=dashed];
+    card_base -> cmake_card [style=dashed];
+    card_base -> fs_directory [style=dashed];
+    card_base -> editor_card [style=dashed];
+    card_base -> ai_chat_card [style=dashed];
+    card_base -> number_series [style=dashed];
+    card_base -> rss_card [style=dashed];
+    card_base -> rss_feed [style=dashed];
+    card_base -> rss_item [style=dashed];
+    card_base -> rss_smart_list [style=dashed];
+    card_base -> weather_card [style=dashed];
+    card_base -> mail_card [style=dashed];
+    card_base -> calendar_card [style=dashed];
+    card_base -> travel_card [style=dashed];
+    card_base -> travel_plan [style=dashed];
+    card_base -> bybit_assets [style=dashed];
+    card_base -> movies_card [style=dashed];
+    card_base -> worldcup_card [style=dashed];
+    card_base -> pomodoro_card [style=dashed];
+    card_base -> alarm_card [style=dashed];
+    card_base -> jira_card [style=dashed];
+    card_base -> trello_card [style=dashed];
+    card_base -> converter_card [style=dashed];
+    card_base -> notes_card [style=dashed];
+    card_base -> camera_card [style=dashed];
+    card_base -> radio_card [style=dashed];
+    card_base -> chess_replay [style=dashed];
+    card_base -> sysinfo_card [style=dashed];
+    card_base -> settings_card [style=dashed];
+    card_base -> envvars_card [style=dashed];
+    card_base -> terminal_card [style=dashed];
+    card_base -> dbrepair_card [style=dashed];
+    card_base -> subnet_scanner [style=dashed];
+    card_base -> universal_sync [style=dashed];
+    card_base -> menu [style=dashed];
     
-    // Model relationships
-    git_card -> git_model [label="uses"];
-    github_card -> github_model [label="uses"];
-    github_ci_card -> github_model [label="uses"];
-    jira_card -> jira_model [label="uses"];
-    trello_card -> trello_model [label="uses"];
-    calendar_card -> calendar_model [label="uses"];
-    mail_card -> mail_model [label="uses"];
-    rss_card -> rss_model [label="uses"];
-    rss_feed -> rss_model [label="uses"];
-    rss_item -> rss_model [label="uses"];
-    travel_card -> travel_model [label="uses"];
-    travel_plan -> travel_model [label="uses"];
-    radio_card -> radio_model [label="uses"];
-    chess_replay -> chess_model [label="uses"];
-    
-    // Host integration relationships
-    bybit_assets -> bybit_host [label="uses"];
-    rss_card -> rss_host [label="uses"];
-    rss_feed -> rss_host [label="uses"];
-    travel_card -> travel_host [label="uses"];
-    travel_plan -> travel_host [label="uses"];
-    trello_card -> trello_host [label="uses"];
-    weather_card -> weather_host [label="uses"];
+    // Host & Video Feed relationships
+    video_feed_host -> stream_encoder [label="encodes H.264/AAC"];
+    video_feed_host -> card_base [label="invokes render_video_ui()"];
+    media_player -> ffmpeg [label="decodes video/audio"];
+    media_player -> sdl3 [label="streams audio"];
+    stream_encoder -> ffmpeg [label="uses avcodec & swscale"];
     
     // Helper system usage
     deck -> deferred_ops [label="uses"];
     deck -> capture_helper [label="uses"];
-    main_wnd -> deferred_ops [label="uses"];
     main_wnd -> config_service [label="uses"];
     main_wnd -> platform_utils [label="uses"];
     
-    // Cards using helpers
-    git_card -> process_helper [label="uses"];
-    github_card -> fetch_service [label="uses"];
-    grok_card -> fetch_service [label="uses"];
-    rss_card -> fetch_service [label="uses"];
-    weather_card -> fetch_service [label="uses"];
-    mail_card -> fetch_service [label="uses"];
-    radio_card -> media_player [label="uses"];
-    settings_card -> config_service [label="uses"];
-    dbrepair_card -> sqlite_service [label="uses"];
+    // Framework connections
+    main_wnd -> sdl3 [label="window & events"];
+    main_wnd -> imgui [label="desktop UI"];
+    deck -> imgui [label="renders cards"];
+    sdl3 -> opengl [label="context"];
     
-    // UI Framework connections
-    main_wnd -> sdl2 [label="uses"];
-    main_wnd -> imgui [label="uses"];
-    deck -> imgui [label="uses"];
-    card_base -> imgui [label="uses"];
-    sdl2 -> opengl [label="uses"];
-    main_wnd -> fonts [label="manages"];
-    
-    // External dependency usage
+    // External dependency connections
     fetch_service -> curl [label="uses"];
     sqlite_service -> sqlite [label="uses"];
     fetch_service -> openssl [label="uses"];
     rss_host -> tinyxml2 [label="uses"];
     config_service -> glaze [label="uses"];
-    media_player -> mpv [label="uses"];
-    
-    // Build system relationships
-    cmake -> vcpkg [label="uses"];
-    cmake -> nix [label="alternative"];
-    vcpkg -> curl [label="provides"];
-    vcpkg -> sqlite [label="provides"];
-    vcpkg -> openssl [label="provides"];
-    vcpkg -> tinyxml2 [label="provides"];
-    vcpkg -> glaze [label="provides"];
-    vcpkg -> sdl2 [label="provides"];
-    vcpkg -> imgui [label="provides"];
-    
-    // Special registrar connections (service registry pattern)
-    registrar -> deck [style=dotted, label="registers"];
-    registrar -> deferred_ops [style=dotted, label="provides"];
-    registrar -> config_service [style=dotted, label="provides"];
-    registrar -> platform_utils [style=dotted, label="provides"];
-    
-    // Data flow legend
-    subgraph cluster_legend {
-        label="Legend";
-        color=black;
-        style=filled;
-        fillcolor=white;
-        
-        legend_solid [label="Uses/Contains", shape=plaintext];
-        legend_dashed [label="Inherits", shape=plaintext];
-        legend_dotted [label="Service Registry", shape=plaintext];
-        
-        legend_solid -> legend_dashed [style=solid];
-        legend_dashed -> legend_dotted [style=dashed];
-        legend_dotted -> legend_solid [style=dotted];
-    }
 }

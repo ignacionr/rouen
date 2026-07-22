@@ -26,7 +26,7 @@ Rouen loads variables from system environment, `~/.secrets`, or a local `.env` f
 * `OPENAI_API_KEY`: API key for OpenAI GPT models.
 * `GROK_API_KEY`: API key for Grok models (x.ai).
 * `GROQ_API_KEY`: API key for Groq fast inference models.
-* `BYBIT_API_KEY` & `BYBIT_SECRET_KEY`: Cryptocurency asset and spot portfolio tracking.
+* `BYBIT_API_KEY` & `BYBIT_SECRET_KEY`: Cryptocurrency asset and spot portfolio tracking.
 * `GOOGLE_CALENDAR_CLIENT_ID` & `GOOGLE_CALENDAR_CLIENT_SECRET`: Credentials to pull tasks and events.
 
 ### JIRA Integration
@@ -46,8 +46,18 @@ Rouen loads variables from system environment, `~/.secrets`, or a local `.env` f
 
 ## Card Management & URIs
 
- Rouen allows creating cards dynamically using URI-like strings in the Command Palette or menu search:
+Rouen allows creating cards dynamically using URI-like strings in the Command Palette or menu search:
 
+* **Camera Video Feed**: 
+  - `camera:` opens camera device index 0 with Full Screen layout.
+  - `camera:<device_index>:<layout_index>` opens device index with preset layout (e.g. `camera:1:1` for Bottom-Right PiP).
+  - Presets: `0` (Full Screen), `1` (Bottom-Right PiP), `2` (Bottom-Left PiP), `3` (Top-Right PiP), `4` (Top-Left PiP), `5` (Centered Circle Avatar), `6` (Right Side Bar).
+* **Number Series Data Visualization**:
+  - `number-series:sales` opens monthly sales revenue chart.
+  - `number-series:temps` opens weekly temperature forecast chart.
+  - `number-series:cpu` opens system CPU load telemetry chart.
+  - `{...}` JSON string opens a custom dataset.
+  - Supports live continuous broadcast animation on video feed streams.
 * **Directory Explorer**: `dir:/absolute/path/to/folder` opens a folder browser card.
 * **Markdown Notes**: 
   - `notes:` opens the note management index.
@@ -55,13 +65,22 @@ Rouen loads variables from system environment, `~/.secrets`, or a local `.env` f
 * **Trello Boards**:
   - `trello:` opens Trello board search and card listings.
   - `trello-board:<board-id>` directly opens a dedicated column board viewer.
-* **Adaptive Cards (Round 1)**:
-  - `adaptive-card` opens the built-in Adaptive Card test card with a dropdown to choose Round 1/2/3/4 sample JSON sets.
-  - `adaptive-card:<card_json_path>|<context_json_path>` loads a card JSON file plus a context JSON file for `${var}` substitution.
-  - The card includes a **JSON** tab showing the loaded card JSON, context JSON, and bound JSON output used by the renderer.
-  - Round 2 adds `Container`, `ColumnSet`, `Column`, and `FactSet`, with nested `${user.profile.name}` style bindings.
-  - Round 3 adds `Input.Text`, `Input.Toggle`, and `Action.OpenUrl` with expression-based URL templating.
-  - Round 4 adds `$data` repeats plus `Action.Submit` and `Action.ShowCard`; submit payloads and input state are inspectable in the card UI.
+* **Adaptive Cards**: `adaptive-card` opens built-in renderer tests.
+
+---
+
+## Embedded REST API Endpoints (Port 8081)
+
+| Endpoint | Method | Payload | Action |
+| :--- | :--- | :--- | :--- |
+| `/api/cards` | `GET` | N/A | List all active cards and URIs |
+| `/api/cards` | `POST` | `{"uri":"camera:1:1"}` | Open a new card |
+| `/api/cards` | `DELETE` | N/A | Close an active card |
+| `/api/camera/layout` | `GET` | N/A | Query active camera layout preset |
+| `/api/camera/layout` | `POST` | `{"preset":1}` | Change camera layout preset |
+| `/api/camera/status` | `GET` | N/A | Query camera resolution and status |
+| `/api/cast/start` | `POST` | `{"url":"camera:1:1"}` | Start TCP video streaming server |
+| `/api/cast/status` | `GET` | N/A | Query video stream status |
 
 ---
 
@@ -98,7 +117,7 @@ Expected params JSON:
 * If you see CURL handshake errors on corporate proxies or custom servers, set `ROUEN_SSL_MODE=relaxed` in your `.env` config file.
 
 ### Audio or Video Not Playing
-* Rouen relies on a local installation of the `mpv` binary. Verify `mpv` is available in your shell's PATH, or set the explicit path inside the Settings card.
+* Rouen relies on native FFmpeg libraries and SDL3. Verify audio device output is unmuted and camera access permission is allowed in system settings.
 
 ### API Key Updates Not Reflecting
 * Values inside `.env` or system profiles are cached. Use the Settings card's **Refresh Cache** button, or restart the application to reload variables.

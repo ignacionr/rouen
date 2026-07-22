@@ -4,17 +4,15 @@ Rouen includes a native, Git-based synchronization engine. This allows you to sy
 
 ---
 
+## Architecture Flow Diagram
+
+![Git Sync Architecture](diagrams/git_sync.png)
+
+---
+
 ## How It Works
 
 Rouen avoids committing raw binary SQLite databases (which are prone to corruption, cannot be merged line-by-line, and cause merge conflicts). Instead, the synchronization engine acts as a serialization gateway:
-
-```mermaid
-graph TD
-    A[Local Databases / Files] -->|Export on Close| B(Local Git Cache Folder)
-    B -->|Git Push| C[Private Git Remote repo]
-    C -->|Git Pull| D(Local Git Cache Folder)
-    D -->|Import on Startup| E[Local Databases / Files]
-```
 
 1. **On Startup**: If auto-sync is enabled, Rouen performs a full Two-Way Sync (pulling and merging remote changes, importing them, and then exporting and pushing any local offline edits to the remote) to ensure local and remote are fully synchronized.
 2. **On Shutdown**: If auto-sync is enabled, Rouen performs a full Two-Way Sync (pulling and merging concurrent remote edits, importing them, and then exporting and pushing the merged local databases to the remote) to ensure no updates are lost.

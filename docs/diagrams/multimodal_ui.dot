@@ -1,0 +1,64 @@
+digraph MultimodalUI {
+    rankdir=LR;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_rouen {
+        label="Rouen Engine";
+        color=blue;
+        style=filled;
+        fillcolor=aliceblue;
+
+        main_ui [label="Main ImGui Context\n(Desktop Window)", fillcolor=lightblue];
+        video_host [label="VideoFeedHost\n(Offscreen 1080p Context)", fillcolor=gold];
+
+        subgraph cluster_cards {
+            label="Active Cards (render_video_ui)";
+            color=darkblue;
+            style=filled;
+            fillcolor=lightcyan;
+
+            camera_card [label="Camera Card\n(7 Layout Presets)", fillcolor=thistle];
+            alarm_card [label="Alarm Card\n(Countdown & Ringing)", fillcolor=plum];
+            number_series [label="Number Series Card\n(Broadcast Animation)", fillcolor=peachpuff];
+            weather_card [label="Weather Card\n(Live Weather Badge)", fillcolor=lightyellow];
+        }
+    }
+
+    subgraph cluster_encoding {
+        label="In-Process Media Pipeline";
+        color=darkgreen;
+        style=filled;
+        fillcolor=lightgreen;
+
+        stream_enc [label="StreamEncoder\n(libavcodec H.264 & AAC)", fillcolor=aquamarine];
+        tcp_server [label="TCP Unicast Server\n(:8889 Socket)", fillcolor=gold];
+    }
+
+    subgraph cluster_clients {
+        label="External Video & Media Clients";
+        color=purple;
+        style=filled;
+        fillcolor=lavender;
+
+        mpv_client [label="MPV Player\n(tcp://127.0.0.1:8889)", fillcolor=lightpink];
+        vlc_client [label="VLC / OBS Studio\n(Live Stream)", fillcolor=lightpink];
+    }
+
+    main_ui -> video_host [label="Triggers per frame"];
+    video_host -> camera_card [label="Invokes render_video_ui()"];
+    video_host -> alarm_card [label="Invokes render_video_ui()"];
+    video_host -> number_series [label="Invokes render_video_ui()"];
+    video_host -> weather_card [label="Invokes render_video_ui()"];
+
+    camera_card -> stream_enc [label="Reads RGB24 Pixels & Audio"];
+    alarm_card -> stream_enc;
+    number_series -> stream_enc;
+    weather_card -> stream_enc;
+
+    stream_enc -> tcp_server [label="MPEG-TS Encoded Packets"];
+    tcp_server -> mpv_client [label="TCP Unicast Stream"];
+    tcp_server -> vlc_client [label="TCP Unicast Stream"];
+}

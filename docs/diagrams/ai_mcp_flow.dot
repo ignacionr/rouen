@@ -1,0 +1,27 @@
+digraph AIMCPFlow {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    user [label="User Input Prompt", fillcolor=lightcyan, shape=ellipse];
+    ai_chat [label="AI Chat Card\n(ai_chat.hpp)", fillcolor=gold];
+    mcp_service [label="MCP Service Registry\n(Tool Registration)", fillcolor=orange];
+    adapter [label="Gemini / OpenAI Adapter\n(llm_config.hpp)", fillcolor=lightsteelblue];
+    llm_api [label="External LLM API\n(Gemini / Grok / OpenAI / Groq)", fillcolor=aquamarine, shape=component];
+    tool_exec [label="Local Tool Execution\n(popen / git / curl / card creation)", fillcolor=lightgreen];
+
+    user -> ai_chat [label="Submits query"];
+    ai_chat -> mcp_service [label="Fetches function declarations"];
+    mcp_service -> ai_chat [label="Returns JSON Tool Schemas"];
+    ai_chat -> adapter [label="Sends Prompt + Schemas"];
+    adapter -> llm_api [label="HTTP POST /v1/chat/completions"];
+    llm_api -> adapter [label="Returns Function Call Request"];
+    adapter -> tool_exec [label="Executes function (e.g. run_local_command)"];
+    tool_exec -> adapter [label="Returns stdout/stderr result"];
+    adapter -> llm_api [label="Sends function response"];
+    llm_api -> adapter [label="Generates final text response"];
+    adapter -> ai_chat [label="Delivers final response"];
+    ai_chat -> user [label="Displays response & card artifacts"];
+}
