@@ -200,6 +200,20 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/camera/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_camera_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/camera/snapshot"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_camera_snapshot(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -362,6 +376,30 @@ std::string api_server::handle_cast_play(struct mg_connection* /*c*/, struct mg_
         item.playMedia();
         
         return std::format(R"({{"success":true,"message":"Media playback started","url":"{}"}})", target_url);
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_camera_status(struct mg_connection*, struct mg_http_message*) {
+    try {
+        auto fn = registrar::get<std::function<std::string()>>("camera_get_status");
+        if (fn && *fn) {
+            return (*fn)();
+        }
+        return R"({"active":false,"message":"Camera service not active"})";
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_camera_snapshot(struct mg_connection*, struct mg_http_message*) {
+    try {
+        auto fn = registrar::get<std::function<std::string(const std::string&)>>("camera_save_snapshot");
+        if (fn && *fn) {
+            return (*fn)("/tmp/camera_snapshot.ppm");
+        }
+        return R"({"success":false,"error":"Camera card snapshot service not available"})";
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }

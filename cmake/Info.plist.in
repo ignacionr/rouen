@@ -41,5 +41,7 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>NSCameraUsageDescription</key>
+    <string>Rouen requires access to camera devices for real-time video feed cards and casting.</string>
 </dict>
 </plist>

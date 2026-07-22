@@ -158,6 +158,19 @@ target_link_libraries(test_objectives
 )
 add_test(NAME ObjectivesTest COMMAND test_objectives)
 
+# Camera Device List Test
+add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
+target_link_libraries(test_camera_device_list PRIVATE ${SDL3_LIBRARIES})
+
+add_gtest_executable(test_sdl3_camera_open test_sdl3_camera_open.cpp)
+target_link_libraries(test_sdl3_camera_open PRIVATE ${SDL3_LIBRARIES})
+
+add_gtest_executable(test_camera_gpu_upload_safety test_camera_gpu_upload_safety.cpp)
+target_link_libraries(test_camera_gpu_upload_safety PRIVATE ${SDL3_LIBRARIES})
+
+add_gtest_executable(test_pixel_conversion test_pixel_conversion.cpp)
+target_link_libraries(test_pixel_conversion PRIVATE ${SDL3_LIBRARIES})
+
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 

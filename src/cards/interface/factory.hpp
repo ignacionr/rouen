@@ -40,6 +40,7 @@
 #include "../media/radio.hpp"
 #include "../media/radiocut.hpp"
 #include "../media/youtube_search.hpp"
+#include "../media/camera.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
@@ -215,6 +216,14 @@ namespace rouen::cards {
 
                 instance.emplace("notifications", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<notifications_card>();
+                });
+
+                instance.emplace("camera", [](std::string_view locator, SDL_Renderer*) {
+                    auto card_inst = std::make_shared<camera_card>();
+                    if (!locator.empty()) {
+                        card_inst->handle_uri(locator);
+                    }
+                    return card_inst;
                 });
                 
                 instance.emplace("kpis", [](std::string_view, SDL_Renderer*) {

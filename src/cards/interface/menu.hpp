@@ -315,6 +315,7 @@ namespace rouen::cards {
                     {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
                 }},
                 { "Media", {
+                    {"Live Camera", []() { "create_card"_sfn("camera"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},
                     {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
                     {"YouTube Search", []() { "create_card"_sfn("youtube"); }},
