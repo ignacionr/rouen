@@ -43,8 +43,8 @@ struct series_record {
     std::vector<data_point> points;
     bool is_bar_chart{true};
     int color_index{0};
-    std::string created_at;
-    std::string updated_at;
+    std::string created_at{};
+    std::string updated_at{};
 
     struct glaze {
         using T = series_record;
@@ -399,11 +399,11 @@ private:
 
     void seed_defaults() {
         save_series({
-            0,
-            "sales",
-            "Monthly Sales Revenue",
-            "$",
-            {
+            .id = 0,
+            .name = "sales",
+            .title = "Monthly Sales Revenue",
+            .unit = "$",
+            .points = {
                 {"Jan", 12000.0f},
                 {"Feb", 15000.0f},
                 {"Mar", 14000.0f},
@@ -417,16 +417,18 @@ private:
                 {"Nov", 35000.0f},
                 {"Dec", 42000.0f}
             },
-            true, // bar chart
-            0     // accent color
+            .is_bar_chart = true,
+            .color_index = 0,
+            .created_at = "",
+            .updated_at = ""
         });
 
         save_series({
-            0,
-            "temps",
-            "Weekly Temperature Forecast",
-            "C",
-            {
+            .id = 0,
+            .name = "temps",
+            .title = "Weekly Temperature Forecast",
+            .unit = "C",
+            .points = {
                 {"Mon", 18.5f},
                 {"Tue", 19.0f},
                 {"Wed", 21.0f},
@@ -435,16 +437,18 @@ private:
                 {"Sat", 25.5f},
                 {"Sun", 24.0f}
             },
-            false, // line chart
-            8      // orange
+            .is_bar_chart = false,
+            .color_index = 8,
+            .created_at = "",
+            .updated_at = ""
         });
 
         save_series({
-            0,
-            "cpu",
-            "System CPU Load",
-            "%",
-            {
+            .id = 0,
+            .name = "cpu",
+            .title = "System CPU Load",
+            .unit = "%",
+            .points = {
                 {"10s ago", 12.0f},
                 {"9s ago", 18.5f},
                 {"8s ago", 25.0f},
@@ -457,8 +461,10 @@ private:
                 {"1s ago", 10.0f},
                 {"now", 5.0f}
             },
-            false, // line chart
-            6      // purple
+            .is_bar_chart = false,
+            .color_index = 6,
+            .created_at = "",
+            .updated_at = ""
         });
     }
 

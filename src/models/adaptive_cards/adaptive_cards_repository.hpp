@@ -28,8 +28,8 @@ struct adaptive_card_record {
     std::string title;        // Display title
     std::string card_json;     // Raw Adaptive Card JSON template
     std::string context_json;  // Context JSON for template binding
-    std::string created_at;
-    std::string updated_at;
+    std::string created_at{};
+    std::string updated_at{};
 
     struct glaze {
         using T = adaptive_card_record;
@@ -323,10 +323,10 @@ private:
 
     void seed_defaults() {
         save_card({
-            0,
-            "welcome-card",
-            "Welcome to Rouen Adaptive Cards",
-            R"JSON({
+            .id = 0,
+            .name = "welcome-card",
+            .title = "Welcome to Rouen Adaptive Cards",
+            .card_json = R"JSON({
   "type": "AdaptiveCard",
   "body": [
     {
@@ -357,19 +357,21 @@ private:
     }
   ]
 })JSON",
-            R"JSON({
+            .context_json = R"JSON({
   "appName": "Rouen",
   "version": "1.0.0",
   "status": "Active & Persisted",
   "username": "ignacionr"
-})JSON"
+})JSON",
+            .created_at = "",
+            .updated_at = ""
         });
 
         save_card({
-            0,
-            "flight-itinerary",
-            "Flight Itinerary & Boarding Pass",
-            R"JSON({
+            .id = 0,
+            .name = "flight-itinerary",
+            .title = "Flight Itinerary & Boarding Pass",
+            .card_json = R"JSON({
   "type": "AdaptiveCard",
   "body": [
     {
@@ -403,7 +405,7 @@ private:
     }
   ]
 })JSON",
-            R"JSON({
+            .context_json = R"JSON({
   "flightNum": "RN-402",
   "origin": "SCL",
   "destination": "EZE",
@@ -411,7 +413,9 @@ private:
   "gate": "B12",
   "seat": "4A",
   "classType": "Business"
-})JSON"
+})JSON",
+            .created_at = "",
+            .updated_at = ""
         });
     }
 

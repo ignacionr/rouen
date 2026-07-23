@@ -470,17 +470,19 @@ private:
     void create_new_series() {
         static int new_counter = 1;
         series_data new_s{
-            0,
-            std::format("new_series_{}", new_counter),
-            std::format("New Series {}", new_counter),
-            "",
-            {
+            .id = 0,
+            .name = std::format("new_series_{}", new_counter),
+            .title = std::format("New Series {}", new_counter),
+            .unit = "",
+            .points = {
                 {"Point 1", 10.0f},
                 {"Point 2", 25.0f},
                 {"Point 3", 18.0f}
             },
-            true,
-            0
+            .is_bar_chart = true,
+            .color_index = 0,
+            .created_at = "",
+            .updated_at = ""
         };
         new_counter++;
         repository_.save_series(new_s);

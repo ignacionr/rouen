@@ -8,6 +8,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(
     -Wall                # Enable all common warnings
     -Wextra              # Enable extra warnings
+    -Wshadow             # Warn about shadowed declarations
+    -Wunused             # Enable unused warnings category
+    -Wunused-result      # Warn about unused return values
+    -Wmissing-field-initializers # Warn about missing field initializers
   )
 
   # Add more strict warnings only for our own code
@@ -76,7 +80,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wredundant-move     # Unnecessary move operations
       -Wundef              # Undefined macro use in #if
       -Wdeprecated         # Deprecated feature usage
-      -Wno-missing-field-initializers # Allow designated initializers (C++23 feature)
+      -Wmissing-field-initializers   # Warn about missing field initializers
       
       # Additional strict warnings available in Clang
       -Wdangling-else            # Ambiguous dangling else
@@ -149,8 +153,10 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wall 
     -Wextra 
     -Wpedantic 
+    -Wshadow
     -Wunused
     -Wunused-result      # Warn about unused return values
+    -Wmissing-field-initializers
     -Wnull-dereference 
     -Wformat=2 
     -Wimplicit-fallthrough
@@ -172,7 +178,10 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       -Wconversion
       -Wsign-conversion
       -Wshadow
+      -Wunused
+      -Wunused-result
       -Wunreachable-code
+      -Wmissing-field-initializers
     )
   endfunction()
 
