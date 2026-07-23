@@ -41,6 +41,7 @@
 #include "../media/radiocut.hpp"
 #include "../media/youtube_search.hpp"
 #include "../media/camera.hpp"
+#include "../media/media_companion.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
@@ -168,6 +169,14 @@ namespace rouen::cards {
 
                 instance.emplace("youtube", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<youtube_search>(uri);
+                });
+
+                instance.emplace("media-companion", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<media_companion>();
+                });
+
+                instance.emplace("media_companion", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<media_companion>();
                 });
                 
                 instance.emplace("envvars", [](std::string_view, SDL_Renderer*) {

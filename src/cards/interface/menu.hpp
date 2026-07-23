@@ -316,6 +316,7 @@ namespace rouen::cards {
                     {"Adaptive Cards", []() { "create_card"_sfn("adaptive-card"); }}
                 }},
                 { "Media", {
+                    {"Media Companion", []() { "create_card"_sfn("media-companion"); }},
                     {"Live Camera", []() { "create_card"_sfn("camera"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},
                     {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
