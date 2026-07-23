@@ -107,7 +107,7 @@ public:
         }
         
         if (ImGui::Begin("Editor", nullptr, 
-            ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoSavedSettings)) {
+            ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_MenuBar|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoNavInputs)) {
             // Add a menu bar with standard options
             renderMenuBar();
             

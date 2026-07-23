@@ -7,7 +7,7 @@
 #include "TextEditor.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "../helpers/imgui_include.hpp"
+#include "../../src/helpers/imgui_include.hpp"
 
 // TODO
 // - multiline comments vs single-line: latter is blocking start of a ML
@@ -1125,7 +1125,7 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(mPalette[(int)PaletteIndex::Background]));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0.0f, 0.0f));
 	if (!mIgnoreImGuiChild)
-		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove);
+		ImGui::BeginChild(aTitle, aSize, aBorder, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysHorizontalScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNavInputs);
 
 	if (mHandleKeyboardInputs)
 	{
@@ -1143,7 +1143,10 @@ void TextEditor::Render(const char* aTitle, const ImVec2& aSize, bool aBorder)
 		ImGui::PopAllowKeyboardFocus();
 
 	if (!mIgnoreImGuiChild)
+	{
+		mLastScrollY = ImGui::GetScrollY();
 		ImGui::EndChild();
+	}
 
 	ImGui::PopStyleVar();
 	ImGui::PopStyleColor();
@@ -2423,29 +2426,49 @@ void TextEditor::EnsureCursorVisible()
 		return;
 	}
 
+	if (mCharAdvance.y <= 0.0f || mCharAdvance.x <= 0.0f)
+	{
+		const float fontSize = ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), FLT_MAX, -1.0f, "#", nullptr, nullptr).x;
+		mCharAdvance = ImVec2(fontSize, ImGui::GetTextLineHeightWithSpacing() * mLineSpacing);
+	}
+
 	float scrollX = ImGui::GetScrollX();
 	float scrollY = ImGui::GetScrollY();
 
-	auto height = ImGui::GetWindowHeight();
-	auto width = ImGui::GetWindowWidth();
+	float usableHeight = ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y * 2.0f - ImGui::GetStyle().ScrollbarSize;
+	float usableWidth = ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x * 2.0f - ImGui::GetStyle().ScrollbarSize;
 
-	auto top = 1 + (int)ceil(scrollY / mCharAdvance.y);
-	auto bottom = (int)ceil((scrollY + height) / mCharAdvance.y);
-
-	auto left = (int)ceil(scrollX / mCharAdvance.x);
-	auto right = (int)ceil((scrollX + width) / mCharAdvance.x);
+	if (usableHeight <= mCharAdvance.y)
+		return;
 
 	auto pos = GetActualCursorCoordinates();
-	auto len = TextDistanceToLineStart(pos);
 
-	if (pos.mLine < top)
-		ImGui::SetScrollY(std::max(0.0f, (pos.mLine - 1) * mCharAdvance.y));
-	if (pos.mLine > bottom - 4)
-		ImGui::SetScrollY(std::max(0.0f, (pos.mLine + 4) * mCharAdvance.y - height));
-	if (len + mTextStart < left + 4)
-		ImGui::SetScrollX(std::max(0.0f, len + mTextStart - 4));
-	if (len + mTextStart > right - 4)
-		ImGui::SetScrollX(std::max(0.0f, len + mTextStart + 4 - width));
+	int topVisibleLine = (int)floor(scrollY / mCharAdvance.y);
+	int bottomVisibleLine = (int)floor((scrollY + usableHeight) / mCharAdvance.y) - 1;
+
+	if (pos.mLine < topVisibleLine)
+	{
+		ImGui::SetScrollY(std::max(0.0f, pos.mLine * mCharAdvance.y));
+	}
+	else if (pos.mLine > bottomVisibleLine)
+	{
+		ImGui::SetScrollY(std::max(0.0f, (pos.mLine + 1) * mCharAdvance.y - usableHeight));
+	}
+
+	if (usableWidth > mCharAdvance.x)
+	{
+		auto len = TextDistanceToLineStart(pos);
+		float cursorLeft = len + mTextStart;
+		float cursorRight = cursorLeft + mCharAdvance.x;
+
+		float scrollLeft = scrollX + mTextStart;
+		float scrollRight = scrollX + usableWidth;
+
+		if (cursorLeft < scrollLeft)
+			ImGui::SetScrollX(std::max(0.0f, cursorLeft - mTextStart));
+		else if (cursorRight > scrollRight)
+			ImGui::SetScrollX(std::max(0.0f, cursorRight - usableWidth));
+	}
 }
 
 int TextEditor::GetPageSize() const

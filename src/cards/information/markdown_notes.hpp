@@ -176,7 +176,7 @@ private:
         const float editor_width = available.x * 0.58f;
         const float preview_width = available.x - editor_width - 8.0f;
 
-        ImGui::BeginChild("MarkdownEditorPane", ImVec2(editor_width, 0.0f), true);
+        ImGui::BeginChild("MarkdownEditorPane", ImVec2(editor_width, 0.0f), true, ImGuiWindowFlags_NoNavInputs);
         editor_.Render("##markdown_editor", ImGui::GetContentRegionAvail(), true);
         ImGui::EndChild();
 

@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <map>
 #include <regex>
-#include "../helpers/imgui_include.hpp"
+#include "../../src/helpers/imgui_include.hpp"
 
 class TextEditor
 {
@@ -218,6 +218,8 @@ public:
 	Coordinates GetCursorPosition() const { return GetActualCursorCoordinates(); }
 	void SetCursorPosition(const Coordinates& aPosition);
 
+	float GetLastScrollY() const { return mLastScrollY; }
+
 	inline void SetHandleMouseInputs    (bool aValue){ mHandleMouseInputs    = aValue;}
 	inline bool IsHandleMouseInputsEnabled() const { return mHandleKeyboardInputs; }
 
@@ -360,6 +362,7 @@ private:
 	bool mWithinRender;
 	bool mScrollToCursor;
 	bool mScrollToTop;
+	float mLastScrollY = 0.0f;
 	bool mTextChanged;
 	bool mColorizerEnabled;
 	float mTextStart;                   // position (in pixels) where a code line starts relative to the left of the TextEditor.
