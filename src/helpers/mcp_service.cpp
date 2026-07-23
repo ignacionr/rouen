@@ -16,6 +16,9 @@
 #include "fetch.hpp"
 #include "../registrar.hpp"
 #include "../models/notes/notes_repository.hpp"
+#include "../models/series/series_repository.hpp"
+#include "../models/adaptive_cards/adaptive_cards_repository.hpp"
+#include "persona_manager.hpp"
 
 namespace rouen::helpers {
 
@@ -184,6 +187,46 @@ struct mcp_create_time_series_params {
             "is_bar_chart", &T::is_bar_chart,
             "color_index", &T::color_index,
             "points", &T::points
+        );
+    };
+};
+
+struct mcp_create_adaptive_card_params {
+    std::string title;
+    std::string card_json;
+    std::string context_json;
+    std::string name;
+
+    struct glaze {
+        using T = mcp_create_adaptive_card_params;
+        static constexpr auto value = glz::object(
+            "title", &T::title,
+            "card_json", &T::card_json,
+            "context_json", &T::context_json,
+            "name", &T::name
+        );
+    };
+};
+
+struct mcp_get_adaptive_card_params {
+    std::string name;
+
+    struct glaze {
+        using T = mcp_get_adaptive_card_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name
+        );
+    };
+};
+
+struct mcp_enable_persona_params {
+    std::string name;
+    int index{-1};
+    struct glaze {
+        using T = mcp_enable_persona_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "index", &T::index
         );
     };
 };
@@ -376,18 +419,24 @@ mcp_service::mcp_service() {
             }
             
             try {
-                // Re-serialize the request back to a JSON string
-                std::string json_locator;
-                auto write_res = glz::write_json(request, json_locator);
-                if (write_res) {
-                    return R"({"status":"error","message":"Failed to serialize data"})";
+                models::series::series_record series_rec{};
+                series_rec.title = request.title;
+                series_rec.name = models::series::series_repository::slugify(request.title);
+                series_rec.unit = request.unit;
+                series_rec.is_bar_chart = request.is_bar_chart;
+                series_rec.color_index = request.color_index;
+                for (const auto& pt : request.points) {
+                    series_rec.points.push_back({pt.label, pt.value});
                 }
-                
+
+                models::series::series_repository repo;
+                repo.save_series(series_rec);
+
                 auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                std::string card_uri = std::format("number-series:{}", json_locator);
+                std::string card_uri = std::format("number-series:{}", series_rec.name);
                 (*create_card_fn)(card_uri);
                 
-                return R"({"status":"success","message":"Number series card created successfully"})";
+                return R"({"status":"success","message":"Number series card created and persisted successfully"})";
             } catch (const std::exception& e) {
                 return std::format(R"({{"status":"error","message":"create_card service is not available: {}"}})", e.what());
             }
@@ -396,6 +445,111 @@ mcp_service::mcp_service() {
     );
     
     register_function("deck", create_time_series_def);
+
+    // Register global create_adaptive_card function
+    function_definition create_adaptive_card_def(
+        "create_adaptive_card",
+        "Create, persist, and present an Adaptive Card in Rouen. Accepts card title, JSON template structure, optional context data, and optional name/slug.",
+        R"mcp({"type":"object","properties":{"title":{"type":"string","description":"Title of the Adaptive Card"},"card_json":{"type":"string","description":"Adaptive Card JSON template structure"},"context_json":{"type":"string","description":"Optional context JSON data object for template variable binding (e.g. '{\"name\":\"Rouen\"}')"},"name":{"type":"string","description":"Optional unique slug or identifier for the card"}},"required":["title","card_json"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            
+            mcp_create_adaptive_card_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.title.empty() || request.card_json.empty()) {
+                return R"({"status":"error","message":"Invalid params. Required fields: 'title', 'card_json'."})";
+            }
+            
+            try {
+                models::adaptive_cards::adaptive_card_record card_rec{};
+                card_rec.title = request.title;
+                card_rec.card_json = request.card_json;
+                card_rec.context_json = request.context_json.empty() ? "{}" : request.context_json;
+                if (!request.name.empty()) {
+                    card_rec.name = models::adaptive_cards::adaptive_cards_repository::slugify(request.name);
+                } else {
+                    card_rec.name = models::adaptive_cards::adaptive_cards_repository::slugify(request.title);
+                }
+
+                models::adaptive_cards::adaptive_cards_repository repo;
+                repo.save_card(card_rec);
+
+                auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                std::string card_uri = std::format("adaptive-card:{}", card_rec.name);
+                (*create_card_fn)(card_uri);
+                
+                return std::format(R"({{"status":"success","message":"Adaptive Card created, saved, and presented successfully","name":"{}","uri":"{}"}})", card_rec.name, card_uri);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"Failed to create Adaptive Card: {}"}})", e.what());
+            }
+        },
+        "adaptive_card"
+    );
+    
+    register_function("adaptive_card", create_adaptive_card_def);
+    register_function("deck", create_adaptive_card_def);
+
+    // Register list_adaptive_cards function
+    function_definition list_adaptive_cards_def(
+        "list_adaptive_cards",
+        "List all persisted Adaptive Cards in Rouen.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                models::adaptive_cards::adaptive_cards_repository repo;
+                auto cards = repo.list_cards();
+                std::string json_res;
+                auto ec = glz::write_json(cards, json_res);
+                if (!ec) {
+                    return json_res;
+                }
+                return R"({"status":"error","message":"Failed to serialize adaptive cards list"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "adaptive_card"
+    );
+
+    register_function("adaptive_card", list_adaptive_cards_def);
+
+    // Register get_adaptive_card function
+    function_definition get_adaptive_card_def(
+        "get_adaptive_card",
+        "Get definition and data of a persisted Adaptive Card by name.",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Unique slug or name of the Adaptive Card"}},"required":["name"]})mcp",
+        [](const std::string& params) -> std::string {
+            if (params.empty()) {
+                return R"({"status":"error","message":"Missing params"})";
+            }
+            mcp_get_adaptive_card_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result || request.name.empty()) {
+                return R"({"status":"error","message":"Invalid params. Required field: 'name'."})";
+            }
+
+            try {
+                models::adaptive_cards::adaptive_cards_repository repo;
+                auto card_opt = repo.get_card_by_name(request.name);
+                if (!card_opt.has_value()) {
+                    return R"({"status":"error","message":"Adaptive card not found"})";
+                }
+                std::string json_res;
+                auto ec = glz::write_json(card_opt.value(), json_res);
+                if (!ec) {
+                    return json_res;
+                }
+                return R"({"status":"error","message":"Failed to serialize card"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "adaptive_card"
+    );
+
+    register_function("adaptive_card", get_adaptive_card_def);
 
     // Register global create_alarm function
     function_definition create_alarm_def(
@@ -991,6 +1145,109 @@ mcp_service::mcp_service() {
         "notes"
     );
     register_function("notes", notes_delete_def);
+
+    // Register Persona MCP functions
+    function_definition list_personas_def(
+        "list_personas",
+        "List all available AI personas in Rouen, including their descriptions, system prompts, allowed MCP tools, and current active selection status.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& pm = PersonaManager::instance();
+                const auto& personas = pm.get_personas();
+                size_t active_idx = pm.get_active_persona_index();
+
+                std::string full_buffer;
+                (void)glz::write_json(personas, full_buffer);
+
+                return std::format(
+                    R"({{"status":"success","active_index":{},"active_persona_name":"{}","personas":{}}})",
+                    active_idx,
+                    active_idx < personas.size() ? personas[active_idx].name : "",
+                    full_buffer
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", list_personas_def);
+    register_function("persona", list_personas_def);
+
+    function_definition enable_persona_def(
+        "enable_persona",
+        "Enable or switch the active AI persona in Rouen by name or 0-based index (e.g. 'Data Cruncher', 'Terminal Hack', 'Rouen Assistant').",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Name of the persona to enable (e.g. 'Data Cruncher', 'Terminal Hack', 'Rouen Assistant')"},"index":{"type":"integer","description":"0-based index of the persona in the persona list"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_enable_persona_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+
+                auto& pm = PersonaManager::instance();
+                const auto& personas = pm.get_personas();
+
+                int target_idx = -1;
+                if (!req.name.empty()) {
+                    std::string target_name = ::helpers::StringHelper::to_lower(req.name);
+                    for (size_t i = 0; i < personas.size(); ++i) {
+                        if (::helpers::StringHelper::to_lower(personas[i].name) == target_name) {
+                            target_idx = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                }
+                if (target_idx < 0 && req.index >= 0 && req.index < static_cast<int>(personas.size())) {
+                    target_idx = req.index;
+                }
+
+                if (target_idx < 0) {
+                    return R"({"status":"error","message":"Persona not found by given name or index"})";
+                }
+
+                pm.select_persona(static_cast<size_t>(target_idx));
+                const auto& active = pm.get_active_persona();
+
+                return std::format(
+                    R"({{"status":"success","message":"Persona '{}' enabled successfully","active_index":{},"active_persona_name":"{}"}})",
+                    active.name, target_idx, active.name
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", enable_persona_def);
+    register_function("persona", enable_persona_def);
+
+    function_definition get_active_persona_def(
+        "get_active_persona",
+        "Get information about the currently active AI persona in Rouen.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& pm = PersonaManager::instance();
+                const auto& active = pm.get_active_persona();
+                size_t active_idx = pm.get_active_persona_index();
+
+                std::string persona_json;
+                (void)glz::write_json(active, persona_json);
+
+                return std::format(
+                    R"({{"status":"success","active_index":{},"persona":{}}})",
+                    active_idx, persona_json
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", get_active_persona_def);
+    register_function("persona", get_active_persona_def);
 }
 
 void mcp_service::register_function(const std::string& card_type, const function_definition& func) {

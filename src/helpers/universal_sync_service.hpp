@@ -13,6 +13,8 @@
 #include "../models/travel/sqliterepo.hpp"
 #include "../models/rss/sqliterepo.hpp"
 #include "../models/notes/notes_repository.hpp"
+#include "../models/series/series_repository.hpp"
+#include "../models/adaptive_cards/adaptive_cards_repository.hpp"
 #include "persona_manager.hpp"
 
 // Logging macros for UniversalSyncService
@@ -97,6 +99,18 @@ namespace rouen::helpers {
                 media::rss::sqliterepo rss_repo(rouen::platform::get_user_data_path("rss.db").string());
                 rss_repo.import_from_directory(cache_dir / "rss");
 
+                // 3.5. Import Number Series
+                UNIV_SYNC_INFO("Sync In: Importing Number Series...");
+                status_message_ = "Sync In: Importing Number Series...";
+                models::series::series_repository series_repo;
+                series_repo.import_from_directory(cache_dir / "series");
+
+                // 3.6. Import Adaptive Cards
+                UNIV_SYNC_INFO("Sync In: Importing Adaptive Cards...");
+                status_message_ = "Sync In: Importing Adaptive Cards...";
+                models::adaptive_cards::adaptive_cards_repository adaptive_cards_repo;
+                adaptive_cards_repo.import_from_directory(cache_dir / "adaptive_cards");
+
                 // 4. Copy Objectives and Ledgers
                 UNIV_SYNC_INFO("Sync In: Copying Objectives JSON...");
                 status_message_ = "Sync In: Copying Objectives...";
@@ -167,6 +181,8 @@ namespace rouen::helpers {
                 std::filesystem::create_directories(cache_dir / "notes");
                 std::filesystem::create_directories(cache_dir / "travel");
                 std::filesystem::create_directories(cache_dir / "rss");
+                std::filesystem::create_directories(cache_dir / "series");
+                std::filesystem::create_directories(cache_dir / "adaptive_cards");
                 std::filesystem::create_directories(cache_dir / "objectives");
                 std::filesystem::create_directories(cache_dir / "config");
 
@@ -187,6 +203,18 @@ namespace rouen::helpers {
                 status_message_ = "Sync Out: Exporting RSS Subscriptions...";
                 media::rss::sqliterepo rss_repo(rouen::platform::get_user_data_path("rss.db").string());
                 rss_repo.export_to_directory(cache_dir / "rss");
+
+                // 3.5. Export Number Series
+                UNIV_SYNC_INFO("Sync Out: Exporting Number Series...");
+                status_message_ = "Sync Out: Exporting Number Series...";
+                models::series::series_repository series_repo;
+                series_repo.export_to_directory(cache_dir / "series");
+
+                // 3.6. Export Adaptive Cards
+                UNIV_SYNC_INFO("Sync Out: Exporting Adaptive Cards...");
+                status_message_ = "Sync Out: Exporting Adaptive Cards...";
+                models::adaptive_cards::adaptive_cards_repository adaptive_cards_repo;
+                adaptive_cards_repo.export_to_directory(cache_dir / "adaptive_cards");
 
                 // 4. Copy Objectives and Ledgers
                 UNIV_SYNC_INFO("Sync Out: Copying Objectives JSON...");
@@ -255,6 +283,8 @@ namespace rouen::helpers {
                     std::filesystem::create_directories(cache_dir / "notes");
                     std::filesystem::create_directories(cache_dir / "travel");
                     std::filesystem::create_directories(cache_dir / "rss");
+                    std::filesystem::create_directories(cache_dir / "series");
+                    std::filesystem::create_directories(cache_dir / "adaptive_cards");
                     std::filesystem::create_directories(cache_dir / "objectives");
                     std::filesystem::create_directories(cache_dir / "config");
 
@@ -269,6 +299,14 @@ namespace rouen::helpers {
                     // 3. Export RSS subscriptions
                     media::rss::sqliterepo rss_repo(rouen::platform::get_user_data_path("rss.db").string());
                     rss_repo.export_to_directory(cache_dir / "rss");
+
+                    // 3.5. Export Time Series
+                    models::series::series_repository series_repo;
+                    series_repo.export_to_directory(cache_dir / "series");
+
+                    // 3.6. Export Adaptive Cards
+                    models::adaptive_cards::adaptive_cards_repository adaptive_cards_repo;
+                    adaptive_cards_repo.export_to_directory(cache_dir / "adaptive_cards");
 
                     // 4. Copy Objectives
                     copy_file_if_exists(rouen::platform::get_user_data_path("objectives") / "objectives.json",

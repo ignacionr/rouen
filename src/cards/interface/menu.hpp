@@ -312,7 +312,8 @@ namespace rouen::cards {
                     {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},
                     {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
                     {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
-                    {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }}
+                    {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }},
+                    {"Adaptive Cards", []() { "create_card"_sfn("adaptive-card"); }}
                 }},
                 { "Media", {
                     {"Live Camera", []() { "create_card"_sfn("camera"); }},

@@ -47,10 +47,11 @@ namespace weather {
         double temp_max;
         double pressure;
         int humidity;
-    // New optional fields sometimes provided by the API
-    std::optional<double> sea_level;   // sea_level pressure (hPa)
-    std::optional<double> grnd_level;  // ground level pressure (hPa)
-    std::optional<double> temp_kf;     // forecast temperature adjustment
+        // New optional fields provided by OpenWeather API
+        std::optional<double> sea_level;   // sea_level pressure (hPa)
+        std::optional<double> grnd_level;  // ground level pressure (hPa)
+        std::optional<double> temp_kf;     // forecast temperature adjustment
+        std::optional<double> dew_point;   // dew point temperature (deg C)
     };
 
     struct Wind {
@@ -467,10 +468,11 @@ struct glz::meta<rouen::hosts::weather::Main> {
         "temp_min", &T::temp_min,
         "temp_max", &T::temp_max,
         "pressure", &T::pressure,
-    "humidity", &T::humidity,
-    "sea_level", &T::sea_level,
-    "grnd_level", &T::grnd_level,
-    "temp_kf", &T::temp_kf
+        "humidity", &T::humidity,
+        "sea_level", &T::sea_level,
+        "grnd_level", &T::grnd_level,
+        "temp_kf", &T::temp_kf,
+        "dew_point", &T::dew_point
     );
     static constexpr auto options = glz::opts{
         .error_on_unknown_keys = false

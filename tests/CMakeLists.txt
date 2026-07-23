@@ -19,6 +19,7 @@ find_package(CURL REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL3 REQUIRED sdl3)
+pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
@@ -28,6 +29,7 @@ find_package(imgui CONFIG REQUIRED)
 include_directories(..)
 include_directories(../external)
 include_directories(${SDL3_INCLUDE_DIRS})
+include_directories(${SDL3_IMAGE_INCLUDE_DIRS})
 
 if(NOT COMMAND target_add_strict_warnings)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)
@@ -134,6 +136,12 @@ add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
 add_gtest_executable(test_weather_glaze test_weather_glaze.cpp)
 add_gtest_executable(test_adaptive_cards test_adaptive_cards.cpp)
+target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+add_gtest_executable(test_adaptive_cards_repository test_adaptive_cards_repository.cpp)
+target_link_libraries(test_adaptive_cards_repository PRIVATE SQLite::SQLite3)
+add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)
+target_link_libraries(test_adaptive_card_image PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES})
+target_compile_options(test_adaptive_card_image PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 add_gtest_executable(test_markdown_renderer test_markdown_renderer.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
@@ -222,8 +230,14 @@ add_executable(test_notes_repository_legacy
 target_link_libraries(test_notes_repository_legacy PRIVATE SQLite::SQLite3)
 add_test(NAME NotesRepositoryLegacyTest COMMAND test_notes_repository_legacy)
 
+add_executable(test_series_repository
+    test_series_repository.cpp
+)
+target_link_libraries(test_series_repository PRIVATE SQLite::SQLite3)
+add_test(NAME SeriesRepositoryTest COMMAND test_series_repository)
+
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_rss_watermark PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -231,6 +245,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     target_add_strict_warnings(test_bybit_currency_fix)
     target_add_strict_warnings(test_example_math)
     target_add_strict_warnings(test_notes_repository_legacy)
+    target_add_strict_warnings(test_series_repository)
 endif()
 
 # Create a comprehensive test runner that builds and runs all tests
@@ -256,7 +271,8 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_series_repository
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -286,7 +302,8 @@ add_custom_target(run_legacy_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_bybit_currency_fix
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
-    DEPENDS test_bybit_currency_fix test_example_math test_notes_repository_legacy
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_series_repository
+    DEPENDS test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository
     COMMENT "Running legacy console tests"
 )
 

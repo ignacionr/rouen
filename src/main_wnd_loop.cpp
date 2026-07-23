@@ -48,6 +48,94 @@ void main_wnd::run() {
 
         while (!m_done) {
             try {
+                auto fs_item = media_player::get_active_fullscreen_item();
+                if (fs_item && fs_item->checkMediaStatus() && fs_item->has_video) {
+                    m_requested_fps = 60;
+                    m_immediate = true;
+
+                    if (!process_events()) {
+                        break;
+                    }
+
+                    if (!media_player::has_active_fullscreen_item()) {
+                        continue;
+                    }
+
+                    ImGui_ImplSDLGPU3_NewFrame();
+                    ImGui_ImplSDL3_NewFrame();
+                    ImGui::NewFrame();
+
+                    m_card_close_handled_this_frame = false;
+
+                    ImGuiViewport* vp = ImGui::GetMainViewport();
+                    ImGui::SetNextWindowPos(vp->Pos);
+                    ImGui::SetNextWindowSize(vp->Size);
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 1));
+
+                    ImGuiWindowFlags fs_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+                                                ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+                    if (ImGui::Begin("##FullscreenVideoOverlay", nullptr, fs_flags)) {
+                        ImTextureID tex = fs_item->get_texture_id(m_device);
+                        if (tex) {
+                            float win_w = vp->Size.x;
+                            float win_h = vp->Size.y;
+                            float aspect = fs_item->video_aspect_ratio.load();
+                            if (aspect <= 0.0f) aspect = 16.0f / 9.0f;
+
+                            float draw_w, draw_h;
+                            if (win_w / win_h > aspect) {
+                                draw_h = win_h;
+                                draw_w = draw_h * aspect;
+                            } else {
+                                draw_w = win_w;
+                                draw_h = draw_w / aspect;
+                            }
+                            float draw_x = (win_w - draw_w) * 0.5f;
+                            float draw_y = (win_h - draw_h) * 0.5f;
+
+                            ImGui::SetCursorPos(ImVec2(draw_x, draw_y));
+                            ImGui::Image(tex, ImVec2(draw_w, draw_h));
+
+                            if ((ImGui::IsItemHovered() || ImGui::IsWindowHovered()) && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                                media_player::clear_active_fullscreen_item();
+                            }
+                        }
+                    }
+                    ImGui::End();
+                    ImGui::PopStyleColor();
+                    ImGui::PopStyleVar(2);
+
+                    ImGui::Render();
+
+                    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
+                    if (cmdbuf) {
+                        Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
+                        SDL_GPUColorTargetInfo color_target = {};
+                        SDL_AcquireGPUSwapchainTexture(cmdbuf, m_window, &color_target.texture, nullptr, nullptr);
+                        if (color_target.texture) {
+                            color_target.clear_color = SDL_FColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+                            color_target.load_op = SDL_GPU_LOADOP_CLEAR;
+                            color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+                            SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
+                            if (render_pass) {
+                                ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
+                                SDL_EndGPURenderPass(render_pass);
+                            }
+                        }
+                        SDL_SubmitGPUCommandBuffer(cmdbuf);
+                    }
+
+                    process_deferred_operations();
+                    continue;
+                } else if (fs_item) {
+                    media_player::clear_active_fullscreen_item();
+                }
+
                 auto video_feed = rouen::hosts::VideoFeedHost::get_host();
                 bool is_casting = (video_feed && video_feed->is_running());
                 if (is_casting) {
@@ -74,6 +162,10 @@ void main_wnd::run() {
                     DB_ERROR_FMT("Error during deck rendering: {}", e.what());
                 } catch (...) {
                     DB_ERROR("Unknown error during deck rendering");
+                }
+
+                if (media_player::is_any_playing_non_cast()) {
+                    m_requested_fps = std::max(m_requested_fps, 60);
                 }
 
                 if (is_casting) {
@@ -235,10 +327,14 @@ bool main_wnd::process_events() {
                         // Font atlas is managed automatically in SDL3 GPU backend
                     }
                 }
-                // run shortcut key handlers
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
+                    if (event.key.key == SDLK_ESCAPE) {
+                        if (media_player::has_active_fullscreen_item()) {
+                            media_player::clear_active_fullscreen_item();
+                        }
+                    }
                     // F11 toggles fullscreen
-                    if (event.key.key == SDLK_F11) {
+                    else if (event.key.key == SDLK_F11) {
                         Uint64 flags = SDL_GetWindowFlags(m_window);
                         if (flags & SDL_WINDOW_FULLSCREEN) {
                             SDL_SetWindowFullscreen(m_window, false);

@@ -140,7 +140,7 @@ TEST(AdaptiveCardsRound2, RejectsUnsupportedElementTypes) {
   "type": "AdaptiveCard",
   "body": [
     {
-      "type": "Image",
+      "type": "Widget.Unknown",
       "id": "unsupported",
       "text": "ignored"
     }
@@ -318,7 +318,7 @@ TEST(AdaptiveCardsRound4, RejectsUnsupportedActionType) {
     { "type": "TextBlock", "text": "Hi" }
   ],
   "actions": [
-    { "type": "Action.Execute", "title": "Unsupported" }
+    { "type": "Action.Unknown", "title": "Unsupported" }
   ]
 }
 )JSON";
@@ -620,4 +620,271 @@ TEST(AdaptiveCardsRound5, FullRound5CardParsesAndBinds) {
         EXPECT_EQ(link_it->text, "release notes");
         EXPECT_EQ(link_it->url, "https://github.com/ignacionr/rouen/releases");
     }
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesInputChoiceSet) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Input.ChoiceSet",
+      "id": "colorChoice",
+      "style": "compact",
+      "isMultiSelect": false,
+      "value": "red",
+      "choices": [
+        { "title": "Red", "value": "red" },
+        { "title": "Green", "value": "green" },
+        { "title": "Blue", "value": "blue" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Input.ChoiceSet");
+    EXPECT_EQ(parsed.body[0].id, "colorChoice");
+    EXPECT_EQ(parsed.body[0].style, "compact");
+    EXPECT_FALSE(parsed.body[0].isMultiSelect);
+    EXPECT_EQ(parsed.body[0].choices.size(), 3U);
+    if (parsed.body[0].choices.size() >= 3U) {
+        EXPECT_EQ(parsed.body[0].choices[0].title, "Red");
+        EXPECT_EQ(parsed.body[0].choices[0].value, "red");
+    }
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesInputNumberDateAndTime) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "Input.Number", "id": "quantity", "min": 1, "max": 10, "value": "5" },
+    { "type": "Input.Date", "id": "startDate", "value": "2026-07-22" },
+    { "type": "Input.Time", "id": "meetingTime", "value": "14:30" }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 3U);
+    EXPECT_EQ(parsed.body[0].type, "Input.Number");
+    EXPECT_EQ(parsed.body[0].min, 1.0);
+    EXPECT_EQ(parsed.body[0].max, 10.0);
+    EXPECT_EQ(parsed.body[1].type, "Input.Date");
+    EXPECT_EQ(parsed.body[1].value, "2026-07-22");
+    EXPECT_EQ(parsed.body[2].type, "Input.Time");
+    EXPECT_EQ(parsed.body[2].value, "14:30");
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesMediaElement) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Media",
+      "poster": "https://example.com/poster.jpg",
+      "altText": "Sample Video",
+      "sources": [
+        { "mimeType": "video/mp4", "url": "https://example.com/video.mp4" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Media");
+    EXPECT_EQ(parsed.body[0].poster, "https://example.com/poster.jpg");
+    EXPECT_EQ(parsed.body[0].altText, "Sample Video");
+    ASSERT_EQ(parsed.body[0].sources.size(), 1U);
+    EXPECT_EQ(parsed.body[0].sources[0].mimeType, "video/mp4");
+    EXPECT_EQ(parsed.body[0].sources[0].url, "https://example.com/video.mp4");
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesImageSet) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "ImageSet",
+      "imageSize": "medium",
+      "images": [
+        { "type": "Image", "url": "https://example.com/img1.png" },
+        { "type": "Image", "url": "https://example.com/img2.png" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "ImageSet");
+    EXPECT_EQ(parsed.body[0].imageSize, "medium");
+    ASSERT_EQ(parsed.body[0].images.size(), 2U);
+    EXPECT_EQ(parsed.body[0].images[0].url, "https://example.com/img1.png");
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesRichTextBlockAndTextRuns) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "RichTextBlock",
+      "inlines": [
+        { "type": "TextRun", "text": "Hello ", "bold": true },
+        { "type": "TextRun", "text": "World", "italic": true, "color": "Accent" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "RichTextBlock");
+    ASSERT_EQ(parsed.body[0].inlines.size(), 2U);
+    EXPECT_EQ(parsed.body[0].inlines[0].text, "Hello ");
+    EXPECT_TRUE(parsed.body[0].inlines[0].bold);
+    EXPECT_EQ(parsed.body[0].inlines[1].text, "World");
+    EXPECT_TRUE(parsed.body[0].inlines[1].italic);
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesTableStructure) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "width": 1 },
+        { "width": 2 }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Header 1" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Header 2" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Table");
+    EXPECT_EQ(parsed.body[0].columns.size(), 2U);
+    ASSERT_EQ(parsed.body[0].rows.size(), 1U);
+    EXPECT_EQ(parsed.body[0].rows[0].cells.size(), 2U);
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesActionToggleVisibilityAndExecute) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "actions": [
+    {
+      "type": "Action.ToggleVisibility",
+      "title": "Toggle Details",
+      "targetElements": ["detailsPanel"]
+    },
+    {
+      "type": "Action.Execute",
+      "title": "Do Action",
+      "verb": "doWork"
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.actions.size(), 2U);
+    EXPECT_EQ(parsed.actions[0].type, "Action.ToggleVisibility");
+    ASSERT_EQ(parsed.actions[0].targetElements.size(), 1U);
+    EXPECT_EQ(parsed.actions[0].targetElements[0], "detailsPanel");
+    EXPECT_EQ(parsed.actions[1].type, "Action.Execute");
+    EXPECT_EQ(parsed.actions[1].verb, "doWork");
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesContainerStyleSpacingAndSeparator) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Container",
+      "style": "emphasis",
+      "spacing": "large",
+      "separator": true,
+      "selectAction": {
+        "type": "Action.OpenUrl",
+        "url": "https://example.com"
+      },
+      "items": [
+        { "type": "TextBlock", "text": "Clickable Styled Container" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Container");
+    EXPECT_EQ(parsed.body[0].style, "emphasis");
+    EXPECT_EQ(parsed.body[0].spacing, "large");
+    EXPECT_TRUE(parsed.body[0].separator);
+    EXPECT_EQ(parsed.body[0].selectAction.type, "Action.OpenUrl");
+    EXPECT_EQ(parsed.body[0].selectAction.url, "https://example.com");
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesLowercaseColorNames) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "Red", "color": "attention" },
+    { "type": "TextBlock", "text": "Yellow", "color": "warning" },
+    { "type": "TextBlock", "text": "Blue", "color": "good" },
+    { "type": "TextBlock", "text": "Header", "color": "accent" }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 4U);
+    EXPECT_EQ(parsed.body[0].color, "attention");
+    EXPECT_EQ(parsed.body[1].color, "warning");
+    EXPECT_EQ(parsed.body[2].color, "good");
+    EXPECT_EQ(parsed.body[3].color, "accent");
 }

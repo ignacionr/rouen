@@ -21,10 +21,15 @@ struct RouenGPUTexture {
     int height = 0;
 };
 
+struct TextureCleanupItem {
+    RouenGPUTexture* tex_ptr{nullptr};
+    SDL_GPUTexture* raw_texture{nullptr};
+};
+
 namespace TextureHelper {
     inline SDL_GPUDevice* g_gpu_device = nullptr;
     inline SDL_GPUSampler* g_default_sampler = nullptr;
-    inline std::vector<RouenGPUTexture*> g_textures_to_cleanup;
+    inline std::vector<TextureCleanupItem> g_textures_to_cleanup;
     inline std::mutex g_cleanup_mutex;
 
     inline SDL_GPUSampler* getDefaultSampler(SDL_GPUDevice* device) {
@@ -45,8 +50,11 @@ namespace TextureHelper {
 
     inline void cleanupFrame() {
         std::lock_guard<std::mutex> lock(g_cleanup_mutex);
-        for (auto* tex : g_textures_to_cleanup) {
-            delete tex;
+        for (const auto& item : g_textures_to_cleanup) {
+            if (g_gpu_device && item.raw_texture) {
+                SDL_ReleaseGPUTexture(g_gpu_device, item.raw_texture);
+            }
+            delete item.tex_ptr;
         }
         g_textures_to_cleanup.clear();
     }
@@ -246,18 +254,12 @@ namespace TextureHelper {
         return rouen_tex;
     }
 
-    // Function to safely destroy a GPU texture (defers RouenGPUTexture structure cleanup)
+    // Function to safely destroy a GPU texture (defers RouenGPUTexture structure and raw GPU texture cleanup)
     inline void destroyTexture(RouenGPUTexture*& texture) {
         if (texture) {
-            if (g_gpu_device) {
-                if (texture->binding.texture) {
-                    SDL_ReleaseGPUTexture(g_gpu_device, texture->binding.texture);
-                    texture->binding.texture = nullptr;
-                }
-            }
             {
                 std::lock_guard<std::mutex> lock(g_cleanup_mutex);
-                g_textures_to_cleanup.push_back(texture);
+                g_textures_to_cleanup.push_back({texture, texture->binding.texture});
             }
             texture = nullptr;
             TEXTURE_DEBUG("GPU Texture scheduled for deferred destruction");

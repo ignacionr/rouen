@@ -147,7 +147,7 @@ namespace rouen::helpers {
             Persona default_p;
             default_p.name = "Rouen Assistant";
             default_p.description = "The default helpful assistant for Rouen with standard system prompt instructions.";
-            default_p.allowed_mcps = {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes"};
+            default_p.allowed_mcps = {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes"};
             default_p.system_prompt = 
                 "You are a helpful AI assistant integrated into Rouen, a card-based desktop application. "
                 "Rouen organizes its UI as cards - each feature (weather, git, terminal, etc.) is a visual card that can be opened, closed, and interacted with.\n"
@@ -173,6 +173,45 @@ namespace rouen::helpers {
             developer_p.temperature = 0.2f;
             
             personas_.push_back(developer_p);
+
+            // Add Data Cruncher persona
+            Persona data_p;
+            data_p.name = "Data Cruncher";
+            data_p.description = "A quantitative analyst and chart wizard role focused on crunching numerical datasets, analyzing statistics, and rendering great-looking Number Series cards.";
+            data_p.allowed_mcps = {"deck", "terminal", "editor", "notes"};
+            data_p.system_prompt = 
+                "You are Data Cruncher, a quantitative analyst and chart wizard persona in Rouen.\n\n"
+                "Objective:\n"
+                "- Crunch numbers, calculate statistical summaries (totals, averages, minimums, maximums, ratios, trends), and visualize datasets cleanly.\n"
+                "- When presented with numerical data, category comparisons, or tabular information, transform them into visual cards using the `create_number_series_card` tool.\n"
+                "- Format numbers clearly with units, labels, and curated colors.\n"
+                "- Speak concisely, focusing on quantitative clarity and actionable insights.";
+            data_p.llm_config_name = "Default";
+            data_p.enable_search = false;
+            data_p.allowed_personas = {};
+            data_p.temperature = 0.2f;
+
+            personas_.push_back(data_p);
+
+            // Add Adaptive Card Architect persona
+            Persona adaptive_p;
+            adaptive_p.name = "Adaptive Card Architect";
+            adaptive_p.description = "A specialized UI/UX designer persona expert in designing, crafting, and presenting rich, interactive Adaptive Cards in Rouen.";
+            adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
+            adaptive_p.system_prompt = 
+                "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.\n\n"
+                "Objective:\n"
+                "- Design, create, and present rich, interactive Adaptive Cards for any request (e.g. flight tickets, invoices, user profiles, status dashboards, weather summaries, forms, or polls).\n"
+                "- Use the `create_adaptive_card` tool to save and present Adaptive Cards in Rouen.\n"
+                "- Craft elegant JSON card templates supporting TextBlock (bold, italic, colored), Container, ColumnSet, FactSet, Image, Input fields, Action.Submit, and Action.OpenUrl.\n"
+                "- When given data or context, provide appropriate `${var}` placeholders in `card_json` and matching key-value pairs in `context_json`.\n"
+                "- Always make card structures clear, modern, and visually delightful.";
+            adaptive_p.llm_config_name = "Default";
+            adaptive_p.enable_search = false;
+            adaptive_p.allowed_personas = {};
+            adaptive_p.temperature = 0.3f;
+
+            personas_.push_back(adaptive_p);
         }
 
         void load_personas() {
@@ -204,6 +243,36 @@ namespace rouen::helpers {
                     active_persona_index_ = model.active_index;
                 } else {
                     active_persona_index_ = 0;
+                }
+
+                // Ensure "Adaptive Card Architect" persona exists
+                bool has_adaptive_persona = false;
+                for (const auto& p : personas_) {
+                    if (p.name == "Adaptive Card Architect") {
+                        has_adaptive_persona = true;
+                        break;
+                    }
+                }
+                if (!has_adaptive_persona) {
+                    Persona adaptive_p;
+                    adaptive_p.name = "Adaptive Card Architect";
+                    adaptive_p.description = "A specialized UI/UX designer persona expert in designing, crafting, and presenting rich, interactive Adaptive Cards in Rouen.";
+                    adaptive_p.allowed_mcps = {"deck", "adaptive_card", "terminal", "editor", "notes"};
+                    adaptive_p.system_prompt = 
+                        "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.\n\n"
+                        "Objective:\n"
+                        "- Design, create, and present rich, interactive Adaptive Cards for any request (e.g. flight tickets, invoices, user profiles, status dashboards, weather summaries, forms, or polls).\n"
+                        "- Use the `create_adaptive_card` tool to save and present Adaptive Cards in Rouen.\n"
+                        "- Craft elegant JSON card templates supporting TextBlock (bold, italic, colored), Container, ColumnSet, FactSet, Image, Input fields, Action.Submit, and Action.OpenUrl.\n"
+                        "- When given data or context, provide appropriate `${var}` placeholders in `card_json` and matching key-value pairs in `context_json`.\n"
+                        "- Always make card structures clear, modern, and visually delightful.";
+                    adaptive_p.llm_config_name = "Default";
+                    adaptive_p.enable_search = false;
+                    adaptive_p.allowed_personas = {};
+                    adaptive_p.temperature = 0.3f;
+
+                    personas_.push_back(adaptive_p);
+                    save_personas();
                 }
             } 
             catch (const std::exception& e) {

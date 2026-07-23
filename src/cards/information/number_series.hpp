@@ -11,98 +11,113 @@
 
 #include "../../fonts.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../models/series/series_repository.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
 
 class number_series_card : public card {
 public:
-    struct data_point {
-        std::string label;
-        float value;
+    using data_point = models::series::data_point;
+    using series_data = models::series::series_record;
 
-        struct glaze {
-            using T = data_point;
-            static constexpr auto value = glz::object(
-                "label", &T::label,
-                "value", &T::value
-            );
-        };
-    };
+    explicit number_series_card(std::string_view locator = {})
+        : repository_{} {
+        refresh_datasets();
 
-    struct series_data {
-        std::string name;
-        std::string title;
-        std::string unit;
-        std::vector<data_point> points;
-        bool is_bar_chart = true;
-        int color_index = 0;
-
-        struct glaze {
-            using T = series_data;
-            static constexpr auto value = glz::object(
-                "name", &T::name,
-                "title", &T::title,
-                "unit", &T::unit,
-                "points", &T::points,
-                "is_bar_chart", &T::is_bar_chart,
-                "color_index", &T::color_index
-            );
-        };
-    };
-
-    explicit number_series_card(std::string_view locator = {}) {
-        // Initialize default datasets
-        datasets_ = {
-            get_default_sales(),
-            get_default_temps(),
-            get_default_cpu()
-        };
-
-        if (locator.starts_with('{')) {
-            series_data custom_data{};
-            auto result = glz::read_json(custom_data, locator);
-            if (!result) {
-                if (custom_data.name.empty()) {
-                    custom_data.name = "custom";
-                }
-                datasets_.push_back(custom_data);
-                selected_dataset_index_ = datasets_.size() - 1;
-            } else {
-                selected_dataset_index_ = 0;
-            }
-        } else if (locator == "sales") {
+        if (!locator.empty()) {
+            handle_uri(locator.starts_with("number-series:") ? locator : std::format("number-series:{}", locator));
+        } else if (!datasets_.empty()) {
             selected_dataset_index_ = 0;
-        } else if (locator == "temps") {
-            selected_dataset_index_ = 1;
-        } else if (locator == "cpu") {
-            selected_dataset_index_ = 2;
-        } else {
-            selected_dataset_index_ = 0;
+            current_data_ = datasets_[0];
         }
 
-        current_data_ = datasets_[selected_dataset_index_];
-        
         colors[0] = {0.20f, 0.43f, 0.70f, 1.0f};
         colors[1] = {0.14f, 0.32f, 0.55f, 0.75f};
-        name(current_data_.title);
-        width = 500.0f;
+        name(current_data_.title.empty() ? "Number Series" : current_data_.title);
+        width = 540.0f;
     }
 
     std::string get_uri() const override {
+        if (current_data_.name.empty()) {
+            return "number-series";
+        }
         return std::format("number-series:{}", current_data_.name);
+    }
+
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "number-series" || uri.starts_with("number-series:");
+    }
+
+    void handle_uri(std::string_view uri) override {
+        std::string target;
+        if (uri.starts_with("number-series:")) {
+            target = models::series::series_repository::trim(uri.substr(14));
+        } else {
+            target = models::series::series_repository::trim(uri);
+        }
+
+        if (target.empty()) {
+            return;
+        }
+
+        if (target.starts_with('{')) {
+            series_data custom_data{};
+            auto result = glz::read_json(custom_data, target);
+            if (!result) {
+                if (custom_data.name.empty()) {
+                    custom_data.name = models::series::series_repository::slugify(custom_data.title);
+                }
+                repository_.save_series(custom_data);
+                refresh_datasets();
+                select_series_by_name(custom_data.name);
+            }
+            return;
+        }
+
+        auto existing = repository_.get_series_by_name(target);
+        if (existing.has_value()) {
+            refresh_datasets();
+            select_series_by_name(existing->name);
+        }
     }
 
     bool render() override {
         return render_window([this]() {
-            // Dropdown to select preset dataset
-            ImGui::SetNextItemWidth(200.0f);
-            if (ImGui::BeginCombo("Preset Dataset", current_data_.title.c_str())) {
+            // Action toolbar: New, Save, Delete buttons
+            if (ImGui::Button("New Series")) {
+                create_new_series();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Save")) {
+                save_current_series();
+            }
+            ImGui::SameLine();
+
+            bool can_delete = !datasets_.empty();
+            if (!can_delete) ImGui::BeginDisabled();
+            if (ImGui::Button("Delete")) {
+                if (!current_data_.name.empty()) {
+                    repository_.delete_series(current_data_.name);
+                    refresh_datasets();
+                    if (!datasets_.empty()) {
+                        selected_dataset_index_ = 0;
+                        current_data_ = datasets_[0];
+                        name(current_data_.title);
+                    }
+                }
+            }
+            if (!can_delete) ImGui::EndDisabled();
+
+            ImGui::Spacing();
+
+            // Dropdown to select preset/saved dataset
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::BeginCombo("Series", current_data_.title.c_str())) {
                 for (size_t i = 0; i < datasets_.size(); ++i) {
                     bool is_selected = (i == selected_dataset_index_);
                     if (ImGui::Selectable(datasets_[i].title.c_str(), is_selected)) {
-                        // Save current data modifications
-                        datasets_[selected_dataset_index_] = current_data_;
+                        save_current_series();
                         selected_dataset_index_ = i;
                         current_data_ = datasets_[i];
                         name(current_data_.title);
@@ -117,18 +132,20 @@ public:
             ImGui::SameLine();
             
             // Toggle chart type
-            ImGui::Checkbox("Bar Chart", &current_data_.is_bar_chart);
+            if (ImGui::Checkbox("Bar Chart", &current_data_.is_bar_chart)) {
+                save_current_series();
+            }
 
             ImGui::SameLine();
 
             // Color Selector from Theme Colors
-            ImGui::SetNextItemWidth(110.0f);
+            ImGui::SetNextItemWidth(100.0f);
             static const char* color_names[] = {
                 "Accent (0)", "Secondary (1)", "Red/Error (2)", "Green/Success (3)",
                 "Warning (4)", "Info (5)", "Purple (6)", "Pink (7)", "Orange (8)", "Gray (9)"
             };
             if (ImGui::Combo("Color", &current_data_.color_index, color_names, IM_ARRAYSIZE(color_names))) {
-                // Color changed
+                save_current_series();
             }
 
             ImGui::Dummy(ImVec2(0.0f, 5.0f));
@@ -244,14 +261,17 @@ public:
 
             // Edit Data Section
             if (ImGui::CollapsingHeader("Data Points Editor")) {
+                bool changed = false;
+
                 // Title and Unit editor
                 char title_buf[128];
                 strncpy(title_buf, current_data_.title.c_str(), sizeof(title_buf) - 1);
                 title_buf[sizeof(title_buf) - 1] = '\0';
-                ImGui::SetNextItemWidth(250.0f);
+                ImGui::SetNextItemWidth(230.0f);
                 if (ImGui::InputText("Series Title", title_buf, sizeof(title_buf))) {
                     current_data_.title = title_buf;
                     name(current_data_.title);
+                    changed = true;
                 }
 
                 ImGui::SameLine();
@@ -259,9 +279,10 @@ public:
                 char unit_buf[32];
                 strncpy(unit_buf, current_data_.unit.c_str(), sizeof(unit_buf) - 1);
                 unit_buf[sizeof(unit_buf) - 1] = '\0';
-                ImGui::SetNextItemWidth(80.0f);
+                ImGui::SetNextItemWidth(70.0f);
                 if (ImGui::InputText("Unit", unit_buf, sizeof(unit_buf))) {
                     current_data_.unit = unit_buf;
+                    changed = true;
                 }
 
                 ImGui::Spacing();
@@ -279,6 +300,7 @@ public:
                     ImGui::SetNextItemWidth(100.0f);
                     if (ImGui::InputText("##LabelInput", name_buf, sizeof(name_buf))) {
                         current_data_.points[i].label = name_buf;
+                        changed = true;
                     }
 
                     ImGui::SameLine();
@@ -292,6 +314,7 @@ public:
 
                     if (ImGui::SliderFloat("##ValueInput", &val, range_min, range_max, "%.1f")) {
                         current_data_.points[i].value = val;
+                        changed = true;
                     }
 
                     if (ImGui::IsItemHovered()) {
@@ -308,6 +331,7 @@ public:
 
                 if (delete_idx >= 0 && delete_idx < static_cast<int>(current_data_.points.size())) {
                     current_data_.points.erase(current_data_.points.begin() + delete_idx);
+                    changed = true;
                 }
 
                 ImGui::EndChild();
@@ -324,6 +348,11 @@ public:
                 ImGui::SameLine();
                 if (ImGui::Button("Add Point")) {
                     current_data_.points.push_back({add_label, add_val});
+                    changed = true;
+                }
+
+                if (changed) {
+                    save_current_series();
                 }
             }
         });
@@ -412,9 +441,9 @@ public:
             std::string fmt_suffix = (current_data_.unit == "$") ? "" : unit_lbl;
 
             ImGui::TextDisabled("Avg: %s%.1f%s  |  Max: %s%.1f%s  |  Min: %s%.1f%s",
-                fmt_prefix.c_str(), avg, fmt_suffix.c_str(),
-                fmt_prefix.c_str(), max_v, fmt_suffix.c_str(),
-                fmt_prefix.c_str(), min_v, fmt_suffix.c_str());
+                fmt_prefix.c_str(), static_cast<double>(avg), fmt_suffix.c_str(),
+                fmt_prefix.c_str(), static_cast<double>(max_v), fmt_suffix.c_str(),
+                fmt_prefix.c_str(), static_cast<double>(min_v), fmt_suffix.c_str());
         }
         ImGui::End();
 
@@ -423,6 +452,58 @@ public:
     }
 
 private:
+    void refresh_datasets() {
+        datasets_ = repository_.list_series();
+    }
+
+    void save_current_series() {
+        if (current_data_.title.empty()) return;
+        if (current_data_.name.empty()) {
+            current_data_.name = models::series::series_repository::slugify(current_data_.title);
+        }
+        int id = repository_.save_series(current_data_);
+        current_data_.id = id;
+        refresh_datasets();
+        select_series_by_name(current_data_.name);
+    }
+
+    void create_new_series() {
+        static int new_counter = 1;
+        series_data new_s{
+            0,
+            std::format("new_series_{}", new_counter),
+            std::format("New Series {}", new_counter),
+            "",
+            {
+                {"Point 1", 10.0f},
+                {"Point 2", 25.0f},
+                {"Point 3", 18.0f}
+            },
+            true,
+            0
+        };
+        new_counter++;
+        repository_.save_series(new_s);
+        refresh_datasets();
+        select_series_by_name(new_s.name);
+    }
+
+    void select_series_by_name(const std::string& name_or_title) {
+        for (size_t i = 0; i < datasets_.size(); ++i) {
+            if (datasets_[i].name == name_or_title || datasets_[i].title == name_or_title) {
+                selected_dataset_index_ = i;
+                current_data_ = datasets_[i];
+                name(current_data_.title);
+                return;
+            }
+        }
+        if (!datasets_.empty()) {
+            selected_dataset_index_ = 0;
+            current_data_ = datasets_[0];
+            name(current_data_.title);
+        }
+    }
+
     void draw_series_plot(ImDrawList* draw_list, ImVec2 canvas_pos, ImVec2 canvas_size, int hovered_idx, ImVec4 active_color, bool show_imgui_tooltip = true) {
         // Margins for plot
         float margin_left = 55.0f;
@@ -664,75 +745,10 @@ private:
         }
     }
 
+    models::series::series_repository repository_;
     series_data current_data_;
     std::vector<series_data> datasets_;
     size_t selected_dataset_index_ = 0;
-
-    static series_data get_default_sales() {
-        return {
-            "sales",
-            "Monthly Sales Revenue",
-            "$",
-            {
-                {"Jan", 12000.0f},
-                {"Feb", 15000.0f},
-                {"Mar", 14000.0f},
-                {"Apr", 18000.0f},
-                {"May", 22000.0f},
-                {"Jun", 25000.0f},
-                {"Jul", 23000.0f},
-                {"Aug", 21000.0f},
-                {"Sep", 26000.0f},
-                {"Oct", 30000.0f},
-                {"Nov", 35000.0f},
-                {"Dec", 42000.0f}
-            },
-            true, // Default bar chart
-            0     // Accent
-        };
-    }
-
-    static series_data get_default_temps() {
-        return {
-            "temps",
-            "Weekly Temperature Forecast",
-            "C",
-            {
-                {"Mon", 18.5f},
-                {"Tue", 19.0f},
-                {"Wed", 21.0f},
-                {"Thu", 20.5f},
-                {"Fri", 23.0f},
-                {"Sat", 25.5f},
-                {"Sun", 24.0f}
-            },
-            false, // Default line chart
-            8      // Orange
-        };
-    }
-
-    static series_data get_default_cpu() {
-        return {
-            "cpu",
-            "System CPU Load",
-            "%",
-            {
-                {"10s ago", 12.0f},
-                {"9s ago", 18.5f},
-                {"8s ago", 25.0f},
-                {"7s ago", 15.0f},
-                {"6s ago", 30.0f},
-                {"5s ago", 45.5f},
-                {"4s ago", 60.0f},
-                {"3s ago", 35.0f},
-                {"2s ago", 20.0f},
-                {"1s ago", 10.0f},
-                {"now", 5.0f}
-            },
-            false, // Default line chart
-            6      // Purple
-        };
-    }
 };
 
 } // namespace rouen::cards

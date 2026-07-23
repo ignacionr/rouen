@@ -810,21 +810,21 @@ public:
     /**
      * Add new feeds from a list of URLs
      */
-    void addFeeds(std::vector<std::string> urls) {
+    void addFeeds(std::vector<std::string> urls, bool open_added_card = false) {
         RSS_WARN_FMT("addFeeds called with {} URLs", urls.size());
         for (const auto& url : urls) {
             RSS_WARN_FMT("URL being added: {}", url);
         }
-        refreshFeeds(std::move(urls));
+        refreshFeeds(std::move(urls), open_added_card);
     }
 
     /**
      * Add a new feed by URL
      */
-    bool addFeed(const std::string& url) {
+    bool addFeed(const std::string& url, bool open_added_card = true) {
         try {
             std::vector<std::string> urls = {url};
-            refreshFeeds(std::move(urls));
+            refreshFeeds(std::move(urls), open_added_card);
             return true;
         } catch (const std::exception&) {
             return false;
@@ -1311,7 +1311,7 @@ private:
         return size * nmemb;
     }
 
-    void refreshFeeds(std::vector<std::string> urls) {
+    void refreshFeeds(std::vector<std::string> urls, bool open_added_card = false) {
         std::lock_guard<std::mutex> threads_lock(fetch_threads_mutex_);
         
         // Clean up any finished threads
@@ -1320,7 +1320,7 @@ private:
                            [](const auto& t) { return !t.joinable(); }),
             active_fetch_threads_.end());
             
-        active_fetch_threads_.emplace_back([this, url_list = std::move(urls)] (std::stop_token stoken) {
+        active_fetch_threads_.emplace_back([this, url_list = std::move(urls), open_added_card] (std::stop_token stoken) {
             auto quit_job = [stoken]() -> bool {
                 return "quitting"_fnb() || stoken.stop_requested();
             };
@@ -1368,6 +1368,10 @@ private:
                     if (feed_ptr) {
                         RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
                         ++success_count;
+                        if (open_added_card && feed_ptr->repo_id > 0) {
+                            std::string feed_uri = std::format("rss-feed:{}", feed_ptr->repo_id);
+                            "create_card"_sfn(feed_uri);
+                        }
                     } else {
                         ++error_count;
                     }

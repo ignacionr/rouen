@@ -210,7 +210,7 @@ namespace rouen::cards {
                     // Allowed MCPs selection
                     ImGui::Text("Allowed MCPs:");
                     std::vector<std::string> mcp_options = {
-                        "terminal", "editor", "deck", "wikipedia", "youtube", 
+                        "terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", 
                         "git", "calendar", "weather", "alarm", "pomodoro", "notes"
                     };
                     
@@ -1006,6 +1006,10 @@ namespace rouen::cards {
             if (mcp_service_) {
                 try {
                     auto has_mcp = [&](const std::string& cat) {
+                        if (cat == "adaptive_card" || cat == "deck") {
+                            return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
+                                   std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "adaptive_card") != target_persona->allowed_mcps.end();
+                        }
                         return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), cat) != target_persona->allowed_mcps.end();
                     };
 
@@ -1092,14 +1096,18 @@ namespace rouen::cards {
         static std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed_mcps) {
             std::string instr;
             auto has_mcp = [&](const std::string& name) {
+                if (name == "adaptive_card" || name == "deck") {
+                    return std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end() ||
+                           std::find(allowed_mcps.begin(), allowed_mcps.end(), "adaptive_card") != allowed_mcps.end();
+                }
                 return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
             };
 
             if (has_mcp("terminal")) {
                 instr += "\nTERMINAL INSTRUCTIONS:\nYou have access to tools that can run local commands (e.g. bash commands). If the user asks you to check repository status, files, find the current date/time, or execute any shell command (including curl), use the provided `run_local_command` tool to execute them instead of giving them instructions on how to run it themselves.\n";
             }
-            if (has_mcp("deck")) {
-                instr += "\nDECK INSTRUCTIONS:\nWhen users ask you to 'open', 'show', 'create', or 'display' something, use the appropriate tool (like `create_card` or `create_number_series_card`) to spawn a new card in the UI.\nCRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n1. If the user asks you to build, show, or create a time series or number series visualization card using data that can be retrieved via other tools (such as weather forecasts, git repository metrics, calendar events, or wallet balances), you MUST follow a two-step process:\n- Step 1: Call the appropriate retrieval tool first (e.g., get_weather_forecast, get_current_weather, or git/calendar tools) to obtain the real data. Do NOT generate placeholders or call create_number_series_card in this step.\n- Step 2: Once you receive the real data from the tool execution, call create_number_series_card with the retrieved data points.\n2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch the actual data.\n";
+            if (has_mcp("deck") || has_mcp("adaptive_card")) {
+                instr += "\nDECK & ADAPTIVE CARD INSTRUCTIONS:\nWhen users ask you to 'open', 'show', 'create', 'design', or 'display' something, use the appropriate tool:\n- To create and present interactive, structured Adaptive Cards (such as flight passes, invoices, user profiles, status dashboards, forms, polls, or rich UI components), call `create_adaptive_card`. Provide a descriptive `title` and a valid Adaptive Card JSON structure for `card_json` (plus optional `context_json`).\n- To visualize numerical data or category comparisons, call `create_number_series_card`.\n- To open standard built-in cards, call `create_card` (e.g. 'pomodoro', 'terminal', 'git', 'calendar').\nCRITICAL INSTRUCTIONS ON DATA RETRIEVAL AND VISUALIZATION:\n1. If the user asks you to build, show, or create a card using data that can be retrieved via other tools (such as weather forecasts, git metrics, calendar events, or notes), you MUST follow a two-step process:\n- Step 1: Call the appropriate retrieval tool first to obtain real data.\n- Step 2: Call `create_adaptive_card` or `create_number_series_card` with the retrieved data.\n2. Never use placeholder data for visualization cards if there is a retrieval tool available to fetch actual data.\n";
             }
             if (has_mcp("wikipedia")) {
                 instr += "\nWIKIPEDIA INSTRUCTIONS:\nCRITICAL INSTRUCTIONS ON WIKIPEDIA TOOL USAGE:\n1. If the user asks you to read, summarize, explain, or answer questions about a Wikipedia article or concept (for example: \"summarize 'The Garden of Forking Paths' by Borges\"), you MUST use retrieval tools: first search using wikipedia_search_concepts if needed to find the exact title, and then retrieve the full article using wikipedia_get_article_text. You must then summarize or answer directly in your chat response. DO NOT call wikipedia_create_card or create_card for this purpose!\n2. ONLY call wikipedia_create_card (or create_card) when the user explicitly requests to \"open\", \"show\", \"display\", or \"create\" a card/view on their screen (for example: \"open the wikipedia card for quantum computing\" or \"show the wikipedia card\").\n";
@@ -1119,7 +1127,7 @@ namespace rouen::cards {
         std::string get_function_category(const helpers::mcp_service::function_definition& func) const {
             if (func.name == "run_local_command") return "terminal";
             if (func.name == "edit_file") return "editor";
-            if (func.name == "create_card" || func.name == "create_number_series_card") return "deck";
+            if (func.name == "create_card" || func.name == "create_number_series_card" || func.name == "create_adaptive_card" || func.name == "list_adaptive_cards" || func.name == "get_adaptive_card") return "deck";
             if (func.name.starts_with("wikipedia_")) return "wikipedia";
             if (func.name.starts_with("youtube_")) return "youtube";
             if (func.name == "create_alarm") return "alarm";
@@ -1178,6 +1186,10 @@ namespace rouen::cards {
                 try {
                     auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
                     auto has_mcp = [&](const std::string& cat) {
+                        if (cat == "adaptive_card" || cat == "deck") {
+                            return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end() ||
+                                   std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "adaptive_card") != active_persona.allowed_mcps.end();
+                        }
                         return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), cat) != active_persona.allowed_mcps.end();
                     };
 

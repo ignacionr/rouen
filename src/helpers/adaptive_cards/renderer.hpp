@@ -9,6 +9,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../texture_utils.hpp"
+#include "../image_cache.hpp"
+#include "../texture_helper.hpp"
 #include "../imgui_include.hpp"
 #include "../markdown_renderer.hpp"
 #include "markdown.hpp"
@@ -19,6 +22,7 @@ namespace rouen::helpers::adaptive_cards {
 // Type alias so existing call sites (adaptive_card.hpp) continue to compile
 // unchanged; the canonical definition lives in helpers::markdown_render_config.
 using render_config = rouen::helpers::markdown_render_config;
+using texture_provider_t = std::function<RouenGPUTexture*(const std::string& url, int& width, int& height)>;
 
 struct renderer_interface {
     virtual ~renderer_interface() = default;
@@ -41,16 +45,17 @@ public:
     void render(const card_document& card) const override {
         input_state state{};
         const render_config default_config{};
-        render(card, state, {}, default_config);
+        render(card, state, {}, default_config, {});
     }
 
     void render(
         const card_document& card,
         input_state& state,
         const action_callbacks& callbacks,
-        const render_config& config
+        const render_config& config,
+        texture_provider_t texture_provider = {}
     ) const {
-        render_elements(card.body, "adaptive", state, callbacks, config);
+        render_elements(card.body, "adaptive", state, callbacks, config, texture_provider);
         render_actions(card.actions, state, callbacks, config);
     }
 
@@ -90,35 +95,258 @@ public:
     }
 
 private:
+    static void render_input_choice_set(const element& node, const std::string& scope, input_state& state) {
+        const std::string key = node.id.empty() ? scope : node.id;
+        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        if (inserted && it->second.empty() && !node.choices.empty()) {
+            it->second = node.choices[0].value;
+        }
+
+        const std::string label = node.title.empty() ? key : node.title;
+        ImGui::TextUnformatted(label.c_str());
+
+        if (node.isMultiSelect) {
+            for (std::size_t idx = 0; idx < node.choices.size(); ++idx) {
+                const auto& choice_item = node.choices[idx];
+                const std::string choice_key = std::format("{}_{}", key, choice_item.value);
+                auto [toggle_it, _] = state.toggle_values.try_emplace(choice_key, false);
+                ImGui::Checkbox(choice_item.title.c_str(), &toggle_it->second);
+            }
+        } else if (node.style == "expanded") {
+            for (const auto& choice_item : node.choices) {
+                bool selected = (it->second == choice_item.value);
+                if (ImGui::RadioButton(choice_item.title.c_str(), selected)) {
+                    it->second = choice_item.value;
+                }
+            }
+        } else {
+            std::string current_title = it->second;
+            for (const auto& choice_item : node.choices) {
+                if (choice_item.value == it->second) {
+                    current_title = choice_item.title;
+                    break;
+                }
+            }
+            if (ImGui::BeginCombo(std::format("##{}", key).c_str(), current_title.c_str())) {
+                for (const auto& choice_item : node.choices) {
+                    bool is_selected = (it->second == choice_item.value);
+                    if (ImGui::Selectable(choice_item.title.c_str(), is_selected)) {
+                        it->second = choice_item.value;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+    }
+
+    static void render_input_number(const element& node, const std::string& scope, input_state& state) {
+        const std::string key = node.id.empty() ? scope : node.id;
+        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        const std::string label = node.title.empty() ? key : node.title;
+        std::array<char, 256> buffer{};
+        std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
+        if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
+            it->second = buffer.data();
+        }
+    }
+
+    static void render_input_date_or_time(const element& node, const std::string& scope, input_state& state) {
+        const std::string key = node.id.empty() ? scope : node.id;
+        auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        std::string label = node.title.empty() ? key : node.title;
+        if (!node.placeholder.empty()) {
+            label = std::format("{} ({})", label, node.placeholder);
+        }
+        std::array<char, 256> buffer{};
+        std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
+        if (ImGui::InputText(label.c_str(), buffer.data(), buffer.size())) {
+            it->second = buffer.data();
+        }
+    }
+
+    static void render_media(const element& node, [[maybe_unused]] const std::string& scope, const texture_provider_t& texture_provider) {
+        float width = 320.0f;
+        float height = 180.0f;
+        align_cursor(width, node.horizontalAlignment);
+
+        std::string poster_url = node.poster;
+        if (poster_url.empty() && !node.sources.empty()) {
+            poster_url = node.sources[0].url;
+        }
+
+        int img_w = 0, img_h = 0;
+        RouenGPUTexture* tex = nullptr;
+        if (texture_provider && !poster_url.empty()) {
+            tex = texture_provider(poster_url, img_w, img_h);
+        }
+
+        ImVec2 start_pos = ImGui::GetCursorScreenPos();
+        if (tex) {
+            ImGui::Image(rouen::helpers::texture_id_cast(tex), ImVec2(width, height));
+        } else {
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                start_pos, ImVec2(start_pos.x + width, start_pos.y + height),
+                ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f
+            );
+            ImGui::GetWindowDrawList()->AddRect(
+                start_pos, ImVec2(start_pos.x + width, start_pos.y + height),
+                ImGui::GetColorU32(ImGuiCol_Border), 6.0f
+            );
+            std::string label = node.altText.empty() ? "Media Video Player" : node.altText;
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 12.0f, start_pos.y + (height * 0.5f) - 6.0f));
+            ImGui::TextDisabled("%s", label.c_str());
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 4.0f));
+        }
+    }
+
+    static void render_image_set(const element& node, const std::string& scope, const texture_provider_t& texture_provider) {
+        for (std::size_t idx = 0; idx < node.images.size(); ++idx) {
+            element img = node.images[idx];
+            if (img.size.empty() && !node.imageSize.empty()) {
+                img.size = node.imageSize;
+            }
+            render_image(img, std::format("{}-img-{}", scope, idx), texture_provider);
+            if (idx + 1 < node.images.size()) {
+                ImGui::SameLine();
+            }
+        }
+    }
+
+    static void render_rich_text_block(const element& node, [[maybe_unused]] const action_callbacks& callbacks, const render_config& config) {
+        for (std::size_t idx = 0; idx < node.inlines.size(); ++idx) {
+            const auto& run = node.inlines[idx];
+            ImVec4 color = color_for(run.color);
+            const float font_scale = font_scale_for(run.size);
+
+            if (font_scale != 1.0f) {
+                ImGui::SetWindowFontScale(font_scale);
+            }
+            if (run.bold && config.font_bold) {
+                ImGui::PushFont(config.font_bold);
+            } else if (run.italic && config.font_italic) {
+                ImGui::PushFont(config.font_italic);
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextUnformatted(run.text.c_str());
+            ImGui::PopStyleColor();
+
+            if (run.bold && config.font_bold) {
+                ImGui::PopFont();
+            } else if (run.italic && config.font_italic) {
+                ImGui::PopFont();
+            }
+            if (font_scale != 1.0f) {
+                ImGui::SetWindowFontScale(1.0f);
+            }
+
+            if (idx + 1 < node.inlines.size()) {
+                ImGui::SameLine(0.0f, 0.0f);
+            }
+        }
+    }
+
+    static void render_table(
+        const element& node,
+        const std::string& scope,
+        input_state& state,
+        const action_callbacks& callbacks,
+        const render_config& config,
+        const texture_provider_t& texture_provider
+    ) {
+        std::size_t num_cols = node.columns.size();
+        if (num_cols == 0 && !node.rows.empty()) {
+            num_cols = node.rows[0].cells.size();
+        }
+        if (num_cols == 0) return;
+
+        if (ImGui::BeginTable(scope.c_str(), static_cast<int>(num_cols), ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_BordersInnerV)) {
+            for (std::size_t r_idx = 0; r_idx < node.rows.size(); ++r_idx) {
+                ImGui::TableNextRow();
+                const auto& row = node.rows[r_idx];
+                for (std::size_t c_idx = 0; c_idx < row.cells.size() && c_idx < num_cols; ++c_idx) {
+                    ImGui::TableSetColumnIndex(static_cast<int>(c_idx));
+                    render_elements(row.cells[c_idx].items, std::format("{}-r{}-c{}", scope, r_idx, c_idx), state, callbacks, config, texture_provider);
+                }
+            }
+            ImGui::EndTable();
+        }
+    }
+
     static void render_elements(
         const std::vector<element>& elements,
         const std::string& scope,
         input_state& state,
         const action_callbacks& callbacks,
-        const render_config& config
+        const render_config& config,
+        const texture_provider_t& texture_provider = {}
     ) {
         for (std::size_t index = 0; index < elements.size(); ++index) {
             const auto& node = elements[index];
             const std::string id = std::format("{}-{}-{}", scope, node.type, index);
+
+            if (node.separator) {
+                ImGui::Separator();
+            }
+            if (node.spacing == "large" || node.spacing == "extraLarge") {
+                ImGui::Spacing();
+                ImGui::Spacing();
+            } else if (node.spacing == "medium" || node.spacing == "default") {
+                ImGui::Spacing();
+            }
+
             if (node.type == "TextBlock") {
                 render_text_block(node, callbacks, config);
+            } else if (node.type == "Image") {
+                render_image(node, id, texture_provider);
             } else if (node.type == "Container") {
-                // Render containers inline so repeated `$data` entries don't consume all remaining space.
                 ImGui::PushID(id.c_str());
-                ImGui::BeginGroup();
-                render_elements(node.items, id, state, callbacks, config);
-                ImGui::EndGroup();
+                if (node.style == "emphasis" || node.style == "accent") {
+                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetColorU32(ImGuiCol_FrameBg));
+                    ImGui::BeginChild(id.c_str(), ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
+                } else {
+                    ImGui::BeginGroup();
+                }
+
+                render_elements(node.items, id, state, callbacks, config, texture_provider);
+
+                if (node.style == "emphasis" || node.style == "accent") {
+                    ImGui::EndChild();
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::EndGroup();
+                }
+
+                if (!node.selectAction.type.empty() && ImGui::IsItemClicked()) {
+                    if (node.selectAction.type == "Action.OpenUrl" && !node.selectAction.url.empty()) {
+                        callbacks.open_url(node.selectAction.url);
+                    }
+                }
                 ImGui::PopID();
             } else if (node.type == "ColumnSet") {
-                render_column_set(node, id, state, callbacks, config);
+                render_column_set(node, id, state, callbacks, config, texture_provider);
             } else if (node.type == "Column") {
-                render_elements(node.items, id, state, callbacks, config);
+                render_elements(node.items, id, state, callbacks, config, texture_provider);
             } else if (node.type == "FactSet") {
                 render_fact_set(node, id);
             } else if (node.type == "Input.Text") {
                 render_input_text(node, id, state);
             } else if (node.type == "Input.Toggle") {
                 render_input_toggle(node, id, state);
+            } else if (node.type == "Input.ChoiceSet") {
+                render_input_choice_set(node, id, state);
+            } else if (node.type == "Input.Number") {
+                render_input_number(node, id, state);
+            } else if (node.type == "Input.Date" || node.type == "Input.Time") {
+                render_input_date_or_time(node, id, state);
+            } else if (node.type == "Media") {
+                render_media(node, id, texture_provider);
+            } else if (node.type == "ImageSet") {
+                render_image_set(node, id, texture_provider);
+            } else if (node.type == "RichTextBlock") {
+                render_rich_text_block(node, callbacks, config);
+            } else if (node.type == "Table") {
+                render_table(node, id, state, callbacks, config, texture_provider);
             }
         }
     }
@@ -128,17 +356,86 @@ private:
         const std::string& scope,
         input_state& state,
         const action_callbacks& callbacks,
-        const render_config& config
+        const render_config& config,
+        const texture_provider_t& texture_provider = {}
     ) {
         if (node.columns.empty()) {
             return;
         }
         ImGui::Columns(static_cast<int>(node.columns.size()), nullptr, false);
         for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
-            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config);
+            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config, texture_provider);
             ImGui::NextColumn();
         }
         ImGui::Columns(1);
+    }
+
+    static void align_cursor(float item_width, std::string_view alignment) {
+        if (alignment.empty() || alignment == "Left" || alignment == "left") {
+            return;
+        }
+        float avail_w = ImGui::GetContentRegionAvail().x;
+        if (item_width >= avail_w || avail_w <= 0.0f) {
+            return;
+        }
+        if (alignment == "Center" || alignment == "center") {
+            float offset = (avail_w - item_width) * 0.5f;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+        } else if (alignment == "Right" || alignment == "right") {
+            float offset = avail_w - item_width;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+        }
+    }
+
+    static void render_image(const element& node, [[maybe_unused]] const std::string& scope, const texture_provider_t& texture_provider) {
+        std::string img_url = node.url;
+        if (img_url.empty()) img_url = node.data;
+        if (img_url.empty()) return;
+
+        int img_w = 0, img_h = 0;
+        RouenGPUTexture* tex = nullptr;
+        if (texture_provider) {
+            tex = texture_provider(img_url, img_w, img_h);
+        }
+
+        float display_w = 160.0f;
+        if (node.size == "Small" || node.size == "small") display_w = 80.0f;
+        else if (node.size == "Medium" || node.size == "medium") display_w = 160.0f;
+        else if (node.size == "Large" || node.size == "large") display_w = 280.0f;
+        else if (node.size == "Auto" || node.size == "Stretch" || node.size == "auto" || node.size == "stretch") {
+            float avail_w = ImGui::GetContentRegionAvail().x;
+            display_w = (img_w > 0) ? std::min(avail_w, static_cast<float>(img_w)) : std::min(avail_w, 400.0f);
+        }
+
+        float display_h = display_w;
+        if (img_w > 0 && img_h > 0) {
+            display_h = display_w * (static_cast<float>(img_h) / static_cast<float>(img_w));
+        }
+
+        align_cursor(display_w, node.horizontalAlignment);
+
+        if (tex) {
+            ImGui::Image(rouen::helpers::texture_id_cast(tex), ImVec2(display_w, display_h));
+        } else {
+            ImVec2 start_pos = ImGui::GetCursorScreenPos();
+            float fill_h = std::clamp(display_h, 40.0f, 180.0f);
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                start_pos,
+                ImVec2(start_pos.x + display_w, start_pos.y + fill_h),
+                ImGui::GetColorU32(ImGuiCol_FrameBg),
+                6.0f
+            );
+            ImGui::GetWindowDrawList()->AddRect(
+                start_pos,
+                ImVec2(start_pos.x + display_w, start_pos.y + fill_h),
+                ImGui::GetColorU32(ImGuiCol_Border),
+                6.0f
+            );
+            std::string label = node.altText.empty() ? "Loading image..." : node.altText;
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 8.0f, start_pos.y + (fill_h * 0.5f) - 6.0f));
+            ImGui::TextDisabled("%s", label.c_str());
+            ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + fill_h + 4.0f));
+        }
     }
 
     static void render_fact_set(const element& node, const std::string& scope) {
@@ -190,16 +487,37 @@ private:
     }
 
     static ImVec4 color_for(std::string_view color_name) {
-        if (color_name == "Good") return {0.25f, 0.74f, 0.37f, 1.0f};
-        if (color_name == "Warning") return {0.96f, 0.70f, 0.22f, 1.0f};
-        if (color_name == "Attention") return {0.90f, 0.25f, 0.20f, 1.0f};
-        if (color_name == "Accent") return {0.23f, 0.55f, 0.95f, 1.0f};
+        if (color_name == "Good" || color_name == "good") return {0.25f, 0.74f, 0.37f, 1.0f};
+        if (color_name == "Warning" || color_name == "warning") return {0.96f, 0.70f, 0.22f, 1.0f};
+        if (color_name == "Attention" || color_name == "attention") return {0.90f, 0.25f, 0.20f, 1.0f};
+        if (color_name == "Accent" || color_name == "accent") return {0.23f, 0.55f, 0.95f, 1.0f};
+        if (color_name == "Dark" || color_name == "dark") return {0.20f, 0.20f, 0.20f, 1.0f};
+        if (color_name == "Light" || color_name == "light") return {0.90f, 0.90f, 0.90f, 1.0f};
         return ImGui::GetStyleColorVec4(ImGuiCol_Text);
     }
 
     static float weight_boost(std::string_view weight_name) {
-        if (weight_name == "Bolder" || weight_name == "Bold") {
+        if (weight_name == "Bolder" || weight_name == "Bold" || weight_name == "bolder" || weight_name == "bold") {
             return 1.15f;
+        }
+        return 1.0f;
+    }
+
+    static float font_scale_for(std::string_view size_name) {
+        if (size_name.empty() || size_name == "Default" || size_name == "default") {
+            return 1.0f;
+        }
+        if (size_name == "Small" || size_name == "small") {
+            return 0.82f;
+        }
+        if (size_name == "Medium" || size_name == "medium") {
+            return 1.15f;
+        }
+        if (size_name == "Large" || size_name == "large") {
+            return 1.35f;
+        }
+        if (size_name == "ExtraLarge" || size_name == "extralarge" || size_name == "extraLarge") {
+            return 1.65f;
         }
         return 1.0f;
     }
@@ -211,22 +529,23 @@ private:
         color.y = std::min(1.0f, color.y * boost);
         color.z = std::min(1.0f, color.z * boost);
 
+        const float font_scale = font_scale_for(node.size);
+        const bool apply_font_scale = (font_scale != 1.0f);
+        const bool is_bold = (node.weight == "Bolder" || node.weight == "Bold" || node.weight == "bolder" || node.weight == "bold");
+
+        if (apply_font_scale) {
+            ImGui::SetWindowFontScale(font_scale);
+        }
+        if (is_bold && config.font_bold) {
+            ImGui::PushFont(config.font_bold);
+        }
+
         const auto spans = parse_inline_markdown(node.text);
         const bool is_plain = spans.size() == 1 && spans[0].kind == span_kind::normal;
 
-        if (node.size == "Large" || node.size == "ExtraLarge") {
-            if (is_plain) {
-                // Plain large text: SeparatorText gives a nice header look.
-                ImGui::PushStyleColor(ImGuiCol_Text, color);
-                ImGui::SeparatorText(node.text.c_str());
-                ImGui::PopStyleColor();
-            } else {
-                // Markdown large text: render spans so bold/italic markers are visible,
-                // then add a separator line below for the header visual grouping.
-                rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
-                ImGui::Separator();
-            }
-            return;
+        if (!node.horizontalAlignment.empty() && node.horizontalAlignment != "Left" && node.horizontalAlignment != "left") {
+            float text_width = ImGui::CalcTextSize(node.text.c_str()).x * font_scale;
+            align_cursor(text_width, node.horizontalAlignment);
         }
 
         if (is_plain) {
@@ -236,6 +555,13 @@ private:
         } else {
             // Delegate to the shared inline markdown renderer.
             rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
+        }
+
+        if (is_bold && config.font_bold) {
+            ImGui::PopFont();
+        }
+        if (apply_font_scale) {
+            ImGui::SetWindowFontScale(1.0f);
         }
     }
 
@@ -282,6 +608,12 @@ private:
                     callbacks.open_url(card_action.url);
                 } else if (card_action.type == "Action.Submit") {
                     callbacks.on_submit(build_submit_payload(state));
+                } else if (card_action.type == "Action.Execute") {
+                    callbacks.on_submit(std::format("{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb, card_action.data.empty() ? "{}" : card_action.data));
+                } else if (card_action.type == "Action.ToggleVisibility") {
+                    for (const auto& target_id : card_action.targetElements) {
+                        state.toggle_values[target_id] = !state.toggle_values[target_id];
+                    }
                 } else if (card_action.type == "Action.ShowCard") {
                     state.show_card_expanded[idx] = !state.show_card_expanded[idx];
                 }
