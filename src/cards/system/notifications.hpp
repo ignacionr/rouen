@@ -201,37 +201,40 @@ private:
             ticker_text += active_notifications[i].preview;
         }
 
+        float disp_w = (ImGui::GetIO().DisplaySize.x > 0.0f) ? ImGui::GetIO().DisplaySize.x : 1920.0f;
+        float disp_h = (ImGui::GetIO().DisplaySize.y > 0.0f) ? ImGui::GetIO().DisplaySize.y : 1080.0f;
+
         std::uint64_t newest_id = active_notifications.empty() ? 0 : active_notifications.back().id;
         if (newest_id > last_seen_notification_id) {
             last_seen_notification_id = newest_id;
-            scroll_x = 1920.0f; // Scroll in new notification from the right side
+            scroll_x = disp_w; // Scroll in new notification from the right side
         }
 
-        float target_y = active_notifications.empty() ? 1080.0f : 980.0f; // 980.0f target y (leaves 100px height band)
+        float target_y = active_notifications.empty() ? disp_h : (disp_h - 100.0f); // 100px height band
         
         // Slide up/down animation
         anim_y += (target_y - anim_y) * 8.0f * dt;
         if (active_notifications.empty()) {
-            if (anim_y > 1079.5f) {
-                anim_y = 1080.0f;
-                scroll_x = 1920.0f;
+            if (anim_y > disp_h - 0.5f) {
+                anim_y = disp_h;
+                scroll_x = disp_w;
             }
         } else {
-            if (anim_y < 980.5f) anim_y = 980.0f;
+            if (anim_y < disp_h - 99.5f) anim_y = disp_h - 100.0f;
         }
 
-        if (anim_y < 1080.0f) {
+        if (anim_y < disp_h) {
             // Calculate text scrolling offset
             float text_width = ImGui::CalcTextSize(ticker_text.c_str()).x;
             scroll_x -= 150.0f * dt; // 150 pixels per second speed
             
             // Allow buffer space before resetting scroll
             if (scroll_x < -(text_width + 100.0f)) {
-                scroll_x = 1920.0f;
+                scroll_x = disp_w;
             }
 
             ImGui::SetNextWindowPos(ImVec2(0.0f, anim_y));
-            ImGui::SetNextWindowSize(ImVec2(1920.0f, 100.0f));
+            ImGui::SetNextWindowSize(ImVec2(disp_w, 100.0f));
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -244,7 +247,7 @@ private:
                 ImDrawList* draw_list = ImGui::GetWindowDrawList();
                 draw_list->AddLine(
                     ImVec2(0.0f, anim_y),
-                    ImVec2(1920.0f, anim_y),
+                    ImVec2(disp_w, anim_y),
                     ImGui::ColorConvertFloat4ToU32(colors[0]),
                     4.0f
                 );
@@ -263,7 +266,7 @@ private:
                 );
 
                 // News ticker clip region
-                ImGui::PushClipRect(ImVec2(270.0f, anim_y), ImVec2(1900.0f, anim_y + 100.0f), true);
+                ImGui::PushClipRect(ImVec2(270.0f, anim_y), ImVec2(disp_w - 20.0f, anim_y + 100.0f), true);
 
                 ImGui::SetCursorPos(ImVec2(scroll_x, 32.0f));
                 ImGui::SetWindowFontScale(2.2f); // Double-size text ticker font scale

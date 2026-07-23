@@ -108,6 +108,15 @@ void main_wnd::run() {
                     ImGui::PopStyleColor();
                     ImGui::PopStyleVar(2);
 
+                    // Render video-output UI overlay of all cards in the deck (e.g. notifications card)
+                    try {
+                        for (const auto& card_ptr : main_deck->get_cards()) {
+                            if (card_ptr) {
+                                card_ptr->render_video_ui();
+                            }
+                        }
+                    } catch (...) {}
+
                     ImGui::Render();
 
                     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);

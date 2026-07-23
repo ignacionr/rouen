@@ -406,7 +406,7 @@ public:
         SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);
     }
 
-    bool render(rouen::ui::ui_context& /*ui*/) override {
+    void process_camera_frame() {
         if (selected_index_ > 0 && camera_device_) {
             SDL_GPUDevice* device = nullptr;
             try {
@@ -417,6 +417,10 @@ public:
 
             update_camera_frame(device);
         }
+    }
+
+    bool render(rouen::ui::ui_context& /*ui*/) override {
+        process_camera_frame();
 
         return render_window([this]() {
             // Camera Device Combo Row
@@ -542,6 +546,8 @@ public:
     }
 
     void render_video_ui() override {
+        process_camera_frame();
+
         if (selected_index_ <= 0 || !has_frame_ || !rouen_gpu_texture_) return;
 
         ImVec2 display_size = ImGui::GetIO().DisplaySize;
