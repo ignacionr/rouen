@@ -244,7 +244,8 @@ private:
         } catch (...) {}
 
         DB_INFO("dictation_host: whisper-server not active, starting background server...");
-        std::system("./scripts/whisper_server.sh start >/dev/null 2>&1 &");
+        [[maybe_unused]] int res = std::system("./scripts/whisper_server.sh start >/dev/null 2>&1 &");
+        (void)res;
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 

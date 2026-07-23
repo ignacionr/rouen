@@ -507,13 +507,13 @@ private:
         static const CardinalText cardinals[] = {
             {"12", -90.0f}, {"3", 0.0f}, {"6", 90.0f}, {"9", 180.0f}
         };
-        for (const auto& card : cardinals) {
-            float rad = card.angle_deg * (static_cast<float>(M_PI) / 180.0f);
+        for (const auto& cardinal : cardinals) {
+            float rad = cardinal.angle_deg * (static_cast<float>(M_PI) / 180.0f);
             float dist = radius * 0.58f;
             ImVec2 txt_pos = ImVec2(center.x + std::cos(rad) * dist, center.y + std::sin(rad) * dist);
-            ImVec2 txt_size = ImGui::CalcTextSize(card.text);
+            ImVec2 txt_size = ImGui::CalcTextSize(cardinal.text);
             draw_list->AddText(ImVec2(txt_pos.x - txt_size.x * 0.5f, txt_pos.y - txt_size.y * 0.5f), 
-                               ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.92f, 0.98f, 0.90f)), card.text);
+                               ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.92f, 0.98f, 0.90f)), cardinal.text);
         }
 
         // 4. Hands

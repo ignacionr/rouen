@@ -190,12 +190,22 @@ elseif(MSVC)
   add_compile_options(
     /W4          # High warning level
     /permissive- # Disable non-conforming code
+    /w14456      # Warn on declaration hiding local variable (-Wshadow equivalent)
+    /w14457      # Warn on declaration hiding function parameter (-Wshadow equivalent)
+    /w14458      # Warn on declaration hiding class member (-Wshadow equivalent)
+    /w14459      # Warn on declaration hiding global declaration (-Wshadow equivalent)
+    /w14834      # Warn on discarding return value of function with [[nodiscard]] attribute (-Wunused-result equivalent)
   )
   
   # Function for adding strict warnings to MSVC targets
   function(target_add_strict_warnings target)
     target_compile_options(${target} PRIVATE
       /WX          # Treat warnings as errors
+      /w14456      # Warn on declaration hiding local variable
+      /w14457      # Warn on declaration hiding function parameter
+      /w14458      # Warn on declaration hiding class member
+      /w14459      # Warn on declaration hiding global declaration
+      /w14834      # Warn on discarding return value of function with [[nodiscard]] attribute
       /wd4267      # Suppress 'conversion from size_t to int' warnings
       /wd4244      # Suppress 'conversion from double to float' warnings
       /wd4101      # Suppress 'unreferenced local variable' warnings
