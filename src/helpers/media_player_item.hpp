@@ -135,6 +135,7 @@ struct media_player_item {
     bool resumeMedia();
     bool togglePause();
     bool setPaused(bool paused);
+    void update_watermark();
     void update_vu_levels();
     float get_vu_level_l();
     float get_vu_level_r();
@@ -276,22 +277,23 @@ inline bool media_player_item::checkMediaStatus() {
     return is_playing;
 }
 
-inline void media_player_item::stopMedia() {
+inline void media_player_item::update_watermark() {
     double cur_pos = position.load();
-    if (feed_id != -1 && !item_link.empty() && cur_pos > 0.0) {
+    if (cur_pos > 0.0) {
         double cur_dur = duration.load();
         if (cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
             watermark = 0.0;
-            if (save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, 0.0);
-            }
         } else {
             watermark = cur_pos;
-            if (save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, cur_pos);
-            }
+        }
+        if (feed_id != -1 && !item_link.empty() && save_watermark_cb) {
+            save_watermark_cb(feed_id, item_link, item_title, watermark.value_or(0.0));
         }
     }
+}
+
+inline void media_player_item::stopMedia() {
+    update_watermark();
 
     ffmpeg_running.store(false);
     vu_level_l.store(0.0f);
@@ -453,6 +455,9 @@ inline bool media_player_item::setVolume(int new_volume) {
 
 inline bool media_player_item::setPaused(bool paused) {
     is_paused = paused;
+    if (paused) {
+        update_watermark();
+    }
     if (local_audio_stream) {
         if (paused) {
             SDL_PauseAudioStreamDevice(local_audio_stream);

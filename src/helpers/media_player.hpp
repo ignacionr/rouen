@@ -556,6 +556,7 @@ struct media_player {
             if (!has_active_media) {
                 item.watermark = initial_watermark;
             } else {
+                item.update_watermark();
                 initial_watermark = item.watermark;
             }
             if (has_active_media) {
