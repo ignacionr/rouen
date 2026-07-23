@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -17,7 +18,10 @@
 
 #include "../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"
+#include "../../helpers/fetch.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/llm_config.hpp"
+#include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/process_helper.hpp"
@@ -33,20 +37,32 @@ namespace rouen::cards {
             std::string text;
         };
 
+        struct minute_commentary {
+            int minute_index{0};
+            std::string timestamp_label;
+            std::string transcript_context;
+            std::string commentary_md;
+            bool is_generating{false};
+            bool generated{false};
+        };
+
         struct shared_state {
             std::mutex mutex;
             bool is_fetching{false};
+            bool is_generating_all{false};
+            int generating_minute_index{-1};
             std::string status_message;
             std::string plain_transcript;
             std::string timestamped_transcript;
             std::vector<transcript_entry> entries;
+            std::vector<minute_commentary> minute_commentaries;
             std::string video_title;
             std::string video_url;
+            double video_duration{0.0};
             bool card_alive{true};
         };
 
         media_companion() {
-            // Curated harmonious palette: Slate Blue & Cyan accent
             colors[0] = ImVec4{0.18f, 0.55f, 0.72f, 1.0f}; // Primary accent (Cyan/Slate)
             colors[1] = ImVec4{0.12f, 0.38f, 0.50f, 0.7f}; // Darker secondary
             colors[2] = ImVec4{0.20f, 0.22f, 0.26f, 0.9f}; // Surface card bg
@@ -54,7 +70,7 @@ namespace rouen::cards {
 
             name("Media Companion");
             requested_fps = 10;
-            width = 480.0f;
+            width = 520.0f;
 
             state = std::make_shared<shared_state>();
         }
@@ -140,7 +156,6 @@ namespace rouen::cards {
                     continue;
                 }
 
-                // Strip VTT / HTML formatting tags
                 std::string clean_line;
                 bool in_tag = false;
                 for (char c : line) {
@@ -178,6 +193,7 @@ namespace rouen::cards {
             std::shared_ptr<media_player_item> active_item = nullptr;
             std::string detected_url;
             std::string detected_title;
+            double detected_duration = 0.0;
 
             {
                 std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
@@ -188,10 +204,12 @@ namespace rouen::cards {
                         if (u.find("youtube.com") != std::string::npos || u.find("youtu.be") != std::string::npos) {
                             detected_url = u;
                             detected_title = item_ptr->item_title;
+                            detected_duration = item_ptr->duration.load();
                             active_item = item_ptr;
                         } else if (l.find("youtube.com") != std::string::npos || l.find("youtu.be") != std::string::npos) {
                             detected_url = l;
                             detected_title = item_ptr->item_title;
+                            detected_duration = item_ptr->duration.load();
                             active_item = item_ptr;
                         }
                         if (active_item && !item_ptr->is_paused.load()) {
@@ -214,9 +232,11 @@ namespace rouen::cards {
                 state->status_message = "Requesting transcript via yt-dlp...";
                 state->video_url = detected_url;
                 state->video_title = detected_title.empty() ? detected_url : detected_title;
+                state->video_duration = detected_duration;
                 state->plain_transcript.clear();
                 state->timestamped_transcript.clear();
                 state->entries.clear();
+                state->minute_commentaries.clear();
             }
 
             auto st = state;
@@ -265,6 +285,7 @@ namespace rouen::cards {
                     if (!st->entries.empty()) {
                         std::stringstream ss_plain;
                         std::stringstream ss_ts;
+                        double max_ts = st->video_duration;
                         for (size_t i = 0; i < st->entries.size(); ++i) {
                             if (i > 0) {
                                 ss_plain << "\n";
@@ -272,10 +293,37 @@ namespace rouen::cards {
                             }
                             ss_plain << st->entries[i].text;
                             ss_ts << "[" << st->entries[i].timestamp_str << "] " << st->entries[i].text;
+                            max_ts = std::max(max_ts, st->entries[i].timestamp_seconds);
                         }
                         st->plain_transcript = ss_plain.str();
                         st->timestamped_transcript = ss_ts.str();
-                        st->status_message = "Transcript obtained successfully.";
+
+                        // Build minute commentaries segmentation
+                        int total_minutes = std::max(1, static_cast<int>(std::floor(max_ts / 60.0)) + 1);
+                        st->minute_commentaries.clear();
+                        st->minute_commentaries.reserve(static_cast<size_t>(total_minutes));
+
+                        for (int m = 0; m < total_minutes; ++m) {
+                            double window_start = std::max(0.0, m * 60.0 - 10.0);
+                            double window_end = (m + 1) * 60.0 + 10.0;
+
+                            std::stringstream ss_ctx;
+                            for (const auto& entry : st->entries) {
+                                if (entry.timestamp_seconds >= window_start && entry.timestamp_seconds <= window_end) {
+                                    ss_ctx << "[" << entry.timestamp_str << "] " << entry.text << "\n";
+                                }
+                            }
+
+                            minute_commentary mc;
+                            mc.minute_index = m;
+                            mc.timestamp_label = std::format("{:02d}:00 - {:02d}:59", m, m);
+                            mc.transcript_context = ss_ctx.str();
+                            mc.is_generating = false;
+                            mc.generated = false;
+                            st->minute_commentaries.push_back(std::move(mc));
+                        }
+
+                        st->status_message = std::format("Transcript obtained ({} minutes segmented).", total_minutes);
                     } else {
                         st->status_message = "Downloaded subtitle file was empty.";
                     }
@@ -285,30 +333,212 @@ namespace rouen::cards {
             }).detach();
         }
 
+        void generate_commentary_for_minute(int minute_idx) {
+            std::string context;
+            std::string title;
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (minute_idx < 0 || minute_idx >= static_cast<int>(state->minute_commentaries.size())) return;
+                auto& mc = state->minute_commentaries[static_cast<size_t>(minute_idx)];
+                if (mc.is_generating) return;
+                mc.is_generating = true;
+                context = mc.transcript_context;
+                title = state->video_title;
+                state->status_message = std::format("Generating AI commentary for Minute {}...", minute_idx);
+            }
+
+            auto st = state;
+            std::thread([st, minute_idx, context, title]() {
+                std::string commentary;
+                if (context.empty()) {
+                    commentary = std::format("*No transcript available for Minute {}.*", minute_idx);
+                } else if (!rouen::helpers::LLMConfig::is_configured()) {
+                    commentary = "*AI Model not configured. Please set your API key in Settings -> LLM Configuration to enable AI commentary.*";
+                } else {
+                    auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
+                    if (!llm_instance) {
+                        commentary = "*Failed to initialize LLM instance.*";
+                    } else {
+                        auto settings = rouen::helpers::LLMConfig::get_current_config();
+                        auto fetcher = std::make_shared<http::fetch>();
+
+                        llm_instance->add_instructions(
+                            "You are an insightful, engaging AI Media Companion analyzing video transcripts minute by minute. "
+                            "Provide a concise, intelligent commentary and summary in Markdown format for the specified minute of the video. "
+                            "Use bullet points, bold text, or key takeaways where appropriate. Keep it engaging, clear, and well-structured."
+                        );
+
+                        std::string prompt = std::format(
+                            "Video Title: {}\n"
+                            "Segment: Minute {} ({:02d}:00 - {:02d}:00)\n\n"
+                            "Transcript Context (Minute {} plus 10s context padding):\n{}\n\n"
+                            "Write an engaging, structured Markdown commentary analyzing this minute.",
+                            title, minute_idx, minute_idx, minute_idx + 1, minute_idx, context
+                        );
+
+                        try {
+                            auto response = llm_instance->sendMessage(
+                                prompt,
+                                [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                    return fetcher->post(url, data, header_client);
+                                },
+                                "user",
+                                settings.model_name
+                            );
+                            if (!response.choices.empty()) {
+                                commentary = response.choices[0].message.content;
+                            } else {
+                                commentary = "*No commentary text returned by AI model.*";
+                            }
+                        } catch (const std::exception& e) {
+                            commentary = std::format("*Error generating commentary: {}*", e.what());
+                        }
+                    }
+                }
+
+                std::lock_guard<std::mutex> lock(st->mutex);
+                if (!st->card_alive) return;
+
+                if (minute_idx >= 0 && minute_idx < static_cast<int>(st->minute_commentaries.size())) {
+                    auto& mc = st->minute_commentaries[static_cast<size_t>(minute_idx)];
+                    mc.commentary_md = commentary;
+                    mc.is_generating = false;
+                    mc.generated = true;
+                }
+                st->status_message = std::format("AI Commentary ready for Minute {}.", minute_idx);
+            }).detach();
+        }
+
+        void generate_all_commentaries() {
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (state->is_generating_all || state->minute_commentaries.empty()) return;
+                state->is_generating_all = true;
+                state->status_message = "Generating AI commentary for all minutes...";
+            }
+
+            auto st = state;
+            std::thread([st]() {
+                size_t total = 0;
+                {
+                    std::lock_guard<std::mutex> lock(st->mutex);
+                    total = st->minute_commentaries.size();
+                }
+
+                for (size_t i = 0; i < total; ++i) {
+                    {
+                        std::lock_guard<std::mutex> lock(st->mutex);
+                        if (!st->card_alive) return;
+                        st->generating_minute_index = static_cast<int>(i);
+                        st->status_message = std::format("Generating AI commentary for Minute {} of {}...", i, total - 1);
+                        st->minute_commentaries[i].is_generating = true;
+                    }
+
+                    std::string context;
+                    std::string title;
+                    {
+                        std::lock_guard<std::mutex> lock(st->mutex);
+                        context = st->minute_commentaries[i].transcript_context;
+                        title = st->video_title;
+                    }
+
+                    std::string commentary;
+                    if (context.empty()) {
+                        commentary = std::format("*No transcript available for Minute {}.*", i);
+                    } else if (!rouen::helpers::LLMConfig::is_configured()) {
+                        commentary = "*AI Model not configured. Please set your API key in Settings -> LLM Configuration to enable AI commentary.*";
+                    } else {
+                        auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
+                        if (!llm_instance) {
+                            commentary = "*Failed to initialize LLM instance.*";
+                        } else {
+                            auto settings = rouen::helpers::LLMConfig::get_current_config();
+                            auto fetcher = std::make_shared<http::fetch>();
+
+                            llm_instance->add_instructions(
+                                "You are an insightful, engaging AI Media Companion analyzing video transcripts minute by minute. "
+                                "Provide a concise, intelligent commentary and summary in Markdown format for the specified minute of the video. "
+                                "Use bullet points, bold text, or key takeaways where appropriate. Keep it engaging, clear, and well-structured."
+                            );
+
+                            std::string prompt = std::format(
+                                "Video Title: {}\n"
+                                "Segment: Minute {} ({:02d}:00 - {:02d}:00)\n\n"
+                                "Transcript Context (Minute {} plus 10s context padding):\n{}\n\n"
+                                "Write an engaging, structured Markdown commentary analyzing this minute.",
+                                title, static_cast<int>(i), static_cast<int>(i), static_cast<int>(i + 1), static_cast<int>(i), context
+                            );
+
+                            try {
+                                auto response = llm_instance->sendMessage(
+                                    prompt,
+                                    [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                        return fetcher->post(url, data, header_client);
+                                    },
+                                    "user",
+                                    settings.model_name
+                                );
+                                if (!response.choices.empty()) {
+                                    commentary = response.choices[0].message.content;
+                                } else {
+                                    commentary = "*No commentary text returned by AI model.*";
+                                }
+                            } catch (const std::exception& e) {
+                                commentary = std::format("*Error generating commentary: {}*", e.what());
+                            }
+                        }
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock(st->mutex);
+                        if (!st->card_alive) return;
+                        st->minute_commentaries[i].commentary_md = commentary;
+                        st->minute_commentaries[i].is_generating = false;
+                        st->minute_commentaries[i].generated = true;
+                    }
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(st->mutex);
+                    if (!st->card_alive) return;
+                    st->is_generating_all = false;
+                    st->generating_minute_index = -1;
+                    st->status_message = "All minute AI commentaries generated successfully.";
+                }
+            }).detach();
+        }
+
         bool render(rouen::ui::ui_context& ui) override {
             return render_window([this, &ui]() {
                 bool fetching = false;
+                bool generating_all = false;
                 std::string status;
                 std::string plain_text;
                 std::string ts_text;
                 std::vector<transcript_entry> entries_copy;
+                std::vector<minute_commentary> commentaries_copy;
                 std::string title;
                 std::string url;
 
                 {
                     std::lock_guard<std::mutex> lock(state->mutex);
                     fetching = state->is_fetching;
+                    generating_all = state->is_generating_all;
                     status = state->status_message;
                     plain_text = state->plain_transcript;
                     ts_text = state->timestamped_transcript;
                     entries_copy = state->entries;
+                    commentaries_copy = state->minute_commentaries;
                     title = state->video_title;
                     url = state->video_url;
                 }
 
-                // Check active media player item in real time for UI feedback
+                // Query active player position in real time
                 std::string active_yt_title;
                 bool yt_active = false;
+                double current_pos = 0.0;
+                double total_duration = 0.0;
+
                 {
                     std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
                     for (auto& [id, item_ptr] : media_player::items()) {
@@ -319,6 +549,8 @@ namespace rouen::cards {
                                 l.find("youtube.com") != std::string::npos || l.find("youtu.be") != std::string::npos) {
                                 yt_active = true;
                                 active_yt_title = item_ptr->item_title.empty() ? u : item_ptr->item_title;
+                                current_pos = item_ptr->position.load();
+                                total_duration = item_ptr->duration.load();
                                 if (!item_ptr->is_paused.load()) {
                                     break;
                                 }
@@ -327,14 +559,38 @@ namespace rouen::cards {
                     }
                 }
 
+                int current_minute = yt_active ? static_cast<int>(current_pos / 60.0) : 0;
+
+                // Auto-sync position tracking
+                if (auto_sync_enabled && yt_active && !commentaries_copy.empty()) {
+                    if (current_minute != last_synced_minute) {
+                        if (current_minute >= 0 && current_minute < static_cast<int>(commentaries_copy.size())) {
+                            selected_minute = current_minute;
+                        }
+                        last_synced_minute = current_minute;
+                    }
+                }
+
+                // Ensure selected minute is within valid bounds
+                if (!commentaries_copy.empty()) {
+                    selected_minute = std::clamp(selected_minute, 0, static_cast<int>(commentaries_copy.size()) - 1);
+                }
+
                 // Header Banner
                 ui.text_colored(colors[0], std::format("{} Media Companion", ICON_MD_SUBTITLES));
                 ui.separator();
                 ui.spacing();
 
-                // Active Player Info
+                // Active Player Info & Live Position
                 if (yt_active) {
-                    ui.text_colored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f), std::format("{} Active YouTube Media Detected:", ICON_MD_PLAY_CIRCLE_FILLED));
+                    int pos_m = static_cast<int>(current_pos) / 60;
+                    int pos_s = static_cast<int>(current_pos) % 60;
+                    int dur_m = static_cast<int>(total_duration) / 60;
+                    int dur_s = static_cast<int>(total_duration) % 60;
+
+                    ui.text_colored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                        std::format("{} Active YouTube Media [{:02d}:{:02d} / {:02d}:{:02d}]:",
+                            ICON_MD_PLAY_CIRCLE_FILLED, pos_m, pos_s, dur_m, dur_s));
                     ui.text_wrapped(active_yt_title);
                 } else {
                     ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), std::format("{} No YouTube video currently playing.", ICON_MD_INFO));
@@ -342,10 +598,10 @@ namespace rouen::cards {
 
                 ui.spacing();
 
-                // Button to request transcript
+                // Request Transcript Button
                 if (fetching) {
                     ImGui::BeginDisabled();
-                    ui.button(std::format("{} Fetching Transcript...", ICON_MD_HOURGLASS_EMPTY), ImVec2(-1, 36));
+                    ui.button(std::format("{} Fetching Subtitles...", ICON_MD_HOURGLASS_EMPTY), ImVec2(-1, 36));
                     ImGui::EndDisabled();
                 } else {
                     ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
@@ -361,7 +617,7 @@ namespace rouen::cards {
 
                 if (!status.empty()) {
                     ui.spacing();
-                    if (status.find("successfully") != std::string::npos) {
+                    if (status.find("successfully") != std::string::npos || status.find("ready") != std::string::npos || status.find("obtained") != std::string::npos) {
                         ui.text_colored(ImVec4(0.3f, 0.9f, 0.5f, 1.0f), std::format("{} {}", ICON_MD_CHECK_CIRCLE, status));
                     } else if (status.find("No") != std::string::npos || status.find("empty") != std::string::npos) {
                         ui.text_colored(ImVec4(0.9f, 0.6f, 0.3f, 1.0f), std::format("{} {}", ICON_MD_WARNING, status));
@@ -374,54 +630,151 @@ namespace rouen::cards {
                 ui.separator();
                 ui.spacing();
 
-                // Transcript Content Region
+                // Main Card View Content
                 if (!entries_copy.empty()) {
-                    if (!title.empty()) {
-                        ui.text_colored(colors[0], std::format("{} Transcript for:", ICON_MD_VIDEO_LIBRARY));
-                        ui.text_wrapped(title);
-                        ui.spacing();
+                    // View Mode Tabs: 0 = AI Commentary, 1 = Timestamped Subtitles, 2 = Plain Text
+                    static int view_tab = 0;
+                    if (ui.button(std::format("{} AI Commentary", ICON_MD_AUTO_AWESOME))) {
+                        view_tab = 0;
                     }
-
-                    // View Mode Tabs: 0 = Timestamped (Interactive), 1 = Plain Text
-                    static int view_mode = 0;
+                    ui.same_line();
                     if (ui.button(std::format("{} Timestamped", ICON_MD_ACCESS_TIME))) {
-                        view_mode = 0;
+                        view_tab = 1;
                     }
                     ui.same_line();
                     if (ui.button(std::format("{} Plain Text", ICON_MD_NOTES))) {
-                        view_mode = 1;
-                    }
-
-                    ui.same_line();
-                    ui.dummy(ImVec2(10, 0));
-                    ui.same_line();
-
-                    if (ui.button(std::format("{} Copy", ICON_MD_CONTENT_COPY))) {
-                        if (view_mode == 0) {
-                            ImGui::SetClipboardText(ts_text.c_str());
-                        } else {
-                            ImGui::SetClipboardText(plain_text.c_str());
-                        }
-                    }
-                    ui.same_line();
-                    if (ui.button(std::format("{} Clear", ICON_MD_DELETE_OUTLINE))) {
-                        std::lock_guard<std::mutex> lock(state->mutex);
-                        state->plain_transcript.clear();
-                        state->timestamped_transcript.clear();
-                        state->entries.clear();
-                        state->status_message.clear();
+                        view_tab = 2;
                     }
 
                     ui.spacing();
 
-                    // Scrollable view box
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[3]);
-                    float avail_h = ImGui::GetContentRegionAvail().y;
-                    if (avail_h < 150.0f) avail_h = 240.0f;
+                    if (view_tab == 0) {
+                        // --- AI Commentary View Mode ---
+                        ui.checkbox("Auto-Sync with Video", &auto_sync_enabled);
+                        ui.same_line();
 
-                    if (ui.begin_child("TranscriptScrollRegion", ImVec2(0, avail_h), true)) {
-                        if (view_mode == 0) {
-                            // Interactive Timestamped view with seek buttons
+                        if (generating_all) {
+                            ImGui::BeginDisabled();
+                            ui.button(std::format("{} Generating All...", ICON_MD_HOURGLASS_EMPTY));
+                            ImGui::EndDisabled();
+                        } else {
+                            if (ui.button(std::format("{} Generate All AI Commentaries", ICON_MD_AUTO_AWESOME))) {
+                                generate_all_commentaries();
+                            }
+                        }
+
+                        ui.spacing();
+
+                        // Horizontal Minute Selection Pills Bar
+                        ui.text_colored(colors[0], std::format("{} Select Minute Segment:", ICON_MD_VIEW_TIMELINE));
+                        if (ui.begin_child("MinuteSelectorBar", ImVec2(0, 36), false, ImGuiWindowFlags_HorizontalScrollbar)) {
+                            for (size_t m = 0; m < commentaries_copy.size(); ++m) {
+                                if (m > 0) ui.same_line();
+
+                                bool is_current_playing = (yt_active && static_cast<int>(m) == current_minute);
+                                bool is_selected = (static_cast<int>(m) == selected_minute);
+
+                                std::string label = std::format("Min {}", m);
+                                if (commentaries_copy[m].generated) {
+                                    label += std::format(" {}", ICON_MD_CHECK);
+                                }
+
+                                if (is_selected) {
+                                    ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[1]);
+                                } else if (is_current_playing) {
+                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.4f, 0.9f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.7f, 0.45f, 1.0f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.5f, 0.35f, 1.0f));
+                                } else {
+                                    ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[0]);
+                                }
+
+                                if (ui.button(label)) {
+                                    selected_minute = static_cast<int>(m);
+                                }
+
+                                ImGui::PopStyleColor(3);
+                            }
+                        }
+                        ui.end_child();
+
+                        ui.spacing();
+                        ui.separator();
+                        ui.spacing();
+
+                        // Selected Minute Banner & Action Bar
+                        if (selected_minute >= 0 && selected_minute < static_cast<int>(commentaries_copy.size())) {
+                            auto& mc = commentaries_copy[static_cast<size_t>(selected_minute)];
+
+                            ui.text_colored(colors[0], std::format("{} Minute {} Commentary ({})",
+                                ICON_MD_AUTO_AWESOME, selected_minute, mc.timestamp_label));
+
+                            ui.same_line();
+                            if (ui.button(std::format("{} Jump to {:02d}:00", ICON_MD_PLAY_ARROW, selected_minute))) {
+                                seek_to(selected_minute * 60.0);
+                            }
+
+                            ui.same_line();
+                            if (!mc.is_generating) {
+                                if (ui.button(std::format("{} Regenerate", ICON_MD_REFRESH))) {
+                                    generate_commentary_for_minute(selected_minute);
+                                }
+                            }
+
+                            ui.spacing();
+
+                            // Markdown Commentary Display Pane using Rouen Markdown Renderer
+                            ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[3]);
+                            float avail_h = ImGui::GetContentRegionAvail().y;
+                            if (avail_h < 150.0f) avail_h = 240.0f;
+
+                            if (ui.begin_child("CommentaryMarkdownRegion", ImVec2(0, avail_h), true)) {
+                                if (mc.is_generating) {
+                                    ui.text_colored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f),
+                                        std::format("{} Generating AI commentary for Minute {}...", ICON_MD_HOURGLASS_EMPTY, selected_minute));
+                                } else if (mc.generated && !mc.commentary_md.empty()) {
+                                    const rouen::helpers::markdown_render_config md_config{
+                                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                                    };
+
+                                    rouen::helpers::render_markdown_block(
+                                        mc.commentary_md,
+                                        md_config,
+                                        [](const std::string& target_url) {
+                                            rouen::platform::open_url(target_url);
+                                        }
+                                    );
+                                } else {
+                                    ui.text_colored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                        std::format("No commentary generated for Minute {} yet.", selected_minute));
+                                    ui.spacing();
+                                    if (ui.button(std::format("{} Generate AI Commentary for Minute {}", ICON_MD_AUTO_AWESOME, selected_minute))) {
+                                        generate_commentary_for_minute(selected_minute);
+                                    }
+                                }
+                            }
+                            ui.end_child();
+                            ImGui::PopStyleColor();
+                        }
+                    } else if (view_tab == 1) {
+                        // --- Timestamped Subtitles View Mode ---
+                        if (ui.button(std::format("{} Copy Timestamped Subtitles", ICON_MD_CONTENT_COPY))) {
+                            ImGui::SetClipboardText(ts_text.c_str());
+                        }
+
+                        ui.spacing();
+
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[3]);
+                        float avail_h = ImGui::GetContentRegionAvail().y;
+                        if (avail_h < 150.0f) avail_h = 240.0f;
+
+                        if (ui.begin_child("TranscriptScrollRegion", ImVec2(0, avail_h), true)) {
                             for (size_t i = 0; i < entries_copy.size(); ++i) {
                                 const auto& entry = entries_copy[i];
                                 ui.begin_group();
@@ -443,13 +796,27 @@ namespace rouen::cards {
                                 ui.end_group();
                                 ui.spacing();
                             }
-                        } else {
-                            // Plain text view
+                        }
+                        ui.end_child();
+                        ImGui::PopStyleColor();
+                    } else {
+                        // --- Plain Text View Mode ---
+                        if (ui.button(std::format("{} Copy Plain Text", ICON_MD_CONTENT_COPY))) {
+                            ImGui::SetClipboardText(plain_text.c_str());
+                        }
+
+                        ui.spacing();
+
+                        ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[3]);
+                        float avail_h = ImGui::GetContentRegionAvail().y;
+                        if (avail_h < 150.0f) avail_h = 240.0f;
+
+                        if (ui.begin_child("PlainTextScrollRegion", ImVec2(0, avail_h), true)) {
                             ui.text_wrapped(plain_text);
                         }
+                        ui.end_child();
+                        ImGui::PopStyleColor();
                     }
-                    ui.end_child();
-                    ImGui::PopStyleColor();
                 } else if (!fetching) {
                     ui.text_colored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
                         "Click 'Request Transcript' above to fetch YouTube subtitles for the currently playing video.");
@@ -461,7 +828,7 @@ namespace rouen::cards {
             return {
                 mcp_function(
                     "get_media_companion_transcript",
-                    "Request or retrieve the YouTube transcript (both timestamped and plain text) for the currently playing media item.",
+                    "Request or retrieve the YouTube transcript and minute-by-minute AI commentaries for the currently playing media item.",
                     R"({"type":"object","properties":{}})",
                     [this](const std::string&) -> std::string {
                         std::lock_guard<std::mutex> lock(state->mutex);
@@ -478,10 +845,21 @@ namespace rouen::cards {
                             return out;
                         };
 
-                        return std::format(R"({{"status":"{}","title":"{}","url":"{}","timestamped_transcript":"{}","plain_transcript":"{}"}})",
+                        std::string commentaries_json = "[";
+                        for (size_t i = 0; i < state->minute_commentaries.size(); ++i) {
+                            if (i > 0) commentaries_json += ",";
+                            const auto& mc = state->minute_commentaries[i];
+                            commentaries_json += std::format(
+                                R"({{"minute":{},"label":"{}","commentary":"{}"}})",
+                                mc.minute_index, escape_json(mc.timestamp_label), escape_json(mc.commentary_md));
+                        }
+                        commentaries_json += "]";
+
+                        return std::format(R"({{"status":"{}","title":"{}","url":"{}","minute_commentaries":{},"timestamped_transcript":"{}","plain_transcript":"{}"}})",
                             escape_json(state->status_message),
                             escape_json(state->video_title),
                             escape_json(state->video_url),
+                            commentaries_json,
                             escape_json(state->timestamped_transcript),
                             escape_json(state->plain_transcript));
                     }
@@ -491,6 +869,9 @@ namespace rouen::cards {
 
     private:
         std::shared_ptr<shared_state> state;
+        int selected_minute{0};
+        int last_synced_minute{-1};
+        bool auto_sync_enabled{true};
     };
 
 } // namespace rouen::cards
