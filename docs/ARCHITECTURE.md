@@ -22,11 +22,16 @@ The primary building block of Rouen's interface is the **Card**. Each card repre
 
 ---
 
-### 2. Deck Management
-The **Deck** ([deck.hpp](file:///Users/ignaciorodriguez/src/rouen/src/interface/deck.hpp)) controls collections of active cards:
-- Manages horizontal tiling, workspace positions, and order of cards.
-- Handles persistent workspace states by saving card layout, sizing, and configuration parameters.
-- Implements global shortcuts (e.g. `Cmd+W`/`Ctrl+W` to close focused cards, screenshot snapshots, etc.).
+### 2. Deck Management & Workspace Layout
+The **Deck** ([deck.hpp](file:///Users/ignaciorodriguez/src/rouen/src/cards/interface/deck.hpp)) controls collections of active cards:
+- **Horizontal Tiling & Workspace Sizing**: Manages card positioning, vertical row stacking, and horizontal workspace width.
+- **Width Multipliers & Section Boundaries**:
+  - **Width Factor Multiplier ($wf$)**: Configured via the `display` card ([display_card.hpp](file:///Users/ignaciorodriguez/src/rouen/src/cards/system/display_card.hpp)), extending total row width capacity to $\text{row\_max\_width} = \text{size.x} \times wf$ (e.g. 1.0x, 2.0x, 3.0x, 4.0x).
+  - **Section Width ($\text{section\_width} = \text{size.x}$)**: Each section represents one full OS window viewport page width.
+  - **Last Fitting Window Expansion**: As cards are laid out sequentially into a row, if adding a card would exceed a section boundary ($\text{sec\_boundary} = (k + 1) \times \text{size.x}$), the layout engine expands the width of the last card fitting in section $k$ so its right edge perfectly aligns to $\text{sec\_boundary}$.
+  - **Section Navigation**: When focusing a card, Rouen calculates its section index ($\text{section\_idx} = \lfloor\text{abs\_x} / \text{size.x}\rfloor$) and programmatically performs smooth horizontal scrolling to $\text{target\_scroll\_x} = \text{section\_idx} \times \text{size.x}$.
+- **Persistent Workspace State**: Saves active card URIs and configurations to `rouen.ini` in user config directory.
+- **Global Shortcuts**: Implements shortcuts (`Cmd+W`/`Ctrl+W` to close focused cards, `Cmd+Shift+F`/`Ctrl+Shift+F` fit window width, `Cmd+Shift+S`/`Ctrl+Shift+S` snapshot).
 
 ---
 

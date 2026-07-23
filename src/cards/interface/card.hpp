@@ -103,12 +103,13 @@ struct card {
         if (window_title.empty()) {
             name("Unnamed Card");
         }
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings;
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar;
         
         try {
             auto get_card_count = registrar::get<std::function<size_t()>>("get_card_count");
             if (get_card_count && (*get_card_count)() == 1) {
                 flags |= ImGuiWindowFlags_NoTitleBar;
+                flags |= ImGuiWindowFlags_NoScrollWithMouse;
             }
         } catch (...) {
             // Intentionally ignored: service may not be registered in all contexts

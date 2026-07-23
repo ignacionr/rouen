@@ -1,8 +1,10 @@
 # Rouen Project Rules
 
 ## Build System
-- This project uses **Nix** as the build system. Always use `nix build` to compile.
-- Do NOT use raw `cmake` commands to build. The CMakeLists.txt is consumed by the Nix flake.
+- Prefer local (nix-aware) incremental quick builds using:
+  `nix develop --command cmake --build build --target rouen -j4`
+  (If configuring or reconfiguring the `build` directory, use `nix develop --command cmake -B build -S .`).
+- Use full `nix build --max-jobs 4` when validating full Nix derivation packages.
 - Before starting any task, read [README.md](README.md) and relevant docs if unfamiliar with the project conventions.
 
 ## Build Parallelism

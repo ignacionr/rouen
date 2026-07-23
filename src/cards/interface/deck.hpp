@@ -160,6 +160,16 @@ struct deck {
         };
     };
 
+    float get_width_factor() const {
+        try {
+            auto get_wf = registrar::get<std::function<float()>>("get_width_factor");
+            if (get_wf) {
+                return (*get_wf)();
+            }
+        } catch (...) {}
+        return 4.0f;
+    }
+
     bool render(card &c, float &x, float height, int &requested_fps, float y = 0.0f, float override_width = -1.0f) {
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         float const scaled_width = (override_width > 0.0f) ? override_width : (c.width * dpi_scale);
@@ -488,36 +498,169 @@ struct deck {
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
         bool const empty_editor = editor_.empty();
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const wf = get_width_factor();
+        float const row_max_width = size.x * wf;
+
+        // Programmatically update smooth horizontal scroll towards target_scroll_x
+        float const max_scroll = std::max(0.0f, row_max_width - size.x);
+        target_scroll_x = std::clamp(target_scroll_x, 0.0f, max_scroll);
+        float scroll_diff = target_scroll_x - current_scroll_x;
+        if (std::abs(scroll_diff) > 0.5f) {
+            current_scroll_x += scroll_diff * 0.25f;
+            result.requested_fps = std::max(result.requested_fps, 60);
+        } else {
+            current_scroll_x = target_scroll_x;
+        }
+
+        /*
+         * SECTION & WIDTH MULTIPLIER LAYOUT ALGORITHM:
+         * 
+         * 1. Section Width & Row Multiplier:
+         *    - section_width = size.x (OS window viewport width).
+         *    - wf = get_width_factor() (1.0x, 2.0x, 3.0x, etc., configured via Display Card).
+         *    - row_max_width = section_width * wf.
+         * 
+         * 2. Section Boundary Alignment:
+         *    - Within each row, cards are organized across section boundaries:
+         *      Section 0: [0, section_width]
+         *      Section 1: [section_width, 2 * section_width]
+         *      Section N: [N * section_width, std::min((N+1)*section_width, row_max_width)]
+         * 
+         * 3. Last Fitting Window Expansion:
+         *    - As cards are placed sequentially, if a card exceeds the current section boundary
+         *      sec_boundary = (current_sec_idx + 1) * section_width:
+         *      a) The last card placed in that section (the "last fitting window") expands its
+         *         override_width to reach sec_boundary - last_item.abs_x.
+         *      b) current_x advances to sec_boundary (the start of the next section).
+         *      c) The current card is then evaluated against the new section or new row.
+         *    - This guarantees every viewport section is perfectly filled with zero straddling or clipping.
+         */
         if (empty_editor) {
-            float x = 0.0f;
-            std::vector<std::vector<std::shared_ptr<card>>> rows;
-            {
-                auto row = std::reference_wrapper(rows.emplace_back());
-                for (auto& c : cards_) {
-                    float const scaled_card_width = c->width * dpi_scale;
-                    if ((x + scaled_card_width) > size.x) {
-                        if (!row.get().empty()) {
-                            row = std::reference_wrapper(rows.emplace_back());
+            struct card_layout_item {
+                std::shared_ptr<card> card_ptr;
+                float abs_x { 0.0f };
+                float scaled_width { 0.0f };
+                float override_width { -1.0f };
+            };
+
+            float const section_width = std::max(size.x, 1.0f);
+            std::vector<std::vector<card_layout_item>> rows;
+            float current_x = 0.0f;
+            int current_sec_idx = 0;
+            rows.emplace_back();
+
+            for (size_t idx = 0; idx < cards_.size(); ) {
+                auto& c = cards_[idx];
+                float const card_w = c->width * dpi_scale;
+                float const sec_boundary = std::min(static_cast<float>(current_sec_idx + 1) * section_width, row_max_width);
+
+                if (current_x + card_w <= sec_boundary + 0.01f) {
+                    rows.back().push_back({
+                        .card_ptr = c,
+                        .abs_x = current_x,
+                        .scaled_width = card_w,
+                        .override_width = -1.0f
+                    });
+                    current_x += card_w;
+                    
+                    if (std::abs(current_x - sec_boundary) < 0.01f) {
+                        current_x = sec_boundary;
+                        current_sec_idx++;
+                        if (current_x >= row_max_width - 0.01f) {
+                            current_x = 0.0f;
+                            current_sec_idx = 0;
+                            if (idx + 1 < cards_.size()) {
+                                rows.emplace_back();
+                            }
                         }
-                        x = 0.0f;
                     }
-                    row.get().push_back(c);
-                    x += scaled_card_width;
+                    idx++;
+                }
+                else {
+                    // Card does not fit in current section
+                    if (current_x > static_cast<float>(current_sec_idx) * section_width + 0.01f) {
+                        // Expand the last fitting card in this section so it reaches sec_boundary
+                        auto& last_item = rows.back().back();
+                        last_item.override_width = sec_boundary - last_item.abs_x;
+                        current_x = sec_boundary;
+                        current_sec_idx++;
+                        
+                        if (current_x >= row_max_width - 0.01f) {
+                            current_x = 0.0f;
+                            current_sec_idx = 0;
+                            if (idx < cards_.size()) {
+                                rows.emplace_back();
+                            }
+                        }
+                        // Retry current card in the new section or row
+                    }
+                    else {
+                        // Current section is empty, card_w > section_width
+                        if (current_x + card_w > row_max_width + 0.01f && current_x > 0.01f) {
+                            current_x = 0.0f;
+                            current_sec_idx = 0;
+                            rows.emplace_back();
+                            // Retry current card at row start
+                        }
+                        else {
+                            rows.back().push_back({
+                                .card_ptr = c,
+                                .abs_x = current_x,
+                                .scaled_width = card_w,
+                                .override_width = -1.0f
+                            });
+                            current_x += card_w;
+                            current_sec_idx = static_cast<int>(current_x / section_width);
+                            if (current_x >= row_max_width - 0.01f) {
+                                current_x = 0.0f;
+                                current_sec_idx = 0;
+                                if (idx + 1 < cards_.size()) {
+                                    rows.emplace_back();
+                                }
+                            }
+                            idx++;
+                        }
+                    }
                 }
             }
+
+            if (!rows.empty() && rows.back().empty()) {
+                rows.pop_back();
+            }
+
+            // Expand the last item in each section or row if not already expanded
+            for (auto& row : rows) {
+                if (!row.empty()) {
+                    auto& last_item = row.back();
+                    if (last_item.override_width < 0.0f) {
+                        int sec_idx = static_cast<int>(last_item.abs_x / section_width);
+                        float sec_boundary = std::min(static_cast<float>(sec_idx + 1) * section_width, row_max_width);
+                        if (sec_boundary > last_item.abs_x) {
+                            last_item.override_width = std::max(sec_boundary - last_item.abs_x, last_item.scaled_width);
+                        }
+                    }
+                }
+            }
+
             float const scaled_min_height = card::min_card_height * dpi_scale;
-            float const row_height { std::max(size.y / static_cast<float>(rows.size()), scaled_min_height) };
+            float const row_height { std::max(size.y / static_cast<float>(std::max<size_t>(rows.size(), 1)), scaled_min_height) };
             float y = 0.0f;
             std::set<card::ptr> cards_to_remove;
+
             for (auto& row : rows) {
-                x = 0.0f;
-                for (size_t i = 0; i < row.size(); ++i) {
-                    auto& c = row[i];
-                    float override_width = -1.0f;
-                    if (i == row.size() - 1) {
-                        override_width = std::max(size.x - x, c->width * dpi_scale);
+                for (auto& item : row) {
+                    auto& c = item.card_ptr;
+                    float card_abs_x = item.abs_x;
+
+                    // Programmatically set the scroll target to the horizontal section of the active/focused card
+                    if (c->is_focused || c->grab_focus) {
+                        int section_idx = static_cast<int>(card_abs_x / std::max(size.x, 1.0f));
+                        float section_target = static_cast<float>(section_idx) * size.x;
+                        target_scroll_x = std::clamp(section_target, 0.0f, max_scroll);
                     }
-                    if (!render(*c, x, row_height, result.requested_fps, y, override_width)) {
+
+                    float draw_x = card_abs_x - current_scroll_x;
+                    if (!render(*c, draw_x, row_height, result.requested_fps, y, item.override_width)) {
                         // Unregister MCP functions immediately when card fails to render
                         try {
                             c->unregister_mcp_functions();
@@ -545,35 +688,34 @@ struct deck {
             cards_.erase(cards_to_remove_main, cards_.end());
         }
         else {
-            auto right_corner_offset {size.x};
+            auto right_corner_offset {row_max_width};
             float left_corner {0.0f};
             for (auto& c : cards_) {
                 float const scaled_card_width = c->width * dpi_scale;
                 right_corner_offset -= scaled_card_width + 2.0f * dpi_scale;
                 if (c->is_focused) {
-                    left_corner = right_corner_offset + scaled_card_width - size.x + 2.0f * dpi_scale;
+                    left_corner = right_corner_offset + scaled_card_width - row_max_width + 2.0f * dpi_scale;
                     break;
                 }
             }
-            static float last_viewport_width = size.x;
-            if (std::abs(last_viewport_width - size.x) > std::numeric_limits<float>::epsilon()) {
+            static float last_viewport_width = row_max_width;
+            if (std::abs(last_viewport_width - row_max_width) > std::numeric_limits<float>::epsilon()) {
                 start_x = 0.0f;
-                last_viewport_width = size.x;
+                last_viewport_width = row_max_width;
             }
-            if (start_x > right_corner_offset || (start_x - size.x) > right_corner_offset) {
+            if (start_x > right_corner_offset || (start_x - row_max_width) > right_corner_offset) {
                 start_x = right_corner_offset;
             }
             start_x = std::max(start_x, left_corner);
             auto x{start_x};
             auto y = (empty_editor ? 450.0f : 250.0f) * dpi_scale;
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, y, &result, dpi_scale](auto const& c) {
+                [this, &x, y, &result, dpi_scale, row_max_width](auto const& c) {
                     float override_width = -1.0f;
                     if (!cards_.empty() && c == cards_.back()) {
-                        float size_x = ImGui::GetMainViewport()->Size.x;
                         float const scaled_card_width = c->width * dpi_scale;
-                        if (size_x - x > scaled_card_width) {
-                            override_width = size_x - x;
+                        if (row_max_width - x > scaled_card_width) {
+                            override_width = row_max_width - x;
                         }
                     }
                     return !render(*c, x, y, result.requested_fps, 0.0f, override_width);
@@ -613,9 +755,10 @@ struct deck {
     // Calculate total width needed for all cards
     float calculate_total_cards_width() const {
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const wf = get_width_factor();
         float total_width = 0.0f;
         for (const auto& card : cards_) {
-            total_width += (card->width * dpi_scale) + (2.0f * dpi_scale); // Add spacing between cards
+            total_width += (card->width * wf * dpi_scale) + (2.0f * dpi_scale); // Add spacing between cards
         }
         // Remove the extra spacing from the last card
         if (!cards_.empty()) {
@@ -648,5 +791,7 @@ private:
     ImVec4 text_color;
     editor editor_;
     float start_x {2.0f};
+    float current_scroll_x {0.0f};
+    float target_scroll_x {0.0f};
     rouen::ui::imgui_ui_context_impl ui_context_;
 };

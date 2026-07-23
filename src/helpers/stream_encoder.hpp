@@ -225,8 +225,9 @@ public:
             {
                 std::lock_guard<std::mutex> lock(audio_buf_mutex);
                 if (audio_buf.size() < bytes_per_frame) break;
-                chunk.assign(audio_buf.begin(), audio_buf.begin() + bytes_per_frame);
-                audio_buf.erase(audio_buf.begin(), audio_buf.begin() + bytes_per_frame);
+                auto offset = static_cast<std::ptrdiff_t>(bytes_per_frame);
+                chunk.assign(audio_buf.begin(), audio_buf.begin() + offset);
+                audio_buf.erase(audio_buf.begin(), audio_buf.begin() + offset);
             }
 
             av_frame_make_writable(audio_frame);

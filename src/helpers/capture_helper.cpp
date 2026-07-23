@@ -25,8 +25,8 @@ RouenGPUTexture* capture_imgui(
     texture_info.type = SDL_GPU_TEXTURETYPE_2D;
     texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     texture_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    texture_info.width = width;
-    texture_info.height = height;
+    texture_info.width = static_cast<Uint32>(width);
+    texture_info.height = static_cast<Uint32>(height);
     texture_info.layer_count_or_depth = 1;
     texture_info.num_levels = 1;
 
@@ -142,7 +142,7 @@ SDL_Surface* download_gpu_texture(
     
     SDL_GPUTransferBufferCreateInfo transferInfo = {};
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-    transferInfo.size = width * height * 4;
+    transferInfo.size = static_cast<Uint32>(width * height * 4);
     SDL_GPUTransferBuffer* download_buffer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
     if (!download_buffer) return nullptr;
     
@@ -152,15 +152,15 @@ SDL_Surface* download_gpu_texture(
         if (copyPass) {
             SDL_GPUTextureRegion sourceRegion = {};
             sourceRegion.texture = texture->binding.texture;
-            sourceRegion.w = width;
-            sourceRegion.h = height;
+            sourceRegion.w = static_cast<Uint32>(width);
+            sourceRegion.h = static_cast<Uint32>(height);
             sourceRegion.d = 1;
 
             SDL_GPUTextureTransferInfo destInfo = {};
             destInfo.transfer_buffer = download_buffer;
             destInfo.offset = 0;
-            destInfo.pixels_per_row = width;
-            destInfo.rows_per_layer = height;
+            destInfo.pixels_per_row = static_cast<Uint32>(width);
+            destInfo.rows_per_layer = static_cast<Uint32>(height);
 
             SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
             SDL_EndGPUCopyPass(copyPass);
@@ -177,7 +177,7 @@ SDL_Surface* download_gpu_texture(
     if (map) {
         surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32);
         if (surface) {
-            std::memcpy(surface->pixels, map, width * height * 4);
+            std::memcpy(surface->pixels, map, static_cast<size_t>(width * height * 4));
         }
         SDL_UnmapGPUTransferBuffer(device, download_buffer);
     }

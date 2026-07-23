@@ -151,7 +151,7 @@ struct media_player {
             float half_t = thick * 0.5f;
             for (int y = min_y; y <= max_y; ++y) {
                 for (int x = min_x; x <= max_x; ++x) {
-                    float d = dist_to_segment(x + 0.5f, y + 0.5f, x1, y1, x2, y2);
+                    float d = dist_to_segment(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f, x1, y1, x2, y2);
                     if (d <= half_t + 0.75f) {
                         float cov = std::clamp((half_t + 0.75f - d) / 1.0f, 0.0f, 1.0f);
                         blend_pixel(x, y, r, g, b, cov * (static_cast<float>(a) / 255.0f));
@@ -165,7 +165,7 @@ struct media_player {
         float meter_h = 248.0f;
 
         for (int ch = 0; ch < 2; ++ch) {
-            float m_x = 4.0f + (meter_w + gap) * ch;
+            float m_x = 4.0f + (meter_w + gap) * static_cast<float>(ch);
             float m_y = 4.0f;
 
             // Frame Bezel
@@ -240,7 +240,7 @@ struct media_player {
             // Pivot Cap
             for (int py = static_cast<int>(cy - 8); py <= static_cast<int>(cy + 8); ++py) {
                 for (int px = static_cast<int>(cx - 8); px <= static_cast<int>(cx + 8); ++px) {
-                    float d = std::hypot(px - cx, py - cy);
+                    float d = std::hypot(static_cast<float>(px) - cx, static_cast<float>(py) - cy);
                     if (d <= 8.0f) {
                         blend_pixel(px, py, 30, 32, 38, 1.0f);
                     }
@@ -392,7 +392,7 @@ struct media_player {
         for (int ch = 0; ch < 2; ++ch) {
             float level = (ch == 0) ? level_l : level_r;
             float watermark = (ch == 0) ? watermark_l : watermark_r;
-            float m_x = pos.x + (meter_w + gap) * ch;
+            float m_x = pos.x + (meter_w + gap) * static_cast<float>(ch);
             float m_y = pos.y;
 
             ImVec2 min_p = ImVec2(m_x, m_y);

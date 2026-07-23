@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
 #include <cstring>
+#include <mutex>
 #include "debug.hpp"
 
 // Add texture-specific logging macros
@@ -97,8 +98,8 @@ namespace TextureHelper {
         texture_info.type = SDL_GPU_TEXTURETYPE_2D;
         texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        texture_info.width = width;
-        texture_info.height = height;
+        texture_info.width = static_cast<Uint32>(width);
+        texture_info.height = static_cast<Uint32>(height);
         texture_info.layer_count_or_depth = 1;
         texture_info.num_levels = 1;
         
@@ -112,7 +113,7 @@ namespace TextureHelper {
         // 2. Create a Transfer Buffer
         SDL_GPUTransferBufferCreateInfo transfer_info = {};
         transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        transfer_info.size = height * rgba_surface->pitch;
+        transfer_info.size = static_cast<Uint32>(height * rgba_surface->pitch);
         
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         if (!transfer_buffer) {
@@ -125,7 +126,7 @@ namespace TextureHelper {
         // 3. Copy pixel data to the Transfer Buffer
         Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, transfer_buffer, false));
         if (map) {
-            std::memcpy(map, rgba_surface->pixels, height * rgba_surface->pitch);
+            std::memcpy(map, rgba_surface->pixels, static_cast<size_t>(height) * static_cast<size_t>(rgba_surface->pitch));
             SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
         } else {
             TEXTURE_ERROR_FMT("Failed to map transfer buffer: {}", SDL_GetError())
@@ -139,13 +140,13 @@ namespace TextureHelper {
                 SDL_GPUTextureTransferInfo transfer_info_gpu = {};
                 transfer_info_gpu.transfer_buffer = transfer_buffer;
                 transfer_info_gpu.offset = 0;
-                transfer_info_gpu.pixels_per_row = width;
-                transfer_info_gpu.rows_per_layer = height;
+                transfer_info_gpu.pixels_per_row = static_cast<Uint32>(width);
+                transfer_info_gpu.rows_per_layer = static_cast<Uint32>(height);
 
                 SDL_GPUTextureRegion region = {};
                 region.texture = texture;
-                region.w = width;
-                region.h = height;
+                region.w = static_cast<Uint32>(width);
+                region.h = static_cast<Uint32>(height);
                 region.d = 1;
 
                 SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
@@ -190,8 +191,8 @@ namespace TextureHelper {
         texture_info.type = SDL_GPU_TEXTURETYPE_2D;
         texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        texture_info.width = width;
-        texture_info.height = height;
+        texture_info.width = static_cast<Uint32>(width);
+        texture_info.height = static_cast<Uint32>(height);
         texture_info.layer_count_or_depth = 1;
         texture_info.num_levels = 1;
 
@@ -205,7 +206,7 @@ namespace TextureHelper {
         // Upload to GPU
         SDL_GPUTransferBufferCreateInfo transfer_info = {};
         transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        transfer_info.size = height * surface->pitch;
+        transfer_info.size = static_cast<Uint32>(height * surface->pitch);
 
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         if (!transfer_buffer) {
@@ -216,7 +217,7 @@ namespace TextureHelper {
 
         Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, transfer_buffer, false));
         if (map) {
-            std::memcpy(map, surface->pixels, height * surface->pitch);
+            std::memcpy(map, surface->pixels, static_cast<size_t>(height) * static_cast<size_t>(surface->pitch));
             SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
         }
 
@@ -227,13 +228,13 @@ namespace TextureHelper {
                 SDL_GPUTextureTransferInfo transfer_info_gpu = {};
                 transfer_info_gpu.transfer_buffer = transfer_buffer;
                 transfer_info_gpu.offset = 0;
-                transfer_info_gpu.pixels_per_row = width;
-                transfer_info_gpu.rows_per_layer = height;
+                transfer_info_gpu.pixels_per_row = static_cast<Uint32>(width);
+                transfer_info_gpu.rows_per_layer = static_cast<Uint32>(height);
 
                 SDL_GPUTextureRegion region = {};
                 region.texture = texture;
-                region.w = width;
-                region.h = height;
+                region.w = static_cast<Uint32>(width);
+                region.h = static_cast<Uint32>(height);
                 region.d = 1;
 
                 SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);

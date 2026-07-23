@@ -145,7 +145,8 @@ public:
         // Cap audio queue to ~5 seconds max to prevent memory leakage
         constexpr size_t kMaxAudioQueueBytes = 882000; 
         if (audio_queue_.size() > kMaxAudioQueueBytes) {
-            audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + (audio_queue_.size() - kMaxAudioQueueBytes));
+            auto drop_count = static_cast<std::ptrdiff_t>(audio_queue_.size() - kMaxAudioQueueBytes);
+            audio_queue_.erase(audio_queue_.begin(), audio_queue_.begin() + drop_count);
         }
     }
 

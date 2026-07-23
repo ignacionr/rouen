@@ -369,16 +369,17 @@ public:
             gpu_texture_device_ = device;
         }
 
+        size_t buffer_size = (h > 0 && pitch > 0) ? (static_cast<size_t>(h) * static_cast<size_t>(pitch)) : 0;
         SDL_GPUTransferBufferCreateInfo transfer_info = {};
         transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        transfer_info.size = static_cast<Uint32>(h * pitch);
+        transfer_info.size = static_cast<Uint32>(buffer_size);
 
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         if (!transfer_buffer) return;
 
         void* map = SDL_MapGPUTransferBuffer(device, transfer_buffer, false);
         if (map) {
-            std::memcpy(map, rgba_data, static_cast<size_t>(h * pitch));
+            std::memcpy(map, rgba_data, buffer_size);
             SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
         }
 

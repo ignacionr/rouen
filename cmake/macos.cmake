@@ -7,9 +7,7 @@ message(STATUS "Setting macOS deployment target to ${CMAKE_OSX_DEPLOYMENT_TARGET
 # Ensure we're using the latest C++ standard library with proper std::format support
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 
-# Disable problematic warnings as errors for macOS builds
-# Note: -Wno-error=nontrivial-memcall is not supported by Apple Clang, removing it
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion -Wno-error=implicit-fallthrough -Wno-error=implicit-int-float-conversion")
+# Ensure all warnings are treated as errors for local target code
 
 # When cross-compiling (e.g. -DCMAKE_OSX_ARCHITECTURES=arm64 on CI), Clang emits
 # -Wpoison-system-directories for host paths such as /usr/local/include that end up

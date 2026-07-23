@@ -516,7 +516,7 @@ public:
                 
                 ImGui::Separator();
                 
-                ImGui::BeginChild("ArticleContent", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+                ImGui::BeginChild("ArticleContent", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar);
                 
                 if (!article_summary.empty()) {
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[4]);

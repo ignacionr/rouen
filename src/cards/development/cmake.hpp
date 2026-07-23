@@ -407,7 +407,7 @@ namespace rouen::cards
                 
                 if (!last_output_.empty()) {
                     ImGui::BeginChild("ScrollingRegion", ImVec2(0, 200), true, 
-                                     ImGuiWindowFlags_HorizontalScrollbar);
+                                     ImGuiWindowFlags_NoScrollbar);
                     
                     ImGui::TextWrapped("%s", last_output_.c_str());
                     

@@ -199,7 +199,7 @@ private:
 
         // 4. Logs Console
         ImGui::TextColored(get_color(2), "Sync Log Console");
-        ImGui::BeginChild("SyncLogs", ImVec2(0, 180), true, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::BeginChild("SyncLogs", ImVec2(0, 180), true, ImGuiWindowFlags_NoScrollbar);
         for (const auto& log : sync_logs_) {
             if (log.find("failed") != std::string::npos || log.find("Error") != std::string::npos) {
                 ImGui::TextColored(get_color(5), "%s", log.c_str());

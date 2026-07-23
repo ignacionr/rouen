@@ -168,16 +168,18 @@ TEST_F(RSSWatermarkTest, StopAllSavesPreviousItemWatermark) {
     items_map.clear(); // Clear to ensure clean state
 
     // Retrieve two different items
-    auto& itemA = items_map[111];
-    itemA.feed_id = feed_id;
-    itemA.item_link = "https://example.com/item1";
-    itemA.item_title = "Episode 1";
-    itemA.position = 45.0; // Simulate we played 45 seconds of Episode 1
+    auto itemA = std::make_shared<media_player_item>();
+    itemA->feed_id = feed_id;
+    itemA->item_link = "https://example.com/item1";
+    itemA->item_title = "Episode 1";
+    itemA->position = 45.0; // Simulate we played 45 seconds of Episode 1
+    items_map[111] = itemA;
 
-    auto& itemB = items_map[222];
-    itemB.feed_id = feed_id;
-    itemB.item_link = "https://example.com/item2";
-    itemB.item_title = "Episode 2";
+    auto itemB = std::make_shared<media_player_item>();
+    itemB->feed_id = feed_id;
+    itemB->item_link = "https://example.com/item2";
+    itemB->item_title = "Episode 2";
+    items_map[222] = itemB;
 
     // Stop all should trigger watermark saving for itemA because it has position > 0
     media_player::stopAll();
@@ -240,17 +242,18 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnCompletion) {
     auto& items_map = media_player::items();
     items_map.clear();
 
-    auto& item = items_map[111];
-    item.feed_id = feed_id;
-    item.item_link = "https://example.com/item1";
-    item.item_title = "Episode 1";
+    auto item = std::make_shared<media_player_item>();
+    item->feed_id = feed_id;
+    item->item_link = "https://example.com/item1";
+    item->item_title = "Episode 1";
     
     // Simulate we played almost to the end of the 100-second episode
-    item.duration = 100.0;
-    item.position = 99.0; 
+    item->duration = 100.0;
+    item->position = 99.0; 
+    items_map[111] = item;
 
     // Stop Media should detect that we are close to duration, and reset watermark to 0.0
-    item.stopMedia();
+    item->stopMedia();
 
     // Verify in-memory of Episode 1 is updated to 0.0
     auto feed = host->feeds()[0];
@@ -310,20 +313,21 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
     auto& items_map = media_player::items();
     items_map.clear();
 
-    auto& item = items_map[111];
-    item.feed_id = feed_id;
-    item.item_link = "https://example.com/item1";
-    item.item_title = "Episode 1";
+    auto item = std::make_shared<media_player_item>();
+    item->feed_id = feed_id;
+    item->item_link = "https://example.com/item1";
+    item->item_title = "Episode 1";
     
     // Simulate process exited naturally (we set player_pid to a dummy value, but waitpid won't find it)
-    item.player_pid = 999999; // Dummy PID that is not our child
-    item.duration = 100.0;
-    item.position = 98.5; // Almost at the end
+    item->player_pid = 999999; // Dummy PID that is not our child
+    item->duration = 100.0;
+    item->position = 98.5; // Almost at the end
+    items_map[111] = item;
 
     // Call checkMediaStatus, which should detect exit and completion
-    bool active = item.checkMediaStatus();
+    bool active = item->checkMediaStatus();
     EXPECT_FALSE(active);
-    EXPECT_EQ(item.player_pid, 0);
+    EXPECT_EQ(item->player_pid, 0);
 
     // Verify in-memory of Episode 1 is updated to 0.0
     auto feed = host->feeds()[0];

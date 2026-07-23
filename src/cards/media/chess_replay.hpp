@@ -594,7 +594,7 @@ public:
             
             if (current_analysis_result.success) {
                 // Display the analysis in a scrollable text box
-                if (ImGui::BeginChild("AnalysisResult", ImVec2(0, 150), true, ImGuiWindowFlags_HorizontalScrollbar)) {
+                if (ImGui::BeginChild("AnalysisResult", ImVec2(0, 150), true, ImGuiWindowFlags_NoScrollbar)) {
                     ImGui::TextWrapped("%s", current_analysis_result.content.c_str());
                 }
                 ImGui::EndChild();

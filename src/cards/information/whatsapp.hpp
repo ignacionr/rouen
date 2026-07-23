@@ -798,7 +798,7 @@ private:
 
         // ── Message bubbles ───────────────────────────────────────────────────
         ImGui::BeginChild("Messages", ImVec2(0, 0), false,
-                          ImGuiWindowFlags_HorizontalScrollbar);
+                          ImGuiWindowFlags_NoScrollbar);
 
         const float avail      = ImGui::GetContentRegionAvail().x;
         const float bubble_max = avail * 0.72f;

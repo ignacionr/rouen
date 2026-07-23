@@ -6,8 +6,7 @@ find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 
-# Add Linux-specific compiler flags
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-conversion -Wno-error=double-promotion")
+# Ensure all warnings are treated as errors for local target code
 
 # Add Linux-specific debug settings
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

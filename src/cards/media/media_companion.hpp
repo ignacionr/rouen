@@ -854,7 +854,7 @@ namespace rouen::cards {
 
                         // Horizontal 2-Minute Segment Selection Pills Bar
                         ui.text_colored(colors[0], std::format("{} Select 2-Minute Segment:", ICON_MD_VIEW_TIMELINE));
-                        if (ui.begin_child("SegmentSelectorBar", ImVec2(0, 36), false, ImGuiWindowFlags_HorizontalScrollbar)) {
+                        if (ui.begin_child("SegmentSelectorBar", ImVec2(0, 36), false, ImGuiWindowFlags_NoScrollbar)) {
                             for (size_t s = 0; s < commentaries_copy.size(); ++s) {
                                 if (s > 0) ui.same_line();
 

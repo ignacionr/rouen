@@ -53,6 +53,7 @@
 #include "../system/about.hpp"
 #include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
+#include "../system/display_card.hpp"
 #include "../system/envvars.hpp"
 #include "../system/notifications.hpp"
 #include "../system/settings.hpp"
@@ -183,6 +184,10 @@ namespace rouen::cards {
                     return std::make_shared<envvars_card>();
                 });
                 
+                instance.emplace("display", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<display_card>();
+                });
+
                 instance.emplace("settings", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<settings_card>();
                 });
