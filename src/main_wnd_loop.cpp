@@ -102,6 +102,18 @@ void main_wnd::run() {
                             if ((ImGui::IsItemHovered() || ImGui::IsWindowHovered()) && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                                 media_player::clear_active_fullscreen_item();
                             }
+
+                            // Seeking in full-window media mode via Left and Right arrow keys
+                            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                                double current = fs_item->position.load();
+                                fs_item->seekTo(std::max(0.0, current - 5.0));
+                            }
+                            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                                double current = fs_item->position.load();
+                                double dur = fs_item->duration.load();
+                                double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                                fs_item->seekTo(std::min(target_limit, current + 5.0));
+                            }
                         }
                     }
                     ImGui::End();
