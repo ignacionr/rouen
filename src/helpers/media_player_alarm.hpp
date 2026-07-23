@@ -40,4 +40,23 @@ namespace media_player_alarm_helper {
         auto& alarm_item = alarm_item_instance();
         alarm_item.stopMedia();
     }
+
+    inline media_player_item& toll_item_instance() {
+        static media_player_item toll_item;
+        return toll_item;
+    }
+
+    inline void play_chime(std::string_view file_path = "img/chime.wav") {
+        auto& toll_item = toll_item_instance();
+        auto resource_path = rouen::platform::get_resource_path(std::string(file_path), "");
+        toll_item.url = resource_path.string();
+        toll_item.stopMedia();
+        toll_item.playMedia();
+    }
+
+    inline void stop_chime() {
+        auto& toll_item = toll_item_instance();
+        toll_item.stopMedia();
+    }
 }
+
