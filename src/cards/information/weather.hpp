@@ -9,7 +9,11 @@
 #include <ctime>
 #include <cmath>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/config_service.hpp"
@@ -260,33 +264,81 @@ public:
             accent_color = ImVec4(0.85f, 0.95f, 1.0f, 1.0f); // Frosty ice white
         }
 
-        ImGui::SetNextWindowPos(ImVec2(40.0f, 40.0f));
-        ImGui::SetNextWindowSize(ImVec2(520.0f, 350.0f));
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        float vp_w = vp ? vp->Size.x : 1920.0f;
+        float vp_h = vp ? vp->Size.y : 1080.0f;
+
+        float win_w = std::min(620.0f, vp_w - 80.0f);
+        float win_h = 370.0f;
+
+        float pos_x = 40.0f;
+        float pos_y = 40.0f;
+
+        if (cast_position == 1) { // Top Right
+            pos_x = std::max(40.0f, vp_w - win_w - 40.0f);
+            pos_y = 40.0f;
+        } else if (cast_position == 2) { // Bottom Left
+            pos_x = 40.0f;
+            pos_y = std::max(40.0f, vp_h - win_h - 40.0f);
+        } else if (cast_position == 3) { // Bottom Right
+            pos_x = std::max(40.0f, vp_w - win_w - 40.0f);
+            pos_y = std::max(40.0f, vp_h - win_h - 40.0f);
+        }
+
+        ImGui::SetNextWindowPos(ImVec2(pos_x, pos_y));
+        ImGui::SetNextWindowSize(ImVec2(win_w, win_h));
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
 
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.10f, 0.88f)); // Premium dark translucent backing
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.10f, 0.90f)); // Premium dark translucent backing
         ImGui::PushStyleColor(ImGuiCol_Border, accent_color); 
 
         if (ImGui::Begin("##WeatherVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
-            // Title & Time/Date
-            auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+            // Local Time Calculation with Timezone Offset
+            auto now_tp = std::chrono::system_clock::now();
             auto timezone_offset = std::chrono::seconds(current_weather->timezone);
-            now += timezone_offset;
+            auto local_tp = now_tp + timezone_offset;
             
-            std::string time_str = std::format("{:%H:%M:%S}", now);
-            std::string date_str = std::format("{:%d/%m/%Y}", now);
+            std::time_t local_tt = std::chrono::system_clock::to_time_t(local_tp);
+            std::tm tm_local;
+            gmtime_r(&local_tt, &tm_local);
 
+            std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
+            std::string date_str = std::format("{:02d}/{:02d}/{:04d}", tm_local.tm_mday, tm_local.tm_mon + 1, tm_local.tm_year + 1900);
+
+            // Top Header: City & Weather Icon
             ImGui::SetWindowFontScale(1.4f);
             ImGui::TextColored(accent_color, "%s  %s", get_weather_icon(weather_main), current_weather->name.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 170.0f);
+            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
             ImGui::SetWindowFontScale(1.05f);
-            ImGui::TextColored(colors[5], "%s | %s", time_str.c_str(), date_str.c_str());
+            ImGui::TextColored(colors[5], "%s", date_str.c_str());
+            
             ImGui::Separator();
             ImGui::Spacing();
 
-            // Temp and Feels Like
+            // Main Body: Left (Analog Clock + Digital Time), Right (Weather Metrics)
+            // Left Group: Analog Clock & Digital Time
+            ImGui::BeginGroup();
+            ImVec2 clock_box_size(180.0f, 175.0f);
+            ImGui::Dummy(clock_box_size);
+            ImVec2 box_min = ImGui::GetItemRectMin();
+            ImVec2 clock_center = ImVec2(box_min.x + clock_box_size.x * 0.5f, box_min.y + 60.0f);
+
+            draw_analog_clock(ImGui::GetWindowDrawList(), clock_center, 56.0f, local_tp, accent_color);
+
+            // Digital Time below clock
+            ImGui::SetWindowFontScale(1.35f);
+            ImVec2 t_size = ImGui::CalcTextSize(time_str.c_str());
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (clock_box_size.x - t_size.x * 1.35f) * 0.5f);
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", time_str.c_str());
+
+            ImGui::EndGroup();
+
+            // Right Group: Temperature & Telemetry
+            ImGui::SameLine();
+            ImGui::BeginGroup();
+
             ImGui::SetWindowFontScale(2.4f);
             ImGui::TextColored(accent_color, "%.1f°C", current_weather->main.temp);
             ImGui::SameLine();
@@ -329,6 +381,8 @@ public:
             ImGui::TextColored(cloud_color, "%s Clouds: %d%%", ICON_MD_CLOUD, current_weather->clouds.all);
 
             ImGui::Columns(1);
+            ImGui::EndGroup();
+
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
@@ -373,29 +427,145 @@ public:
     }
     
 private:
+    void draw_analog_clock(ImDrawList* draw_list, ImVec2 center, float radius, std::chrono::system_clock::time_point local_tp, ImVec4 accent_color) {
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(local_tp.time_since_epoch()).count() % 1000;
+        std::time_t local_tt = std::chrono::system_clock::to_time_t(local_tp);
+        std::tm tm_local;
+        gmtime_r(&local_tt, &tm_local);
+
+        float sec_f = static_cast<float>(tm_local.tm_sec) + static_cast<float>(ms) / 1000.0f;
+        float min_f = static_cast<float>(tm_local.tm_min) + sec_f / 60.0f;
+        float hour_f = static_cast<float>(tm_local.tm_hour % 12) + min_f / 60.0f;
+
+        float hour_angle = (hour_f / 12.0f) * 2.0f * static_cast<float>(M_PI) - (static_cast<float>(M_PI) / 2.0f);
+        float min_angle = (min_f / 60.0f) * 2.0f * static_cast<float>(M_PI) - (static_cast<float>(M_PI) / 2.0f);
+        float sec_angle = (sec_f / 60.0f) * 2.0f * static_cast<float>(M_PI) - (static_cast<float>(M_PI) / 2.0f);
+
+        // 1. Clock Face Backdrop & Bezel Glow
+        ImU32 glow_col       = ImGui::ColorConvertFloat4ToU32(ImVec4(accent_color.x, accent_color.y, accent_color.z, 0.20f));
+        ImU32 bg_col         = ImGui::ColorConvertFloat4ToU32(ImVec4(0.05f, 0.06f, 0.11f, 0.95f));
+        ImU32 ring_col       = ImGui::ColorConvertFloat4ToU32(accent_color);
+        ImU32 inner_ring_col = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
+
+        draw_list->AddCircleFilled(center, radius + 5.0f, glow_col, 64);
+        draw_list->AddCircleFilled(center, radius, bg_col, 64);
+        draw_list->AddCircle(center, radius, ring_col, 64, 2.5f);
+        draw_list->AddCircle(center, radius * 0.92f, inner_ring_col, 64, 1.0f);
+
+        // 2. Ticks
+        for (int i = 0; i < 60; ++i) {
+            float angle = static_cast<float>(i) * (2.0f * static_cast<float>(M_PI) / 60.0f);
+            float c = std::cos(angle);
+            float s = std::sin(angle);
+
+            if (i % 5 == 0) { // Hour ticks
+                float r_in  = radius * 0.76f;
+                float r_out = radius * 0.90f;
+                ImVec2 p_in  = ImVec2(center.x + c * r_in,  center.y + s * r_in);
+                ImVec2 p_out = ImVec2(center.x + c * r_out, center.y + s * r_out);
+                
+                ImU32 tick_col = (i % 15 == 0) ? ring_col : ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.95f, 1.0f, 0.85f));
+                draw_list->AddLine(p_in, p_out, tick_col, 2.2f);
+            } else { // Minute ticks
+                float r_in  = radius * 0.84f;
+                float r_out = radius * 0.90f;
+                ImVec2 p_in  = ImVec2(center.x + c * r_in,  center.y + s * r_in);
+                ImVec2 p_out = ImVec2(center.x + c * r_out, center.y + s * r_out);
+                
+                draw_list->AddLine(p_in, p_out, ImGui::ColorConvertFloat4ToU32(ImVec4(0.7f, 0.75f, 0.85f, 0.35f)), 1.0f);
+            }
+        }
+
+        // 3. Hour numbers (12, 3, 6, 9)
+        struct CardinalText { const char* text; float angle_deg; };
+        static const CardinalText cardinals[] = {
+            {"12", -90.0f}, {"3", 0.0f}, {"6", 90.0f}, {"9", 180.0f}
+        };
+        for (const auto& card : cardinals) {
+            float rad = card.angle_deg * (static_cast<float>(M_PI) / 180.0f);
+            float dist = radius * 0.58f;
+            ImVec2 txt_pos = ImVec2(center.x + std::cos(rad) * dist, center.y + std::sin(rad) * dist);
+            ImVec2 txt_size = ImGui::CalcTextSize(card.text);
+            draw_list->AddText(ImVec2(txt_pos.x - txt_size.x * 0.5f, txt_pos.y - txt_size.y * 0.5f), 
+                               ImGui::ColorConvertFloat4ToU32(ImVec4(0.9f, 0.92f, 0.98f, 0.90f)), card.text);
+        }
+
+        // 4. Hands
+        // Hour Hand
+        float h_len = radius * 0.48f;
+        ImVec2 h_pt = ImVec2(center.x + std::cos(hour_angle) * h_len, center.y + std::sin(hour_angle) * h_len);
+        draw_list->AddLine(center, h_pt, ImGui::ColorConvertFloat4ToU32(ImVec4(0.95f, 0.96f, 1.0f, 1.0f)), 3.8f);
+
+        // Minute Hand
+        float m_len = radius * 0.74f;
+        ImVec2 m_pt = ImVec2(center.x + std::cos(min_angle) * m_len, center.y + std::sin(min_angle) * m_len);
+        draw_list->AddLine(center, m_pt, ImGui::ColorConvertFloat4ToU32(ImVec4(0.85f, 0.90f, 1.0f, 0.92f)), 2.4f);
+
+        // Second Hand
+        float s_len = radius * 0.85f;
+        float s_tail_len = radius * 0.20f;
+        ImVec2 s_pt = ImVec2(center.x + std::cos(sec_angle) * s_len, center.y + std::sin(sec_angle) * s_len);
+        ImVec2 s_tail = ImVec2(center.x - std::cos(sec_angle) * s_tail_len, center.y - std::sin(sec_angle) * s_tail_len);
+        ImU32 sec_col = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+
+        draw_list->AddLine(s_tail, s_pt, sec_col, 1.5f);
+        draw_list->AddCircleFilled(s_tail, 3.0f, sec_col);
+
+        // Center Pivot
+        draw_list->AddCircleFilled(center, 4.5f, sec_col);
+        draw_list->AddCircleFilled(center, 2.0f, ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)));
+    }
+
     void render_time() {
-        // Get current time
-        auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
+        // Get current local time with timezone offset
+        auto now_tp = std::chrono::system_clock::now();
         auto current_weather = weather_host->getCurrentWeather();
         if (current_weather) {
-            // Adjust time zone based on weather data
             auto timezone_offset = std::chrono::seconds(current_weather->timezone);
-            now += timezone_offset;
+            now_tp += timezone_offset;
         }
-        
-        // Format time and date using C++23 std::format with chrono formatting
-        std::string time_str = std::format("{:%H:%M:%S}", now);
-        
-        std::string date_str = std::format("{:%d/%m/%Y}", now);
-        
-        // Display time in large font
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Monospaced font
-        ImGui::TextColored(colors[2], "%s", time_str.c_str());
-        ImGui::PopFont();
-        
+
+        std::time_t local_tt = std::chrono::system_clock::to_time_t(now_tp);
+        std::tm tm_local;
+        gmtime_r(&local_tt, &tm_local);
+
+        std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
+        std::string date_str = std::format("{:02d}/{:02d}/{:04d}", tm_local.tm_mday, tm_local.tm_mon + 1, tm_local.tm_year + 1900);
+
+        ImVec4 accent_color = colors[0];
+        if (current_weather && !current_weather->weather.empty()) {
+            std::string weather_main = current_weather->weather[0].main;
+            if (weather_main == "Clear") accent_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+            else if (weather_main == "Clouds") accent_color = ImVec4(0.55f, 0.65f, 0.75f, 1.0f);
+            else if (weather_main == "Rain" || weather_main == "Drizzle") accent_color = ImVec4(0.2f, 0.7f, 1.0f, 1.0f);
+            else if (weather_main == "Thunderstorm") accent_color = ImVec4(0.6f, 0.4f, 1.0f, 1.0f);
+            else if (weather_main == "Snow") accent_color = ImVec4(0.85f, 0.95f, 1.0f, 1.0f);
+        }
+
+        // Draw Clock and Digital readout side-by-side
+        ImGui::BeginGroup();
+        ImVec2 clock_box_size(88.0f, 88.0f);
+        ImGui::Dummy(clock_box_size);
+        ImVec2 box_min = ImGui::GetItemRectMin();
+        ImVec2 clock_center = ImVec2(box_min.x + clock_box_size.x * 0.5f, box_min.y + clock_box_size.y * 0.5f);
+
+        draw_analog_clock(ImGui::GetWindowDrawList(), clock_center, 38.0f, now_tp, accent_color);
+        ImGui::EndGroup();
+
         ImGui::SameLine();
-        // Display date below
+        ImGui::BeginGroup();
+        ImGui::Spacing();
+        // Display time in large font
+        ImGui::SetWindowFontScale(1.6f);
+        ImGui::TextColored(accent_color, "%s", time_str.c_str());
+        ImGui::SetWindowFontScale(1.0f);
+
         ImGui::TextColored(colors[5], "%s", date_str.c_str());
+        if (current_weather && !current_weather->name.empty()) {
+            int tz_hours = current_weather->timezone / 3600;
+            ImGui::TextColored(colors[5], "%s (UTC%+d)", current_weather->name.c_str(), tz_hours);
+        }
+        ImGui::EndGroup();
     }
     
     // Helper function to get weather icon based on weather condition
@@ -598,9 +768,55 @@ private:
         }
         
         ImGui::TextColored(colors[5], "Format: City,CountryCode (e.g., London,uk)");
+
+        ImGui::Spacing();
+        ImGui::TextColored(colors[2], "%s Video Cast Position:", ICON_MD_SETTINGS);
+        const char* pos_options[] = { "Top Left (Default)", "Top Right", "Bottom Left", "Bottom Right" };
+        ImGui::SetNextItemWidth(200.0f);
+        if (ImGui::Combo("##WeatherCastPos", &cast_position, pos_options, IM_ARRAYSIZE(pos_options))) {
+            save_settings();
+        }
     }
     
 private:
+    void save_settings() {
+        try {
+            auto config_dir = rouen::platform::get_user_config_directory();
+            std::filesystem::create_directories(config_dir);
+            auto config_path = config_dir / "weather_settings.json";
+            
+            glz::json_t json;
+            json["cast_position"] = static_cast<double>(cast_position);
+            
+            std::ofstream file(config_path);
+            if (file.is_open()) {
+                std::string json_str;
+                auto result = glz::write_json(json, json_str);
+                if (!result) {
+                    file << json_str;
+                }
+                file.close();
+            }
+        } catch (...) {}
+    }
+
+    void load_settings() {
+        try {
+            auto config_path = rouen::platform::get_user_config_directory() / "weather_settings.json";
+            if (!std::filesystem::exists(config_path)) return;
+            std::ifstream file(config_path);
+            if (file.is_open()) {
+                std::string json_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                glz::json_t json;
+                auto ec = glz::read_json(json, json_str);
+                if (!ec && json.contains("cast_position")) {
+                    cast_position = static_cast<int>(json["cast_position"].get<double>());
+                }
+                file.close();
+            }
+        } catch (...) {}
+    }
+
     void setLocation(std::string_view location) {
         weather_host->setLocation(location);
         weather_host->refreshWeather();
@@ -618,6 +834,7 @@ private:
     std::shared_ptr<hosts::WeatherHost> weather_host;
     bool initialized_{false};
     char location_buffer_[64]{};
+    int cast_position{0};
 };
 
 } // namespace rouen::cards

@@ -28,18 +28,51 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wconversion
       -Wsign-conversion
       -Wdouble-promotion
+      -Wimplicit-int-conversion
+      -Wimplicit-float-conversion
 
       # Shadow warnings  
       -Wshadow
       -Wshadow-all         # Even more aggressive shadowing detection
+      -Wshadow-field
+      -Wshadow-uncaptured-local
 
-      # Important structural warnings
+      # Lifetime & Dangling reference warnings
+      -Wdangling
+      -Wdangling-field
+      -Wdangling-initializer-list
+      -Wdangling-gsl
+      -Wreturn-stack-address
+
+      # Logic, Comparison & Tautological warnings
+      -Wtautological-compare
+      -Wtautological-type-limit-compare
+      -Wtautological-overlap-compare
+      -Wtautological-unsigned-enum-zero-compare
+      -Wtautological-value-range-compare
+      -Wtautological-pointer-compare
+      -Wfloat-equal
+      -Wcomma
+      -Wswitch-enum
+
+      # Type Cast & Pointer warnings
+      -Wcast-align
+      -Wcast-qual
+      -Wzero-as-null-pointer-constant
+      -Wstring-conversion
+      -Wstring-concatenation
+
+      # Important structural and control flow warnings
       -Wunreachable-code
+      -Wunreachable-code-break
+      -Wunreachable-code-return
+      -Wunreachable-code-loop-increment
       -Wself-assign
       -Woverloaded-virtual 
 
       # More advanced warnings to catch issues
       -Wrange-loop-analysis # Range-based for loop issues
+      -Wrange-loop-bind-reference
       -Wredundant-move     # Unnecessary move operations
       -Wundef              # Undefined macro use in #if
       -Wdeprecated         # Deprecated feature usage
@@ -57,20 +90,35 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Warray-bounds             # Array bounds checking
       -Warray-bounds-pointer-arithmetic # Pointer arithmetic bounds
       
-      # C++ specific strict warnings
+      # C++ specific strict warnings & Overrides
       -Wnon-virtual-dtor         # Missing virtual destructors
+      -Winconsistent-missing-override # Missing override keywords
+      -Winconsistent-missing-destructor-override
+      -Wsuggest-override
+      -Wabstract-final-class
       -Wold-style-cast           # C-style casts in C++
       -Wextra-semi               # Extra semicolons
       -Wno-extra-semi-stmt       # Temporarily disable for macro issues
-      -Winconsistent-missing-override # Missing override keywords
       -Wloop-analysis            # Loop analysis warnings
       -Wmove                     # Move semantic issues
       -Wthread-safety            # Thread safety analysis
       -Wthread-safety-analysis   # More thread safety checks
+
+      # Bitwise and Shift warnings
+      -Wshift-overflow
+      -Wshift-sign-overflow
+      -Wbitwise-op-parentheses
+      -Wbitwise-conditional-parentheses
       
       # String and format warnings
+      -Wformat-security          # Format string security
+      -Wformat-nonliteral        # Non-literal format strings
       -Wformat-pedantic          # Pedantic format checking
       -Wformat-type-confusion    # Format type mismatches
+
+      # Header and Macro Hygiene
+      -Wundefined-func-template  # Undefined function templates
+      -Wheader-hygiene           # Main header hygiene checks
       
       # Enable everything and then disable specific ones we don't want
       -Weverything

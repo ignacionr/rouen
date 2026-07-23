@@ -67,9 +67,35 @@ struct media_player {
     static inline std::shared_ptr<media_player_item> s_active_fullscreen_item{nullptr};
     static inline std::mutex s_fullscreen_mutex;
 
+    static inline std::shared_ptr<media_player_item> s_detached_item{nullptr};
+    static inline std::mutex s_detached_mutex;
+
+    static void set_detached_item(std::shared_ptr<media_player_item> item) {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        s_detached_item = item;
+    }
+
+    static std::shared_ptr<media_player_item> get_detached_item() {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        return s_detached_item;
+    }
+
+    static void clear_detached_item() {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        s_detached_item = nullptr;
+    }
+
+    static bool has_detached_item() {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        return s_detached_item != nullptr;
+    }
+
     static void set_active_fullscreen_item(std::shared_ptr<media_player_item> item) {
         std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
         s_active_fullscreen_item = item;
+        if (get_detached_item() == item) {
+            clear_detached_item();
+        }
     }
 
     static std::shared_ptr<media_player_item> get_active_fullscreen_item() {
@@ -535,6 +561,106 @@ struct media_player {
 
         ImGui::Dummy(ImVec2(width, height));
     }
+
+    static void draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
+        double current_pos = item.position.load();
+        double current_dur = item.duration.load();
+        if (current_dur <= 0.0) return;
+
+        float progress = static_cast<float>(std::clamp(current_pos / current_dur, 0.0, 1.0));
+
+        ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+        ImGuiIO& io = ImGui::GetIO();
+        ImVec2 mouse_pos = io.MousePos;
+
+        float hit_height = 24.0f;
+        bool is_bottom_hovered = (mouse_pos.x >= 0.0f && mouse_pos.x <= win_w &&
+                                  mouse_pos.y >= win_h - hit_height && mouse_pos.y <= win_h + 10.0f);
+
+        static bool s_is_dragging = false;
+        if (is_bottom_hovered && io.MouseDown[0] && !io.MouseDownOwned[0]) {
+            s_is_dragging = true;
+        }
+        if (!io.MouseDown[0]) {
+            s_is_dragging = false;
+        }
+
+        if (s_is_dragging) {
+            double target_time = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
+            item.seekTo(target_time);
+            current_pos = target_time;
+            progress = static_cast<float>(std::clamp(current_pos / current_dur, 0.0, 1.0));
+        }
+
+        float line_h = (is_bottom_hovered || s_is_dragging) ? 8.0f : 4.0f;
+        float y1 = win_h - line_h;
+        float y2 = win_h;
+
+        // Background track
+        draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(0, 0, 0, 160));
+        draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(255, 255, 255, 50));
+
+        // Played progress fill
+        float filled_w = progress * win_w;
+        if (filled_w > 0.0f) {
+            draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(filled_w, y2), IM_COL32(235, 55, 55, 255));
+        }
+
+        // Scrubber handle (knob)
+        if (is_bottom_hovered || s_is_dragging) {
+            float knob_x = std::clamp(filled_w, 6.0f, win_w - 6.0f);
+            float knob_y = y1 + line_h * 0.5f;
+            draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(255, 255, 255, 255));
+            draw_list->AddCircle(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(235, 55, 55, 255), 12, 1.5f);
+
+            // Hover time preview tooltip
+            double hover_target_time = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
+            std::string hover_str = item.formatTime(hover_target_time);
+
+            ImVec2 txt_sz = ImGui::CalcTextSize(hover_str.c_str());
+            float tt_x = std::clamp(mouse_pos.x - txt_sz.x * 0.5f, 10.0f, win_w - txt_sz.x - 10.0f);
+            float tt_y = y1 - txt_sz.y - 12.0f;
+
+            draw_list->AddRectFilled(
+                ImVec2(tt_x - 6.0f, tt_y - 4.0f),
+                ImVec2(tt_x + txt_sz.x + 6.0f, tt_y + txt_sz.y + 4.0f),
+                IM_COL32(20, 20, 25, 220),
+                4.0f
+            );
+            draw_list->AddRect(
+                ImVec2(tt_x - 6.0f, tt_y - 4.0f),
+                ImVec2(tt_x + txt_sz.x + 6.0f, tt_y + txt_sz.y + 4.0f),
+                IM_COL32(255, 255, 255, 50),
+                4.0f
+            );
+            draw_list->AddText(ImVec2(tt_x, tt_y), IM_COL32(255, 255, 255, 255), hover_str.c_str());
+        }
+
+        // Time overlay badge (Current / Total)
+        if (is_bottom_hovered || s_is_dragging || item.is_paused.load()) {
+            std::string status_text = std::format("{} / {}", item.formatTime(current_pos), item.formatTime(current_dur));
+            if (item.is_paused.load()) {
+                status_text = ICON_MD_PAUSE " " + status_text;
+            }
+            ImVec2 status_size = ImGui::CalcTextSize(status_text.c_str());
+            float badge_x = 12.0f;
+            float badge_y = y1 - status_size.y - 12.0f;
+            draw_list->AddRectFilled(
+                ImVec2(badge_x - 6.0f, badge_y - 4.0f),
+                ImVec2(badge_x + status_size.x + 6.0f, badge_y + status_size.y + 4.0f),
+                IM_COL32(20, 20, 25, 200),
+                4.0f
+            );
+            draw_list->AddRect(
+                ImVec2(badge_x - 6.0f, badge_y - 4.0f),
+                ImVec2(badge_x + status_size.x + 6.0f, badge_y + status_size.y + 4.0f),
+                IM_COL32(255, 255, 255, 40),
+                4.0f
+            );
+            draw_list->AddText(ImVec2(badge_x, badge_y), IM_COL32(230, 230, 230, 255), status_text.c_str());
+        }
+    }
+
 
     static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
         (void)info_color;

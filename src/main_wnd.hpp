@@ -50,8 +50,11 @@ public:
 private:
     bool process_events();
     void process_deferred_operations();
+    void process_detached_window();
 
     SDL_Window* m_window = nullptr;
+    SDL_Window* m_detached_window = nullptr;
+    ImGuiContext* m_detached_imgui_ctx = nullptr;
     SDL_GPUDevice* m_device = nullptr;
     std::shared_ptr<deferred_operations> m_deferred_ops;
     bool m_done = false;

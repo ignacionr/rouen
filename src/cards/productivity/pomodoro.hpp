@@ -8,11 +8,13 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/media_player_alarm.hpp"
 
@@ -238,6 +240,166 @@ namespace rouen::cards {
         }
         std::string get_uri() const override {
             return "pomodoro";
+        }
+
+        void render_video_ui() override {
+            auto const now = std::chrono::system_clock::now();
+            bool done = is_done(now);
+            double pct = std::clamp(percentaged_done(now), 0.0, 1.0);
+
+            long long total_sec = 25 * 60;
+            long long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+            long long remaining_sec = std::max(0LL, total_sec - elapsed_sec);
+            long long rem_min = remaining_sec / 60;
+            long long rem_s = remaining_sec % 60;
+            long long elap_min = elapsed_sec / 60;
+            long long elap_s = elapsed_sec % 60;
+
+            ImVec4 accent_color;
+            ImVec4 bg_color;
+            ImVec4 border_color;
+
+            if (done) {
+                // Completed celebration styling (emerald green glow)
+                static auto flash_start = std::chrono::steady_clock::now();
+                double ms_count = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - flash_start).count());
+                float pulse = static_cast<float>(0.8 + 0.2 * std::sin(ms_count * 0.005));
+
+                accent_color = ImVec4(0.2f * pulse, 0.95f * pulse, 0.55f * pulse, 1.0f);
+                bg_color     = ImVec4(0.04f, 0.12f, 0.08f, 0.92f);
+                border_color = ImVec4(0.3f, 1.0f, 0.6f, 1.0f);
+            } else {
+                // Active focus session (vibrant Pomodoro red-orange)
+                accent_color = ImVec4(1.0f, 0.42f, 0.22f, 1.0f);
+                bg_color     = ImVec4(0.07f, 0.05f, 0.09f, 0.92f);
+                border_color = accent_color;
+            }
+
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            float vp_w = vp ? vp->Size.x : 1920.0f;
+            float win_w = std::min(520.0f, vp_w - 80.0f);
+            float pos_x = std::max(40.0f, vp_w - win_w - 40.0f);
+            float pos_y = 40.0f;
+
+            ImGui::SetNextWindowPos(ImVec2(pos_x, pos_y));
+            ImGui::SetNextWindowSize(ImVec2(win_w, 220.0f));
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
+
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, bg_color);
+            ImGui::PushStyleColor(ImGuiCol_Border, border_color);
+
+            if (ImGui::Begin("##PomodoroVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
+                // Header Bar
+                ImGui::SetWindowFontScale(1.4f);
+                ImGui::TextColored(accent_color, "%s  POMODORO TIMER", ICON_MD_TIMER);
+
+                ImGui::SameLine(ImGui::GetWindowWidth() - 160.0f);
+                ImGui::SetWindowFontScale(1.05f);
+                if (done) {
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "%s DONE!", ICON_MD_CHECK_CIRCLE);
+                } else {
+                    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%s FOCUSING", ICON_MD_PLAY_ARROW);
+                }
+
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Main Body: Radial Gauge on Left, Session Telemetry on Right
+                ImGui::BeginGroup();
+                
+                // Left Group: Radial Gauge
+                ImVec2 gauge_size(150.0f, 130.0f);
+                ImGui::Dummy(gauge_size);
+                ImVec2 rect_min = ImGui::GetItemRectMin();
+                ImVec2 gauge_center = ImVec2(rect_min.x + gauge_size.x * 0.5f, rect_min.y + gauge_size.y * 0.48f);
+                float radius = 48.0f;
+
+                ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+                // Outer subtle track
+                draw_list->AddCircle(gauge_center, radius, ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 0.12f)), 64, 7.0f);
+
+                // Progress Arc
+                float start_angle = -static_cast<float>(M_PI) / 2.0f; // 12 o'clock
+                float end_angle   = start_angle + static_cast<float>(pct * 2.0 * M_PI);
+
+                if (pct > 0.001) {
+                    draw_list->PathClear();
+                    draw_list->PathArcTo(gauge_center, radius, start_angle, end_angle, 64);
+                    draw_list->PathStroke(ImGui::ColorConvertFloat4ToU32(accent_color), 0, 7.5f);
+
+                    // Indicator dot at current progress head
+                    ImVec2 head_pt = ImVec2(gauge_center.x + std::cos(end_angle) * radius,
+                                            gauge_center.y + std::sin(end_angle) * radius);
+                    draw_list->AddCircleFilled(head_pt, 6.0f, ImGui::ColorConvertFloat4ToU32(accent_color));
+                    draw_list->AddCircleFilled(head_pt, 3.0f, ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)));
+                }
+
+                // Digital Time Remaining in Center of Gauge
+                std::string time_str = std::format("{:02d}:{:02d}", rem_min, rem_s);
+                ImVec2 time_size = ImGui::CalcTextSize(time_str.c_str());
+                
+                float text_scale = 1.45f;
+                ImVec2 scaled_size = ImVec2(time_size.x * text_scale, time_size.y * text_scale);
+                
+                draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * text_scale,
+                    ImVec2(gauge_center.x - scaled_size.x * 0.5f, gauge_center.y - scaled_size.y * 0.5f - 4.0f),
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)), time_str.c_str());
+
+                // Label underneath time
+                std::string label_str = done ? "COMPLETED" : "REMAINING";
+                float label_scale = 0.75f;
+                ImVec2 lbl_size = ImGui::CalcTextSize(label_str.c_str());
+                draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * label_scale,
+                    ImVec2(gauge_center.x - (lbl_size.x * label_scale) * 0.5f, gauge_center.y + 14.0f),
+                    ImGui::ColorConvertFloat4ToU32(colors[1]), label_str.c_str());
+
+                ImGui::EndGroup();
+
+                // Right Group: Detailed Session Telemetry
+                ImGui::SameLine();
+                ImGui::BeginGroup();
+
+                ImGui::SetWindowFontScale(1.05f);
+                ImGui::TextColored(colors[1], "%s SESSION METRICS", ICON_MD_TIMELINE);
+                ImGui::TextColored(ImVec4(0.85f, 0.9f, 0.98f, 1.0f), "Target: 25m | Elapsed: %02lld:%02lld (%.0f%%)", elap_min, elap_s, pct * 100.0);
+
+                ImGui::Spacing();
+                
+                // Custom styled progress bar
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, accent_color);
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.16f, 0.22f, 0.8f));
+                ImGui::ProgressBar(static_cast<float>(pct), ImVec2(280.0f, 12.0f), "");
+                ImGui::PopStyleColor(2);
+
+                ImGui::Spacing();
+
+                // Start / End script status badges
+                if (!start_command.empty()) {
+                    ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "%s Start Cmd: Active", ICON_MD_TERMINAL);
+                } else {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 0.8f), "%s Start Cmd: None", ICON_MD_TERMINAL);
+                }
+
+                if (!end_command.empty()) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "%s End Cmd: Ready", ICON_MD_TERMINAL);
+                }
+
+                // Audio Alert
+                if (selected_sound >= 0 && selected_sound < static_cast<int>(sound_options.size())) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.4f, 1.0f), "%s Alert: %s", ICON_MD_VOLUME_UP, sound_options[static_cast<std::size_t>(selected_sound)].c_str());
+                }
+
+                ImGui::EndGroup();
+            }
+            ImGui::End();
+
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(2);
         }
         
         // Override to provide MCP functions

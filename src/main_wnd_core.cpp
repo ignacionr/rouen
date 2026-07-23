@@ -61,6 +61,14 @@ main_wnd::~main_wnd() {
         TextureHelper::shutdown();
         SDL_DestroyGPUDevice(m_device);
     }
+    if (m_detached_imgui_ctx) {
+        ImGui::DestroyContext(m_detached_imgui_ctx);
+        m_detached_imgui_ctx = nullptr;
+    }
+    if (m_detached_window) {
+        SDL_DestroyWindow(m_detached_window);
+        m_detached_window = nullptr;
+    }
     if (m_window) {
         SDL_DestroyWindow(m_window);
     }

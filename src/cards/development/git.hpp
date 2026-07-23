@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <algorithm>
 #include <memory>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 #include "../../helpers/imgui_include.hpp"
 #include <SDL3/SDL.h>
@@ -25,6 +28,10 @@ struct git: public card {
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
     std::string target_repo; // Optional target repository path
     std::string last_commit_message; // AI-generated commit message used most recently
+    
+    std::atomic<bool> ai_request_pending{false};
+    std::string ai_status_cue;
+    mutable std::mutex state_mutex;
     
     git(std::string_view repo_path = "") : target_repo(repo_path) {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
@@ -115,7 +122,9 @@ struct git: public card {
         }
         
         // Use the git model to get the status
-        repo_status = git_model->getGitStatus(selected_repo);
+        std::string status = git_model->getGitStatus(selected_repo);
+        std::lock_guard<std::mutex> lock(state_mutex);
+        repo_status = status;
         return !repo_status.empty();
     }
     
@@ -139,7 +148,38 @@ struct git: public card {
         return it != statusColorMap.end() ? it->second : ImColor(255, 255, 255, 255); // White as default
     }
 
+    void render_ai_busy_cue() {
+        double time = ImGui::GetTime();
+        auto dot_count = static_cast<std::size_t>(static_cast<long long>(time * 3.0) % 4);
+        std::string dots(dot_count, '.');
+
+        std::string cue_text;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            cue_text = ai_status_cue.empty() ? "AI request in progress" : ai_status_cue;
+        }
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.25f, 0.35f, 0.6f));
+        ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
+        if (ImGui::BeginChild("AIBusyCue", ImVec2(0, 36.0f), true, ImGuiWindowFlags_NoScrollbar)) {
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(colors[1], "%s  %s%-3s", ICON_MD_SYNC, cue_text.c_str(), dots.c_str());
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+        ImGui::Spacing();
+    }
+
     void render_selected() {
+        std::string current_status;
+        std::string current_commit_msg;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            current_status = repo_status;
+            current_commit_msg = last_commit_message;
+        }
+
         // Back button
         if (ImGui::Button("Back to Repository List")) {
             back_to_list();
@@ -151,7 +191,7 @@ struct git: public card {
         // Display the git status
         ImGui::Separator();
         ImGui::BeginChild("GitStatus", ImVec2(0, ImGui::GetWindowHeight() - 180.0f), true);
-        ImGui::TextWrapped("%s", repo_status.c_str());
+        ImGui::TextWrapped("%s", current_status.c_str());
         ImGui::EndChild();
 
         // Repository actions using SmallButton
@@ -198,14 +238,19 @@ struct git: public card {
         }
 
         ImGui::SameLine();
+        if (ImGui::SmallButton("AI Summary")) {
+            generate_ai_summary();
+        }
+
+        ImGui::SameLine();
         if (ImGui::SmallButton("Commit All")) {
             commit_all_with_ai_message();
         }
 
-        if (!last_commit_message.empty()) {
+        if (!current_commit_msg.empty()) {
             ImGui::Separator();
             ImGui::Text("Last AI commit message:");
-            ImGui::TextWrapped("%s", last_commit_message.c_str());
+            ImGui::TextWrapped("%s", current_commit_msg.c_str());
         }
         
         // GitHub status indicator (if this is a GitHub repo)
@@ -214,14 +259,25 @@ struct git: public card {
 
     bool render() override {
         return render_window([this]() {
+            bool disabled = ai_request_pending.load();
+
+            if (disabled) {
+                render_ai_busy_cue();
+                ImGui::BeginDisabled();
+            }
+
             if (selected_repo.empty()) {
                 render_index();
             } else {
                 render_selected();
             }
+
+            if (disabled) {
+                ImGui::EndDisabled();
+            }
         });
     }
-    
+
     void render_index() {
         // Get repository data from the model
         // const auto& repos = git_model->getRepos(); // Commented out unused variable
@@ -283,6 +339,7 @@ private:
             output = std::format("{} completed.", action_name);
         }
 
+        std::lock_guard<std::mutex> lock(state_mutex);
         repo_status = std::format("{} result:\n{}\n\n{}", action_name, output, repo_status);
     }
 
@@ -293,7 +350,7 @@ private:
         return value;
     }
 
-    std::string generate_ai_commit_message(const std::string& staged_context) {
+    std::string generate_ai_commit_message(const std::string& staged_context, const std::string& repo_path) {
         if (!rouen::helpers::LLMConfig::is_configured()) {
             return {};
         }
@@ -318,7 +375,7 @@ private:
             "Repository: {}\n\n"
             "Write a git commit message for these staged changes.\n\n"
             "Staged context:\n{}\n",
-            selected_repo,
+            repo_path,
             staged_context
         );
 
@@ -338,46 +395,145 @@ private:
         return trim_copy(response.choices[0].message.content);
     }
 
+    void generate_ai_summary() {
+        if (ai_request_pending) return;
+        if (selected_repo.empty()) return;
+
+        ai_request_pending = true;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            ai_status_cue = "Generating AI repository summary";
+        }
+
+        std::string repo = selected_repo;
+
+        std::thread([this, repo]() {
+            std::string status_output = git_model->getGitStatus(repo);
+            std::string diff_context = git_model->getCachedDiff(repo);
+
+            if (diff_context.empty() || diff_context.find("---DIFF---") == std::string::npos) {
+                std::string git_path = CONFIG_SERVICE()->get_git_path();
+                diff_context = rouen::models::GitProcessHelper::executeCommandInDirectory(
+                    repo,
+                    git_path + " diff --stat && printf '\\n---DIFF---\\n' && " + git_path + " diff"
+                );
+            }
+
+            constexpr std::size_t max_context_length = 12000;
+            if (diff_context.size() > max_context_length) {
+                diff_context.resize(max_context_length);
+                diff_context += "\n\n[truncated]";
+            }
+
+            std::string prompt = std::format(
+                "Repository: {}\n\n"
+                "Provide a concise summary of the current git status and changes.\n\n"
+                "Git Status:\n{}\n\n"
+                "Diff Context:\n{}\n",
+                repo,
+                status_output,
+                diff_context.empty() ? "(No active diff / working directory clean)" : diff_context
+            );
+
+            std::string summary_result;
+            try {
+                if (rouen::helpers::LLMConfig::is_configured()) {
+                    if (auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance()) {
+                        auto settings = rouen::helpers::LLMConfig::get_current_config();
+                        auto fetcher = std::make_shared<http::fetch>();
+
+                        llm_instance->add_instructions(
+                            "You are an expert software developer. "
+                            "Summarize the git status and changes concisely with bullet points. "
+                            "Focus on key structural changes, additions, or fixes."
+                        );
+
+                        auto response = llm_instance->sendMessage(
+                            prompt,
+                            [fetcher](const std::string& url, const std::string& data, auto header_client) {
+                                return fetcher->post(url, data, header_client);
+                            },
+                            "user",
+                            settings.model_name
+                        );
+
+                        if (!response.choices.empty() && !response.choices[0].message.content.empty()) {
+                            summary_result = trim_copy(response.choices[0].message.content);
+                        }
+                    }
+                }
+                if (summary_result.empty()) {
+                    summary_result = "AI LLM is not configured or returned no summary.";
+                }
+            } catch (const std::exception& e) {
+                summary_result = std::format("Error generating AI summary: {}", e.what());
+            }
+
+            prepend_action_result("AI Summary", summary_result);
+            ai_request_pending = false;
+        }).detach();
+    }
+
     void commit_all_with_ai_message() {
-        last_commit_message.clear();
+        if (ai_request_pending) return;
+        if (selected_repo.empty()) return;
 
-        std::string add_result = git_model->gitAddAll(selected_repo);
-        std::string staged_context = git_model->getCachedDiff(selected_repo);
+        ai_request_pending = true;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            ai_status_cue = "Generating AI commit message & committing...";
+            last_commit_message.clear();
+        }
 
-        if (!git_model->hasStagedChanges(selected_repo)) {
+        std::string repo = selected_repo;
+
+        std::thread([this, repo]() {
+            std::string add_result = git_model->gitAddAll(repo);
+            std::string staged_context = git_model->getCachedDiff(repo);
+
+            if (!git_model->hasStagedChanges(repo)) {
+                prepend_action_result(
+                    "Commit All",
+                    add_result.empty() ? "No changes to commit after staging." : add_result + "\nNo changes to commit after staging."
+                );
+                ai_request_pending = false;
+                return;
+            }
+
+            constexpr std::size_t max_context_length = 12000;
+            if (staged_context.size() > max_context_length) {
+                staged_context.resize(max_context_length);
+                staged_context += "\n\n[truncated]";
+            }
+
+            std::string commit_message;
+            try {
+                commit_message = generate_ai_commit_message(staged_context, repo);
+            } catch (const std::exception& e) {
+                prepend_action_result("Commit All", std::format("Failed to generate AI commit message: {}", e.what()));
+                ai_request_pending = false;
+                return;
+            }
+
+            commit_message = trim_copy(commit_message);
+            if (commit_message.empty()) {
+                prepend_action_result("Commit All", "AI did not return a usable commit message.");
+                ai_request_pending = false;
+                return;
+            }
+
+            std::string commit_result = git_model->gitCommit(repo, commit_message);
+            {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                last_commit_message = commit_message;
+            }
             prepend_action_result(
                 "Commit All",
-                add_result.empty() ? "No changes to commit after staging." : add_result + "\nNo changes to commit after staging."
+                std::format("Generated commit message:\n{}\n\n{}", commit_message, commit_result)
             );
-            return;
-        }
 
-        constexpr std::size_t max_context_length = 12000;
-        if (staged_context.size() > max_context_length) {
-            staged_context.resize(max_context_length);
-            staged_context += "\n\n[truncated]";
-        }
-
-        std::string commit_message;
-        try {
-            commit_message = generate_ai_commit_message(staged_context);
-        } catch (const std::exception& e) {
-            prepend_action_result("Commit All", std::format("Failed to generate AI commit message: {}", e.what()));
-            return;
-        }
-
-        commit_message = trim_copy(commit_message);
-        if (commit_message.empty()) {
-            prepend_action_result("Commit All", "AI did not return a usable commit message.");
-            return;
-        }
-
-        last_commit_message = commit_message;
-        std::string commit_result = git_model->gitCommit(selected_repo, commit_message);
-        prepend_action_result(
-            "Commit All",
-            std::format("Generated commit message:\n{}\n\n{}", commit_message, commit_result)
-        );
+            ai_request_pending = false;
+        }).detach();
     }
 
     // Helper to extract GitHub repository name from remote URL
