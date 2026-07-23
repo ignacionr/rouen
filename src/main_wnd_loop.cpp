@@ -83,8 +83,7 @@ void main_wnd::run() {
                         if (tex) {
                             float win_w = vp->Size.x;
                             float win_h = vp->Size.y;
-                            float aspect = fs_item->video_aspect_ratio.load();
-                            if (aspect <= 0.0f) aspect = 16.0f / 9.0f;
+                            float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
 
                             float draw_w, draw_h;
                             if (win_w / win_h > aspect) {

@@ -104,6 +104,8 @@ struct media_player_item {
     std::mutex texture_mutex;
     SDL_AudioStream* local_audio_stream{nullptr};
     std::atomic<double> last_audio_pts{0.0};
+    double m_last_valid_audio_time{0.0};
+    std::chrono::steady_clock::time_point m_last_clock_time{};
 
     struct decoded_video_frame {
         std::vector<uint8_t> pixels;
@@ -197,11 +199,20 @@ struct media_player_item {
                 }
             } else {
                 double current_audio_time = 0.0;
-                if (local_audio_stream) {
-                    double queued_seconds = static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0;
+                int queued_bytes = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
+                if (local_audio_stream && queued_bytes > 0) {
+                    double queued_seconds = static_cast<double>(queued_bytes) / 176400.0;
                     current_audio_time = last_audio_pts.load() - queued_seconds;
+                    m_last_valid_audio_time = current_audio_time;
+                    m_last_clock_time = std::chrono::steady_clock::now();
                 } else {
-                    current_audio_time = position.load();
+                    auto now = std::chrono::steady_clock::now();
+                    if (m_last_clock_time.time_since_epoch().count() > 0) {
+                        double elapsed = std::chrono::duration<double>(now - m_last_clock_time).count();
+                        current_audio_time = m_last_valid_audio_time + elapsed;
+                    } else {
+                        current_audio_time = position.load();
+                    }
                 }
 
                 std::lock_guard<std::mutex> q_lock(video_queue_mutex);
@@ -599,14 +610,23 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
     video_format_ctx->interrupt_callback.callback = decode_interrupt_cb;
     video_format_ctx->interrupt_callback.opaque = this;
 
-    if (avformat_open_input(&video_format_ctx, video_target.c_str(), nullptr, nullptr) < 0) {
+    AVDictionary* v_opts = nullptr;
+    if (video_target.find("http://") == 0 || video_target.find("https://") == 0) {
+        av_dict_set(&v_opts, "reconnect", "1", 0);
+        av_dict_set(&v_opts, "reconnect_streamed", "1", 0);
+        av_dict_set(&v_opts, "reconnect_delay_max", "5", 0);
+        av_dict_set(&v_opts, "rw_timeout", "10000000", 0);
+    }
+
+    if (avformat_open_input(&video_format_ctx, video_target.c_str(), nullptr, &v_opts) < 0) {
+        if (v_opts) av_dict_free(&v_opts);
         std::cerr << "[NativePlayer] Failed to open input: " << video_target << std::endl;
-        avformat_free_context(video_format_ctx);
         is_playing = false;
         ffmpeg_running.store(false);
         player_pid = 0;
         return;
     }
+    if (v_opts) av_dict_free(&v_opts);
 
     if (avformat_find_stream_info(video_format_ctx, nullptr) < 0) {
         std::cerr << "[NativePlayer] Failed to find stream info" << std::endl;
@@ -623,10 +643,19 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
         if (audio_format_ctx) {
             audio_format_ctx->interrupt_callback.callback = decode_interrupt_cb;
             audio_format_ctx->interrupt_callback.opaque = this;
-            if (avformat_open_input(&audio_format_ctx, audio_target.c_str(), nullptr, nullptr) < 0) {
+            AVDictionary* a_opts = nullptr;
+            if (audio_target.find("http://") == 0 || audio_target.find("https://") == 0) {
+                av_dict_set(&a_opts, "reconnect", "1", 0);
+                av_dict_set(&a_opts, "reconnect_streamed", "1", 0);
+                av_dict_set(&a_opts, "reconnect_delay_max", "5", 0);
+                av_dict_set(&a_opts, "rw_timeout", "10000000", 0);
+            }
+            if (avformat_open_input(&audio_format_ctx, audio_target.c_str(), nullptr, &a_opts) < 0) {
+                if (a_opts) av_dict_free(&a_opts);
                 avformat_free_context(audio_format_ctx);
                 audio_format_ctx = nullptr;
             } else {
+                if (a_opts) av_dict_free(&a_opts);
                 if (avformat_find_stream_info(audio_format_ctx, nullptr) < 0) {
                     avformat_close_input(&audio_format_ctx);
                     audio_format_ctx = nullptr;
@@ -766,10 +795,121 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
     player_pid = 1;
 
     bool is_dual_input = (audio_format_ctx != video_format_ctx);
+    bool video_eof = (video_stream_idx < 0);
+    bool audio_eof = (audio_stream_idx < 0);
+
+    auto drain_and_finish = [&]() {
+        if (video_codec_ctx && sws_ctx && video_stream_idx >= 0) {
+            avcodec_send_packet(video_codec_ctx, nullptr);
+            while (avcodec_receive_frame(video_codec_ctx, frame) >= 0) {
+                double pts_time = 0.0;
+                if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                    pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[video_stream_idx]->time_base);
+                } else {
+                    pts_time = position.load() + (1.0 / kFps);
+                }
+                std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+                rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                sws_scale(sws_ctx, frame->data, frame->linesize, 0, video_codec_ctx->height, rgba_frame->data, rgba_frame->linesize);
+                {
+                    std::lock_guard<std::mutex> lock(video_queue_mutex);
+                    decoded_video_queue.push_back({
+                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
+                        pts_time
+                    });
+                }
+            }
+        }
+        if (audio_codec_ctx && swr_ctx && audio_stream_idx >= 0) {
+            avcodec_send_packet(audio_codec_ctx, nullptr);
+            while (avcodec_receive_frame(audio_codec_ctx, frame) >= 0) {
+                double pts_time = 0.0;
+                if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                    pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[audio_stream_idx]->time_base);
+                } else {
+                    pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
+                }
+                last_audio_pts.store(pts_time);
+
+                const uint8_t* input_data[8];
+                for (int i = 0; i < 8; ++i) input_data[i] = frame->data[i];
+                int out_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, input_data, frame->nb_samples);
+                if (out_samples > 0) {
+                    size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
+                    std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
+                    if (!local_audio_stream) {
+                        SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                        local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+                        if (local_audio_stream) SDL_ResumeAudioStreamDevice(local_audio_stream);
+                    }
+                    if (local_audio_stream) {
+                        float vol_factor = static_cast<float>(volume.load()) / 100.0f;
+                        if (vol_factor < 1.0f) {
+                            int16_t* samples = reinterpret_cast<int16_t*>(pcm_chunk.data());
+                            size_t sample_count = pcm_chunk.size() / sizeof(int16_t);
+                            for (size_t i = 0; i < sample_count; ++i) {
+                                samples[i] = static_cast<int16_t>(std::clamp<int32_t>(static_cast<int32_t>(samples[i] * vol_factor), -32768, 32767));
+                            }
+                        }
+                        SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                    }
+                    if (!pcm_chunk.empty()) {
+                        const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_chunk.data());
+                        size_t f_count = pcm_chunk.size() / (2 * sizeof(int16_t));
+                        int32_t max_l = 0, max_r = 0;
+                        for (size_t i = 0; i < f_count; ++i) {
+                            int32_t l = std::abs(static_cast<int32_t>(samples[i * 2]));
+                            int32_t r = std::abs(static_cast<int32_t>(samples[i * 2 + 1]));
+                            if (l > max_l) max_l = l;
+                            if (r > max_r) max_r = r;
+                        }
+                        float peak_l = static_cast<float>(max_l) / 32768.0f;
+                        float peak_r = static_cast<float>(max_r) / 32768.0f;
+                        {
+                            std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
+                            audio_peak_queue.push_back({pts_time, peak_l, peak_r});
+                            if (audio_peak_queue.size() > 300) {
+                                audio_peak_queue.pop_front();
+                            }
+                        }
+                    }
+                }
+            }
+            int flush_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, nullptr, 0);
+            if (flush_samples > 0) {
+                size_t pcm_bytes = static_cast<size_t>(flush_samples) * 2 * sizeof(int16_t);
+                std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
+                if (local_audio_stream) {
+                    SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                }
+            }
+        }
+
+        while (ffmpeg_running.load() && !is_paused.load()) {
+            int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
+            size_t q_size = 0;
+            {
+                std::lock_guard<std::mutex> lock(video_queue_mutex);
+                q_size = decoded_video_queue.size();
+            }
+            if (queued_audio <= 0 && q_size == 0) {
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (duration.load() > 0.0) {
+            position.store(duration.load());
+        }
+        update_watermark();
+        is_playing = false;
+    };
 
     while (ffmpeg_running.load()) {
         double target = seek_target.exchange(-1.0);
         if (target >= 0.0) {
+            video_eof = (video_stream_idx < 0);
+            audio_eof = (audio_stream_idx < 0);
             if (video_stream_idx >= 0 && video_format_ctx) {
                 int64_t target_pts = av_rescale_q(static_cast<int64_t>(target * AV_TIME_BASE), AV_TIME_BASE_Q, video_format_ctx->streams[video_stream_idx]->time_base);
                 av_seek_frame(video_format_ctx, video_stream_idx, target_pts, AVSEEK_FLAG_BACKWARD);
@@ -815,7 +955,8 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
         if (!is_dual_input) {
             int read_res = av_read_frame(video_format_ctx, packet);
             if (read_res < 0) {
-                if (read_res == AVERROR_EOF) {
+                if (read_res != AVERROR(EAGAIN)) {
+                    drain_and_finish();
                     break;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -926,7 +1067,7 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                 current_q_size = decoded_video_queue.size();
             }
 
-            if (video_stream_idx >= 0 && current_q_size < 20) {
+            if (video_stream_idx >= 0 && !video_eof && current_q_size < 20) {
                 int read_res = av_read_frame(video_format_ctx, packet);
                 if (read_res >= 0) {
                     did_work = true;
@@ -957,11 +1098,13 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                         }
                     }
                     av_packet_unref(packet);
+                } else if (read_res < 0 && read_res != AVERROR(EAGAIN)) {
+                    video_eof = true;
                 }
             }
 
             int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
-            if (audio_stream_idx >= 0 && queued_audio < 44100 * 2) {
+            if (audio_stream_idx >= 0 && !audio_eof && queued_audio < 44100 * 2) {
                 int read_res = av_read_frame(audio_format_ctx, packet);
                 if (read_res >= 0) {
                     did_work = true;
@@ -1025,7 +1168,58 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                         }
                     }
                     av_packet_unref(packet);
+                } else if (read_res < 0 && read_res != AVERROR(EAGAIN)) {
+                    audio_eof = true;
+                    if (audio_codec_ctx && swr_ctx) {
+                        avcodec_send_packet(audio_codec_ctx, nullptr);
+                        while (avcodec_receive_frame(audio_codec_ctx, frame) >= 0) {
+                            double pts_time = 0.0;
+                            if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                                pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(audio_format_ctx->streams[audio_stream_idx]->time_base);
+                            } else {
+                                pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
+                            }
+                            last_audio_pts.store(pts_time);
+
+                            const uint8_t* input_data[8];
+                            for (int i = 0; i < 8; ++i) input_data[i] = frame->data[i];
+                            int out_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, input_data, frame->nb_samples);
+                            if (out_samples > 0) {
+                                size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
+                                std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
+                                if (!local_audio_stream) {
+                                    SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                                    local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+                                    if (local_audio_stream) SDL_ResumeAudioStreamDevice(local_audio_stream);
+                                }
+                                if (local_audio_stream) {
+                                    float vol_factor = static_cast<float>(volume.load()) / 100.0f;
+                                    if (vol_factor < 1.0f) {
+                                        int16_t* samples = reinterpret_cast<int16_t*>(pcm_chunk.data());
+                                        size_t sample_count = pcm_chunk.size() / sizeof(int16_t);
+                                        for (size_t i = 0; i < sample_count; ++i) {
+                                            samples[i] = static_cast<int16_t>(std::clamp<int32_t>(static_cast<int32_t>(samples[i] * vol_factor), -32768, 32767));
+                                        }
+                                    }
+                                    SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                                }
+                            }
+                        }
+                        int flush_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, nullptr, 0);
+                        if (flush_samples > 0) {
+                            size_t pcm_bytes = static_cast<size_t>(flush_samples) * 2 * sizeof(int16_t);
+                            std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
+                            if (local_audio_stream) {
+                                SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                            }
+                        }
+                    }
                 }
+            }
+
+            if (video_eof && audio_eof) {
+                drain_and_finish();
+                break;
             }
 
             if (!did_work) {
