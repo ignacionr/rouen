@@ -23,9 +23,14 @@ terminal::terminal(std::string_view initial_dir) {
     width = 600.0f;                  // Default width
     requested_fps = 30;              // High refresh rate for smoother output
     
-    // Initialize working directory
+    // Initialize working directory ($HOME if not specified)
     if (initial_dir.empty()) {
-        current_working_dir = std::filesystem::current_path().string();
+        const char* home = std::getenv("HOME");
+        if (home && home[0] != '\0') {
+            current_working_dir = home;
+        } else {
+            current_working_dir = std::filesystem::current_path().string();
+        }
     } else {
         current_working_dir = std::string(initial_dir);
     }
@@ -292,6 +297,14 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         return false;
     }
 
+    // Ensure working directory is up to date from interactive bash session
+    if (bash.is_interactive()) {
+        std::string new_cwd = bash.get_cwd();
+        if (!new_cwd.empty()) {
+            current_working_dir = new_cwd;
+        }
+    }
+
     // Output the command typed by the user to the terminal output log so they see it
     output.add_to_output(cmd, OutputType::Command);
 
@@ -364,22 +377,22 @@ bool terminal::handle_slash_command(const std::string& cmd) {
             
             const char* home_env = std::getenv("HOME");
             std::string home_dir = home_env ? home_env : "";
-            
             std::string agy_path = home_dir.empty() ? "" : (std::filesystem::path(home_dir) / ".local" / "bin" / "agy").string();
-            std::string agy_cmd;
+            std::string src_path = home_dir.empty() ? "" : (std::filesystem::path(home_dir) / "src").string();
             
-            if (!agy_path.empty() && std::filesystem::exists(agy_path)) {
-                // Use standalone binary directly for speed and reliability
-                agy_cmd = std::format(R"((cd "{}" && "{}" --add-dir "{}" --prompt "{}" < /dev/null))", current_working_dir, agy_path, current_working_dir, escaped_prompt);
-            } else {
-                // Fallback to nix shell using the src directory flake
-                std::string src_path = home_dir.empty() ? "/Users/inz/src" : (std::filesystem::path(home_dir) / "src").string();
-                agy_cmd = std::format(R"((cd "{}" && NIXPKGS_ALLOW_UNFREE=1 nix shell "{}" -c agy --add-dir "{}" --prompt "{}" < /dev/null))", current_working_dir, src_path, current_working_dir, escaped_prompt);
-            }
+            std::string agy_cmd = std::format(
+                R"((if command -v agy >/dev/null 2>&1; then agy --add-dir "$PWD" --prompt "{0}" < /dev/null; elif [ -n "{1}" ] && [ -f "{1}" ]; then "{1}" --add-dir "$PWD" --prompt "{0}" < /dev/null; elif [ -n "{2}" ] && [ -d "{2}" ] && [ -f "{2}/flake.nix" ]; then NIXPKGS_ALLOW_UNFREE=1 nix shell "{2}" -c agy --add-dir "$PWD" --prompt "{0}" < /dev/null; else NIXPKGS_ALLOW_UNFREE=1 nix shell . -c agy --add-dir "$PWD" --prompt "{0}" < /dev/null; fi))",
+                escaped_prompt, agy_path, src_path);
             
             // Execute the command in the bash session
             is_command_running.store(true);
-            bash.send_to_bash(agy_cmd);
+            if (bash.is_interactive()) {
+                bash.send_to_bash(agy_cmd);
+            } else {
+                commands.execute_command(agy_cmd, false, output, current_working_dir,
+                                         command_history, history_index, is_command_running,
+                                         bash.is_interactive(), show_sudo_prompt, sudo_command);
+            }
         }
     }
     else {
@@ -392,7 +405,9 @@ bool terminal::handle_slash_command(const std::string& cmd) {
 }
 
 std::string terminal::get_uri() const {
-    if (current_working_dir.empty() || current_working_dir == std::filesystem::current_path().string()) {
+    const char* home = std::getenv("HOME");
+    std::string home_dir = (home && home[0] != '\0') ? home : std::filesystem::current_path().string();
+    if (current_working_dir.empty() || current_working_dir == home_dir) {
         return "terminal";
     }
     return std::format("terminal:{}", current_working_dir);
