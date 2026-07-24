@@ -926,7 +926,7 @@ private:
                 toll_count_remaining.store(count - i);
                 media_player_alarm_helper::play_chime("img/chime.wav");
 
-                for (int ms = 0; ms < 1200 && !toll_stop_flag.load(); ++ms) {
+                for (int ms = 0; ms < 3000 && !toll_stop_flag.load(); ms += 20) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
             }

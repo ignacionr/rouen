@@ -12,6 +12,7 @@
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/media_player.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 #include "../interface/card.hpp"
 #include "../../hosts/video_feed_host.hpp"
@@ -42,6 +43,8 @@ namespace rouen::cards {
             // Default to 1 hour from now
             current_tm.tm_hour += 1;
             target_time = std::chrono::system_clock::from_time_t(std::mktime(&current_tm));
+            initial_duration = std::chrono::duration_cast<std::chrono::seconds>(target_time - current_time);
+            if (initial_duration <= std::chrono::seconds(0)) initial_duration = std::chrono::seconds(1);
             
             // Parse target time if provided
             if (!target_time_str.empty()) {
@@ -103,11 +106,49 @@ namespace rouen::cards {
             auto time_remaining = get_time_remaining(now);
             bool is_ringing = alarm_active && time_remaining <= std::chrono::seconds(0);
 
-            ImGui::SetNextWindowPos(ImVec2(1380.0f, 40.0f));
-            ImGui::SetNextWindowSize(ImVec2(500.0f, 220.0f));
+            ImGuiViewport* vp = ImGui::GetMainViewport();
+            float vp_w = vp ? vp->Size.x : 1920.0f;
+            float vp_h = vp ? vp->Size.y : 1080.0f;
+            float win_w = std::min(480.0f, vp_w - 80.0f);
+            float win_h = is_ringing ? 155.0f : (alarm_active ? 165.0f : 135.0f);
+
+            float pos_x = 40.0f;
+            float pos_y = 40.0f;
+
+            switch (selected_overlay_position) {
+                case 1: // Top Left
+                    pos_x = 40.0f;
+                    pos_y = 40.0f;
+                    break;
+                case 2: // Bottom Right
+                    pos_x = std::max(40.0f, vp_w - win_w - 40.0f);
+                    pos_y = std::max(40.0f, vp_h - win_h - 40.0f);
+                    break;
+                case 3: // Bottom Left
+                    pos_x = 40.0f;
+                    pos_y = std::max(40.0f, vp_h - win_h - 40.0f);
+                    break;
+                case 4: // Top Center
+                    pos_x = (vp_w - win_w) * 0.5f;
+                    pos_y = 40.0f;
+                    break;
+                case 0: // Top Right (default)
+                default:
+                    pos_x = std::max(40.0f, vp_w - win_w - 40.0f);
+                    pos_y = 40.0f;
+                    break;
+            }
+
+            ImGui::SetNextWindowPos(ImVec2(pos_x, pos_y));
+            ImGui::SetNextWindowSize(ImVec2(win_w, win_h));
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 3.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.5f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 12.0f));
+
+            ImVec4 bg_color;
+            ImVec4 border_color;
+            ImVec4 header_accent;
 
             if (is_ringing) {
                 static auto last_flash = std::chrono::steady_clock::now();
@@ -116,56 +157,94 @@ namespace rouen::cards {
                     flash = !flash;
                     last_flash = std::chrono::steady_clock::now();
                 }
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, flash ? ImVec4(0.85f, 0.15f, 0.15f, 0.95f) : ImVec4(0.55f, 0.08f, 0.08f, 0.95f));
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 0.9f, 0.3f, 1.0f));
+                bg_color      = flash ? ImVec4(0.85f, 0.15f, 0.15f, 0.95f) : ImVec4(0.50f, 0.08f, 0.08f, 0.95f);
+                border_color  = ImVec4(1.0f, 0.85f, 0.2f, 1.0f);
+                header_accent = ImVec4(1.0f, 0.95f, 0.5f, 1.0f);
             } else if (alarm_active) {
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.14f, 0.24f, 0.92f));
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.7f, 1.0f, 1.0f));
+                bg_color      = ImVec4(0.08f, 0.12f, 0.20f, 0.94f);
+                border_color  = ImVec4(0.25f, 0.65f, 0.95f, 1.0f);
+                header_accent = ImVec4(1.0f, 0.75f, 0.25f, 1.0f);
             } else {
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.12f, 0.12f, 0.14f, 0.88f));
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.4f, 0.45f, 0.8f));
+                bg_color      = ImVec4(0.12f, 0.12f, 0.14f, 0.88f);
+                border_color  = ImVec4(0.40f, 0.40f, 0.45f, 0.8f);
+                header_accent = ImVec4(0.60f, 0.60f, 0.65f, 1.0f);
             }
 
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, bg_color);
+            ImGui::PushStyleColor(ImGuiCol_Border, border_color);
+
             if (ImGui::Begin("##AlarmVideoOverlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs)) {
-                ImGui::SetWindowFontScale(1.8f);
-                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.25f, 1.0f), "⏰ ALARM CARD");
+                // Header line: Left side icon + title, Right side status pill
+                ImGui::SetWindowFontScale(1.3f);
+                ImGui::TextColored(header_accent, "%s  ALARM CARD", ICON_MD_ALARM);
+
+                ImGui::SameLine(ImGui::GetWindowWidth() - 170.0f);
+                ImGui::SetWindowFontScale(1.0f);
+                if (is_ringing) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "%s  RINGING!", ICON_MD_NOTIFICATIONS_ACTIVE);
+                } else if (alarm_active) {
+                    ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.60f, 1.0f), "%s  COUNTDOWN", ICON_MD_TIMER);
+                } else {
+                    ImGui::TextColored(ImVec4(0.65f, 0.65f, 0.70f, 1.0f), "%s  OFF", ICON_MD_ALARM_OFF);
+                }
+
+                ImGui::SetWindowFontScale(1.0f);
                 ImGui::Separator();
                 ImGui::Spacing();
 
                 if (is_ringing) {
-                    ImGui::SetWindowFontScale(2.4f);
-                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "🚨 ALARM RINGING!");
-                    ImGui::SetWindowFontScale(1.6f);
-                    ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.5f, 1.0f), "Time's up! Attention required.");
+                    ImGui::SetWindowFontScale(2.0f);
+                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s  TIME'S UP!", ICON_MD_WARNING);
+                    ImGui::SetWindowFontScale(1.1f);
+                    ImGui::TextColored(ImVec4(1.0f, 0.95f, 0.6f, 1.0f), "Alarm is sounding — attention required!");
                 } else if (alarm_active) {
-                    auto hours = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
+                    auto hours   = std::chrono::duration_cast<std::chrono::hours>(time_remaining).count();
                     auto minutes = std::chrono::duration_cast<std::chrono::minutes>(time_remaining).count() % 60;
                     auto seconds = std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count() % 60;
                     std::string timer_str = std::format("{:02d}:{:02d}:{:02d}", hours, minutes, seconds);
 
-                    ImGui::SetWindowFontScale(1.4f);
-                    ImGui::TextColored(ImVec4(0.4f, 0.95f, 0.6f, 1.0f), "COUNTDOWN ACTIVE");
-
-                    ImGui::SetWindowFontScale(2.6f);
+                    ImGui::BeginGroup();
+                    ImGui::SetWindowFontScale(2.3f);
                     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", timer_str.c_str());
+                    ImGui::EndGroup();
+
+                    ImGui::SameLine(ImGui::GetWindowWidth() - 150.0f);
+                    ImGui::BeginGroup();
+                    ImGui::SetWindowFontScale(0.9f);
+                    ImGui::TextColored(ImVec4(0.65f, 0.75f, 0.85f, 1.0f), "Target Time:");
+                    auto target_t = std::chrono::system_clock::to_time_t(target_time);
+                    std::tm target_tm = *std::localtime(&target_t);
+                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.95f, 1.0f), "%02d:%02d:%02d",
+                                       target_tm.tm_hour, target_tm.tm_min, target_tm.tm_sec);
+                    ImGui::EndGroup();
+
+                    ImGui::Spacing();
 
                     // Visual Progress Bar
                     ImGui::SetWindowFontScale(1.0f);
-                    float total_sec = 1800.0f; // 30 min default
+                    float total_sec = static_cast<float>(initial_duration.count());
+                    if (total_sec <= 0.0f) total_sec = 1800.0f;
                     float rem_sec = static_cast<float>(std::chrono::duration_cast<std::chrono::seconds>(time_remaining).count());
                     float progress = std::clamp(rem_sec / total_sec, 0.0f, 1.0f);
-                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 12.0f), "");
+
+                    // Custom styled progress bar
+                    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.25f, 0.75f, 0.95f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.20f, 0.30f, 0.8f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+                    ImGui::ProgressBar(progress, ImVec2(-1.0f, 14.0f), "");
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(2);
                 } else {
-                    ImGui::SetWindowFontScale(1.8f);
-                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.65f, 1.0f), "ALARM INACTIVE");
-                    ImGui::SetWindowFontScale(1.3f);
+                    ImGui::SetWindowFontScale(1.4f);
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.75f, 1.0f), "ALARM INACTIVE");
+                    ImGui::SetWindowFontScale(1.1f);
                     ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.55f, 1.0f), "Set a timer to enable overlay countdown.");
                 }
             }
             ImGui::End();
 
             ImGui::PopStyleColor(2);
-            ImGui::PopStyleVar(2);
+            ImGui::PopStyleVar(3);
         }
 
         void paint_video_surface(SDL_Surface* surface, int surface_w, int surface_h) override {
@@ -176,11 +255,35 @@ namespace rouen::cards {
             auto time_remaining = get_time_remaining(now);
             bool is_ringing = alarm_active && time_remaining <= std::chrono::seconds(0);
 
-            // Card position & dimensions on the 1080p video feed (top right overlay box)
+            // Card position & dimensions on the video feed
             int card_w = 480;
             int card_h = 160;
-            int card_x = surface_w - card_w - 40;
+            int card_x = 40;
             int card_y = 40;
+
+            switch (selected_overlay_position) {
+                case 1: // Top Left
+                    card_x = 40;
+                    card_y = 40;
+                    break;
+                case 2: // Bottom Right
+                    card_x = std::max(40, surface_w - card_w - 40);
+                    card_y = std::max(40, surface_h - card_h - 40);
+                    break;
+                case 3: // Bottom Left
+                    card_x = 40;
+                    card_y = std::max(40, surface_h - card_h - 40);
+                    break;
+                case 4: // Top Center
+                    card_x = (surface_w - card_w) / 2;
+                    card_y = 40;
+                    break;
+                case 0: // Top Right
+                default:
+                    card_x = std::max(40, surface_w - card_w - 40);
+                    card_y = 40;
+                    break;
+            }
 
             // Draw card background box
             SDL_Rect box_rect{card_x, card_y, card_w, card_h};
@@ -324,6 +427,21 @@ namespace rouen::cards {
                     // Sound selection changed
                 }
                 ImGui::PopItemWidth();
+
+                // Overlay position selection
+                ImGui::Spacing();
+                ImGui::Text("Overlay Position:");
+                ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.9f);
+                if (ImGui::Combo("##overlay_pos", &selected_overlay_position,
+                                [](void* data, int idx, const char** out_text) -> bool {
+                                    auto& positions = *static_cast<std::vector<std::string>*>(data);
+                                    if (idx < 0 || idx >= static_cast<int>(positions.size())) return false;
+                                    *out_text = positions[static_cast<size_t>(idx)].c_str();
+                                    return true;
+                                }, &overlay_positions, static_cast<int>(overlay_positions.size()))) {
+                    // Position selection changed
+                }
+                ImGui::PopItemWidth();
                 
                 // Test alarm sound button
                 if (ImGui::Button("Test Sound", ImVec2(ImGui::GetWindowWidth() * 0.9f, 0))) {
@@ -376,9 +494,12 @@ namespace rouen::cards {
         }
         void add_minutes(int minutes) {
             target_time += std::chrono::minutes(minutes);
+            auto now = std::chrono::system_clock::now();
+            initial_duration = std::chrono::duration_cast<std::chrono::seconds>(target_time - now);
+            if (initial_duration <= std::chrono::seconds(0)) initial_duration = std::chrono::seconds(1);
             update_time_string();
             alarm_active = true;
-            auto new_time_remaining = get_time_remaining(std::chrono::system_clock::now());
+            auto new_time_remaining = get_time_remaining(now);
             if (alarm_playing && new_time_remaining > std::chrono::seconds(0)) {
                 alarm_playing = false;
                 media_player_alarm_helper::stop_sound_loop();
@@ -413,6 +534,8 @@ namespace rouen::cards {
                             auto t_time = std::mktime(&target_tm);
                             if (t_time != -1) {
                                 target_time = std::chrono::system_clock::from_time_t(t_time);
+                                initial_duration = std::chrono::duration_cast<std::chrono::seconds>(target_time - std::chrono::system_clock::now());
+                                if (initial_duration <= std::chrono::seconds(0)) initial_duration = std::chrono::seconds(1);
                                 update_time_string();
                                 alarm_active = true;
                                 if (alarm_playing) {
@@ -467,6 +590,8 @@ namespace rouen::cards {
                     new_target += std::chrono::hours(24);
                 }
                 target_time = new_target;
+                initial_duration = std::chrono::duration_cast<std::chrono::seconds>(target_time - current_time);
+                if (initial_duration <= std::chrono::seconds(0)) initial_duration = std::chrono::seconds(1);
                 update_time_string();
                 alarm_active = true;
                 if (alarm_playing) {
@@ -686,6 +811,7 @@ namespace rouen::cards {
 
     private:
         std::chrono::system_clock::time_point target_time;
+        std::chrono::seconds initial_duration{3600};
         char time_buffer[32] = {0};
         bool alarm_playing = false;
         bool alarm_active = true;
@@ -698,5 +824,15 @@ namespace rouen::cards {
             {"Simple Tone", "img/new_alarm.wav"}
         };
         int selected_alarm_sound = 0;
+
+        // Available overlay positions
+        std::vector<std::string> overlay_positions = {
+            "Top Right",
+            "Top Left",
+            "Bottom Right",
+            "Bottom Left",
+            "Top Center"
+        };
+        int selected_overlay_position = 0;
     };
 }
