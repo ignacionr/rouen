@@ -298,7 +298,7 @@ public:
                     // Content in a scrollable area
                     try {
                         // Note: BeginChild returns if content is visible, but EndChild must always be called
-                        bool is_visible = ImGui::BeginChild("ContentScrollArea", ImVec2(0, 0), true);
+                        bool is_visible = ImGui::BeginChild("ContentScrollArea", ImVec2(0, 0), true, ImGuiWindowFlags_NavFlattened);
                         
                         if (is_visible) {
                             // Try to load item image if available

@@ -634,7 +634,7 @@ namespace rouen::cards
                                 "FeedItemsScroll",
                                 ImVec2(0, items_child_height),
                                 false,
-                                ImGuiWindowFlags_AlwaysVerticalScrollbar
+                                ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened
                             );
                             if (feed_items_scroll_open) {
                                 size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
@@ -662,16 +662,17 @@ namespace rouen::cards
 
                                             bool has_item_image = (item_tex != nullptr);
                                             float avail_width = ImGui::GetContentRegionAvail().x;
+                                            float const left_width = has_item_image ? avail_width - 130.0f * dpi_scale : avail_width;
                                             
                                             if (has_item_image) {
                                                 ImGui::BeginGroup();
-                                                ImGui::PushTextWrapPos(avail_width - 130.0f * dpi_scale);
+                                                ImGui::PushTextWrapPos(left_width);
                                             } else {
                                                 ImGui::PushTextWrapPos(avail_width);
                                             }
                                             
                                             // Title (selectable to open item)
-                                            if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f * dpi_scale : avail_width, 0))) {
+                                            if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(left_width, 0))) {
                                                 // Open item in a new card
                                                 std::string item_uri = std::format("rss-item:{}|||{}|||{}", feed_id, item.link, item.title);
                                                 "create_card"_sfn(item_uri);
@@ -700,7 +701,7 @@ namespace rouen::cards
  
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
-                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark);
+                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, false, left_width);
                                             }
                                             // Enhanced: Check for extracted media URLs if no direct enclosure
                                             else if (!item.extracted_media_urls.empty()) {
@@ -719,14 +720,14 @@ namespace rouen::cards
                                                             break;
                                                         }
                                                     }
-                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark);
+                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, false, left_width);
                                                 }
                                             }
                                             // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
                                             else if (item.link.find("youtube.com") != std::string::npos || 
                                                      item.link.find("youtu.be") != std::string::npos ||
                                                      item.link.find("vimeo.com") != std::string::npos) {
-                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark);
+                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, false, left_width);
                                             }
                                             else {
                                                 // Check if currently speaking
@@ -748,7 +749,7 @@ namespace rouen::cards
                                                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.15f, 0.18f, 0.9f));
                                                 }
                                                 
-                                                if (ImGui::Button(btn_label.c_str())) {
+                                                if (ImGui::Button(btn_label.c_str(), ImVec2(left_width, 0))) {
                                                     if (is_this_speaking) {
                                                         rouen::platform::stop_speech();
                                                         std::lock_guard<std::mutex> lock(speaking_mutex);

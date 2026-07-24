@@ -473,7 +473,7 @@ public:
             // Create scrollable area for feeds
             auto available_size = ImGui::GetContentRegionAvail();
             ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
-            if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true)) {
+            if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true, ImGuiWindowFlags_NavFlattened)) {
                 auto all_feeds = rss_host->feeds();
                 
                 // Check if we need to re-filter and re-sort feeds

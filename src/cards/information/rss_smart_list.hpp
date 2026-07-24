@@ -225,7 +225,7 @@ namespace rouen::cards
 
             // Draw feed list items
             float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-            ImGui::BeginChild("##smart_items_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            ImGui::BeginChild("##smart_items_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened);
             
             size_t const count = std::min(displayed_items.size(), static_cast<size_t>(items_limit));
             for (size_t i = 0; i < count; ++i) {

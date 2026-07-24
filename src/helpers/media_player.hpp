@@ -662,9 +662,10 @@ struct media_player {
     }
 
 
-    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false) {
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false, float max_width = 0.0f) {
         (void)info_color;
         (void)prefer_tall_layout;
+        float const player_width = (max_width > 0.0f) ? max_width : ImGui::GetContentRegionAvail().x;
         ImGui::PushID(url.data(), url.data() + url.size());
         try {
             auto item_ptr = get_item_ptr(ImGui::GetID("MediaPlayer"));
@@ -714,8 +715,8 @@ struct media_player {
                         static_cast<float>(current_pos / current_dur) : 0.0f;
                     progress = std::max(0.0f, std::min(1.0f, progress));
                     ImVec2 progress_bar_pos = ImGui::GetCursorScreenPos();
-                    ImVec2 progress_bar_size = ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetFrameHeight());
-                    ImGui::ProgressBar(progress, ImVec2(-1, 0), "");
+                    ImVec2 progress_bar_size = ImVec2(player_width, ImGui::GetFrameHeight());
+                    ImGui::ProgressBar(progress, ImVec2(player_width, 0), "");
                     if (ImGui::IsItemClicked()) {
                         auto mouse_x = ImGui::GetIO().MousePos.x;
                         auto rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
@@ -724,7 +725,7 @@ struct media_player {
                         item.seekTo(target_pos);
                     }
                 } else {
-                    ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "Loading...");
+                    ImGui::ProgressBar(0.0f, ImVec2(player_width, 0), "Loading...");
                 }
 
                 ImTextureID tex = item.get_texture_id();
@@ -734,7 +735,7 @@ struct media_player {
                     float thumb_w = 120.0f;
                     float thumb_h = 67.5f;
                     if (!cast_active) {
-                        float avail_w = ImGui::GetContentRegionAvail().x;
+                        float avail_w = player_width;
                         thumb_w = std::max(120.0f, avail_w - 26.0f);
                         thumb_h = thumb_w * 9.0f / 16.0f;
                     }
@@ -747,7 +748,7 @@ struct media_player {
                     draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, thumb_h);
                 } else {
                     ImGui::Spacing();
-                    draw_vintage_110_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), ImGui::GetContentRegionAvail().x, 85.0f, /*is_lit=*/true);
+                    draw_vintage_110_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), player_width, 85.0f, /*is_lit=*/true);
                 }
             } else {
                 // Stopped / Idle state: render clean Play/Resume button without premature VU meter
@@ -757,7 +758,7 @@ struct media_player {
                 if (has_bookmark) {
                     std::string formatted_bookmark = item.formatTime(*item.watermark);
                     float restart_btn_w = ImGui::CalcTextSize("Restart").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                    float play_btn_w = ImGui::GetContentRegionAvail().x - restart_btn_w - ImGui::GetStyle().ItemSpacing.x;
+                    float play_btn_w = player_width - restart_btn_w - ImGui::GetStyle().ItemSpacing.x;
                     
                     if (ImGui::Button(std::format(" {} Resume ({})", ICON_MD_PLAY_ARROW, formatted_bookmark).c_str(), ImVec2(play_btn_w, 0))) {
                         stopAll();
@@ -771,7 +772,7 @@ struct media_player {
                         item.playMedia();
                     }
                 } else {
-                    if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(-1, 0))) {
+                    if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(player_width, 0))) {
                         stopAll();
                         item.start_offset = 0.0;
                         item.playMedia();
