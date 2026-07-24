@@ -77,8 +77,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${FORCEFEEDBACK_LIBRARY}
   ${CARBON_LIBRARY}
   "-framework OpenGL"
-  ${SDL2_LIBRARIES}
-  ${SDL2_IMAGE_LIBRARIES}
   ${OPENGL_LIBRARY}
 )
 

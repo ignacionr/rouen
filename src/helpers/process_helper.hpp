@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <iostream>
 #include "debug.hpp"
+#include "platform_utils.hpp"
 
 // Add process-specific logging macros
 #define PROCESS_ERROR(message) LOG_COMPONENT("PROCESS", LOG_LEVEL_ERROR, message)
@@ -28,9 +29,9 @@ namespace ProcessHelper {
         };
         
         std::string command_to_run = command;
-#if !defined(_WIN32)
-        command_to_run = "export PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:~/.nix-profile/bin\" && " + command;
-#endif
+        if constexpr (!rouen::platform::is_windows) {
+            command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + command;
+        }
 
         // Open a pipe to read the command output using the custom deleter
         std::unique_ptr<FILE, decltype(pipeDeleter)> pipe(popen(command_to_run.c_str(), "r"), pipeDeleter);

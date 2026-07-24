@@ -25,6 +25,24 @@
 
 namespace rouen::platform
 {
+#if defined(_WIN32)
+    constexpr bool is_windows = true;
+#else
+    constexpr bool is_windows = false;
+#endif
+
+#if defined(__APPLE__)
+    constexpr bool is_apple = true;
+#else
+    constexpr bool is_apple = false;
+#endif
+
+#if defined(__linux__)
+    constexpr bool is_linux = true;
+#else
+    constexpr bool is_linux = false;
+#endif
+
     /**
      * Opens a file or URL with the default system application
      * Uses 'open' on macOS and 'xdg-open' on Linux

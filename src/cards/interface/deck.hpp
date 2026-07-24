@@ -171,8 +171,7 @@ struct deck {
     }
 
     bool render(card &c, float &x, float height, int &requested_fps, float y = 0.0f, float override_width = -1.0f) {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        float const scaled_width = (override_width > 0.0f) ? override_width : (c.width * dpi_scale);
+        float const scaled_width = (override_width > 0.0f) ? override_width : c.width;
         ImGui::SetNextWindowPos({x, y}, ImGuiCond_Always);
         ImGui::SetNextWindowSize({scaled_width, height}, ImGuiCond_Always);
 
@@ -187,7 +186,7 @@ struct deck {
         bool result = c.render(ui_context_);
         requested_fps = std::max(requested_fps, c.requested_fps);
         
-        x += scaled_width + 2.0f * dpi_scale;
+        x += scaled_width + 2.0f;
         return result;
     }
 
@@ -497,7 +496,6 @@ struct deck {
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
         bool const empty_editor = editor_.empty();
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         float const wf = get_width_factor();
         float const row_max_width = size.x * wf;
 
@@ -551,7 +549,7 @@ struct deck {
 
             for (size_t idx = 0; idx < cards_.size(); ) {
                 auto& c = cards_[idx];
-                float const card_w = c->width * dpi_scale;
+                float const card_w = c->width;
                 float const sec_boundary = std::min(static_cast<float>(current_sec_idx + 1) * section_width, row_max_width);
 
                 if (current_x + card_w <= sec_boundary + 0.01f) {
@@ -642,7 +640,7 @@ struct deck {
                 }
             }
 
-            float const scaled_min_height = card::min_card_height * dpi_scale;
+            float const scaled_min_height = card::min_card_height;
             float const row_height { std::max(size.y / static_cast<float>(std::max<size_t>(rows.size(), 1)), scaled_min_height) };
             float y = 0.0f;
             std::set<card::ptr> cards_to_remove;
@@ -691,10 +689,10 @@ struct deck {
             auto right_corner_offset {row_max_width};
             float left_corner {0.0f};
             for (auto& c : cards_) {
-                float const scaled_card_width = c->width * dpi_scale;
-                right_corner_offset -= scaled_card_width + 2.0f * dpi_scale;
+                float const scaled_card_width = c->width;
+                right_corner_offset -= scaled_card_width + 2.0f;
                 if (c->is_focused) {
-                    left_corner = right_corner_offset + scaled_card_width - row_max_width + 2.0f * dpi_scale;
+                    left_corner = right_corner_offset + scaled_card_width - row_max_width + 2.0f;
                     break;
                 }
             }
@@ -708,12 +706,12 @@ struct deck {
             }
             start_x = std::max(start_x, left_corner);
             auto x{start_x};
-            auto y = (empty_editor ? 450.0f : 250.0f) * dpi_scale;
+            auto y = (empty_editor ? 450.0f : 250.0f);
             auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, y, &result, dpi_scale, row_max_width](auto const& c) {
+                [this, &x, y, &result, row_max_width](auto const& c) {
                     float override_width = -1.0f;
                     if (!cards_.empty() && c == cards_.back()) {
-                        float const scaled_card_width = c->width * dpi_scale;
+                        float const scaled_card_width = c->width;
                         if (row_max_width - x > scaled_card_width) {
                             override_width = row_max_width - x;
                         }
@@ -734,7 +732,7 @@ struct deck {
             cards_.erase(cards_to_remove, cards_.end());
 
             // Render the editor window
-            ImGui::SetNextWindowPos({0.0f, (2.0f * dpi_scale) + y}, ImGuiCond_Always);
+            ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
             ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
             editor_.render();
@@ -754,15 +752,14 @@ struct deck {
 
     // Calculate total width needed for all cards
     float calculate_total_cards_width() const {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
         float const wf = get_width_factor();
         float total_width = 0.0f;
         for (const auto& card : cards_) {
-            total_width += (card->width * wf * dpi_scale) + (2.0f * dpi_scale); // Add spacing between cards
+            total_width += (card->width * wf) + 2.0f; // Add spacing between cards
         }
         // Remove the extra spacing from the last card
         if (!cards_.empty()) {
-            total_width -= 2.0f * dpi_scale;
+            total_width -= 2.0f;
         }
         return total_width;
     }

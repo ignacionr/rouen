@@ -91,21 +91,6 @@ namespace rouen::fonts {
         
         std::cout << "Font setup using DPI scale: " << dpi_scale << '\n';
         
-        // Scale base font size for high-DPI displays
-        float scaled_base_size = base_size * dpi_scale;
-        
-        // Scale ImGui style for consistent UI scaling
-        ImGuiStyle& style = ImGui::GetStyle();
-        // Only scale if we haven't already scaled before
-        static bool style_scaled = false;
-        if (!style_scaled && dpi_scale > 1.0f) {
-            style.ScaleAllSizes(dpi_scale);
-            style_scaled = true;
-            std::cout << "Scaled ImGui style by factor: " << dpi_scale << '\n';
-        }
-        
-        std::cout << "Using DPI scale: " << dpi_scale << ", Scaled font size: " << scaled_base_size << '\n';
-        
         // Store the current DPI scale for change detection
         get_state().last_dpi_scale = dpi_scale;
         
@@ -247,7 +232,9 @@ namespace rouen::fonts {
             // This will prevent the assertion failure but won't have all the glyphs
         } else {
             // Load the default font first
-            get_state().s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            ImFontConfig default_cfg;
+            default_cfg.RasterizerDensity = dpi_scale;
+            get_state().s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), base_size, &default_cfg, ranges);
             
             // Then merge Material Design Icons with the default font
             if (!material_icons_path.empty()) {
@@ -258,9 +245,10 @@ namespace rouen::fonts {
                 icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
                 icons_config.OversampleH = 3;
                 icons_config.OversampleV = 3;
+                icons_config.RasterizerDensity = dpi_scale;
                 strcpy(icons_config.Name, "Material Icons");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with default font" << '\n';
             } else {
                 std::cerr << "WARNING: Could not find Material Icons font!" << '\n';
@@ -269,7 +257,9 @@ namespace rouen::fonts {
         
         // Add monospace font if found
         if (!mono_font_path.empty()) {
-            get_state().s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            ImFontConfig mono_cfg;
+            mono_cfg.RasterizerDensity = dpi_scale;
+            get_state().s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), base_size, &mono_cfg, ranges);
             
             // Also merge Material Design Icons with the monospace font if found
             if (!material_icons_path.empty()) {
@@ -279,9 +269,10 @@ namespace rouen::fonts {
                 icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
                 icons_config.OversampleH = 3;
                 icons_config.OversampleV = 3;
+                icons_config.RasterizerDensity = dpi_scale;
                 strcpy(icons_config.Name, "Material Icons (Mono)");
                 
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), scaled_base_size, &icons_config, icon_ranges);
+                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
                 std::cout << "Successfully merged Material Icons with monospace font" << '\n';
             }
         } else {
@@ -290,7 +281,9 @@ namespace rouen::fonts {
 
         // Add bold font if found; null s_bold_font means callers fall back to default.
         if (!bold_font_path.empty()) {
-            get_state().s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            ImFontConfig bold_cfg;
+            bold_cfg.RasterizerDensity = dpi_scale;
+            get_state().s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), base_size, &bold_cfg, ranges);
             std::cout << "Loaded bold font: " << bold_font_path << '\n';
         } else {
             std::cerr << "WARNING: Could not find a suitable bold font — markdown bold will use the default font.\n";
@@ -298,7 +291,9 @@ namespace rouen::fonts {
 
         // Add italic font if found; null s_italic_font means callers fall back to default.
         if (!italic_font_path.empty()) {
-            get_state().s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), scaled_base_size, nullptr, ranges);
+            ImFontConfig italic_cfg;
+            italic_cfg.RasterizerDensity = dpi_scale;
+            get_state().s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), base_size, &italic_cfg, ranges);
             std::cout << "Loaded italic font: " << italic_font_path << '\n';
         } else {
             std::cerr << "WARNING: Could not find a suitable italic font — markdown italic will use the default font.\n";

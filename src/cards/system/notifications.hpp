@@ -136,6 +136,14 @@ private:
         ImGui::Separator();
         ImGui::Text("Received: %s", selected_it->timestamp.c_str());
         ImGui::Spacing();
+
+        if (ImGui::Button("Copy to Clipboard")) {
+            ImGui::SetClipboardText(selected_it->message.c_str());
+            status_message_ = "Copied to clipboard!";
+            status_message_expires_at_ = ImGui::GetTime() + 4.0;
+        }
+
+        ImGui::Spacing();
         ImGui::TextWrapped("Full text:");
         ImGui::Spacing();
 

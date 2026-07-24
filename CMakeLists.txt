@@ -151,8 +151,8 @@ else()
   find_package(PkgConfig REQUIRED)
   
   # Use pkg-config for SDL3 on system builds
-  pkg_check_modules(SDL3 REQUIRED sdl3)
-  pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
+  pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
+  pkg_check_modules(SDL3_IMAGE REQUIRED IMPORTED_TARGET sdl3-image)
   pkg_check_modules(AVFORMAT REQUIRED libavformat)
   pkg_check_modules(AVCODEC REQUIRED libavcodec)
   pkg_check_modules(AVUTIL REQUIRED libavutil)
@@ -161,24 +161,16 @@ else()
   
   # Create imported targets for SDL3 if they don't exist
   if(SDL3_FOUND AND NOT TARGET SDL3::SDL3)
-    list(GET SDL3_INCLUDE_DIRS 0 FIRST_SDL_INCLUDE)
-    get_filename_component(SDL_INCLUDE_PARENT "${FIRST_SDL_INCLUDE}" DIRECTORY)
     add_library(SDL3::SDL3 INTERFACE IMPORTED)
     set_target_properties(SDL3::SDL3 PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${SDL3_INCLUDE_DIRS};${SDL_INCLUDE_PARENT}"
-      INTERFACE_LINK_LIBRARIES "${SDL3_LIBRARIES}"
-      INTERFACE_COMPILE_OPTIONS "${SDL3_CFLAGS_OTHER}"
+      INTERFACE_LINK_LIBRARIES PkgConfig::SDL3
     )
   endif()
   
   if(SDL3_IMAGE_FOUND AND NOT TARGET SDL3_image::SDL3_image)
-    list(GET SDL3_IMAGE_INCLUDE_DIRS 0 FIRST_IMG_INCLUDE)
-    get_filename_component(IMG_INCLUDE_PARENT "${FIRST_IMG_INCLUDE}" DIRECTORY)
     add_library(SDL3_image::SDL3_image INTERFACE IMPORTED)
     set_target_properties(SDL3_image::SDL3_image PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${SDL3_IMAGE_INCLUDE_DIRS};${IMG_INCLUDE_PARENT}"
-      INTERFACE_LINK_LIBRARIES "${SDL3_IMAGE_LIBRARIES}"
-      INTERFACE_COMPILE_OPTIONS "${SDL3_IMAGE_CFLAGS_OTHER}"
+      INTERFACE_LINK_LIBRARIES PkgConfig::SDL3_IMAGE
     )
   endif()
   

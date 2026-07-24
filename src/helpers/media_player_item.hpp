@@ -404,25 +404,41 @@ inline bool media_player_item::playMedia() {
 
     if (sanitized_url.find("youtube.com") != std::string::npos ||
         sanitized_url.find("youtu.be") != std::string::npos) {
-        std::string ytdl_cmd = std::format("yt-dlp -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>/dev/null", sanitized_url);
+        std::string ytdl_cmd = std::format("yt-dlp -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", sanitized_url);
         std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
-        if (!resolved.empty()) {
-            std::stringstream ss(resolved);
-            std::string line;
-            std::vector<std::string> urls;
-            while (std::getline(ss, line)) {
-                line.erase(line.find_last_not_of(" \r\n\t") + 1);
-                if (line.starts_with("http://") || line.starts_with("https://")) {
-                    urls.push_back(line);
-                }
+        std::stringstream ss(resolved);
+        std::string line;
+        std::vector<std::string> urls;
+        while (std::getline(ss, line)) {
+            line.erase(line.find_last_not_of(" \r\n\t") + 1);
+            if (line.starts_with("http://") || line.starts_with("https://")) {
+                urls.push_back(line);
             }
+        }
+        if (!urls.empty()) {
             if (urls.size() >= 2) {
                 video_target = urls[0];
                 audio_target = urls[1];
-            } else if (!urls.empty()) {
+            } else {
                 video_target = urls[0];
                 audio_target = urls[0];
             }
+        } else {
+            std::string clean_resolved = resolved;
+            clean_resolved.erase(clean_resolved.find_last_not_of(" \r\n\t") + 1);
+            if (clean_resolved.empty()) {
+                clean_resolved = "No output from yt-dlp";
+            }
+            if (clean_resolved.length() > 200) {
+                clean_resolved = clean_resolved.substr(0, 197) + "...";
+            }
+            std::string err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
+            std::cerr << "[NativePlayer] " << err_msg << std::endl;
+            try {
+                "notify"_sfn(err_msg);
+            } catch (...) {}
+            is_playing = false;
+            return false;
         }
     }
 
@@ -597,11 +613,22 @@ inline float media_player_item::get_vu_watermark_r() {
     return vu_watermark_r.load();
 }
 
+inline std::string get_ffmpeg_error_string(int errnum) {
+    char errbuf[256];
+    if (av_strerror(errnum, errbuf, sizeof(errbuf)) == 0) {
+        return std::string(errbuf);
+    }
+    return "Unknown FFmpeg error " + std::to_string(errnum);
+}
+
 inline void media_player_item::decode_loop(std::string video_target, std::string audio_target, double offset) {
     avformat_network_init();
 
     AVFormatContext* video_format_ctx = avformat_alloc_context();
     if (!video_format_ctx) {
+        try {
+            "notify"_sfn("Media Player Error: Failed to allocate video format context");
+        } catch (...) {}
         is_playing = false;
         ffmpeg_running.store(false);
         player_pid = 0;
@@ -618,9 +645,15 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
         av_dict_set(&v_opts, "rw_timeout", "10000000", 0);
     }
 
-    if (avformat_open_input(&video_format_ctx, video_target.c_str(), nullptr, &v_opts) < 0) {
+    int err = avformat_open_input(&video_format_ctx, video_target.c_str(), nullptr, &v_opts);
+    if (err < 0) {
         if (v_opts) av_dict_free(&v_opts);
-        std::cerr << "[NativePlayer] Failed to open input: " << video_target << std::endl;
+        std::string err_msg = get_ffmpeg_error_string(err);
+        std::string final_err = std::format("Media Player Error: Failed to open input ({}): {}", video_target, err_msg);
+        std::cerr << "[NativePlayer] " << final_err << std::endl;
+        try {
+            "notify"_sfn(final_err);
+        } catch (...) {}
         is_playing = false;
         ffmpeg_running.store(false);
         player_pid = 0;
@@ -628,8 +661,14 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
     }
     if (v_opts) av_dict_free(&v_opts);
 
-    if (avformat_find_stream_info(video_format_ctx, nullptr) < 0) {
-        std::cerr << "[NativePlayer] Failed to find stream info" << std::endl;
+    int find_info_err = avformat_find_stream_info(video_format_ctx, nullptr);
+    if (find_info_err < 0) {
+        std::string err_msg = get_ffmpeg_error_string(find_info_err);
+        std::string final_err = std::format("Media Player Error: Failed to find stream info: {}", err_msg);
+        std::cerr << "[NativePlayer] Failed to find stream info: " << err_msg << std::endl;
+        try {
+            "notify"_sfn(final_err);
+        } catch (...) {}
         avformat_close_input(&video_format_ctx);
         is_playing = false;
         ffmpeg_running.store(false);
