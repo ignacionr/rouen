@@ -86,6 +86,7 @@ struct deck {
             // If the card already exists, we will make it request the focus and handle the URI
             (*existing_card)->handle_uri(uri);
             (*existing_card)->grab_focus = true;
+            last_focused_card_ = *existing_card;
         }
         else {
             static auto card_factory {rouen::cards::factory()};
@@ -93,14 +94,30 @@ struct deck {
             if (card_ptr) {
                 // Register MCP functions for the new card
                 card_ptr->register_mcp_functions();
+                card_ptr->grab_focus = true;
                 
                 if (move_first) {
                     // Move the card to the front of the vector
-                    cards_.insert(cards_.begin(), std::move(card_ptr));
+                    cards_.insert(cards_.begin(), card_ptr);
                 } else {
-                    // Add the card to the end of the vector
-                    cards_.emplace_back(std::move(card_ptr));
+                    // Insert the new card next to the currently selected (focused) or last focused card
+                    auto target_it = std::find_if(cards_.begin(), cards_.end(),
+                        [](const auto& card) { return card->is_focused; });
+
+                    if (target_it == cards_.end()) {
+                        if (auto last_focused = last_focused_card_.lock()) {
+                            target_it = std::find(cards_.begin(), cards_.end(), last_focused);
+                        }
+                    }
+
+                    if (target_it != cards_.end()) {
+                        cards_.insert(target_it + 1, card_ptr);
+                    } else {
+                        // Add the card to the end of the vector if no card is currently focused
+                        cards_.push_back(card_ptr);
+                    }
                 }
+                last_focused_card_ = card_ptr;
             }
         }
     }
@@ -658,7 +675,11 @@ struct deck {
                     }
 
                     float draw_x = card_abs_x - current_scroll_x;
-                    if (!render(*c, draw_x, row_height, result.requested_fps, y, item.override_width)) {
+                    bool render_result = render(*c, draw_x, row_height, result.requested_fps, y, item.override_width);
+                    if (c->is_focused) {
+                        last_focused_card_ = c;
+                    }
+                    if (!render_result) {
                         // Unregister MCP functions immediately when card fails to render
                         try {
                             c->unregister_mcp_functions();
@@ -716,7 +737,11 @@ struct deck {
                             override_width = row_max_width - x;
                         }
                     }
-                    return !render(*c, x, y, result.requested_fps, 0.0f, override_width);
+                    bool draw_ok = render(*c, x, y, result.requested_fps, 0.0f, override_width);
+                    if (c->is_focused) {
+                        last_focused_card_ = c;
+                    }
+                    return !draw_ok;
                 });
             
             // Defer cleanup to prevent use-after-free crashes during the current frame rendering
@@ -791,4 +816,5 @@ private:
     float current_scroll_x {0.0f};
     float target_scroll_x {0.0f};
     rouen::ui::imgui_ui_context_impl ui_context_;
+    std::weak_ptr<card> last_focused_card_;
 };
