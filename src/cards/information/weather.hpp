@@ -294,7 +294,7 @@ public:
         float vp_h = vp ? vp->Size.y : 1080.0f;
 
         float win_w = std::min(620.0f, vp_w - 80.0f);
-        float win_h = 370.0f;
+        float win_h = 185.0f; // Halved height
 
         float pos_x = 40.0f;
         float pos_y = 40.0f;
@@ -333,115 +333,174 @@ public:
             std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
             std::string date_str = std::format("{:02d}/{:02d}/{:04d}", tm_local.tm_mday, tm_local.tm_mon + 1, tm_local.tm_year + 1900);
 
-            // Top Header: City & Weather Icon
-            ImGui::SetWindowFontScale(1.4f);
+            // 1. ALWAYS PRESENTED: Title & Header
+            ImGui::SetWindowFontScale(1.3f);
             ImGui::TextColored(accent_color, "%s  %s", get_weather_icon(weather_main), current_weather->name.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
-            ImGui::SetWindowFontScale(1.05f);
+            ImGui::SameLine(ImGui::GetWindowWidth() - 170.0f);
+            ImGui::SetWindowFontScale(1.0f);
             ImGui::TextColored(colors[5], "%s", date_str.c_str());
             
             ImGui::Separator();
             ImGui::Spacing();
 
-            // Main Body: Left (Analog Clock + Digital Time), Right (Weather Metrics)
-            // Left Group: Analog Clock & Digital Time
-            ImGui::BeginGroup();
-            ImVec2 clock_box_size(180.0f, 175.0f);
-            ImGui::Dummy(clock_box_size);
-            ImVec2 box_min = ImGui::GetItemRectMin();
-            ImVec2 clock_center = ImVec2(box_min.x + clock_box_size.x * 0.5f, box_min.y + 60.0f);
+            // 2. 20-Second Animated Cycle Calculation
+            // Cycle breakdown:
+            // Second 1 (0.0s - 1.0s): Main Info slide-in
+            // Seconds 2-12 (1.0s - 12.0s): Main Info presented
+            // Second 13 (12.0s - 13.0s): Main Info slide-out
+            // Second 14 (13.0s - 14.0s): Forecast slide-in
+            // Seconds 15-19 (14.0s - 19.0s): Forecast presented
+            // Second 20 (19.0s - 20.0s): Forecast slide-out
+            double time_sec = std::chrono::duration<double>(now_tp.time_since_epoch()).count();
+            float cycle_t = std::fmod(static_cast<float>(time_sec), 20.0f);
+            if (cycle_t < 0.0f) cycle_t += 20.0f;
 
-            draw_analog_clock(ImGui::GetWindowDrawList(), clock_center, 56.0f, local_tp, accent_color);
+            int active_section = 0; // 0 = main info, 1 = forecast
+            float raw_progress = 0.0f;
+            bool is_sliding_in = true;
 
-            // Digital Time below clock
-            ImGui::SetWindowFontScale(1.35f);
-            ImVec2 t_size = ImGui::CalcTextSize(time_str.c_str());
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (clock_box_size.x - t_size.x * 1.35f) * 0.5f);
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", time_str.c_str());
-
-            ImGui::EndGroup();
-
-            // Right Group: Temperature & Telemetry
-            ImGui::SameLine();
-            ImGui::BeginGroup();
-
-            ImGui::SetWindowFontScale(2.4f);
-            ImGui::TextColored(accent_color, "%.1f°C", current_weather->main.temp);
-            ImGui::SameLine();
-            ImGui::SetWindowFontScale(1.15f);
-            ImGui::TextColored(colors[5], "(Feels: %.1f°C)", current_weather->main.feels_like);
-
-            if (!current_weather->weather.empty()) {
-                std::string description = current_weather->weather[0].description;
-                if (!description.empty()) {
-                    description[0] = static_cast<char>(std::toupper(description[0]));
-                }
-                ImGui::TextColored(colors[3], "%s", description.c_str());
+            if (cycle_t < 1.0f) {
+                active_section = 0;
+                raw_progress = cycle_t / 1.0f;
+                is_sliding_in = true;
+            } else if (cycle_t < 12.0f) {
+                active_section = 0;
+                raw_progress = 1.0f;
+                is_sliding_in = true;
+            } else if (cycle_t < 13.0f) {
+                active_section = 0;
+                raw_progress = 1.0f - (cycle_t - 12.0f) / 1.0f;
+                is_sliding_in = false;
+            } else if (cycle_t < 14.0f) {
+                active_section = 1;
+                raw_progress = (cycle_t - 13.0f) / 1.0f;
+                is_sliding_in = true;
+            } else if (cycle_t < 19.0f) {
+                active_section = 1;
+                raw_progress = 1.0f;
+                is_sliding_in = true;
+            } else {
+                active_section = 1;
+                raw_progress = 1.0f - (cycle_t - 19.0f) / 1.0f;
+                is_sliding_in = false;
             }
 
-            ImGui::Spacing();
-            ImGui::Columns(2, "weather_details_video", false);
-            
-            // Humid / Press
-            auto humidity_color = colors[0];
-            if (current_weather->main.humidity > 80) humidity_color = ImVec4(0.2f, 0.8f, 1.0f, 1.0f);
-            else if (current_weather->main.humidity < 30) humidity_color = ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
-            else humidity_color = ImVec4(0.2f, 1.0f, 0.4f, 1.0f);
+            // Smoothstep animation curve
+            float smooth_p = std::clamp(raw_progress * raw_progress * (3.0f - 2.0f * raw_progress), 0.0f, 1.0f);
+            float slide_dist = win_w * 0.45f;
+            float offset_x = is_sliding_in ? ((1.0f - smooth_p) * slide_dist) : (-(1.0f - smooth_p) * slide_dist);
 
-            ImGui::TextColored(humidity_color, "%s Humidity: %d%%", ICON_MD_OPACITY, current_weather->main.humidity);
-            ImGui::TextColored(colors[5], "%s Pressure: %d hPa", ICON_MD_SPEED, static_cast<int>(current_weather->main.pressure));
+            // Animated body container clipped inside child window
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, smooth_p);
+            if (ImGui::BeginChild("##OverlayContent", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs)) {
+                ImGui::SetCursorPos(ImVec2(offset_x + 5.0f, 2.0f));
 
-            ImGui::NextColumn();
-            // Wind / Cloud
-            auto wind_color = colors[0];
-            if (current_weather->wind.speed > 10.0) wind_color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
-            else if (current_weather->wind.speed > 5.0) wind_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
-            else wind_color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+                if (active_section == 0) {
+                    // MAIN INFO SECTION (Analog clock, digital time, temp, feels like, weather stats)
+                    ImGui::BeginGroup();
+                    ImVec2 clock_box_size(140.0f, 115.0f);
+                    ImGui::Dummy(clock_box_size);
+                    ImVec2 box_min = ImGui::GetItemRectMin();
+                    ImVec2 clock_center = ImVec2(box_min.x + 42.0f, box_min.y + 40.0f);
 
-            ImGui::TextColored(wind_color, "%s Wind: %.1f m/s", ICON_MD_AIR, current_weather->wind.speed);
-            
-            auto cloud_color = colors[5];
-            if (current_weather->clouds.all > 80) cloud_color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-            else if (current_weather->clouds.all > 50) cloud_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-            else cloud_color = ImVec4(0.7f, 0.9f, 1.0f, 1.0f);
-            ImGui::TextColored(cloud_color, "%s Clouds: %d%%", ICON_MD_CLOUD, current_weather->clouds.all);
+                    draw_analog_clock(ImGui::GetWindowDrawList(), clock_center, 36.0f, local_tp, accent_color);
 
-            ImGui::Columns(1);
-            ImGui::EndGroup();
+                    ImGui::SetWindowFontScale(1.15f);
+                    ImVec2 t_size = ImGui::CalcTextSize(time_str.c_str());
+                    ImGui::SetCursorScreenPos(ImVec2(box_min.x + 42.0f - t_size.x * 0.5f, box_min.y + 84.0f));
+                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", time_str.c_str());
+                    ImGui::EndGroup();
 
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
+                    ImGui::SameLine(150.0f);
+                    ImGui::BeginGroup();
 
-            // Forecast block (Compact 3 items)
-            auto forecast = weather_host->getForecast();
-            if (forecast) {
-                const size_t forecast_items_to_show = std::min(static_cast<size_t>(3), forecast->list.size());
-                if (ImGui::BeginTable("forecast_table_video", 3, ImGuiTableFlags_BordersInnerV)) {
-                    for (const auto& item : forecast->list | std::views::take(forecast_items_to_show)) {
-                        std::string f_time_str = item.dt_txt;
-                        size_t pos = f_time_str.find(' ');
-                        if (pos != std::string::npos) {
-                            f_time_str = f_time_str.substr(pos + 1, 5); // HH:MM
+                    ImGui::SetWindowFontScale(1.8f);
+                    ImGui::TextColored(accent_color, "%.1f°C", current_weather->main.temp);
+                    ImGui::SameLine();
+                    ImGui::SetWindowFontScale(1.0f);
+                    ImGui::TextColored(colors[5], "(Feels: %.1f°C)", current_weather->main.feels_like);
+
+                    if (!current_weather->weather.empty()) {
+                        std::string description = current_weather->weather[0].description;
+                        if (!description.empty()) {
+                            description[0] = static_cast<char>(std::toupper(description[0]));
                         }
-                        
-                        std::string condition;
-                        if (!item.weather.empty()) {
-                            condition = item.weather[0].main;
-                        }
-
-                        ImGui::TableNextRow();
-                        ImGui::TableNextColumn();
-                        ImGui::TextColored(colors[5], "%s", f_time_str.c_str());
-                        ImGui::TableNextColumn();
-                        ImGui::Text("%.1f°C", item.main.temp);
-                        ImGui::TableNextColumn();
-                        const char* f_icon = get_weather_icon(condition);
-                        ImGui::TextColored(colors[3], "%s %s", f_icon, condition.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextColored(colors[3], "|  %s", description.c_str());
                     }
-                    ImGui::EndTable();
+
+                    ImGui::Spacing();
+                    ImGui::Columns(2, "weather_details_video_compact", false);
+
+                    // Humid / Press
+                    auto humidity_color = colors[0];
+                    if (current_weather->main.humidity > 80) humidity_color = ImVec4(0.2f, 0.8f, 1.0f, 1.0f);
+                    else if (current_weather->main.humidity < 30) humidity_color = ImVec4(1.0f, 0.6f, 0.2f, 1.0f);
+                    else humidity_color = ImVec4(0.2f, 1.0f, 0.4f, 1.0f);
+
+                    ImGui::TextColored(humidity_color, "%s Humidity: %d%%", ICON_MD_OPACITY, current_weather->main.humidity);
+                    ImGui::TextColored(colors[5], "%s Pressure: %d hPa", ICON_MD_SPEED, static_cast<int>(current_weather->main.pressure));
+
+                    ImGui::NextColumn();
+                    // Wind / Cloud
+                    auto wind_color = colors[0];
+                    if (current_weather->wind.speed > 10.0) wind_color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                    else if (current_weather->wind.speed > 5.0) wind_color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+                    else wind_color = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+
+                    ImGui::TextColored(wind_color, "%s Wind: %.1f m/s", ICON_MD_AIR, current_weather->wind.speed);
+
+                    auto cloud_color = colors[5];
+                    if (current_weather->clouds.all > 80) cloud_color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                    else if (current_weather->clouds.all > 50) cloud_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                    else cloud_color = ImVec4(0.7f, 0.9f, 1.0f, 1.0f);
+                    ImGui::TextColored(cloud_color, "%s Clouds: %d%%", ICON_MD_CLOUD, current_weather->clouds.all);
+
+                    ImGui::Columns(1);
+                    ImGui::EndGroup();
+
+                } else if (active_section == 1) {
+                    // FORECAST SECTION
+                    auto forecast = weather_host->getForecast();
+                    if (forecast && !forecast->list.empty()) {
+                        const size_t num_items = std::min(static_cast<size_t>(4), forecast->list.size());
+                        ImGui::Columns(static_cast<int>(num_items), "video_forecast_cols", false);
+
+                        for (size_t i = 0; i < num_items; ++i) {
+                            const auto& item = forecast->list[i];
+                            std::string f_time_str = item.dt_txt;
+                            size_t pos = f_time_str.find(' ');
+                            if (pos != std::string::npos) {
+                                f_time_str = f_time_str.substr(pos + 1, 5); // HH:MM
+                            }
+
+                            std::string condition;
+                            if (!item.weather.empty()) {
+                                condition = item.weather[0].main;
+                            }
+                            const char* f_icon = get_weather_icon(condition);
+
+                            ImGui::SetWindowFontScale(1.15f);
+                            ImGui::TextColored(colors[5], "%s", f_time_str.c_str());
+                            
+                            ImGui::SetWindowFontScale(1.4f);
+                            ImGui::TextColored(accent_color, "%.1f°C", item.main.temp);
+                            
+                            ImGui::SetWindowFontScale(1.0f);
+                            ImGui::TextColored(colors[3], "%s %s", f_icon, condition.c_str());
+                            ImGui::TextColored(colors[5], "%s %.1fm/s  %s%d%%", ICON_MD_AIR, item.wind.speed, ICON_MD_OPACITY, item.main.humidity);
+                            
+                            ImGui::NextColumn();
+                        }
+                        ImGui::Columns(1);
+                    } else {
+                        ImGui::SetWindowFontScale(1.1f);
+                        ImGui::TextColored(colors[5], "Loading weather forecast data...");
+                    }
                 }
+                ImGui::EndChild();
             }
+            ImGui::PopStyleVar(); // Pop Alpha
         }
         ImGui::End();
         ImGui::PopStyleColor(2);
