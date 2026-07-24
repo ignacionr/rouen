@@ -160,7 +160,7 @@ public:
         should_focus_ = false;
     }
 
-    bool isModified() const {
+    bool isModified() const override {
         return file_modified_;
     }
 

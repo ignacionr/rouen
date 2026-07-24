@@ -66,19 +66,22 @@
             "name": "default",
             "displayName": "Build Application (Default)",
             "configurePreset": "default",
-            "description": "Build the main Rouen application"
+            "description": "Build the main Rouen application",
+            "jobs": 2
         },
         {
             "name": "default-tests",
             "displayName": "Build Tests (Default)",
             "configurePreset": "default-tests",
-            "description": "Build all test executables"
+            "description": "Build all test executables",
+            "jobs": 2
         },
         {
             "name": "ci-tests",
             "displayName": "Build Tests (CI Strictness)",
             "configurePreset": "ci-tests",
-            "description": "Build test executables with CI strictness"
+            "description": "Build test executables with CI strictness",
+            "jobs": 2
         }
     ],
     "testPresets": [

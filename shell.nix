@@ -60,6 +60,9 @@ pkgs.mkShell {
   shellHook = ''
     export CC=${envVars.CC}
     export CXX=${envVars.CXX}
+    export CMAKE_BUILD_PARALLEL_LEVEL=2
+    export MAKEFLAGS="-j2"
+    export NIX_BUILD_CORES=2
     export PKG_CONFIG_PATH="${pkgs.tinyxml-2}/lib/pkgconfig:${pkgs.openssl}/lib/pkgconfig:${pkgs.sqlite}/lib/pkgconfig:${pkgs.sdl3}/lib/pkgconfig:${pkgs.sdl3-image}/lib/pkgconfig:${pkgs.curl}/lib/pkgconfig:${pkgs.gtest.dev}/lib/pkgconfig:${pkgs.glaze}/lib/pkgconfig:${pkgs.imgui}/lib/pkgconfig"
     export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml-2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.sdl3}:${pkgs.sdl3-image}:${pkgs.curl}:${pkgs.gtest.dev}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share"
     # Remove Homebrew from PATH for full Nix isolation

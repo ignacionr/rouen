@@ -138,7 +138,7 @@ if [[ "$SKIP_BUILD" == "true" ]]; then
 else
     info "Building Rouen with Nix..."
     # Enable experimental features inline to ensure compatibility
-    nix build --extra-experimental-features "nix-command flakes" --cores 4 --max-jobs 4 --print-build-logs
+    nix build --extra-experimental-features "nix-command flakes" --cores 2 --max-jobs 2 --print-build-logs
     success "Nix build completed successfully."
 fi
 

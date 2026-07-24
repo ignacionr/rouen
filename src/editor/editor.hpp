@@ -18,6 +18,8 @@ namespace editor {
 
 class Editor {
 public:
+    enum class PendingAction { None, Close, New, Open, SelectFile };
+
     Editor() {
         // Initialize the sub-editors
         text_editor_ = std::make_unique<TextEditor>();
@@ -34,7 +36,7 @@ public:
         registrar::add<std::function<void()>>(
             "clear_editor",
             std::make_shared<std::function<void()>>(
-                [this]() { clear(); }
+                [this]() { requestClose(); }
             )
         );
 
@@ -62,16 +64,45 @@ public:
         if (text_editor_) text_editor_->clear();
         if (image_editor_) image_editor_->clear();
         active_editor_ = nullptr;
+        pending_action_ = PendingAction::None;
+        pending_uri_.clear();
+        show_confirm_modal_ = false;
+    }
+
+    void requestClose() {
+        if (active_editor_ && active_editor_->isModified()) {
+            pending_action_ = PendingAction::Close;
+            show_confirm_modal_ = true;
+        } else {
+            clear();
+        }
+    }
+
+    void requestNew() {
+        if (active_editor_ && active_editor_->isModified()) {
+            pending_action_ = PendingAction::New;
+            show_confirm_modal_ = true;
+        } else {
+            clear();
+        }
+    }
+
+    void requestOpen() {
+        if (active_editor_ && active_editor_->isModified()) {
+            pending_action_ = PendingAction::Open;
+            show_confirm_modal_ = true;
+        } else {
+            "create_card"_sfn("dir");
+        }
     }
 
     void select(const std::string& uri) {
-        // Determine which editor to use based on file type
-        if (isImageFile(uri)) {
-            image_editor_->select(uri);
-            active_editor_ = image_editor_.get();
+        if (active_editor_ && active_editor_->isModified()) {
+            pending_action_ = PendingAction::SelectFile;
+            pending_uri_ = uri;
+            show_confirm_modal_ = true;
         } else {
-            text_editor_->select(uri);
-            active_editor_ = text_editor_.get();
+            doSelect(uri);
         }
     }
 
@@ -83,12 +114,21 @@ public:
     }
 
     void render() {
-        // Handle Ctrl+W (Windows/Linux) or Cmd+W (macOS) to close the editor
+        // Handle Ctrl+S / Cmd+S (Save) and Ctrl+W / Cmd+W (Close)
         auto& io = ImGui::GetIO();
         auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
-        if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
-            clear();
+
+        if (active_editor_ && !active_editor_->empty()) {
+            if (ImGui::IsKeyPressed(ImGuiKey_S) && ctrl) {
+                saveFile();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
+                requestClose();
+            }
         }
+
+        // Render confirmation modal if unsaved changes exist
+        renderConfirmModal();
 
         // Push a custom style for this window to have square corners
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -123,35 +163,116 @@ public:
     }
 
 private:
+    void doSelect(const std::string& uri) {
+        if (isImageFile(uri)) {
+            image_editor_->select(uri);
+            active_editor_ = image_editor_.get();
+        } else {
+            text_editor_->select(uri);
+            active_editor_ = text_editor_.get();
+        }
+    }
+
+    void executePendingAction() {
+        PendingAction action = pending_action_;
+        std::string uri = pending_uri_;
+        pending_action_ = PendingAction::None;
+        pending_uri_.clear();
+
+        switch (action) {
+            case PendingAction::Close:
+            case PendingAction::New:
+                clear();
+                break;
+            case PendingAction::Open:
+                clear();
+                "create_card"_sfn("dir");
+                break;
+            case PendingAction::SelectFile:
+                clear();
+                doSelect(uri);
+                break;
+            case PendingAction::None:
+                break;
+        }
+    }
+
+    void renderConfirmModal() {
+        if (show_confirm_modal_) {
+            ImGui::OpenPopup("Unsaved Changes##EditorConfirmModal");
+            show_confirm_modal_ = false;
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+        if (ImGui::BeginPopupModal("Unsaved Changes##EditorConfirmModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("The current file has unsaved changes.\nDo you want to save your changes before proceeding?");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            if (ImGui::Button("Save", ImVec2(100, 0))) {
+                saveFile();
+                executePendingAction();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Don't Save", ImVec2(100, 0))) {
+                executePendingAction();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                pending_action_ = PendingAction::None;
+                pending_uri_.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
     void renderMenuBar() {
+        auto& io = ImGui::GetIO();
+        const char* modStr = io.ConfigMacOSXBehaviors ? "Cmd+" : "Ctrl+";
+        std::string newShortcut = std::string(modStr) + "N";
+        std::string openShortcut = std::string(modStr) + "O";
+        std::string saveShortcut = std::string(modStr) + "S";
+        std::string saveAsShortcut = std::string(modStr) + "Shift+S";
+        std::string closeShortcut = std::string(modStr) + "W";
+
+        std::string undoShortcut = std::string(modStr) + "Z";
+        std::string redoShortcut = std::string(modStr) + "Y";
+        std::string cutShortcut = std::string(modStr) + "X";
+        std::string copyShortcut = std::string(modStr) + "C";
+        std::string pasteShortcut = std::string(modStr) + "V";
+        std::string selectAllShortcut = std::string(modStr) + "A";
+
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("New", "Ctrl+N")) {
-                    clear();
+                if (ImGui::MenuItem("New", newShortcut.c_str())) {
+                    requestNew();
                 }
                 
-                if (ImGui::MenuItem("Open...", "Ctrl+O")) {
-                    "create_card"_sfn("dir");
+                if (ImGui::MenuItem("Open...", openShortcut.c_str())) {
+                    requestOpen();
                 }
                 
                 ImGui::Separator();
                 
                 bool isTextEditorActive = dynamic_cast<TextEditor*>(active_editor_) != nullptr;
                 
-                if (ImGui::MenuItem("Save", "Ctrl+S", nullptr, active_editor_ && isTextEditorActive)) {
+                if (ImGui::MenuItem("Save", saveShortcut.c_str(), nullptr, active_editor_ && isTextEditorActive)) {
                     saveFile();
                 }
                 
-                if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", nullptr, active_editor_ && isTextEditorActive)) {
-                    // In a real implementation, this would open a save dialog
-                    // For now just save to the current file
+                if (ImGui::MenuItem("Save As...", saveAsShortcut.c_str(), nullptr, active_editor_ && isTextEditorActive)) {
                     saveFile();
                 }
                 
                 ImGui::Separator();
                 
-                if (ImGui::MenuItem("Close", "Ctrl+W")) {
-                    clear();
+                if (ImGui::MenuItem("Close", closeShortcut.c_str())) {
+                    requestClose();
                 }
                 
                 ImGui::EndMenu();
@@ -163,29 +284,29 @@ private:
                 
                 bool hasSelection = hasTextEditor && textEditor->hasSelection();
                 
-                if (ImGui::MenuItem("Undo", "Ctrl+Z", nullptr, hasTextEditor && textEditor->canUndo())) {
+                if (ImGui::MenuItem("Undo", undoShortcut.c_str(), nullptr, hasTextEditor && textEditor->canUndo())) {
                     textEditor->undo();
                 }
                 
-                if (ImGui::MenuItem("Redo", "Ctrl+Y", nullptr, hasTextEditor && textEditor->canRedo())) {
+                if (ImGui::MenuItem("Redo", redoShortcut.c_str(), nullptr, hasTextEditor && textEditor->canRedo())) {
                     textEditor->redo();
                 }
                 
                 ImGui::Separator();
                 
-                if (ImGui::MenuItem("Cut", "Ctrl+X", nullptr, hasSelection)) {
+                if (ImGui::MenuItem("Cut", cutShortcut.c_str(), nullptr, hasSelection)) {
                     textEditor->cut();
                 }
                 
-                if (ImGui::MenuItem("Copy", "Ctrl+C", nullptr, hasSelection)) {
+                if (ImGui::MenuItem("Copy", copyShortcut.c_str(), nullptr, hasSelection)) {
                     textEditor->copy();
                 }
                 
-                if (ImGui::MenuItem("Paste", "Ctrl+V", nullptr, hasTextEditor)) {
+                if (ImGui::MenuItem("Paste", pasteShortcut.c_str(), nullptr, hasTextEditor)) {
                     textEditor->paste();
                 }
                 
-                if (ImGui::MenuItem("Select All", "Ctrl+A", nullptr, hasTextEditor)) {
+                if (ImGui::MenuItem("Select All", selectAllShortcut.c_str(), nullptr, hasTextEditor)) {
                     textEditor->selectAll();
                 }
                 
@@ -204,18 +325,19 @@ private:
                 ImGui::EndMenu();
             }
             
-            // Display file path in the menu bar (right-aligned)
+            // Display file path / modification status in the menu bar (right-aligned)
             if (active_editor_ && !active_editor_->empty()) {
                 TextEditor* textEditor = dynamic_cast<TextEditor*>(active_editor_);
                 
                 float menuWidth = ImGui::GetWindowWidth() - 150.0f;
                 ImGui::SameLine(menuWidth);
                 
-                // Get the file path from the active editor
-                std::string displayPath = "";
-                if (textEditor && textEditor->isModified()) {
-                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "*");
-                    ImGui::SameLine();
+                if (textEditor) {
+                    if (textEditor->isModified()) {
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "* Modified");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.5f, 0.7f, 0.5f, 1.0f), "Saved");
+                    }
                 }
             }
             
@@ -226,6 +348,10 @@ private:
     std::unique_ptr<TextEditor> text_editor_;
     std::unique_ptr<ImageEditor> image_editor_;
     EditorInterface* active_editor_ = nullptr;
+
+    PendingAction pending_action_ = PendingAction::None;
+    std::string pending_uri_;
+    bool show_confirm_modal_ = false;
 };
 
 } // namespace editor

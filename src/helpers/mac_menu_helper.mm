@@ -41,14 +41,9 @@ void disable_mac_cmd_w_menu_item() {
             if ([item hasSubmenu]) {
                 NSMenu* submenu = [item submenu];
                 for (NSMenuItem* subitem in [submenu itemArray]) {
-                    NSString* eq = [subitem keyEquivalent];
+                    NSString* eq = [[subitem keyEquivalent] lowercaseString];
                     NSUInteger mask = [subitem keyEquivalentModifierMask];
-                    if ([eq isEqualToString:@"w"] && (mask & NSEventModifierFlagCommand)) {
-                        [subitem setKeyEquivalent:@""];
-                        [subitem setKeyEquivalentModifierMask:0];
-                        found = true;
-                    }
-                    if ([eq isEqualToString:@"p"] && (mask & NSEventModifierFlagCommand)) {
+                    if ((mask & NSEventModifierFlagCommand) && ![eq isEqualToString:@"q"]) {
                         [subitem setKeyEquivalent:@""];
                         [subitem setKeyEquivalentModifierMask:0];
                         found = true;

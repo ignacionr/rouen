@@ -65,6 +65,9 @@
           
           shellHook = ''
             echo "[Nix Flake] Entering Rouen development environment..."
+            export CMAKE_BUILD_PARALLEL_LEVEL=2
+            export MAKEFLAGS="-j2"
+            export NIX_BUILD_CORES=2
             
             # Load secrets and environment variables
             if [ -f scripts/nix-setup-secrets.sh ]; then

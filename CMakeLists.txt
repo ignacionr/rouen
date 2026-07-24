@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.30)
 
+# Enforce build job pools to prevent memory exhaustion (OOM) on 16GB RAM machines
+set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=2 link_job_pool=1)
+set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
+set(CMAKE_JOB_POOL_LINK link_job_pool)
+
 # Set build type to Debug if not specified
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)

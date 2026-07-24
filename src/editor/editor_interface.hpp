@@ -22,6 +22,9 @@ public:
     // Save the current file (if applicable)
     virtual bool saveFile() = 0;
     
+    // Check if current file has unsaved modifications
+    virtual bool isModified() const { return false; }
+
     // Render the editor UI
     virtual void render() = 0;
 };
