@@ -28,6 +28,8 @@
 #include "../../helpers/image_cache.hpp"
 #include "../../helpers/texture_helper.hpp"
 #include "../../helpers/texture_utils.hpp"
+#include "../../helpers/media_player.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 namespace rouen::cards {
 
@@ -69,7 +71,13 @@ public:
         );
     }
     
+    void on_close() override {
+        media_player::stopAll();
+        rouen::platform::stop_speech();
+    }
+
     ~rss() override {
+        on_close();
         clear_feed_textures();
     }
 

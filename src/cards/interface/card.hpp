@@ -68,6 +68,7 @@ struct card {
 
     virtual bool render() { return false; }
     virtual bool render(rouen::ui::ui_context& /*ui*/) { return render(); }
+    virtual void on_close() {}
 
     virtual std::string get_uri() const = 0;
 

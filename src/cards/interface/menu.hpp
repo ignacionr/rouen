@@ -306,6 +306,8 @@ namespace rouen::cards {
                     {"RSS Smart Lists", []() { "create_card"_sfn("rss-smart-list:Smart List"); }},
                     {"Travel Plans", []() { "create_card"_sfn("travel"); }},
                     {"Markdown Notes", []() { "create_card"_sfn("notes:"); }},
+                    {"PDF Viewer", []() { "create_card"_sfn("pdf"); }},
+                    {"Image Viewer", []() { "create_card"_sfn("image"); }},
                     {"Weather & Time", []() { "create_card"_sfn("weather"); }},
                     {"Wikipedia", []() { "create_card"_sfn("wikipedia"); }},
                     {"Email", []() { "create_card"_sfn("mail"); }},

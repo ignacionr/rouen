@@ -106,8 +106,13 @@ namespace rouen::cards {
             );
         }
         
+        void on_close() override {
+            media_player::stopAll();
+            rouen::platform::stop_speech();
+        }
+
         ~radiocut() override {
-            // Stop any active resolution threads
+            on_close();
         }
         
         std::string get_uri() const override {

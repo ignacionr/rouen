@@ -210,6 +210,28 @@ foreach(IMG_FILE ${IMG_FILES})
   )
 endforeach()
 
+# Copy libpdfium.dylib to app bundle Contents/MacOS and fix install_name link
+if(TARGET pdfium OR PDFium_LIBRARY)
+  if(TARGET pdfium)
+    set(PDFIUM_DYLIB_SRC "$<TARGET_FILE:pdfium>")
+  else()
+    set(PDFIUM_DYLIB_SRC "${PDFium_LIBRARY}")
+  endif()
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PDFIUM_DYLIB_SRC}"
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/MacOS/libpdfium.dylib"
+    COMMENT "Copying libpdfium.dylib into app bundle Contents/MacOS"
+  )
+  add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND install_name_tool -change ./libpdfium.dylib @executable_path/libpdfium.dylib
+            "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.app/Contents/MacOS/${PROJECT_NAME}"
+    COMMENT "Updating pdfium dylib path in rouen binary"
+  )
+endif()
+
 # Add option for code signing
 option(ENABLE_CODESIGN "Enable code signing of the application bundle" OFF)
 if(ENABLE_CODESIGN)

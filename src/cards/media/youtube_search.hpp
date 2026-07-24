@@ -76,7 +76,12 @@ namespace rouen::cards {
             }
         }
 
+        void on_close() override {
+            media_player::stopAll();
+        }
+
         ~youtube_search() override {
+            on_close();
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
                 state->card_alive = false;

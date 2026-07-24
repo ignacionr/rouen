@@ -31,6 +31,7 @@ struct media_player {
         for (auto &[k,v]: items()) {
             if (v) v->stopMedia();
         }
+        clear_detached_item();
     }
 
     static bool is_any_playing_non_cast() {

@@ -680,9 +680,10 @@ struct deck {
                         last_focused_card_ = c;
                     }
                     if (!render_result) {
-                        // Unregister MCP functions immediately when card fails to render
+                        // Unregister MCP functions and trigger close hook immediately when card fails to render
                         try {
                             c->unregister_mcp_functions();
+                            c->on_close();
                         } catch (...) {
                             // Intentionally ignored: card might already be corrupted during cleanup
                             static_cast<void>(0);
@@ -740,6 +741,9 @@ struct deck {
                     bool draw_ok = render(*c, x, y, result.requested_fps, 0.0f, override_width);
                     if (c->is_focused) {
                         last_focused_card_ = c;
+                    }
+                    if (!draw_ok) {
+                        c->on_close();
                     }
                     return !draw_ok;
                 });

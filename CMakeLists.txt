@@ -219,6 +219,30 @@ else()
     endif()
   endif()
   
+  # Try to find PDFium via CMake or manual search
+  find_package(PDFium QUIET)
+  if(NOT PDFium_FOUND AND NOT TARGET pdfium)
+    find_package(pdfium QUIET)
+  endif()
+  if(NOT PDFium_FOUND AND NOT TARGET pdfium)
+    find_path(PDFium_INCLUDE_DIR fpdfview.h
+      PATHS /opt/homebrew/include /usr/local/include /usr/include
+      PATH_SUFFIXES pdfium)
+    find_library(PDFium_LIBRARY NAMES pdfium
+      PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+    if(PDFium_INCLUDE_DIR AND PDFium_LIBRARY)
+      add_library(pdfium SHARED IMPORTED)
+      set_target_properties(pdfium PROPERTIES
+        IMPORTED_LOCATION "${PDFium_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${PDFium_INCLUDE_DIR};${PDFium_INCLUDE_DIR}/cpp"
+      )
+      set(PDFium_FOUND TRUE)
+      message(STATUS "Found PDFium via manual search")
+    endif()
+  else()
+    message(STATUS "Found PDFium via find_package")
+  endif()
+  
   # For glaze, try to find it first, then fall back to FetchContent
   find_package(glaze CONFIG QUIET)
   if(NOT glaze_FOUND AND NOT TARGET glaze AND NOT TARGET glaze::glaze)
@@ -577,6 +601,18 @@ else()
     # pkg-config or manual detection
     target_include_directories(${PROJECT_NAME} PRIVATE ${TINYXML2_INCLUDE_DIRS})
     target_link_libraries(${PROJECT_NAME} PRIVATE ${TINYXML2_LIBRARIES})
+  endif()
+
+  # Handle PDFium system dependencies
+  if(TARGET pdfium)
+    target_link_libraries(${PROJECT_NAME} PRIVATE pdfium)
+  elseif(PDFium_FOUND OR PDFium_LIBRARY)
+    if(PDFium_INCLUDE_DIR)
+      target_include_directories(${PROJECT_NAME} PRIVATE ${PDFium_INCLUDE_DIR})
+    endif()
+    if(PDFium_LIBRARY)
+      target_link_libraries(${PROJECT_NAME} PRIVATE ${PDFium_LIBRARY})
+    endif()
   endif()
 endif()
 

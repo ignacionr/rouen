@@ -26,6 +26,8 @@
 #include "../information/ai_chat.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/markdown_notes.hpp"
+#include "../information/pdf_viewer.hpp"
+#include "../information/image_viewer.hpp"
 #include "../information/rss.hpp"
 #include "../information/rss_feed.hpp"
 #include "../information/rss_item.hpp"
@@ -42,6 +44,7 @@
 #include "../media/youtube_search.hpp"
 #include "../media/camera.hpp"
 #include "../media/media_companion.hpp"
+#include "../media/media_card.hpp"
 #include "../productivity/alarm.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
@@ -392,6 +395,37 @@ namespace rouen::cards {
                 // Register the theme settings card
                 instance.emplace("theme", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<theme_card>();
+                });
+
+                // Register the PDF viewer card
+                instance.emplace("pdf", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<pdf_viewer>(uri);
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
+                });
+
+                // Register the Image viewer card
+                instance.emplace("image", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<image_viewer>(uri);
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
+                });
+
+                instance.emplace("img", [](std::string_view uri, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<image_viewer>(uri);
+                    if (renderer) {
+                        card->set_renderer(renderer);
+                    }
+                    return card;
+                });
+
+                // Register the Media player card
+                instance.emplace("media", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<media_card>(uri);
                 });
 
                 initialized = true;

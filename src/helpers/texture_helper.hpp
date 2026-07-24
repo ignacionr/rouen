@@ -255,6 +255,91 @@ namespace TextureHelper {
         return rouen_tex;
     }
 
+    // Function to create a GPU texture from an SDL_Surface
+    inline RouenGPUTexture* createTextureFromSurface(SDL_GPUDevice* device, SDL_Surface* surface) {
+        if (!device || !surface) {
+            TEXTURE_ERROR("Cannot create texture from surface: device or surface is null");
+            return nullptr;
+        }
+
+        SDL_Surface* rgba_surface = (surface->format == SDL_PIXELFORMAT_RGBA32) 
+            ? surface 
+            : SDL_ConvertSurface(surface, SDL_PIXELFORMAT_RGBA32);
+
+        if (!rgba_surface) {
+            TEXTURE_ERROR("Failed to convert surface to RGBA32");
+            return nullptr;
+        }
+
+        int width = rgba_surface->w;
+        int height = rgba_surface->h;
+
+        SDL_GPUTextureCreateInfo texture_info = {};
+        texture_info.type = SDL_GPU_TEXTURETYPE_2D;
+        texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        texture_info.width = static_cast<Uint32>(width);
+        texture_info.height = static_cast<Uint32>(height);
+        texture_info.layer_count_or_depth = 1;
+        texture_info.num_levels = 1;
+
+        SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &texture_info);
+        if (!texture) {
+            TEXTURE_ERROR_FMT("Failed to create GPU texture: {}", SDL_GetError());
+            if (rgba_surface != surface) SDL_DestroySurface(rgba_surface);
+            return nullptr;
+        }
+
+        SDL_GPUTransferBufferCreateInfo transfer_info = {};
+        transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        transfer_info.size = static_cast<Uint32>(height * rgba_surface->pitch);
+
+        SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
+        if (!transfer_buffer) {
+            SDL_ReleaseGPUTexture(device, texture);
+            if (rgba_surface != surface) SDL_DestroySurface(rgba_surface);
+            return nullptr;
+        }
+
+        Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, transfer_buffer, false));
+        if (map) {
+            std::memcpy(map, rgba_surface->pixels, static_cast<size_t>(height) * static_cast<size_t>(rgba_surface->pitch));
+            SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
+        }
+
+        SDL_GPUCommandBuffer* cmd_buf = SDL_AcquireGPUCommandBuffer(device);
+        if (cmd_buf) {
+            SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
+            if (copy_pass) {
+                SDL_GPUTextureTransferInfo transfer_info_gpu = {};
+                transfer_info_gpu.transfer_buffer = transfer_buffer;
+                transfer_info_gpu.offset = 0;
+                transfer_info_gpu.pixels_per_row = static_cast<Uint32>(width);
+                transfer_info_gpu.rows_per_layer = static_cast<Uint32>(height);
+
+                SDL_GPUTextureRegion region = {};
+                region.texture = texture;
+                region.w = static_cast<Uint32>(width);
+                region.h = static_cast<Uint32>(height);
+                region.d = 1;
+
+                SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
+                SDL_EndGPUCopyPass(copy_pass);
+            }
+            SDL_SubmitGPUCommandBuffer(cmd_buf);
+        }
+
+        SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);
+        if (rgba_surface != surface) SDL_DestroySurface(rgba_surface);
+
+        RouenGPUTexture* rouen_tex = new RouenGPUTexture();
+        rouen_tex->binding.texture = texture;
+        rouen_tex->binding.sampler = getDefaultSampler(device);
+        rouen_tex->width = width;
+        rouen_tex->height = height;
+        return rouen_tex;
+    }
+
     // Function to safely destroy a GPU texture (defers RouenGPUTexture structure and raw GPU texture cleanup)
     inline void destroyTexture(RouenGPUTexture*& texture) {
         if (texture) {

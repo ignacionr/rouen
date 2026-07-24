@@ -99,11 +99,16 @@ public:
         requested_fps = 1;
     }
     
-    ~rss_item() override {
-        // Make sure to stop playback when card is closed
+    void on_close() override {
+        media_player::stopAll();
+        rouen::platform::stop_speech();
         if (!item.enclosure.empty()) {
             media.stopMedia();
         }
+    }
+
+    ~rss_item() override {
+        on_close();
         clear_item_textures();
     }
 

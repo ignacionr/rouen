@@ -11,6 +11,8 @@
 #include "../../helpers/config_service.hpp"
 
 #include "../interface/card.hpp"
+#include "../information/image_viewer.hpp"
+#include "../media/media_card.hpp"
 
 namespace rouen::cards
 {
@@ -165,8 +167,12 @@ namespace rouen::cards
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[3])); // Code files (Green/Success)
                             } else if (ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".yaml" || ext == ".yml") {
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4])); // Text files (Yellow/Warning)
-                            } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".bmp") {
+                            } else if (is_supported_image_extension(ext)) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[6])); // Image files (Purple/Special 1)
+                            } else if (is_supported_media_extension(ext)) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[1])); // Media files (Turquoise/Special 2)
+                            } else if (ext == ".pdf" || ext == ".PDF") {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[0])); // PDF files (Red/Primary)
                             } else if (ext == ".exe" || ext == "" || ext == ".bin" || ext == ".sh") {
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[2])); // Executable files (Red/Error)
                             } else {
@@ -201,6 +207,12 @@ namespace rouen::cards
                                 // If Ctrl is pressed and it's a CMakeLists.txt file, open a cmake card
                                 if (ImGui::GetIO().KeyCtrl && entry.path().filename() == "CMakeLists.txt") {
                                     "create_card"_sfn(std::format("cmake:{}", entry.path().string()));
+                                } else if (entry.path().extension() == ".pdf" || entry.path().extension() == ".PDF") {
+                                    "create_card"_sfn(std::format("pdf:{}", entry.path().string()));
+                                } else if (is_supported_image_extension(entry.path().extension().string())) {
+                                    "create_card"_sfn(std::format("image:{}", entry.path().string()));
+                                } else if (is_supported_media_extension(entry.path().extension().string())) {
+                                    "create_card"_sfn(std::format("media:{}", entry.path().string()));
                                 } else {
                                     // For other files or normal clicking, use the default editor
                                     "edit"_sfn(entry.path().string());

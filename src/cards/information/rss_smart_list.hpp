@@ -52,10 +52,13 @@ namespace rouen::cards
             width *= 1.5f;
         }
 
+        void on_close() override {
+            media_player::stopAll();
+            rouen::platform::stop_speech();
+        }
+
         ~rss_smart_list() override {
-            if (active_speak_link == current_speaking_link && !active_speak_link.empty()) {
-                rouen::platform::stop_speech();
-            }
+            on_close();
         }
 
         void loadSmartList()

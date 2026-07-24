@@ -43,6 +43,7 @@
             unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze
             unstable.imgui
+            unstable.pdfium-binaries
             unstable.gtest.dev  # Google Test development headers and CMake files
             unstable.ccache     # Compiler cache to speed up compilation
             unstable.clang-tools # Clang-tidy and other analysis tools
@@ -120,6 +121,7 @@
             unstable.tinyxml-2  # TinyXML2 (version 2)
             unstable.glaze 
             unstable.imgui 
+            unstable.pdfium-binaries
           ] ++ darwinFrameworks
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.libGL 
@@ -209,6 +211,7 @@
             unstable.gtest.dev
             unstable.glaze 
             unstable.imgui 
+            unstable.pdfium-binaries
           ] ++ darwinFrameworks
             ++ (unstable.lib.optionals (!unstable.stdenv.isDarwin) [ 
               unstable.libGL 

@@ -83,8 +83,14 @@ namespace rouen::cards
             width *= 1.5f; // Adjust width for better display
         }
 
+        void on_close() override {
+            media_player::stopAll();
+            rouen::platform::stop_speech();
+        }
+
         ~rss_feed() override
         {
+            on_close();
             if (feed_image_texture)
             {
                 SDL_DestroyTexture(feed_image_texture);

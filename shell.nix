@@ -30,6 +30,7 @@ pkgs.mkShell {
     pkgs.gtest.dev
     pkgs.glaze
     pkgs.imgui
+    pkgs.pdfium-binaries
     # Add macOS SDK frameworks for proper header isolation
   ] ++ (if isDarwin then [
     # Use current Darwin frameworks - these should be available in modern nixpkgs
@@ -64,7 +65,7 @@ pkgs.mkShell {
     export MAKEFLAGS="-j2"
     export NIX_BUILD_CORES=2
     export PKG_CONFIG_PATH="${pkgs.tinyxml-2}/lib/pkgconfig:${pkgs.openssl}/lib/pkgconfig:${pkgs.sqlite}/lib/pkgconfig:${pkgs.sdl3}/lib/pkgconfig:${pkgs.sdl3-image}/lib/pkgconfig:${pkgs.curl}/lib/pkgconfig:${pkgs.gtest.dev}/lib/pkgconfig:${pkgs.glaze}/lib/pkgconfig:${pkgs.imgui}/lib/pkgconfig"
-    export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml-2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.sdl3}:${pkgs.sdl3-image}:${pkgs.curl}:${pkgs.gtest.dev}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share"
+    export CMAKE_PREFIX_PATH="${pkgs.cmake}/lib/cmake:${pkgs.tinyxml-2}:${pkgs.openssl}:${pkgs.sqlite}:${pkgs.sdl3}:${pkgs.sdl3-image}:${pkgs.curl}:${pkgs.gtest.dev}:${pkgs.glaze}:${pkgs.glaze}/share:${pkgs.imgui}:${pkgs.imgui}/share:${pkgs.pdfium-binaries}"
     # Remove Homebrew from PATH for full Nix isolation
     export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/opt/homebrew' | grep -v '/usr/local' | paste -sd ':' -)
     
