@@ -5,6 +5,49 @@
 
 namespace rouen::cards {
 
+namespace {
+std::string unescape_shell_path(const std::string& input) {
+    std::string str = input;
+    str.erase(0, str.find_first_not_of(" \t\n\r"));
+    if (str.empty()) return "";
+    str.erase(str.find_last_not_of(" \t\n\r") + 1);
+
+    if (str.size() >= 2 && ((str.front() == '"' && str.back() == '"') || 
+                            (str.front() == '\'' && str.back() == '\''))) {
+        return str.substr(1, str.size() - 2);
+    }
+
+    std::string result;
+    result.reserve(str.size());
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] == '\\' && i + 1 < str.size()) {
+            result += str[++i];
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+std::string resolve_terminal_file_path(const std::string& raw_input, const std::string& cwd) {
+    std::string cleaned = unescape_shell_path(raw_input);
+    if (cleaned.empty()) return "";
+
+    if (cleaned == "~" || cleaned.starts_with("~/")) {
+        const char* home = std::getenv("HOME");
+        if (home) {
+            cleaned = (cleaned == "~") ? std::string(home) : std::string(home) + cleaned.substr(1);
+        }
+    }
+
+    std::filesystem::path path_obj(cleaned);
+    if (!path_obj.is_absolute()) {
+        path_obj = std::filesystem::path(cwd) / path_obj;
+    }
+    return path_obj.lexically_normal().string();
+}
+}
+
 terminal::terminal(std::string_view initial_dir) {
     // Set up colors for the terminal card
     colors[0] = {0.15f, 0.15f, 0.2f, 1.0f};     // Primary color - dark blue
@@ -230,17 +273,14 @@ void terminal::render_command_input(float window_width) {
         }
         // Check for 'ed <filename>' shortcut with Ctrl+Enter
         else if (ctrl_down && user_cmd.starts_with("ed ") && user_cmd.size() > 3) {
-            // Extract filename (relative to current_working_dir)
-            std::string filename = user_cmd.substr(3);
-            std::filesystem::path file_path = std::filesystem::path(current_working_dir) / filename;
-            // Call the edit connector slot
-            "edit"_sfn(file_path.string());
-            // Add to history for convenience
+            std::string resolved_path = resolve_terminal_file_path(user_cmd.substr(3), current_working_dir);
+            if (!resolved_path.empty()) {
+                "edit"_sfn(resolved_path);
+                output.add_to_output(std::format("Editing file: {}", resolved_path), OutputType::System);
+            }
             command_history.push_back(user_cmd);
             if (command_history.size() > 50) command_history.erase(command_history.begin());
             history_index = command_history.size();
-            // Output to terminal for feedback
-            output.add_to_output(std::format("Editing file: {}", file_path.string()), OutputType::System);
         } else if (is_command_running.load()) {
             // A process is running in the foreground. Send the raw input to its stdin.
             output.add_to_output(user_cmd, OutputType::Command);
@@ -324,12 +364,18 @@ bool terminal::handle_slash_command(const std::string& cmd) {
     if (clean_cmd == "/help") {
         output.add_to_output("Available slash commands:", OutputType::System);
         output.add_to_output("  /help           - Show this help message", OutputType::System);
+        output.add_to_output("  /clear          - Clear terminal display buffer", OutputType::System);
         output.add_to_output("  /clear-history  - Clear terminal command history", OutputType::System);
         output.add_to_output("  /reset          - Restart interactive bash session", OutputType::System);
         output.add_to_output("  /info           - Show terminal card status and environment info", OutputType::System);
+        output.add_to_output("  /edit <file>    - Open file in Rouen editor", OutputType::System);
+        output.add_to_output("  /copy           - Copy all terminal contents to system clipboard", OutputType::System);
         output.add_to_output("  /agy <prompt>   - Run Antigravity CLI print command using Nix", OutputType::System);
         output.add_to_output("", OutputType::Blank);
         output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd == "/clear" || clean_cmd == "/cls") {
+        output.clear_terminal(current_working_dir);
     }
     else if (clean_cmd == "/clear-history" || clean_cmd == "/clear_history" || clean_cmd == "/history -c") {
         command_history.clear();
@@ -352,6 +398,29 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         output.add_to_output(std::format("  History Size: {} / 50", command_history.size()), OutputType::System);
         output.add_to_output(std::format("  Interactive: {}", bash.is_interactive() ? "Yes" : "No"), OutputType::System);
         output.add_to_output(std::format("  Process Running: {}", is_command_running.load() ? "Yes" : "No"), OutputType::System);
+        output.add_to_output("", OutputType::Blank);
+        output.add_prompt(current_working_dir);
+    }
+    else if (clean_cmd == "/edit" || clean_cmd.starts_with("/edit ") || clean_cmd.starts_with("/edit\t")) {
+        size_t space_pos = clean_cmd.find_first_of(" \t");
+        std::string raw_arg = (space_pos != std::string::npos) ? clean_cmd.substr(space_pos + 1) : "";
+        std::string resolved_path = resolve_terminal_file_path(raw_arg, current_working_dir);
+
+        if (resolved_path.empty()) {
+            output.add_to_output("Error: /edit requires a filename (e.g., /edit main.cpp)", OutputType::StdErr);
+            output.add_to_output("", OutputType::Blank);
+            output.add_prompt(current_working_dir);
+        } else {
+            "edit"_sfn(resolved_path);
+            output.add_to_output(std::format("Editing file: {}", resolved_path), OutputType::System);
+            output.add_to_output("", OutputType::Blank);
+            output.add_prompt(current_working_dir);
+        }
+    }
+    else if (clean_cmd == "/copy" || clean_cmd == "/copy-all" || clean_cmd == "/copyall" || clean_cmd == "/clipboard") {
+        std::string full_text = output.get_all_text();
+        ImGui::SetClipboardText(full_text.c_str());
+        output.add_to_output("Copied all terminal contents to clipboard.", OutputType::System);
         output.add_to_output("", OutputType::Blank);
         output.add_prompt(current_working_dir);
     }

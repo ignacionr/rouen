@@ -181,6 +181,31 @@ target_link_libraries(test_camera_gpu_upload_safety PRIVATE ${SDL3_LIBRARIES})
 add_gtest_executable(test_pixel_conversion test_pixel_conversion.cpp)
 target_link_libraries(test_pixel_conversion PRIVATE ${SDL3_LIBRARIES})
 
+# Terminal CWD Tracking Test
+add_executable(test_terminal_cd
+    test_terminal_cd.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/helpers/config_service.cpp
+)
+target_include_directories(test_terminal_cd PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+target_link_libraries(test_terminal_cd
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
+    GTest::gmock_main
+    CURL::libcurl
+    imgui::imgui
+)
+add_test(NAME TerminalCdTest COMMAND test_terminal_cd)
+set_target_properties(test_terminal_cd PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 

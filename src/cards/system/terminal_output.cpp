@@ -4,6 +4,54 @@
 namespace rouen::cards {
 
 namespace {
+std::string StripAnsiSequences(const std::string& input) {
+    std::string stripped;
+    stripped.reserve(input.size());
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] != '\x1b') {
+            stripped += input[i];
+            continue;
+        }
+
+        if (i + 1 >= input.size()) {
+            break;
+        }
+
+        const char next = input[i + 1];
+        if (next == '[') {
+            i += 2;
+            while (i < input.size()) {
+                const auto ch = static_cast<unsigned char>(input[i]);
+                if (ch >= 0x40 && ch <= 0x7e) {
+                    break;
+                }
+                ++i;
+            }
+            continue;
+        }
+
+        if (next == ']') {
+            i += 2;
+            while (i < input.size()) {
+                if (input[i] == '\a') {
+                    break;
+                }
+                if (input[i] == '\x1b' && i + 1 < input.size() && input[i + 1] == '\\') {
+                    ++i;
+                    break;
+                }
+                ++i;
+            }
+            continue;
+        }
+
+        ++i;
+    }
+
+    return stripped;
+}
+
 void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
     ImVec4 current_color = default_color;
     bool has_color_push = false;
@@ -182,6 +230,26 @@ void TerminalOutput::set_partial_line(const std::string& text, OutputType type) 
         stderr_partial = text;
     }
     should_auto_scroll = true;
+}
+
+std::string TerminalOutput::get_all_text() {
+    std::lock_guard<std::mutex> lock(output_mutex);
+    std::string result;
+    for (const auto& [text, type] : output_buffer) {
+        if (type == OutputType::Blank) {
+            result += "\n";
+        } else {
+            result += StripAnsiSequences(text);
+            result += "\n";
+        }
+    }
+    if (!stdout_partial.empty()) {
+        result += StripAnsiSequences(stdout_partial);
+    }
+    if (!stderr_partial.empty()) {
+        result += StripAnsiSequences(stderr_partial);
+    }
+    return result;
 }
 
 void TerminalOutput::display_buffer(const ImVec4* colors, bool& auto_scroll) {

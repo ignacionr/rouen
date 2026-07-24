@@ -27,6 +27,7 @@ public:
     void clear_terminal(const std::string& cwd);
     void add_prompt(const std::string& working_dir);
     void set_partial_line(const std::string& text, OutputType type);
+    std::string get_all_text();
     
     // Display output buffer in the UI
     void display_buffer(const ImVec4* colors, bool& auto_scroll);

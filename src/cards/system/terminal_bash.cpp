@@ -151,14 +151,13 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
             read_bash_stream(bash_master_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
-        // Customize bash environment - use PS1 that has the working directory (\w) followed by a newline for prompt tracking
-        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
-        send_to_bash("set +H", true);
-        
         // Ensure Nix and standard paths are loaded
         send_to_bash("export PATH=\"$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
         send_to_bash("export NIXPKGS_ALLOW_UNFREE=1", true);
         send_to_bash(R"(if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi)", true);
+        send_to_bash("set +H", true);
+        send_to_bash(R"(export PROMPT_COMMAND='echo "ROUEN_PROMPT|$PWD|"')", true);
+        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
         
         // Change to initial directory
         send_to_bash(std::format("cd \"{}\"", initial_dir), true);
@@ -398,11 +397,11 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         std::string pass_str = std::string(password) + "\n";
         [[maybe_unused]] auto write_result = write(bash_master_fd, pass_str.c_str(), pass_str.length());
         
-        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
-        send_to_bash("set +H", true);
         send_to_bash("export PATH=\"$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
         send_to_bash("export NIXPKGS_ALLOW_UNFREE=1", true);
         send_to_bash(R"(if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'; elif [ -e '/etc/profile.d/nix.sh' ]; then . '/etc/profile.d/nix.sh'; elif [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi)", true);
+        send_to_bash("set +H", true);
+        send_to_bash(R"(export PS1="ROUEN_PROMPT|\w|\n")", true);
         
         send_to_bash(std::format("cd \"{}\"", prev_cwd), true);
         
