@@ -207,6 +207,132 @@ namespace bybit {
 
 } // namespace bybit
 
+// Glaze metadata for JSON parsing
+template <>
+struct glz::meta<rouen::hosts::bybit::CoinBalance> {
+    using T = rouen::hosts::bybit::CoinBalance;
+    static constexpr auto value = object(
+        "coin", &T::coin,
+        "walletBalance", &T::walletBalance,
+        "transferBalance", &T::transferBalance,
+        "bonus", &T::bonus
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::AccountData> {
+    using T = rouen::hosts::bybit::AccountData;
+    static constexpr auto value = object(
+        "totalEquity", &T::totalEquity,
+        "totalWalletBalance", &T::totalWalletBalance,
+        "totalMarginBalance", &T::totalMarginBalance,
+        "totalAvailableBalance", &T::totalAvailableBalance,
+        "totalPerpUPL", &T::totalPerpUPL,
+        "totalInitialMargin", &T::totalInitialMargin,
+        "totalMaintenanceMargin", &T::totalMaintenanceMargin,
+        "accountType", &T::accountType,
+        "coin", &T::coin
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::AccountInfo> {
+    using T = rouen::hosts::bybit::AccountInfo;
+    static constexpr auto value = object(
+        "list", &T::list
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::BybitResponse> {
+    using T = rouen::hosts::bybit::BybitResponse;
+    static constexpr auto value = object(
+        "retCode", &T::retCode,
+        "retMsg", &T::retMsg,
+        "result", &T::result,
+        "retExtInfo", &T::retExtInfo,
+        "time", &T::time
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false,
+        .error_on_missing_keys = false  // Allow missing result field in error responses
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::AssetBalance> {
+    using T = rouen::hosts::bybit::AssetBalance;
+    static constexpr auto value = object(
+        "coin", &T::coin,
+        "transferBalance", &T::transferBalance,
+        "walletBalance", &T::walletBalance,
+        "bonus", &T::bonus
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::AssetAccountInfo> {
+    using T = rouen::hosts::bybit::AssetAccountInfo;
+    static constexpr auto value = object(
+        "accountType", &T::accountType,
+        "memberId", &T::memberId,
+        "balance", &T::balance
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::AssetResponse> {
+    using T = rouen::hosts::bybit::AssetResponse;
+    static constexpr auto value = object(
+        "retCode", &T::retCode,
+        "retMsg", &T::retMsg,
+        "result", &T::result,
+        "retExtInfo", &T::retExtInfo,
+        "time", &T::time
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false,
+        .error_on_missing_keys = false  // Allow missing result field in error responses
+    };
+};
+
+template <>
+struct glz::meta<rouen::hosts::bybit::WalletData> {
+    using T = rouen::hosts::bybit::WalletData;
+    static constexpr auto value = object(
+        "accountType", &T::accountType,
+        "totalEquity", &T::totalEquity,
+        "totalWalletBalance", &T::totalWalletBalance,
+        "coins", &T::coins
+    );
+    
+    static constexpr auto options = glz::opts{
+        .error_on_unknown_keys = false
+    };
+};
+
 /**
  * Bybit API Host Controller
  * 
@@ -589,128 +715,4 @@ private:
 
 } // namespace rouen::hosts
 
-// Glaze metadata for JSON parsing
-template <>
-struct glz::meta<rouen::hosts::bybit::CoinBalance> {
-    using T = rouen::hosts::bybit::CoinBalance;
-    static constexpr auto value = object(
-        "coin", &T::coin,
-        "walletBalance", &T::walletBalance,
-        "transferBalance", &T::transferBalance,
-        "bonus", &T::bonus
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
 
-template <>
-struct glz::meta<rouen::hosts::bybit::AccountData> {
-    using T = rouen::hosts::bybit::AccountData;
-    static constexpr auto value = object(
-        "totalEquity", &T::totalEquity,
-        "totalWalletBalance", &T::totalWalletBalance,
-        "totalMarginBalance", &T::totalMarginBalance,
-        "totalAvailableBalance", &T::totalAvailableBalance,
-        "totalPerpUPL", &T::totalPerpUPL,
-        "totalInitialMargin", &T::totalInitialMargin,
-        "totalMaintenanceMargin", &T::totalMaintenanceMargin,
-        "accountType", &T::accountType,
-        "coin", &T::coin
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::AccountInfo> {
-    using T = rouen::hosts::bybit::AccountInfo;
-    static constexpr auto value = object(
-        "list", &T::list
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::BybitResponse> {
-    using T = rouen::hosts::bybit::BybitResponse;
-    static constexpr auto value = object(
-        "retCode", &T::retCode,
-        "retMsg", &T::retMsg,
-        "result", &T::result,
-        "retExtInfo", &T::retExtInfo,
-        "time", &T::time
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false,
-        .error_on_missing_keys = false  // Allow missing result field in error responses
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::AssetBalance> {
-    using T = rouen::hosts::bybit::AssetBalance;
-    static constexpr auto value = object(
-        "coin", &T::coin,
-        "transferBalance", &T::transferBalance,
-        "walletBalance", &T::walletBalance,
-        "bonus", &T::bonus
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::AssetAccountInfo> {
-    using T = rouen::hosts::bybit::AssetAccountInfo;
-    static constexpr auto value = object(
-        "accountType", &T::accountType,
-        "memberId", &T::memberId,
-        "balance", &T::balance
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::AssetResponse> {
-    using T = rouen::hosts::bybit::AssetResponse;
-    static constexpr auto value = object(
-        "retCode", &T::retCode,
-        "retMsg", &T::retMsg,
-        "result", &T::result,
-        "retExtInfo", &T::retExtInfo,
-        "time", &T::time
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false,
-        .error_on_missing_keys = false  // Allow missing result field in error responses
-    };
-};
-
-template <>
-struct glz::meta<rouen::hosts::bybit::WalletData> {
-    using T = rouen::hosts::bybit::WalletData;
-    static constexpr auto value = object(
-        "accountType", &T::accountType,
-        "totalEquity", &T::totalEquity,
-        "totalWalletBalance", &T::totalWalletBalance,
-        "coins", &T::coins
-    );
-    
-    static constexpr auto options = glz::opts{
-        .error_on_unknown_keys = false
-    };
-};
