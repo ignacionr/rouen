@@ -206,6 +206,7 @@ namespace bybit {
     };
 
 } // namespace bybit
+} // namespace rouen::hosts
 
 // Glaze metadata for JSON parsing
 template <>
@@ -332,6 +333,8 @@ struct glz::meta<rouen::hosts::bybit::WalletData> {
         .error_on_unknown_keys = false
     };
 };
+
+namespace rouen::hosts {
 
 /**
  * Bybit API Host Controller

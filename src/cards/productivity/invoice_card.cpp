@@ -157,10 +157,10 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
             ctx->Q();
         };
 
-        auto draw_line = [&](double x1, double y1, double x2, double y2, double r, double g, double b, double width = 1.0) {
+        auto draw_line = [&](double x1, double y1, double x2, double y2, double r, double g, double b, double line_width = 1.0) {
             ctx->q();
             ctx->RG(r, g, b);
-            ctx->w(width);
+            ctx->w(line_width);
             ctx->m(x1, y1);
             ctx->l(x2, y2);
             ctx->s();
