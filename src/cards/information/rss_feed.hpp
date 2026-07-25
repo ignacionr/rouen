@@ -84,7 +84,7 @@ namespace rouen::cards
         }
 
         void on_close() override {
-            media_player::stopAll();
+            media_player::stopForOwner(this);
             rouen::platform::stop_speech();
         }
 
@@ -707,7 +707,7 @@ namespace rouen::cards
  
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
-                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, false, left_width);
+                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, false, left_width, this);
                                             }
                                             // Enhanced: Check for extracted media URLs if no direct enclosure
                                             else if (!item.extracted_media_urls.empty()) {
@@ -726,14 +726,14 @@ namespace rouen::cards
                                                             break;
                                                         }
                                                     }
-                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, false, left_width);
+                                                    media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, false, left_width, this);
                                                 }
                                             }
                                             // Enhanced: Check if this is a YouTube/Vimeo link without enclosure
                                             else if (item.link.find("youtube.com") != std::string::npos || 
                                                      item.link.find("youtu.be") != std::string::npos ||
                                                      item.link.find("vimeo.com") != std::string::npos) {
-                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, false, left_width);
+                                                media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, false, left_width, this);
                                             }
                                             else {
                                                 // Check if currently speaking
@@ -941,7 +941,7 @@ namespace rouen::cards
                                                 next_item.item_title = next_item_ref.title;
                                                 next_item.watermark = next_item_ref.watermark;
                                                 next_item.start_offset = next_item_ref.watermark.value_or(0.0);
-                                                next_item.playMedia();
+                                                next_item.playMedia(this);
                                                 break;
                                             }
                                         }

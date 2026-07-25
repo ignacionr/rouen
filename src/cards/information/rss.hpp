@@ -72,7 +72,7 @@ public:
     }
     
     void on_close() override {
-        media_player::stopAll();
+        media_player::stopForOwner(this);
         rouen::platform::stop_speech();
     }
 

@@ -100,7 +100,7 @@ public:
     }
     
     void on_close() override {
-        media_player::stopAll();
+        media_player::stopForOwner(this);
         rouen::platform::stop_speech();
         if (!item.enclosure.empty()) {
             media.stopMedia();
@@ -220,7 +220,7 @@ public:
                         
                         media_player::stopAll();
                         global_item.start_offset = global_item.watermark.value_or(0.0);
-                        global_item.playMedia();
+                        global_item.playMedia(this);
                     }
                     
                     // Original URL link
@@ -251,7 +251,7 @@ public:
                         
                         // Use the media_player helper for playback controls
                         try {
-                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, true);
+                            media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, true, 0.0f, this);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in media player: {}", e.what());
                         }
@@ -274,7 +274,7 @@ public:
                                 extracted_media.format);
                             
                             try {
-                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, true);
+                                media_player::player(extracted_media.url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, true, 0.0f, this);
                                 if (i < item.extracted_media_urls.size() - 1) {
                                     ImGui::Spacing();
                                 }
@@ -292,7 +292,7 @@ public:
                         ImGui::Separator();
                         
                         try {
-                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, true);
+                            media_player::player(item.link, colors[0], "Play Video", item.feed_id, item.link, item.title, item.watermark, true, 0.0f, this);
                         } catch (const std::exception& e) {
                             RSS_ERROR_FMT("Exception in video link player: {}", e.what());
                         }

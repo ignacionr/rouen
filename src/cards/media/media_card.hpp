@@ -43,7 +43,12 @@ struct media_card : public card {
         }
     }
 
+    void on_close() override {
+        media_player::stopForOwner(this);
+    }
+
     ~media_card() override {
+        on_close();
         // Stop playback when card is closed
         if (active_item_id_ != 0) {
             auto item_ptr = media_player::get_item_ptr(active_item_id_);
@@ -107,12 +112,12 @@ struct media_card : public card {
                 if (item_ptr) {
                     item_ptr->url = media_url;
                     item_ptr->start_offset = 0.0;
-                    item_ptr->playMedia();
+                    item_ptr->playMedia(this);
                 }
             }
 
             // Render expanded active media player UI
-            media_player::player(media_url, colors[0], path_.filename().string(), -1, "", "", media_player::get_dummy_watermark(), true);
+            media_player::player(media_url, colors[0], path_.filename().string(), -1, "", "", media_player::get_dummy_watermark(), true, 0.0f, this);
         });
     }
 

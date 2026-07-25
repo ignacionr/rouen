@@ -34,6 +34,26 @@ struct media_player {
         clear_detached_item();
     }
 
+    static void stopForOwner(const void* owner) {
+        if (!owner) return;
+        std::lock_guard<std::recursive_mutex> lock(items_mutex());
+        for (auto &[k, v]: items()) {
+            if (v && v->owner_card == owner) {
+                v->stopMedia();
+            }
+        }
+        std::lock_guard<std::mutex> detached_lock(s_detached_mutex);
+        if (s_detached_item && s_detached_item->owner_card == owner) {
+            s_detached_item->stopMedia();
+            s_detached_item = nullptr;
+        }
+        std::lock_guard<std::mutex> fs_lock(s_fullscreen_mutex);
+        if (s_active_fullscreen_item && s_active_fullscreen_item->owner_card == owner) {
+            s_active_fullscreen_item->stopMedia();
+            s_active_fullscreen_item = nullptr;
+        }
+    }
+
     static bool is_any_playing_non_cast() {
         if (media_player_item::is_cast_active.load()) {
             return false;
@@ -663,7 +683,7 @@ struct media_player {
     }
 
 
-    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false, float max_width = 0.0f) {
+    static void player(std::string_view url, auto info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false, float max_width = 0.0f, const void* owner_card = nullptr) {
         (void)info_color;
         (void)prefer_tall_layout;
         float const player_width = (max_width > 0.0f) ? max_width : ImGui::GetContentRegionAvail().x;
@@ -671,6 +691,9 @@ struct media_player {
         try {
             auto item_ptr = get_item_ptr(ImGui::GetID("MediaPlayer"));
             auto &item = *item_ptr;
+            if (owner_card) {
+                item.owner_card = owner_card;
+            }
             item.url = url;
             if (feed_id != -1) {
                 item.feed_id = feed_id;
@@ -764,19 +787,19 @@ struct media_player {
                     if (ImGui::Button(std::format(" {} Resume ({})", ICON_MD_PLAY_ARROW, formatted_bookmark).c_str(), ImVec2(play_btn_w, 0))) {
                         stopAll();
                         item.start_offset = *item.watermark;
-                        item.playMedia();
+                        item.playMedia(owner_card);
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Restart", ImVec2(restart_btn_w, 0))) {
                         stopAll();
                         item.start_offset = 0.0;
-                        item.playMedia();
+                        item.playMedia(owner_card);
                     }
                 } else {
                     if (ImGui::Button(std::format(" {} {}", ICON_MD_PLAY_ARROW, title).c_str(), ImVec2(player_width, 0))) {
                         stopAll();
                         item.start_offset = 0.0;
-                        item.playMedia();
+                        item.playMedia(owner_card);
                     }
                 }
                 ImGui::PopStyleVar();

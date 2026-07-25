@@ -85,6 +85,7 @@ struct media_player_item {
     std::optional<window_rect> last_docked_video_rect;
     bool user_tall_layout{false};
     bool user_tall_layout_set{false};
+    const void* owner_card{nullptr};
     static inline std::atomic<bool> is_cast_active{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
     static inline std::function<void(const uint8_t*, size_t)> push_audio_cb;
@@ -129,7 +130,7 @@ struct media_player_item {
     std::string urlDecode(const std::string& encoded);
     bool isUrlEncoded(const std::string& input_str);
     std::string sanitizeURL(const std::string& input_url);
-    bool playMedia();
+    bool playMedia(const void* owner = nullptr);
     std::string formatTime(double seconds) const;
     bool seekTo(double position_seconds);
     bool setVolume(int new_volume);
@@ -358,6 +359,7 @@ inline void media_player_item::stopMedia() {
     duration = 0.0;
     start_offset = 0.0;
     player_pid = 0;
+    owner_card = nullptr;
 }
 
 inline std::string media_player_item::urlDecode(const std::string& encoded) {
@@ -391,7 +393,10 @@ inline std::string media_player_item::sanitizeURL(const std::string& input_url) 
     return sanitized_url;
 }
 
-inline bool media_player_item::playMedia() {
+inline bool media_player_item::playMedia(const void* owner) {
+    if (owner) {
+        owner_card = owner;
+    }
     double offset = start_offset;
     stopMedia();
     start_offset = offset;

@@ -107,7 +107,7 @@ namespace rouen::cards {
         }
         
         void on_close() override {
-            media_player::stopAll();
+            media_player::stopForOwner(this);
             rouen::platform::stop_speech();
         }
 
@@ -297,12 +297,12 @@ namespace rouen::cards {
                                 auto &item = media_player::get_item(ImGui::GetID("MediaPlayer"));
                                 item.url = playlist_url;
                                 item.start_offset = cut.start_offset;
-                                item.playMedia();
+                                item.playMedia(this);
                                 ImGui::PopID();
                             }
                             
                             // Render standard player controls
-                            media_player::player(playlist_url, colors[0], cut.title);
+                             media_player::player(playlist_url, colors[0], cut.title, -1, "", "", media_player::get_dummy_watermark(), false, 0.0f, this);
                         } else {
                             if (ImGui::Button(ICON_MD_PLAY_CIRCLE_OUTLINE " Play in MPV")) {
                                 trigger_play(cut.id);

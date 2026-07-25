@@ -53,7 +53,7 @@ namespace rouen::cards
         }
 
         void on_close() override {
-            media_player::stopAll();
+            media_player::stopForOwner(this);
             rouen::platform::stop_speech();
         }
 
@@ -293,7 +293,7 @@ namespace rouen::cards
                         } else if (best_media_url.find(".mp4") != std::string::npos || best_media_url.find(".MP4") != std::string::npos) {
                             media_title = "Play Video";
                         }
-                        media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark);
+                        media_player::player(best_media_url, colors[0], media_title, item.feed_id, item.link, item.title, item.watermark, false, 0.0f, this);
                         ImGui::SameLine();
                     }
                 }
@@ -427,7 +427,7 @@ namespace rouen::cards
                                     next_item.item_title = next_item_ref.title;
                                     next_item.watermark = next_item_ref.watermark;
                                     next_item.start_offset = next_item_ref.watermark.value_or(0.0);
-                                    next_item.playMedia();
+                                    next_item.playMedia(this);
                                     break;
                                 }
                             }

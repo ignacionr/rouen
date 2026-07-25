@@ -77,7 +77,7 @@ namespace rouen::cards {
         }
 
         void on_close() override {
-            media_player::stopAll();
+            media_player::stopForOwner(this);
         }
 
         ~youtube_search() override {
@@ -230,7 +230,7 @@ namespace rouen::cards {
                     mp_item.url = play_url_trigger;
                     mp_item.item_title = play_title_trigger;
                     mp_item.start_offset = 0.0;
-                    mp_item.playMedia();
+                    mp_item.playMedia(this);
                     
                     currently_playing_url = play_url_trigger;
                     
@@ -309,7 +309,7 @@ namespace rouen::cards {
                     ImGui::Spacing();
                     
                     // Unified In-Card Media Player Control Area
-                    media_player::player(active_url, colors[0], "Now Playing Player", -1, "", active_title);
+                    media_player::player(active_url, colors[0], "Now Playing Player", -1, "", active_title, media_player::get_dummy_watermark(), false, 0.0f, this);
                     
                     ImGui::Spacing();
                     ImGui::Separator();
