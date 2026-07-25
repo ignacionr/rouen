@@ -299,6 +299,7 @@ namespace rouen::cards {
                     {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
                     {"Trello", []() { "create_card"_sfn("trello"); }},
                     {"Invoice Card", []() { "create_card"_sfn("invoice"); }},
+                    {"Contacts Directory", []() { "create_card"_sfn("directory"); }},
                 }},
                 { "Information", {
                     {"Calendar", []() { "create_card"_sfn("calendar"); }},

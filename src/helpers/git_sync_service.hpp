@@ -131,15 +131,15 @@ namespace rouen::helpers {
 
             GIT_SYNC_INFO("Pulling latest changes from remote Git repository...");
             const std::string command = std::format(
-                "git -C {} pull --rebase --autostash",
+                "GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git -C {} -c core.editor=true pull --rebase -X ours --autostash",
                 shell_escape(cache_path_)
             );
 
             if (!run_shell(command)) {
                 status_message_ = "Git pull failed: " + status_message_;
                 GIT_SYNC_ERROR(status_message_);
-                // Abort the rebase if pull --rebase failed, leaving the working tree clean
-                run_shell(std::format("git -C {} rebase --abort", shell_escape(cache_path_)));
+                // Abort any in-progress rebase if pull failed, leaving the working tree clean
+                run_shell(std::format("GIT_EDITOR=true git -C {} rebase --abort", shell_escape(cache_path_)));
                 return false;
             }
 

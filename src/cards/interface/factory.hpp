@@ -24,6 +24,8 @@
 #include "../information/calendar/calendar.hpp"
 #include "../information/adaptive_card.hpp"
 #include "../information/ai_chat.hpp"
+#include "../information/directory_card.hpp"
+#include "../information/contact_card.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/markdown_notes.hpp"
 #include "../information/pdf_viewer.hpp"
@@ -300,6 +302,18 @@ namespace rouen::cards {
 
                 instance.emplace("adaptive-card", [](std::string_view locator, SDL_Renderer*) {
                     return std::make_shared<adaptive_card>(locator);
+                });
+
+                instance.emplace("directory", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<directory_card>(locator);
+                });
+
+                instance.emplace("contacts", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<directory_card>(locator);
+                });
+
+                instance.emplace("contact", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<contact_card>(locator);
                 });
                 
                 instance.emplace("number-series", [](std::string_view locator, SDL_Renderer*) {

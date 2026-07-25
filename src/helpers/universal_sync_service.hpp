@@ -15,6 +15,7 @@
 #include "../models/notes/notes_repository.hpp"
 #include "../models/series/series_repository.hpp"
 #include "../models/adaptive_cards/adaptive_cards_repository.hpp"
+#include "../models/contacts/contacts_repository.hpp"
 #include "persona_manager.hpp"
 
 // Logging macros for UniversalSyncService
@@ -111,6 +112,12 @@ namespace rouen::helpers {
                 models::adaptive_cards::adaptive_cards_repository adaptive_cards_repo;
                 adaptive_cards_repo.import_from_directory(cache_dir / "adaptive_cards");
 
+                // 3.7. Import Contacts
+                UNIV_SYNC_INFO("Sync In: Importing Contacts...");
+                status_message_ = "Sync In: Importing Contacts...";
+                models::contacts::contacts_repository contacts_repo(rouen::platform::get_user_data_path("contacts.db").string());
+                contacts_repo.import_from_directory(cache_dir / "contacts");
+
                 // 4. Copy Objectives and Ledgers
                 UNIV_SYNC_INFO("Sync In: Copying Objectives JSON...");
                 status_message_ = "Sync In: Copying Objectives...";
@@ -183,6 +190,7 @@ namespace rouen::helpers {
                 std::filesystem::create_directories(cache_dir / "rss");
                 std::filesystem::create_directories(cache_dir / "series");
                 std::filesystem::create_directories(cache_dir / "adaptive_cards");
+                std::filesystem::create_directories(cache_dir / "contacts");
                 std::filesystem::create_directories(cache_dir / "objectives");
                 std::filesystem::create_directories(cache_dir / "config");
 
@@ -215,6 +223,12 @@ namespace rouen::helpers {
                 status_message_ = "Sync Out: Exporting Adaptive Cards...";
                 models::adaptive_cards::adaptive_cards_repository adaptive_cards_repo;
                 adaptive_cards_repo.export_to_directory(cache_dir / "adaptive_cards");
+
+                // 3.7. Export Contacts
+                UNIV_SYNC_INFO("Sync Out: Exporting Contacts...");
+                status_message_ = "Sync Out: Exporting Contacts...";
+                models::contacts::contacts_repository contacts_repo(rouen::platform::get_user_data_path("contacts.db").string());
+                contacts_repo.export_to_directory(cache_dir / "contacts");
 
                 // 4. Copy Objectives and Ledgers
                 UNIV_SYNC_INFO("Sync Out: Copying Objectives JSON...");

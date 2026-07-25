@@ -18,6 +18,8 @@
 #include "../models/notes/notes_repository.hpp"
 #include "../models/series/series_repository.hpp"
 #include "../models/adaptive_cards/adaptive_cards_repository.hpp"
+#include "../models/contacts/contacts_repository.hpp"
+#include "universal_sync_service.hpp"
 #include "persona_manager.hpp"
 
 namespace rouen::helpers {
@@ -263,6 +265,68 @@ struct mcp_notes_get_params {
         using T = mcp_notes_get_params;
         static constexpr auto value = glz::object(
             "title", &T::title
+        );
+    };
+};
+
+struct mcp_contacts_list_params {
+    std::string query;
+    struct glaze {
+        using T = mcp_contacts_list_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query
+        );
+    };
+};
+
+struct mcp_contacts_get_params {
+    int64_t id{-1};
+    std::string name;
+    struct glaze {
+        using T = mcp_contacts_get_params;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "name", &T::name
+        );
+    };
+};
+
+struct mcp_contacts_save_params {
+    int64_t id{-1};
+    std::string first_name;
+    std::string last_name;
+    std::string display_name;
+    std::string organization;
+    std::string job_title;
+    std::string email;
+    std::string phone;
+    std::string address;
+    std::string notes;
+    std::string picture_url;
+    struct glaze {
+        using T = mcp_contacts_save_params;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "first_name", &T::first_name,
+            "last_name", &T::last_name,
+            "display_name", &T::display_name,
+            "organization", &T::organization,
+            "job_title", &T::job_title,
+            "email", &T::email,
+            "phone", &T::phone,
+            "address", &T::address,
+            "notes", &T::notes,
+            "picture_url", &T::picture_url
+        );
+    };
+};
+
+struct mcp_contacts_delete_params {
+    int64_t id{-1};
+    struct glaze {
+        using T = mcp_contacts_delete_params;
+        static constexpr auto value = glz::object(
+            "id", &T::id
         );
     };
 };
@@ -1145,6 +1209,162 @@ mcp_service::mcp_service() {
         "notes"
     );
     register_function("notes", notes_delete_def);
+
+    // ----------------------------------------------------
+    // Contacts Directory MCP Functions
+    // ----------------------------------------------------
+    function_definition contacts_list_def(
+        "contacts_list",
+        "List or search contacts in the Directory card database.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Search term to filter contacts"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                std::string query;
+                if (!params.empty()) {
+                    mcp_contacts_list_params req{};
+                    (void)glz::read_json(req, params);
+                    query = req.query;
+                }
+                models::contacts::contacts_repository repo;
+                auto contacts = repo.search_contacts(query);
+                std::vector<models::contacts::contact_dto> dtos;
+                dtos.reserve(contacts.size());
+                for (const auto& c : contacts) dtos.push_back(models::contacts::to_dto(c));
+
+                std::string response;
+                if (auto ec = glz::write_json(dtos, response); ec) {
+                    return R"({"status":"error","message":"Failed to serialize contacts"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "directory"
+    );
+    register_function("directory", contacts_list_def);
+    register_function("contacts", contacts_list_def);
+
+    function_definition contacts_get_def(
+        "contacts_get",
+        "Get detailed information about a specific contact by ID or name.",
+        R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"Contact ID"},"name":{"type":"string","description":"Contact display name"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_contacts_get_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+
+                models::contacts::contacts_repository repo;
+                std::optional<models::contacts::contact> target;
+
+                if (req.id > 0) {
+                    target = repo.get_contact_by_id(req.id);
+                } else if (!req.name.empty()) {
+                    auto search_res = repo.search_contacts(req.name);
+                    if (!search_res.empty()) target = search_res.front();
+                }
+
+                if (!target.has_value()) {
+                    return R"({"status":"error","message":"Contact not found"})";
+                }
+
+                auto dto = models::contacts::to_dto(target.value());
+                std::string response;
+                if (auto ec = glz::write_json(dto, response); ec) {
+                    return R"({"status":"error","message":"Failed to serialize contact"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "directory"
+    );
+    register_function("directory", contacts_get_def);
+    register_function("contacts", contacts_get_def);
+
+    function_definition contacts_save_def(
+        "contacts_save",
+        "Create a new contact or update an existing contact in the Contacts Directory.",
+        R"mcp({"type":"object","properties":{"id":{"type":"integer"},"first_name":{"type":"string"},"last_name":{"type":"string"},"display_name":{"type":"string"},"organization":{"type":"string"},"job_title":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"address":{"type":"string"},"notes":{"type":"string"},"picture_url":{"type":"string"}},"required":["display_name"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_contacts_save_params req{};
+                if (auto ec = glz::read_json(req, params); ec) {
+                    return R"({"status":"error","message":"Invalid contact save parameters"})";
+                }
+
+                models::contacts::contact c;
+                c.id = req.id;
+                c.first_name = req.first_name;
+                c.last_name = req.last_name;
+                c.display_name = req.display_name;
+                c.organization = req.organization;
+                c.job_title = req.job_title;
+                c.email = req.email;
+                c.phone = req.phone;
+                c.address = req.address;
+                c.notes = req.notes;
+                c.picture_url = req.picture_url;
+                c.source = "mcp";
+
+                models::contacts::contacts_repository repo;
+                int64_t saved_id = repo.upsert_contact(c);
+                UniversalSyncService::instance().sync_out("MCP saved contact: " + c.get_full_name());
+
+                return std::format(R"({{"status":"success","message":"Contact saved","id":{}}})", saved_id);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "directory"
+    );
+    register_function("directory", contacts_save_def);
+    register_function("contacts", contacts_save_def);
+
+    function_definition contacts_delete_def(
+        "contacts_delete",
+        "Delete a contact by ID from the directory.",
+        R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"ID of contact to delete"}},"required":["id"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_contacts_delete_params req{};
+                if (auto ec = glz::read_json(req, params); ec || req.id <= 0) {
+                    return R"mcp({"status":"error","message":"Invalid contact delete parameters (must specify positive id)"})mcp";
+                }
+
+                models::contacts::contacts_repository repo;
+                repo.delete_contact(req.id);
+                UniversalSyncService::instance().sync_out("MCP deleted contact ID: " + std::to_string(req.id));
+
+                return std::format(R"({{"status":"success","message":"Contact deleted","id":{}}})", req.id);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "directory"
+    );
+    register_function("directory", contacts_delete_def);
+    register_function("contacts", contacts_delete_def);
+
+    function_definition contacts_import_macos_def(
+        "contacts_import_macos",
+        "Import contacts from local macOS Contacts app into the directory.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                models::contacts::contacts_repository repo;
+                int count = repo.import_macos_contacts();
+                UniversalSyncService::instance().sync_out("Imported macOS contacts via MCP");
+                return std::format(R"({{"status":"success","imported_count":{}}})", count);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "directory"
+    );
+    register_function("directory", contacts_import_macos_def);
+    register_function("contacts", contacts_import_macos_def);
 
     // Register Persona MCP functions
     function_definition list_personas_def(
