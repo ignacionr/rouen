@@ -150,6 +150,7 @@ add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)
 target_link_libraries(test_adaptive_card_image PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES})
 target_compile_options(test_adaptive_card_image PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 add_gtest_executable(test_markdown_renderer test_markdown_renderer.cpp)
+add_gtest_http_executable(test_contact_gravatar test_contact_gravatar.cpp)
 
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)

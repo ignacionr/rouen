@@ -170,6 +170,9 @@ private:
         ui.separator();
         ui.spacing();
 
+        int64_t contact_to_delete = -1;
+        std::string deleted_name;
+
         // Contacts List Container (no unnecessary border)
         ui.begin_child("contacts_list_child", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
 
@@ -178,19 +181,29 @@ private:
             ui.text_colored(colors[3], "No contacts found. Click 'New', 'macOS', or 'WhatsApp' to add contacts.");
         } else {
             for (const auto& c : contacts_) {
-                render_contact_row(ui, c);
+                if (render_contact_row(ui, c)) {
+                    contact_to_delete = c.id;
+                    deleted_name = c.get_full_name();
+                }
                 ui.separator();
             }
         }
 
         ui.end_child();
 
+        if (contact_to_delete > 0) {
+            repo_->delete_contact(contact_to_delete);
+            helpers::UniversalSyncService::instance().sync_out("Deleted contact: " + deleted_name);
+            reload_contacts();
+        }
+
         if (show_wa_modal_) {
             render_whatsapp_modal(ui);
         }
     }
 
-    void render_contact_row(rouen::ui::ui_context& ui, const models::contacts::contact& c) {
+    bool render_contact_row(rouen::ui::ui_context& ui, const models::contacts::contact& c) {
+        bool delete_clicked = false;
         ImGui::PushID(static_cast<int>(c.id));
 
         // Render Avatar
@@ -198,10 +211,14 @@ private:
         bool has_tex = false;
         if (!avatar_url.empty() && image_cache_) {
             int tex_w = 0, tex_h = 0;
-            SDL_Texture* tex = image_cache_->getTexture(renderer_, avatar_url, tex_w, tex_h);
-            if (tex) {
-                ImGui::Image(rouen::helpers::texture_id_cast(tex), ImVec2(42, 42));
-                has_tex = true;
+            if (image_cache_->isCached(avatar_url, tex_w, tex_h)) {
+                SDL_Texture* tex = image_cache_->getTexture(renderer_, avatar_url, tex_w, tex_h);
+                if (tex) {
+                    ImGui::Image(rouen::helpers::texture_id_cast(tex), ImVec2(42, 42));
+                    has_tex = true;
+                }
+            } else {
+                image_cache_->downloadAndCache(avatar_url);
             }
         }
 
@@ -253,13 +270,13 @@ private:
         }
         ui.same_line();
         if (ui.button("Del")) {
-            repo_->delete_contact(c.id);
-            helpers::UniversalSyncService::instance().sync_out("Deleted contact: " + c.get_full_name());
-            reload_contacts();
+            delete_clicked = true;
         }
 
         ImGui::PopID();
+        return delete_clicked;
     }
+
 
     void render_whatsapp_modal(rouen::ui::ui_context& ui) {
         ImGui::OpenPopup("Import WhatsApp Contacts");

@@ -304,16 +304,22 @@ namespace rouen::cards {
                     return std::make_shared<adaptive_card>(locator);
                 });
 
-                instance.emplace("directory", [](std::string_view locator, SDL_Renderer*) {
-                    return std::make_shared<directory_card>(locator);
+                instance.emplace("directory", [](std::string_view locator, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<directory_card>(locator);
+                    if (renderer) card->set_renderer(renderer);
+                    return card;
                 });
 
-                instance.emplace("contacts", [](std::string_view locator, SDL_Renderer*) {
-                    return std::make_shared<directory_card>(locator);
+                instance.emplace("contacts", [](std::string_view locator, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<directory_card>(locator);
+                    if (renderer) card->set_renderer(renderer);
+                    return card;
                 });
 
-                instance.emplace("contact", [](std::string_view locator, SDL_Renderer*) {
-                    return std::make_shared<contact_card>(locator);
+                instance.emplace("contact", [](std::string_view locator, SDL_Renderer* renderer) {
+                    auto card = std::make_shared<contact_card>(locator);
+                    if (renderer) card->set_renderer(renderer);
+                    return card;
                 });
                 
                 instance.emplace("number-series", [](std::string_view locator, SDL_Renderer*) {

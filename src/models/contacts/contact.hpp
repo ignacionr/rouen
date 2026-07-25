@@ -37,20 +37,44 @@ struct contact {
         return full;
     }
 
+    static std::string sanitize_email(std::string_view raw) {
+        auto start = raw.find_first_not_of(" \t\n\r\"'");
+        if (start == std::string_view::npos) return "";
+        auto end = raw.find_last_not_of(" \t\n\r\"'");
+        raw = raw.substr(start, end - start + 1);
+
+        auto langle = raw.find('<');
+        auto rangle = raw.find('>', langle != std::string_view::npos ? langle : 0);
+        if (langle != std::string_view::npos && rangle != std::string_view::npos && rangle > langle) {
+            raw = raw.substr(langle + 1, rangle - langle - 1);
+            start = raw.find_first_not_of(" \t\n\r");
+            if (start == std::string_view::npos) return "";
+            end = raw.find_last_not_of(" \t\n\r");
+            raw = raw.substr(start, end - start + 1);
+        }
+
+        return std::string(raw);
+    }
+
     std::vector<std::string> get_email_list() const {
         std::vector<std::string> list;
         if (email.empty()) return list;
 
-        std::stringstream ss(email);
-        std::string item;
-        while (std::getline(ss, item, ',')) {
-            auto start = item.find_first_not_of(" \t\n\r");
-            if (start == std::string::npos) continue;
-            auto end = item.find_last_not_of(" \t\n\r");
-            std::string clean = item.substr(start, end - start + 1);
-            if (!clean.empty()) {
-                list.push_back(clean);
+        std::string current;
+        for (char ch : email) {
+            if (ch == ',' || ch == ';' || ch == '\n' || ch == '\r') {
+                std::string clean = sanitize_email(current);
+                if (!clean.empty()) {
+                    list.push_back(clean);
+                }
+                current.clear();
+            } else {
+                current.push_back(ch);
             }
+        }
+        std::string clean = sanitize_email(current);
+        if (!clean.empty()) {
+            list.push_back(clean);
         }
         return list;
     }

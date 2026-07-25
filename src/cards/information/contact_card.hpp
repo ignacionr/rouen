@@ -168,10 +168,14 @@ private:
 
         if (!avatar_url.empty() && image_cache_) {
             int tex_w = 0, tex_h = 0;
-            SDL_Texture* avatar_tex = image_cache_->getTexture(renderer_, avatar_url, tex_w, tex_h);
-            if (avatar_tex) {
-                ImGui::Image(rouen::helpers::texture_id_cast(avatar_tex), ImVec2(72, 72));
-                has_tex = true;
+            if (image_cache_->isCached(avatar_url, tex_w, tex_h)) {
+                SDL_Texture* avatar_tex = image_cache_->getTexture(renderer_, avatar_url, tex_w, tex_h);
+                if (avatar_tex) {
+                    ImGui::Image(rouen::helpers::texture_id_cast(avatar_tex), ImVec2(72, 72));
+                    has_tex = true;
+                }
+            } else {
+                image_cache_->downloadAndCache(avatar_url);
             }
         }
 
