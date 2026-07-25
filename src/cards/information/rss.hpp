@@ -481,7 +481,7 @@ public:
             // Create scrollable area for feeds
             auto available_size = ImGui::GetContentRegionAvail();
             ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
-            if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, true, ImGuiWindowFlags_NavFlattened)) {
+            if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, false, ImGuiWindowFlags_NavFlattened)) {
                 auto all_feeds = rss_host->feeds();
                 
                 // Check if we need to re-filter and re-sort feeds
@@ -894,14 +894,15 @@ public:
                 ImVec2(card_width, card_height)
             );
             bool is_emphasized = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+            if (is_emphasized) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            }
             ImGui::PopStyleColor(3);
             
-            // Draw background and borders
+            // Draw background
             ImVec4 bg_color = is_emphasized ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
-            ImVec4 border_color = is_emphasized ? colors[0] : ImVec4(0.24f, 0.24f, 0.27f, 0.6f);
             
             draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f * dpi_scale);
-            draw_list->AddRect(start_pos, end_pos, ImGui::GetColorU32(border_color), 8.0f * dpi_scale);
             
             // Padding
             ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 6.0f * dpi_scale, start_pos.y + 6.0f * dpi_scale));
@@ -917,6 +918,9 @@ public:
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
             bool cover_clicked = ImGui::Button(std::format("##cover_btn_{}", feed->repo_id).c_str(), img_size);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            }
             ImGui::PopStyleColor(3);
             ImGui::PopStyleVar();
             
