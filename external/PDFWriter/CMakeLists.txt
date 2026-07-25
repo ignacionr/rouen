@@ -1,0 +1,254 @@
+cmake_minimum_required(VERSION 3.19)
+
+# Soname
+# MAJOR is incremented when symbols are removed or changed in an incompatible way
+# MINOR is incremented when new symbols are added
+project(PDFHummus VERSION 4.9.0)
+
+
+option(USE_BUNDLED  "Whether to use bundled libraries" TRUE)
+option(USE_UNBUNDLED_FALLBACK_BUNDLED  "When USE_BUNDLED is false and a certain system library is not available should fallback on bundled lib")
+option(PDFHUMMUS_NO_DCT  "Whether to drop support for DCT streams parsing (will not use LibJpeg)")
+option(PDFHUMMUS_NO_TIFF "Whether to drop TIFF Images support (will not use LibTiff)" )
+option(PDFHUMMUS_NO_PNG "Whether to drop PNG Images support (will not use LibPng)" )
+option(PDFHUMMUS_NO_OPENSSL "Whether to drop OpenSSL Usage, and therefore PDF2.0 encryption support (will not allow encryption or decryption of PDF2.0 files)" )
+
+# Optional sanitizer build (requires clang). Accepts comma-separated -fsanitize= values:
+# address, undefined, address,undefined, thread, memory. Empty (default) = no sanitizer.
+# Flags are applied globally so they also instrument bundled dependencies (zlib, freetype, libpng, libjpeg, libtiff, libaesgm).
+# See wiki: Sanitizer-Builds-Of-PDFWriter
+set(PDFHUMMUS_SANITIZER "" CACHE STRING "Build with the given clang sanitizer (e.g. address, undefined, address,undefined). Empty = off.")
+
+if(PDFHUMMUS_SANITIZER)
+    message(STATUS "Building with sanitizer: ${PDFHUMMUS_SANITIZER}")
+    add_compile_options(-fsanitize=${PDFHUMMUS_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${PDFHUMMUS_SANITIZER})
+endif()
+
+# Fuzzing harness build (requires LLVM clang + lld + libFuzzer runtime).
+# Declared up here (before the dependency subdirectories) so the instrumentation
+# flag flows into PDFWriter and every bundled dep (zlib, freetype, libpng,
+# libjpeg, libtiff, libaesgm). Without this, libFuzzer only sees ~5 edges
+# (the harness body) and coverage-guided exploration is effectively off.
+# See wiki: Fuzz-Testing
+option(BUILD_FUZZING_HARNESS "Build the fuzzing harnesses, requires LLVM's clang + lld")
+
+if(BUILD_FUZZING_HARNESS)
+    message(STATUS "Building with fuzzing instrumentation: -fsanitize=fuzzer-no-link,address")
+    add_compile_options(-fsanitize=fuzzer-no-link,address -fno-omit-frame-pointer -g -O2)
+    add_link_options(-fsanitize=address)
+endif()
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+# OpenSSL detection and AES implementation choice - done early to inform all subsequent logic
+if(NOT PDFHUMMUS_NO_OPENSSL)
+    find_package (OpenSSL)
+    if (OPENSSL_FOUND)
+        set(PDFHUMMUS_DEPENDS_OPENSSL "find_dependency(OpenSSL)")
+        set(USE_OPENSSL_AES TRUE)
+        message(STATUS "Using OpenSSL for AES encryption")
+    else(OPENSSL_FOUND)
+        message(WARNING "OpenSSL not found, disabling PDF 2.0 encyrption/decryption")
+        set (PDFHUMMUS_NO_OPENSSL TRUE)
+        set(USE_OPENSSL_AES FALSE)
+        message(STATUS "Using LibAesgm for AES encryption")
+    endif(OPENSSL_FOUND)
+else()
+    set(USE_OPENSSL_AES FALSE)
+    message(STATUS "Using LibAesgm for AES encryption")
+endif()
+
+if(NOT USE_BUNDLED)
+    # zlib
+    if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (ZLIB)
+        if(ZLIB_FOUND)
+            set (USING_UNBUNDLED_ZLIB TRUE)
+        else(ZLIB_FOUND)
+            ADD_SUBDIRECTORY(Zlib)
+        endif(ZLIB_FOUND)
+    else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (ZLIB REQUIRED)
+        set (USING_UNBUNDLED_ZLIB TRUE)
+    endif(USE_UNBUNDLED_FALLBACK_BUNDLED)
+    if(USING_UNBUNDLED_ZLIB)
+        set(PDFHUMMUS_DEPENDS_ZLIB "find_dependency(ZLIB)")
+    endif()
+
+    # freetype
+    if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (Freetype)
+        if(Freetype_FOUND)
+            set (USING_UNBUNDLED_Freetype TRUE)
+        else(Freetype_FOUND)
+            ADD_SUBDIRECTORY(FreeType)
+        endif(Freetype_FOUND)
+    else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (Freetype REQUIRED)
+        set (USING_UNBUNDLED_Freetype TRUE)
+    endif(USE_UNBUNDLED_FALLBACK_BUNDLED)    
+    if(USING_UNBUNDLED_Freetype)
+        set(PDFHUMMUS_DEPENDS_FREETYPE "find_dependency(Freetype)")
+    endif()
+
+
+    # libaesgm
+    if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (Aesgm)
+        if(aesgm_FOUND)
+            set (USING_UNBUNDLED_aesgm TRUE)
+        else(aesgm_FOUND)
+            if(NOT USE_OPENSSL_AES)
+                ADD_SUBDIRECTORY(LibAesgm)
+            endif()
+        endif(aesgm_FOUND)
+    else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        find_package (Aesgm REQUIRED)
+        set (USING_UNBUNDLED_aesgm TRUE)
+    endif(USE_UNBUNDLED_FALLBACK_BUNDLED)    
+    if(USING_UNBUNDLED_aesgm)
+        install(FILES
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindAesgm.cmake
+            DESTINATION lib/cmake/PDFHummus/cmake
+        )        
+        set(PDFHUMMUS_APPEND_MODULE "list(APPEND CMAKE_MODULE_PATH \"${CMAKE_CURRENT_LIST_DIR}/cmake\")") 
+        set(PDFHUMMUS_DEPENDS_AESGM "find_dependency(Aesgm)")
+    endif()
+
+
+    # libjpeg
+    if(NOT PDFHUMMUS_NO_DCT)
+        find_package (JPEG)
+        if (JPEG_FOUND)
+            set (USING_UNBUNDLED_JPEG TRUE)
+        else(JPEG_FOUND)
+            if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                ADD_SUBDIRECTORY(LibJpeg)
+            else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                message(WARNING "JPEG (LibJpeg) not found, disabling DCT encoding/decoding support")
+                set (PDFHUMMUS_NO_DCT TRUE)
+            endif(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        endif(JPEG_FOUND)
+    endif(NOT PDFHUMMUS_NO_DCT)
+    if(USING_UNBUNDLED_JPEG)
+        set(PDFHUMMUS_DEPENDS_JPEG "find_dependency(JPEG)")
+    endif()
+
+
+    # libtiff
+    if(NOT PDFHUMMUS_NO_TIFF)
+        find_package (TIFF)
+        if (TIFF_FOUND)
+            set (USING_UNBUNDLED_TIFF TRUE)
+        else(TIFF_FOUND)
+            if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                ADD_SUBDIRECTORY(LibTiff)
+            else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                message(WARNING "TIFF (LibTiff) not found, disabling TIFF images support")
+                set (PDFHUMMUS_NO_TIFF TRUE)
+            endif(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        endif(TIFF_FOUND)
+    endif(NOT PDFHUMMUS_NO_TIFF)
+    if(USING_UNBUNDLED_TIFF)
+        set(PDFHUMMUS_DEPENDS_TIFF "find_dependency(TIFF)")
+    endif()
+
+    # libpng
+    if(NOT PDFHUMMUS_NO_PNG)
+        find_package (PNG)
+        if (PNG_FOUND)
+            set (USING_UNBUNDLED_PNG TRUE)
+        else(PNG_FOUND)
+            if(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                ADD_SUBDIRECTORY(LibPng)
+            else(USE_UNBUNDLED_FALLBACK_BUNDLED)
+                message(WARNING "PNG (LibPng) not found, disabling PNG images support")
+                set (PDFHUMMUS_NO_PNG TRUE)
+            endif(USE_UNBUNDLED_FALLBACK_BUNDLED)
+        endif(PNG_FOUND)
+    endif(NOT PDFHUMMUS_NO_PNG)
+    if(USING_UNBUNDLED_PNG)
+        set(PDFHUMMUS_DEPENDS_PNG "find_dependency(PNG)")
+    endif()    
+
+
+else(NOT USE_BUNDLED)
+    # zlib
+    ADD_SUBDIRECTORY(Zlib)
+
+    # freetype
+    ADD_SUBDIRECTORY(FreeType)
+
+    # libaesgm
+    if(NOT USE_OPENSSL_AES)
+        ADD_SUBDIRECTORY(LibAesgm)
+    endif()
+
+    # libjpeg
+    if(NOT PDFHUMMUS_NO_DCT)
+        ADD_SUBDIRECTORY(LibJpeg)
+    endif(NOT PDFHUMMUS_NO_DCT)
+
+    # libtiff
+    if(NOT PDFHUMMUS_NO_TIFF)
+        ADD_SUBDIRECTORY(LibTiff)
+    endif(NOT PDFHUMMUS_NO_TIFF)
+
+    # libpng
+    if(NOT PDFHUMMUS_NO_PNG)
+        ADD_SUBDIRECTORY(LibPng)
+    endif(NOT PDFHUMMUS_NO_PNG)
+
+endif(NOT USE_BUNDLED)
+
+ADD_SUBDIRECTORY(PDFWriter)
+
+
+if(PROJECT_IS_TOP_LEVEL AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/PDFWriterTesting)
+    # avoid installing the testing lib altogether when included in another project.
+    # it's annoying when in parent all, and more annoying to then get the tests added
+    # to the parent project ctest.
+    # BUILD_FUZZING_HARNESS is declared near the top of this file so its
+    # instrumentation flag reaches the bundled-dep subdirectory builds.
+
+    enable_testing()
+    ADD_SUBDIRECTORY(PDFWriterTesting)
+endif()
+
+include(InstallRequiredSystemLibraries)
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_VERSION_MAJOR "${PDFHummus_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${PDFHummus_VERSION_MINOR}")
+set(CPACK_SOURCE_GENERATOR "ZIP")
+set(CPACK_GENERATOR "ZIP")
+include(CPack)
+
+install(EXPORT PDFHummusTargets
+  FILE PDFHummusTargets.cmake
+  DESTINATION lib/cmake/PDFHummus
+  NAMESPACE PDFHummus::
+)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/PDFHummusConfig.cmake"
+  INSTALL_DESTINATION "lib/cmake/PDFHummus"
+  )
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/PDFHummusConfigVersion.cmake"
+    VERSION "${PDFHummus_VERSION_MAJOR}.${PDFHummus_VERSION_MINOR}"
+    COMPATIBILITY AnyNewerVersion
+)
+
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/PDFHummusConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/PDFHummusConfigVersion.cmake
+  DESTINATION lib/cmake/PDFHummus
+  )
+
+export(EXPORT PDFHummusTargets
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/PDFHummusTargets.cmake"
+  NAMESPACE PDFHummus::
+)

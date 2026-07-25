@@ -53,6 +53,7 @@
 #include "../productivity/trello_card.hpp"
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
+#include "../productivity/invoice_card.hpp"
 #include "../system/about.hpp"
 #include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
@@ -426,6 +427,11 @@ namespace rouen::cards {
                 // Register the Media player card
                 instance.emplace("media", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<media_card>(uri);
+                });
+
+                // Register the Invoice card
+                instance.emplace("invoice", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<invoice_card>();
                 });
 
                 initialized = true;

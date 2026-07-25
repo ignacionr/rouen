@@ -428,6 +428,12 @@ target_include_directories(mongoose PUBLIC ${CMAKE_SOURCE_DIR}/external/mongoose
 # Force C compilation for mongoose
 set_source_files_properties(${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c PROPERTIES LANGUAGE C)
 
+# Add PDFHummus (PDFWriter)
+set(USE_BUNDLED OFF CACHE BOOL "" FORCE)
+set(USE_UNBUNDLED_FALLBACK_BUNDLED ON CACHE BOOL "" FORCE)
+set(PDFHUMMUS_NO_TIFF ON CACHE BOOL "" FORCE)
+add_subdirectory(external/PDFWriter EXCLUDE_FROM_ALL)
+
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)
 
@@ -458,6 +464,7 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp
+  src/cards/productivity/invoice_card.cpp
   src/cards/information/bybit_registrar.cpp
   src/cards/information/worldcup_registrar.cpp
   src/cards/information/movies_registrar.cpp
@@ -560,6 +567,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     tinyxml2::tinyxml2
     unofficial::sqlite3::sqlite3
     mongoose
+    PDFWriter
   )
 else()
   # System dependencies with standard target names
@@ -581,6 +589,7 @@ else()
     SDL3::SDL3
     SDL3_image::SDL3_image
     mongoose
+    PDFWriter
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
     ${AVUTIL_LIBRARIES}
