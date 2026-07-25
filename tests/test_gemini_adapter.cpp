@@ -70,7 +70,7 @@ TEST(GeminiAdapterTest, SerializesFunctionCallCorrectly) {
     GeminiAdapter::Message msg;
     msg.role = "model";
     msg.content = "I need to run a command.";
-    msg.function_calls.push_back({"run_local_command", "{\"command\":\"git status\"}"});
+    msg.function_calls.push_back({"run_local_command", "{\"command\":\"git status\"}", ""});
     conversation.push_back(msg);
     
     std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
@@ -103,7 +103,7 @@ TEST(GeminiAdapterTest, SerializesFunctionResponseCorrectly) {
     
     GeminiAdapter::Message msg;
     msg.role = "function";
-    msg.function_responses.push_back({"run_local_command", "{\"success\":true,\"output\":\"on branch main\"}"});
+    msg.function_responses.push_back({"run_local_command", "{\"success\":true,\"output\":\"on branch main\"}", ""});
     conversation.push_back(msg);
     
     std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
@@ -135,7 +135,7 @@ TEST(GeminiAdapterTest, SerializesRawFunctionResponseCorrectly) {
     
     GeminiAdapter::Message msg;
     msg.role = "function";
-    msg.function_responses.push_back({"run_local_command", "some raw non-json text response"});
+    msg.function_responses.push_back({"run_local_command", "some raw non-json text response", ""});
     conversation.push_back(msg);
     
     std::string request = adapter.build_gemini_request(conversation, 0.5f, false);

@@ -20,6 +20,11 @@ find_package(SQLite3 REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL3 REQUIRED sdl3)
 pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
+pkg_check_modules(AVFORMAT REQUIRED libavformat)
+pkg_check_modules(AVCODEC REQUIRED libavcodec)
+pkg_check_modules(AVUTIL REQUIRED libavutil)
+pkg_check_modules(SWSCALE REQUIRED libswscale)
+pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
 
 # Find TinyXML2 for RSS parsing tests
 find_package(tinyxml2 CONFIG REQUIRED)
@@ -157,6 +162,7 @@ add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
 target_link_libraries(test_rss_watermark 
     PRIVATE 
     SQLite::SQLite3
+    ${SDL3_LIBRARIES}
 )
 add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 
@@ -205,6 +211,9 @@ add_test(NAME TerminalCdTest COMMAND test_terminal_cd)
 set_target_properties(test_terminal_cd PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(test_terminal_cd)
+endif()
 
 # Gemini Adapter Test
 add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
@@ -228,11 +237,22 @@ target_link_libraries(test_mcp
     GTest::gmock_main
     CURL::libcurl
     imgui::imgui
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
+    target_add_strict_warnings(test_mcp)
+endif()
+
 # TextEditor Scrolling Unit Test
 add_executable(test_text_editor_scrolling
     test_text_editor_scrolling.cpp

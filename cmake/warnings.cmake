@@ -12,6 +12,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -Wunused             # Enable unused warnings category
     -Wunused-result      # Warn about unused return values
     -Wmissing-field-initializers # Warn about missing field initializers
+    -Wpedantic           # Strict ISO C++ compliance
+    -Wconversion         # Warn on implicit conversions
+    -Wsign-conversion    # Warn on sign conversions
+    -Wnull-dereference   # Warn on null dereferences
+    -Wformat=2           # String format checks
+    -Wimplicit-fallthrough # Switch fallthrough checks
+    -Wunreachable-code   # Unreachable code detection
+    -Wcast-align         # Pointer cast alignment checks
+    -Wcast-qual          # Qualifier cast checks
+    -Wzero-as-null-pointer-constant # Modern null pointer checks
   )
 
   # Add more strict warnings only for our own code
@@ -34,6 +44,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wdouble-promotion
       -Wimplicit-int-conversion
       -Wimplicit-float-conversion
+      -Wfloat-conversion
+      -Wshorten-64-to-32
+      -Wnarrowing
+      -Wsign-compare
 
       # Shadow warnings  
       -Wshadow
@@ -46,6 +60,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wdangling-field
       -Wdangling-initializer-list
       -Wdangling-gsl
+      -Wdangling-else
       -Wreturn-stack-address
 
       # Logic, Comparison & Tautological warnings
@@ -55,6 +70,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wtautological-unsigned-enum-zero-compare
       -Wtautological-value-range-compare
       -Wtautological-pointer-compare
+      -Wtautological-negation-compare
       -Wfloat-equal
       -Wcomma
       -Wswitch-enum
@@ -65,27 +81,41 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wzero-as-null-pointer-constant
       -Wstring-conversion
       -Wstring-concatenation
+      -Wpointer-arith
+      -Wnull-pointer-subtraction
 
       # Important structural and control flow warnings
       -Wunreachable-code
       -Wunreachable-code-break
       -Wunreachable-code-return
       -Wunreachable-code-loop-increment
+      -Wunreachable-code-aggressive
       -Wself-assign
+      -Wself-assign-overloaded
+      -Wself-assign-field
+      -Wself-move
       -Woverloaded-virtual 
 
       # More advanced warnings to catch issues
       -Wrange-loop-analysis # Range-based for loop issues
       -Wrange-loop-bind-reference
       -Wredundant-move     # Unnecessary move operations
+      -Wpessimizing-move
       -Wundef              # Undefined macro use in #if
       -Wdeprecated         # Deprecated feature usage
+      -Wdeprecated-copy
+      -Wdeprecated-copy-dtor
+      -Wdeprecated-copy-with-user-declared-copy
+      -Wdeprecated-copy-with-user-declared-dtor
       -Wmissing-field-initializers   # Warn about missing field initializers
       
       # Additional strict warnings available in Clang
       -Wdangling-else            # Ambiguous dangling else
       -Wempty-body               # Empty bodies in if/else/for
       -Wparentheses              # Missing parentheses
+      -Widiomatic-parentheses
+      -Wlogical-op-parentheses
+      -Wlogical-not-parentheses
       -Wreturn-type              # Missing return statements
       -Wuninitialized            # Uninitialized variables
       -Wconditional-uninitialized # Clang-specific uninitialized variable detection
@@ -99,20 +129,34 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Winconsistent-missing-override # Missing override keywords
       -Winconsistent-missing-destructor-override
       -Wsuggest-override
+      -Wsuggest-destructor-override
       -Wabstract-final-class
       -Wold-style-cast           # C-style casts in C++
       -Wextra-semi               # Extra semicolons
-      -Wno-extra-semi-stmt       # Temporarily disable for macro issues
       -Wloop-analysis            # Loop analysis warnings
       -Wmove                     # Move semantic issues
       -Wthread-safety            # Thread safety analysis
       -Wthread-safety-analysis   # More thread safety checks
+      -Wthread-safety-precise
+      -Wthread-safety-attributes
+      -Wthread-safety-beta
+      -Wctor-dtor-privacy
+      -Wsign-promo
+      -Wstrict-prototypes
 
-      # Bitwise and Shift warnings
+      # Bitwise, Shift & Enum warnings
       -Wshift-overflow
       -Wshift-sign-overflow
       -Wbitwise-op-parentheses
       -Wbitwise-conditional-parentheses
+      -Wduplicate-enum
+      -Wduplicate-decl-specifier
+      -Wenum-conversion
+      -Wenum-compare
+      -Wenum-compare-conditional
+      -Wenum-enum-conversion
+      -Wenum-float-conversion
+      -Wassign-enum
       
       # String and format warnings
       -Wformat-security          # Format string security
@@ -120,8 +164,45 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wformat-pedantic          # Pedantic format checking
       -Wformat-type-confusion    # Format type mismatches
 
+      # Documentation warnings
+      -Wdocumentation
+      -Wdocumentation-unknown-command
+      -Wdocumentation-pedantic
+
+      # Unused entity warnings
+      -Wunused-exception-parameter
+      -Wunused-template
+      -Wunused-lambda-capture
+      -Wunused-private-field
+      -Wunused-member-function
+      -Wunused-const-variable
+      -Wunused-local-typedef
+      -Wunused-macros
+      -Wunneeded-internal-declaration
+      -Wused-but-marked-unused
+
+      # Misc strictness
+      -Wdate-time
+      -Watomic-alignment
+      -Wextra-qualification
+      -Wnewline-eof
+      -Wvla
+      -Wmissing-noreturn
+      -Wuser-defined-warnings
+      -Wctad-maybe-unsupported
+      -Wpoison-system-directories
+      -Wconsumed
+      -Wunnamed-type-template-args
+      -Wzero-length-array
+      -Wfinal-macro
+      -Wsubobject-linkage
+      -Wvector-conversion
+      -Wambiguous-reversed-operator
+
       # Header and Macro Hygiene
       -Wundefined-func-template  # Undefined function templates
+      -Wundefined-inline
+      -Wundefined-reinterpret-cast
       -Wheader-hygiene           # Main header hygiene checks
       
       # Enable everything and then disable specific ones we don't want
@@ -143,6 +224,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wno-reserved-macro-identifier # Allow mongoose's internal macros
       -Wno-nrvo                  # Allow return value copy elision warnings
       -Wno-thread-safety-negative # Disable negative capability thread warnings
+      -Wno-extra-semi-stmt       # Macro expansions ending with semicolon
       -Wno-unknown-warning-option # Ignore unknown warning flags across clang versions
     )
   endfunction()

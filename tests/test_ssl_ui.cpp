@@ -27,8 +27,9 @@ protected:
         // Clear any existing SSL mode setting
         unsetenv("ROUEN_SSL_MODE");
         
-        // Get fresh ConfigService instance
+        // Get fresh ConfigService instance and set to strict for baseline test
         config_service = ConfigService::instance();
+        config_service->set_env_value("ROUEN_SSL_MODE", "strict");
         config_service->refresh_cache();
     }
     
@@ -36,8 +37,10 @@ protected:
         // Restore original environment variable if it existed
         if (original_ssl_mode) {
             setenv("ROUEN_SSL_MODE", original_ssl_mode, 1);
+            config_service->set_env_value("ROUEN_SSL_MODE", original_ssl_mode);
         } else {
             unsetenv("ROUEN_SSL_MODE");
+            config_service->set_env_value("ROUEN_SSL_MODE", "strict");
         }
         
         config_service->refresh_cache();
@@ -47,6 +50,7 @@ protected:
     void simulate_ui_selection(const std::string& mode) {
         // Set environment variable as the UI would
         setenv("ROUEN_SSL_MODE", mode.c_str(), 1);
+        config_service->set_env_value("ROUEN_SSL_MODE", mode);
         
         // Refresh configuration cache
         config_service->refresh_cache();

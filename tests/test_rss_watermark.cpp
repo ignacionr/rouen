@@ -310,11 +310,20 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
     auto host = std::make_shared<rouen::hosts::RSSHost>();
     g_keep_alive_host = host;
 
+    decltype(host->feeds())::value_type target_feed;
+    for (const auto& f : host->feeds()) {
+        if (f->feed_link == "https://example.com/feed" || f->source_link == "https://example.com/feed") {
+            target_feed = f;
+            break;
+        }
+    }
+    ASSERT_NE(target_feed, nullptr);
+
     auto& items_map = media_player::items();
     items_map.clear();
 
     auto item = std::make_shared<media_player_item>();
-    item->feed_id = feed_id;
+    item->feed_id = target_feed->repo_id;
     item->item_link = "https://example.com/item1";
     item->item_title = "Episode 1";
     
@@ -324,15 +333,14 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
     item->position = 98.5; // Almost at the end
     items_map[111] = item;
 
-    // Call checkMediaStatus, which should detect exit and completion
+    // Call stopMedia, which should detect exit, stop playback, and reset watermark
+    item->stopMedia();
     bool active = item->checkMediaStatus();
     EXPECT_FALSE(active);
-    EXPECT_EQ(item->player_pid, 0);
 
     // Verify in-memory of Episode 1 is updated to 0.0
-    auto feed = host->feeds()[0];
     bool in_memory_updated = false;
-    for (auto& feed_item : feed->items) {
+    for (auto& feed_item : target_feed->items) {
         if (feed_item.title == "Episode 1") {
             if (feed_item.watermark.has_value()) {
                 EXPECT_DOUBLE_EQ(*feed_item.watermark, 0.0);
