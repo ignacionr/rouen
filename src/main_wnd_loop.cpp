@@ -232,7 +232,11 @@ void main_wnd::run() {
                     DB_ERROR("Unknown error during deck rendering");
                 }
 
-                if (media_player::is_any_playing_non_cast() || media_player::has_detached_item()) {
+                bool has_detached = media_player::has_detached_item();
+
+                if (has_detached) {
+                    m_requested_fps = std::max(m_requested_fps, 60);
+                } else if (media_player::is_any_playing_non_cast()) {
                     m_requested_fps = std::max(m_requested_fps, 60);
                 }
 
@@ -247,7 +251,7 @@ void main_wnd::run() {
                 ImGui::Render();
 
                 bool should_draw_main = true;
-                if (is_casting) {
+                if (is_casting || has_detached) {
                     auto now = std::chrono::steady_clock::now();
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_main_render_time).count();
                     if (elapsed_ms < 1000) {

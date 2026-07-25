@@ -55,7 +55,7 @@ struct media_player {
     }
 
     static bool is_any_playing_non_cast() {
-        if (media_player_item::is_cast_active.load()) {
+        if (media_player_item::is_cast_active.load() || has_detached_item()) {
             return false;
         }
         std::lock_guard<std::recursive_mutex> lock(items_mutex());
@@ -754,11 +754,12 @@ struct media_player {
 
                 ImTextureID tex = item.get_texture_id();
                 bool cast_active = media_player_item::is_cast_active.load();
+                bool detached_active = has_detached_item();
 
                 if (tex && item.has_video) {
                     float thumb_w = 120.0f;
                     float thumb_h = 67.5f;
-                    if (!cast_active) {
+                    if (!cast_active && !detached_active) {
                         float avail_w = player_width;
                         thumb_w = std::max(120.0f, avail_w - 26.0f);
                         thumb_h = thumb_w * 9.0f / 16.0f;
