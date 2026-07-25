@@ -69,7 +69,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro"}, "You are a helpful assistant.", "Default", false, {}, 0.7f};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f};
             return fallback;
         }
 
@@ -147,7 +147,7 @@ namespace rouen::helpers {
             Persona default_p;
             default_p.name = "Rouen Assistant";
             default_p.description = "The default helpful assistant for Rouen with standard system prompt instructions.";
-            default_p.allowed_mcps = {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes"};
+            default_p.allowed_mcps = {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"};
             default_p.system_prompt = 
                 "You are a helpful AI assistant integrated into Rouen, a card-based desktop application. "
                 "Rouen organizes its UI as cards - each feature (weather, git, terminal, etc.) is a visual card that can be opened, closed, and interacted with.\n"
@@ -273,6 +273,16 @@ namespace rouen::helpers {
 
                     personas_.push_back(adaptive_p);
                     save_personas();
+                }
+
+                // Ensure "Rouen Assistant" includes "contacts" if missing
+                for (auto& p : personas_) {
+                    if (p.name == "Rouen Assistant") {
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back("contacts");
+                            save_personas();
+                        }
+                    }
                 }
             } 
             catch (const std::exception& e) {

@@ -1537,6 +1537,18 @@ std::vector<mcp_service::function_definition> mcp_service::get_functions_for_car
     return result;
 }
 
+std::vector<std::string> mcp_service::get_registered_categories() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> categories;
+    categories.reserve(card_functions_.size());
+    for (const auto& [card_type, funcs] : card_functions_) {
+        if (!card_type.empty() && std::find(categories.begin(), categories.end(), card_type) == categories.end()) {
+            categories.push_back(card_type);
+        }
+    }
+    return categories;
+}
+
 mcp_service::execution_result mcp_service::execute_function(const std::string& name, const std::string& params) {
     function_definition func;
     {

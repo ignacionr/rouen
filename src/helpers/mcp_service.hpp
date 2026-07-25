@@ -80,6 +80,11 @@ public:
     std::vector<function_definition> get_functions_for_card(const std::string& card_type) const;
     
     /**
+     * Get all registered MCP category / card_type names
+     */
+    std::vector<std::string> get_registered_categories() const;
+    
+    /**
      * Execute a function call with error handling
      */
     execution_result execute_function(const std::string& name, const std::string& params);

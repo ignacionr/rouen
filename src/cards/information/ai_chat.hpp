@@ -207,12 +207,31 @@ namespace rouen::cards {
                         changed = true;
                     }
                     
-                    // Allowed MCPs selection
+                    // Allowed MCPs selection (Dynamic Discovery)
                     ImGui::Text("Allowed MCPs:");
                     std::vector<std::string> mcp_options = {
                         "terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", 
-                        "git", "calendar", "weather", "alarm", "pomodoro", "notes"
+                        "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"
                     };
+                    
+                    if (mcp_service_) {
+                        auto registered_funcs = mcp_service_->get_available_functions();
+                        for (const auto& func : registered_funcs) {
+                            std::string cat = get_function_category(func);
+                            if (!cat.empty() && std::find(mcp_options.begin(), mcp_options.end(), cat) == mcp_options.end()) {
+                                mcp_options.push_back(cat);
+                            }
+                            if (!func.card_type.empty() && std::find(mcp_options.begin(), mcp_options.end(), func.card_type) == mcp_options.end()) {
+                                mcp_options.push_back(func.card_type);
+                            }
+                        }
+                    }
+                    for (const auto& existing_mcp : p.allowed_mcps) {
+                        if (!existing_mcp.empty() && std::find(mcp_options.begin(), mcp_options.end(), existing_mcp) == mcp_options.end()) {
+                            mcp_options.push_back(existing_mcp);
+                        }
+                    }
+                    std::sort(mcp_options.begin(), mcp_options.end());
                     
                     // Render in 3 columns for space efficiency
                     ImGui::Columns(3, "mcp_columns", false);
@@ -1010,6 +1029,10 @@ namespace rouen::cards {
                             return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
                                    std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "adaptive_card") != target_persona->allowed_mcps.end();
                         }
+                        if (cat == "contacts" || cat == "directory") {
+                            return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "contacts") != target_persona->allowed_mcps.end() ||
+                                   std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "directory") != target_persona->allowed_mcps.end();
+                        }
                         return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), cat) != target_persona->allowed_mcps.end();
                     };
 
@@ -1100,6 +1123,10 @@ namespace rouen::cards {
                     return std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end() ||
                            std::find(allowed_mcps.begin(), allowed_mcps.end(), "adaptive_card") != allowed_mcps.end();
                 }
+                if (name == "contacts" || name == "directory") {
+                    return std::find(allowed_mcps.begin(), allowed_mcps.end(), "contacts") != allowed_mcps.end() ||
+                           std::find(allowed_mcps.begin(), allowed_mcps.end(), "directory") != allowed_mcps.end();
+                }
                 return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
             };
 
@@ -1121,6 +1148,9 @@ namespace rouen::cards {
             if (has_mcp("notes")) {
                 instr += "\nNOTES INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create, update/append, or delete markdown notes. If the user wants to list/search notes, get a note's full text, write/save a new note, append information to a note, or delete a note, you MUST use the corresponding `notes_list`, `notes_get`, `notes_save`, `notes_append`, or `notes_delete` tool instead of guiding the user to do it manually.\n";
             }
+            if (has_mcp("contacts") || has_mcp("directory")) {
+                instr += "\nCONTACTS INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create/update, delete, or import macOS contacts. If the user wants to search contacts, view contact details, save or import contacts, use the `contacts_list`, `contacts_get`, `contacts_save`, `contacts_delete`, or `contacts_import_macos` tools.\n";
+            }
             return instr;
         }
 
@@ -1130,6 +1160,7 @@ namespace rouen::cards {
             if (func.name == "create_card" || func.name == "create_number_series_card" || func.name == "create_adaptive_card" || func.name == "list_adaptive_cards" || func.name == "get_adaptive_card") return "deck";
             if (func.name.starts_with("wikipedia_")) return "wikipedia";
             if (func.name.starts_with("youtube_")) return "youtube";
+            if (func.name.starts_with("contacts_")) return "contacts";
             if (func.name == "create_alarm") return "alarm";
             return func.card_type;
         }
@@ -1189,6 +1220,10 @@ namespace rouen::cards {
                         if (cat == "adaptive_card" || cat == "deck") {
                             return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end() ||
                                    std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "adaptive_card") != active_persona.allowed_mcps.end();
+                        }
+                        if (cat == "contacts" || cat == "directory") {
+                            return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "contacts") != active_persona.allowed_mcps.end() ||
+                                   std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "directory") != active_persona.allowed_mcps.end();
                         }
                         return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), cat) != active_persona.allowed_mcps.end();
                     };
