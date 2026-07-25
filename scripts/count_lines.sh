@@ -1,5 +1,5 @@
 #!/bin/bash
-# filepath: count_lines.sh
+# filepath: scripts/count_lines.sh
 
 echo "Counting lines in source files..."
 

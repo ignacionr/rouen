@@ -2,7 +2,7 @@
 
 Rouen uses a modular, card-based architecture that promotes separation of concerns, flexibility, and maintainability.
 
-![Rouen Architecture Diagram](../rouen_architecture.png)
+![Rouen Architecture Diagram](diagrams/rouen_architecture.png)
 
 ---
 
