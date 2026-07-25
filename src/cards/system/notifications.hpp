@@ -23,7 +23,7 @@ struct notifications_card : public card {
         get_color(7, {0.95f, 0.70f, 0.35f, 1.0f});
 
         name("Notifications");
-        width = 900.0f;
+        width = 450.0f;
         requested_fps = 4;
     }
 
@@ -59,15 +59,13 @@ private:
             return;
         }
 
-        float available_width = ImGui::GetContentRegionAvail().x;
-        float left_width = std::max(260.0f, available_width * 0.38f);
+        float available_height = ImGui::GetContentRegionAvail().y;
+        float list_height = std::max(120.0f, available_height * 0.40f);
 
-        if (ImGui::BeginChild("notifications_list", ImVec2(left_width, 0), true)) {
+        if (ImGui::BeginChild("notifications_list", ImVec2(0, list_height), true)) {
             render_notifications_list(notifications);
         }
         ImGui::EndChild();
-
-        ImGui::SameLine();
 
         if (ImGui::BeginChild("notification_detail", ImVec2(0, 0), true)) {
             render_notification_detail(notifications);
@@ -98,7 +96,6 @@ private:
             if (ImGui::GetTime() > status_message_expires_at_) {
                 status_message_.clear();
             } else {
-                ImGui::SameLine();
                 ImGui::TextColored(get_color(6), "%s", status_message_.c_str());
             }
         }
@@ -137,9 +134,15 @@ private:
         ImGui::Text("Received: %s", selected_it->timestamp.c_str());
         ImGui::Spacing();
 
-        if (ImGui::Button("Copy to Clipboard")) {
+        if (ImGui::Button(ICON_MD_CONTENT_COPY " Copy to Clipboard")) {
             ImGui::SetClipboardText(selected_it->message.c_str());
             status_message_ = "Copied to clipboard!";
+            status_message_expires_at_ = ImGui::GetTime() + 4.0;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_MD_VOLUME_UP " Read Out Loud")) {
+            notify_service::speak_notification(selected_it->message);
+            status_message_ = "Reading notification out loud...";
             status_message_expires_at_ = ImGui::GetTime() + 4.0;
         }
 

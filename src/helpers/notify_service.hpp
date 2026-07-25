@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "../registrar.hpp"
@@ -57,6 +58,28 @@ struct notify_service {
         return CONFIG_SERVICE()->set_env_value("ROUEN_SPOKEN_NOTIFICATIONS", enabled ? "1" : "0", true);
     }
 
+    static void speak_notification(const std::string& message) {
+        std::thread([message]() {
+            std::string safe_message;
+            safe_message.reserve(message.size());
+
+            for (char c : message) {
+                if (c == '"') {
+                    safe_message += "\\\"";
+                } else if (c == '\\') {
+                    safe_message += "\\\\";
+                } else if (c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
+                    safe_message += ' ';
+                } else {
+                    safe_message += c;
+                }
+            }
+
+            std::string say_path = CONFIG_SERVICE()->get_say_path();
+            [[maybe_unused]] int system_result = system(std::format("\"{}\" \"{}\"", say_path, safe_message).c_str());
+        }).detach();
+    }
+
 private:
     inline static std::atomic<std::uint64_t> next_id_ {1};
     inline static std::mutex history_mutex_;
@@ -96,25 +119,5 @@ private:
         }
 
         return first_line.empty() ? std::string("(empty notification)") : first_line;
-    }
-
-    static void speak_notification(const std::string& message) {
-        std::string safe_message;
-        safe_message.reserve(message.size());
-
-        for (char c : message) {
-            if (c == '"') {
-                safe_message += "\\\"";
-            } else if (c == '\\') {
-                safe_message += "\\\\";
-            } else if (c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
-                safe_message += ' ';
-            } else {
-                safe_message += c;
-            }
-        }
-
-        std::string say_path = CONFIG_SERVICE()->get_say_path();
-        [[maybe_unused]] int system_result = system(std::format("\"{}\" \"{}\"", say_path, safe_message).c_str());
     }
 };
