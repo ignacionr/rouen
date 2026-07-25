@@ -169,7 +169,9 @@ namespace rouen::cards {
                             if (resp.contains("title") && resp["title"].is_string()) {
                                 res.title = resp["title"].get<std::string>();
                             }
-                            if (resp.contains("url") && resp["url"].is_string()) {
+                            if (!res.id.empty() && res.id.length() == 11 && !res.id.starts_with("UC")) {
+                                res.url = "https://www.youtube.com/watch?v=" + res.id;
+                            } else if (resp.contains("url") && resp["url"].is_string()) {
                                 res.url = resp["url"].get<std::string>();
                             } else if (!res.id.empty()) {
                                 res.url = "https://www.youtube.com/watch?v=" + res.id;
