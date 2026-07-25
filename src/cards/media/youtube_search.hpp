@@ -12,8 +12,11 @@
 #include <format>
 #include <ctime>
 
+#include <set>
+
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
+#include "../information/rss.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/glaze_include.hpp"
@@ -32,6 +35,9 @@ namespace rouen::cards {
             double duration{0};
             std::string duration_string;
             std::string channel;
+            std::string channel_id;
+            std::string channel_url;
+            std::string uploader_url;
             std::string description;
             std::string published_time;
         };
@@ -178,6 +184,15 @@ namespace rouen::cards {
                                 res.channel = resp["channel"].get<std::string>();
                             } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
                                 res.channel = resp["uploader"].get<std::string>();
+                            }
+                            if (resp.contains("channel_id") && resp["channel_id"].is_string()) {
+                                res.channel_id = resp["channel_id"].get<std::string>();
+                            }
+                            if (resp.contains("channel_url") && resp["channel_url"].is_string()) {
+                                res.channel_url = resp["channel_url"].get<std::string>();
+                            }
+                            if (resp.contains("uploader_url") && resp["uploader_url"].is_string()) {
+                                res.uploader_url = resp["uploader_url"].get<std::string>();
                             }
                             if (resp.contains("description") && resp["description"].is_string()) {
                                 res.description = resp["description"].get<std::string>();
@@ -393,6 +408,9 @@ namespace rouen::cards {
                     float list_height = ImGui::GetContentRegionAvail().y;
                     if (list_height < 100.0f) list_height = 100.0f;
                     
+                    auto rss_host = rss::getHost();
+                    auto current_feeds = rss_host ? rss_host->feeds() : std::vector<std::shared_ptr<media::rss::feed>>{};
+
                     // Remove outline (third parameter set to false)
                     ImGui::BeginChild("YouTubeResults", ImVec2(0, list_height), false);
                     
@@ -406,6 +424,16 @@ namespace rouen::cards {
                         
                         bool is_current = (yt_playing && item.url == active_url);
                         
+                        std::string feed_target = get_channel_feed_url(item);
+                        long long subscribed_repo_id = rss_host ? find_subscribed_feed_id(item, current_feeds) : -1;
+                        bool is_sub = (subscribed_repo_id >= 0);
+                        bool is_pending = (!feed_target.empty() && subscribing_urls.contains(feed_target));
+
+                        if (is_sub && is_pending) {
+                            subscribing_urls.erase(feed_target);
+                            is_pending = false;
+                        }
+
                         // Draw background manually to prevent child-scroll conflicts
                         ImVec2 p_min = ImGui::GetCursorScreenPos();
                         float item_height = 80.0f;
@@ -460,12 +488,17 @@ namespace rouen::cards {
                         
                         ImGui::BeginGroup();
                         
+                        float avail_width = ImGui::GetContentRegionAvail().x - 115.0f;
+                        int max_chars = static_cast<int>(avail_width / 7.0f);
+                        if (max_chars < 15) max_chars = 15;
+
                         // Title
                         {
                             rouen::fonts::with_font bold(rouen::fonts::FontType::Bold);
                             std::string display_title = item.title;
-                            if (display_title.length() > 60) {
-                                display_title = display_title.substr(0, 57) + "...";
+                            size_t title_len = (max_chars > 3) ? static_cast<size_t>(max_chars - 3) : 0;
+                            if (display_title.length() > static_cast<size_t>(max_chars)) {
+                                display_title = display_title.substr(0, title_len) + "...";
                             }
                             if (is_current) {
                                 ImGui::TextColored(colors[0], "%s %s", ICON_MD_VOLUME_UP, display_title.c_str());
@@ -477,20 +510,73 @@ namespace rouen::cards {
                         // Channel & Duration & Published Time (High contrast)
                         std::string duration_lbl = item.duration_string.empty() ? "" : "  (" + item.duration_string + ")";
                         std::string published_lbl = item.published_time.empty() ? "" : "  •  " + item.published_time;
-                        ImGui::TextColored(channel_color, "%s%s%s", item.channel.c_str(), duration_lbl.c_str(), published_lbl.c_str());
+                        std::string channel_line = item.channel + duration_lbl + published_lbl;
+                        size_t channel_len = (max_chars > 3) ? static_cast<size_t>(max_chars - 3) : 0;
+                        if (channel_line.length() > static_cast<size_t>(max_chars)) {
+                            channel_line = channel_line.substr(0, channel_len) + "...";
+                        }
+                        ImGui::TextColored(channel_color, "%s", channel_line.c_str());
+                        
+                        // Inline Subscribe / RSS Feed Button next to Channel Name
+                        if (!feed_target.empty() && rss_host) {
+                            ImGui::SameLine(0.0f, 10.0f);
+                            ImGui::PushID("sub_btn");
+                            if (is_pending) {
+                                ImGui::BeginDisabled(true);
+                                std::string btn_label = std::format("{} Subscribing...", ICON_MD_SYNC);
+                                ImGui::SmallButton(btn_label.c_str());
+                                ImGui::EndDisabled();
+                            } else if (is_sub) {
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.45f, 0.25f, 0.8f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.55f, 0.3f, 0.9f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.4f, 0.2f, 1.0f));
+                                
+                                std::string btn_label = std::format("{} Subscribed", ICON_MD_CHECK);
+                                if (ImGui::SmallButton(btn_label.c_str())) {
+                                    if (subscribed_repo_id > 0) {
+                                        "create_card"_sfn(std::format("rss-feed:{}", subscribed_repo_id));
+                                    } else {
+                                        "create_card"_sfn("rss");
+                                    }
+                                }
+                                ImGui::PopStyleColor(3);
+                                
+                                if (ImGui::IsItemHovered()) {
+                                    ImGui::SetTooltip("Subscribed! Click to open feed in RSS Reader");
+                                }
+                            } else {
+                                ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[1]);
+                                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.05f, 0.05f, 1.0f));
+                                
+                                std::string btn_label = std::format("{} Subscribe", ICON_MD_RSS_FEED);
+                                if (ImGui::SmallButton(btn_label.c_str())) {
+                                    subscribing_urls.insert(feed_target);
+                                    rss_host->addFeed(feed_target, false);
+                                }
+                                ImGui::PopStyleColor(3);
+                                
+                                if (ImGui::IsItemHovered()) {
+                                    ImGui::SetTooltip("Subscribe to %s RSS feed", item.channel.c_str());
+                                }
+                            }
+                            ImGui::PopID();
+                        }
                         
                         // Description snippet (High contrast)
                         if (!item.description.empty()) {
                             std::string desc = item.description;
-                            if (desc.length() > 70) {
-                                desc = desc.substr(0, 67) + "...";
+                            size_t desc_max = static_cast<size_t>(max_chars + 10);
+                            size_t desc_len = (max_chars > 0) ? static_cast<size_t>(max_chars + 7) : 0;
+                            if (desc.length() > desc_max) {
+                                desc = desc.substr(0, desc_len) + "...";
                             }
                             ImGui::TextColored(desc_color, "%s", desc.c_str());
                         }
                         
                         ImGui::EndGroup();
                         ImGui::EndGroup();
-                        
+
                         // Advance cursor below the item card bounds
                         ImGui::SetCursorScreenPos(ImVec2(p_min.x, p_max.y));
                         ImGui::Spacing();
@@ -517,6 +603,49 @@ namespace rouen::cards {
         std::string play_url_trigger;
         std::string play_title_trigger;
         std::string currently_playing_url;
+        
+        std::set<std::string> subscribing_urls;
+
+        static std::string get_channel_feed_url(const youtube_result& res) {
+            if (!res.channel_id.empty()) {
+                return "https://www.youtube.com/feeds/videos.xml?channel_id=" + res.channel_id;
+            }
+            if (!res.channel_url.empty()) {
+                return res.channel_url;
+            }
+            if (!res.uploader_url.empty()) {
+                return res.uploader_url;
+            }
+            if (!res.channel.empty()) {
+                if (res.channel.starts_with("@")) {
+                    return "https://www.youtube.com/" + res.channel;
+                }
+                return "https://www.youtube.com/@" + res.channel;
+            }
+            return "";
+        }
+
+        static long long find_subscribed_feed_id(const youtube_result& item, const std::vector<std::shared_ptr<media::rss::feed>>& feeds) {
+            std::string feed_url = get_channel_feed_url(item);
+            for (const auto& f : feeds) {
+                if (!f) continue;
+                if (!item.channel_id.empty()) {
+                    if (f->feed_link.find(item.channel_id) != std::string::npos ||
+                        f->source_link.find(item.channel_id) != std::string::npos) {
+                        return f->repo_id;
+                    }
+                }
+                if (!feed_url.empty() && (f->feed_link == feed_url || f->source_link == feed_url)) {
+                    return f->repo_id;
+                }
+                if (!item.channel.empty()) {
+                    if (f->feed_title == item.channel || f->feed_title == ("YouTube Channel: " + item.channel)) {
+                        return f->repo_id;
+                    }
+                }
+            }
+            return -1;
+        }
 
         static std::string format_relative_time(double timestamp_seconds) {
             if (timestamp_seconds <= 0) return "";
