@@ -63,8 +63,10 @@ RouenGPUTexture* capture_imgui(
     } else {
         rouen::fonts::setup();
     }
+    io.Fonts->TexID = 0;
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = 1.0f / 60.0f;
+
     
     // Initialize ImGui backends for this context
     ImGui_ImplSDL3_InitForSDLGPU(dummy_window);

@@ -98,3 +98,37 @@ TEST_F(TextEditorTest, RequestCloseClearsEditor) {
     editor.requestClose();
     EXPECT_TRUE(editor.empty()) << "Requesting close on unmodified editor should clear and set empty() to true";
 }
+
+TEST_F(TextEditorTest, TypingCharactersInsertsTextAtCaretWhenFocused) {
+    rouen::editor::Editor editor;
+    editor.requestNew();
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+    
+    // Render first frame to set up window and focus
+    editor.render();
+    ImGui::Render();
+
+    // Second frame: simulate typing 'X', 'Y', 'Z' into ImGui IO character queue
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddInputCharacter('X');
+    io.AddInputCharacter('Y');
+    io.AddInputCharacter('Z');
+
+    ImGui::NewFrame();
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(800, 600));
+
+    // Focus the child window
+    ImGui::SetNextWindowFocus();
+
+    editor.render();
+    ImGui::Render();
+
+
+    std::string text = editor.getText();
+    EXPECT_NE(text.find("XYZ"), std::string::npos) << "TextEditor should have inserted 'XYZ' at caret! Actual text: '" << text << "'";
+}
+

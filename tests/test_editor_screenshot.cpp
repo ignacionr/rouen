@@ -41,13 +41,9 @@ protected:
             ImGui::DestroyContext(imgui_ctx);
             imgui_ctx = nullptr;
         }
-        if (gpu_device) {
-            try { registrar::remove<SDL_GPUDevice*>("main_gpu_device"); } catch (...) {}
-            SDL_DestroyGPUDevice(gpu_device);
-            gpu_device = nullptr;
-        }
-        SDL_Quit();
     }
+
+
 
     size_t count_non_background_pixels(SDL_Surface* surface, Uint32 bg_color) {
         if (!surface || !surface->pixels) return 0;

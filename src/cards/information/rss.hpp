@@ -215,10 +215,10 @@ public:
         }
         
         // Periodically invalidate the cache to ensure freshness colors update
-        // We do this based on time elapsed (every 2 minutes) rather than frame count
+        // We do this based on time elapsed (every 10 minutes) rather than frame count
         // to handle variable frame rates gracefully
         auto now_steady = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::minutes>(now_steady - last_freshness_cache_invalidation_time_).count() >= 2) {
+        if (std::chrono::duration_cast<std::chrono::minutes>(now_steady - last_freshness_cache_invalidation_time_).count() >= 10) {
             invalidate_freshness_cache();
             last_freshness_cache_invalidation_time_ = now_steady;
         }
@@ -1385,4 +1385,5 @@ private:
 };
 
 } // namespace rouen::cards
+
 

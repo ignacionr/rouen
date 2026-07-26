@@ -137,6 +137,14 @@ public:
         return active_editor_ == nullptr || active_editor_->empty();
     }
 
+    std::string getText() const {
+        if (text_editor_) {
+            return text_editor_->getText();
+        }
+        return "";
+    }
+
+
     void clear() {
         if (text_editor_) text_editor_->clear();
         if (image_editor_) image_editor_->clear();

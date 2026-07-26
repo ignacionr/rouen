@@ -52,6 +52,8 @@ bool main_wnd::initialize() {
             return false;
         }
         std::cout << "DEBUG: SDL window created successfully" << '\n';
+        SDL_StartTextInput(m_window);
+
 
 #ifdef __APPLE__
         rouen::platform::disable_mac_cmd_w_menu_item();

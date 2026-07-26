@@ -702,7 +702,8 @@ void TextEditor::HandleKeyboardInputs()
 	auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
 	auto alt = io.ConfigMacOSXBehaviors ? io.KeyCtrl : io.KeyAlt;
 
-	if (ImGui::IsWindowFocused())
+	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows | ImGuiFocusedFlags_RootWindow))
+
 	{
 		if (ImGui::IsWindowHovered())
 			ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
@@ -831,7 +832,9 @@ void TextEditor::HandleMouseInputs()
 			*/
 			else if (click)
 			{
+				ImGui::SetWindowFocus();
 				mState.mCursorPosition = mInteractiveStart = mInteractiveEnd = ScreenPosToCoordinates(ImGui::GetMousePos());
+
 				if (ctrl)
 					mSelectionMode = SelectionMode::Word;
 				else

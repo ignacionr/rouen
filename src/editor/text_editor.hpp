@@ -157,8 +157,14 @@ public:
                 avail.y = std::max(100.0f, window_h - cursor_y - ImGui::GetStyle().WindowPadding.y);
             }
             
+            if (should_focus_) {
+                ImGui::SetNextWindowFocus();
+                should_focus_ = false;
+            }
+
             // Render the TextEditor widget
             text_editor_.Render("##editor", avail, true);
+
             
             // Update the modified flag
             if (text_editor_.IsTextChanged()) {
@@ -196,6 +202,7 @@ public:
     }
     bool isShowingWhitespaces() const { return text_editor_.IsShowingWhitespaces(); }
     void setShowWhitespaces(bool show) { text_editor_.SetShowWhitespaces(show); }
+    std::string getText() const { return text_editor_.GetText(); }
 
 private:
     std::string source_file_;
