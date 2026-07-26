@@ -36,6 +36,10 @@ private:
     static std::string handle_camera_snapshot(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_camera_layout_get(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_camera_layout_set(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_card_focus(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_deck_scroll(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_window_get(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_window_set(struct mg_connection* c, struct mg_http_message* hm);
 
     std::unique_ptr<struct mg_mgr> mgr_;
     struct mg_connection* conn_;

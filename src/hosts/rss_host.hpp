@@ -522,6 +522,7 @@ public:
     struct FeedItem {
         std::string title;
         std::string description;
+        std::string clean_description;
         std::string link;
         std::string enclosure;
         std::string image_url;
@@ -895,6 +896,7 @@ public:
             FeedItem item{
                 .title = title,
                 .description = description,
+                .clean_description = "",
                 .link = link,
                 .enclosure = enclosure,
                 .image_url = image_url,
@@ -907,6 +909,10 @@ public:
             };
             if (!item.description.empty()) {
                 item.extracted_media_urls = media::html::extract_media_urls(item.description);
+                item.clean_description = ::helpers::StringHelper::strip_html_tags(item.description);
+                if (item.clean_description.length() > 100) {
+                    item.clean_description = item.clean_description.substr(0, 97) + "...";
+                }
             }
             items.push_back(std::move(item));
         });
@@ -1010,6 +1016,7 @@ public:
             FeedItem item{
                 .title = title ? title : "",
                 .description = description ? description : "",
+                .clean_description = "",
                 .link = link ? link : "",
                 .enclosure = enclosure ? enclosure : "",
                 .image_url = image_url ? image_url : "",
@@ -1024,6 +1031,10 @@ public:
             // Enhanced: Extract media URLs from description content
             if (!item.description.empty()) {
                 item.extracted_media_urls = media::html::extract_media_urls(item.description);
+                item.clean_description = ::helpers::StringHelper::strip_html_tags(item.description);
+                if (item.clean_description.length() > 100) {
+                    item.clean_description = item.clean_description.substr(0, 97) + "...";
+                }
             }
             
             items.push_back(std::move(item));
@@ -1110,6 +1121,7 @@ public:
                 result = FeedItem{
                     .title = title ? title : "",
                     .description = description ? description : "",
+                    .clean_description = "",
                     .link = link,
                     .enclosure = enclosure ? enclosure : "",
                     .image_url = image_url ? image_url : "",
@@ -1124,6 +1136,10 @@ public:
                 // Enhanced: Extract media URLs from description content
                 if (!result->description.empty()) {
                     result->extracted_media_urls = media::html::extract_media_urls(result->description);
+                    result->clean_description = ::helpers::StringHelper::strip_html_tags(result->description);
+                    if (result->clean_description.length() > 100) {
+                        result->clean_description = result->clean_description.substr(0, 97) + "...";
+                    }
                 }
             }
         });

@@ -293,6 +293,8 @@ namespace rouen::cards
                 }
             }
             
+            update_cached_feed_metadata();
+            
             try
             {
                 return render_window([this]()
@@ -411,7 +413,7 @@ namespace rouen::cards
                             {"it", "Italian"}
                         };
                         
-                        std::string current_lang = rss_host->getFeedLanguage(feed_id);
+                        std::string current_lang = cached_feed_language_;
                         std::string current_display = "Auto Detect";
                         for (const auto& [code, label] : languages) {
                             if (code == current_lang) {
@@ -426,6 +428,7 @@ namespace rouen::cards
                                 bool is_selected = (code == current_lang);
                                 if (ImGui::Selectable(label.c_str(), is_selected)) {
                                     rss_host->setFeedLanguage(feed_id, code);
+                                    update_cached_feed_metadata(true);
                                 }
                                 if (is_selected) {
                                     ImGui::SetItemDefaultFocus();
@@ -439,9 +442,8 @@ namespace rouen::cards
                         // 2. Tags Selector (with wrapping layout)
                         ImGui::TextColored(colors[2], "Tags:");
                         
-                        auto current_tags = rss_host->getFeedTags(feed_id);
-                        std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
-                        std::sort(all_possible_tags.begin(), all_possible_tags.end());
+                        const auto& current_tags = cached_feed_tags_;
+                        const auto& all_possible_tags = cached_available_tags_;
                         const float tags_row_width = ImGui::GetContentRegionAvail().x;
                         float used_row_width = 0.0f;
                         
@@ -476,6 +478,7 @@ namespace rouen::cards
                                 } else {
                                     rss_host->removeFeedTag(feed_id, tag_name);
                                 }
+                                update_cached_feed_metadata(true);
                             }
 
                             if (!fits_same_line) {
@@ -552,7 +555,7 @@ namespace rouen::cards
                         }
                     } else {
                         // Non-editing mode: only associated tags appear as pills, no checkboxes, no Language selector, no delete feed button
-                        auto current_tags = rss_host->getFeedTags(feed_id);
+                        const auto& current_tags = cached_feed_tags_;
                         if (!current_tags.empty()) {
                             ImGui::TextColored(colors[2], "Tags:");
                             
@@ -648,6 +651,25 @@ namespace rouen::cards
                                     auto& item = *filtered_items[i];
                                     ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
                                     const ImVec2 row_start = ImGui::GetCursorScreenPos();
+                                    float avail_width = ImGui::GetContentRegionAvail().x;
+                                    ImVec2 const est_item_size = ImVec2(avail_width, 85.0f * dpi_scale);
+
+                                    bool const is_item_visible = ImGui::IsRectVisible(row_start, ImVec2(row_start.x + est_item_size.x, row_start.y + est_item_size.y));
+                                    bool is_playing = false;
+                                    if (item.feed_id > 0) {
+                                        for (const auto& [id, player_item] : media_player::items()) {
+                                            if (player_item && player_item->player_pid > 0 && player_item->item_link == item.link) {
+                                                is_playing = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (!is_item_visible && !is_playing) {
+                                        ImGui::Dummy(est_item_size);
+                                        ImGui::PopID();
+                                        continue;
+                                    }
                                     
                                     try {
                                         ImGui::BeginGroup();
@@ -667,7 +689,6 @@ namespace rouen::cards
                                             }
 
                                             bool has_item_image = (item_tex != nullptr);
-                                            float avail_width = ImGui::GetContentRegionAvail().x;
                                             float const left_width = has_item_image ? avail_width - 130.0f * dpi_scale : avail_width;
                                             
                                             if (has_item_image) {
@@ -693,16 +714,9 @@ namespace rouen::cards
                                             
                                             ImGui::TextColored(colors[1], "%s (%s)", date_str, age_str.c_str());
                                             
-                                            // Truncated description (if available)
-                                            if (!item.description.empty()) {
-                                                std::string desc = ::helpers::StringHelper::strip_html_tags(item.description);
-                                                
-                                                // Limit length
-                                                if (desc.length() > 100) {
-                                                    desc = desc.substr(0, 97) + "...";
-                                                }
-                                                
-                                                ImGui::TextWrapped("%s", desc.c_str());
+                                            // Pre-stripped clean description (no regex execution during render)
+                                            if (!item.clean_description.empty()) {
+                                                ImGui::TextWrapped("%s", item.clean_description.c_str());
                                             }
  
                                             // if there's a playable enclosure, offer media controls
@@ -1046,6 +1060,24 @@ namespace rouen::cards
         std::string ai_tagging_error_;
         std::vector<std::string> pending_ai_tags_;
         std::mutex ai_tags_mutex_;
+
+        std::string cached_feed_language_;
+        std::set<std::string> cached_feed_tags_;
+        std::vector<std::string> cached_available_tags_;
+        std::chrono::steady_clock::time_point last_metadata_cache_time_{};
+
+        void update_cached_feed_metadata(bool force = false) {
+            auto now = std::chrono::steady_clock::now();
+            if (force || cached_available_tags_.empty() || std::chrono::duration_cast<std::chrono::seconds>(now - last_metadata_cache_time_).count() >= 2) {
+                last_metadata_cache_time_ = now;
+                if (rss_host && feed_id >= 0) {
+                    cached_feed_language_ = rss_host->getFeedLanguage(feed_id);
+                    cached_feed_tags_ = rss_host->getFeedTags(feed_id);
+                    cached_available_tags_ = rss_host->getAvailableTags();
+                    std::sort(cached_available_tags_.begin(), cached_available_tags_.end());
+                }
+            }
+        }
 
         void suggestTagsWithAI() {
             if (ai_tagging_in_progress_) return;

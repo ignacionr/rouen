@@ -24,6 +24,7 @@
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/drive_benchmark.hpp"
+#include "../../helpers/card_render_metrics.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -338,6 +339,40 @@ struct sysinfo_card : public card {
             int process_count = get_process_count();
             ui.text(std::format("Running Processes: {}", process_count));
             
+            ui.separator();
+
+            // Card Render Times Section
+            ui.text("Active Card Render Performance:");
+            auto card_metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics();
+            if (card_metrics.empty()) {
+                ui.text("No active card metrics recorded yet.");
+            } else {
+                if (ui.begin_table("CardRenderMetricsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                    ui.table_setup_column("Card Title", ImGuiTableColumnFlags_WidthStretch);
+                    ui.table_setup_column("Last (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+                    ui.table_setup_column("Avg (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+                    ui.table_setup_column("Max (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+                    ui.table_headers_row();
+
+                    for (const auto& metric : card_metrics) {
+                        ui.table_next_row();
+
+                        ui.table_set_column_index(0);
+                        ui.text(metric.title);
+
+                        ui.table_set_column_index(1);
+                        ui.text(std::format("{:.2f}", metric.last_render_ms));
+
+                        ui.table_set_column_index(2);
+                        ui.text(std::format("{:.2f}", metric.avg_render_ms));
+
+                        ui.table_set_column_index(3);
+                        ui.text(std::format("{:.2f}", metric.max_render_ms));
+                    }
+                    ui.end_table();
+                }
+            }
+
             ui.separator();
             
             // Drive Benchmark section

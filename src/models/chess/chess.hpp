@@ -13,7 +13,7 @@
 #include <sstream>
 #include <fstream>
 
-#include "../helpers/debug.hpp"
+#include "../../helpers/debug.hpp"
 
 namespace rouen::models::chess {
 

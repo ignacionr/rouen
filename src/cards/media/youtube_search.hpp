@@ -410,8 +410,9 @@ namespace rouen::cards {
                     float list_height = ImGui::GetContentRegionAvail().y;
                     if (list_height < 100.0f) list_height = 100.0f;
                     
+                    update_cached_feeds();
                     auto rss_host = rss::getHost();
-                    auto current_feeds = rss_host ? rss_host->feeds() : std::vector<std::shared_ptr<media::rss::feed>>{};
+                    const auto& current_feeds = cached_current_feeds_;
 
                     // Remove outline (third parameter set to false)
                     ImGui::BeginChild("YouTubeResults", ImVec2(0, list_height), false);
@@ -555,6 +556,7 @@ namespace rouen::cards {
                                 if (ImGui::SmallButton(btn_label.c_str())) {
                                     subscribing_urls.insert(feed_target);
                                     rss_host->addFeed(feed_target, false);
+                                    update_cached_feeds(true);
                                 }
                                 ImGui::PopStyleColor(3);
                                 
@@ -607,6 +609,22 @@ namespace rouen::cards {
         std::string currently_playing_url;
         
         std::set<std::string> subscribing_urls;
+
+        std::vector<std::shared_ptr<media::rss::feed>> cached_current_feeds_;
+        std::chrono::steady_clock::time_point last_feeds_cache_time_{};
+
+        void update_cached_feeds(bool force = false) {
+            auto now = std::chrono::steady_clock::now();
+            if (force || std::chrono::duration_cast<std::chrono::seconds>(now - last_feeds_cache_time_).count() >= 2) {
+                last_feeds_cache_time_ = now;
+                auto rss_host = rss::getHost();
+                if (rss_host) {
+                    cached_current_feeds_ = rss_host->feeds();
+                } else {
+                    cached_current_feeds_.clear();
+                }
+            }
+        }
 
         static std::string get_channel_feed_url(const youtube_result& res) {
             if (!res.channel_id.empty()) {

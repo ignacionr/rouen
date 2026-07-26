@@ -25,6 +25,7 @@
 #include "../productivity/editor.hpp"
 #include "factory.hpp"
 #include "../../helpers/imgui_ui_context.hpp"
+#include "../../helpers/card_render_metrics.hpp"
 
 struct deck {
     deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer) {
@@ -57,6 +58,50 @@ struct deck {
             )
         );
         
+        // Register focus and scroll services
+        registrar::add<std::function<void(std::string const&)>>(
+            "focus_card", 
+            std::make_shared<std::function<void(std::string const&)>>(
+                [this](std::string const& uri) { focus_card_by_uri(uri); }
+            )
+        );
+
+        registrar::add<std::function<void(size_t)>>(
+            "focus_card_index", 
+            std::make_shared<std::function<void(size_t)>>(
+                [this](size_t index) { focus_card_by_index(index); }
+            )
+        );
+
+        registrar::add<std::function<void(int)>>(
+            "scroll_to_section", 
+            std::make_shared<std::function<void(int)>>(
+                [this](int section) { scroll_to_section(section); }
+            )
+        );
+
+        registrar::add<std::function<std::string()>>(
+            "get_deck_status",
+            std::make_shared<std::function<std::string()>>(
+                [this]() {
+                    std::string focused_title = "";
+                    std::string focused_uri = "";
+                    if (auto last_locked = last_focused_card_.lock()) {
+                        focused_title = last_locked->window_title;
+                        focused_uri = last_locked->get_uri();
+                    }
+                    std::string cards_json = "[";
+                    for (size_t i = 0; i < cards_.size(); ++i) {
+                        if (i > 0) cards_json += ",";
+                        cards_json += std::format(R"({{"index":{},"title":"{}","uri":"{}"}})", i, cards_[i]->window_title, cards_[i]->get_uri());
+                    }
+                    cards_json += "]";
+                    return std::format(R"({{"current_scroll_x":{:.1f},"target_scroll_x":{:.1f},"card_count":{},"focused_card_title":"{}","focused_card_uri":"{}","cards":{}}})",
+                        current_scroll_x, target_scroll_x, cards_.size(), focused_title, focused_uri, cards_json);
+                }
+            )
+        );
+        
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
     }
@@ -69,6 +114,10 @@ struct deck {
         registrar::remove<std::function<void(std::string const&)>>("create_card");
         registrar::remove<std::function<size_t()>>("get_card_count");
         registrar::remove<std::function<std::vector<std::shared_ptr<card>>>>("get_active_cards");
+        registrar::remove<std::function<void(std::string const&)>>("focus_card");
+        registrar::remove<std::function<void(size_t)>>("focus_card_index");
+        registrar::remove<std::function<void(int)>>("scroll_to_section");
+        registrar::remove<std::function<std::string()>>("get_deck_status");
     }
 
     void create_card(std::string_view uri, bool move_first = false) {
@@ -77,6 +126,32 @@ struct deck {
         deferred_ops->queue([this, uri_str = std::string{uri}, move_first] {
             create_card_impl(uri_str, move_first);
         });
+    }
+
+    void focus_card_by_uri(std::string_view uri) {
+        create_card(uri);
+    }
+
+    void focus_card_by_index(size_t index) {
+        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+        if (deferred_ops) {
+            deferred_ops->queue([this, index] {
+                if (index < cards_.size()) {
+                    cards_[index]->grab_focus = true;
+                    last_focused_card_ = cards_[index];
+                }
+            });
+        }
+    }
+
+    void scroll_to_section(int section_idx) {
+        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+        if (deferred_ops) {
+            deferred_ops->queue([this, section_idx] {
+                float const section_width = std::max(ImGui::GetMainViewport()->Size.x, 1.0f);
+                target_scroll_x = static_cast<float>(section_idx) * section_width;
+            });
+        }
     }
 
     void create_card_impl(std::string_view uri, bool move_first = false) {
@@ -95,19 +170,21 @@ struct deck {
                 // Register MCP functions for the new card
                 card_ptr->register_mcp_functions();
                 card_ptr->grab_focus = true;
+                last_focused_card_ = card_ptr;
                 
                 if (move_first) {
                     // Move the card to the front of the vector
                     cards_.insert(cards_.begin(), card_ptr);
                 } else {
-                    // Insert the new card next to the currently selected (focused) or last focused card
-                    auto target_it = std::find_if(cards_.begin(), cards_.end(),
-                        [](const auto& card) { return card->is_focused; });
+                    // Insert the new card next to the last focused card or currently focused card
+                    auto target_it = cards_.end();
+                    if (auto last_focused = last_focused_card_.lock()) {
+                        target_it = std::find(cards_.begin(), cards_.end(), last_focused);
+                    }
 
                     if (target_it == cards_.end()) {
-                        if (auto last_focused = last_focused_card_.lock()) {
-                            target_it = std::find(cards_.begin(), cards_.end(), last_focused);
-                        }
+                        target_it = std::find_if(cards_.begin(), cards_.end(),
+                            [](const auto& card) { return card->is_focused; });
                     }
 
                     if (target_it != cards_.end()) {
@@ -194,13 +271,25 @@ struct deck {
 
         color_setup colors(c.get_color(0), c.get_color(1));
 
-        // does it overlap the screen?
         if (c.grab_focus) {
-            c.grab_focus = false;
             ImGui::SetNextWindowFocus();
         }
         ui_context_.prepare();
+        auto t0 = std::chrono::high_resolution_clock::now();
         bool result = c.render(ui_context_);
+        if (c.is_focused) {
+            c.grab_focus = false;
+        }
+        auto t1 = std::chrono::high_resolution_clock::now();
+        double duration_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+        std::string card_name = c.window_title;
+        size_t hash_pos = card_name.find("##");
+        if (hash_pos != std::string::npos) {
+            card_name = card_name.substr(0, hash_pos);
+        }
+        rouen::helpers::CardRenderMetrics::instance().record(card_name, c.get_uri(), duration_ms);
+
         requested_fps = std::max(requested_fps, c.requested_fps);
         
         x += scaled_width + 2.0f;
@@ -513,19 +602,13 @@ struct deck {
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
         bool const empty_editor = editor_.empty();
+        float const section_width = std::max(size.x, 1.0f);
         float const wf = get_width_factor();
-        float const row_max_width = size.x * wf;
-
-        // Programmatically update smooth horizontal scroll towards target_scroll_x
-        float const max_scroll = std::max(0.0f, row_max_width - size.x);
-        target_scroll_x = std::clamp(target_scroll_x, 0.0f, max_scroll);
-        float scroll_diff = target_scroll_x - current_scroll_x;
-        if (std::abs(scroll_diff) > 0.5f) {
-            current_scroll_x += scroll_diff * 0.25f;
-            result.requested_fps = std::max(result.requested_fps, 60);
-        } else {
-            current_scroll_x = target_scroll_x;
+        float estimated_total_width = 0.0f;
+        for (const auto& c : cards_) {
+            estimated_total_width += c->width;
         }
+        float const row_max_width = std::max(size.x * wf, std::ceil(estimated_total_width / section_width) * section_width);
 
         /*
          * SECTION & WIDTH MULTIPLIER LAYOUT ALGORITHM:
@@ -558,7 +641,6 @@ struct deck {
                 float override_width { -1.0f };
             };
 
-            float const section_width = std::max(size.x, 1.0f);
             std::vector<std::vector<card_layout_item>> rows;
             float current_x = 0.0f;
             int current_sec_idx = 0;
@@ -567,7 +649,7 @@ struct deck {
             for (size_t idx = 0; idx < cards_.size(); ) {
                 auto& c = cards_[idx];
                 float const card_w = c->width;
-                float const sec_boundary = std::min(static_cast<float>(current_sec_idx + 1) * section_width, row_max_width);
+                float const sec_boundary = static_cast<float>(current_sec_idx + 1) * section_width;
 
                 if (current_x + card_w <= sec_boundary + 0.01f) {
                     rows.back().push_back({
@@ -649,12 +731,90 @@ struct deck {
                     auto& last_item = row.back();
                     if (last_item.override_width < 0.0f) {
                         int sec_idx = static_cast<int>(last_item.abs_x / section_width);
-                        float sec_boundary = std::min(static_cast<float>(sec_idx + 1) * section_width, row_max_width);
+                        float sec_boundary = static_cast<float>(sec_idx + 1) * section_width;
                         if (sec_boundary > last_item.abs_x) {
                             last_item.override_width = std::max(sec_boundary - last_item.abs_x, last_item.scaled_width);
                         }
                     }
                 }
+            }
+
+            // Calculate dynamic total deck width from all layout items across rows
+            float total_deck_width = size.x;
+            for (const auto& row : rows) {
+                for (const auto& item : row) {
+                    float item_end_x = item.abs_x + ((item.override_width > 0.0f) ? item.override_width : item.scaled_width);
+                    total_deck_width = std::max(total_deck_width, item_end_x);
+                }
+            }
+            float const max_scroll = std::max(0.0f, total_deck_width - size.x);
+
+            // Scan all cards to update target_scroll_x: priority to grab_focus card, then last_focused_card_, then is_focused card
+            card::ptr focus_target_card = nullptr;
+            float target_card_abs_x = 0.0f;
+
+            for (const auto& row : rows) {
+                for (const auto& item : row) {
+                    if (item.card_ptr && item.card_ptr->grab_focus) {
+                        focus_target_card = item.card_ptr;
+                        target_card_abs_x = item.abs_x;
+                        break;
+                    }
+                }
+                if (focus_target_card) break;
+            }
+
+            if (!focus_target_card) {
+                if (auto last_locked = last_focused_card_.lock()) {
+                    for (const auto& row : rows) {
+                        for (const auto& item : row) {
+                            if (item.card_ptr && item.card_ptr == last_locked) {
+                                focus_target_card = item.card_ptr;
+                                target_card_abs_x = item.abs_x;
+                                break;
+                            }
+                        }
+                        if (focus_target_card) break;
+                    }
+                }
+            }
+
+            if (!focus_target_card) {
+                for (const auto& row : rows) {
+                    for (const auto& item : row) {
+                        if (item.card_ptr && item.card_ptr->is_focused) {
+                            focus_target_card = item.card_ptr;
+                            target_card_abs_x = item.abs_x;
+                            break;
+                        }
+                    }
+                    if (focus_target_card) break;
+                }
+            }
+
+            if (focus_target_card) {
+                int section_idx = static_cast<int>(target_card_abs_x / section_width);
+                float section_target = static_cast<float>(section_idx) * section_width;
+                target_scroll_x = std::clamp(section_target, 0.0f, max_scroll);
+            } else {
+                target_scroll_x = std::clamp(target_scroll_x, 0.0f, max_scroll);
+            }
+
+            // Smoothly interpolate current_scroll_x towards target_scroll_x
+            float scroll_diff = target_scroll_x - current_scroll_x;
+            if (std::abs(scroll_diff) > 0.5f) {
+                float step = scroll_diff * 0.35f;
+                if (std::abs(step) < 2.0f) {
+                    step = (scroll_diff > 0.0f) ? 2.0f : -2.0f;
+                }
+                if (std::abs(step) >= std::abs(scroll_diff)) {
+                    current_scroll_x = target_scroll_x;
+                } else {
+                    current_scroll_x += step;
+                }
+                result.requested_fps = std::max(result.requested_fps, 60);
+            } else {
+                current_scroll_x = target_scroll_x;
             }
 
             float const scaled_min_height = card::min_card_height;
@@ -667,16 +827,13 @@ struct deck {
                     auto& c = item.card_ptr;
                     float card_abs_x = item.abs_x;
 
-                    // Programmatically set the scroll target to the horizontal section of the active/focused card
-                    if (c->is_focused || c->grab_focus) {
-                        int section_idx = static_cast<int>(card_abs_x / std::max(size.x, 1.0f));
-                        float section_target = static_cast<float>(section_idx) * size.x;
-                        target_scroll_x = std::clamp(section_target, 0.0f, max_scroll);
-                    }
-
                     float draw_x = card_abs_x - current_scroll_x;
+                    float const card_w = (item.override_width > 0.0f) ? item.override_width : c->width;
+                    bool const in_view = (draw_x + card_w >= -20.0f && draw_x <= size.x + 20.0f && y + row_height >= -20.0f && y <= size.y + 20.0f);
+                    c->is_visible_in_viewport = in_view || c->is_focused || c->grab_focus;
                     bool render_result = render(*c, draw_x, row_height, result.requested_fps, y, item.override_width);
                     if (c->is_focused) {
+                        c->grab_focus = false;
                         last_focused_card_ = c;
                     }
                     if (!render_result) {
@@ -808,7 +965,11 @@ struct deck {
         return false;
     }
 
+    std::vector<std::shared_ptr<card>>& get_cards() { return cards_; }
+    [[nodiscard]] float get_target_scroll_x() const { return target_scroll_x; }
+
 private:
+    friend class DeckScrollingTest;
     SDL_Renderer* renderer;
     std::vector<std::shared_ptr<card>> cards_;
     std::vector<std::shared_ptr<card>> cards_to_cleanup_;

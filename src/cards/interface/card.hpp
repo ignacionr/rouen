@@ -121,6 +121,11 @@ struct card {
         rouen::theme::theme_manager::get().apply_theme_to_card(this);
 
         if (ImGui::Begin(window_title.c_str(), &is_open, flags)) {
+            is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+            if (!is_visible_in_viewport && !is_focused && !grab_focus && requested_fps <= 1) {
+                ImGui::End();
+                return is_open;
+            }
             is_open &= run_focused_handlers();
             render_func();
         }
@@ -151,6 +156,7 @@ struct card {
     float width {300.0f};
     bool is_focused{false};
     bool grab_focus{false};
+    bool is_visible_in_viewport{true};  // Viewport visibility state
     std::string window_title;
     int requested_fps{1};
     bool mcp_functions_registered{false}; // Track MCP registration state

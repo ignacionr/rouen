@@ -175,6 +175,11 @@ target_link_libraries(test_objectives
 )
 add_test(NAME ObjectivesTest COMMAND test_objectives)
 
+# Deck Scrolling Test
+add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
+target_link_libraries(test_deck_scrolling PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+add_test(NAME DeckScrollingTest COMMAND test_deck_scrolling)
+
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
 target_link_libraries(test_camera_device_list PRIVATE ${SDL3_LIBRARIES})

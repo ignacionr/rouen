@@ -22,7 +22,9 @@
 #include <glaze/glaze.hpp>
 
 // 3. All other includes
+#include <SDL3/SDL.h>
 #include "../registrar.hpp"
+#include "deferred_operations.hpp"
 #include "mcp_service.hpp"
 #include "media_player.hpp"
 #include "../hosts/video_feed_host.hpp"
@@ -219,6 +221,36 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             response = handle_camera_layout_get(c, hm);
         } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_camera_layout_set(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/cards/focus"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_card_focus(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/deck/scroll"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            auto fn = registrar::get<std::function<std::string()>>("get_deck_status");
+            if (fn && *fn) {
+                response = (*fn)();
+            } else {
+                response = R"({"error":"Deck status service not available"})";
+            }
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_deck_scroll(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/window"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_window_get(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_window_set(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -446,6 +478,144 @@ std::string api_server::handle_camera_layout_set(struct mg_connection*, struct m
 
         std::string target = !req.layout.empty() ? req.layout : (req.preset >= 0 ? std::to_string(req.preset) : "0");
         return (*fn)(target);
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+struct card_focus_request {
+    std::string uri{};
+    int index{-1};
+};
+
+std::string api_server::handle_card_focus(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        std::string body(hm->body.buf, hm->body.len);
+        card_focus_request req;
+        if (!body.empty()) {
+            (void)glz::read_json(req, body);
+        }
+
+        if (req.index >= 0) {
+            auto fn = registrar::get<std::function<void(size_t)>>("focus_card_index");
+            if (fn && *fn) {
+                (*fn)(static_cast<size_t>(req.index));
+                return std::format(R"({{"success":true,"message":"Focused card at index {}"}})", req.index);
+            }
+        }
+
+        if (!req.uri.empty()) {
+            auto fn = registrar::get<std::function<void(const std::string&)>>("focus_card");
+            if (fn && *fn) {
+                (*fn)(req.uri);
+                return std::format(R"({{"success":true,"message":"Focused card with URI {}"}})", req.uri);
+            }
+        }
+
+        error_response response{"Focus card service not available or invalid parameters"};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+struct deck_scroll_request {
+    int section{0};
+};
+
+std::string api_server::handle_deck_scroll(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        std::string body(hm->body.buf, hm->body.len);
+        deck_scroll_request req;
+        if (!body.empty()) {
+            (void)glz::read_json(req, body);
+        }
+
+        auto fn = registrar::get<std::function<void(int)>>("scroll_to_section");
+        if (fn && *fn) {
+            (*fn)(req.section);
+            return std::format(R"({{"success":true,"message":"Scrolled deck to section {}"}})", req.section);
+        }
+
+        error_response response{"Scroll deck service not available"};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+struct window_geometry_request {
+    int x{-1};
+    int y{-1};
+    int width{-1};
+    int height{-1};
+};
+
+std::string api_server::handle_window_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
+        if (!get_window_fn || !*get_window_fn) {
+            return R"({"error":"Window service not available"})";
+        }
+
+        SDL_Window* window = (*get_window_fn)();
+        if (!window) {
+            return R"({"error":"Window instance not available"})";
+        }
+
+        int x = 0, y = 0, w = 0, h = 0;
+        SDL_GetWindowPosition(window, &x, &y);
+        SDL_GetWindowSize(window, &w, &h);
+
+        return std::format(R"({{"x":{},"y":{},"width":{},"height":{}}})", x, y, w, h);
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server::handle_window_set(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
+        if (!get_window_fn || !*get_window_fn) {
+            return R"({"error":"Window service not available"})";
+        }
+
+        SDL_Window* window = (*get_window_fn)();
+        if (!window) {
+            return R"({"error":"Window instance not available"})";
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        window_geometry_request req;
+        if (!body.empty()) {
+            (void)glz::read_json(req, body);
+        }
+
+        int cur_x = 0, cur_y = 0, cur_w = 0, cur_h = 0;
+        SDL_GetWindowPosition(window, &cur_x, &cur_y);
+        SDL_GetWindowSize(window, &cur_w, &cur_h);
+
+        int new_x = (req.x != -1) ? req.x : cur_x;
+        int new_y = (req.y != -1) ? req.y : cur_y;
+        int new_w = (req.width > 0) ? req.width : cur_w;
+        int new_h = (req.height > 0) ? req.height : cur_h;
+
+        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+        if (deferred_ops) {
+            deferred_ops->queue([window, req, new_x, new_y, new_w, new_h] {
+                if (req.x != -1 || req.y != -1) {
+                    SDL_SetWindowPosition(window, new_x, new_y);
+                }
+                if (req.width > 0 || req.height > 0) {
+                    SDL_SetWindowSize(window, new_w, new_h);
+                }
+            });
+        }
+
+        return std::format(R"({{"success":true,"message":"Window position and size updated","x":{},"y":{},"width":{},"height":{}}})",
+            new_x, new_y, new_w, new_h);
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }

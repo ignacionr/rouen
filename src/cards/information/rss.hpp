@@ -274,14 +274,16 @@ public:
                 ImGui::Dummy(ImVec2(0.0f, height + 4.0f));
             }
 
-            // Tag Filter Pills (with wrapping layout to prevent overflow)
-            {
-                std::vector<std::string> tags = rss_host->getAvailableTags();
+            // Periodically refresh cached tags, smart lists, and feed references (every 2 seconds) to avoid per-frame SQLite queries
+            auto cache_now = std::chrono::steady_clock::now();
+            if (cached_all_feeds_.empty() || std::chrono::duration_cast<std::chrono::seconds>(cache_now - last_gallery_cache_update_time_).count() >= 2) {
+                last_gallery_cache_update_time_ = cache_now;
+                cached_all_feeds_ = rss_host->feeds();
+                cached_smart_lists_ = rss_host->getSmartLists();
                 
-                // Count occurrences of each tag in all feeds
-                auto all_feeds = rss_host->feeds();
+                std::vector<std::string> avail_tags = rss_host->getAvailableTags();
                 std::unordered_map<std::string, int> tag_counts;
-                for (const auto& feed : all_feeds) {
+                for (const auto& feed : cached_all_feeds_) {
                     if (feed) {
                         for (const auto& tag : feed->tags) {
                             tag_counts[tag]++;
@@ -289,8 +291,7 @@ public:
                     }
                 }
                 
-                // Sort tags (excluding "All") in order of count (most first)
-                std::sort(tags.begin(), tags.end(), [&tag_counts](const std::string& a, const std::string& b) {
+                std::sort(avail_tags.begin(), avail_tags.end(), [&tag_counts](const std::string& a, const std::string& b) {
                     int count_a = tag_counts.contains(a) ? tag_counts.at(a) : 0;
                     int count_b = tag_counts.contains(b) ? tag_counts.at(b) : 0;
                     if (count_a != count_b) {
@@ -299,7 +300,13 @@ public:
                     return a < b;
                 });
                 
-                tags.insert(tags.begin(), "All");
+                avail_tags.insert(avail_tags.begin(), "All");
+                cached_gallery_tags_ = std::move(avail_tags);
+            }
+
+            // Tag Filter Pills (with wrapping layout to prevent overflow)
+            {
+                const auto& tags = cached_gallery_tags_;
                 if (std::find(tags.begin(), tags.end(), selected_tag_) == tags.end()) {
                     selected_tag_ = "All";
                 }
@@ -362,7 +369,7 @@ public:
 
             // Smart Lists section
             {
-                auto smart_lists = rss_host->getSmartLists();
+                const auto& smart_lists = cached_smart_lists_;
                 if (!smart_lists.empty()) {
                     ImGui::TextColored(colors[0], "Your Smart Lists:");
                     ImGui::Spacing();
@@ -482,7 +489,7 @@ public:
             auto available_size = ImGui::GetContentRegionAvail();
             ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
             if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, false, ImGuiWindowFlags_NavFlattened)) {
-                auto all_feeds = rss_host->feeds();
+                const auto& all_feeds = cached_all_feeds_;
                 
                 // Check if we need to re-filter and re-sort feeds
                 bool needs_update = false;
@@ -1344,6 +1351,10 @@ private:
         std::set<std::string> tags;
     };
     std::vector<std::shared_ptr<media::rss::feed>> cached_feeds_;
+    std::vector<std::shared_ptr<media::rss::feed>> cached_all_feeds_;
+    std::vector<std::string> cached_gallery_tags_;
+    std::vector<rouen::hosts::RSSHost::SmartListInfo> cached_smart_lists_;
+    std::chrono::steady_clock::time_point last_gallery_cache_update_time_{};
     std::string last_selected_tag_ = "";
     size_t last_all_feeds_size_ = 0;
     std::unordered_map<std::string, FeedCacheState> feed_states_;
