@@ -417,7 +417,7 @@ public:
                     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", time_str.c_str());
                     ImGui::EndGroup();
 
-                    ImGui::SameLine(box_min.x + clock_w + 10.0f * scale);
+                    ImGui::SameLine(0.0f, 10.0f * scale);
                     ImGui::BeginGroup();
 
                     ImGui::SetWindowFontScale(1.7f * font_scale);
