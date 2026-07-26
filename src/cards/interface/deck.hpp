@@ -170,7 +170,6 @@ struct deck {
                 // Register MCP functions for the new card
                 card_ptr->register_mcp_functions();
                 card_ptr->grab_focus = true;
-                last_focused_card_ = card_ptr;
                 
                 if (move_first) {
                     // Move the card to the front of the vector
@@ -890,36 +889,41 @@ struct deck {
             start_x = std::max(start_x, left_corner);
             auto x{start_x};
             auto y = (empty_editor ? 450.0f : 250.0f);
-            auto cards_to_remove = std::remove_if(cards_.begin(), cards_.end(),
-                [this, &x, y, &result, row_max_width](auto const& c) {
-                    float override_width = -1.0f;
-                    if (!cards_.empty() && c == cards_.back()) {
-                        float const scaled_card_width = c->width;
-                        if (row_max_width - x > scaled_card_width) {
-                            override_width = row_max_width - x;
-                        }
+            std::set<card::ptr> cards_to_remove;
+            for (auto const& c : cards_) {
+                float override_width = -1.0f;
+                if (!cards_.empty() && c == cards_.back()) {
+                    float const scaled_card_width = c->width;
+                    if (row_max_width - x > scaled_card_width) {
+                        override_width = row_max_width - x;
                     }
-                    bool draw_ok = render(*c, x, y, result.requested_fps, 0.0f, override_width);
-                    if (c->is_focused) {
-                        last_focused_card_ = c;
-                    }
-                    if (!draw_ok) {
+                }
+                bool draw_ok = render(*c, x, y, result.requested_fps, 0.0f, override_width);
+                if (c->is_focused) {
+                    last_focused_card_ = c;
+                }
+                if (!draw_ok) {
+                    try {
+                        c->unregister_mcp_functions();
                         c->on_close();
+                    } catch (...) {
+                        static_cast<void>(0);
                     }
-                    return !draw_ok;
-                });
-            
+                    cards_to_remove.insert(c);
+                }
+            }
+
             // Defer cleanup to prevent use-after-free crashes during the current frame rendering
-            for (auto it = cards_to_remove; it != cards_.end(); ++it) {
-                cards_to_cleanup_.push_back(*it);
+            for (const auto& c : cards_to_remove) {
+                cards_to_cleanup_.push_back(c);
             }
+
+            auto cards_to_remove_main = std::remove_if(cards_.begin(), cards_.end(),
+                [&cards_to_remove] (auto &c) {
+                    return cards_to_remove.find(c) != cards_to_remove.end();
+                 });
             
-            // Unregister MCP functions for cards being removed
-            for (auto it = cards_to_remove; it != cards_.end(); ++it) {
-                (*it)->unregister_mcp_functions();
-            }
-            
-            cards_.erase(cards_to_remove, cards_.end());
+            cards_.erase(cards_to_remove_main, cards_.end());
 
             // Render the editor window
             ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
