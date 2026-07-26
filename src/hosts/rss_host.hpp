@@ -1464,10 +1464,6 @@ private:
             }
             
             // Final notification
-            if (success_count > 0) {
-                "notify"_sfn(std::format("Successfully loaded {} RSS feeds.", success_count));
-            }
-            
             if (error_count > 0) {
                 "notify"_sfn(std::format("{} feeds failed to load. Check the logs for details.", error_count));
             }
@@ -2068,3 +2064,4 @@ private:
 };
 
 } // namespace rouen::hosts
+
