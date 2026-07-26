@@ -1093,14 +1093,18 @@ namespace rouen::cards {
             double segment_sec = fmod(current_pos, 120.0);
             if (segment_sec < 0.0) segment_sec += 120.0;
 
-            // Fast vertical expansion / shrinking animation factor
-            // Block start (0.0s - 0.4s): vertically expands from 0 to 1 over 0.4s
+            // Display overlay in the last half of the target 2-minute time block (60.0s to 120.0s)
+            // Block start of 2nd half (60.0s - 60.4s): vertically expands from 0 to 1 over 0.4s
             // Block pre-end (119.2s - 120.0s): vertically shrinks from 1 to 0 over 0.8s
-            float anim_factor = 1.0f;
-            if (segment_sec < 0.4) {
-                anim_factor = static_cast<float>(segment_sec / 0.4);
+            float anim_factor = 0.0f;
+            if (segment_sec < 60.0) {
+                anim_factor = 0.0f;
+            } else if (segment_sec < 60.4) {
+                anim_factor = static_cast<float>((segment_sec - 60.0) / 0.4);
             } else if (segment_sec >= 119.2) {
                 anim_factor = static_cast<float>(std::max(0.0, (120.0 - segment_sec) / 0.8));
+            } else {
+                anim_factor = 1.0f;
             }
 
             if (anim_factor <= 0.005f) return; // Completely hidden when height is 0
@@ -1111,9 +1115,9 @@ namespace rouen::cards {
             constexpr float kFullHeight = 880.0f;
             float current_height = kFullHeight * anim_factor;
 
-            // Translucent dark background with matching alpha animation
-            ImVec4 bg_color = ImVec4(0.04f, 0.05f, 0.09f, 0.50f * anim_factor);
-            ImVec4 border_color = ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.35f * anim_factor);
+            // Translucent dark background with matching alpha animation (less transparent for enhanced readability)
+            ImVec4 bg_color = ImVec4(0.04f, 0.05f, 0.09f, 0.90f * anim_factor);
+            ImVec4 border_color = ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.60f * anim_factor);
 
             // Half-width text container (880px)
             ImGui::SetNextWindowPos(ImVec2(80.0f, 100.0f), ImGuiCond_Always);
@@ -1157,7 +1161,7 @@ namespace rouen::cards {
                         // Calculate internal scroll animation progress if text height exceeds container
                         float max_scroll_y = ImGui::GetScrollMaxY();
                         if (max_scroll_y > 0.0f) {
-                            float scroll_progress = std::clamp(static_cast<float>((segment_sec - 1.0) / 117.0), 0.0f, 1.0f);
+                            float scroll_progress = std::clamp(static_cast<float>((segment_sec - 61.0) / 57.0), 0.0f, 1.0f);
                             ImGui::SetScrollY(scroll_progress * max_scroll_y);
                         }
 
