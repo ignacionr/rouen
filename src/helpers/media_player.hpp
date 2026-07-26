@@ -583,6 +583,103 @@ struct media_player {
         ImGui::Dummy(ImVec2(width, height));
     }
 
+    static void draw_full_window_audio_visualization(media_player_item& item, float win_w, float win_h) {
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        float lvl_l = item.get_vu_level_l();
+        float lvl_r = item.get_vu_level_r();
+        float avg_lvl = (lvl_l + lvl_r) * 0.5f;
+
+        static float anim_time = 0.0f;
+        anim_time += ImGui::GetIO().DeltaTime;
+
+        // 1. Ambient radial background glow pulse
+        ImVec2 center(win_w * 0.5f, win_h * 0.38f);
+        float glow_radius = std::min(win_w, win_h) * (0.35f + avg_lvl * 0.15f);
+
+        for (int ring = 5; ring >= 1; --ring) {
+            float r = glow_radius * (static_cast<float>(ring) / 5.0f);
+            uint8_t alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (20.0f + avg_lvl * 40.0f));
+            draw_list->AddCircleFilled(center, r, IM_COL32(40, 90, 180, alpha), 32);
+        }
+
+        // 2. Frequency Spectrum Bars (Centered Waveform / Bars)
+        constexpr int kBarCount = 48;
+        float bar_gap = 4.0f;
+        float total_bars_w = std::min(win_w * 0.85f, 900.0f);
+        float bar_w = (total_bars_w - (static_cast<float>(kBarCount) - 1.0f) * bar_gap) / static_cast<float>(kBarCount);
+        float start_x = (win_w - total_bars_w) * 0.5f;
+        float base_y = win_h * 0.44f;
+        float max_bar_h = win_h * 0.26f;
+
+        for (int i = 0; i < kBarCount; ++i) {
+            float t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
+            float dist_from_center = std::abs(t - 0.5f) * 2.0f;
+
+            float freq_val = std::sin(t * 3.14159f * 3.0f + anim_time * 4.0f) * 0.3f
+                           + std::cos(t * 3.14159f * 7.0f - anim_time * 2.5f) * 0.2f
+                           + 0.5f;
+
+            float ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
+            float height_factor = (0.08f + ch_lvl * 0.85f * (1.0f - dist_from_center * 0.4f)) * freq_val;
+            height_factor = std::clamp(height_factor, 0.04f, 1.0f);
+
+            float bar_h = max_bar_h * height_factor;
+            float bx = start_x + static_cast<float>(i) * (bar_w + bar_gap);
+            float by_top = base_y - bar_h * 0.5f;
+            float by_bot = base_y + bar_h * 0.5f;
+
+            ImU32 bar_col;
+            if (height_factor > 0.75f) {
+                bar_col = IM_COL32(235, 70, 70, 230);
+            } else if (height_factor > 0.45f) {
+                bar_col = IM_COL32(245, 180, 50, 220);
+            } else {
+                bar_col = IM_COL32(60, 160, 240, 200);
+            }
+
+            draw_list->AddRectFilled(ImVec2(bx, by_top), ImVec2(bx + bar_w, by_bot), bar_col, 2.0f);
+        }
+
+        // 3. Glowing Oscilloscope Wave Line
+        constexpr int kWavePoints = 80;
+        ImVec2 wave_pts[kWavePoints];
+        for (int i = 0; i < kWavePoints; ++i) {
+            float t = static_cast<float>(i) / static_cast<float>(kWavePoints - 1);
+            float wx = start_x + t * total_bars_w;
+            float wave_amp = (lvl_l * 0.5f + lvl_r * 0.5f) * 45.0f + 5.0f;
+            float wy = base_y + std::sin(t * 3.14159f * 6.0f + anim_time * 6.0f) * wave_amp
+                              + std::cos(t * 3.14159f * 12.0f - anim_time * 8.0f) * (wave_amp * 0.3f);
+            wave_pts[i] = ImVec2(wx, wy);
+        }
+        draw_list->AddPolyline(wave_pts, kWavePoints, IM_COL32(255, 255, 255, 180), 0, 2.5f);
+
+        // 4. Centered Media Title & Status Info (Upper Center)
+        std::string display_title = item.item_title.empty() ? (item.url.empty() ? "Audio Stream" : item.url) : item.item_title;
+        ImVec2 title_sz = ImGui::CalcTextSize(display_title.c_str());
+        float title_x = std::max(20.0f, (win_w - title_sz.x) * 0.5f);
+        float title_y = win_h * 0.12f;
+
+        draw_list->AddRectFilled(
+            ImVec2(title_x - 16.0f, title_y - 8.0f),
+            ImVec2(title_x + title_sz.x + 16.0f, title_y + title_sz.y + 8.0f),
+            IM_COL32(15, 18, 24, 200),
+            8.0f
+        );
+        draw_list->AddRect(
+            ImVec2(title_x - 16.0f, title_y - 8.0f),
+            ImVec2(title_x + title_sz.x + 16.0f, title_y + title_sz.y + 8.0f),
+            IM_COL32(255, 255, 255, 30),
+            8.0f
+        );
+        draw_list->AddText(ImVec2(title_x, title_y), IM_COL32(240, 245, 255, 255), display_title.c_str());
+
+        std::string status_str = item.is_paused.load() ? ICON_MD_PAUSE " PAUSED" : ICON_MD_MUSIC_NOTE " NOW PLAYING";
+        ImVec2 stat_sz = ImGui::CalcTextSize(status_str.c_str());
+        float stat_x = (win_w - stat_sz.x) * 0.5f;
+        float stat_y = title_y + title_sz.y + 14.0f;
+        draw_list->AddText(ImVec2(stat_x, stat_y), item.is_paused.load() ? IM_COL32(240, 180, 60, 240) : IM_COL32(80, 220, 120, 240), status_str.c_str());
+    }
+
     static void draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
         double current_pos = item.position.load();
         double current_dur = item.duration.load();
@@ -779,7 +876,16 @@ struct media_player {
                     draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, thumb_h);
                 } else {
                     ImGui::Spacing();
+                    ImVec2 vu_screen_pos = ImGui::GetCursorScreenPos();
                     draw_vintage_110_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), player_width, 85.0f, /*is_lit=*/true);
+                    ImGui::SetCursorScreenPos(vu_screen_pos);
+                    ImGui::InvisibleButton("##audio_fullscreen_surface", ImVec2(player_width, 85.0f));
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Double-click for Fullscreen");
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                            set_active_fullscreen_item(item_ptr);
+                        }
+                    }
                 }
             } else {
                 // Stopped / Idle state: render clean Play/Resume button without premature VU meter

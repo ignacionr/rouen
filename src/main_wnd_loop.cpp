@@ -51,7 +51,7 @@ void main_wnd::run() {
         while (!m_done) {
             try {
                 auto fs_item = media_player::get_active_fullscreen_item();
-                if (fs_item && fs_item->checkMediaStatus() && fs_item->has_video) {
+                if (fs_item && fs_item->checkMediaStatus()) {
                     m_requested_fps = 60;
                     m_immediate = true;
 
@@ -88,10 +88,11 @@ void main_wnd::run() {
                                                 ImGuiWindowFlags_NoBringToFrontOnFocus;
 
                     if (ImGui::Begin("##FullscreenVideoOverlay", nullptr, fs_flags)) {
+                        float win_w = vp->Size.x;
+                        float win_h = vp->Size.y;
+
                         ImTextureID tex = fs_item->get_texture_id(m_device);
-                        if (tex) {
-                            float win_w = vp->Size.x;
-                            float win_h = vp->Size.y;
+                        if (tex && fs_item->has_video) {
                             float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
 
                             float draw_w, draw_h;
@@ -107,52 +108,67 @@ void main_wnd::run() {
 
                             ImGui::SetCursorPos(ImVec2(draw_x, draw_y));
                             ImGui::Image(tex, ImVec2(draw_w, draw_h));
+                        } else {
+                            // Render audio background visualization
+                            media_player::draw_full_window_audio_visualization(*fs_item, win_w, win_h);
 
-                            if ((ImGui::IsItemHovered() || ImGui::IsWindowHovered()) && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                                if (ImGui::GetIO().MousePos.y < win_h - 24.0f) {
-                                    media_player::clear_active_fullscreen_item();
-                                }
-                            }
+                            // Render VU-meters on center-bottom
+                            float vu_w = std::min(win_w * 0.65f, 460.0f);
+                            float vu_h = 110.0f;
+                            float vu_x = (win_w - vu_w) * 0.5f;
+                            float vu_y = win_h - vu_h - 38.0f;
+                            ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
+                            media_player::draw_vintage_110_vu_meter(
+                                fs_item->get_vu_level_l(), fs_item->get_vu_level_r(),
+                                fs_item->get_vu_watermark_l(), fs_item->get_vu_watermark_r(),
+                                vu_w, vu_h, /*is_lit=*/true
+                            );
+                        }
 
-                            // Seeking in full-window media mode via Left and Right arrow keys
-                            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                                double current = fs_item->position.load();
-                                fs_item->seekTo(std::max(0.0, current - 5.0));
-                            }
-                            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                                double current = fs_item->position.load();
-                                double dur = fs_item->duration.load();
-                                double target_limit = (dur > 0.0) ? dur : (current + 5.0);
-                                fs_item->seekTo(std::min(target_limit, current + 5.0));
-                            }
-                            if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
-                                fs_item->togglePause();
-                            }
-
-                            // Small icon button to detach media player into a separate OS window
-                            float btn_w = 36.0f;
-                            float btn_h = 36.0f;
-                            float btn_margin = 16.0f;
-                            ImGui::SetCursorPos(ImVec2(win_w - btn_w - btn_margin, btn_margin));
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.5f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.6f, 1.0f, 0.8f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.4f, 0.8f, 0.9f));
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-                            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
-
-                            if (ImGui::Button(ICON_MD_OPEN_IN_NEW "##DetachMediaBtn", ImVec2(btn_w, btn_h))) {
-                                media_player::set_detached_item(fs_item);
+                        if ((ImGui::IsItemHovered() || ImGui::IsWindowHovered()) && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                            if (ImGui::GetIO().MousePos.y < win_h - 24.0f) {
                                 media_player::clear_active_fullscreen_item();
                             }
-                            if (ImGui::IsItemHovered()) {
-                                ImGui::SetTooltip("Detach media player into separate OS window");
-                            }
-                            ImGui::PopStyleVar();
-                            ImGui::PopStyleColor(4);
-
-                            // Render progress line for full-window media player overlay
-                            media_player::draw_full_window_progress_line(*fs_item, win_w, win_h);
                         }
+
+                        // Seeking in full-window media mode via Left and Right arrow keys
+                        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                            double current = fs_item->position.load();
+                            fs_item->seekTo(std::max(0.0, current - 5.0));
+                        }
+                        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                            double current = fs_item->position.load();
+                            double dur = fs_item->duration.load();
+                            double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                            fs_item->seekTo(std::min(target_limit, current + 5.0));
+                        }
+                        if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                            fs_item->togglePause();
+                        }
+
+                        // Small icon button to detach media player into a separate OS window
+                        float btn_w = 36.0f;
+                        float btn_h = 36.0f;
+                        float btn_margin = 16.0f;
+                        ImGui::SetCursorPos(ImVec2(win_w - btn_w - btn_margin, btn_margin));
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.5f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.6f, 1.0f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.4f, 0.8f, 0.9f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
+                        if (ImGui::Button(ICON_MD_OPEN_IN_NEW "##DetachMediaBtn", ImVec2(btn_w, btn_h))) {
+                            media_player::set_detached_item(fs_item);
+                            media_player::clear_active_fullscreen_item();
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Detach media player into separate OS window");
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(4);
+
+                        // Render progress line for full-window media player overlay
+                        media_player::draw_full_window_progress_line(*fs_item, win_w, win_h);
                     }
                     ImGui::End();
                     ImGui::PopStyleColor();
