@@ -87,15 +87,16 @@
           version = "0.1.0";
           src = unstable.lib.cleanSourceWith {
             filter = name: type: let
+              relPath = unstable.lib.removePrefix (toString ./. + "/") (toString name);
               baseName = baseNameOf (toString name);
             in
               ! (type == "directory" && (
-                baseName == "build" ||
-                baseName == "build-debug" ||
-                baseName == "build-tests" ||
-                baseName == "build-cmake-tools" ||
-                baseName == "cache" ||
-                baseName == "result" ||
+                relPath == "build" ||
+                relPath == "build-debug" ||
+                relPath == "build-tests" ||
+                relPath == "build-cmake-tools" ||
+                relPath == "cache" ||
+                relPath == "result" ||
                 baseName == ".git" ||
                 baseName == "vcpkg_installed" ||
                 baseName == ".direnv"

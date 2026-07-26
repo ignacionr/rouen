@@ -215,10 +215,10 @@ public:
         }
         
         // Periodically invalidate the cache to ensure freshness colors update
-        // We do this based on time elapsed (every 10 minutes) rather than frame count
+        // We do this based on time elapsed (every 2 minutes) rather than frame count
         // to handle variable frame rates gracefully
         auto now_steady = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::minutes>(now_steady - last_freshness_cache_invalidation_time_).count() >= 10) {
+        if (std::chrono::duration_cast<std::chrono::minutes>(now_steady - last_freshness_cache_invalidation_time_).count() >= 2) {
             invalidate_freshness_cache();
             last_freshness_cache_invalidation_time_ = now_steady;
         }
@@ -228,7 +228,7 @@ public:
             {
                 auto last_refresh = rss_host->last_refresh_time();
                 auto interval = rss_host->refresh_interval_s();
-                auto now = std::chrono::system_clock::now();
+                auto const now {std::chrono::system_clock::now()};
                 
                 auto elapsed = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh).count()) / 1000.0;
                 float ratio = static_cast<float>(elapsed / interval);
@@ -270,9 +270,9 @@ public:
                 ImGui::Dummy(ImVec2(0.0f, height + 4.0f));
             }
 
-            // Periodically refresh cached tags, smart lists, and feed references (every 2 seconds) to avoid per-frame SQLite queries
-            auto cache_now = std::chrono::steady_clock::now();
-            if (cached_all_feeds_.empty() || std::chrono::duration_cast<std::chrono::seconds>(cache_now - last_gallery_cache_update_time_).count() >= 2) {
+            // Periodically refresh cached tags, smart lists, and feed references (every 20 seconds) to avoid per-frame SQLite queries
+            auto const cache_now {std::chrono::steady_clock::now()};
+            if (cached_all_feeds_.empty() || std::chrono::duration_cast<std::chrono::seconds>(cache_now - last_gallery_cache_update_time_).count() >= 20) {
                 last_gallery_cache_update_time_ = cache_now;
                 cached_all_feeds_ = rss_host->feeds();
                 cached_smart_lists_ = rss_host->getSmartLists();
@@ -1385,5 +1385,7 @@ private:
 };
 
 } // namespace rouen::cards
+
+
 
 
