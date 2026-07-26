@@ -280,6 +280,15 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/screenshot"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/editor/snapshot"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/cards/snapshot"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_screenshot(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -641,6 +650,44 @@ std::string api_server::handle_window_set(struct mg_connection* /*c*/, struct mg
 
         return std::format(R"({{"success":true,"message":"Window position and size updated","x":{},"y":{},"width":{},"height":{}}})",
             new_x, new_y, new_w, new_h);
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+struct screenshot_request {
+    std::string target = "editor";
+    std::string filename = "/tmp/snapshot.png";
+    int width = 800;
+    int height = 600;
+};
+
+std::string api_server::handle_screenshot(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        std::string body(hm->body.buf, hm->body.len);
+        screenshot_request req;
+        if (!body.empty()) {
+            (void)glz::read_json(req, body);
+        }
+        if (req.filename.empty()) {
+            req.filename = "/tmp/snapshot.png";
+        }
+        if (req.width <= 0) req.width = 800;
+        if (req.height <= 0) req.height = 600;
+
+        auto screenshot_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
+        if (screenshot_fn && *screenshot_fn) {
+            return (*screenshot_fn)(req.target, req.filename, req.width, req.height);
+        }
+
+        if (req.target == "editor" || req.target.empty()) {
+            auto ed_fn = registrar::get<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
+            if (ed_fn && *ed_fn) {
+                return (*ed_fn)(req.filename, req.width, req.height);
+            }
+        }
+
+        return R"({"success":false,"error":"Screenshot service not available"})";
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }

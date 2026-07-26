@@ -367,10 +367,18 @@ namespace rouen::fonts {
             return nullptr;
         }
 
-        // Helper: return the font pointer if non-null, else the default, else Fonts[0].
+        auto is_valid_font = [&](ImFont* f) -> bool {
+            if (!f) return false;
+            for (ImFont* font : io.Fonts->Fonts) {
+                if (font == f) return true;
+            }
+            return false;
+        };
+
+        // Helper: return the font pointer if valid in current context, else default, else Fonts[0].
         auto fallback = [&](ImFont* f) -> ImFont* {
-            if (f) return f;
-            if (get_state().s_default_font) return get_state().s_default_font;
+            if (is_valid_font(f)) return f;
+            if (is_valid_font(get_state().s_default_font)) return get_state().s_default_font;
             return io.Fonts->Fonts[0];
         };
         

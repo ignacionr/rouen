@@ -36,7 +36,7 @@ public:
     }
     
     bool empty() const override {
-        return source_file_.empty();
+        return !is_active_;
     }
 
     void clear() override {
@@ -45,6 +45,7 @@ public:
         error_.clear();
         file_modified_ = false;
         save_message_.clear();
+        is_active_ = false;
         
         text_editor_.SetText("");
         text_editor_.SetLanguageDefinition(::TextEditor::LanguageDefinition::CPlusPlus());
@@ -52,12 +53,19 @@ public:
 
     void select(const std::string& uri) override {
         source_file_ = uri;
+        is_active_ = true;
         
         // Set flag to focus the window on next render
         should_focus_ = true;
         
         buffer_.clear();
         error_.clear();
+
+        if (uri.empty()) {
+            text_editor_.SetText("");
+            text_editor_.SetLanguageDefinition(::TextEditor::LanguageDefinition::CPlusPlus());
+            return;
+        }
         
         // Handle as text file
         try {
@@ -142,8 +150,15 @@ public:
             // Create a child window for the text editor
             ImGui::Separator();
             
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            if (avail.y < 100.0f) {
+                float window_h = ImGui::GetWindowSize().y;
+                float cursor_y = ImGui::GetCursorPosY();
+                avail.y = std::max(100.0f, window_h - cursor_y - ImGui::GetStyle().WindowPadding.y);
+            }
+            
             // Render the TextEditor widget
-            text_editor_.Render("##editor", ImGui::GetContentRegionAvail(), true);
+            text_editor_.Render("##editor", avail, true);
             
             // Update the modified flag
             if (text_editor_.IsTextChanged()) {
@@ -190,6 +205,7 @@ private:
     std::string save_message_;
     float save_message_time_ = 0.0f;
     bool should_focus_ = false;  // Flag to track when the window should grab focus
+    bool is_active_ = false;     // Flag to track whether a document is currently active
     
     // Text editor
     ::TextEditor text_editor_;

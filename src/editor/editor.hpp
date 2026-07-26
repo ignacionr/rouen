@@ -8,7 +8,12 @@
 #include "../helpers/imgui_include.hpp"
 #include "../helpers/sdl_compat.hpp"
 
+#include <format>
+#include <SDL3_image/SDL_image.h>
+
 #include "../registrar.hpp"
+#include "../helpers/capture_helper.hpp"
+#include "../helpers/texture_helper.hpp"
 #include "editor_interface.hpp"
 #include "text_editor.hpp"
 #include "image_editor.hpp"
@@ -46,6 +51,31 @@ public:
                 [this]() { return empty(); }
             )
         );
+
+        registrar::add<std::function<std::string(const std::string&, int, int)>>(
+            "editor_save_snapshot",
+            std::make_shared<std::function<std::string(const std::string&, int, int)>>(
+                [this](const std::string& path, int w, int h) { return take_snapshot(path, w, h); }
+            )
+        );
+
+        registrar::add<std::function<std::string(const std::string&, const std::string&, int, int)>>(
+            "take_screenshot",
+            std::make_shared<std::function<std::string(const std::string&, const std::string&, int, int)>>(
+                [this](const std::string& target, const std::string& path, int w, int h) {
+                    if (target == "editor" || target.empty()) {
+                        return take_snapshot(path, w, h);
+                    }
+                    try {
+                        auto card_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("card_save_snapshot");
+                        if (card_fn && *card_fn) {
+                            return (*card_fn)(target, path, w, h);
+                        }
+                    } catch (...) {}
+                    return std::string(R"({"success":false,"error":"Unknown screenshot target"})");
+                }
+            )
+        );
     }
     
     virtual ~Editor() {
@@ -53,7 +83,54 @@ public:
             registrar::remove<std::function<void(std::string const &)>>("edit");
             registrar::remove<std::function<void()>>("clear_editor");
             registrar::remove<std::function<bool()>>("is_editor_empty");
+            registrar::remove<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
+            registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
         } catch (...) {}
+    }
+
+    std::string take_snapshot(const std::string& filepath, int width = 800, int height = 600) {
+        SDL_GPUDevice* device = nullptr;
+        try {
+            auto device_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
+            if (device_ptr && *device_ptr) {
+                device = *device_ptr;
+            }
+        } catch (...) {}
+
+        auto render_fn = [this, width, height]() {
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
+            this->render();
+        };
+
+        RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
+            width, height, render_fn, device
+        );
+
+        if (!snapshot_texture) {
+            return R"({"success":false,"error":"Failed to create snapshot texture"})";
+        }
+
+        SDL_Surface* surface = rouen::helpers::download_gpu_texture(
+            device, snapshot_texture, width, height
+        );
+
+        if (!surface) {
+            TextureHelper::destroyTexture(snapshot_texture);
+            return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
+        }
+
+        std::string target_path = filepath.empty() ? "/tmp/editor_snapshot.png" : filepath;
+        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        SDL_DestroySurface(surface);
+        TextureHelper::destroyTexture(snapshot_texture);
+
+        if (saved) {
+            return std::format(R"({{"success":true,"message":"Editor snapshot saved","file":"{}","width":{},"height":{}}})",
+                target_path, width, height);
+        } else {
+            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+        }
     }
 
     bool empty() const {
@@ -84,6 +161,8 @@ public:
             show_confirm_modal_ = true;
         } else {
             clear();
+            text_editor_->select("");
+            active_editor_ = text_editor_.get();
         }
     }
 
@@ -127,9 +206,6 @@ public:
             }
         }
 
-        // Render confirmation modal if unsaved changes exist
-        renderConfirmModal();
-
         // Push a custom style for this window to have square corners
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         
@@ -160,6 +236,9 @@ public:
         
         // Restore the original style
         ImGui::PopStyleVar();
+
+        // Render confirmation modal if unsaved changes exist
+        renderConfirmModal();
     }
 
 private:
@@ -181,8 +260,12 @@ private:
 
         switch (action) {
             case PendingAction::Close:
+                clear();
+                break;
             case PendingAction::New:
                 clear();
+                text_editor_->select("");
+                active_editor_ = text_editor_.get();
                 break;
             case PendingAction::Open:
                 clear();
@@ -203,31 +286,33 @@ private:
             show_confirm_modal_ = false;
         }
 
-        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::IsPopupOpen("Unsaved Changes##EditorConfirmModal")) {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
-        if (ImGui::BeginPopupModal("Unsaved Changes##EditorConfirmModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("The current file has unsaved changes.\nDo you want to save your changes before proceeding?");
-            ImGui::Separator();
-            ImGui::Spacing();
+            if (ImGui::BeginPopupModal("Unsaved Changes##EditorConfirmModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("The current file has unsaved changes.\nDo you want to save your changes before proceeding?");
+                ImGui::Separator();
+                ImGui::Spacing();
 
-            if (ImGui::Button("Save", ImVec2(100, 0))) {
-                saveFile();
-                executePendingAction();
-                ImGui::CloseCurrentPopup();
+                if (ImGui::Button("Save", ImVec2(100, 0))) {
+                    saveFile();
+                    executePendingAction();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Don't Save", ImVec2(100, 0))) {
+                    executePendingAction();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+                    pending_action_ = PendingAction::None;
+                    pending_uri_.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Don't Save", ImVec2(100, 0))) {
-                executePendingAction();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cancel", ImVec2(100, 0))) {
-                pending_action_ = PendingAction::None;
-                pending_uri_.clear();
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::EndPopup();
         }
     }
 

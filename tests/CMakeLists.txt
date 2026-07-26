@@ -259,6 +259,64 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     target_add_strict_warnings(test_mcp)
 endif()
 
+# TextEditor Functionality Unit Test
+add_executable(test_text_editor
+    test_text_editor.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
+    ../external/imgui_backends/imgui_impl_sdl3.cpp
+    ../external/imgui_backends/imgui_impl_sdlgpu3.cpp
+    ../src/fonts.cpp
+    ../src/helpers/capture_helper.cpp
+)
+target_include_directories(test_text_editor PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/imgui_backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/imguicolortextedit
+)
+target_link_libraries(test_text_editor
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    imgui::imgui
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+)
+add_test(NAME TextEditorTest COMMAND test_text_editor)
+set_target_properties(test_text_editor PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# Editor Screenshot Unit Test
+add_executable(test_editor_screenshot
+    test_editor_screenshot.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
+    ../external/imgui_backends/imgui_impl_sdl3.cpp
+    ../external/imgui_backends/imgui_impl_sdlgpu3.cpp
+    ../src/fonts.cpp
+    ../src/helpers/capture_helper.cpp
+)
+target_include_directories(test_editor_screenshot PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/imgui_backends
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/imguicolortextedit
+)
+target_link_libraries(test_editor_screenshot
+    PRIVATE
+    GTest::gtest
+    GTest::gtest_main
+    imgui::imgui
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+)
+add_test(NAME EditorScreenshotTest COMMAND test_editor_screenshot)
+set_target_properties(test_editor_screenshot PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 # TextEditor Scrolling Unit Test
 add_executable(test_text_editor_scrolling
     test_text_editor_scrolling.cpp

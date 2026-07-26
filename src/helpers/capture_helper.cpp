@@ -1,4 +1,5 @@
 #include "capture_helper.hpp"
+#include "../fonts.hpp"
 #include <cstring>
 
 namespace rouen::helpers {
@@ -57,6 +58,11 @@ RouenGPUTexture* capture_imgui(
     
     // Initialize ImGui IO parameters
     ImGuiIO& io = ImGui::GetIO();
+    if (original_context && original_context->IO.Fonts && !original_context->IO.Fonts->Fonts.empty()) {
+        io.Fonts = original_context->IO.Fonts;
+    } else {
+        rouen::fonts::setup();
+    }
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = 1.0f / 60.0f;
     
@@ -69,25 +75,23 @@ RouenGPUTexture* capture_imgui(
     ImGui_ImplSDLGPU3_Init(&init_info);
     
     try {
-        // Start a new ImGui frame
-        ImGui_ImplSDLGPU3_NewFrame();
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
-        
-        // Set up a window with the exact size and no decorations
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
-        
-        // Execute the render callback
-        render_callback();
-        
-        ImGui::PopStyleVar(2);
-        
-        // Render ImGui
-        ImGui::Render();
+        // Run 2 passes so ImGui window layout and child window dimensions settle
+        for (int frame = 0; frame < 2; ++frame) {
+            ImGui_ImplSDLGPU3_NewFrame();
+            ImGui_ImplSDL3_NewFrame();
+            ImGui::NewFrame();
+            
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
+            
+            render_callback();
+            
+            ImGui::PopStyleVar(2);
+            ImGui::Render();
+        }
 
         // Acquire command buffer and begin render pass onto our texture
         SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
