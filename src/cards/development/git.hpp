@@ -273,7 +273,7 @@ struct git: public card {
                     
         // Display the git status
         ImGui::Separator();
-        ImGui::BeginChild("GitStatus", ImVec2(0, ImGui::GetWindowHeight() - 180.0f), false);
+        ImGui::BeginChild("GitStatus", ImVec2(0, 100.0f));
         ImGui::TextWrapped("%s", current_status.c_str());
         ImGui::EndChild();
 
@@ -826,4 +826,6 @@ private:
         }
     }
 };
+
+
 
