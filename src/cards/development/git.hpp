@@ -26,14 +26,13 @@
 struct git: public card {
     std::string repo_status; // Store the git status result
     std::unique_ptr<rouen::models::git> git_model; // Git model for handling git operations
-    std::string target_repo; // Optional target repository path
     std::string last_commit_message; // AI-generated commit message used most recently
     
     std::atomic<bool> ai_request_pending{false};
     std::string ai_status_cue;
     mutable std::mutex state_mutex;
     
-    git(std::string_view repo_path = "") : target_repo(repo_path) {
+    git(std::string_view repo_path = "") {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
         
@@ -43,24 +42,43 @@ struct git: public card {
         // Create git model
         git_model = std::make_unique<rouen::models::git>();
         
-        if (!target_repo.empty()) {
-            // If a specific repository is provided, select it immediately
-            name(std::format("Git: {}", std::filesystem::path(target_repo).filename().string()));
-            selected_repo = target_repo;
-            
-            // Ensure the target repository is recognized by the git model
-            // by adding it if it's not already there
-            git_model->addRepository(target_repo);
+        if (!repo_path.empty()) {
+            std::string_view actual_path = repo_path;
+            if (actual_path.starts_with("git:")) {
+                actual_path = actual_path.substr(4);
+            }
+            if (!actual_path.empty()) {
+                select(std::string(actual_path));
+            } else {
+                name("Git Repos");
+            }
         } else {
             name("Git Repos");
         }
     }
 
     std::string get_uri() const override {
-        if (!target_repo.empty()) {
-            return std::format("git:{}", target_repo);
+        if (!selected_repo.empty()) {
+            return std::format("git:{}", selected_repo);
         }
         return "git";
+    }
+
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "git" || uri.starts_with("git:");
+    }
+
+    void handle_uri(std::string_view uri) override {
+        if (uri.starts_with("git:")) {
+            std::string path = std::string(uri.substr(4));
+            if (!path.empty()) {
+                select(path);
+            } else {
+                back_to_list();
+            }
+        } else if (uri == "git") {
+            back_to_list();
+        }
     }
     
     // Override to provide MCP functions
@@ -94,11 +112,18 @@ struct git: public card {
      * @return true if successful, false if failed
      */
     bool select(const std::string& repo_path) {
-        if (repo_path.empty() || git_model->getRepos().find(repo_path) == git_model->getRepos().end()) {
+        if (repo_path.empty()) {
+            return false;
+        }
+
+        git_model->addRepository(repo_path);
+
+        if (git_model->getRepos().find(repo_path) == git_model->getRepos().end()) {
             return false;
         }
 
         this->selected_repo = repo_path;
+        name(std::format("Git: {}", std::filesystem::path(selected_repo).filename().string()));
         this->updateRepoStatus();
         
         return true;
@@ -109,6 +134,7 @@ struct git: public card {
      */
     void back_to_list() {
         selected_repo.clear();
+        name("Git Repos");
     }
     
     /**
