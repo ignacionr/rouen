@@ -727,6 +727,7 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
     video_format_ctx->interrupt_callback.opaque = this;
 
     AVDictionary* v_opts = nullptr;
+    av_dict_set(&v_opts, "protocol_whitelist", "file,http,https,tcp,tls,crypto,data", 0);
     if (video_target.find("http://") == 0 || video_target.find("https://") == 0) {
         av_dict_set(&v_opts, "reconnect", "1", 0);
         av_dict_set(&v_opts, "reconnect_streamed", "1", 0);
@@ -772,6 +773,7 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
             audio_format_ctx->interrupt_callback.callback = decode_interrupt_cb;
             audio_format_ctx->interrupt_callback.opaque = this;
             AVDictionary* a_opts = nullptr;
+            av_dict_set(&a_opts, "protocol_whitelist", "file,http,https,tcp,tls,crypto,data", 0);
             if (audio_target.find("http://") == 0 || audio_target.find("https://") == 0) {
                 av_dict_set(&a_opts, "reconnect", "1", 0);
                 av_dict_set(&a_opts, "reconnect_streamed", "1", 0);

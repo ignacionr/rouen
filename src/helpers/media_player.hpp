@@ -68,7 +68,8 @@ struct media_player {
     }
 
     static std::optional<double>& get_dummy_watermark() noexcept {
-        static std::optional<double> dummy = std::nullopt;
+        static thread_local std::optional<double> dummy;
+        dummy = std::nullopt;
         return dummy;
     }
 

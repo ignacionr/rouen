@@ -652,6 +652,7 @@ public:
                         } else {
                             for (size_t i = 0; i < cached_matching_items_.size(); ++i) {
                                 const auto& item = cached_matching_items_[i];
+                                ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
 
                                 try {
                                     ImGui::BeginGroup();

@@ -56,6 +56,7 @@ namespace rouen::cards {
         std::string playlist_url;
         double start_offset = 0.0;
         bool should_autoplay = false;
+        std::optional<double> watermark = std::nullopt;
     };
 
 } // namespace rouen::cards
@@ -175,7 +176,7 @@ namespace rouen::cards {
                         
                         // Card background styling
                         bool is_playing = false;
-                        std::string playlist_url = "file:///tmp/radiocut_" + cut.id + ".m3u";
+                        std::string playlist_url = cut.playlist_url.empty() ? ("file:///tmp/radiocut_" + cut.id + ".m3u8") : cut.playlist_url;
                         ImGuiID player_id = 0;
                         
                         // Check if this cut is currently playing in the global media player
@@ -194,24 +195,6 @@ namespace rouen::cards {
                             ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
                             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
                             ImGui::BeginGroup();
-                        }
-                        
-                        // Handle auto-play if flagged
-                        if (cut.should_autoplay && cut.resolved) {
-                            // Find and update item to clear flag
-                            auto it = std::find_if(cuts.begin(), cuts.end(), [&](const auto& c) { return c.id == cut.id; });
-                            if (it != cuts.end()) {
-                                it->should_autoplay = false;
-                            }
-                            
-                            media_player::stopAll();
-                            
-                            ImGui::PushID(playlist_url.c_str());
-                            auto &item = media_player::get_item(ImGui::GetID("MediaPlayer"));
-                            item.url = playlist_url;
-                            item.start_offset = cut.start_offset;
-                            item.playMedia();
-                            ImGui::PopID();
                         }
                         
                         ImGui::BeginGroup();
@@ -301,10 +284,20 @@ namespace rouen::cards {
                                 ImGui::PopID();
                             }
                             
-                            // Render standard player controls
-                             media_player::player(playlist_url, colors[0], cut.title, -1, "", "", media_player::get_dummy_watermark(), false, 0.0f, this);
+                            // Render native player controls
+                            std::string cut_link = cut.path.empty() ? "" : ("https://radiocut.fm" + cut.path);
+                            media_player::player(playlist_url, colors[0], cut.title, -1, cut_link, cut.title, cut.watermark, false, 0.0f, this);
+                            
+                            // Sync updated watermark back to shared state
+                            {
+                                std::lock_guard<std::mutex> lock(data_mutex);
+                                auto it = std::find_if(cuts.begin(), cuts.end(), [&](const auto& c) { return c.id == cut.id; });
+                                if (it != cuts.end()) {
+                                    it->watermark = cut.watermark;
+                                }
+                            }
                         } else {
-                            if (ImGui::Button(ICON_MD_PLAY_CIRCLE_OUTLINE " Play in MPV")) {
+                            if (ImGui::Button(ICON_MD_PLAY_ARROW " Play")) {
                                 trigger_play(cut.id);
                             }
                         }
@@ -313,6 +306,7 @@ namespace rouen::cards {
                         ImGui::Spacing();
                         
                         if (is_playing) {
+                            ImGui::EndGroup();
                             ImGui::PopStyleVar();
                             ImGui::PopStyleColor();
                         }
@@ -606,9 +600,18 @@ namespace rouen::cards {
                     offset = static_cast<double>(start_time) - first_chunk_start;
                     if (offset < 0.0) offset = 0.0;
                     
-                    // Construct M3U playlist file content
+                    // Construct HLS M3U8 playlist file content
+                    int max_chunk_len = 10;
+                    for (const auto& chunk : selected_chunks) {
+                        if (chunk.length > max_chunk_len) {
+                            max_chunk_len = static_cast<int>(std::ceil(chunk.length));
+                        }
+                    }
                     std::stringstream m3u;
                     m3u << "#EXTM3U\n";
+                    m3u << "#EXT-X-VERSION:3\n";
+                    m3u << "#EXT-X-TARGETDURATION:" << max_chunk_len << "\n";
+                    m3u << "#EXT-X-MEDIA-SEQUENCE:0\n";
                     for (const auto& chunk : selected_chunks) {
                         std::string url = chunk.base_url;
                         if (url.find("http:") == 0) {
@@ -619,12 +622,13 @@ namespace rouen::cards {
                         m3u << "#EXTINF:" << static_cast<int>(chunk.length) << "," << chunk.filename << "\n";
                         m3u << url << "/" << chunk.filename << "\n";
                     }
+                    m3u << "#EXT-X-ENDLIST\n";
                     
-                    // Write M3U playlist file to /tmp
-                    std::string playlist_path = "/tmp/radiocut_" + cut_id + ".m3u";
+                    // Write M3U8 playlist file to /tmp
+                    std::string playlist_path = "/tmp/radiocut_" + cut_id + ".m3u8";
                     std::ofstream playlist_file(playlist_path, std::ios::out | std::ios::trunc);
                     if (!playlist_file) {
-                        throw std::runtime_error("Failed to write temporary M3U playlist file");
+                        throw std::runtime_error("Failed to write temporary M3U8 playlist file");
                     }
                     playlist_file << m3u.str();
                     playlist_file.close();
