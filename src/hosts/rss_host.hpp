@@ -148,6 +148,170 @@ namespace rouen::hosts {
         return value;
     }
 
+    inline std::string resolveRelativeUrl(std::string_view href, std::string_view base_url) {
+        std::string h = trim_copy(std::string(href));
+        if (h.empty()) return "";
+        if (h.find("http://") == 0 || h.find("https://") == 0) {
+            return h;
+        }
+
+        std::string base = trim_copy(std::string(base_url));
+        if (base.find("http://") != 0 && base.find("https://") != 0) {
+            base = "https://" + base;
+        }
+
+        size_t scheme_end = base.find("://");
+        std::string scheme = (scheme_end != std::string::npos) ? base.substr(0, scheme_end) : "https";
+
+        if (h.find("//") == 0) {
+            return scheme + ":" + h;
+        }
+
+        size_t host_start = (scheme_end != std::string::npos) ? scheme_end + 3 : 0;
+        size_t path_start = base.find('/', host_start);
+        std::string origin = (path_start != std::string::npos) ? base.substr(0, path_start) : base;
+
+        if (h[0] == '/') {
+            return origin + h;
+        }
+
+        // Relative path
+        if (path_start == std::string::npos) {
+            return origin + "/" + h;
+        }
+
+        size_t last_slash = base.find_last_of('/');
+        if (last_slash != std::string::npos && last_slash >= host_start) {
+            return base.substr(0, last_slash + 1) + h;
+        }
+
+        return origin + "/" + h;
+    }
+
+    inline std::string extractRssUrlFromHtml(std::string_view html, std::string_view base_url) {
+        std::string html_str(html);
+
+        std::regex link_regex(R"raw(<link\s+[^>]*rel=["']?alternate["']?[^>]*>)raw", std::regex::icase);
+        auto words_begin = std::sregex_iterator(html_str.begin(), html_str.end(), link_regex);
+        auto words_end = std::sregex_iterator();
+
+        std::string main_feed_url;
+        std::string fallback_feed_url;
+
+        auto get_attr = [](const std::string& tag, const std::string& attr_name) -> std::string {
+            std::regex attr_regex(attr_name + R"raw(\s*=\s*["']([^"']+)["'])raw", std::regex::icase);
+            std::smatch match;
+            if (std::regex_search(tag, match, attr_regex) && match.size() > 1) {
+                return match.str(1);
+            }
+            std::regex attr_unquoted(attr_name + R"raw(\s*=\s*([^\s>]+))raw", std::regex::icase);
+            if (std::regex_search(tag, match, attr_unquoted) && match.size() > 1) {
+                return match.str(1);
+            }
+            return "";
+        };
+
+        for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+            std::smatch match = *i;
+            std::string tag = match.str();
+
+            std::string type = ::helpers::StringHelper::to_lower(get_attr(tag, "type"));
+            std::string href = get_attr(tag, "href");
+            std::string title = ::helpers::StringHelper::to_lower(get_attr(tag, "title"));
+
+            if (href.empty()) continue;
+
+            bool is_rss_type = (type.find("application/rss+xml") != std::string::npos ||
+                                type.find("application/atom+xml") != std::string::npos ||
+                                type.find("application/rdf+xml") != std::string::npos ||
+                                type.find("application/feed+json") != std::string::npos ||
+                                type.find("text/xml") != std::string::npos);
+
+            if (!is_rss_type) continue;
+
+            bool is_comments = (title.find("comment") != std::string::npos ||
+                                href.find("comments/feed") != std::string::npos ||
+                                href.find("comments") != std::string::npos);
+
+            if (!is_comments && main_feed_url.empty()) {
+                main_feed_url = href;
+            } else if (fallback_feed_url.empty()) {
+                fallback_feed_url = href;
+            }
+        }
+
+        std::string target_href = !main_feed_url.empty() ? main_feed_url : fallback_feed_url;
+
+        if (target_href.empty()) {
+            std::regex a_regex(R"raw(<a\s+[^>]*href=["']([^"']+)["'][^>]*>(?:[^<]*RSS[^<]*)?</a>)raw", std::regex::icase);
+            auto a_begin = std::sregex_iterator(html_str.begin(), html_str.end(), a_regex);
+            for (std::sregex_iterator i = a_begin; i != words_end; ++i) {
+                std::smatch match = *i;
+                std::string href = match.str(1);
+                std::string lower_href = ::helpers::StringHelper::to_lower(href);
+                if (lower_href.find("feed") != std::string::npos || lower_href.find("rss") != std::string::npos) {
+                    if (lower_href.find("comments") == std::string::npos) {
+                        target_href = href;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (target_href.empty()) return "";
+
+        return resolveRelativeUrl(target_href, base_url);
+    }
+
+    inline std::string resolveFeedUrl(const std::string& input_url) {
+        std::string url = trim_copy(input_url);
+        if (url.empty()) return url;
+
+        if (url.find("http://") != 0 && url.find("https://") != 0) {
+            url = "https://" + url;
+        }
+
+        // Try YouTube resolution
+        std::string yt_resolved = resolveYoutubeUrl(url);
+        if (yt_resolved != url && yt_resolved.find("youtube.com/feeds/videos.xml") != std::string::npos) {
+            return yt_resolved;
+        }
+
+        // Fetch page content to inspect if it's HTML containing RSS autodiscovery tags
+        try {
+            http::fetch client{10};
+            std::vector<std::string> headers = {
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,application/rss+xml;q=0.9,*/*;q=0.8"
+            };
+
+            std::string content = client(url, headers);
+            std::string effective_url = client.last_effective_url();
+            if (effective_url.empty()) effective_url = url;
+
+            // Check if content is XML feed
+            bool is_xml = (content.find("<?xml") != std::string::npos ||
+                           content.find("<rss") != std::string::npos ||
+                           content.find("<feed") != std::string::npos ||
+                           content.find("<rdf:RDF") != std::string::npos);
+
+            if (is_xml) {
+                return effective_url;
+            }
+
+            // It's HTML page - extract RSS feed link
+            std::string discovered_rss = extractRssUrlFromHtml(content, effective_url);
+            if (!discovered_rss.empty()) {
+                RSS_INFO_FMT("Autodiscovered RSS feed link for webpage {}: {}", url, discovered_rss);
+                return discovered_rss;
+            }
+        } catch (const std::exception& e) {
+            HTTP_WARN_FMT("Failed to fetch/resolve feed URL for {}: {}", url, e.what());
+        }
+
+        return url;
+    }
+
     inline std::string decode_json_string(std::string value) {
         std::string out;
         out.reserve(value.size());
@@ -1474,9 +1638,9 @@ private:
     std::shared_ptr<media::rss::feed> addFeedSync(std::string_view url, auto quitting) {
         std::string resolved_url;
         try {
-            resolved_url = resolveYoutubeUrl(std::string(url));
+            resolved_url = resolveFeedUrl(std::string(url));
         } catch (const std::exception& e) {
-            RSS_WARN_FMT("Failed to resolve YouTube URL {}: {}", url, e.what());
+            RSS_WARN_FMT("Failed to resolve Feed URL {}: {}", url, e.what());
             resolved_url = std::string(url);
         }
 
@@ -1730,6 +1894,16 @@ private:
             }
 
             RSS_INFO_FMT("Successfully fetched feed: {} - Title: {}", url, parser.feed_title);
+
+            // If parser has no items/title and contents looks like HTML, try autodiscovering RSS link from contents
+            if (parser.items.empty() && parser.feed_title.empty() && !parser.contents.empty()) {
+                std::string discovered = extractRssUrlFromHtml(parser.contents, fetch.last_effective_url().empty() ? url_str : fetch.last_effective_url());
+                if (!discovered.empty() && discovered != url_str) {
+                    RSS_INFO_FMT("getFeed: HTML page detected for {}, re-fetching discovered RSS feed: {}", url, discovered);
+                    return getFeed(discovered);
+                }
+            }
+
             return parser;
         } catch (const std::exception& e) {
             // Increment failure count on failure

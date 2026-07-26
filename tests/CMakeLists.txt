@@ -155,6 +155,9 @@ add_gtest_http_executable(test_contact_gravatar test_contact_gravatar.cpp)
 # RSS Media Extraction Test - tests HTML media extraction and RSS parsing
 add_gtest_rss_executable(test_rss_media_extraction test_rss_media_extraction.cpp)
 
+# RSS Autodiscovery Test - tests HTML RSS feed link autodiscovery
+add_gtest_rss_executable(test_rss_autodiscovery test_rss_autodiscovery.cpp)
+
 # RT Media Extraction Test - tests RT.com specific RSS media extraction patterns
 add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 
