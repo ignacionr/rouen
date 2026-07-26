@@ -273,22 +273,42 @@ namespace rouen::cards {
                 std::string out_prefix = std::format("/tmp/rouen_trans_{}_{}", pid, timestamp);
 
                 std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
-                std::string cmd = std::format("\"{}\" -q --no-warnings --skip-download --write-sub --write-auto-sub "
-                                              "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
-                                              ytdlp_path, out_prefix, detected_url);
+                auto config = rouen::helpers::ConfigService::instance();
+                std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-                ProcessHelper::executeCommand(cmd);
+                auto fetch_sub_file = [&](const std::string& cargs) -> std::filesystem::path {
+                    std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
+                    std::string cmd = std::format("\"{}\" -q --no-warnings{} --skip-download --write-sub --write-auto-sub "
+                                                  "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
+                                                  ytdlp_path, extra_flags, out_prefix, detected_url);
+                    ProcessHelper::executeCommand(cmd);
+                    try {
+                        for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
+                            std::string fname = entry.path().string();
+                            if (fname.starts_with(out_prefix)) {
+                                return entry.path();
+                            }
+                        }
+                    } catch (...) {}
+                    return {};
+                };
 
-                std::filesystem::path found_file;
-                try {
-                    for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
-                        std::string fname = entry.path().string();
-                        if (fname.starts_with(out_prefix)) {
-                            found_file = entry.path();
+                std::filesystem::path found_file = fetch_sub_file(cookie_args);
+                if (found_file.empty()) {
+                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+                    for (const auto& browser : candidate_browsers) {
+                        if (browser == configured_browser) continue;
+                        std::string fb_args = std::format("--cookies-from-browser {}", browser);
+                        found_file = fetch_sub_file(fb_args);
+                        if (!found_file.empty()) {
+                            if (config) {
+                                config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
+                            }
                             break;
                         }
                     }
-                } catch (...) {}
+                }
 
                 std::string raw_content;
                 if (!found_file.empty() && std::filesystem::exists(found_file)) {
@@ -1112,7 +1132,7 @@ namespace rouen::cards {
             const auto& sc = commentaries_copy[static_cast<size_t>(current_segment)];
             if (!sc.generated || sc.commentary_md.empty()) return;
 
-            constexpr float kFullHeight = 880.0f;
+            constexpr float kFullHeight = 680.0f;
             float current_height = kFullHeight * anim_factor;
 
             // Translucent dark background with matching alpha animation (less transparent for enhanced readability)

@@ -93,6 +93,9 @@ namespace rouen::helpers {
         std::string get_vscode_path() const; // Added for VS Code
         std::string get_ping_path() const;  // Added for ping
 
+        // yt-dlp cookie options helper
+        std::string get_ytdlp_cookie_args() const;
+
         // Path validation helpers
         static bool validate_executable_path(const std::string& path);
         std::string get_validated_executable_path(const std::string& env_name, const std::string& default_value) const;

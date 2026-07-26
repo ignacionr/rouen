@@ -336,6 +336,8 @@ namespace rouen::helpers {
                        "Enable spoken notifications (1=true, 0=false)", "1");
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
                        "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)");
+        register_config("ROUEN_COOKIES_FILE", Category::GENERAL, false, false,
+                       "Path to cookies.txt file for yt-dlp authentication");
         register_config("ROUEN_SYNC_GIT_URL", Category::GENERAL, false, false,
                        "Remote Git sync repository URL");
         register_config("ROUEN_SYNC_TOKEN", Category::GENERAL, false, true,
@@ -627,6 +629,18 @@ std::string ConfigService::get_vscode_path() const {
 
 std::string ConfigService::get_ping_path() const {
     return get_validated_executable_path("PING_PATH", "ping");
+}
+
+std::string ConfigService::get_ytdlp_cookie_args() const {
+    std::string file = get_env("ROUEN_COOKIES_FILE");
+    if (!file.empty() && std::filesystem::exists(file)) {
+        return std::format("--cookies \"{}\"", file);
+    }
+    std::string browser = get_env("ROUEN_COOKIES_BROWSER");
+    if (!browser.empty()) {
+        return std::format("--cookies-from-browser {}", browser);
+    }
+    return "";
 }
 
     void ConfigService::refresh_cache() {

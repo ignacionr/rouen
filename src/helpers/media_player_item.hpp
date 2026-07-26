@@ -459,17 +459,53 @@ inline bool media_player_item::playMedia(const void* owner) {
             }
 
             if (!found_cached) {
-                std::string ytdl_cmd = std::format("yt-dlp --no-warnings --socket-timeout 5 -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", sanitized_url);
-                std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
-                std::stringstream ss(resolved);
-                std::string line;
-                std::vector<std::string> urls;
-                while (std::getline(ss, line)) {
-                    line.erase(line.find_last_not_of(" \r\n\t") + 1);
-                    if (line.starts_with("http://") || line.starts_with("https://")) {
-                        urls.push_back(line);
+                std::string ytdl_exe = rouen::platform::find_executable("yt-dlp");
+                auto config = rouen::helpers::ConfigService::instance();
+                std::string initial_cookie_args = config ? config->get_ytdlp_cookie_args() : "";
+
+                auto run_ytdlp = [&](const std::string& cookie_args) -> std::pair<std::vector<std::string>, std::string> {
+                    std::string cmd;
+                    if (!cookie_args.empty()) {
+                        cmd = std::format("\"{}\" --no-warnings --socket-timeout 10 {} -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, cookie_args, sanitized_url);
+                    } else {
+                        cmd = std::format("\"{}\" --no-warnings --socket-timeout 10 -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, sanitized_url);
+                    }
+                    std::string output = ProcessHelper::executeCommand(cmd);
+                    std::stringstream ss(output);
+                    std::string line;
+                    std::vector<std::string> parsed_urls;
+                    while (std::getline(ss, line)) {
+                        line.erase(line.find_last_not_of(" \r\n\t") + 1);
+                        if (line.starts_with("http://") || line.starts_with("https://")) {
+                            parsed_urls.push_back(line);
+                        }
+                    }
+                    return {parsed_urls, output};
+                };
+
+                auto [urls, resolved] = run_ytdlp(initial_cookie_args);
+
+                // If yt-dlp failed to resolve YouTube URL, attempt browser cookies auto-detection fallback
+                if (urls.empty()) {
+                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+
+                    for (const auto& browser : candidate_browsers) {
+                        if (browser == configured_browser) continue;
+                        std::string fallback_args = std::format("--cookies-from-browser {}", browser);
+                        auto [fb_urls, fb_output] = run_ytdlp(fallback_args);
+                        if (!fb_urls.empty()) {
+                            urls = fb_urls;
+                            resolved = fb_output;
+                            if (config) {
+                                config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
+                            }
+                            std::cout << "[NativePlayer] Successfully resolved YouTube URL using cookies from browser: " << browser << std::endl;
+                            break;
+                        }
                     }
                 }
+
                 if (!urls.empty()) {
                     {
                         std::lock_guard<std::mutex> lock(s_yt_resolved_url_mutex);

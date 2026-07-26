@@ -315,82 +315,103 @@ namespace rouen::cards {
                     escaped_query += c;
                 }
 
-#ifdef __APPLE__
-                std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --no-warnings --no-call-home --socket-timeout 10 --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
-#else
-                std::string cmd = std::format("yt-dlp --no-warnings --no-call-home --socket-timeout 10 --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
-#endif
-                std::string output = ProcessHelper::executeCommand(cmd);
+                std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
+                auto config = rouen::helpers::ConfigService::instance();
+                std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-                std::stringstream ss(output);
-                std::string line;
-                std::vector<youtube_result> temp_results;
+                auto run_yt_search = [&](const std::string& cargs) -> std::vector<youtube_result> {
+                    std::string cflags = cargs.empty() ? "" : (" " + cargs);
+                    std::string cmd = std::format("\"{}\" --no-warnings --no-call-home --socket-timeout 10{} --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", ytdlp_path, cflags, escaped_query);
+                    std::string output = ProcessHelper::executeCommand(cmd);
 
-                while (std::getline(ss, line)) {
-                    if (line.empty()) continue;
-                    try {
-                        glz::json_t resp;
-                        auto ec = glz::read_json(resp, line);
-                        if (!ec) {
-                            youtube_result res;
-                            if (resp.contains("id") && resp["id"].is_string()) {
-                                res.id = resp["id"].get<std::string>();
-                            }
-                            if (resp.contains("title") && resp["title"].is_string()) {
-                                res.title = resp["title"].get<std::string>();
-                            }
-                            if (!res.id.empty() && res.id.length() == 11 && !res.id.starts_with("UC")) {
-                                res.url = "https://www.youtube.com/watch?v=" + res.id;
-                            } else if (resp.contains("url") && resp["url"].is_string()) {
-                                res.url = resp["url"].get<std::string>();
-                            } else if (!res.id.empty()) {
-                                res.url = "https://www.youtube.com/watch?v=" + res.id;
-                            }
-                            if (resp.contains("duration") && resp["duration"].is_number()) {
-                                res.duration = resp["duration"].get<double>();
-                            }
-                            if (resp.contains("duration_string") && resp["duration_string"].is_string()) {
-                                res.duration_string = resp["duration_string"].get<std::string>();
-                            }
-                            if (resp.contains("channel") && resp["channel"].is_string()) {
-                                res.channel = resp["channel"].get<std::string>();
-                            } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
-                                res.channel = resp["uploader"].get<std::string>();
-                            }
-                            if (resp.contains("channel_id") && resp["channel_id"].is_string()) {
-                                res.channel_id = resp["channel_id"].get<std::string>();
-                            }
-                            if (resp.contains("channel_url") && resp["channel_url"].is_string()) {
-                                res.channel_url = resp["channel_url"].get<std::string>();
-                            }
-                            if (resp.contains("uploader_url") && resp["uploader_url"].is_string()) {
-                                res.uploader_url = resp["uploader_url"].get<std::string>();
-                            }
-                            if (resp.contains("description") && resp["description"].is_string()) {
-                                res.description = resp["description"].get<std::string>();
-                            }
-                            if (resp.contains("timestamp") && resp["timestamp"].is_number()) {
-                                double ts = resp["timestamp"].get<double>();
-                                res.published_time = format_relative_time(ts);
-                            } else if (resp.contains("upload_date") && resp["upload_date"].is_string()) {
-                                std::string date_str = resp["upload_date"].get<std::string>();
-                                if (date_str.length() == 8) {
-                                    try {
-                                        std::tm tm = {};
-                                        tm.tm_year = std::stoi(date_str.substr(0, 4)) - 1900;
-                                        tm.tm_mon = std::stoi(date_str.substr(4, 2)) - 1;
-                                        tm.tm_mday = std::stoi(date_str.substr(6, 2));
-                                        tm.tm_isdst = -1;
-                                        time_t t = std::mktime(&tm);
-                                        if (t != -1) {
-                                            res.published_time = format_relative_time(static_cast<double>(t));
-                                        }
-                                    } catch (...) {}
+                    std::stringstream ss(output);
+                    std::string line;
+                    std::vector<youtube_result> temp;
+
+                    while (std::getline(ss, line)) {
+                        if (line.empty()) continue;
+                        try {
+                            glz::json_t resp;
+                            auto ec = glz::read_json(resp, line);
+                            if (!ec) {
+                                youtube_result res;
+                                if (resp.contains("id") && resp["id"].is_string()) {
+                                    res.id = resp["id"].get<std::string>();
                                 }
+                                if (resp.contains("title") && resp["title"].is_string()) {
+                                    res.title = resp["title"].get<std::string>();
+                                }
+                                if (!res.id.empty() && res.id.length() == 11 && !res.id.starts_with("UC")) {
+                                    res.url = "https://www.youtube.com/watch?v=" + res.id;
+                                } else if (resp.contains("url") && resp["url"].is_string()) {
+                                    res.url = resp["url"].get<std::string>();
+                                } else if (!res.id.empty()) {
+                                    res.url = "https://www.youtube.com/watch?v=" + res.id;
+                                }
+                                if (resp.contains("duration") && resp["duration"].is_number()) {
+                                    res.duration = resp["duration"].get<double>();
+                                }
+                                if (resp.contains("duration_string") && resp["duration_string"].is_string()) {
+                                    res.duration_string = resp["duration_string"].get<std::string>();
+                                }
+                                if (resp.contains("channel") && resp["channel"].is_string()) {
+                                    res.channel = resp["channel"].get<std::string>();
+                                } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
+                                    res.channel = resp["uploader"].get<std::string>();
+                                }
+                                if (resp.contains("channel_id") && resp["channel_id"].is_string()) {
+                                    res.channel_id = resp["channel_id"].get<std::string>();
+                                }
+                                if (resp.contains("channel_url") && resp["channel_url"].is_string()) {
+                                    res.channel_url = resp["channel_url"].get<std::string>();
+                                }
+                                if (resp.contains("uploader_url") && resp["uploader_url"].is_string()) {
+                                    res.uploader_url = resp["uploader_url"].get<std::string>();
+                                }
+                                if (resp.contains("description") && resp["description"].is_string()) {
+                                    res.description = resp["description"].get<std::string>();
+                                }
+                                if (resp.contains("timestamp") && resp["timestamp"].is_number()) {
+                                    double ts = resp["timestamp"].get<double>();
+                                    res.published_time = format_relative_time(ts);
+                                } else if (resp.contains("upload_date") && resp["upload_date"].is_string()) {
+                                    std::string date_str = resp["upload_date"].get<std::string>();
+                                    if (date_str.length() == 8) {
+                                        try {
+                                            std::tm tm = {};
+                                            tm.tm_year = std::stoi(date_str.substr(0, 4)) - 1900;
+                                            tm.tm_mon = std::stoi(date_str.substr(4, 2)) - 1;
+                                            tm.tm_mday = std::stoi(date_str.substr(6, 2));
+                                            tm.tm_isdst = -1;
+                                            time_t t = std::mktime(&tm);
+                                            if (t != -1) {
+                                                res.published_time = format_relative_time(static_cast<double>(t));
+                                            }
+                                        } catch (...) {}
+                                    }
+                                }
+                                temp.push_back(std::move(res));
                             }
-                            temp_results.push_back(std::move(res));
+                        } catch (...) {}
+                    }
+                    return temp;
+                };
+
+                std::vector<youtube_result> temp_results = run_yt_search(cookie_args);
+                if (temp_results.empty()) {
+                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+                    for (const auto& browser : candidate_browsers) {
+                        if (browser == configured_browser) continue;
+                        std::string fb_args = std::format("--cookies-from-browser {}", browser);
+                        temp_results = run_yt_search(fb_args);
+                        if (!temp_results.empty()) {
+                            if (config) {
+                                config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
+                            }
+                            break;
                         }
-                    } catch (...) {}
+                    }
                 }
 
                 if (!temp_results.empty()) {

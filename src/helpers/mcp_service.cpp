@@ -708,11 +708,11 @@ mcp_service::mcp_service() {
                 escaped_query += c;
             }
             
-#ifdef __APPLE__
-            std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --flat-playlist --dump-json \"ytsearch10:{}\"", escaped_query);
-#else
-            std::string cmd = std::format("yt-dlp --flat-playlist --dump-json \"ytsearch10:{}\"", escaped_query);
-#endif
+            std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
+            auto config = ConfigService::instance();
+            std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
+            std::string extra_cflags = cookie_args.empty() ? "" : (" " + cookie_args);
+            std::string cmd = std::format("\"{}\" --flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, extra_cflags, escaped_query);
             std::string output = ProcessHelper::executeCommand(cmd);
             
             std::stringstream ss(output);
