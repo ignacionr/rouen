@@ -32,6 +32,11 @@ struct git: public card {
     std::string ai_status_cue;
     mutable std::mutex state_mutex;
     
+    std::atomic<bool> status_update_in_progress{false};
+    std::chrono::steady_clock::time_point last_status_update{std::chrono::steady_clock::now() - std::chrono::seconds(20)};
+    std::string cached_git_remote;
+    std::string cached_github_repo_name;
+    
     git(std::string_view repo_path = "") {
         colors[0] = {0.37f, 0.53f, 0.71f, 1.0f}; // Changed from orange to blue accent color (first_color)
         colors[1] = {0.251f, 0.878f, 0.816f, 0.7f}; // Turquoise color (second_color)
@@ -51,9 +56,11 @@ struct git: public card {
                 select(std::string(actual_path));
             } else {
                 name("Git Repos");
+                trigger_async_status_update();
             }
         } else {
             name("Git Repos");
+            trigger_async_status_update();
         }
     }
 
@@ -104,6 +111,38 @@ struct git: public card {
             )
         };
     }
+
+    void trigger_async_status_update() {
+        if (status_update_in_progress.exchange(true)) {
+            return;
+        }
+
+        std::string current_repo;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            current_repo = selected_repo;
+        }
+
+        std::thread([this, current_repo]() {
+            if (!current_repo.empty()) {
+                std::string status = git_model->getGitStatus(current_repo);
+                std::string git_remote = git_model->getGitRemote(current_repo);
+                std::string repo_name = extract_github_repo_name(git_remote);
+
+                std::lock_guard<std::mutex> lock(state_mutex);
+                if (selected_repo == current_repo) {
+                    repo_status = status;
+                    cached_git_remote = git_remote;
+                    cached_github_repo_name = repo_name;
+                }
+            } else {
+                for (const auto& path : git_model->getRepoPaths()) {
+                    git_model->getGitStatus(path);
+                }
+            }
+            status_update_in_progress = false;
+        }).detach();
+    }
     
     /**
      * Select a repository and get its current git status
@@ -124,34 +163,52 @@ struct git: public card {
 
         this->selected_repo = repo_path;
         name(std::format("Git: {}", std::filesystem::path(selected_repo).filename().string()));
-        this->updateRepoStatus();
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            cached_git_remote.clear();
+            cached_github_repo_name.clear();
+        }
+        trigger_async_status_update();
         
         return true;
     }
     
     /**
-     * Go back to the repository list with a slide animation
+     * Go back to the repository list
      */
     void back_to_list() {
         selected_repo.clear();
         name("Git Repos");
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            cached_git_remote.clear();
+            cached_github_repo_name.clear();
+        }
+        trigger_async_status_update();
     }
     
     /**
-     * Update the repository status by using the git model
-     * 
-     * @return true if successful, false if failed
+     * Synchronously update status for immediate action results
      */
-    bool updateRepoStatus() {
+    bool updateRepoStatusSync() {
         if (selected_repo.empty()) {
             return false;
         }
         
-        // Use the git model to get the status
         std::string status = git_model->getGitStatus(selected_repo);
+        std::string git_remote = git_model->getGitRemote(selected_repo);
+        std::string repo_name = extract_github_repo_name(git_remote);
+
         std::lock_guard<std::mutex> lock(state_mutex);
         repo_status = status;
+        cached_git_remote = git_remote;
+        cached_github_repo_name = repo_name;
         return !repo_status.empty();
+    }
+
+    bool updateRepoStatus() {
+        trigger_async_status_update();
+        return true;
     }
     
     // Helper function to scale and offset SVG coordinates
@@ -241,15 +298,13 @@ struct git: public card {
         // Add GitHub integration button
         ImGui::SameLine();
         if (ImGui::SmallButton("GitHub CI")) {
-            // Try to determine if this is a GitHub repository
-            std::string git_remote = git_model->getGitRemote(selected_repo);
-            if (git_remote.find("github.com") != std::string::npos) {
-                // Extract repo name from remote URL
-                std::string repo_name = extract_github_repo_name(git_remote);
-                if (!repo_name.empty()) {
-                    // This could create a GitHub CI card or switch to existing one
-                    "create_card"_sfn(std::format("github-ci:{}", repo_name));
-                }
+            std::string repo_name;
+            {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                repo_name = cached_github_repo_name;
+            }
+            if (!repo_name.empty()) {
+                "create_card"_sfn(std::format("github-ci:{}", repo_name));
             }
         }
         
@@ -284,6 +339,12 @@ struct git: public card {
     }
 
     bool render() override {
+        auto now = std::chrono::steady_clock::now();
+        if (now - last_status_update >= std::chrono::seconds(20)) {
+            last_status_update = now;
+            trigger_async_status_update();
+        }
+
         return render_window([this]() {
             bool disabled = ai_request_pending.load();
 
@@ -358,7 +419,7 @@ struct git: public card {
     
 private:
     void prepend_action_result(const std::string& action_name, const std::string& command_output) {
-        updateRepoStatus();
+        updateRepoStatusSync();
 
         std::string output = command_output;
         if (output.empty()) {
@@ -596,8 +657,15 @@ private:
     }
     
     void render_github_status_indicator() {
+        std::string git_remote;
+        std::string repo_name;
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            git_remote = cached_git_remote;
+            repo_name = cached_github_repo_name;
+        }
+
         // Check if this repository has a GitHub remote
-        std::string git_remote = git_model->getGitRemote(selected_repo);
         if (git_remote.find("github.com") == std::string::npos) {
             return; // Not a GitHub repository
         }
@@ -605,7 +673,6 @@ private:
         ImGui::Separator();
         ImGui::TextColored(colors[0], ICON_MD_CLOUD " GitHub Integration");
         
-        std::string repo_name = extract_github_repo_name(git_remote);
         if (!repo_name.empty()) {
             ImGui::Text("Repository: %s", repo_name.c_str());
             
