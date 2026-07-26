@@ -39,7 +39,11 @@ namespace rouen::cards {
         }
         
         bool render(rouen::ui::ui_context& ui) override {
-            return render_window([this, &ui]() {
+            if (should_close_) {
+                return false;
+            }
+
+            bool is_open = render_window([this, &ui]() {
                 const auto& menu_categories = get_categories();
                 
                 // Flatten menu items for search
@@ -90,6 +94,7 @@ namespace rouen::cards {
                         "create_card"_sfn("ai-chat:" + encoded_query);
                         search_buffer[0] = '\0';
                         selected_index = 0;
+                        should_close_ = true;
                     }
                 }
                 
@@ -136,6 +141,7 @@ namespace rouen::cards {
                             
                             if (ImGui::Selectable(item.first.c_str(), false, 0, ImVec2(item_width, 0))) {
                                 item.second();
+                                should_close_ = true;
                             }
                             
                             ui.pop_style_color(3);
@@ -171,6 +177,7 @@ namespace rouen::cards {
                                 menu_categories[static_cast<size_t>(cat_idx)].items[static_cast<size_t>(item_idx)].second();
                                 // also clear the filter
                                 search_buffer[0] = '\0';
+                                should_close_ = true;
                             }
                         }
                     }
@@ -196,6 +203,7 @@ namespace rouen::cards {
                             
                             if (ui.selectable(item_text, is_selected)) {
                                 menu_categories[static_cast<size_t>(cat_idx)].items[static_cast<size_t>(item_idx)].second();
+                                should_close_ = true;
                             }
                             
                             // Make the selected item visible - auto-scroll to it
@@ -210,6 +218,7 @@ namespace rouen::cards {
                     ui.end_child();
                 }
             });
+            return is_open && !should_close_;
         }
 
         // Override to provide MCP functions
@@ -237,7 +246,7 @@ namespace rouen::cards {
                     "execute_menu_command",
                     "Execute one of the commands/applications from the menu by its exact name.",
                     R"mcp({"type":"object","properties":{"name":{"type":"string","description":"The exact name of the command/application to execute (e.g. 'Git', 'Pomodoro', 'Calendar')"}},"required":["name"]})mcp",
-                    [](const std::string& params) -> std::string {
+                    [this](const std::string& params) -> std::string {
                         std::string target_name;
                         auto start = params.find("\"name\"");
                         if (start != std::string::npos) {
@@ -262,6 +271,7 @@ namespace rouen::cards {
                             for (const auto& item : cat.items) {
                                 if (::helpers::StringHelper::to_lower(item.first) == ::helpers::StringHelper::to_lower(target_name)) {
                                     item.second(); // Run the command function
+                                    should_close_ = true;
                                     return std::format(R"({{"status": "success", "message": "Executed command '{}'"}})", item.first);
                                 }
                             }
@@ -274,6 +284,7 @@ namespace rouen::cards {
         }
 
     private:
+        mutable bool should_close_{false};
         struct MenuCategory {
             std::string name;
             std::vector<std::pair<std::string, std::function<void()>>> items;

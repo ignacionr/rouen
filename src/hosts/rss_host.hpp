@@ -1404,7 +1404,7 @@ private:
                 return "quitting"_fnb() || stoken.stop_requested();
             };
             
-            int success_count = 0;
+            [[maybe_unused]] int success_count = 0;
             int error_count = 0;
             
             // Process feeds sequentially with spacing to prevent rate-limiting and DB locking conflicts
