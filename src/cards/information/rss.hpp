@@ -415,7 +415,6 @@ public:
             ImGui::TextColored(colors[0], "Your RSS Feeds:");
             
             // Search functionality
-            static char search_buffer[256] = "";
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
             
             // Calculate width for input field to leave space for clear button
@@ -424,7 +423,7 @@ public:
             float input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
             ImGui::PushItemWidth(input_width);
             
-            bool changed = ImGui::InputText("##search", search_buffer, static_cast<int>(sizeof(search_buffer)));
+            bool changed = ImGui::InputText("##search", search_buffer_, static_cast<int>(sizeof(search_buffer_)));
             if (changed) {
                 last_search_type_time_ = std::chrono::system_clock::now();
                 search_pending_ = true;
@@ -432,7 +431,7 @@ public:
             
             // Apply search immediately if Enter is pressed
             if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-                debounced_search_query_ = search_buffer;
+                debounced_search_query_ = search_buffer_;
                 search_pending_ = false;
             }
             
@@ -440,14 +439,14 @@ public:
             if (search_pending_) {
                 auto elapsed = std::chrono::system_clock::now() - last_search_type_time_;
                 if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= 1000) {
-                    debounced_search_query_ = search_buffer;
+                    debounced_search_query_ = search_buffer_;
                     search_pending_ = false;
                 }
             }
             
             // Handle ESC key to clear search while maintaining focus
             if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                search_buffer[0] = '\0';
+                search_buffer_[0] = '\0';
                 debounced_search_query_ = "";
                 search_pending_ = false;
                 // Focus will naturally stay on the input field since we're not changing focus
@@ -459,14 +458,14 @@ public:
             // Clear button (soft X)
             ImGui::SameLine();
             if (ImGui::SmallButton("×")) {
-                search_buffer[0] = '\0'; // Clear the search buffer
+                search_buffer_[0] = '\0'; // Clear the search buffer
                 debounced_search_query_ = "";
                 search_pending_ = false;
                 ImGui::SetKeyboardFocusHere(-1); // Focus the previous item (the InputText)
             }
             
             // Show placeholder text when input is empty
-            if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
+            if (search_buffer_[0] == '\0' && !ImGui::IsItemActive()) {
                 ImGui::GetWindowDrawList()->AddText(
                     ImVec2(pos.x + 5, pos.y + 2),
                     ImGui::GetColorU32(ImGuiCol_TextDisabled),
@@ -512,6 +511,7 @@ public:
                 }
                 
                 if (needs_update) {
+                    search_results_dirty_ = true;
                     cached_feeds_.clear();
                     if (selected_tag_ == "All") {
                         cached_feeds_ = all_feeds;
@@ -598,51 +598,60 @@ public:
                         bool has_matches = false;
                         render_feed_list(feeds, search_text, has_matches);
                     } else {
-                        // 1. Search matching Feeds within current category
-                        std::vector<std::shared_ptr<media::rss::feed>> matching_feeds;
-                        for (const auto& feed : feeds) {
-                            std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
-                            if (::helpers::StringHelper::contains_case_insensitive(title, search_text) ||
-                                ::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
-                                matching_feeds.push_back(feed);
+                        // Re-run deep search only if query, tag, or feed cache changed
+                        if (search_text != cached_search_query_ ||
+                            selected_tag_ != cached_search_tag_ ||
+                            search_results_dirty_)
+                        {
+                            cached_matching_feeds_.clear();
+                            for (const auto& feed : feeds) {
+                                std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+                                if (::helpers::StringHelper::contains_case_insensitive(title, search_text) ||
+                                    ::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
+                                    cached_matching_feeds_.push_back(feed);
+                                }
                             }
+
+                            auto raw_matching_items = rss_host->searchItems(search_text);
+                            cached_matching_items_.clear();
+                            if (selected_tag_ == "All") {
+                                cached_matching_items_ = std::move(raw_matching_items);
+                            } else {
+                                std::set<long long> active_ids;
+                                for (const auto& f : feeds) {
+                                    active_ids.insert(f->repo_id);
+                                }
+                                for (auto& item : raw_matching_items) {
+                                    if (active_ids.contains(item.feed_id)) {
+                                        cached_matching_items_.push_back(std::move(item));
+                                    }
+                                }
+                            }
+
+                            cached_search_query_ = search_text;
+                            cached_search_tag_ = selected_tag_;
+                            search_results_dirty_ = false;
                         }
 
-                        if (!matching_feeds.empty()) {
-                            ImGui::TextColored(colors[0], "Matching Feeds (%d):", static_cast<int>(matching_feeds.size()));
+                        if (!cached_matching_feeds_.empty()) {
+                            ImGui::TextColored(colors[0], "Matching Feeds (%d):", static_cast<int>(cached_matching_feeds_.size()));
                             ImGui::Spacing();
                             bool has_matches = false;
-                            render_feed_list(matching_feeds, search_text, has_matches);
+                            render_feed_list(cached_matching_feeds_, search_text, has_matches);
                             ImGui::Spacing();
                             ImGui::Separator();
                             ImGui::Spacing();
                         }
 
                         // 2. Deep Search matching Articles within category
-                        auto raw_matching_items = rss_host->searchItems(search_text);
-                        std::vector<hosts::RSSHost::FeedItem> matching_items;
-                        if (selected_tag_ == "All") {
-                            matching_items = raw_matching_items;
-                        } else {
-                            std::set<long long> active_ids;
-                            for (const auto& f : feeds) {
-                                active_ids.insert(f->repo_id);
-                            }
-                            for (const auto& item : raw_matching_items) {
-                                if (active_ids.contains(item.feed_id)) {
-                                    matching_items.push_back(item);
-                                }
-                            }
-                        }
-                        ImGui::TextColored(colors[0], "Matching Articles (%d):", static_cast<int>(matching_items.size()));
+                        ImGui::TextColored(colors[0], "Matching Articles (%d):", static_cast<int>(cached_matching_items_.size()));
                         ImGui::Spacing();
 
-                        if (matching_items.empty()) {
+                        if (cached_matching_items_.empty()) {
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No articles found matching your search");
                         } else {
-                            for (size_t i = 0; i < matching_items.size(); ++i) {
-                                const auto& item = matching_items[i];
-                                ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
+                            for (size_t i = 0; i < cached_matching_items_.size(); ++i) {
+                                const auto& item = cached_matching_items_[i];
 
                                 try {
                                     ImGui::BeginGroup();
@@ -1343,10 +1352,17 @@ private:
     std::unordered_map<std::string, FeedCacheState> feed_states_;
     std::set<std::string> top_fresh_tags_;
 
-    // Search debouncing state
+    // Search debouncing and caching state
+    char search_buffer_[256] = "";
     std::string debounced_search_query_ = "";
     std::chrono::system_clock::time_point last_search_type_time_;
     bool search_pending_ = false;
+
+    std::string cached_search_query_ = "";
+    std::string cached_search_tag_ = "";
+    bool search_results_dirty_ = true;
+    std::vector<std::shared_ptr<media::rss::feed>> cached_matching_feeds_;
+    std::vector<hosts::RSSHost::FeedItem> cached_matching_items_;
 
     SDL_Renderer* renderer = nullptr;
     std::shared_ptr<::helpers::ImageCache> image_cache;
