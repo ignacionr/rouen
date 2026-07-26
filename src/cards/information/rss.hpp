@@ -215,16 +215,12 @@ public:
         }
         
         // Periodically invalidate the cache to ensure freshness colors update
-        // We do this based on frame count to avoid doing it every single frame
-        static int frame_counter = 0;
-        frame_counter++;
-        
-        // Every 60 frames (roughly every minute at 1 FPS), clear the entire cache
-        // This ensures that even if feeds are refreshed in the background, we'll
-        // eventually pick up the new update times
-        if (frame_counter >= 60) {
+        // We do this based on time elapsed (every 2 minutes) rather than frame count
+        // to handle variable frame rates gracefully
+        auto now_steady = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::minutes>(now_steady - last_freshness_cache_invalidation_time_).count() >= 2) {
             invalidate_freshness_cache();
-            frame_counter = 0;
+            last_freshness_cache_invalidation_time_ = now_steady;
         }
         
         return render_window([this] {
@@ -1223,10 +1219,10 @@ private:
         bool should_refresh = true;
         
         if (cache_it != freshness_cache.end()) {
-            // In normal cases, refresh cache every minute instead of every 5 minutes
+            // In normal cases, refresh cache every 2 minutes
             // to ensure UI feels responsive to feed updates
             auto cache_age = now - cache_it->second.second;
-            if (std::chrono::duration_cast<std::chrono::minutes>(cache_age).count() < 1) {
+            if (std::chrono::duration_cast<std::chrono::minutes>(cache_age).count() < 2) {
                 should_refresh = false;
             }
         }
@@ -1341,6 +1337,7 @@ private:
     std::vector<std::string> cached_gallery_tags_;
     std::vector<rouen::hosts::RSSHost::SmartListInfo> cached_smart_lists_;
     std::chrono::steady_clock::time_point last_gallery_cache_update_time_{};
+    std::chrono::steady_clock::time_point last_freshness_cache_invalidation_time_{};
     std::string last_selected_tag_ = "";
     size_t last_all_feeds_size_ = 0;
     std::unordered_map<std::string, FeedCacheState> feed_states_;
