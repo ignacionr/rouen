@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "../interface/card.hpp"
+#include "../../models/contacts/contacts_repository.hpp"
 
 namespace rouen::cards {
 
@@ -16,6 +17,11 @@ struct invoice_line_item {
     double amount() const {
         return quantity * unit_price;
     }
+};
+
+enum class contact_picker_target {
+    provider,
+    customer
 };
 
 struct invoice_card : public card {
@@ -32,6 +38,10 @@ struct invoice_card : public card {
     bool generate_pdf(const std::string& output_path, std::string& error_msg) const;
 
     void apply_monthly_retainer();
+
+    void refresh_contacts();
+    void apply_contact_as_provider(const rouen::models::contacts::contact& c);
+    void apply_contact_as_customer(const rouen::models::contacts::contact& c);
 
 private:
     // Seller / Provider Information
@@ -76,9 +86,24 @@ private:
     std::string status_message;
     bool status_is_error{false};
 
+    // Contacts Integration
+    std::unique_ptr<rouen::models::contacts::contacts_repository> contacts_repo_;
+    std::vector<rouen::models::contacts::contact> cached_contacts_;
+    bool contacts_loaded_{false};
+
+    // Contact picker UI state
+    bool show_contact_picker_{false};
+    contact_picker_target picker_target_{contact_picker_target::provider};
+    char contact_search_buf_[128]{""};
+    int selected_provider_combo_idx_{-1};
+    int selected_customer_combo_idx_{-1};
+
     std::string get_swift_bic_label() const;
     double calculate_subtotal() const;
     double calculate_total() const;
+
+    void render_contact_picker_modal(rouen::ui::ui_context& ui);
 };
 
 } // namespace rouen::cards
+

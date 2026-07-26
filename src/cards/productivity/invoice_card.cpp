@@ -25,9 +25,11 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/ui_context.hpp"
 #include "../../registrar.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 namespace rouen::cards {
 
@@ -48,6 +50,50 @@ invoice_card::invoice_card() {
     } else {
         pdf_output_path = "Invoice_INV-2026-001.pdf";
     }
+
+    std::string db_path = rouen::platform::get_user_data_path("contacts.db").string();
+    contacts_repo_ = std::make_unique<rouen::models::contacts::contacts_repository>(db_path);
+    refresh_contacts();
+}
+
+void invoice_card::refresh_contacts() {
+    if (contacts_repo_) {
+        cached_contacts_ = contacts_repo_->get_all_contacts();
+        contacts_loaded_ = true;
+    }
+}
+
+void invoice_card::apply_contact_as_provider(const rouen::models::contacts::contact& c) {
+    seller_name = c.get_full_name();
+    seller_email = c.email;
+    seller_phone = c.phone;
+    seller_address = c.address;
+    if (!seller_name.empty()) {
+        account_holder = seller_name;
+    }
+    status_message = "Provider updated from contact: " + seller_name;
+    status_is_error = false;
+}
+
+void invoice_card::apply_contact_as_customer(const rouen::models::contacts::contact& c) {
+    if (!c.organization.empty()) {
+        client_name = c.organization;
+        std::string full_n = c.get_full_name();
+        if (!full_n.empty() && full_n != "Unnamed Contact") {
+            client_contact = full_n;
+            if (!c.email.empty()) {
+                client_contact += " (" + c.email + ")";
+            }
+        } else {
+            client_contact = c.email;
+        }
+    } else {
+        client_name = c.get_full_name();
+        client_contact = c.email;
+    }
+    client_address = c.address;
+    status_message = "Customer updated from contact: " + client_name;
+    status_is_error = false;
 }
 
 std::string invoice_card::get_swift_bic_label() const {
@@ -271,10 +317,120 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
     }
 }
 
+void invoice_card::render_contact_picker_modal(rouen::ui::ui_context& ui) {
+    if (!show_contact_picker_) return;
+
+    std::string modal_title = (picker_target_ == contact_picker_target::provider)
+        ? "Select Provider from Contacts"
+        : "Select Customer from Contacts";
+
+    ImGui::OpenPopup(modal_title.c_str());
+    ImGui::SetNextWindowSize(ImVec2(540, 400), ImGuiCond_Appearing);
+
+    if (ImGui::BeginPopupModal(modal_title.c_str(), &show_contact_picker_)) {
+        ui.text_colored(colors[0], picker_target_ == contact_picker_target::provider
+            ? "Select a contact to fill Provider (Seller) information:"
+            : "Select a contact to fill Customer (Client) information:");
+
+        ui.spacing();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##contact_search", "Search contacts by name, company, email, phone...", contact_search_buf_, sizeof(contact_search_buf_));
+
+        ui.spacing();
+
+        std::string filter_str = contact_search_buf_;
+        std::transform(filter_str.begin(), filter_str.end(), filter_str.begin(), ::tolower);
+
+        if (ImGui::BeginChild("ContactListChild", ImVec2(0, 240), true)) {
+            if (cached_contacts_.empty()) {
+                ui.text_colored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No contacts found in contacts database.");
+            } else {
+                int match_count = 0;
+                for (const auto& c : cached_contacts_) {
+                    std::string full_name = c.get_full_name();
+                    std::string search_target = full_name + " " + c.organization + " " + c.email + " " + c.phone;
+                    std::transform(search_target.begin(), search_target.end(), search_target.begin(), ::tolower);
+
+                    if (!filter_str.empty() && search_target.find(filter_str) == std::string::npos) {
+                        continue;
+                    }
+
+                    match_count++;
+                    ImGui::PushID(static_cast<int>(c.id));
+
+                    std::string display_title = std::string(ICON_MD_CONTACTS) + "  " + full_name;
+                    if (!c.organization.empty()) {
+                        display_title += " (" + c.organization + ")";
+                    }
+                    if (!c.job_title.empty()) {
+                        display_title += " - " + c.job_title;
+                    }
+
+                    if (ImGui::Selectable(display_title.c_str(), false)) {
+                        if (picker_target_ == contact_picker_target::provider) {
+                            apply_contact_as_provider(c);
+                        } else {
+                            apply_contact_as_customer(c);
+                        }
+                        show_contact_picker_ = false;
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    if (!c.email.empty() || !c.phone.empty() || !c.address.empty()) {
+                        std::string subtitle;
+                        if (!c.email.empty()) subtitle += c.email;
+                        if (!c.phone.empty()) {
+                            if (!subtitle.empty()) subtitle += " | ";
+                            subtitle += c.phone;
+                        }
+                        if (!c.address.empty()) {
+                            if (!subtitle.empty()) subtitle += " | ";
+                            subtitle += c.address;
+                        }
+                        ui.text_colored(ImVec4(0.55f, 0.65f, 0.75f, 1.0f), "     " + subtitle);
+                    }
+
+                    ui.separator();
+                    ImGui::PopID();
+                }
+
+                if (match_count == 0) {
+                    ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No contacts match search filter.");
+                }
+            }
+        }
+        ImGui::EndChild();
+
+        ui.spacing();
+        if (ui.button("Cancel", ImVec2(100, 0))) {
+            show_contact_picker_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
 bool invoice_card::render(rouen::ui::ui_context& ui) {
     return render_window([this, &ui]() {
         ui.text_colored(colors[0], "Professional Invoice Generator (PDFHummus)");
-        ui.text_wrapped("Fill in invoice details or use the Monthly Retainer preset to generate a formatted PDF invoice.");
+        ui.text_wrapped("Fill in invoice details, load provider/customer from Contacts, or use the Monthly Retainer preset.");
+        
+        ui.spacing();
+        if (ImGui::Button((std::string(ICON_MD_CONTACTS) + " Choose Provider from Contacts##top_provider_btn").c_str())) {
+            refresh_contacts();
+            picker_target_ = contact_picker_target::provider;
+            show_contact_picker_ = true;
+            contact_search_buf_[0] = '\0';
+        }
+        ImGui::SameLine();
+        if (ImGui::Button((std::string(ICON_MD_CONTACTS) + " Choose Customer from Contacts##top_customer_btn").c_str())) {
+            refresh_contacts();
+            picker_target_ = contact_picker_target::customer;
+            show_contact_picker_ = true;
+            contact_search_buf_[0] = '\0';
+        }
+
         ui.separator();
 
         auto draw_input_string = [](const char* label, std::string& str) {
@@ -292,6 +448,39 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
             // Tab 1: Provider, Client, & Metadata
             if (ImGui::BeginTabItem("Parties & Meta")) {
                 ui.text_colored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Provider (Seller / Freelancer)");
+
+                if (ImGui::Button((std::string(ICON_MD_CONTACTS) + " Choose Provider from Contacts...##provider_btn").c_str())) {
+                    refresh_contacts();
+                    picker_target_ = contact_picker_target::provider;
+                    show_contact_picker_ = true;
+                    contact_search_buf_[0] = '\0';
+                }
+
+                if (!cached_contacts_.empty()) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(210);
+                    std::string combo_preview = (selected_provider_combo_idx_ >= 0 && selected_provider_combo_idx_ < static_cast<int>(cached_contacts_.size()))
+                        ? cached_contacts_[static_cast<size_t>(selected_provider_combo_idx_)].get_full_name()
+                        : "Quick Select Contact...";
+                    if (ImGui::BeginCombo("##provider_combo", combo_preview.c_str())) {
+                        for (size_t i = 0; i < cached_contacts_.size(); ++i) {
+                            const bool is_selected = (selected_provider_combo_idx_ == static_cast<int>(i));
+                            std::string item_label = cached_contacts_[i].get_full_name();
+                            if (!cached_contacts_[i].organization.empty()) {
+                                item_label += " (" + cached_contacts_[i].organization + ")";
+                            }
+                            if (ImGui::Selectable(item_label.c_str(), is_selected)) {
+                                selected_provider_combo_idx_ = static_cast<int>(i);
+                                apply_contact_as_provider(cached_contacts_[i]);
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
                 draw_input_string("Full Name##seller", seller_name);
                 draw_input_string("Email / Contact##seller", seller_email);
                 draw_input_string("Address / Country##seller", seller_address);
@@ -299,8 +488,41 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
 
                 ui.spacing();
                 ui.separator();
-                ui.text_colored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Client (Company)");
-                draw_input_string("Company Name##client", client_name);
+                ui.text_colored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Client (Customer / Company)");
+
+                if (ImGui::Button((std::string(ICON_MD_CONTACTS) + " Choose Customer from Contacts...##client_btn").c_str())) {
+                    refresh_contacts();
+                    picker_target_ = contact_picker_target::customer;
+                    show_contact_picker_ = true;
+                    contact_search_buf_[0] = '\0';
+                }
+
+                if (!cached_contacts_.empty()) {
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(210);
+                    std::string combo_preview = (selected_customer_combo_idx_ >= 0 && selected_customer_combo_idx_ < static_cast<int>(cached_contacts_.size()))
+                        ? cached_contacts_[static_cast<size_t>(selected_customer_combo_idx_)].get_full_name()
+                        : "Quick Select Contact...";
+                    if (ImGui::BeginCombo("##customer_combo", combo_preview.c_str())) {
+                        for (size_t i = 0; i < cached_contacts_.size(); ++i) {
+                            const bool is_selected = (selected_customer_combo_idx_ == static_cast<int>(i));
+                            std::string item_label = cached_contacts_[i].get_full_name();
+                            if (!cached_contacts_[i].organization.empty()) {
+                                item_label += " (" + cached_contacts_[i].organization + ")";
+                            }
+                            if (ImGui::Selectable(item_label.c_str(), is_selected)) {
+                                selected_customer_combo_idx_ = static_cast<int>(i);
+                                apply_contact_as_customer(cached_contacts_[i]);
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
+                draw_input_string("Company / Name##client", client_name);
                 draw_input_string("Billing Contact##client", client_contact);
                 draw_input_string("Company Address##client", client_address);
 
@@ -435,6 +657,8 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
                 ui.text_colored(ImVec4(0.3f, 0.9f, 0.4f, 1.0f), status_message);
             }
         }
+
+        render_contact_picker_modal(ui);
     });
 }
 
@@ -468,8 +692,79 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
                     return std::format(R"({{"status": "error", "message": "{}"}})", err);
                 }
             }
+        ),
+        mcp_function(
+            "set_provider_from_contact",
+            "Set the invoice seller/provider information using a contact matched by search query or name.",
+            R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Contact name, email, or search term"}},"required":["query"]})mcp",
+            [this](const std::string& params) -> std::string {
+                std::string query;
+                auto start = params.find("\"query\"");
+                if (start != std::string::npos) {
+                    start = params.find(":", start);
+                    if (start != std::string::npos) {
+                        start = params.find("\"", start);
+                        if (start != std::string::npos) {
+                            start++;
+                            auto end = params.find("\"", start);
+                            if (end != std::string::npos) {
+                                query = params.substr(start, end - start);
+                            }
+                        }
+                    }
+                }
+
+                if (query.empty()) {
+                    return R"({"status": "error", "message": "query parameter missing"})";
+                }
+
+                const_cast<invoice_card*>(this)->refresh_contacts();
+                auto matched = contacts_repo_ ? contacts_repo_->search_contacts(query) : std::vector<models::contacts::contact>{};
+                if (matched.empty()) {
+                    return std::format(R"({{"status": "error", "message": "No contact found matching '{}'"}})", query);
+                }
+
+                const_cast<invoice_card*>(this)->apply_contact_as_provider(matched.front());
+                return std::format(R"({{"status": "success", "provider_name": "{}", "email": "{}"}})", seller_name, seller_email);
+            }
+        ),
+        mcp_function(
+            "set_customer_from_contact",
+            "Set the invoice client/customer information using a contact matched by search query or name.",
+            R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Contact name, organization, email, or search term"}},"required":["query"]})mcp",
+            [this](const std::string& params) -> std::string {
+                std::string query;
+                auto start = params.find("\"query\"");
+                if (start != std::string::npos) {
+                    start = params.find(":", start);
+                    if (start != std::string::npos) {
+                        start = params.find("\"", start);
+                        if (start != std::string::npos) {
+                            start++;
+                            auto end = params.find("\"", start);
+                            if (end != std::string::npos) {
+                                query = params.substr(start, end - start);
+                            }
+                        }
+                    }
+                }
+
+                if (query.empty()) {
+                    return R"({"status": "error", "message": "query parameter missing"})";
+                }
+
+                const_cast<invoice_card*>(this)->refresh_contacts();
+                auto matched = contacts_repo_ ? contacts_repo_->search_contacts(query) : std::vector<models::contacts::contact>{};
+                if (matched.empty()) {
+                    return std::format(R"({{"status": "error", "message": "No contact found matching '{}'"}})", query);
+                }
+
+                const_cast<invoice_card*>(this)->apply_contact_as_customer(matched.front());
+                return std::format(R"({{"status": "success", "customer_name": "{}", "contact": "{}"}})", client_name, client_contact);
+            }
         )
     };
 }
 
 } // namespace rouen::cards
+
