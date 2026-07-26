@@ -350,26 +350,17 @@ public:
     // Get access to the Travel host controller (needed for travel plan cards)
     static std::shared_ptr<TravelHost> getHost() {
         try {
-            static std::weak_ptr<TravelHost> weak_host;
+            static std::shared_ptr<TravelHost> instance;
             static std::mutex init_mutex;
-            
             std::lock_guard<std::mutex> lock(init_mutex);
-            
-            // Try to get a shared_ptr from the weak_ptr
-            auto shared_host = weak_host.lock();
-            
-            // If the weak_ptr has expired or was never initialized, create a new instance
-            if (!shared_host) {
-                DB_INFO("TravelHost: Creating new shared TravelHost instance");
-                shared_host = std::make_shared<TravelHost>();
-                weak_host = shared_host; // Store a weak_ptr, not keeping the object alive
+            if (!instance) {
+                DB_INFO("TravelHost: Creating persistent TravelHost instance");
+                instance = std::make_shared<TravelHost>();
             }
-            
-            return shared_host;
+            return instance;
         } catch (const std::exception& e) {
             DB_ERROR_FMT("TravelHost: Exception in getHost: {}", e.what());
-            // Fallback to creating a new instance in case of failure
-            return std::make_shared<TravelHost>();
+            return nullptr;
         }
     }
 

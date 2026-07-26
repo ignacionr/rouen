@@ -27,6 +27,7 @@
 #include "deferred_operations.hpp"
 #include "mcp_service.hpp"
 #include "media_player.hpp"
+#include "card_render_metrics.hpp"
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
@@ -251,6 +252,30 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
             response = handle_window_get(c, hm);
         } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_window_set(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/metrics"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            auto metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics();
+            std::vector<glz::json_t> arr;
+            for (const auto& m : metrics) {
+                glz::json_t item;
+                item["title"] = m.title;
+                item["uri"] = m.uri;
+                item["last_render_ms"] = m.last_render_ms;
+                item["avg_render_ms"] = m.avg_render_ms;
+                item["max_render_ms"] = m.max_render_ms;
+                item["render_count"] = m.render_count;
+                arr.push_back(item);
+            }
+            std::string out;
+            (void)glz::write_json(arr, out);
+            response = out;
+        } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+            rouen::helpers::CardRenderMetrics::instance().reset();
+            response = R"({"status":"ok","message":"Metrics reset"})";
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";

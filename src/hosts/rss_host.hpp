@@ -418,11 +418,44 @@ namespace rouen::hosts {
             return std::nullopt;
         }
 
+        const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
+
+        // Fast Primary Path: Direct HTTP fetch & regex scrape lengthSeconds / approxDurationMs (~20ms)
+        try {
+            http::fetch client{4};
+            std::vector<std::string> headers = {
+                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            };
+            std::string html = client(watch_url, headers);
+            if (!html.empty()) {
+                std::smatch match;
+                static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
+                static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
+
+                if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
+                    try {
+                        auto secs = std::stod(match.str(1));
+                        if (secs > 0.0 && std::isfinite(secs)) {
+                            return secs;
+                        }
+                    } catch (...) {}
+                }
+                if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
+                    try {
+                        auto ms = std::stod(match.str(1));
+                        if (ms > 0.0 && std::isfinite(ms)) {
+                            return ms / 1000.0;
+                        }
+                    } catch (...) {}
+                }
+            }
+        } catch (...) {}
+
+        // Fallback Path: Call yt-dlp with hard 3s timeout only if HTTP scrape fails
         static const std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
         if (!ytdlp_path.empty()) {
-            const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
             const std::string command = std::format(
-                "{} --no-warnings --quiet --print duration {} 2>/dev/null",
+                "{} --no-warnings --socket-timeout 3 --quiet --print duration {} 2>/dev/null",
                 shell_quote(ytdlp_path),
                 shell_quote(watch_url)
             );
@@ -442,41 +475,6 @@ namespace rouen::hosts {
             }
         }
 
-        // Fallback: scrape YouTube watch page for lengthSeconds / approxDurationMs
-        const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
-        try {
-            http::fetch client{4};
-            std::vector<std::string> headers = {
-                "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            };
-            std::string html = client(watch_url, headers);
-            if (html.empty()) {
-                return std::nullopt;
-            }
-
-            std::smatch match;
-            static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
-            static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
-
-            if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
-                try {
-                    auto secs = std::stod(match.str(1));
-                    if (secs > 0.0 && std::isfinite(secs)) {
-                        return secs;
-                    }
-                } catch (...) {}
-            }
-            if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
-                try {
-                    auto ms = std::stod(match.str(1));
-                    if (ms > 0.0 && std::isfinite(ms)) {
-                        return ms / 1000.0;
-                    }
-                } catch (...) {}
-            }
-        } catch (const std::exception& e) {
-            HTTP_DEBUG_FMT("Failed to probe YouTube duration for {}: {}", url, e.what());
-        }
         return std::nullopt;
     }
 
@@ -865,6 +863,71 @@ public:
 
     void deleteSmartList(const std::string& title) {
         repo_.delete_smart_list(title);
+    }
+
+    long long find_subscribed_youtube_feed_id(const std::string& channel_id, const std::string& feed_url, const std::string& channel_title) const {
+        std::lock_guard<std::mutex> lock(yt_sub_mutex_);
+        if (!channel_id.empty()) {
+            auto it = yt_channel_id_map_.find(channel_id);
+            if (it != yt_channel_id_map_.end()) return it->second;
+        }
+        if (!feed_url.empty()) {
+            auto it = yt_url_map_.find(feed_url);
+            if (it != yt_url_map_.end()) return it->second;
+        }
+        if (!channel_title.empty()) {
+            auto it = yt_title_map_.find(channel_title);
+            if (it != yt_title_map_.end()) return it->second;
+            it = yt_title_map_.find("YouTube Channel: " + channel_title);
+            if (it != yt_title_map_.end()) return it->second;
+        }
+        return -1;
+    }
+
+    void rebuild_yt_index() {
+        std::unordered_map<std::string, long long> cid_map;
+        std::unordered_map<std::string, long long> url_map;
+        std::unordered_map<std::string, long long> title_map;
+
+        {
+            std::lock_guard<std::mutex> lock(feeds_mutex_);
+            for (const auto& f : feeds_) {
+                if (!f) continue;
+                bool is_yt = (f->feed_link.find("youtube.com") != std::string::npos || 
+                              f->source_link.find("youtube.com") != std::string::npos ||
+                              f->feed_title.find("YouTube") != std::string::npos);
+                if (!is_yt) continue;
+
+                if (!f->feed_link.empty()) {
+                    url_map[f->feed_link] = f->repo_id;
+                    size_t cid_pos = f->feed_link.find("channel_id=");
+                    if (cid_pos != std::string::npos) {
+                        std::string cid = f->feed_link.substr(cid_pos + 11);
+                        size_t amp = cid.find('&');
+                        if (amp != std::string::npos) cid = cid.substr(0, amp);
+                        if (!cid.empty()) cid_map[cid] = f->repo_id;
+                    }
+                }
+                if (!f->source_link.empty()) {
+                    url_map[f->source_link] = f->repo_id;
+                    size_t cid_pos = f->source_link.find("channel_id=");
+                    if (cid_pos != std::string::npos) {
+                        std::string cid = f->source_link.substr(cid_pos + 11);
+                        size_t amp = cid.find('&');
+                        if (amp != std::string::npos) cid = cid.substr(0, amp);
+                        if (!cid.empty()) cid_map[cid] = f->repo_id;
+                    }
+                }
+                if (!f->feed_title.empty()) {
+                    title_map[f->feed_title] = f->repo_id;
+                }
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(yt_sub_mutex_);
+        yt_channel_id_map_ = std::move(cid_map);
+        yt_url_map_ = std::move(url_map);
+        yt_title_map_ = std::move(title_map);
     }
 
     struct SmartListInfo {
@@ -1848,6 +1911,11 @@ private:
     std::vector<std::shared_ptr<media::rss::feed>> feeds_;
     mutable std::mutex feeds_mutex_;
     
+    mutable std::mutex yt_sub_mutex_;
+    std::unordered_map<std::string, long long> yt_channel_id_map_;
+    std::unordered_map<std::string, long long> yt_url_map_;
+    std::unordered_map<std::string, long long> yt_title_map_;
+
     media::rss::sqliterepo repo_;
 
     int timeout_s_ = 60;

@@ -154,7 +154,7 @@ struct media_player_item {
 
     void decode_loop(std::string video_target, std::string audio_target, double start_offset);
 
-    ImTextureID get_texture_id(SDL_GPUDevice* device = nullptr) {
+    ImTextureID get_texture_id(SDL_GPUDevice* device = nullptr, SDL_GPUCommandBuffer* existing_cmdbuf = nullptr) {
         if (!device) {
             try {
                 auto r_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
@@ -254,7 +254,7 @@ struct media_player_item {
                 if (map) {
                     std::memcpy(map, local_pixels.data(), kWidth * kHeight * 4);
                     SDL_UnmapGPUTransferBuffer(device, upload_buffer);
-                    SDL_GPUCommandBuffer* cmd_buf = SDL_AcquireGPUCommandBuffer(device);
+                    SDL_GPUCommandBuffer* cmd_buf = existing_cmdbuf ? existing_cmdbuf : SDL_AcquireGPUCommandBuffer(device);
                     if (cmd_buf) {
                         SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
                         if (copy_pass) {
@@ -271,7 +271,9 @@ struct media_player_item {
                             SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
                             SDL_EndGPUCopyPass(copy_pass);
                         }
-                        SDL_SubmitGPUCommandBuffer(cmd_buf);
+                        if (!existing_cmdbuf) {
+                            SDL_SubmitGPUCommandBuffer(cmd_buf);
+                        }
                     }
                     has_video = true;
                 }
@@ -432,43 +434,73 @@ inline bool media_player_item::playMedia(const void* owner) {
                 return;
             }
 
-            std::string ytdl_cmd = std::format("yt-dlp -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", sanitized_url);
-            std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
-            std::stringstream ss(resolved);
-            std::string line;
-            std::vector<std::string> urls;
-            while (std::getline(ss, line)) {
-                line.erase(line.find_last_not_of(" \r\n\t") + 1);
-                if (line.starts_with("http://") || line.starts_with("https://")) {
-                    urls.push_back(line);
+            static std::mutex s_yt_resolved_url_mutex;
+            static std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<std::string>>> s_yt_resolved_urls;
+
+            bool found_cached = false;
+            {
+                std::lock_guard<std::mutex> lock(s_yt_resolved_url_mutex);
+                auto it = s_yt_resolved_urls.find(sanitized_url);
+                if (it != s_yt_resolved_urls.end()) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
+                    if (age_mins < 120 && !it->second.second.empty()) {
+                        const auto& urls = it->second.second;
+                        if (urls.size() >= 2) {
+                            video_target = urls[0];
+                            audio_target = urls[1];
+                        } else {
+                            video_target = urls[0];
+                            audio_target = urls[0];
+                        }
+                        found_cached = true;
+                    }
                 }
             }
-            if (!urls.empty()) {
-                if (urls.size() >= 2) {
-                    video_target = urls[0];
-                    audio_target = urls[1];
+
+            if (!found_cached) {
+                std::string ytdl_cmd = std::format("yt-dlp --no-warnings --socket-timeout 5 -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", sanitized_url);
+                std::string resolved = ProcessHelper::executeCommand(ytdl_cmd);
+                std::stringstream ss(resolved);
+                std::string line;
+                std::vector<std::string> urls;
+                while (std::getline(ss, line)) {
+                    line.erase(line.find_last_not_of(" \r\n\t") + 1);
+                    if (line.starts_with("http://") || line.starts_with("https://")) {
+                        urls.push_back(line);
+                    }
+                }
+                if (!urls.empty()) {
+                    {
+                        std::lock_guard<std::mutex> lock(s_yt_resolved_url_mutex);
+                        s_yt_resolved_urls[sanitized_url] = {std::chrono::steady_clock::now(), urls};
+                    }
+                    if (urls.size() >= 2) {
+                        video_target = urls[0];
+                        audio_target = urls[1];
+                    } else {
+                        video_target = urls[0];
+                        audio_target = urls[0];
+                    }
                 } else {
-                    video_target = urls[0];
-                    audio_target = urls[0];
+                    std::string clean_resolved = resolved;
+                    clean_resolved.erase(clean_resolved.find_last_not_of(" \r\n\t") + 1);
+                    if (clean_resolved.empty()) {
+                        clean_resolved = "No output from yt-dlp";
+                    }
+                    if (clean_resolved.length() > 200) {
+                        clean_resolved = clean_resolved.substr(0, 197) + "...";
+                    }
+                    std::string err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
+                    std::cerr << "[NativePlayer] " << err_msg << std::endl;
+                    try {
+                        "notify"_sfn(err_msg);
+                    } catch (...) {}
+                    ffmpeg_running.store(false);
+                    is_playing = false;
+                    player_pid = 0;
+                    return;
                 }
-            } else {
-                std::string clean_resolved = resolved;
-                clean_resolved.erase(clean_resolved.find_last_not_of(" \r\n\t") + 1);
-                if (clean_resolved.empty()) {
-                    clean_resolved = "No output from yt-dlp";
-                }
-                if (clean_resolved.length() > 200) {
-                    clean_resolved = clean_resolved.substr(0, 197) + "...";
-                }
-                std::string err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
-                std::cerr << "[NativePlayer] " << err_msg << std::endl;
-                try {
-                    "notify"_sfn(err_msg);
-                } catch (...) {}
-                ffmpeg_running.store(false);
-                is_playing = false;
-                player_pid = 0;
-                return;
             }
         }
 

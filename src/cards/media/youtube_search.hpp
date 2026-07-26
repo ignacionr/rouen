@@ -14,6 +14,8 @@
 
 #include <set>
 
+#include <fstream>
+#include <filesystem>
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 #include "../information/rss.hpp"
@@ -21,6 +23,7 @@
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/string_helper.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../fonts.hpp"
 #include "../../external/IconsMaterialDesign.h"
 
@@ -46,9 +49,117 @@ namespace rouen::cards {
             std::mutex mutex;
             std::vector<youtube_result> results;
             bool is_searching{false};
+            bool is_from_cache{false};
             std::string error_message;
             bool card_alive{true};
         };
+
+        struct YouTubeSearchCacheEntry {
+            std::chrono::steady_clock::time_point timestamp;
+            std::vector<youtube_result> results;
+        };
+
+        static std::recursive_mutex& cache_mutex() {
+            static std::recursive_mutex mtx;
+            return mtx;
+        }
+
+        static std::unordered_map<std::string, YouTubeSearchCacheEntry>& search_cache() {
+            static std::unordered_map<std::string, YouTubeSearchCacheEntry> cache;
+            return cache;
+        }
+
+        static std::string normalize_youtube_query(std::string_view q) {
+            std::string s(q);
+            size_t start = s.find_first_not_of(" \t\n\r");
+            if (start == std::string::npos) return "";
+            size_t end = s.find_last_not_of(" \t\n\r");
+            s = s.substr(start, end - start + 1);
+            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+            return s;
+        }
+
+        static void load_youtube_cache_from_disk() {
+            static bool loaded = false;
+            if (loaded) return;
+            loaded = true;
+            try {
+                std::filesystem::path path = rouen::platform::get_user_data_path("youtube_search_cache.json");
+                if (std::filesystem::exists(path)) {
+                    std::ifstream f(path);
+                    if (f.is_open()) {
+                        std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                        glz::json_t json;
+                        if (!glz::read_json(json, content)) {
+                            if (json.contains("entries") && json["entries"].is_array()) {
+                                std::lock_guard<std::recursive_mutex> lock(cache_mutex());
+                                for (const auto& item : json["entries"].get<std::vector<glz::json_t>>()) {
+                                    if (item.contains("query") && item["query"].is_string() && item.contains("results") && item["results"].is_array()) {
+                                        std::string q = item["query"].get<std::string>();
+                                        YouTubeSearchCacheEntry entry;
+                                        entry.timestamp = std::chrono::steady_clock::now();
+                                        for (const auto& r : item["results"].get<std::vector<glz::json_t>>()) {
+                                            youtube_result res;
+                                            if (r.contains("id") && r["id"].is_string()) res.id = r["id"].get<std::string>();
+                                            if (r.contains("title") && r["title"].is_string()) res.title = r["title"].get<std::string>();
+                                            if (r.contains("url") && r["url"].is_string()) res.url = r["url"].get<std::string>();
+                                            if (r.contains("duration") && r["duration"].is_number()) res.duration = r["duration"].get<double>();
+                                            if (r.contains("duration_string") && r["duration_string"].is_string()) res.duration_string = r["duration_string"].get<std::string>();
+                                            if (r.contains("channel") && r["channel"].is_string()) res.channel = r["channel"].get<std::string>();
+                                            if (r.contains("channel_id") && r["channel_id"].is_string()) res.channel_id = r["channel_id"].get<std::string>();
+                                            if (r.contains("published_time") && r["published_time"].is_string()) res.published_time = r["published_time"].get<std::string>();
+                                            if (!res.id.empty() || !res.url.empty()) {
+                                                entry.results.push_back(res);
+                                            }
+                                        }
+                                        if (!entry.results.empty()) {
+                                            search_cache()[q] = entry;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (...) {}
+        }
+
+        static void save_youtube_cache_to_disk() {
+            try {
+                std::filesystem::path path = rouen::platform::get_user_data_path("youtube_search_cache.json");
+                glz::json_t json;
+                std::vector<glz::json_t> entries;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(cache_mutex());
+                    for (const auto& [q, entry] : search_cache()) {
+                        glz::json_t item;
+                        item["query"] = q;
+                        std::vector<glz::json_t> res_arr;
+                        for (const auto& r : entry.results) {
+                            glz::json_t r_json;
+                            r_json["id"] = r.id;
+                            r_json["title"] = r.title;
+                            r_json["url"] = r.url;
+                            r_json["duration"] = r.duration;
+                            r_json["duration_string"] = r.duration_string;
+                            r_json["channel"] = r.channel;
+                            r_json["channel_id"] = r.channel_id;
+                            r_json["published_time"] = r.published_time;
+                            res_arr.push_back(r_json);
+                        }
+                        item["results"] = res_arr;
+                        entries.push_back(item);
+                    }
+                }
+                json["entries"] = entries;
+                std::string out;
+                (void)glz::write_json(json, out);
+                std::ofstream f(path);
+                if (f.is_open()) {
+                    f << out;
+                }
+            } catch (...) {}
+        }
 
         youtube_search(std::string_view initial_query = "") {
             // Set YouTube Red colors
@@ -72,12 +183,30 @@ namespace rouen::cards {
                         play_url_trigger = ::helpers::StringHelper::url_decode(encoded_url);
                         play_title_trigger = ::helpers::StringHelper::url_decode(encoded_title);
                     }
+                } else if (initial_query.starts_with("youtube:play:")) {
+                    std::string params = std::string(initial_query.substr(13));
+                    size_t separator = params.find('|');
+                    if (separator != std::string::npos) {
+                        std::string encoded_url = params.substr(0, separator);
+                        std::string encoded_title = params.substr(separator + 1);
+                        
+                        play_url_trigger = ::helpers::StringHelper::url_decode(encoded_url);
+                        play_title_trigger = ::helpers::StringHelper::url_decode(encoded_title);
+                    }
                 } else {
-                    std::string decoded_query = ::helpers::StringHelper::url_decode(initial_query);
-                    strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
-                    pending_query = decoded_query;
-                    current_query = decoded_query;
-                    trigger_search(decoded_query);
+                    std::string raw = std::string(initial_query);
+                    if (raw.starts_with("youtube:")) {
+                        raw = raw.substr(8);
+                    } else if (raw == "youtube") {
+                        raw = "";
+                    }
+                    if (!raw.empty()) {
+                        std::string decoded_query = ::helpers::StringHelper::url_decode(raw);
+                        strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
+                        pending_query = decoded_query;
+                        current_query = decoded_query;
+                        trigger_search(decoded_query);
+                    }
                 }
             }
         }
@@ -118,25 +247,66 @@ namespace rouen::cards {
                 }
             } else if (uri.starts_with("youtube:")) {
                 std::string query = std::string(uri.substr(8));
-                std::string decoded_query = ::helpers::StringHelper::url_decode(query);
-                strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
-                pending_query = decoded_query;
-                current_query = decoded_query;
-                input_changed = false;
-                trigger_search(decoded_query);
+                if (!query.empty()) {
+                    std::string decoded_query = ::helpers::StringHelper::url_decode(query);
+                    strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
+                    pending_query = decoded_query;
+                    current_query = decoded_query;
+                    input_changed = false;
+                    trigger_search(decoded_query);
+                }
             }
         }
 
-        void trigger_search(const std::string& query) {
-            if (query.empty()) return;
+        static std::set<std::string>& failed_queries() {
+            static std::set<std::string> set;
+            return set;
+        }
 
+        void trigger_search(const std::string& query, bool force_refresh = false) {
+            std::string norm_query = normalize_youtube_query(query);
+            if (norm_query.empty()) return;
+
+            load_youtube_cache_from_disk();
+
+            // 1. Check if query failed previously and force_refresh is not requested -> give up immediately!
+            if (!force_refresh) {
+                std::lock_guard<std::recursive_mutex> cache_lock(cache_mutex());
+                if (failed_queries().contains(norm_query)) {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    state->is_searching = false;
+                    state->is_from_cache = false;
+                    state->results.clear();
+                    state->error_message = "Search failed previously. Click Find to try again.";
+                    return;
+                }
+
+                auto it = search_cache().find(norm_query);
+                if (it != search_cache().end()) {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    state->results = it->second.results;
+                    state->is_searching = false;
+                    state->is_from_cache = true;
+                    state->error_message.clear();
+                    return;
+                }
+            } else {
+                std::lock_guard<std::recursive_mutex> cache_lock(cache_mutex());
+                failed_queries().erase(norm_query);
+            }
+
+            // 2. Prevent concurrent yt-dlp executions
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
+                if (state->is_searching) {
+                    return;
+                }
                 state->is_searching = true;
+                state->is_from_cache = false;
                 state->error_message.clear();
             }
 
-            std::thread([shared_state_ptr = this->state, query]() {
+            std::thread([shared_state_ptr = this->state, query, norm_query]() {
                 std::string escaped_query;
                 for (char c : query) {
                     if (c == '"' || c == '\\' || c == '$' || c == '`') {
@@ -146,9 +316,9 @@ namespace rouen::cards {
                 }
 
 #ifdef __APPLE__
-                std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
+                std::string cmd = std::format("export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH && yt-dlp --no-warnings --no-call-home --socket-timeout 10 --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
 #else
-                std::string cmd = std::format("yt-dlp --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
+                std::string cmd = std::format("yt-dlp --no-warnings --no-call-home --socket-timeout 10 --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", escaped_query);
 #endif
                 std::string output = ProcessHelper::executeCommand(cmd);
 
@@ -223,19 +393,34 @@ namespace rouen::cards {
                     } catch (...) {}
                 }
 
+                if (!temp_results.empty()) {
+                    std::lock_guard<std::recursive_mutex> cache_lock(cache_mutex());
+                    failed_queries().erase(norm_query);
+                    search_cache()[norm_query] = YouTubeSearchCacheEntry{
+                        .timestamp = std::chrono::steady_clock::now(),
+                        .results = temp_results
+                    };
+                    save_youtube_cache_to_disk();
+                } else {
+                    std::lock_guard<std::recursive_mutex> cache_lock(cache_mutex());
+                    failed_queries().insert(norm_query);
+                }
+
                 std::lock_guard<std::mutex> lock(shared_state_ptr->mutex);
                 if (shared_state_ptr->card_alive) {
                     shared_state_ptr->results = std::move(temp_results);
                     shared_state_ptr->is_searching = false;
+                    shared_state_ptr->is_from_cache = false;
                     if (shared_state_ptr->results.empty()) {
-                        shared_state_ptr->error_message = "No results found or search failed.";
+                        shared_state_ptr->error_message = "Search failed or timed out. Giving up until refreshed.";
                     }
                 }
             }).detach();
         }
 
         bool render() override {
-            return render_window([this]() {
+            auto t_a = std::chrono::high_resolution_clock::now();
+            bool res = render_window([this, &t_a]() {
                 // --- Process Play Triggers under the Card's main ID stack ---
                 if (!play_url_trigger.empty()) {
                     ImGui::PushID(play_url_trigger.c_str());
@@ -254,46 +439,41 @@ namespace rouen::cards {
                     play_url_trigger.clear();
                     play_title_trigger.clear();
                 }
-
-                // --- Delay Search Timing ---
-                bool trigger_immediate = false;
                 
-                ImGui::Text("%s Search YouTube:", ICON_MD_SEARCH);
-                ImGui::SameLine();
-                
-                ImGui::PushItemWidth(-1);
-                if (ImGui::InputText("##ytsearch", search_buffer, sizeof(search_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    trigger_immediate = true;
-                }
-                
-                if (search_buffer[0] == '\0' && !ImGui::IsItemActive()) {
-                    auto pos = ImGui::GetItemRectMin();
-                    ImGui::GetWindowDrawList()->AddText(
-                        ImVec2(pos.x + 5, pos.y + 2),
-                        ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                        "Search videos..."
-                    );
-                }
-                ImGui::PopItemWidth();
-                
-                std::string current_buffer_str = search_buffer;
-                if (current_buffer_str != pending_query) {
-                    pending_query = current_buffer_str;
-                    last_input_time = std::chrono::steady_clock::now();
+                // Header Search Input
+                input_changed = false;
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0f);
+                if (ImGui::InputText("##search", search_buffer, sizeof(search_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
                     input_changed = true;
                 }
                 
-                if (input_changed && !pending_query.empty()) {
-                    auto now = std::chrono::steady_clock::now();
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_input_time).count();
-                    if (trigger_immediate || elapsed > 800) {
-                        input_changed = false;
+                ImGui::SameLine();
+                if (ImGui::Button("Find", ImVec2(60, 0))) {
+                    input_changed = true;
+                }
+                
+                std::string q(search_buffer);
+                if (input_changed && !q.empty() && q != current_query) {
+                    pending_query = q;
+                    last_input_time = std::chrono::steady_clock::now();
+                }
+                
+                if (!pending_query.empty()) {
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - last_input_time
+                    ).count();
+                    
+                    if (elapsed >= 500) {
                         current_query = pending_query;
                         trigger_search(current_query);
+                        pending_query.clear();
                     }
-                } else if (trigger_immediate && pending_query.empty()) {
+                }
+                
+                if (input_changed && q.empty()) {
                     std::lock_guard<std::mutex> lock(state->mutex);
                     state->results.clear();
+                    state->is_searching = false;
                     state->error_message.clear();
                     current_query.clear();
                     input_changed = false;
@@ -301,6 +481,8 @@ namespace rouen::cards {
                 
                 ImGui::Spacing();
                 
+                auto t_b = std::chrono::high_resolution_clock::now();
+
                 // --- Now Playing Region ---
                 std::string active_url;
                 std::string active_title;
@@ -333,14 +515,18 @@ namespace rouen::cards {
                     ImGui::Spacing();
                 }
                 
+                auto t_c = std::chrono::high_resolution_clock::now();
+
                 // --- Search Status / Results ---
                 bool searching = false;
+                bool is_cache = false;
                 std::string err;
                 std::vector<youtube_result> results_copy;
                 
                 {
                     std::lock_guard<std::mutex> lock(state->mutex);
                     searching = state->is_searching;
+                    is_cache = state->is_from_cache;
                     err = state->error_message;
                     results_copy = state->results;
                 }
@@ -364,55 +550,36 @@ namespace rouen::cards {
                     if (it != media_player::items().end() && it->second) {
                         auto& item = *it->second;
                         if (item.player_pid == 0 && item.duration > 0.0 && item.position >= item.duration - 3.0) {
-                            size_t next_idx = std::string::npos;
                             for (size_t i = 0; i < results_copy.size(); ++i) {
-                                if (results_copy[i].url == currently_playing_url) {
-                                    if (i + 1 < results_copy.size()) {
-                                        next_idx = i + 1;
-                                    }
+                                if (results_copy[i].url == currently_playing_url && i + 1 < results_copy.size()) {
+                                    play_url_trigger = results_copy[i + 1].url;
+                                    play_title_trigger = results_copy[i + 1].title;
+                                    currently_playing_url = play_url_trigger;
                                     break;
                                 }
                             }
-                            
-                            item.position = 0.0;
-                            item.duration = 0.0;
-                            
-                            if (next_idx != std::string::npos) {
-                                play_url_trigger = results_copy[next_idx].url;
-                                play_title_trigger = results_copy[next_idx].title;
-                            } else {
-                                currently_playing_url.clear();
-                            }
-                        } else if (item.player_pid == 0) {
-                            currently_playing_url.clear();
                         }
-                    } else {
-                        currently_playing_url.clear();
                     }
                 }
                 
                 if (searching) {
-                    float time = static_cast<float>(ImGui::GetTime());
-                    int dots = static_cast<int>(time * 3.0f) % 4;
-                    std::string loading_text = "Searching YouTube";
-                    for (int i = 0; i < dots; ++i) {
-                        loading_text += ".";
-                    }
+                    std::string loading_text = "Searching YouTube via yt-dlp...";
                     ImGui::TextColored(colors[0], "%s", loading_text.c_str());
                 } else if (!err.empty()) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Error: %s", err.c_str());
-                }
-                
-                if (!results_copy.empty()) {
-                    ImGui::Text("Results:");
+                    ImGui::TextColored(ImVec4(0.9f, 0.2f, 0.2f, 1.0f), "Error: %s", err.c_str());
+                } else if (!results_copy.empty()) {
+                    if (is_cache) {
+                        ImGui::TextColored(ImVec4(0.4f, 0.7f, 0.4f, 1.0f), "Showing cached results (%zu found)", results_copy.size());
+                    } else {
+                        ImGui::TextColored(ImVec4(0.4f, 0.7f, 0.9f, 1.0f), "Found %zu results", results_copy.size());
+                    }
+                    ImGui::Spacing();
                     ImGui::Separator();
                     
                     float list_height = ImGui::GetContentRegionAvail().y;
                     if (list_height < 100.0f) list_height = 100.0f;
                     
-                    update_cached_feeds();
                     auto rss_host = rss::getHost();
-                    const auto& current_feeds = cached_current_feeds_;
 
                     // Remove outline (third parameter set to false)
                     ImGui::BeginChild("YouTubeResults", ImVec2(0, list_height), false);
@@ -428,7 +595,7 @@ namespace rouen::cards {
                         bool is_current = (yt_playing && item.url == active_url);
                         
                         std::string feed_target = get_channel_feed_url(item);
-                        long long subscribed_repo_id = rss_host ? find_subscribed_feed_id(item, current_feeds) : -1;
+                        long long subscribed_repo_id = rss_host ? rss_host->find_subscribed_youtube_feed_id(item.channel_id, feed_target, item.channel) : -1;
                         bool is_sub = (subscribed_repo_id >= 0);
                         bool is_pending = (!feed_target.empty() && subscribing_urls.contains(feed_target));
 
@@ -592,7 +759,17 @@ namespace rouen::cards {
                 } else if (!current_query.empty() && !searching) {
                     ImGui::Text("No results found for '%s'.", current_query.c_str());
                 }
+                
+                auto t_d = std::chrono::high_resolution_clock::now();
+                double ms_total = std::chrono::duration<double, std::milli>(t_d - t_a).count();
+                if (ms_total > 20.0) {
+                    double d1 = std::chrono::duration<double, std::milli>(t_b - t_a).count();
+                    double d2 = std::chrono::duration<double, std::milli>(t_c - t_b).count();
+                    double d3 = std::chrono::duration<double, std::milli>(t_d - t_c).count();
+                    std::cerr << "[YOUTUBE BREAKDOWN] total=" << ms_total << " ms (input=" << d1 << "ms, playing=" << d2 << "ms, results_loop=" << d3 << "ms)" << std::endl;
+                }
             });
+            return res;
         }
 
     private:
@@ -610,19 +787,66 @@ namespace rouen::cards {
         
         std::set<std::string> subscribing_urls;
 
+        mutable std::mutex feeds_cache_mutex_;
+        std::atomic<bool> updating_feeds_bg_{false};
         std::vector<std::shared_ptr<media::rss::feed>> cached_current_feeds_;
+        std::unordered_map<std::string, long long> channel_id_to_feed_id_;
+        std::unordered_map<std::string, long long> url_to_feed_id_;
+        std::unordered_map<std::string, long long> title_to_feed_id_;
         std::chrono::steady_clock::time_point last_feeds_cache_time_{};
 
         void update_cached_feeds(bool force = false) {
             auto now = std::chrono::steady_clock::now();
-            if (force || std::chrono::duration_cast<std::chrono::seconds>(now - last_feeds_cache_time_).count() >= 2) {
+            if (force || std::chrono::duration_cast<std::chrono::seconds>(now - last_feeds_cache_time_).count() >= 5) {
                 last_feeds_cache_time_ = now;
-                auto rss_host = rss::getHost();
-                if (rss_host) {
-                    cached_current_feeds_ = rss_host->feeds();
-                } else {
-                    cached_current_feeds_.clear();
-                }
+                if (updating_feeds_bg_.load()) return;
+                updating_feeds_bg_.store(true);
+                std::thread([this]() {
+                    auto rss_host = rss::getHost();
+                    if (rss_host) {
+                        auto feeds_list = rss_host->feeds();
+                        std::unordered_map<std::string, long long> cid_map;
+                        std::unordered_map<std::string, long long> url_map;
+                        std::unordered_map<std::string, long long> title_map;
+                        for (const auto& f : feeds_list) {
+                            if (!f) continue;
+                            bool is_yt = (f->feed_link.find("youtube.com") != std::string::npos || 
+                                          f->source_link.find("youtube.com") != std::string::npos ||
+                                          f->feed_title.find("YouTube") != std::string::npos);
+                            if (!is_yt) continue;
+
+                            if (!f->feed_link.empty()) {
+                                url_map[f->feed_link] = f->repo_id;
+                                size_t cid_pos = f->feed_link.find("channel_id=");
+                                if (cid_pos != std::string::npos) {
+                                    std::string cid = f->feed_link.substr(cid_pos + 11);
+                                    size_t amp = cid.find('&');
+                                    if (amp != std::string::npos) cid = cid.substr(0, amp);
+                                    if (!cid.empty()) cid_map[cid] = f->repo_id;
+                                }
+                            }
+                            if (!f->source_link.empty()) {
+                                url_map[f->source_link] = f->repo_id;
+                                size_t cid_pos = f->source_link.find("channel_id=");
+                                if (cid_pos != std::string::npos) {
+                                    std::string cid = f->source_link.substr(cid_pos + 11);
+                                    size_t amp = cid.find('&');
+                                    if (amp != std::string::npos) cid = cid.substr(0, amp);
+                                    if (!cid.empty()) cid_map[cid] = f->repo_id;
+                                }
+                            }
+                            if (!f->feed_title.empty()) {
+                                title_map[f->feed_title] = f->repo_id;
+                            }
+                        }
+                        std::lock_guard<std::mutex> lock(feeds_cache_mutex_);
+                        cached_current_feeds_ = std::move(feeds_list);
+                        channel_id_to_feed_id_ = std::move(cid_map);
+                        url_to_feed_id_ = std::move(url_map);
+                        title_to_feed_id_ = std::move(title_map);
+                    }
+                    updating_feeds_bg_.store(false);
+                }).detach();
             }
         }
 
@@ -645,24 +869,22 @@ namespace rouen::cards {
             return "";
         }
 
-        static long long find_subscribed_feed_id(const youtube_result& item, const std::vector<std::shared_ptr<media::rss::feed>>& feeds) {
+        long long find_subscribed_feed_id(const youtube_result& item) const {
+            std::lock_guard<std::mutex> lock(feeds_cache_mutex_);
+            if (!item.channel_id.empty()) {
+                auto it = channel_id_to_feed_id_.find(item.channel_id);
+                if (it != channel_id_to_feed_id_.end()) return it->second;
+            }
             std::string feed_url = get_channel_feed_url(item);
-            for (const auto& f : feeds) {
-                if (!f) continue;
-                if (!item.channel_id.empty()) {
-                    if (f->feed_link.find(item.channel_id) != std::string::npos ||
-                        f->source_link.find(item.channel_id) != std::string::npos) {
-                        return f->repo_id;
-                    }
-                }
-                if (!feed_url.empty() && (f->feed_link == feed_url || f->source_link == feed_url)) {
-                    return f->repo_id;
-                }
-                if (!item.channel.empty()) {
-                    if (f->feed_title == item.channel || f->feed_title == ("YouTube Channel: " + item.channel)) {
-                        return f->repo_id;
-                    }
-                }
+            if (!feed_url.empty()) {
+                auto it = url_to_feed_id_.find(feed_url);
+                if (it != url_to_feed_id_.end()) return it->second;
+            }
+            if (!item.channel.empty()) {
+                auto it = title_to_feed_id_.find(item.channel);
+                if (it != title_to_feed_id_.end()) return it->second;
+                it = title_to_feed_id_.find("YouTube Channel: " + item.channel);
+                if (it != title_to_feed_id_.end()) return it->second;
             }
             return -1;
         }

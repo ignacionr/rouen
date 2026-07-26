@@ -1021,27 +1021,13 @@ public:
     // Get access to the RSS host controller (needed for other RSS card classes)
     static std::shared_ptr<hosts::RSSHost> getHost() {
         static std::mutex host_mutex;
-        static std::weak_ptr<hosts::RSSHost> weak_host;
-        
-        RSS_DEBUG("Entering getHost(), acquiring lock...");
+        static std::shared_ptr<hosts::RSSHost> instance;
         std::lock_guard<std::mutex> lock(host_mutex);
-        RSS_DEBUG("Lock acquired in getHost()");
-        
-        // Try to get a shared_ptr from the weak_ptr
-        auto shared_host = weak_host.lock();
-        
-        // If the weak_ptr has expired or was never initialized, create a new instance
-        if (!shared_host) {
-            RSS_INFO("Creating new shared RSSHost instance");
-            shared_host = std::make_shared<hosts::RSSHost>();
-            weak_host = shared_host; // Store a weak_ptr, not keeping the object alive
-            RSS_INFO("Shared RSSHost instance created");
-        } else {
-            RSS_DEBUG("Reusing existing shared RSSHost instance");
+        if (!instance) {
+            RSS_INFO("Creating persistent shared RSSHost instance");
+            instance = std::make_shared<hosts::RSSHost>();
         }
-        
-        RSS_DEBUG("Exiting getHost()");
-        return shared_host;
+        return instance;
     }
     
     // Force a cache refresh for a specific feed or all feeds

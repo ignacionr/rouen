@@ -547,16 +547,33 @@ void main_wnd::process_detached_window() {
         }
     }
 
-    ImTextureID tex = detached_item->get_texture_id(m_device);
-    if (!tex) return;
-
-    RouenGPUTexture* rtex = reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex));
-    if (!rtex || !rtex->binding.texture) return;
+    // High-precision frame pacing for detached window (~60 FPS / ~15ms min interval)
+    static auto last_detached_render_time = std::chrono::steady_clock::now();
+    auto now_time = std::chrono::steady_clock::now();
+    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now_time - last_detached_render_time).count();
+    if (elapsed_ms < 15) {
+        return;
+    }
 
     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
-    if (cmdbuf) {
-        SDL_GPUColorTargetInfo color_target = {};
-        SDL_AcquireGPUSwapchainTexture(cmdbuf, m_detached_window, &color_target.texture, nullptr, nullptr);
+    if (!cmdbuf) return;
+
+    ImTextureID tex = detached_item->get_texture_id(m_device, cmdbuf);
+    if (!tex) {
+        SDL_SubmitGPUCommandBuffer(cmdbuf);
+        return;
+    }
+
+    RouenGPUTexture* rtex = reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex));
+    if (!rtex || !rtex->binding.texture) {
+        SDL_SubmitGPUCommandBuffer(cmdbuf);
+        return;
+    }
+
+    last_detached_render_time = now_time;
+
+    SDL_GPUColorTargetInfo color_target = {};
+    SDL_AcquireGPUSwapchainTexture(cmdbuf, m_detached_window, &color_target.texture, nullptr, nullptr);
         if (color_target.texture) {
             int w = 0, h = 0;
             SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
@@ -673,5 +690,4 @@ void main_wnd::process_detached_window() {
             }
         }
         SDL_SubmitGPUCommandBuffer(cmdbuf);
-    }
 }

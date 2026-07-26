@@ -288,6 +288,10 @@ struct deck {
         if (hash_pos != std::string::npos) {
             card_name = card_name.substr(0, hash_pos);
         }
+
+        if (duration_ms > 100.0) {
+            std::cerr << "[DECK SLOW RENDER] Card '" << card_name << "' (" << c.get_uri() << ") took " << duration_ms << " ms to render!" << std::endl;
+        }
         rouen::helpers::CardRenderMetrics::instance().record(card_name, c.get_uri(), duration_ms);
 
         requested_fps = std::max(requested_fps, c.requested_fps);
