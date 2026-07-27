@@ -77,8 +77,14 @@ int SDL_main(int argc, char* argv[]) {
     // Initialize Windows debug console for development builds
     setup_windows_debug_console();
 #else
-int main() {
+int main(int argc, char* argv[]) {
 #endif
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg(argv[i]);
+        if (arg == "--no-initial-cards" || arg == "--no-cards") {
+            deck::no_initial_cards = true;
+        }
+    }
     try {
     // Debug: Print working directory at startup
     std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << '\n';

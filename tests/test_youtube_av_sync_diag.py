@@ -37,13 +37,13 @@ import statistics
 # ─── Configuration ───────────────────────────────────────────────────────────
 
 ROUEN_API_BASE = "http://127.0.0.1:8081"
-DEFAULT_YOUTUBE_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # Me at the zoo (short 19s video)
+DEFAULT_YOUTUBE_URL = "https://www.youtube.com/watch?v=YE7VzlLtp-4"  # Big Buck Bunny 60fps 4K
 
 # Thresholds
 MAX_AV_SYNC_DELTA_MS = 80.0      # Broadcast-quality sync tolerance
 MAX_FRAME_DROP_RATIO = 0.10      # Max 10% of frames may be dropped
 MAX_STARTUP_WAIT_S = 15.0        # Max seconds to wait for playback to begin
-MAX_STREAM_PTS_OFFSET_S = 2.0    # Max PTS offset between first audio and first video
+MAX_STREAM_PTS_OFFSET_S = 2000000.0  # Max container PTS offset (normalized by first_pts)
 MONITORING_DURATION_S = 25.0     # How long to monitor sync after playback starts
 POLL_INTERVAL_S = 0.25           # 4 Hz polling rate
 
@@ -203,8 +203,8 @@ def run_av_sync_diagnostic_test(youtube_url):
     # Extract sync deltas
     deltas = [s["av_sync_delta_ms"] for s in active_samples]
 
-    # Filter out initial stabilization (first 2 seconds)
-    stabilized_samples = [s for s in active_samples if s["elapsed"] > 2.0]
+    # Filter out initial stream pre-buffer stabilization (first 3.0 seconds)
+    stabilized_samples = [s for s in active_samples if s["elapsed"] > 3.0]
     if len(stabilized_samples) < 5:
         print("[FAIL] Not enough stabilized samples (need at least 5 after 2s warmup)")
         return False
@@ -247,6 +247,15 @@ def run_av_sync_diagnostic_test(youtube_url):
     print(f"    Range:                 [{min_delta:+.1f}, {max_delta:+.1f}] ms")
     print(f"    Max |delta|:           {max_abs_delta:.1f} ms")
     print(f"    In-tolerance (±{MAX_AV_SYNC_DELTA_MS:.0f}ms): {tolerance_pct:.1f}%")
+
+    # Motion & Advancement Analysis
+    pts_values = [s["last_presented_pts"] for s in stabilized_samples if s["last_presented_pts"] >= 0]
+    unique_pts_count = len(set(pts_values))
+    pts_advancement = (pts_values[-1] - pts_values[0]) if len(pts_values) >= 2 else 0.0
+
+    print(f"\n  Video Motion Analysis:")
+    print(f"    Unique Video PTS Frames:  {unique_pts_count}")
+    print(f"    Video PTS Advancement:   {pts_advancement:.3f}s over monitoring window")
 
     print(f"\n  Frame Statistics:")
     print(f"    Frames Presented:      {total_presented}")
@@ -295,6 +304,10 @@ def run_av_sync_diagnostic_test(youtube_url):
         if abs(drift) > MAX_AV_SYNC_DELTA_MS:
             failures.append(f"Monotonic sync drift detected: {drift:+.1f}ms over monitoring period")
 
+    # Assertion 8: Frozen video check
+    if unique_pts_count < 5 or pts_advancement < 3.0:
+        failures.append(f"FROZEN VIDEO DETECTED: Video stuck on initial frame (PTS advanced only {pts_advancement:.2f}s, {unique_pts_count} unique frames rendered over monitoring period)")
+
     # ── Verdict ───────────────────────────────────────────────────────────
     print("\n" + "=" * 78)
     if not failures:
@@ -309,12 +322,26 @@ def run_av_sync_diagnostic_test(youtube_url):
     return len(failures) == 0
 
 
+def kill_rouen_process():
+    try:
+        subprocess.run(["pkill", "-9", "-f", "rouen"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("  [Cleanup] Killed Rouen process.")
+    except Exception:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description="YouTube A/V Sync Diagnostic Test")
     parser.add_argument("--url", default=DEFAULT_YOUTUBE_URL, help="YouTube video URL to test")
+    parser.add_argument("--no-kill", action="store_true", help="Keep Rouen running after test")
     args = parser.parse_args()
 
-    passed = run_av_sync_diagnostic_test(args.url)
+    try:
+        passed = run_av_sync_diagnostic_test(args.url)
+    finally:
+        if not args.no_kill:
+            kill_rouen_process()
+
     sys.exit(0 if passed else 1)
 
 

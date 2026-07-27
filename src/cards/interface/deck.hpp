@@ -510,6 +510,10 @@ struct deck {
     
     // Load cards from ImGui configuration
     void load_card_uris() {
+        if (no_initial_cards) {
+            create_card("menu", true);
+            return;
+        }
         // Read from user config path, fallback to bundle resource path if not present
         std::filesystem::path rouen_ini_path = rouen::platform::get_user_config_directory() / "rouen.ini";
         if (!std::filesystem::exists(rouen_ini_path)) {
@@ -990,4 +994,6 @@ private:
     float target_scroll_x {0.0f};
     rouen::ui::imgui_ui_context_impl ui_context_;
     std::weak_ptr<card> last_focused_card_;
+public:
+    static inline bool no_initial_cards{false};
 };

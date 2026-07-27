@@ -421,7 +421,7 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
                     // A/V sync diagnostics
                     first_video_pts = item_ptr->first_video_pts.load();
                     first_audio_pts = item_ptr->first_audio_pts.load();
-                    last_presented_pts = item_ptr->last_presented_pts;
+                    last_presented_pts = item_ptr->last_presented_pts.load();
                     av_sync_delta_ms = item_ptr->last_av_sync_delta_ms.load();
                     frames_presented = item_ptr->frames_presented.load();
                     frames_dropped = item_ptr->frames_dropped.load();
