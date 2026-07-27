@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../../external/IconsMaterialDesign.h"
+#include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
@@ -104,6 +105,36 @@ public:
             ImGui::TextColored(colors[0], "Current Layout Metrics:");
             ImGui::BulletText("Active Width Factor: %.1fx", static_cast<double>(s_width_factor));
             ImGui::BulletText("Row Capacity: %.1fx OS Window Width", static_cast<double>(s_width_factor));
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::TextColored(colors[0], "%s YouTube Stream Quality Preference:", ICON_MD_VIDEO_SETTINGS);
+            ImGui::Spacing();
+            ImGui::TextWrapped("Choose preferred video resolution for YouTube media playback:");
+            ImGui::Spacing();
+
+            auto config = rouen::helpers::ConfigService::instance();
+            std::string current_q = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
+            if (current_q.empty()) current_q = "360p";
+
+            const char* qualities[] = { "360p", "1080p", "4k" };
+            for (int i = 0; i < 3; ++i) {
+                if (i > 0) ImGui::SameLine();
+                bool is_sel = (current_q == qualities[i]);
+                if (is_sel) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                }
+                if (ImGui::Button(qualities[i], ImVec2(76, 0))) {
+                    if (config) {
+                        config->set_env_value("ROUEN_YOUTUBE_PREFERRED_QUALITY", qualities[i], true);
+                    }
+                }
+                if (is_sel) {
+                    ImGui::PopStyleColor();
+                }
+            }
 
             ImGui::Spacing();
             ImGui::Separator();

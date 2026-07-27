@@ -405,11 +405,7 @@ public:
                 }
             }
 
-            SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-            if (fence) {
-                SDL_WaitForGPUFences(device, true, &fence, 1);
-                SDL_ReleaseGPUFence(device, fence);
-            }
+            SDL_SubmitGPUCommandBuffer(cmdbuf);
 
             if (download_buffer_) {
                 void* map = SDL_MapGPUTransferBuffer(device, download_buffer_, false);

@@ -173,6 +173,8 @@ def run_av_sync_diagnostic_test(youtube_url):
                 "frames_dropped": dropped,
                 "frames_held": held,
                 "audio_queue_seconds": audio_q,
+                "gpu_frames_rendered": data.get("gpu_frames_rendered", 0),
+                "actual_rendering_fps": data.get("actual_rendering_fps", 0.0),
                 "first_video_pts": data.get("first_video_pts", -1.0),
                 "first_audio_pts": data.get("first_audio_pts", -1.0),
                 "last_presented_pts": data.get("last_presented_pts", -1.0),
@@ -257,11 +259,15 @@ def run_av_sync_diagnostic_test(youtube_url):
     print(f"    Unique Video PTS Frames:  {unique_pts_count}")
     print(f"    Video PTS Advancement:   {pts_advancement:.3f}s over monitoring window")
 
+    gpu_frames = last.get("gpu_frames_rendered", 0)
+    rendering_fps = last.get("actual_rendering_fps", 0.0)
+
     print(f"\n  Frame Statistics:")
-    print(f"    Frames Presented:      {total_presented}")
-    print(f"    Frames Dropped:        {total_dropped}")
-    print(f"    Frames Held:           {total_held}")
-    print(f"    Drop Ratio:            {drop_ratio * 100:.1f}%")
+    print(f"    Frames Presented (Queue): {total_presented}")
+    print(f"    GPU Frames Rendered:      {gpu_frames} ({rendering_fps:.1f} FPS)")
+    print(f"    Frames Dropped:           {total_dropped}")
+    print(f"    Frames Held:              {total_held}")
+    print(f"    Drop Ratio:               {drop_ratio * 100:.1f}%")
 
     print(f"\n  Total Samples Collected: {len(samples)}")
     print(f"  Active Samples:          {len(active_samples)}")

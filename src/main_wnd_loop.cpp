@@ -257,8 +257,18 @@ void main_wnd::run() {
                 }
 
                 if (is_casting) {
-                    m_requested_fps = std::max(m_requested_fps, 30);
+                    m_requested_fps = std::max(m_requested_fps, 60);
                 }
+
+                // Update texture for all active playing media items on every 60 FPS frame
+                try {
+                    std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+                    for (auto& [id, item_ptr] : media_player::items()) {
+                        if (item_ptr && item_ptr->is_playing && !item_ptr->is_paused.load()) {
+                            item_ptr->get_texture_id(m_device);
+                        }
+                    }
+                } catch (...) {}
 
                 // Restore actual scale before rendering so backends work with correct physical coordinates
                 io.DisplayFramebufferScale = ImVec2(actual_scale_x, actual_scale_y);
@@ -267,7 +277,7 @@ void main_wnd::run() {
                 ImGui::Render();
 
                 bool should_draw_main = true;
-                if (is_casting || has_detached) {
+                if (has_detached) {
                     auto now = std::chrono::steady_clock::now();
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_main_render_time).count();
                     if (elapsed_ms < 1000) {
@@ -356,7 +366,9 @@ bool main_wnd::process_events() {
         // Poll events
         SDL_Event event;
         if (!m_immediate) {
-            SDL_WaitEventTimeout(nullptr, 1000/m_requested_fps);
+            bool is_media_playing = media_player::is_any_playing_non_cast() || media_player_item::is_cast_active.load();
+            int effective_fps = is_media_playing ? 60 : std::max(1, m_requested_fps);
+            SDL_WaitEventTimeout(nullptr, 1000 / effective_fps);
         }
         else {
             m_immediate = false;

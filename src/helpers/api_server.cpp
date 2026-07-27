@@ -399,6 +399,8 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
         int64_t frames_presented = 0;
         int64_t frames_dropped = 0;
         int64_t frames_held = 0;
+        int64_t gpu_frames_rendered = 0;
+        float actual_rendering_fps = 0.0f;
         double audio_queue_seconds = 0.0;
         
         {
@@ -426,6 +428,8 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
                     frames_presented = item_ptr->frames_presented.load();
                     frames_dropped = item_ptr->frames_dropped.load();
                     frames_held = item_ptr->frames_held.load();
+                    gpu_frames_rendered = item_ptr->gpu_frames_rendered.load();
+                    actual_rendering_fps = item_ptr->actual_rendering_fps.load();
                     if (item_ptr->local_audio_stream) {
                         int q_bytes = SDL_GetAudioStreamQueued(item_ptr->local_audio_stream);
                         audio_queue_seconds = static_cast<double>(q_bytes) / 176400.0;
@@ -438,7 +442,7 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
         bool eof_reached = (dur > 0.0 && pos >= dur - 0.3);
         
         return std::format(
-            R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.3f},"duration":{:.3f},"audio_queued_bytes":{},"eof_reached":{},"has_video":{},"texture_ready":{},"luminance":{:.4f},"vu_level_l":{:.4f},"vu_level_r":{:.4f},"video_queue_size":{},"first_video_pts":{:.6f},"first_audio_pts":{:.6f},"last_presented_pts":{:.6f},"av_sync_delta_ms":{:.3f},"frames_presented":{},"frames_dropped":{},"frames_held":{},"audio_queue_seconds":{:.4f}}})",
+            R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.3f},"duration":{:.3f},"audio_queued_bytes":{},"eof_reached":{},"has_video":{},"texture_ready":{},"luminance":{:.4f},"vu_level_l":{:.4f},"vu_level_r":{:.4f},"video_queue_size":{},"first_video_pts":{:.6f},"first_audio_pts":{:.6f},"last_presented_pts":{:.6f},"av_sync_delta_ms":{:.3f},"frames_presented":{},"frames_dropped":{},"frames_held":{},"audio_queue_seconds":{:.4f},"gpu_frames_rendered":{},"actual_rendering_fps":{:.1f}}})",
             is_casting ? "true" : "false",
             is_playing ? "true" : "false",
             media_url,
@@ -459,7 +463,9 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
             frames_presented,
             frames_dropped,
             frames_held,
-            audio_queue_seconds
+            audio_queue_seconds,
+            gpu_frames_rendered,
+            actual_rendering_fps
         );
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());

@@ -58,9 +58,6 @@ struct media_player {
     }
 
     static bool is_any_playing_non_cast() {
-        if (media_player_item::is_cast_active.load() || has_detached_item()) {
-            return false;
-        }
         std::lock_guard<std::recursive_mutex> lock(items_mutex());
         for (auto &[k, v] : items()) {
             if (v && v->is_playing && !v->is_paused.load()) {
