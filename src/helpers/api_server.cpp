@@ -384,14 +384,52 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
         double dur = 0.0;
         std::string media_url;
         
+        bool has_video = false;
+        bool texture_ready = false;
+        float luminance = 0.0f;
+        float vu_l = 0.0f;
+        float vu_r = 0.0f;
+        size_t video_q_size = 0;
+        
+        // A/V sync diagnostic fields
+        double first_video_pts = -1.0;
+        double first_audio_pts = -1.0;
+        double last_presented_pts = -1.0;
+        double av_sync_delta_ms = 0.0;
+        int64_t frames_presented = 0;
+        int64_t frames_dropped = 0;
+        int64_t frames_held = 0;
+        double audio_queue_seconds = 0.0;
+        
         {
             std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
             for (auto& [id, item_ptr] : media_player::items()) {
                 if (item_ptr && item_ptr->is_playing) {
                     is_playing = true;
-                    pos = item_ptr->position.load();
+                    pos = item_ptr->get_current_position();
                     dur = item_ptr->duration.load();
                     media_url = item_ptr->url;
+                    has_video = item_ptr->has_video.load();
+                    texture_ready = (item_ptr->video_texture != nullptr);
+                    luminance = item_ptr->current_luminance.load();
+                    vu_l = item_ptr->get_vu_level_l();
+                    vu_r = item_ptr->get_vu_level_r();
+                    {
+                        std::lock_guard<std::mutex> q_lock(item_ptr->video_queue_mutex);
+                        video_q_size = item_ptr->decoded_video_queue.size();
+                    }
+                    // A/V sync diagnostics
+                    first_video_pts = item_ptr->first_video_pts.load();
+                    first_audio_pts = item_ptr->first_audio_pts.load();
+                    last_presented_pts = item_ptr->last_presented_pts;
+                    av_sync_delta_ms = item_ptr->last_av_sync_delta_ms.load();
+                    frames_presented = item_ptr->frames_presented.load();
+                    frames_dropped = item_ptr->frames_dropped.load();
+                    frames_held = item_ptr->frames_held.load();
+                    if (item_ptr->local_audio_stream) {
+                        int q_bytes = SDL_GetAudioStreamQueued(item_ptr->local_audio_stream);
+                        audio_queue_seconds = static_cast<double>(q_bytes) / 176400.0;
+                    }
                     break;
                 }
             }
@@ -400,14 +438,28 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
         bool eof_reached = (dur > 0.0 && pos >= dur - 0.3);
         
         return std::format(
-            R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.2f},"duration":{:.2f},"audio_queued_bytes":{},"eof_reached":{}}})",
+            R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.3f},"duration":{:.3f},"audio_queued_bytes":{},"eof_reached":{},"has_video":{},"texture_ready":{},"luminance":{:.4f},"vu_level_l":{:.4f},"vu_level_r":{:.4f},"video_queue_size":{},"first_video_pts":{:.6f},"first_audio_pts":{:.6f},"last_presented_pts":{:.6f},"av_sync_delta_ms":{:.3f},"frames_presented":{},"frames_dropped":{},"frames_held":{},"audio_queue_seconds":{:.4f}}})",
             is_casting ? "true" : "false",
             is_playing ? "true" : "false",
             media_url,
             pos,
             dur,
             audio_queued,
-            eof_reached ? "true" : "false"
+            eof_reached ? "true" : "false",
+            has_video ? "true" : "false",
+            texture_ready ? "true" : "false",
+            luminance,
+            vu_l,
+            vu_r,
+            video_q_size,
+            first_video_pts,
+            first_audio_pts,
+            last_presented_pts,
+            av_sync_delta_ms,
+            frames_presented,
+            frames_dropped,
+            frames_held,
+            audio_queue_seconds
         );
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());

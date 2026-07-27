@@ -712,7 +712,7 @@ mcp_service::mcp_service() {
             auto config = ConfigService::instance();
             std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
             std::string extra_cflags = cookie_args.empty() ? "" : (" " + cookie_args);
-            std::string cmd = std::format("\"{}\" --flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, extra_cflags, escaped_query);
+            std::string cmd = std::format("\"{}\" --remote-components ejs:github --flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, extra_cflags, escaped_query);
             std::string output = ProcessHelper::executeCommand(cmd);
             
             std::stringstream ss(output);

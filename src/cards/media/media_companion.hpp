@@ -49,33 +49,55 @@ namespace rouen::cards {
             {"Original / Auto-detect", "auto"}
         };
 
-        inline static const std::vector<int> supported_word_counts = {50, 100, 150, 300};
-
         struct transcript_entry {
             double timestamp_seconds{0.0};
             std::string timestamp_str;
             std::string text;
         };
 
-        struct segment_commentary {
-            int segment_index{0};
-            std::string timestamp_label;
-            std::string transcript_context;
-            std::string commentary_md;
-            bool is_generating{false};
-            bool generated{false};
+        struct fact_check_assertion {
+            std::string claim;       // Claim / statement evaluated
+            double truth_score{0.0}; // Value between -1.0 (complete lie) and +1.0 (certain truth)
+            std::string explanation; // Detailed verification / context
         };
+
+        struct dynamic_commentary_point {
+            double timestamp_seconds{0.0};
+            std::string timestamp_str;
+            std::string commentary_md;
+            std::vector<fact_check_assertion> assertions;
+        };
+
+        struct truth_rating_visual {
+            const char* icon;
+            const char* label;
+            ImVec4 color;
+        };
+
+        static truth_rating_visual get_truth_rating_visual(double score) {
+            score = std::clamp(score, -1.0, 1.0);
+            if (score >= 0.7) {
+                return {ICON_MD_VERIFIED, "Certain Truth", ImVec4(0.25f, 0.90f, 0.45f, 1.0f)};
+            } else if (score >= 0.3) {
+                return {ICON_MD_GPP_GOOD, "Mostly True", ImVec4(0.40f, 0.85f, 0.60f, 1.0f)};
+            } else if (score > -0.3) {
+                return {ICON_MD_GPP_MAYBE, "Uncertain / Mixed", ImVec4(0.95f, 0.75f, 0.25f, 1.0f)};
+            } else if (score > -0.7) {
+                return {ICON_MD_WARNING, "Mostly False", ImVec4(0.95f, 0.50f, 0.20f, 1.0f)};
+            } else {
+                return {ICON_MD_GPP_BAD, "Complete Lie", ImVec4(0.95f, 0.25f, 0.25f, 1.0f)};
+            }
+        }
 
         struct shared_state {
             std::mutex mutex;
             bool is_fetching{false};
-            bool is_generating_all{false};
-            int generating_segment_index{-1};
+            bool is_generating{false};
             std::string status_message;
             std::string plain_transcript;
             std::string timestamped_transcript;
             std::vector<transcript_entry> entries;
-            std::vector<segment_commentary> segment_commentaries;
+            std::vector<dynamic_commentary_point> commentary_points;
             std::string video_title;
             std::string video_url;
             double video_duration{0.0};
@@ -96,7 +118,6 @@ namespace rouen::cards {
             state = std::make_shared<shared_state>();
             selected_llm_config = rouen::helpers::LLMConfigManager::instance().get_default_config_name();
             selected_language = "English";
-            target_word_count = 100;
             enable_fact_check = false;
             enable_web_search = true;
         }
@@ -114,6 +135,40 @@ namespace rouen::cards {
 
         bool matches_uri(std::string_view uri) const override {
             return uri == "media-companion" || uri == "media_companion";
+        }
+
+        static double parse_time_str_to_seconds(const std::string& ts_str) {
+            std::string clean;
+            for (char c : ts_str) {
+                if (std::isdigit(c) || c == ':' || c == '.' || c == ',') {
+                    if (c == ',') clean += '.';
+                    else clean += c;
+                }
+            }
+            if (clean.empty()) return 0.0;
+
+            int h = 0, m = 0;
+            double s = 0.0;
+            if (sscanf(clean.c_str(), "%d:%d:%lf", &h, &m, &s) == 3) {
+                return h * 3600.0 + m * 60.0 + s;
+            } else if (sscanf(clean.c_str(), "%d:%lf", &m, &s) == 2) {
+                return m * 60.0 + s;
+            } else if (sscanf(clean.c_str(), "%lf", &s) == 1) {
+                return s;
+            }
+            return 0.0;
+        }
+
+        static std::string format_seconds_to_timestamp(double sec) {
+            int total_s = static_cast<int>(sec);
+            int h = total_s / 3600;
+            int m = (total_s % 3600) / 60;
+            int s = total_s % 60;
+            if (h > 0) {
+                return std::format("{:02d}:{:02d}:{:02d}", h, m, s);
+            } else {
+                return std::format("{:02d}:{:02d}", m, s);
+            }
         }
 
         static double parse_srt_timestamp(const std::string& ts_str, std::string& formatted_str) {
@@ -205,6 +260,235 @@ namespace rouen::cards {
             return entries;
         }
 
+        static std::vector<dynamic_commentary_point> parse_ai_commentary_response(const std::string& ai_response) {
+            std::vector<dynamic_commentary_point> points;
+
+            auto extract_field_val = [](const std::string& obj_str, const std::string& key) -> std::string {
+                size_t pos = obj_str.find("\"" + key + "\"");
+                if (pos == std::string::npos) return "";
+                size_t colon = obj_str.find(':', pos);
+                if (colon == std::string::npos) return "";
+                size_t q1 = obj_str.find('"', colon);
+                if (q1 == std::string::npos) return "";
+                std::string val;
+                bool escaped = false;
+                for (size_t k = q1 + 1; k < obj_str.size(); ++k) {
+                    char ch = obj_str[k];
+                    if (escaped) {
+                        if (ch == 'n') val += '\n';
+                        else if (ch == 'r') val += '\r';
+                        else if (ch == 't') val += '\t';
+                        else val += ch;
+                        escaped = false;
+                    } else if (ch == '\\') {
+                        escaped = true;
+                    } else if (ch == '"') {
+                        break;
+                    } else {
+                        val += ch;
+                    }
+                }
+                return val;
+            };
+
+            auto extract_field_num = [](const std::string& obj_str, const std::string& key) -> double {
+                size_t pos = obj_str.find("\"" + key + "\"");
+                if (pos == std::string::npos) return 0.0;
+                size_t colon = obj_str.find(':', pos);
+                if (colon == std::string::npos) return 0.0;
+                size_t start = obj_str.find_first_of("-0123456789.", colon + 1);
+                if (start == std::string::npos) return 0.0;
+                double val = 0.0;
+                if (sscanf(obj_str.c_str() + start, "%lf", &val) == 1) {
+                    return val;
+                }
+                return 0.0;
+            };
+
+            auto process_entry = [&](std::string raw_ts, std::string comment, std::vector<fact_check_assertion> assertions) {
+                while (!raw_ts.empty() && (raw_ts.front() == '[' || raw_ts.front() == '"' || raw_ts.front() == ' ' || raw_ts.front() == '#')) {
+                    raw_ts.erase(raw_ts.begin());
+                }
+                while (!raw_ts.empty() && (raw_ts.back() == ']' || raw_ts.back() == '"' || raw_ts.back() == ' ' || raw_ts.back() == ':')) {
+                    raw_ts.pop_back();
+                }
+
+                size_t c_start = comment.find_first_not_of(" \t\r\n");
+                size_t c_end = comment.find_last_not_of(" \t\r\n");
+                if (c_start != std::string::npos && c_end != std::string::npos) {
+                    comment = comment.substr(c_start, c_end - c_start + 1);
+                }
+                if (raw_ts.empty() || comment.empty()) return;
+
+                double sec = parse_time_str_to_seconds(raw_ts);
+                std::string formatted_ts = format_seconds_to_timestamp(sec);
+                points.push_back({sec, formatted_ts, comment, assertions});
+            };
+
+            // 1. Try parsing JSON array if present
+            std::string json_str = ai_response;
+            size_t code_fence = json_str.find("```json");
+            if (code_fence != std::string::npos) {
+                size_t fence_start = code_fence + 7;
+                size_t fence_end = json_str.find("```", fence_start);
+                if (fence_end != std::string::npos) {
+                    json_str = json_str.substr(fence_start, fence_end - fence_start);
+                } else {
+                    json_str = json_str.substr(fence_start);
+                }
+            } else {
+                code_fence = json_str.find("```");
+                if (code_fence != std::string::npos) {
+                    size_t fence_start = code_fence + 3;
+                    size_t fence_end = json_str.find("```", fence_start);
+                    if (fence_end != std::string::npos) {
+                        json_str = json_str.substr(fence_start, fence_end - fence_start);
+                    }
+                }
+            }
+
+            size_t arr_start = json_str.find('[');
+            size_t arr_end = json_str.rfind(']');
+            if (arr_start != std::string::npos && arr_end != std::string::npos && arr_end > arr_start) {
+                std::string array_content = json_str.substr(arr_start, arr_end - arr_start + 1);
+                bool inside_obj = false;
+                int brace_depth = 0;
+                size_t obj_start = 0;
+                for (size_t i = 0; i < array_content.size(); ++i) {
+                    char c = array_content[i];
+                    if (c == '{') {
+                        if (brace_depth == 0) {
+                            obj_start = i;
+                            inside_obj = true;
+                        }
+                        brace_depth++;
+                    } else if (c == '}') {
+                        brace_depth--;
+                        if (brace_depth == 0 && inside_obj) {
+                            std::string obj_str = array_content.substr(obj_start, i - obj_start + 1);
+
+                            std::string ts_val = extract_field_val(obj_str, "timestamp");
+                            if (ts_val.empty()) ts_val = extract_field_val(obj_str, "time");
+                            if (ts_val.empty()) ts_val = extract_field_val(obj_str, "point");
+
+                            std::string comment_val = extract_field_val(obj_str, "comment");
+                            if (comment_val.empty()) comment_val = extract_field_val(obj_str, "text");
+                            if (comment_val.empty()) comment_val = extract_field_val(obj_str, "commentary");
+
+                            std::vector<fact_check_assertion> assertions;
+                            size_t assertions_pos = obj_str.find("\"assertions\"");
+                            if (assertions_pos != std::string::npos) {
+                                size_t a_start = obj_str.find('[', assertions_pos);
+                                size_t a_end = (a_start != std::string::npos) ? obj_str.find(']', a_start) : std::string::npos;
+                                if (a_start != std::string::npos && a_end != std::string::npos) {
+                                    std::string a_arr = obj_str.substr(a_start, a_end - a_start + 1);
+                                    int a_depth = 0;
+                                    size_t sub_obj_start = 0;
+                                    for (size_t k = 0; k < a_arr.size(); ++k) {
+                                        char ch = a_arr[k];
+                                        if (ch == '{') {
+                                            if (a_depth == 0) sub_obj_start = k;
+                                            a_depth++;
+                                        } else if (ch == '}') {
+                                            a_depth--;
+                                            if (a_depth == 0) {
+                                                std::string a_obj = a_arr.substr(sub_obj_start, k - sub_obj_start + 1);
+                                                std::string claim = extract_field_val(a_obj, "claim");
+                                                if (claim.empty()) claim = extract_field_val(a_obj, "statement");
+
+                                                double score = extract_field_num(a_obj, "truth_score");
+                                                if (a_obj.find("\"truth_score\"") == std::string::npos && a_obj.find("\"score\"") != std::string::npos) {
+                                                    score = extract_field_num(a_obj, "score");
+                                                }
+                                                score = std::clamp(score, -1.0, 1.0);
+
+                                                std::string explanation = extract_field_val(a_obj, "explanation");
+                                                if (explanation.empty()) explanation = extract_field_val(a_obj, "reason");
+
+                                                if (!claim.empty()) {
+                                                    assertions.push_back({claim, score, explanation});
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (!ts_val.empty() && !comment_val.empty()) {
+                                process_entry(ts_val, comment_val, assertions);
+                            }
+                            inside_obj = false;
+                        }
+                    }
+                }
+            }
+
+            // 2. Fallback: Parse line headers e.g. [01:25] or ### 01:25 or **[01:25]**
+            if (points.empty()) {
+                std::istringstream iss(ai_response);
+                std::string line;
+                std::string current_ts;
+                std::string current_comment;
+
+                while (std::getline(iss, line)) {
+                    if (!line.empty() && line.back() == '\r') line.pop_back();
+
+                    size_t b_open = line.find('[');
+                    size_t b_close = line.find(']', b_open != std::string::npos ? b_open : 0);
+                    bool found_header = false;
+                    std::string found_ts;
+
+                    if (b_open != std::string::npos && b_close != std::string::npos && b_close > b_open) {
+                        std::string inside = line.substr(b_open + 1, b_close - b_open - 1);
+                        if (inside.find(':') != std::string::npos) {
+                            found_ts = inside;
+                            found_header = true;
+                        }
+                    }
+
+                    if (!found_header) {
+                        std::string trimmed = line;
+                        size_t s = trimmed.find_first_not_of(" \t#*");
+                        if (s != std::string::npos) trimmed = trimmed.substr(s);
+                        int h = 0, m = 0, sec = 0;
+                        if (sscanf(trimmed.c_str(), "%d:%d:%d", &h, &m, &sec) == 3 ||
+                            sscanf(trimmed.c_str(), "%d:%d", &m, &sec) == 2) {
+                            found_ts = trimmed.substr(0, trimmed.find_first_of(" \t\r\n*#)]}"));
+                            found_header = true;
+                        }
+                    }
+
+                    if (found_header && !found_ts.empty()) {
+                        if (!current_ts.empty() && !current_comment.empty()) {
+                            process_entry(current_ts, current_comment, {});
+                        }
+                        current_ts = found_ts;
+                        current_comment.clear();
+                        size_t remainder_pos = (b_close != std::string::npos && b_close > b_open) ? b_close + 1 : 0;
+                        if (remainder_pos < line.size()) {
+                            std::string rem = line.substr(remainder_pos);
+                            size_t rs = rem.find_first_not_of(" \t:-*#");
+                            if (rs != std::string::npos) {
+                                current_comment = rem.substr(rs);
+                            }
+                        }
+                    } else if (!current_ts.empty()) {
+                        if (!current_comment.empty()) current_comment += "\n";
+                        current_comment += line;
+                    }
+                }
+                if (!current_ts.empty() && !current_comment.empty()) {
+                    process_entry(current_ts, current_comment, {});
+                }
+            }
+
+            std::sort(points.begin(), points.end(), [](const dynamic_commentary_point& a, const dynamic_commentary_point& b) {
+                return a.timestamp_seconds < b.timestamp_seconds;
+            });
+
+            return points;
+        }
+
         void seek_to(double seconds) {
             std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
             for (auto& [id, item_ptr] : media_player::items()) {
@@ -262,7 +546,7 @@ namespace rouen::cards {
                 state->plain_transcript.clear();
                 state->timestamped_transcript.clear();
                 state->entries.clear();
-                state->segment_commentaries.clear();
+                state->commentary_points.clear();
             }
 
             auto st = state;
@@ -278,7 +562,7 @@ namespace rouen::cards {
 
                 auto fetch_sub_file = [&](const std::string& cargs) -> std::filesystem::path {
                     std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
-                    std::string cmd = std::format("\"{}\" -q --no-warnings{} --skip-download --write-sub --write-auto-sub "
+                    std::string cmd = std::format("\"{}\" -q --no-warnings --remote-components ejs:github{} --skip-download --write-sub --write-auto-sub "
                                                   "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
                                                   ytdlp_path, extra_flags, out_prefix, detected_url);
                     ProcessHelper::executeCommand(cmd);
@@ -295,7 +579,7 @@ namespace rouen::cards {
 
                 std::filesystem::path found_file = fetch_sub_file(cookie_args);
                 if (found_file.empty()) {
-                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "arc", "vivaldi", "opera"};
                     std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
                     for (const auto& browser : candidate_browsers) {
                         if (browser == configured_browser) continue;
@@ -331,7 +615,6 @@ namespace rouen::cards {
                     if (!st->entries.empty()) {
                         std::stringstream ss_plain;
                         std::stringstream ss_ts;
-                        double max_ts = st->video_duration;
                         for (size_t i = 0; i < st->entries.size(); ++i) {
                             if (i > 0) {
                                 ss_plain << "\n";
@@ -339,40 +622,10 @@ namespace rouen::cards {
                             }
                             ss_plain << st->entries[i].text;
                             ss_ts << "[" << st->entries[i].timestamp_str << "] " << st->entries[i].text;
-                            max_ts = std::max(max_ts, st->entries[i].timestamp_seconds);
                         }
                         st->plain_transcript = ss_plain.str();
                         st->timestamped_transcript = ss_ts.str();
-
-                        // Build 2-minute segment commentaries (120 seconds per segment)
-                        constexpr double kSegmentLengthSec = 120.0;
-                        int total_segments = std::max(1, static_cast<int>(std::floor(max_ts / kSegmentLengthSec)) + 1);
-                        st->segment_commentaries.clear();
-                        st->segment_commentaries.reserve(static_cast<size_t>(total_segments));
-
-                        for (int s = 0; s < total_segments; ++s) {
-                            double window_start = std::max(0.0, s * kSegmentLengthSec - 10.0); // 10s context padding
-                            double window_end = (s + 1) * kSegmentLengthSec + 10.0; // 10s context padding
-
-                            std::stringstream ss_ctx;
-                            for (const auto& entry : st->entries) {
-                                if (entry.timestamp_seconds >= window_start && entry.timestamp_seconds <= window_end) {
-                                    ss_ctx << "[" << entry.timestamp_str << "] " << entry.text << "\n";
-                                }
-                            }
-
-                            int start_min = s * 2;
-                            int end_min = s * 2 + 1;
-                            segment_commentary sc;
-                            sc.segment_index = s;
-                            sc.timestamp_label = std::format("{:02d}:00 - {:02d}:59", start_min, end_min);
-                            sc.transcript_context = ss_ctx.str();
-                            sc.is_generating = false;
-                            sc.generated = false;
-                            st->segment_commentaries.push_back(std::move(sc));
-                        }
-
-                        st->status_message = std::format("Transcript obtained ({} 2-minute segments).", total_segments);
+                        st->status_message = std::format("Transcript obtained ({} entries). Click 'Generate AI Commentary' to analyze.", st->entries.size());
                     } else {
                         st->status_message = "Downloaded subtitle file was empty.";
                     }
@@ -382,44 +635,40 @@ namespace rouen::cards {
             }).detach();
         }
 
-        void generate_commentary_for_segment(int segment_idx) {
-            std::string context;
+        void generate_commentary_for_full_video() {
+            std::string transcript_text;
             std::string title;
             std::string config_name = selected_llm_config;
             std::string lang_name = selected_language;
-            int words_target = target_word_count;
             bool do_fact_check = enable_fact_check;
             bool do_web_search = enable_web_search;
 
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
-                if (segment_idx < 0 || segment_idx >= static_cast<int>(state->segment_commentaries.size())) return;
-                auto& sc = state->segment_commentaries[static_cast<size_t>(segment_idx)];
-                if (sc.is_generating) return;
-                sc.is_generating = true;
-                context = sc.transcript_context;
+                if (state->is_generating || state->timestamped_transcript.empty()) return;
+                state->is_generating = true;
+                transcript_text = state->timestamped_transcript;
                 title = state->video_title;
-                state->status_message = std::format("Generating AI commentary for Segment {} ({}, {}, ~{} words, fact-check: {})...",
-                    segment_idx, config_name.empty() ? "Default" : config_name, lang_name, words_target, do_fact_check ? "ON" : "OFF");
+                state->status_message = std::format("Generating time-marked AI commentaries for full video ({}, {}, fact-check: {})...",
+                    config_name.empty() ? "Default" : config_name, lang_name, do_fact_check ? "ON" : "OFF");
             }
 
             auto st = state;
-            std::thread([st, segment_idx, context, title, config_name, lang_name, words_target, do_fact_check, do_web_search]() {
-                std::string commentary;
-                if (context.empty()) {
-                    commentary = std::format("*No transcript available for Segment {}.*", segment_idx);
+            std::thread([st, transcript_text, title, config_name, lang_name, do_fact_check, do_web_search]() {
+                std::string raw_response;
+                if (transcript_text.empty()) {
+                    raw_response = "*No transcript available.*";
                 } else if (!rouen::helpers::LLMConfig::is_configured(config_name)) {
-                    commentary = std::format("*AI Model configuration '{}' is not fully configured. Please set API key in Settings -> LLM Configuration.*",
+                    raw_response = std::format("*AI Model configuration '{}' is not fully configured. Please set API key in Settings -> LLM Configuration.*",
                         config_name.empty() ? "Default" : config_name);
                 } else {
                     auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance(config_name);
                     if (!llm_instance) {
-                        commentary = std::format("*Failed to initialize LLM instance for configuration '{}'.*", config_name);
+                        raw_response = std::format("*Failed to initialize LLM instance for configuration '{}'.*", config_name);
                     } else {
                         auto settings = rouen::helpers::LLMConfig::get_current_config(config_name);
-                            auto fetcher = std::make_shared<http::fetch>(300);
+                        auto fetcher = std::make_shared<http::fetch>(300);
 
-                        // Check if selected AI Model provider supports web search grounding
                         bool adapter_allows_search = (settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
                                                       settings.provider == rouen::helpers::LLMConfig::Provider::GEMINI ||
                                                       settings.provider == rouen::helpers::LLMConfig::Provider::OPENAI);
@@ -428,42 +677,54 @@ namespace rouen::cards {
                         std::string search_mode = use_search ? "on" : "";
 
                         std::string lang_directive = (lang_name == "Original / Auto-detect")
-                            ? "Write the commentary in the primary language of the transcript."
-                            : std::format("You MUST write the entire response and commentary in {}.", lang_name);
+                            ? "Write all comments in the primary language of the transcript."
+                            : std::format("You MUST write all comments and text in {}.", lang_name);
 
                         std::string fact_check_directive = do_fact_check
-                            ? "FACT-CHECKING MODE: Actively verify and fact-check key claims, statistics, and statements in this transcript segment. "
-                              "Include a dedicated section '### Fact-Check & Verification' in your Markdown output noting verified facts, unverified claims, or inaccuracies."
+                            ? "FACT-CHECKING MODE (STRICT NUMERIC TRUTH SCORES):\n"
+                              "Evaluate key claims, statements, and statistics made at each point in the video.\n"
+                              "For each evaluated claim, assign a precise numeric 'truth_score' float between -1.0 (a complete lie / false statement) and +1.0 (a certain, verified truth).\n"
+                              "- Score +1.0 = Certain, verified truth (e.g. established scientific fact, confirmed data).\n"
+                              "- Score +0.5 = Mostly true / minor context missing.\n"
+                              "- Score  0.0 = Uncertain, unverified, mixed, or subjective opinion.\n"
+                              "- Score -0.5 = Mostly false, misleading, or deceptive statement.\n"
+                              "- Score -1.0 = Complete lie, demonstrably false, or fabricated statement.\n"
+                              "For each commentary item in your output array, include an 'assertions' array containing all fact check evaluations for that moment. Each assertion object MUST have:\n"
+                              "  * \"claim\": string (the claim/statement evaluated)\n"
+                              "  * \"truth_score\": float value between -1.0 and 1.0\n"
+                              "  * \"explanation\": string (brief verification context/reasoning)\n"
                             : "";
 
                         llm_instance->add_instructions(
                             std::format(
-                                "You are an insightful, engaging AI Media Companion analyzing video transcripts in 2-minute segments. "
-                                "Provide a concise, intelligent commentary and summary in Markdown format for the specified 2-minute segment of the video.\n\n"
-                                "STRICT OUTPUT RULES:\n"
-                                "1. STRICT WORD COUNT: Your total output MUST be strictly target approximately {} words (do not write significantly more or fewer words).\n"
-                                "2. NO PREAMBLE / NO INTRO: Start IMMEDIATELY with the commentary body or header. Do NOT include conversational intros (e.g. 'Here is a commentary...', 'Here is the summary...', 'Sure!', 'Below is...', 'In this segment...').\n"
-                                "3. NO CLOSING / NO FOLLOW-UP: Stop IMMEDIATELY after completing the commentary. Do NOT include follow-up questions, suggestions, or sign-offs (e.g. 'Let me know if you want more details', 'Would you like further analysis?', 'Hope this helps!').\n"
+                                "You are an insightful, engaging AI Media Companion analyzing complete video transcripts with time markers.\n"
+                                "Your task is to analyze the entire video transcript and generate structured, time-marked comments and insights throughout the video timeline.\n\n"
+                                "STRICT OUTPUT FORMAT:\n"
+                                "You MUST respond strictly with a valid JSON array of objects. Each object in the array represents a point-in-time commentary with the following JSON keys:\n"
+                                "- \"timestamp\": A string representing the timestamp in \"MM:SS\" or \"HH:MM:SS\" format where the commentary applies (e.g., \"01:25\", \"04:10\").\n"
+                                "- \"comment\": A markdown-formatted commentary/insight for that specific moment in the video.\n"
+                                "- \"assertions\": (Optional array of fact-check assertion objects):\n"
+                                "    [ {{\"claim\": \"...\", \"truth_score\": 0.85, \"explanation\": \"...\"}} ]\n\n"
+                                "STRICT RULES:\n"
+                                "1. Identify key moments, main arguments, shifts in topic, key takeaways, facts, or interesting observations throughout the entire video.\n"
+                                "2. Ensure timestamps correspond to actual moments occurring in the transcript.\n"
+                                "3. Start IMMEDIATELY with the raw JSON array (or inside a ```json ``` block). Do NOT include conversational intros or sign-offs outside the JSON.\n"
                                 "4. LANGUAGE: {}\n"
                                 "{}\n"
-                                "Use bullet points, bold text, or key takeaways where appropriate. Keep it clear, engaging, and well-structured.",
-                                words_target, lang_directive, fact_check_directive
+                                "Keep each comment engaging, clear, and well-structured.",
+                                lang_directive, fact_check_directive
                             )
                         );
 
-                        int start_m = segment_idx * 2;
-                        int end_m = start_m + 2;
                         std::string prompt = std::format(
                             "Video Title: {}\n"
-                            "Time Segment: Segment {} ({:02d}:00 - {:02d}:00, 2-minute block)\n"
                             "Target Language: {}\n"
-                            "Strict Word Count Target: Exactly ~{} words (STRICT REQUIREMENT).\n"
                             "Fact-Checking Requested: {}\n\n"
-                            "Transcript Context (2-minute block plus 10s context padding before and after):\n{}\n\n"
-                            "Write an engaging, structured Markdown commentary adhering strictly to ~{} words. Start directly without any introductory preamble ('Here is...') and end cleanly without any follow-up suggestions or questions.",
-                            title, segment_idx, start_m, end_m, lang_name, words_target,
-                            do_fact_check ? "YES - verify claims and provide a Fact-Check & Verification section" : "NO",
-                            context, words_target
+                            "Full Transcript with Time Markers:\n{}\n\n"
+                            "Analyze the entire transcript and output the structured JSON array of time-marked comments.",
+                            title, lang_name,
+                            do_fact_check ? "YES - verify key claims, assign truth_scores (-1.0 to +1.0) and include assertion objects" : "NO",
+                            transcript_text
                         );
 
                         try {
@@ -477,165 +738,29 @@ namespace rouen::cards {
                                 search_mode
                             );
                             if (!response.choices.empty()) {
-                                commentary = response.choices[0].message.content;
+                                raw_response = response.choices[0].message.content;
                             } else {
-                                commentary = "*No commentary text returned by AI model.*";
+                                raw_response = "*No text returned by AI model.*";
                             }
                         } catch (const std::exception& e) {
-                            commentary = std::format("*Error generating commentary: {}*", e.what());
+                            raw_response = std::format("*Error generating commentary: {}*", e.what());
                         }
                     }
                 }
+
+                auto parsed_points = parse_ai_commentary_response(raw_response);
 
                 std::lock_guard<std::mutex> lock(st->mutex);
                 if (!st->card_alive) return;
 
-                if (segment_idx >= 0 && segment_idx < static_cast<int>(st->segment_commentaries.size())) {
-                    auto& sc = st->segment_commentaries[static_cast<size_t>(segment_idx)];
-                    sc.commentary_md = commentary;
-                    sc.is_generating = false;
-                    sc.generated = true;
-                }
-                st->status_message = std::format("AI Commentary ready for Segment {}.", segment_idx);
-            }).detach();
-        }
-
-        void generate_all_commentaries() {
-            std::string config_name = selected_llm_config;
-            std::string lang_name = selected_language;
-            int words_target = target_word_count;
-            bool do_fact_check = enable_fact_check;
-            bool do_web_search = enable_web_search;
-
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                if (state->is_generating_all || state->segment_commentaries.empty()) return;
-                state->is_generating_all = true;
-                state->status_message = std::format("Generating AI commentary for all 2-minute segments ({}, {}, ~{} words, fact-check: {})...",
-                    config_name.empty() ? "Default" : config_name, lang_name, words_target, do_fact_check ? "ON" : "OFF");
-            }
-
-            auto st = state;
-            std::thread([st, config_name, lang_name, words_target, do_fact_check, do_web_search]() {
-                size_t total = 0;
-                {
-                    std::lock_guard<std::mutex> lock(st->mutex);
-                    total = st->segment_commentaries.size();
-                }
-
-                for (size_t i = 0; i < total; ++i) {
-                    {
-                        std::lock_guard<std::mutex> lock(st->mutex);
-                        if (!st->card_alive) return;
-                        st->generating_segment_index = static_cast<int>(i);
-                        st->status_message = std::format("Generating AI commentary for Segment {} of {} (in {}, ~{} words)...", i, total - 1, lang_name, words_target);
-                        st->segment_commentaries[i].is_generating = true;
-                    }
-
-                    std::string context;
-                    std::string title;
-                    {
-                        std::lock_guard<std::mutex> lock(st->mutex);
-                        context = st->segment_commentaries[i].transcript_context;
-                        title = st->video_title;
-                    }
-
-                    std::string commentary;
-                    if (context.empty()) {
-                        commentary = std::format("*No transcript available for Segment {}.*", i);
-                    } else if (!rouen::helpers::LLMConfig::is_configured(config_name)) {
-                        commentary = std::format("*AI Model configuration '{}' is not fully configured. Please set API key in Settings -> LLM Configuration.*",
-                            config_name.empty() ? "Default" : config_name);
-                    } else {
-                        auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance(config_name);
-                        if (!llm_instance) {
-                            commentary = std::format("*Failed to initialize LLM instance for configuration '{}'.*", config_name);
-                        } else {
-                            auto settings = rouen::helpers::LLMConfig::get_current_config(config_name);
-                                auto fetcher = std::make_shared<http::fetch>(300);
-
-                            bool adapter_allows_search = (settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
-                                                          settings.provider == rouen::helpers::LLMConfig::Provider::GEMINI ||
-                                                          settings.provider == rouen::helpers::LLMConfig::Provider::OPENAI);
-
-                            bool use_search = adapter_allows_search && (do_web_search || do_fact_check);
-                            std::string search_mode = use_search ? "on" : "";
-
-                            std::string lang_directive = (lang_name == "Original / Auto-detect")
-                                ? "Write the commentary in the primary language of the transcript."
-                                : std::format("You MUST write the entire response and commentary in {}.", lang_name);
-
-                            std::string fact_check_directive = do_fact_check
-                                ? "FACT-CHECKING MODE: Actively verify and fact-check key claims, statistics, and statements in this transcript segment. "
-                                  "Include a dedicated section '### Fact-Check & Verification' in your Markdown output noting verified facts, unverified claims, or inaccuracies."
-                                : "";
-
-                            llm_instance->add_instructions(
-                                std::format(
-                                    "You are an insightful, engaging AI Media Companion analyzing video transcripts in 2-minute segments. "
-                                    "Provide a concise, intelligent commentary and summary in Markdown format for the specified 2-minute segment of the video.\n\n"
-                                    "STRICT OUTPUT RULES:\n"
-                                    "1. STRICT WORD COUNT: Your total output MUST be strictly target approximately {} words (do not write significantly more or fewer words).\n"
-                                    "2. NO PREAMBLE / NO INTRO: Start IMMEDIATELY with the commentary body or header. Do NOT include conversational intros (e.g. 'Here is a commentary...', 'Here is the summary...', 'Sure!', 'Below is...', 'In this segment...').\n"
-                                    "3. NO CLOSING / NO FOLLOW-UP: Stop IMMEDIATELY after completing the commentary. Do NOT include follow-up questions, suggestions, or sign-offs (e.g. 'Let me know if you want more details', 'Would you like further analysis?', 'Hope this helps!').\n"
-                                    "4. LANGUAGE: {}\n"
-                                    "{}\n"
-                                    "Use bullet points, bold text, or key takeaways where appropriate. Keep it clear, engaging, and well-structured.",
-                                    words_target, lang_directive, fact_check_directive
-                                )
-                            );
-
-                            int start_m = static_cast<int>(i) * 2;
-                            int end_m = start_m + 2;
-                            std::string prompt = std::format(
-                                "Video Title: {}\n"
-                                "Time Segment: Segment {} ({:02d}:00 - {:02d}:00, 2-minute block)\n"
-                                "Target Language: {}\n"
-                                "Strict Word Count Target: Exactly ~{} words (STRICT REQUIREMENT).\n"
-                                "Fact-Checking Requested: {}\n\n"
-                                "Transcript Context (2-minute block plus 10s context padding before and after):\n{}\n\n"
-                                "Write an engaging, structured Markdown commentary adhering strictly to ~{} words. Start directly without any introductory preamble ('Here is...') and end cleanly without any follow-up suggestions or questions.",
-                                title, static_cast<int>(i), start_m, end_m, lang_name, words_target,
-                                do_fact_check ? "YES - verify claims and provide a Fact-Check & Verification section" : "NO",
-                                context, words_target
-                            );
-
-                            try {
-                                auto response = llm_instance->sendMessage(
-                                    prompt,
-                                    [fetcher](const std::string& url, const std::string& data, auto header_client) {
-                                        return fetcher->post(url, data, header_client);
-                                    },
-                                    "user",
-                                    settings.model_name,
-                                    search_mode
-                                );
-                                if (!response.choices.empty()) {
-                                    commentary = response.choices[0].message.content;
-                                } else {
-                                    commentary = "*No commentary text returned by AI model.*";
-                                }
-                            } catch (const std::exception& e) {
-                                commentary = std::format("*Error generating commentary: {}*", e.what());
-                            }
-                        }
-                    }
-
-                    {
-                        std::lock_guard<std::mutex> lock(st->mutex);
-                        if (!st->card_alive) return;
-                        st->segment_commentaries[i].commentary_md = commentary;
-                        st->segment_commentaries[i].is_generating = false;
-                        st->segment_commentaries[i].generated = true;
-                    }
-                }
-
-                {
-                    std::lock_guard<std::mutex> lock(st->mutex);
-                    if (!st->card_alive) return;
-                    st->is_generating_all = false;
-                    st->generating_segment_index = -1;
-                    st->status_message = "All 2-minute AI commentaries generated successfully.";
+                st->is_generating = false;
+                st->commentary_points = parsed_points;
+                if (!parsed_points.empty()) {
+                    st->status_message = std::format("Generated {} time-marked AI commentaries.", parsed_points.size());
+                } else if (!raw_response.empty() && raw_response.front() == '*') {
+                    st->status_message = raw_response;
+                } else {
+                    st->status_message = "Failed to parse structured time-marked commentaries from AI model.";
                 }
             }).detach();
         }
@@ -643,24 +768,24 @@ namespace rouen::cards {
         bool render(rouen::ui::ui_context& ui) override {
             return render_window([this, &ui]() {
                 bool fetching = false;
-                bool generating_all = false;
+                bool is_generating = false;
                 std::string status;
                 std::string plain_text;
                 std::string ts_text;
                 std::vector<transcript_entry> entries_copy;
-                std::vector<segment_commentary> commentaries_copy;
+                std::vector<dynamic_commentary_point> points_copy;
                 std::string title;
                 std::string url;
 
                 {
                     std::lock_guard<std::mutex> lock(state->mutex);
                     fetching = state->is_fetching;
-                    generating_all = state->is_generating_all;
+                    is_generating = state->is_generating;
                     status = state->status_message;
                     plain_text = state->plain_transcript;
                     ts_text = state->timestamped_transcript;
                     entries_copy = state->entries;
-                    commentaries_copy = state->segment_commentaries;
+                    points_copy = state->commentary_points;
                     title = state->video_title;
                     url = state->video_url;
                 }
@@ -691,22 +816,32 @@ namespace rouen::cards {
                     }
                 }
 
-                // 2-minute segment calculations (120 seconds per segment)
-                int current_segment = yt_active ? static_cast<int>(current_pos / 120.0) : 0;
+                // Find active dynamic commentary point for current playback position
+                int current_active_point = -1;
+                if (yt_active && !points_copy.empty()) {
+                    for (size_t i = 0; i < points_copy.size(); ++i) {
+                        double start_t = points_copy[i].timestamp_seconds;
+                        double next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
+                        double dur = std::min(30.0, std::max(12.0, next_t - start_t));
 
-                // Auto-sync position tracking
-                if (auto_sync_enabled && yt_active && !commentaries_copy.empty()) {
-                    if (current_segment != last_synced_segment) {
-                        if (current_segment >= 0 && current_segment < static_cast<int>(commentaries_copy.size())) {
-                            selected_segment = current_segment;
+                        if (current_pos >= start_t && current_pos < (start_t + dur)) {
+                            current_active_point = static_cast<int>(i);
+                            break;
                         }
-                        last_synced_segment = current_segment;
                     }
                 }
 
-                // Ensure selected segment is within valid bounds
-                if (!commentaries_copy.empty()) {
-                    selected_segment = std::clamp(selected_segment, 0, static_cast<int>(commentaries_copy.size()) - 1);
+                // Auto-sync position tracking
+                if (auto_sync_enabled && yt_active && !points_copy.empty() && current_active_point >= 0) {
+                    if (current_active_point != last_synced_point_index) {
+                        selected_point_index = current_active_point;
+                        last_synced_point_index = current_active_point;
+                    }
+                }
+
+                // Ensure selected point index is within valid bounds
+                if (!points_copy.empty()) {
+                    selected_point_index = std::clamp(selected_point_index, 0, static_cast<int>(points_copy.size()) - 1);
                 }
 
                 // Header Banner
@@ -714,7 +849,7 @@ namespace rouen::cards {
                 ui.separator();
                 ui.spacing();
 
-                // LLM Config, Language & Word Count Dropdowns
+                // LLM Config & Language Dropdowns
                 auto& lcm = rouen::helpers::LLMConfigManager::instance();
                 const auto& llm_configs = lcm.get_configs();
                 std::string current_config_label = selected_llm_config;
@@ -724,7 +859,7 @@ namespace rouen::cards {
 
                 ui.text_colored(ImVec4(0.8f, 0.8f, 0.95f, 1.0f), std::format("{} Model:", ICON_MD_SETTINGS));
                 ui.same_line();
-                ImGui::SetNextItemWidth(120.0f);
+                ImGui::SetNextItemWidth(140.0f);
                 if (ImGui::BeginCombo("##media_companion_llm_config", current_config_label.c_str())) {
                     for (const auto& cfg : llm_configs) {
                         bool is_selected = (selected_llm_config == cfg.name);
@@ -741,31 +876,12 @@ namespace rouen::cards {
                 ui.same_line();
                 ui.text_colored(ImVec4(0.8f, 0.8f, 0.95f, 1.0f), std::format("{} Lang:", ICON_MD_LANGUAGE));
                 ui.same_line();
-                ImGui::SetNextItemWidth(125.0f);
+                ImGui::SetNextItemWidth(140.0f);
                 if (ImGui::BeginCombo("##media_companion_language", selected_language.c_str())) {
                     for (const auto& lang : supported_languages) {
                         bool is_selected = (selected_language == lang.name);
                         if (ImGui::Selectable(lang.name.c_str(), is_selected)) {
                             selected_language = lang.name;
-                        }
-                        if (is_selected) {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-
-                ui.same_line();
-                ui.text_colored(ImVec4(0.8f, 0.8f, 0.95f, 1.0f), std::format("{} Words:", ICON_MD_SHORT_TEXT));
-                ui.same_line();
-                ImGui::SetNextItemWidth(90.0f);
-                std::string word_label = std::format("~{}", target_word_count);
-                if (ImGui::BeginCombo("##media_companion_word_count", word_label.c_str())) {
-                    for (int count : supported_word_counts) {
-                        std::string item_label = std::format("~{} words", count);
-                        bool is_selected = (target_word_count == count);
-                        if (ImGui::Selectable(item_label.c_str(), is_selected)) {
-                            target_word_count = count;
                         }
                         if (is_selected) {
                             ImGui::SetItemDefaultFocus();
@@ -783,9 +899,15 @@ namespace rouen::cards {
                     int dur_m = static_cast<int>(total_duration) / 60;
                     int dur_s = static_cast<int>(total_duration) % 60;
 
-                    ui.text_colored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
-                        std::format("{} Active YouTube Media [{:02d}:{:02d} / {:02d}:{:02d}] (2-min seg #{}):",
-                            ICON_MD_PLAY_CIRCLE_FILLED, pos_m, pos_s, dur_m, dur_s, current_segment));
+                    if (current_active_point >= 0 && current_active_point < static_cast<int>(points_copy.size())) {
+                        ui.text_colored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                            std::format("{} Active YouTube Media [{:02d}:{:02d} / {:02d}:{:02d}] (Point [{}]):",
+                                ICON_MD_PLAY_CIRCLE_FILLED, pos_m, pos_s, dur_m, dur_s, points_copy[static_cast<size_t>(current_active_point)].timestamp_str));
+                    } else {
+                        ui.text_colored(ImVec4(0.4f, 0.85f, 0.4f, 1.0f),
+                            std::format("{} Active YouTube Media [{:02d}:{:02d} / {:02d}:{:02d}]:",
+                                ICON_MD_PLAY_CIRCLE_FILLED, pos_m, pos_s, dur_m, dur_s));
+                    }
                     ui.text_wrapped(active_yt_title);
                 } else {
                     ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), std::format("{} No YouTube video currently playing.", ICON_MD_INFO));
@@ -812,9 +934,9 @@ namespace rouen::cards {
 
                 if (!status.empty()) {
                     ui.spacing();
-                    if (status.find("successfully") != std::string::npos || status.find("ready") != std::string::npos || status.find("obtained") != std::string::npos) {
+                    if (status.find("successfully") != std::string::npos || status.find("Generated") != std::string::npos || status.find("obtained") != std::string::npos) {
                         ui.text_colored(ImVec4(0.3f, 0.9f, 0.5f, 1.0f), std::format("{} {}", ICON_MD_CHECK_CIRCLE, status));
-                    } else if (status.find("No") != std::string::npos || status.find("empty") != std::string::npos) {
+                    } else if (status.find("No") != std::string::npos || status.find("empty") != std::string::npos || status.find("Failed") != std::string::npos) {
                         ui.text_colored(ImVec4(0.9f, 0.6f, 0.3f, 1.0f), std::format("{} {}", ICON_MD_WARNING, status));
                     } else {
                         ui.text_colored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f), std::format("{} {}", ICON_MD_SYNC, status));
@@ -827,9 +949,9 @@ namespace rouen::cards {
 
                 // Main Card View Content
                 if (!entries_copy.empty()) {
-                    // View Mode Tabs: 0 = AI Commentary (2-min groups), 1 = Timestamped Subtitles, 2 = Plain Text
+                    // View Mode Tabs: 0 = Dynamic AI Commentary, 1 = Timestamped Subtitles, 2 = Plain Text
                     static int view_tab = 0;
-                    if (ui.button(std::format("{} AI Commentary (2-min)", ICON_MD_AUTO_AWESOME))) {
+                    if (ui.button(std::format("{} AI Commentary ({})", ICON_MD_AUTO_AWESOME, points_copy.size()))) {
                         view_tab = 0;
                     }
                     ui.same_line();
@@ -844,7 +966,7 @@ namespace rouen::cards {
                     ui.spacing();
 
                     if (view_tab == 0) {
-                        // --- AI Commentary View Mode (2-Minute Groups) ---
+                        // --- Dynamic AI Commentary View Mode ---
                         ui.checkbox("Auto-Sync", &auto_sync_enabled);
                         ui.same_line();
                         ui.checkbox("Fact-Check", &enable_fact_check);
@@ -860,93 +982,87 @@ namespace rouen::cards {
                         }
 
                         ui.same_line();
-                        if (generating_all) {
+                        if (is_generating) {
                             ImGui::BeginDisabled();
-                            ui.button(std::format("{} Generating All...", ICON_MD_HOURGLASS_EMPTY));
+                            ui.button(std::format("{} Analyzing Full Video...", ICON_MD_HOURGLASS_EMPTY));
                             ImGui::EndDisabled();
                         } else {
-                            if (ui.button(std::format("{} Generate All AI Commentaries", ICON_MD_AUTO_AWESOME))) {
-                                generate_all_commentaries();
+                            std::string gen_btn_label = points_copy.empty()
+                                ? std::format("{} Generate AI Commentary", ICON_MD_AUTO_AWESOME)
+                                : std::format("{} Regenerate AI Commentary", ICON_MD_REFRESH);
+
+                            if (ui.button(gen_btn_label)) {
+                                generate_commentary_for_full_video();
                             }
                         }
 
                         ui.spacing();
 
-                        // Horizontal 2-Minute Segment Selection Pills Bar
-                        ui.text_colored(colors[0], std::format("{} Select 2-Minute Segment:", ICON_MD_VIEW_TIMELINE));
-                        if (ui.begin_child("SegmentSelectorBar", ImVec2(0, 36), false, ImGuiWindowFlags_NoScrollbar)) {
-                            for (size_t s = 0; s < commentaries_copy.size(); ++s) {
-                                if (s > 0) ui.same_line();
+                        if (!points_copy.empty()) {
+                            // Horizontal Dynamic Points Selection Pills Bar
+                            ui.text_colored(colors[0], std::format("{} Time-Marked Commentary Points ({}):", ICON_MD_VIEW_TIMELINE, points_copy.size()));
+                            if (ui.begin_child("PointSelectorBar", ImVec2(0, 36), false, ImGuiWindowFlags_NoScrollbar)) {
+                                for (size_t p = 0; p < points_copy.size(); ++p) {
+                                    if (p > 0) ui.same_line();
 
-                                bool is_current_playing = (yt_active && static_cast<int>(s) == current_segment);
-                                bool is_selected = (static_cast<int>(s) == selected_segment);
+                                    bool is_current_playing = (yt_active && static_cast<int>(p) == current_active_point);
+                                    bool is_selected = (static_cast<int>(p) == selected_point_index);
 
-                                std::string label = std::format("{:02d}:00", s * 2);
-                                if (commentaries_copy[s].generated) {
-                                    label += std::format(" {}", ICON_MD_CHECK);
-                                }
+                                    std::string label = points_copy[p].timestamp_str;
+                                    if (!points_copy[p].assertions.empty()) {
+                                        label += std::format(" {}", ICON_MD_FACT_CHECK);
+                                    }
 
-                                if (is_selected) {
-                                    ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[1]);
-                                } else if (is_current_playing) {
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.65f, 0.4f, 0.95f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.75f, 0.45f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.55f, 0.35f, 1.0f));
-                                } else {
-                                    ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[0]);
-                                }
+                                    if (is_selected) {
+                                        ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[1]);
+                                    } else if (is_current_playing) {
+                                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.65f, 0.4f, 0.95f));
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.75f, 0.45f, 1.0f));
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.55f, 0.35f, 1.0f));
+                                    } else {
+                                        ImGui::PushStyleColor(ImGuiCol_Button, colors[1]);
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors[0]);
+                                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors[0]);
+                                    }
 
-                                if (ui.button(label)) {
-                                    selected_segment = static_cast<int>(s);
-                                }
+                                    if (ui.button(label)) {
+                                        selected_point_index = static_cast<int>(p);
+                                        seek_to(points_copy[p].timestamp_seconds);
+                                    }
 
-                                ImGui::PopStyleColor(3);
-                            }
-                        }
-                        ui.end_child();
-
-                        ui.spacing();
-                        ui.separator();
-                        ui.spacing();
-
-                        // Selected Segment Banner & Action Bar
-                        if (selected_segment >= 0 && selected_segment < static_cast<int>(commentaries_copy.size())) {
-                            auto& sc = commentaries_copy[static_cast<size_t>(selected_segment)];
-
-                            ui.text_colored(colors[0], std::format("{} 2-Min Segment {} ({})",
-                                ICON_MD_AUTO_AWESOME, selected_segment, sc.timestamp_label));
-
-                            ui.same_line();
-                            if (ui.button(std::format("{} Jump to {:02d}:00", ICON_MD_PLAY_ARROW, selected_segment * 2))) {
-                                seek_to(selected_segment * 120.0);
-                            }
-
-                            ui.same_line();
-                            if (!sc.is_generating) {
-                                if (ui.button(std::format("{} Regenerate", ICON_MD_REFRESH))) {
-                                    generate_commentary_for_segment(selected_segment);
+                                    ImGui::PopStyleColor(3);
                                 }
                             }
+                            ui.end_child();
 
                             ui.spacing();
+                            ui.separator();
+                            ui.spacing();
 
-                            // Markdown Commentary Display Pane with High Contrast Charcoal Background
-                            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.07f, 0.08f, 0.11f, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.94f, 0.96f, 1.0f));
+                            // Selected Point Banner & Content
+                            if (selected_point_index >= 0 && selected_point_index < static_cast<int>(points_copy.size())) {
+                                const auto& pt = points_copy[static_cast<size_t>(selected_point_index)];
 
-                            float avail_h = ImGui::GetContentRegionAvail().y;
-                            if (avail_h < 150.0f) avail_h = 240.0f;
+                                ui.text_colored(colors[0], std::format("{} Point [{}] (Point {} of {})",
+                                    ICON_MD_AUTO_AWESOME, pt.timestamp_str, selected_point_index + 1, points_copy.size()));
 
-                            if (ui.begin_child("CommentaryMarkdownRegion", ImVec2(0, avail_h), true)) {
-                                if (sc.is_generating) {
-                                    ui.text_colored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f),
-                                        std::format("{} Generating AI commentary for Segment {} (in {}, ~{} words, fact-check: {})...",
-                                            ICON_MD_HOURGLASS_EMPTY, selected_segment, selected_language, target_word_count, enable_fact_check ? "ON" : "OFF"));
-                                } else if (sc.generated && !sc.commentary_md.empty()) {
+                                ui.same_line();
+                                if (ui.button(std::format("{} Jump to {}", ICON_MD_PLAY_ARROW, pt.timestamp_str))) {
+                                    seek_to(pt.timestamp_seconds);
+                                }
+
+                                ui.spacing();
+
+                                // Markdown Commentary Display Pane
+                                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.07f, 0.08f, 0.11f, 1.0f));
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.94f, 0.96f, 1.0f));
+
+                                float avail_h = ImGui::GetContentRegionAvail().y;
+                                if (avail_h < 150.0f) avail_h = 240.0f;
+
+                                if (ui.begin_child("CommentaryMarkdownRegion", ImVec2(0, avail_h), true)) {
                                     const rouen::helpers::markdown_render_config md_config{
                                         .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
                                         .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
@@ -954,23 +1070,59 @@ namespace rouen::cards {
                                     };
 
                                     rouen::helpers::render_markdown_block(
-                                        sc.commentary_md,
+                                        pt.commentary_md,
                                         md_config,
                                         [](const std::string& target_url) {
                                             rouen::platform::open_url(target_url);
                                         }
                                     );
-                                } else {
-                                    ui.text_colored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
-                                        std::format("No commentary generated for 2-minute Segment {} yet.", selected_segment));
-                                    ui.spacing();
-                                    if (ui.button(std::format("{} Generate AI Commentary for Segment {}", ICON_MD_AUTO_AWESOME, selected_segment))) {
-                                        generate_commentary_for_segment(selected_segment);
+
+                                    // Structured Fact-Check Assertions Display Section
+                                    if (!pt.assertions.empty()) {
+                                        ui.spacing();
+                                        ui.separator();
+                                        ui.spacing();
+
+                                        ui.text_colored(colors[0], std::format("{} Fact-Check Assertions ({})", ICON_MD_FACT_CHECK, pt.assertions.size()));
+                                        ui.spacing();
+
+                                        for (size_t a_idx = 0; a_idx < pt.assertions.size(); ++a_idx) {
+                                            const auto& ass = pt.assertions[a_idx];
+                                            truth_rating_visual vis = get_truth_rating_visual(ass.truth_score);
+
+                                            ImGui::PushID(static_cast<int>(a_idx));
+                                            ui.begin_group();
+
+                                            // Rating Icon + Rating Label + Numeric Truth Score Badge
+                                            ui.text_colored(vis.color, std::format("{} {} [{:+.2f}]", vis.icon, vis.label, ass.truth_score));
+                                            ui.same_line();
+                                            ui.text_colored(ImVec4(0.88f, 0.90f, 0.94f, 1.0f), std::format("Claim: {}", ass.claim));
+
+                                            if (!ass.explanation.empty()) {
+                                                ui.text_colored(ImVec4(0.70f, 0.72f, 0.76f, 1.0f), std::format("   Verification: {}", ass.explanation));
+                                            }
+
+                                            ui.end_group();
+                                            ImGui::PopID();
+                                            ui.spacing();
+                                        }
                                     }
                                 }
+                                ui.end_child();
+                                ImGui::PopStyleColor(2);
                             }
-                            ui.end_child();
-                            ImGui::PopStyleColor(2);
+                        } else {
+                            ui.text_colored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                "No AI commentary points generated yet.");
+                            ui.spacing();
+                            if (!is_generating) {
+                                if (ui.button(std::format("{} Generate AI Commentary for Full Video", ICON_MD_AUTO_AWESOME))) {
+                                    generate_commentary_for_full_video();
+                                }
+                            } else {
+                                ui.text_colored(ImVec4(0.4f, 0.75f, 1.0f, 1.0f),
+                                    std::format("{} Generating time-marked AI commentaries for full video transcript...", ICON_MD_HOURGLASS_EMPTY));
+                            }
                         }
                     } else if (view_tab == 1) {
                         // --- Timestamped Subtitles View Mode ---
@@ -1073,14 +1225,14 @@ namespace rouen::cards {
         }
 
         void render_video_ui() override {
-            std::vector<segment_commentary> commentaries_copy;
+            std::vector<dynamic_commentary_point> points_copy;
 
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
-                commentaries_copy = state->segment_commentaries;
+                points_copy = state->commentary_points;
             }
 
-            if (commentaries_copy.empty()) return;
+            if (points_copy.empty()) return;
 
             // Query active player position in real time
             bool yt_active = false;
@@ -1106,36 +1258,44 @@ namespace rouen::cards {
 
             if (!yt_active) return;
 
-            int current_segment = static_cast<int>(current_pos / 120.0);
-            if (current_segment < 0 || current_segment >= static_cast<int>(commentaries_copy.size())) return;
-
-            // 2-minute block timing: 120 seconds total
-            double segment_sec = fmod(current_pos, 120.0);
-            if (segment_sec < 0.0) segment_sec += 120.0;
-
-            // Display overlay in the last half of the target 2-minute time block (60.0s to 120.0s)
-            // Block start of 2nd half (60.0s - 60.4s): vertically expands from 0 to 1 over 0.4s
-            // Block pre-end (119.2s - 120.0s): vertically shrinks from 1 to 0 over 0.8s
+            // Find active point for current_pos
+            int active_idx = -1;
             float anim_factor = 0.0f;
-            if (segment_sec < 60.0) {
-                anim_factor = 0.0f;
-            } else if (segment_sec < 60.4) {
-                anim_factor = static_cast<float>((segment_sec - 60.0) / 0.4);
-            } else if (segment_sec >= 119.2) {
-                anim_factor = static_cast<float>(std::max(0.0, (120.0 - segment_sec) / 0.8));
+            double rel_sec = 0.0;
+            double active_duration = 20.0;
+
+            for (size_t i = 0; i < points_copy.size(); ++i) {
+                double start_t = points_copy[i].timestamp_seconds;
+                double next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
+                double dur = std::min(30.0, std::max(12.0, next_t - start_t));
+
+                if (current_pos >= start_t && current_pos < (start_t + dur)) {
+                    active_idx = static_cast<int>(i);
+                    active_duration = dur;
+                    rel_sec = current_pos - start_t;
+                    break;
+                }
+            }
+
+            if (active_idx < 0) return;
+
+            // Calculate animation factor based on rel_sec and active_duration
+            if (rel_sec < 0.5) {
+                anim_factor = static_cast<float>(rel_sec / 0.5);
+            } else if (rel_sec >= (active_duration - 0.8)) {
+                anim_factor = static_cast<float>(std::max(0.0, (active_duration - rel_sec) / 0.8));
             } else {
                 anim_factor = 1.0f;
             }
 
             if (anim_factor <= 0.005f) return; // Completely hidden when height is 0
 
-            const auto& sc = commentaries_copy[static_cast<size_t>(current_segment)];
-            if (!sc.generated || sc.commentary_md.empty()) return;
+            const auto& active_point = points_copy[static_cast<size_t>(active_idx)];
 
             constexpr float kFullHeight = 680.0f;
             float current_height = kFullHeight * anim_factor;
 
-            // Translucent dark background with matching alpha animation (less transparent for enhanced readability)
+            // Translucent dark background with matching alpha animation
             ImVec4 bg_color = ImVec4(0.04f, 0.05f, 0.09f, 0.90f * anim_factor);
             ImVec4 border_color = ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.60f * anim_factor);
 
@@ -1160,7 +1320,21 @@ namespace rouen::cards {
                     ImGui::SetWindowFontScale(2.5f);
                     ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 800.0f);
 
-                    std::string wrapped_commentary = wrap_text_soft_breaks(sc.commentary_md, 58);
+                    std::string header_text = std::format("[{}] ", active_point.timestamp_str);
+                    std::string full_text = header_text + active_point.commentary_md;
+
+                    if (!active_point.assertions.empty()) {
+                        full_text += "\n\n**Fact Checks:**\n";
+                        for (const auto& ass : active_point.assertions) {
+                            truth_rating_visual vis = get_truth_rating_visual(ass.truth_score);
+                            full_text += std::format("{} **{}** [{:+.2f}] Claim: {}\n", vis.icon, vis.label, ass.truth_score, ass.claim);
+                            if (!ass.explanation.empty()) {
+                                full_text += std::format("   Context: {}\n", ass.explanation);
+                            }
+                        }
+                    }
+
+                    std::string wrapped_commentary = wrap_text_soft_breaks(full_text, 58);
 
                     float child_h = std::max(1.0f, current_height - 56.0f);
                     if (ImGui::BeginChild("##VideoCastScrollRegion", ImVec2(816.0f, child_h), false,
@@ -1181,7 +1355,7 @@ namespace rouen::cards {
                         // Calculate internal scroll animation progress if text height exceeds container
                         float max_scroll_y = ImGui::GetScrollMaxY();
                         if (max_scroll_y > 0.0f) {
-                            float scroll_progress = std::clamp(static_cast<float>((segment_sec - 61.0) / 57.0), 0.0f, 1.0f);
+                            float scroll_progress = std::clamp(static_cast<float>((rel_sec - 0.5) / std::max(1.0, active_duration - 1.3)), 0.0f, 1.0f);
                             ImGui::SetScrollY(scroll_progress * max_scroll_y);
                         }
 
@@ -1208,7 +1382,7 @@ namespace rouen::cards {
             return {
                 mcp_function(
                     "get_media_companion_transcript",
-                    "Request or retrieve the YouTube transcript and 2-minute segment AI commentaries for the currently playing media item.",
+                    "Request or retrieve the YouTube transcript and dynamic time-marked AI commentaries with fact-check truth scores for the currently playing media item.",
                     R"({"type":"object","properties":{}})",
                     [this](const std::string&) -> std::string {
                         std::lock_guard<std::mutex> lock(state->mutex);
@@ -1225,26 +1399,36 @@ namespace rouen::cards {
                             return out;
                         };
 
-                        std::string commentaries_json = "[";
-                        for (size_t i = 0; i < state->segment_commentaries.size(); ++i) {
-                            if (i > 0) commentaries_json += ",";
-                            const auto& sc = state->segment_commentaries[i];
-                            commentaries_json += std::format(
-                                R"({{"segment":{},"label":"{}","commentary":"{}"}})",
-                                sc.segment_index, escape_json(sc.timestamp_label), escape_json(sc.commentary_md));
-                        }
-                        commentaries_json += "]";
+                        std::string points_json = "[";
+                        for (size_t i = 0; i < state->commentary_points.size(); ++i) {
+                            if (i > 0) points_json += ",";
+                            const auto& pt = state->commentary_points[i];
 
-                        return std::format(R"({{"status":"{}","title":"{}","url":"{}","selected_llm_config":"{}","selected_language":"{}","target_word_count":{},"enable_fact_check":{},"enable_web_search":{},"segment_commentaries":{},"timestamped_transcript":"{}","plain_transcript":"{}"}})",
+                            std::string assertions_json = "[";
+                            for (size_t k = 0; k < pt.assertions.size(); ++k) {
+                                if (k > 0) assertions_json += ",";
+                                const auto& ass = pt.assertions[k];
+                                assertions_json += std::format(
+                                    R"({{"claim":"{}","truth_score":{},"explanation":"{}"}})",
+                                    escape_json(ass.claim), ass.truth_score, escape_json(ass.explanation));
+                            }
+                            assertions_json += "]";
+
+                            points_json += std::format(
+                                R"({{"timestamp":"{}","timestamp_seconds":{},"comment":"{}","assertions":{}}})",
+                                escape_json(pt.timestamp_str), pt.timestamp_seconds, escape_json(pt.commentary_md), assertions_json);
+                        }
+                        points_json += "]";
+
+                        return std::format(R"({{"status":"{}","title":"{}","url":"{}","selected_llm_config":"{}","selected_language":"{}","enable_fact_check":{},"enable_web_search":{},"commentary_points":{},"timestamped_transcript":"{}","plain_transcript":"{}"}})",
                             escape_json(state->status_message),
                             escape_json(state->video_title),
                             escape_json(state->video_url),
                             escape_json(selected_llm_config),
                             escape_json(selected_language),
-                            target_word_count,
                             enable_fact_check ? "true" : "false",
                             enable_web_search ? "true" : "false",
-                            commentaries_json,
+                            points_json,
                             escape_json(state->timestamped_transcript),
                             escape_json(state->plain_transcript));
                     }
@@ -1256,11 +1440,10 @@ namespace rouen::cards {
         std::shared_ptr<shared_state> state;
         std::string selected_llm_config;
         std::string selected_language{"English"};
-        int target_word_count{100};
         bool enable_fact_check{false};
         bool enable_web_search{true};
-        int selected_segment{0};
-        int last_synced_segment{-1};
+        int selected_point_index{0};
+        int last_synced_point_index{-1};
         bool auto_sync_enabled{true};
     };
 

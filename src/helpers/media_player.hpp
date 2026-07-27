@@ -748,7 +748,7 @@ struct media_player {
     }
 
     static void draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
-        double current_pos = item.position.load();
+        double current_pos = item.get_current_position();
         double current_dur = item.duration.load();
         if (current_dur <= 0.0) return;
 
@@ -853,7 +853,8 @@ struct media_player {
         float const player_width = (max_width > 0.0f) ? max_width : ImGui::GetContentRegionAvail().x;
         ImGui::PushID(url.data(), url.data() + url.size());
         try {
-            auto item_ptr = get_item_ptr(ImGui::GetID("MediaPlayer"));
+            ImGuiID item_id = ImHashData(url.data(), url.size(), 0);
+            auto item_ptr = get_item_ptr(item_id);
             auto &item = *item_ptr;
             if (owner_card) {
                 item.owner_card = owner_card;
@@ -876,7 +877,7 @@ struct media_player {
             }
             if (has_active_media) {
                 ImGui::TextUnformatted(title.data(), title.data() + title.size());
-                double current_pos = item.position.load();
+                double current_pos = item.get_current_position();
                 double current_dur = item.duration.load();
                 if (current_pos > 0 && current_dur > 0) {
                     ImGui::TextColored(info_color, "%s: %s / %s",
@@ -902,25 +903,26 @@ struct media_player {
                     float progress = current_pos > 0 && current_dur > 0 ? 
                         static_cast<float>(current_pos / current_dur) : 0.0f;
                     progress = std::max(0.0f, std::min(1.0f, progress));
+                    float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
                     ImVec2 progress_bar_pos = ImGui::GetCursorScreenPos();
-                    ImVec2 progress_bar_size = ImVec2(player_width, ImGui::GetFrameHeight());
-                    ImGui::ProgressBar(progress, ImVec2(player_width, 0), "");
+                    ImGui::ProgressBar(progress, ImVec2(remaining_w, 0), "");
                     if (ImGui::IsItemClicked()) {
                         auto mouse_x = ImGui::GetIO().MousePos.x;
-                        auto rel_x = (mouse_x - progress_bar_pos.x) / progress_bar_size.x;
+                        auto rel_x = (mouse_x - progress_bar_pos.x) / remaining_w;
                         rel_x = std::max(0.0f, std::min(1.0f, rel_x));
                         auto target_pos = static_cast<double>(rel_x) * current_dur;
                         item.seekTo(target_pos);
                     }
                 } else {
-                    ImGui::ProgressBar(0.0f, ImVec2(player_width, 0), "Loading...");
+                    float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
+                    ImGui::ProgressBar(0.0f, ImVec2(remaining_w, 0), "Loading...");
                 }
 
                 ImTextureID tex = item.get_texture_id();
                 bool cast_active = media_player_item::is_cast_active.load();
                 bool detached_active = has_detached_item();
 
-                if (tex && item.has_video) {
+                if (tex && item.has_video.load()) {
                     float thumb_w = 120.0f;
                     float thumb_h = 67.5f;
                     if (!cast_active && !detached_active) {

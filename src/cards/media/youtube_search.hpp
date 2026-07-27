@@ -321,7 +321,7 @@ namespace rouen::cards {
 
                 auto run_yt_search = [&](const std::string& cargs) -> std::vector<youtube_result> {
                     std::string cflags = cargs.empty() ? "" : (" " + cargs);
-                    std::string cmd = std::format("\"{}\" --no-warnings --no-call-home --socket-timeout 10{} --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", ytdlp_path, cflags, escaped_query);
+                    std::string cmd = std::format("\"{}\" --no-warnings --no-call-home --remote-components ejs:github --socket-timeout 10{} --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", ytdlp_path, cflags, escaped_query);
                     std::string output = ProcessHelper::executeCommand(cmd);
 
                     std::stringstream ss(output);

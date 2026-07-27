@@ -61,7 +61,7 @@ struct media_player_item {
     int player_pid{0}; // Kept for backward compatibility with active card tracking
     bool is_playing{false};
     std::atomic<bool> is_paused{false};
-    std::atomic<double> position{0.0};
+    mutable std::atomic<double> position{0.0};
     std::atomic<double> duration{0.0};
     std::atomic<int> volume{100};
     std::atomic<float> vu_level_l{0.0f};
@@ -69,15 +69,34 @@ struct media_player_item {
     std::atomic<float> vu_watermark_l{0.0f};
     std::atomic<float> vu_watermark_r{0.0f};
     struct audio_peak_sample {
-        double pts{0.0};
+        double wall_time{0.0};  // wall-clock time when this audio will be heard (steady_clock seconds)
         float peak_l{0.0f};
         float peak_r{0.0f};
     };
     std::mutex audio_peak_mutex;
     std::deque<audio_peak_sample> audio_peak_queue;
     std::atomic<float> video_aspect_ratio{16.0f / 9.0f};
-    bool has_video{false};
-    double start_offset{0.0};
+    std::atomic<bool> has_video{false};
+    std::atomic<float> current_luminance{0.0f};
+    std::atomic<float> current_audio_peak_l{0.0f};
+    std::atomic<float> current_audio_peak_r{0.0f};
+    std::atomic<bool> has_presented_first_frame{false};
+    std::atomic<double> initial_pts_offset{0.0};
+    std::atomic<double> first_video_pts{-1.0};
+    std::atomic<double> first_audio_pts{-1.0};
+    std::atomic<double> start_offset{0.0};
+    mutable std::chrono::steady_clock::time_point playback_start_time{};
+    mutable std::chrono::steady_clock::time_point baseline_tp{};
+    mutable std::atomic<bool> baseline_set{false};
+    mutable std::atomic<double> baseline_start_pts{-1.0};
+    mutable std::chrono::steady_clock::time_point pause_start_tp{};
+    mutable std::chrono::steady_clock::time_point last_video_present_time{};
+    mutable double current_frame_duration{1.0 / 30.0};
+    mutable double last_presented_pts{-1.0};
+    mutable std::atomic<double> last_av_sync_delta_ms{0.0};  // (video_pts - audio_pts) in ms at last frame present
+    mutable std::atomic<int64_t> frames_presented{0};
+    mutable std::atomic<int64_t> frames_dropped{0};
+    mutable std::atomic<int64_t> frames_held{0};
     long long feed_id{-1};
     std::string item_link;
     std::string item_title;
@@ -137,6 +156,19 @@ struct media_player_item {
     bool pauseMedia();
     bool resumeMedia();
     bool togglePause();
+    double get_current_position() const {
+        if (!is_playing) return position.load();
+        if (is_paused.load()) return position.load();
+
+        auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - playback_start_time).count();
+        double live_pos = start_offset.load() + elapsed;
+        double max_dur = duration.load();
+        if (max_dur > 0.0 && live_pos > max_dur) {
+            live_pos = max_dur;
+        }
+        position.store(live_pos);
+        return live_pos;
+    }
     bool setPaused(bool paused);
     void update_watermark();
     void update_vu_levels();
@@ -186,6 +218,35 @@ struct media_player_item {
             transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
             transfer_info.size = kHeight * kWidth * 4;
             upload_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
+
+            if (upload_buffer && video_texture && video_texture->binding.texture) {
+                Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, upload_buffer, false));
+                if (map) {
+                    std::memset(map, 0, kHeight * kWidth * 4);
+                    SDL_UnmapGPUTransferBuffer(device, upload_buffer);
+                    SDL_GPUCommandBuffer* cmd_buf = existing_cmdbuf ? existing_cmdbuf : SDL_AcquireGPUCommandBuffer(device);
+                    if (cmd_buf) {
+                        SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
+                        if (copy_pass) {
+                            SDL_GPUTextureTransferInfo transfer_info_gpu = {};
+                            transfer_info_gpu.transfer_buffer = upload_buffer;
+                            transfer_info_gpu.offset = 0;
+                            transfer_info_gpu.pixels_per_row = kWidth;
+                            transfer_info_gpu.rows_per_layer = kHeight;
+                            SDL_GPUTextureRegion region = {};
+                            region.texture = video_texture->binding.texture;
+                            region.w = kWidth;
+                            region.h = kHeight;
+                            region.d = 1;
+                            SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
+                            SDL_EndGPUCopyPass(copy_pass);
+                        }
+                        if (!existing_cmdbuf) {
+                            SDL_SubmitGPUCommandBuffer(cmd_buf);
+                        }
+                    }
+                }
+            }
         }
         {
             std::vector<uint8_t> frame_to_present;
@@ -199,39 +260,44 @@ struct media_player_item {
                     }
                 }
             } else {
-                double current_audio_time = 0.0;
-                int queued_bytes = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
-                if (local_audio_stream && queued_bytes > 0) {
-                    double queued_seconds = static_cast<double>(queued_bytes) / 176400.0;
-                    current_audio_time = last_audio_pts.load() - queued_seconds;
-                    m_last_valid_audio_time = current_audio_time;
-                    m_last_clock_time = std::chrono::steady_clock::now();
-                } else {
+                if (first_audio_pts.load() < 0.0 && first_video_pts.load() >= 0.0) {
                     auto now = std::chrono::steady_clock::now();
-                    if (m_last_clock_time.time_since_epoch().count() > 0) {
-                        double elapsed = std::chrono::duration<double>(now - m_last_clock_time).count();
-                        current_audio_time = m_last_valid_audio_time + elapsed;
-                    } else {
-                        current_audio_time = position.load();
+                    double wait_sec = std::chrono::duration<double>(now - playback_start_time).count();
+                    if (wait_sec < 2.0 && is_playing) {
+                        // Hold video presentation up to 2.0 seconds while waiting for audio stream
+                        return reinterpret_cast<ImTextureID>(video_texture);
                     }
                 }
+                double speaker_audio_time = get_current_position();
 
                 std::lock_guard<std::mutex> q_lock(video_queue_mutex);
+                double f_v = first_video_pts.load() >= 0.0 ? first_video_pts.load() : 0.0;
+                double f_a = first_audio_pts.load() >= 0.0 ? first_audio_pts.load() : 0.0;
+
                 while (!decoded_video_queue.empty()) {
                     const auto& front = decoded_video_queue.front();
-                    if (front.pts > current_audio_time + 0.030) {
+                    double norm_video = front.pts - f_v;
+                    double norm_audio = speaker_audio_time - f_a;
+                    double delta = norm_video - norm_audio;
+
+                    if (delta > 0.025) {
+                        // HOLD: Frame is ahead of speaker audio presentation time
+                        frames_held.fetch_add(1, std::memory_order_relaxed);
+                        break;
+                    } else if (delta < -0.300 && decoded_video_queue.size() > 5) {
+                        // SKIP: Frame is severely behind speaker audio presentation time (>300ms)
+                        frames_dropped.fetch_add(1, std::memory_order_relaxed);
+                        decoded_video_queue.pop_front();
+                        continue;
+                    } else {
+                        // SHOW: Present frame to GPU texture
+                        last_av_sync_delta_ms.store(delta * 1000.0);
+                        last_presented_pts = front.pts;
+                        frames_presented.fetch_add(1, std::memory_order_relaxed);
+                        frame_to_present = std::move(decoded_video_queue.front().pixels);
+                        decoded_video_queue.pop_front();
                         break;
                     }
-                    if (decoded_video_queue.size() > 1) {
-                        const auto& next_frame = decoded_video_queue[1];
-                        if (next_frame.pts <= current_audio_time + 0.030) {
-                            decoded_video_queue.pop_front();
-                            continue;
-                        }
-                    }
-                    frame_to_present = std::move(decoded_video_queue.front().pixels);
-                    decoded_video_queue.pop_front();
-                    break;
                 }
             }
 
@@ -250,6 +316,19 @@ struct media_player_item {
                 new_frame_ready.store(false);
             }
             if (!local_pixels.empty() && video_texture && upload_buffer) {
+                if (local_pixels.size() >= 48) {
+                    uint64_t sum = 0;
+                    size_t count = 0;
+                    for (size_t i = 0; i < local_pixels.size(); i += 64) {
+                        sum += (local_pixels[i] + local_pixels[i + 1] + local_pixels[i + 2]);
+                        count++;
+                    }
+                    if (count > 0) {
+                        float lum = static_cast<float>(sum) / (static_cast<float>(count) * 3.0f * 255.0f);
+                        float prev_lum = current_luminance.load();
+                        current_luminance.store(std::max(prev_lum * 0.92f, lum));
+                    }
+                }
                 Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, upload_buffer, false));
                 if (map) {
                     std::memcpy(map, local_pixels.data(), kWidth * kHeight * 4);
@@ -275,7 +354,7 @@ struct media_player_item {
                             SDL_SubmitGPUCommandBuffer(cmd_buf);
                         }
                     }
-                    has_video = true;
+                    has_video.store(true);
                 }
             }
         }
@@ -292,7 +371,7 @@ inline bool media_player_item::checkMediaStatus() {
 }
 
 inline void media_player_item::update_watermark() {
-    double cur_pos = position.load();
+    double cur_pos = get_current_position();
     if (cur_pos > 0.0) {
         double cur_dur = duration.load();
         if (cur_dur > 0.0 && cur_pos >= cur_dur - 2.0) {
@@ -356,12 +435,22 @@ inline void media_player_item::stopMedia() {
 
     is_playing = false;
     is_paused = false;
-    has_video = false;
+    has_video.store(false);
+    has_presented_first_frame.store(false);
+    baseline_set.store(false);
+    baseline_start_pts.store(-1.0);
     position = 0.0;
     duration = 0.0;
     start_offset = 0.0;
     player_pid = 0;
     owner_card = nullptr;
+    last_video_present_time = {};
+    current_frame_duration = 1.0 / 30.0;
+    last_presented_pts = -1.0;
+    last_av_sync_delta_ms.store(0.0);
+    frames_presented.store(0);
+    frames_dropped.store(0);
+    frames_held.store(0);
 }
 
 inline std::string media_player_item::urlDecode(const std::string& encoded) {
@@ -401,15 +490,16 @@ inline bool media_player_item::playMedia(const void* owner) {
     }
     double offset = start_offset;
     stopMedia();
-    start_offset = offset;
-    has_video = false;
+    start_offset.store(offset);
+    playback_start_time = std::chrono::steady_clock::now();
+    has_video.store(false);
     is_paused = false;
 
     std::string sanitized_url = sanitizeURL(url);
 
     ffmpeg_running.store(true);
     is_playing = true;
-    position.store(start_offset);
+    position.store(offset);
     player_pid = 1;
     if (reset_sync_cb) {
         reset_sync_cb();
@@ -437,6 +527,32 @@ inline bool media_player_item::playMedia(const void* owner) {
             static std::mutex s_yt_resolved_url_mutex;
             static std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<std::string>>> s_yt_resolved_urls;
 
+            auto assign_targets_from_urls = [&](const std::vector<std::string>& urls_vec) {
+                std::string v_url;
+                std::string a_url;
+                for (const auto& u : urls_vec) {
+                    if (u.find("mime=video") != std::string::npos || u.find("mime%3Dvideo") != std::string::npos) {
+                        if (v_url.empty()) v_url = u;
+                    } else if (u.find("mime=audio") != std::string::npos || u.find("mime%3Daudio") != std::string::npos) {
+                        if (a_url.empty()) a_url = u;
+                    }
+                }
+
+                if (!v_url.empty() && !a_url.empty()) {
+                    video_target = v_url;
+                    audio_target = a_url;
+                } else if (urls_vec.size() >= 2) {
+                    video_target = urls_vec[0];
+                    audio_target = urls_vec[1];
+                } else if (!v_url.empty()) {
+                    video_target = v_url;
+                    audio_target = v_url;
+                } else if (!urls_vec.empty()) {
+                    video_target = urls_vec[0];
+                    audio_target = urls_vec[0];
+                }
+            };
+
             bool found_cached = false;
             {
                 std::lock_guard<std::mutex> lock(s_yt_resolved_url_mutex);
@@ -445,14 +561,7 @@ inline bool media_player_item::playMedia(const void* owner) {
                     auto now = std::chrono::steady_clock::now();
                     auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
                     if (age_mins < 120 && !it->second.second.empty()) {
-                        const auto& urls = it->second.second;
-                        if (urls.size() >= 2) {
-                            video_target = urls[0];
-                            audio_target = urls[1];
-                        } else {
-                            video_target = urls[0];
-                            audio_target = urls[0];
-                        }
+                        assign_targets_from_urls(it->second.second);
                         found_cached = true;
                     }
                 }
@@ -466,9 +575,9 @@ inline bool media_player_item::playMedia(const void* owner) {
                 auto run_ytdlp = [&](const std::string& cookie_args) -> std::pair<std::vector<std::string>, std::string> {
                     std::string cmd;
                     if (!cookie_args.empty()) {
-                        cmd = std::format("\"{}\" --no-warnings --socket-timeout 10 {} -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, cookie_args, sanitized_url);
+                        cmd = std::format("\"{}\" --no-warnings --remote-components ejs:github --socket-timeout 10 {} -g -f \"bestvideo[vcodec^=avc1]+bestaudio/bestvideo[vcodec^=vp9]+bestaudio/bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, cookie_args, sanitized_url);
                     } else {
-                        cmd = std::format("\"{}\" --no-warnings --socket-timeout 10 -g -f \"bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, sanitized_url);
+                        cmd = std::format("\"{}\" --no-warnings --remote-components ejs:github --socket-timeout 10 -g -f \"bestvideo[vcodec^=avc1]+bestaudio/bestvideo[vcodec^=vp9]+bestaudio/bestvideo+bestaudio/best\" \"{}\" 2>&1", ytdl_exe, sanitized_url);
                     }
                     std::string output = ProcessHelper::executeCommand(cmd);
                     std::stringstream ss(output);
@@ -487,7 +596,7 @@ inline bool media_player_item::playMedia(const void* owner) {
 
                 // If yt-dlp failed to resolve YouTube URL, attempt browser cookies auto-detection fallback
                 if (urls.empty()) {
-                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "arc", "vivaldi", "opera"};
                     std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
 
                     for (const auto& browser : candidate_browsers) {
@@ -511,23 +620,24 @@ inline bool media_player_item::playMedia(const void* owner) {
                         std::lock_guard<std::mutex> lock(s_yt_resolved_url_mutex);
                         s_yt_resolved_urls[sanitized_url] = {std::chrono::steady_clock::now(), urls};
                     }
-                    if (urls.size() >= 2) {
-                        video_target = urls[0];
-                        audio_target = urls[1];
-                    } else {
-                        video_target = urls[0];
-                        audio_target = urls[0];
-                    }
+                    assign_targets_from_urls(urls);
                 } else {
                     std::string clean_resolved = resolved;
                     clean_resolved.erase(clean_resolved.find_last_not_of(" \r\n\t") + 1);
-                    if (clean_resolved.empty()) {
-                        clean_resolved = "No output from yt-dlp";
+
+                    std::string err_msg;
+                    if (clean_resolved.find("Sign in to confirm you") != std::string::npos || clean_resolved.find("not a bot") != std::string::npos) {
+                        err_msg = "YouTube Authentication Required:\nYouTube requires cookies for this video.\nSave a cookies.txt file to ~/.config/rouen/cookies.txt or ~/Downloads/cookies.txt, or set ROUEN_COOKIES_FILE in Settings.";
+                    } else {
+                        if (clean_resolved.empty()) {
+                            clean_resolved = "No output from yt-dlp";
+                        }
+                        if (clean_resolved.length() > 200) {
+                            clean_resolved = clean_resolved.substr(0, 197) + "...";
+                        }
+                        err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
                     }
-                    if (clean_resolved.length() > 200) {
-                        clean_resolved = clean_resolved.substr(0, 197) + "...";
-                    }
-                    std::string err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
+
                     std::cerr << "[NativePlayer] " << err_msg << std::endl;
                     try {
                         "notify"_sfn(err_msg);
@@ -556,8 +666,20 @@ inline std::string media_player_item::formatTime(double seconds) const {
 }
 
 inline bool media_player_item::seekTo(double position_seconds) {
+    start_offset.store(position_seconds);
+    playback_start_time = std::chrono::steady_clock::now();
+    position.store(position_seconds);
+    has_presented_first_frame.store(false);
+    baseline_set.store(false);
+    baseline_start_pts.store(-1.0);
+    last_video_present_time = {};
+    current_frame_duration = 1.0 / 30.0;
+    last_presented_pts = -1.0;
+    last_av_sync_delta_ms.store(0.0);
+    frames_presented.store(0);
+    frames_dropped.store(0);
+    frames_held.store(0);
     if (!ffmpeg_running.load()) {
-        start_offset = position_seconds;
         return playMedia();
     }
     seek_target.store(position_seconds);
@@ -570,10 +692,14 @@ inline bool media_player_item::setVolume(int new_volume) {
 }
 
 inline bool media_player_item::setPaused(bool paused) {
-    is_paused = paused;
-    if (paused) {
+    if (paused && !is_paused.load()) {
+        position.store(get_current_position());
         update_watermark();
+    } else if (!paused && is_paused.load()) {
+        start_offset.store(position.load());
+        playback_start_time = std::chrono::steady_clock::now();
     }
+    is_paused = paused;
     if (local_audio_stream) {
         if (paused) {
             SDL_PauseAudioStreamDevice(local_audio_stream);
@@ -600,88 +726,32 @@ inline bool media_player_item::togglePause() {
 }
 
 inline void media_player_item::update_vu_levels() {
-    if (!is_playing || is_paused.load()) {
-        float curr_l = vu_level_l.load();
-        float curr_r = vu_level_r.load();
-        vu_level_l.store(std::max(0.0f, curr_l * 0.80f));
-        vu_level_r.store(std::max(0.0f, curr_r * 0.80f));
-
-        float wm_l = vu_watermark_l.load();
-        float wm_r = vu_watermark_r.load();
-        vu_watermark_l.store(std::max(0.0f, wm_l - 0.0025f));
-        vu_watermark_r.store(std::max(0.0f, wm_r - 0.0025f));
-        return;
-    }
-
-    double current_audio_time = 0.0;
-    if (local_audio_stream && !is_cast_active.load()) {
-        int queued_bytes = SDL_GetAudioStreamQueued(local_audio_stream);
-        double queued_seconds = static_cast<double>(queued_bytes) / 176400.0;
-        current_audio_time = last_audio_pts.load() - queued_seconds;
-    } else {
-        current_audio_time = position.load();
-    }
-
+    double now = std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
     float target_l = 0.0f;
     float target_r = 0.0f;
 
     {
         std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
-        while (!audio_peak_queue.empty() && audio_peak_queue.front().pts < current_audio_time - 0.05) {
+        // Remove peaks that have already been played (older than 0.05s ago)
+        while (!audio_peak_queue.empty() && audio_peak_queue.front().wall_time < now - 0.05) {
             audio_peak_queue.pop_front();
         }
 
-        if (!audio_peak_queue.empty()) {
-            const auto& front = audio_peak_queue.front();
-            if (front.pts <= current_audio_time + 0.08) {
-                target_l = front.peak_l;
-                target_r = front.peak_r;
+        // Match peaks within a window around 'now' (already heard or about to be heard)
+        for (const auto& sample : audio_peak_queue) {
+            if (sample.wall_time <= now + 0.02) {  // include slightly future peaks
+                if (sample.peak_l > target_l) target_l = sample.peak_l;
+                if (sample.peak_r > target_r) target_r = sample.peak_r;
             }
         }
     }
 
     float curr_l = vu_level_l.load();
     float curr_r = vu_level_r.load();
-    float wm_l = vu_watermark_l.load();
-    float wm_r = vu_watermark_r.load();
 
-    constexpr float kWatermarkDropStep = 0.0025f; // 0.25 per frame on 0..100 scale
-
-    // Left channel level & watermark update
-    if (target_l >= curr_l) {
-        curr_l = target_l;
-    } else {
-        curr_l = curr_l * 0.82f + target_l * 0.18f;
-    }
-
-    if (target_l >= wm_l) {
-        wm_l = target_l;
-    } else {
-        wm_l = std::max(target_l, wm_l - kWatermarkDropStep);
-    }
-
-    // Right channel level & watermark update
-    if (target_r >= curr_r) {
-        curr_r = target_r;
-    } else {
-        curr_r = curr_r * 0.82f + target_r * 0.18f;
-    }
-
-    if (target_r >= wm_r) {
-        wm_r = target_r;
-    } else {
-        wm_r = std::max(target_r, wm_r - kWatermarkDropStep);
-    }
-
-    if (curr_l < 0.001f) curr_l = 0.0f;
-    if (curr_r < 0.001f) curr_r = 0.0f;
-    if (wm_l < 0.001f) wm_l = 0.0f;
-    if (wm_r < 0.001f) wm_r = 0.0f;
-
-    vu_level_l.store(curr_l);
-    vu_level_r.store(curr_r);
-    vu_watermark_l.store(wm_l);
-    vu_watermark_r.store(wm_r);
+    vu_level_l.store(std::max(curr_l * 0.85f, target_l));
+    vu_level_r.store(std::max(curr_r * 0.85f, target_r));
 }
 
 inline float media_player_item::get_vu_level_l() {
@@ -820,6 +890,8 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
     int dst_h = kHeight;
     int offset_x = 0;
     int offset_y = 0;
+    int last_src_w = 0;
+    int last_src_h = 0;
 
     if (video_stream_idx >= 0) {
         const AVCodec* video_codec = avcodec_find_decoder(video_format_ctx->streams[video_stream_idx]->codecpar->codec_id);
@@ -828,27 +900,31 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
             avcodec_parameters_to_context(video_codec_ctx, video_format_ctx->streams[video_stream_idx]->codecpar);
             video_codec_ctx->thread_count = 4;
             if (avcodec_open2(video_codec_ctx, video_codec, nullptr) >= 0) {
-                double aspect_ratio = static_cast<double>(video_codec_ctx->width) / static_cast<double>(video_codec_ctx->height);
-                if (aspect_ratio > 0.0) {
-                    video_aspect_ratio.store(static_cast<float>(aspect_ratio));
-                }
-                if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
-                    dst_w = kWidth;
-                    dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
-                } else {
-                    dst_h = kHeight;
-                    dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
-                }
-                dst_w = (dst_w / 2) * 2;
-                dst_h = (dst_h / 2) * 2;
-                offset_x = (kWidth - dst_w) / 2;
-                offset_y = (kHeight - dst_h) / 2;
+                if (video_codec_ctx->width > 0 && video_codec_ctx->height > 0) {
+                    last_src_w = video_codec_ctx->width;
+                    last_src_h = video_codec_ctx->height;
+                    double aspect_ratio = static_cast<double>(last_src_w) / static_cast<double>(last_src_h);
+                    if (aspect_ratio > 0.0) {
+                        video_aspect_ratio.store(static_cast<float>(aspect_ratio));
+                    }
+                    if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
+                        dst_w = kWidth;
+                        dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
+                    } else {
+                        dst_h = kHeight;
+                        dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
+                    }
+                    dst_w = (dst_w / 2) * 2;
+                    dst_h = (dst_h / 2) * 2;
+                    offset_x = (kWidth - dst_w) / 2;
+                    offset_y = (kHeight - dst_h) / 2;
 
-                sws_ctx = sws_getContext(
-                    video_codec_ctx->width, video_codec_ctx->height, video_codec_ctx->pix_fmt,
-                    dst_w, dst_h, AV_PIX_FMT_RGBA,
-                    SWS_BILINEAR, nullptr, nullptr, nullptr
-                );
+                    sws_ctx = sws_getContext(
+                        last_src_w, last_src_h, video_codec_ctx->pix_fmt,
+                        dst_w, dst_h, AV_PIX_FMT_RGBA,
+                        SWS_BILINEAR, nullptr, nullptr, nullptr
+                    );
+                }
             }
         }
     }
@@ -960,6 +1036,10 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                     pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
                 }
                 last_audio_pts.store(pts_time);
+                double cur_dur = duration.load();
+                if (pts_time > cur_dur) {
+                    duration.store(pts_time);
+                }
 
                 const uint8_t* input_data[8];
                 for (int i = 0; i < 8; ++i) input_data[i] = frame->data[i];
@@ -982,6 +1062,10 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                             }
                         }
                         SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                        int q_bytes = SDL_GetAudioStreamQueued(local_audio_stream);
+                        double q_sec = static_cast<double>(q_bytes) / 176400.0;
+                        double cur_pos = std::max(0.0, pts_time - q_sec);
+                        position.store(cur_pos);
                     }
                     if (!pcm_chunk.empty()) {
                         const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_chunk.data());
@@ -997,7 +1081,10 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                         float peak_r = static_cast<float>(max_r) / 32768.0f;
                         {
                             std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
-                            audio_peak_queue.push_back({pts_time, peak_l, peak_r});
+                            // Compute wall-clock time when this audio will reach the speaker
+                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                            double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
+                            audio_peak_queue.push_back({arrival, peak_l, peak_r});
                             if (audio_peak_queue.size() > 300) {
                                 audio_peak_queue.pop_front();
                             }
@@ -1017,15 +1104,15 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
 
         while (ffmpeg_running.load() && !is_paused.load()) {
             int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
-            size_t q_size = 0;
-            {
-                std::lock_guard<std::mutex> lock(video_queue_mutex);
-                q_size = decoded_video_queue.size();
-            }
-            if (queued_audio <= 0 && q_size == 0) {
+            if (queued_audio <= 8820) {
                 break;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(video_queue_mutex);
+            decoded_video_queue.clear();
         }
 
         if (duration.load() > 0.0) {
@@ -1033,6 +1120,8 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
         }
         update_watermark();
         is_playing = false;
+        is_paused = false;
+        player_pid = 0;
     };
 
     while (ffmpeg_running.load()) {
@@ -1042,12 +1131,12 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
             audio_eof = (audio_stream_idx < 0);
             if (video_stream_idx >= 0 && video_format_ctx) {
                 int64_t target_pts = av_rescale_q(static_cast<int64_t>(target * AV_TIME_BASE), AV_TIME_BASE_Q, video_format_ctx->streams[video_stream_idx]->time_base);
-                av_seek_frame(video_format_ctx, video_stream_idx, target_pts, AVSEEK_FLAG_BACKWARD);
+                avformat_seek_file(video_format_ctx, video_stream_idx, INT64_MIN, target_pts, target_pts, 0);
                 if (video_codec_ctx) avcodec_flush_buffers(video_codec_ctx);
             }
-            if (audio_stream_idx >= 0 && audio_format_ctx) {
+            if (audio_stream_idx >= 0 && audio_format_ctx && audio_format_ctx != video_format_ctx) {
                 int64_t target_pts = av_rescale_q(static_cast<int64_t>(target * AV_TIME_BASE), AV_TIME_BASE_Q, audio_format_ctx->streams[audio_stream_idx]->time_base);
-                av_seek_frame(audio_format_ctx, audio_stream_idx, target_pts, AVSEEK_FLAG_BACKWARD);
+                avformat_seek_file(audio_format_ctx, audio_stream_idx, INT64_MIN, target_pts, target_pts, 0);
                 if (audio_codec_ctx) avcodec_flush_buffers(audio_codec_ctx);
             }
 
@@ -1076,7 +1165,7 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
 
         if (local_audio_stream && !is_cast_active.load()) {
             int queued = SDL_GetAudioStreamQueued(local_audio_stream);
-            if (queued > 44100 * 2) {
+            if (queued > 176400) { // 1.0 second of audio buffer (176,400 bytes)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
@@ -1093,32 +1182,70 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                 continue;
             }
 
-            if (packet->stream_index == video_stream_idx && video_codec_ctx && sws_ctx) {
+            if (packet->stream_index == video_stream_idx && video_codec_ctx) {
                 if (avcodec_send_packet(video_codec_ctx, packet) >= 0) {
                     while (avcodec_receive_frame(video_codec_ctx, frame) >= 0) {
-                        double pts_time = 0.0;
-                        if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
-                            pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[video_stream_idx]->time_base);
-                        } else {
-                            pts_time = position.load() + (1.0 / kFps);
-                        }
+                        int src_w = frame->width;
+                        int src_h = frame->height;
+                        if (src_w > 0 && src_h > 0) {
+                            if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                                if (sws_ctx) sws_freeContext(sws_ctx);
+                                double aspect_ratio = static_cast<double>(src_w) / static_cast<double>(src_h);
+                                if (aspect_ratio > 0.0) {
+                                    video_aspect_ratio.store(static_cast<float>(aspect_ratio));
+                                }
+                                if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
+                                    dst_w = kWidth;
+                                    dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
+                                } else {
+                                    dst_h = kHeight;
+                                    dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
+                                }
+                                dst_w = (dst_w / 2) * 2;
+                                dst_h = (dst_h / 2) * 2;
+                                offset_x = (kWidth - dst_w) / 2;
+                                offset_y = (kHeight - dst_h) / 2;
 
-                        std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                        rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
-                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, video_codec_ctx->height, rgba_frame->data, rgba_frame->linesize);
-
-                        {
-                            std::lock_guard<std::mutex> lock(video_queue_mutex);
-                            decoded_video_queue.push_back({
-                                std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                                pts_time
-                            });
-                            if (!is_cast_active.load() && decoded_video_queue.size() > 15) {
-                                decoded_video_queue.pop_front();
+                                sws_ctx = sws_getContext(
+                                    src_w, src_h, static_cast<AVPixelFormat>(frame->format),
+                                    dst_w, dst_h, AV_PIX_FMT_RGBA,
+                                    SWS_BILINEAR, nullptr, nullptr, nullptr
+                                );
+                                last_src_w = src_w;
+                                last_src_h = src_h;
                             }
                         }
-                        has_video = true;
-                        position.store(pts_time);
+
+                        if (sws_ctx) {
+                            double pts_time = 0.0;
+                            if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                                pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[video_stream_idx]->time_base);
+                            } else {
+                                pts_time = position.load() + (1.0 / kFps);
+                            }
+                            if (first_video_pts.load() < 0.0 && pts_time >= 0.0) {
+                                first_video_pts.store(pts_time);
+                            }
+
+                            std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+                            rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                            sws_scale(sws_ctx, frame->data, frame->linesize, 0, src_h, rgba_frame->data, rgba_frame->linesize);
+
+                            {
+                                std::lock_guard<std::mutex> lock(video_queue_mutex);
+                                decoded_video_queue.push_back({
+                                    std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
+                                    pts_time
+                                });
+                                if (!is_cast_active.load() && decoded_video_queue.size() > 30) {
+                                    decoded_video_queue.pop_front();
+                                }
+                            }
+                            has_video.store(true);
+                            if (!local_audio_stream) {
+                                position.store(pts_time);
+                            }
+                        }
                     }
                 }
             } else if (packet->stream_index == audio_stream_idx && audio_codec_ctx && swr_ctx) {
@@ -1130,7 +1257,15 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                         } else {
                             pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
                         }
+                        if (first_audio_pts.load() < 0.0 && pts_time >= 0.0) {
+                            first_audio_pts.store(pts_time);
+                            playback_start_time = std::chrono::steady_clock::now();
+                        }
                         last_audio_pts.store(pts_time);
+                        double cur_dur = duration.load();
+                        if (pts_time > cur_dur) {
+                            duration.store(pts_time);
+                        }
                         if (video_stream_idx < 0) {
                             position.store(pts_time);
                         }
@@ -1161,6 +1296,10 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                                         }
                                     }
                                     SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                                    int q_bytes = SDL_GetAudioStreamQueued(local_audio_stream);
+                                    double q_sec = static_cast<double>(q_bytes) / 176400.0;
+                                    double cur_pos = std::max(0.0, pts_time - q_sec);
+                                    position.store(cur_pos);
                                 }
                             }
 
@@ -1176,9 +1315,15 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                                 }
                                 float peak_l = static_cast<float>(max_l) / 32768.0f;
                                 float peak_r = static_cast<float>(max_r) / 32768.0f;
+                                float prev_l = current_audio_peak_l.load();
+                                float prev_r = current_audio_peak_r.load();
+                                current_audio_peak_l.store(std::max(prev_l * 0.85f, peak_l));
+                                current_audio_peak_r.store(std::max(prev_r * 0.85f, peak_r));
                                 {
                                     std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
-                                    audio_peak_queue.push_back({pts_time, peak_l, peak_r});
+                                    double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                                    double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
+                                    audio_peak_queue.push_back({arrival, peak_l, peak_r});
                                     if (audio_peak_queue.size() > 300) {
                                         audio_peak_queue.pop_front();
                                     }
@@ -1197,33 +1342,85 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                 current_q_size = decoded_video_queue.size();
             }
 
-            if (video_stream_idx >= 0 && !video_eof && current_q_size < 20) {
+            bool video_ahead = false;
+            double f_v = first_video_pts.load();
+            double f_a = first_audio_pts.load();
+            if (audio_stream_idx >= 0 && f_a < 0.0) {
+                video_ahead = true; // Hold video decoding until audio stream connects & buffers
+            } else if (f_v >= 0.0 && f_a >= 0.0 && local_audio_stream && !decoded_video_queue.empty()) {
+                double last_v_pts = decoded_video_queue.back().pts;
+                double norm_v = last_v_pts - f_v;
+                double norm_a = get_current_position() - f_a;
+                if (norm_v > norm_a + 0.300) {
+                    video_ahead = true;
+                }
+            }
+
+            if (video_stream_idx >= 0 && !video_eof && current_q_size < 30 && !video_ahead) {
                 int read_res = av_read_frame(video_format_ctx, packet);
                 if (read_res >= 0) {
                     did_work = true;
-                    if (packet->stream_index == video_stream_idx && video_codec_ctx && sws_ctx) {
+                    if (packet->stream_index == video_stream_idx && video_codec_ctx) {
                         if (avcodec_send_packet(video_codec_ctx, packet) >= 0) {
                             while (avcodec_receive_frame(video_codec_ctx, frame) >= 0) {
-                                double pts_time = 0.0;
-                                if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
-                                    pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[video_stream_idx]->time_base);
-                                } else {
-                                    pts_time = position.load() + (1.0 / kFps);
+                                int src_w = frame->width;
+                                int src_h = frame->height;
+                                if (src_w > 0 && src_h > 0) {
+                                    if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                                        if (sws_ctx) sws_freeContext(sws_ctx);
+                                        double aspect_ratio = static_cast<double>(src_w) / static_cast<double>(src_h);
+                                        if (aspect_ratio > 0.0) {
+                                            video_aspect_ratio.store(static_cast<float>(aspect_ratio));
+                                        }
+                                        if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
+                                            dst_w = kWidth;
+                                            dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
+                                        } else {
+                                            dst_h = kHeight;
+                                            dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
+                                        }
+                                        dst_w = std::max(64, (dst_w / 2) * 2);
+                                        dst_h = std::max(64, (dst_h / 2) * 2);
+                                        offset_x = (kWidth - dst_w) / 2;
+                                        offset_y = (kHeight - dst_h) / 2;
+
+                                        sws_ctx = sws_getContext(
+                                            src_w, src_h, static_cast<AVPixelFormat>(frame->format),
+                                            dst_w, dst_h, AV_PIX_FMT_RGBA,
+                                            SWS_BILINEAR, nullptr, nullptr, nullptr
+                                        );
+                                        last_src_w = src_w;
+                                        last_src_h = src_h;
+                                    }
                                 }
 
-                                std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                                rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
-                                sws_scale(sws_ctx, frame->data, frame->linesize, 0, video_codec_ctx->height, rgba_frame->data, rgba_frame->linesize);
+                                if (sws_ctx) {
+                                    double pts_time = 0.0;
+                                    if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                                        pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[video_stream_idx]->time_base);
+                                    } else {
+                                        pts_time = position.load() + (1.0 / kFps);
+                                    }
+                                    if (first_video_pts.load() < 0.0 && pts_time >= 0.0) {
+                                        first_video_pts.store(pts_time);
+                                    }
 
-                                {
-                                    std::lock_guard<std::mutex> lock(video_queue_mutex);
-                                    decoded_video_queue.push_back({
-                                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                                        pts_time
-                                    });
+                                    std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+                                    rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                                    sws_scale(sws_ctx, frame->data, frame->linesize, 0, src_h, rgba_frame->data, rgba_frame->linesize);
+
+                                    {
+                                        std::lock_guard<std::mutex> lock(video_queue_mutex);
+                                        decoded_video_queue.push_back({
+                                            std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
+                                            pts_time
+                                        });
+                                    }
+                                    has_video.store(true);
+                                    if (!local_audio_stream) {
+                                        position.store(pts_time);
+                                    }
                                 }
-                                has_video = true;
-                                position.store(pts_time);
                             }
                         }
                     }
@@ -1234,7 +1431,7 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
             }
 
             int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
-            if (audio_stream_idx >= 0 && !audio_eof && queued_audio < 44100 * 2) {
+            if (audio_stream_idx >= 0 && !audio_eof && queued_audio < 176400 * 2) {
                 int read_res = av_read_frame(audio_format_ctx, packet);
                 if (read_res >= 0) {
                     did_work = true;
@@ -1242,10 +1439,22 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                         if (avcodec_send_packet(audio_codec_ctx, packet) >= 0) {
                             while (avcodec_receive_frame(audio_codec_ctx, frame) >= 0) {
                                 double pts_time = 0.0;
-                                if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
+                                if (frame->pts != AV_NOPTS_VALUE) {
+                                    pts_time = static_cast<double>(frame->pts) * av_q2d(audio_format_ctx->streams[audio_stream_idx]->time_base);
+                                } else if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
                                     pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(audio_format_ctx->streams[audio_stream_idx]->time_base);
                                 } else {
-                                    pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
+                                    pts_time = std::max(0.0, position.load()) + (static_cast<double>(frame->nb_samples) / 44100.0);
+                                }
+                                if (first_audio_pts.load() < 0.0 && pts_time >= 0.0) {
+                                    first_audio_pts.store(pts_time);
+                                    playback_start_time = std::chrono::steady_clock::now();
+                                    {
+                                        std::lock_guard<std::mutex> lock(video_queue_mutex);
+                                        if (!decoded_video_queue.empty()) {
+                                            first_video_pts.store(decoded_video_queue.front().pts);
+                                        }
+                                    }
                                 }
                                 last_audio_pts.store(pts_time);
 
@@ -1287,7 +1496,9 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                                         float peak_r = static_cast<float>(max_r) / 32768.0f;
                                         {
                                             std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
-                                            audio_peak_queue.push_back({pts_time, peak_l, peak_r});
+                                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                                            double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
+                                            audio_peak_queue.push_back({arrival, peak_l, peak_r});
                                             if (audio_peak_queue.size() > 300) {
                                                 audio_peak_queue.pop_front();
                                             }

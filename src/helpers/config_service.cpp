@@ -335,7 +335,7 @@ namespace rouen::helpers {
         register_config("ROUEN_SPOKEN_NOTIFICATIONS", Category::GENERAL, false, false,
                        "Enable spoken notifications (1=true, 0=false)", "1");
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
-                       "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)");
+                       "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)", "safari");
         register_config("ROUEN_COOKIES_FILE", Category::GENERAL, false, false,
                        "Path to cookies.txt file for yt-dlp authentication");
         register_config("ROUEN_SYNC_GIT_URL", Category::GENERAL, false, false,
@@ -636,6 +636,24 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
     if (!file.empty() && std::filesystem::exists(file)) {
         return std::format("--cookies \"{}\"", file);
     }
+
+    const char* home = getenv("HOME");
+    std::string home_dir = home ? home : "";
+    if (!home_dir.empty()) {
+        std::vector<std::string> auto_cookie_paths = {
+            home_dir + "/.config/rouen/cookies.txt",
+            home_dir + "/Library/Application Support/Rouen/cookies.txt",
+            home_dir + "/Downloads/cookies.txt",
+            home_dir + "/cookies.txt",
+            home_dir + "/.cookies.txt"
+        };
+        for (const auto& path : auto_cookie_paths) {
+            if (std::filesystem::exists(path)) {
+                return std::format("--cookies \"{}\"", path);
+            }
+        }
+    }
+
     std::string browser = get_env("ROUEN_COOKIES_BROWSER");
     if (!browser.empty()) {
         return std::format("--cookies-from-browser {}", browser);
