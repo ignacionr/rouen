@@ -73,6 +73,10 @@ struct media_player {
         return dummy;
     }
 
+    static ImGuiID get_item_id(std::string_view url) {
+        return ImHashData(url.data(), url.size(), 0);
+    }
+
     static std::shared_ptr<media_player_item> get_item_ptr(ImGuiID id) {
         std::lock_guard<std::recursive_mutex> lock(items_mutex());
         auto& item_ptr = items()[id];
@@ -82,8 +86,16 @@ struct media_player {
         return item_ptr;
     }
 
+    static std::shared_ptr<media_player_item> get_item_ptr(std::string_view url) {
+        return get_item_ptr(get_item_id(url));
+    }
+
     static media_player_item& get_item(ImGuiID id) {
         return *get_item_ptr(id);
+    }
+
+    static media_player_item& get_item(std::string_view url) {
+        return *get_item_ptr(url);
     }
 
     static inline std::shared_ptr<media_player_item> s_active_fullscreen_item{nullptr};
@@ -850,7 +862,7 @@ struct media_player {
         float const player_width = (max_width > 0.0f) ? max_width : ImGui::GetContentRegionAvail().x;
         ImGui::PushID(url.data(), url.data() + url.size());
         try {
-            ImGuiID item_id = ImHashData(url.data(), url.size(), 0);
+            ImGuiID item_id = get_item_id(url);
             auto item_ptr = get_item_ptr(item_id);
             auto &item = *item_ptr;
             if (owner_card) {

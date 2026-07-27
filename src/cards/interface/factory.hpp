@@ -214,8 +214,7 @@ namespace rouen::cards {
 
                 instance.emplace("media-play", [](std::string_view locator, SDL_Renderer*) {
                     std::string url = ::helpers::StringHelper::url_decode(locator);
-                    unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(url));
-                    auto& item = media_player::get_item(id);
+                    auto& item = media_player::get_item(url);
                     item.url = url;
                     item.playMedia();
                     return std::make_shared<menu>();
@@ -226,8 +225,7 @@ namespace rouen::cards {
                     if (h) h->start();
                     std::string url = ::helpers::StringHelper::url_decode(locator);
                     if (!url.empty()) {
-                        unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(url));
-                        auto& item = media_player::get_item(id);
+                        auto& item = media_player::get_item(url);
                         item.url = url;
                         item.playMedia();
                     }

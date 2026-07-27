@@ -503,8 +503,7 @@ std::string api_server::handle_cast_play(struct mg_connection* /*c*/, struct mg_
             return R"({"error":"No media URL/URI provided"})";
         }
         
-        unsigned int id = static_cast<unsigned int>(std::hash<std::string>{}(target_url));
-        auto& item = media_player::get_item(id);
+        auto& item = media_player::get_item(target_url);
         item.url = target_url;
         item.playMedia();
         

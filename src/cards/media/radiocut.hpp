@@ -177,17 +177,13 @@ namespace rouen::cards {
                         // Card background styling
                         bool is_playing = false;
                         std::string playlist_url = cut.playlist_url.empty() ? ("file:///tmp/radiocut_" + cut.id + ".m3u8") : cut.playlist_url;
-                        ImGuiID player_id = 0;
                         
                         // Check if this cut is currently playing in the global media player
                         if (cut.resolved) {
-                            ImGui::PushID(playlist_url.c_str());
-                            player_id = ImGui::GetID("MediaPlayer");
-                            auto it = media_player::items().find(player_id);
+                            auto it = media_player::items().find(media_player::get_item_id(playlist_url));
                             if (it != media_player::items().end() && it->second) {
                                 is_playing = it->second->checkMediaStatus();
                             }
-                            ImGui::PopID();
                         }
                         
                         // Render a premium border/background for the active cut
@@ -276,12 +272,10 @@ namespace rouen::cards {
                                 
                                 media_player::stopAll();
                                 
-                                ImGui::PushID(playlist_url.c_str());
-                                auto &item = media_player::get_item(ImGui::GetID("MediaPlayer"));
+                                auto &item = media_player::get_item(playlist_url);
                                 item.url = playlist_url;
                                 item.start_offset = cut.start_offset;
                                 item.playMedia(this);
-                                ImGui::PopID();
                             }
                             
                             // Render native player controls

@@ -830,7 +830,7 @@ inline void media_player_item::update_vu_levels() {
 
         // Match peaks within a window around 'now' (already heard or about to be heard)
         for (const auto& sample : audio_peak_queue) {
-            if (sample.wall_time <= now + 0.02) {  // include slightly future peaks
+            if (sample.wall_time <= now + 0.05) {  // include slightly future peaks
                 if (sample.peak_l > target_l) target_l = sample.peak_l;
                 if (sample.peak_r > target_r) target_r = sample.peak_r;
             }
@@ -839,9 +839,16 @@ inline void media_player_item::update_vu_levels() {
 
     float curr_l = vu_level_l.load();
     float curr_r = vu_level_r.load();
+    float new_l = std::max(curr_l * 0.85f, target_l);
+    float new_r = std::max(curr_r * 0.85f, target_r);
 
-    vu_level_l.store(std::max(curr_l * 0.85f, target_l));
-    vu_level_r.store(std::max(curr_r * 0.85f, target_r));
+    vu_level_l.store(new_l);
+    vu_level_r.store(new_r);
+
+    float wm_l = vu_watermark_l.load();
+    float wm_r = vu_watermark_r.load();
+    vu_watermark_l.store(std::max(wm_l * 0.96f, new_l));
+    vu_watermark_r.store(std::max(wm_r * 0.96f, new_r));
 }
 
 inline float media_player_item::get_vu_level_l() {
@@ -1302,6 +1309,28 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
                                         }
                                         SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
                                     }
+                                    if (!pcm_chunk.empty()) {
+                                        const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_chunk.data());
+                                        size_t f_count = pcm_chunk.size() / (2 * sizeof(int16_t));
+                                        int32_t max_l = 0, max_r = 0;
+                                        for (size_t i = 0; i < f_count; ++i) {
+                                            int32_t l = std::abs(static_cast<int32_t>(samples[i * 2]));
+                                            int32_t r = std::abs(static_cast<int32_t>(samples[i * 2 + 1]));
+                                            if (l > max_l) max_l = l;
+                                            if (r > max_r) max_r = r;
+                                        }
+                                        float peak_l = static_cast<float>(max_l) / 32768.0f;
+                                        float peak_r = static_cast<float>(max_r) / 32768.0f;
+                                        {
+                                            std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
+                                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                                            double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
+                                            audio_peak_queue.push_back({arrival, peak_l, peak_r});
+                                            if (audio_peak_queue.size() > 300) {
+                                                audio_peak_queue.pop_front();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1369,6 +1398,11 @@ inline void media_player_item::decode_loop(std::string video_target, std::string
         }
 
         if (!is_dual_input) {
+            int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
+            if (video_stream_idx < 0 && queued_audio >= 176400 / 4) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                continue;
+            }
             int read_res = av_read_frame(video_format_ctx, packet);
             if (read_res < 0) {
                 if (read_res != AVERROR(EAGAIN)) {

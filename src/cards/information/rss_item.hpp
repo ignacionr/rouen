@@ -207,10 +207,7 @@ public:
                     if (auto_play && !playable_url.empty()) {
                         auto_play = false; // Only trigger once
                         
-                        ImGui::PushID(playable_url.c_str());
-                        ImGuiID player_id = ImGui::GetID("MediaPlayer");
-                        auto& global_item = media_player::get_item(player_id);
-                        ImGui::PopID();
+                        auto& global_item = media_player::get_item(playable_url);
                         
                         global_item.url = playable_url;
                         global_item.feed_id = feed_id;

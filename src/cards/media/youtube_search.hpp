@@ -444,12 +444,8 @@ namespace rouen::cards {
             bool res = render_window([this, &t_a]() {
                 // --- Process Play Triggers under the Card's main ID stack ---
                 if (!play_url_trigger.empty()) {
-                    ImGui::PushID(play_url_trigger.c_str());
-                    ImGuiID item_id = ImGui::GetID("MediaPlayer");
-                    ImGui::PopID();
-                    
                     media_player::stopAll();
-                    auto& mp_item = media_player::get_item(item_id);
+                    auto& mp_item = media_player::get_item(play_url_trigger);
                     mp_item.url = play_url_trigger;
                     mp_item.item_title = play_title_trigger;
                     mp_item.start_offset = 0.0;
@@ -563,11 +559,7 @@ namespace rouen::cards {
 
                 // --- Auto-play next result ---
                 if (!currently_playing_url.empty()) {
-                    ImGui::PushID(currently_playing_url.c_str());
-                    ImGuiID item_id = ImGui::GetID("MediaPlayer");
-                    ImGui::PopID();
-                    
-                    auto it = media_player::items().find(item_id);
+                    auto it = media_player::items().find(media_player::get_item_id(currently_playing_url));
                     if (it != media_player::items().end() && it->second) {
                         auto& item = *it->second;
                         if (item.player_pid == 0 && item.duration > 0.0 && item.position >= item.duration - 3.0) {
@@ -649,10 +641,7 @@ namespace rouen::cards {
                         
                         bool is_playing_now = false;
                         if (is_current) {
-                            ImGui::PushID(item.url.c_str());
-                            ImGuiID item_id = ImGui::GetID("MediaPlayer");
-                            ImGui::PopID();
-                            auto it = media_player::items().find(item_id);
+                            auto it = media_player::items().find(media_player::get_item_id(item.url));
                             if (it != media_player::items().end() && it->second && !it->second->is_paused.load()) {
                                 is_playing_now = true;
                             }
@@ -661,10 +650,7 @@ namespace rouen::cards {
                         const char* btn_icon = is_playing_now ? ICON_MD_PAUSE : ICON_MD_PLAY_ARROW;
                         if (ImGui::Button(btn_icon, ImVec2(40, 40))) {
                             if (is_current) {
-                                ImGui::PushID(item.url.c_str());
-                                ImGuiID item_id = ImGui::GetID("MediaPlayer");
-                                ImGui::PopID();
-                                auto it = media_player::items().find(item_id);
+                                auto it = media_player::items().find(media_player::get_item_id(item.url));
                                 if (it != media_player::items().end() && it->second) {
                                     it->second->togglePause();
                                 }
@@ -944,3 +930,4 @@ namespace rouen::cards {
     };
 
 } // namespace rouen::cards
+

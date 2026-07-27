@@ -413,14 +413,7 @@ namespace rouen::cards
                                 if (!next_url.empty()) {
                                     media_player::stopAll();
                                     
-                                    // Compute ImGui ID for next_url using correct ID stack (with index next_idx)
-                                    ImGui::PushID(static_cast<int>(next_idx));
-                                    ImGui::PushID(next_url.data(), next_url.data() + next_url.size());
-                                    ImGuiID next_id = ImGui::GetID("MediaPlayer");
-                                    ImGui::PopID();
-                                    ImGui::PopID();
-                                    
-                                    auto& next_item = media_player::get_item(next_id);
+                                    auto& next_item = media_player::get_item(next_url);
                                     next_item.url = next_url;
                                     next_item.feed_id = next_item_ref.feed_id;
                                     next_item.item_link = next_item_ref.link;
