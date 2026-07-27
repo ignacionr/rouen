@@ -12,6 +12,8 @@
 #include <mutex>
 #include <vector>
 
+#include "../cards/interface/card.hpp"
+
 struct media_player {
     using item = media_player_item;
     using item_map = media_player_item_map;
@@ -51,6 +53,7 @@ struct media_player {
         if (s_active_fullscreen_item && s_active_fullscreen_item->owner_card == owner) {
             s_active_fullscreen_item->stopMedia();
             s_active_fullscreen_item = nullptr;
+            restore_fullscreen_origin_focus();
         }
     }
 
@@ -88,9 +91,66 @@ struct media_player {
 
     static inline std::shared_ptr<media_player_item> s_active_fullscreen_item{nullptr};
     static inline std::mutex s_fullscreen_mutex;
+    static inline std::weak_ptr<card> s_fullscreen_origin_card;
 
     static inline std::shared_ptr<media_player_item> s_detached_item{nullptr};
     static inline std::mutex s_detached_mutex;
+
+    static void save_fullscreen_origin_card(const std::shared_ptr<media_player_item>& item) {
+        std::shared_ptr<card> target_card = nullptr;
+        try {
+            auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+            if (get_cards_fn) {
+                auto cards = (*get_cards_fn)();
+                if (item && item->owner_card) {
+                    for (const auto& c : cards) {
+                        if (c && c.get() == item->owner_card) {
+                            target_card = c;
+                            break;
+                        }
+                    }
+                }
+                if (!target_card) {
+                    for (const auto& c : cards) {
+                        if (c && c->is_focused) {
+                            target_card = c;
+                            break;
+                        }
+                    }
+                }
+                if (!target_card && !cards.empty()) {
+                    for (const auto& c : cards) {
+                        if (c && c->grab_focus) {
+                            target_card = c;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (...) {}
+
+        s_fullscreen_origin_card = target_card;
+    }
+
+    static void restore_fullscreen_origin_focus() {
+        auto saved_card = s_fullscreen_origin_card.lock();
+        s_fullscreen_origin_card.reset();
+
+        if (!saved_card) return;
+
+        try {
+            auto get_cards_fn = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+            if (get_cards_fn) {
+                auto cards = (*get_cards_fn)();
+                for (const auto& c : cards) {
+                    if (c == saved_card) {
+                        c->grab_focus = true;
+                        break;
+                    }
+                }
+            }
+        } catch (...) {}
+    }
 
     static void set_detached_item(std::shared_ptr<media_player_item> item) {
         std::lock_guard<std::mutex> lock(s_detached_mutex);
@@ -114,6 +174,9 @@ struct media_player {
 
     static void set_active_fullscreen_item(std::shared_ptr<media_player_item> item) {
         std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+        if (!s_active_fullscreen_item && item) {
+            save_fullscreen_origin_card(item);
+        }
         s_active_fullscreen_item = item;
         if (get_detached_item() == item) {
             clear_detached_item();
@@ -127,7 +190,10 @@ struct media_player {
 
     static void clear_active_fullscreen_item() {
         std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
-        s_active_fullscreen_item = nullptr;
+        if (s_active_fullscreen_item) {
+            s_active_fullscreen_item = nullptr;
+            restore_fullscreen_origin_focus();
+        }
     }
 
     static bool has_active_fullscreen_item() {
