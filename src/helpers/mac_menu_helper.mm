@@ -1,42 +1,66 @@
 #import <Cocoa/Cocoa.h>
 #include "mac_menu_helper.hpp"
-#include "../registrar.hpp"
+#include "../cards/interface/menu.hpp"
 #include <SDL3/SDL.h>
 #include <cmath>
 #include <iostream>
+#include <objc/runtime.h>
 
-@interface RouenMenuHandler : NSObject
-- (void)handleAboutMenu:(id)sender;
+@interface RouenMenuBlockTarget : NSObject
+@property (nonatomic, copy) void (^actionBlock)(void);
+- (instancetype)initWithBlock:(void (^)(void))block;
+- (void)handleMenuItem:(id)sender;
 @end
 
-static RouenMenuHandler* g_menuHandler = nil;
+@implementation RouenMenuBlockTarget
+@synthesize actionBlock = _actionBlock;
 
-@implementation RouenMenuHandler
-- (void)handleAboutMenu:(id)sender {
-    try {
-        auto service = registrar::get<std::function<void(std::string const&)>>("create_card");
-        if (service) {
-            (*service)("about");
+- (instancetype)initWithBlock:(void (^)(void))block {
+    if ((self = [super init])) {
+        self.actionBlock = block;
+    }
+    return self;
+}
+
+- (void)handleMenuItem:(id)sender {
+    void (^block)(void) = self.actionBlock;
+    if (block) {
+        try {
+            block();
+        } catch (const std::exception& e) {
+            std::cerr << "ERROR: macOS menu callback exception: " << e.what() << '\n';
+        } catch (...) {
+            std::cerr << "ERROR: Unknown exception in macOS menu callback\n";
         }
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR: Failed to trigger About card from macOS menu: " << e.what() << '\n';
-    } catch (...) {
-        std::cerr << "ERROR: Unknown error triggering About card from macOS menu" << '\n';
     }
 }
 @end
 
+static const char kRouenMenuTargetKey = 0;
+
 namespace rouen::platform {
 
 void disable_mac_cmd_w_menu_item() {
-    static bool completed = false;
-    if (completed) return;
-    
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     NSApplication* app = [NSApplication sharedApplication];
     NSMenu* mainMenu = [app mainMenu];
-    if (mainMenu) {
-        bool found = false;
+
+    if (mainMenu && [mainMenu numberOfItems] > 0) {
+        // Check if custom categories are already merged
+        bool already_merged = false;
+        for (NSMenuItem* item in [mainMenu itemArray]) {
+            if ([[item title] isEqualToString:@"Development"]) {
+                already_merged = true;
+                break;
+            }
+        }
+        if (already_merged) {
+            [pool release];
+            return;
+        }
+
+        std::cout << "DEBUG: mac_menu_helper merging categories into mainMenu (items before: " << [mainMenu numberOfItems] << ")\n";
+
         for (NSMenuItem* item in [mainMenu itemArray]) {
             if ([item hasSubmenu]) {
                 NSMenu* submenu = [item submenu];
@@ -46,34 +70,116 @@ void disable_mac_cmd_w_menu_item() {
                     if ((mask & NSEventModifierFlagCommand) && ![eq isEqualToString:@"q"]) {
                         [subitem setKeyEquivalent:@""];
                         [subitem setKeyEquivalentModifierMask:0];
-                        found = true;
                     }
                 }
             }
         }
         
-        // Configure native "About Rouen" menu item to trigger our custom card
-        if ([mainMenu numberOfItems] > 0) {
-            NSMenuItem* appMenuItem = [mainMenu itemAtIndex:0];
-            if ([appMenuItem hasSubmenu]) {
-                NSMenu* appMenu = [appMenuItem submenu];
-                for (NSMenuItem* subitem in [appMenu itemArray]) {
-                    if ([[subitem title] rangeOfString:@"About" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-                        if (!g_menuHandler) {
-                            g_menuHandler = [[RouenMenuHandler alloc] init];
+        NSMenuItem* appMenuItem = [mainMenu itemAtIndex:0];
+        NSMenu* appMenu = [appMenuItem hasSubmenu] ? [appMenuItem submenu] : nil;
+        if (appMenu) {
+            [appMenu setAutoenablesItems:NO];
+        }
+
+        const auto& categories = rouen::cards::menu::get_categories();
+
+        for (const auto& category : categories) {
+            std::cout << "DEBUG: Processing menu category '" << category.name << "' (" << category.items.size() << " items)\n";
+            if (category.name == "System") {
+                if (!appMenu) continue;
+
+                NSInteger insertIndex = 1;
+                if ([appMenu numberOfItems] > 1 && [[appMenu itemAtIndex:1] isSeparatorItem]) {
+                    insertIndex = 2;
+                }
+
+                for (const auto& item : category.items) {
+                    NSString* nsTitle = [NSString stringWithUTF8String:item.first.c_str()];
+                    NSMenuItem* existingSubitem = nil;
+
+                    for (NSMenuItem* subitem in [appMenu itemArray]) {
+                        NSString* subTitle = [subitem title];
+                        if ([subTitle rangeOfString:nsTitle options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                            (item.first == "About" && [subTitle rangeOfString:@"About" options:NSCaseInsensitiveSearch].location != NSNotFound) ||
+                            (item.first == "Exit Application" && [subTitle rangeOfString:@"Quit" options:NSCaseInsensitiveSearch].location != NSNotFound)) {
+                            existingSubitem = subitem;
+                            break;
                         }
-                        [subitem setTarget:g_menuHandler];
-                        [subitem setAction:@selector(handleAboutMenu:)];
-                        std::cout << "DEBUG: Custom About menu handler registered successfully." << '\n';
-                        found = true;
+                    }
+
+                    auto callback = item.second;
+                    RouenMenuBlockTarget* blockTarget = [[RouenMenuBlockTarget alloc] initWithBlock:^{
+                        callback();
+                    }];
+
+                    if (existingSubitem) {
+                        [existingSubitem setTarget:blockTarget];
+                        [existingSubitem setAction:@selector(handleMenuItem:)];
+                        [existingSubitem setEnabled:YES];
+                        objc_setAssociatedObject(existingSubitem, &kRouenMenuTargetKey, blockTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    } else {
+                        NSMenuItem* newItem = [appMenu insertItemWithTitle:nsTitle action:@selector(handleMenuItem:) keyEquivalent:@"" atIndex:insertIndex++];
+                        [newItem setTarget:blockTarget];
+                        [newItem setEnabled:YES];
+                        objc_setAssociatedObject(newItem, &kRouenMenuTargetKey, blockTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    }
+                }
+            } else {
+                NSString* nsCategoryName = [NSString stringWithUTF8String:category.name.c_str()];
+                NSMenuItem* catMenuItem = nil;
+                NSMenu* catSubmenu = nil;
+
+                for (NSMenuItem* item in [mainMenu itemArray]) {
+                    if ([[item title] isEqualToString:nsCategoryName]) {
+                        catMenuItem = item;
+                        catSubmenu = [item submenu];
+                        break;
+                    }
+                }
+
+                if (!catMenuItem) {
+                    catSubmenu = [[NSMenu alloc] initWithTitle:nsCategoryName];
+                    [catSubmenu setAutoenablesItems:NO];
+                    catMenuItem = [[NSMenuItem alloc] initWithTitle:nsCategoryName action:nil keyEquivalent:@""];
+                    [catMenuItem setSubmenu:catSubmenu];
+                    [catMenuItem setEnabled:YES];
+                    [mainMenu addItem:catMenuItem];
+                }
+
+                for (const auto& item : category.items) {
+                    NSString* nsTitle = [NSString stringWithUTF8String:item.first.c_str()];
+                    NSMenuItem* existingSubitem = nil;
+
+                    for (NSMenuItem* subitem in [catSubmenu itemArray]) {
+                        if ([[subitem title] isEqualToString:nsTitle]) {
+                            existingSubitem = subitem;
+                            break;
+                        }
+                    }
+
+                    auto callback = item.second;
+                    RouenMenuBlockTarget* blockTarget = [[RouenMenuBlockTarget alloc] initWithBlock:^{
+                        callback();
+                    }];
+
+                    if (existingSubitem) {
+                        [existingSubitem setTarget:blockTarget];
+                        [existingSubitem setAction:@selector(handleMenuItem:)];
+                        [existingSubitem setEnabled:YES];
+                        objc_setAssociatedObject(existingSubitem, &kRouenMenuTargetKey, blockTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    } else {
+                        NSMenuItem* newItem = [catSubmenu addItemWithTitle:nsTitle action:@selector(handleMenuItem:) keyEquivalent:@""];
+                        [newItem setTarget:blockTarget];
+                        [newItem setEnabled:YES];
+                        objc_setAssociatedObject(newItem, &kRouenMenuTargetKey, blockTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                     }
                 }
             }
         }
-        
-        if (found) {
-            completed = true;
-        }
+
+        [mainMenu update];
+        [app setMainMenu:mainMenu];
+        std::cout << "DEBUG: macOS menu merged successfully. Total top-level items: " << [mainMenu numberOfItems] << '\n';
     }
     [pool release];
 }

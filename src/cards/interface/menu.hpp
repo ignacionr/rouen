@@ -285,6 +285,8 @@ namespace rouen::cards {
 
     private:
         mutable bool should_close_{false};
+
+    public:
         struct MenuCategory {
             std::string name;
             std::vector<std::pair<std::string, std::function<void()>>> items;
