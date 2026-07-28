@@ -14,7 +14,7 @@
         unstable = import nixpkgs-unstable { inherit system; };
         
         # Use appropriate stdenv for each platform
-        stdenv = if unstable.stdenv.isDarwin then unstable.clang19Stdenv else unstable.gcc15Stdenv;
+        stdenv = if unstable.stdenv.isDarwin then unstable.llvmPackages_20.stdenv else unstable.gcc15Stdenv;
         
         # Modern Darwin frameworks - removed in Nixpkgs 25.11 as they are now integrated into stdenv
         darwinFrameworks = [];
