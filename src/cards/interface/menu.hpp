@@ -326,7 +326,6 @@ namespace rouen::cards {
                     {"Email", []() { "create_card"_sfn("mail"); }},
                     {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},
                     {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
-                    {"FIFA World Cup 2026", []() { "create_card"_sfn("worldcup"); }},
                     {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }},
                     {"Adaptive Cards", []() { "create_card"_sfn("adaptive-card"); }}
                 }},
