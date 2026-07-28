@@ -454,9 +454,11 @@ add_executable(${PROJECT_NAME}
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
-  src/helpers/llm_config.cpp
-  src/helpers/mcp_service.cpp
-  src/helpers/api_server.cpp
+  src/hosts/llm_host.cpp
+  src/hosts/mcp_host.cpp
+  src/hosts/api_server_host.cpp
+  src/hosts/git_sync_host.cpp
+  src/hosts/universal_sync_host.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp
@@ -511,6 +513,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_SOURCE_DIR}/external/mongoose-7.15
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/helpers
+  ${CMAKE_SOURCE_DIR}/src/hosts
 )
 
 # Add ImGui include directories based on which target is available

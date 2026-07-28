@@ -8,7 +8,7 @@
 
 // 3. All other includes
 #include "debug.hpp"
-#include "mcp_service.hpp"
+#include "mcp_host.hpp"
 #include "platform_utils.hpp"
 #include "media_player.hpp"
 #include "process_helper.hpp"
@@ -22,7 +22,7 @@
 #include "universal_sync_service.hpp"
 #include "persona_manager.hpp"
 
-namespace rouen::helpers {
+namespace rouen::hosts {
 
 struct local_command_request {
     std::string command;
@@ -401,7 +401,7 @@ struct mcp_notes_operation_result {
     };
 };
 
-mcp_service::mcp_service() {
+mcp_host::mcp_host() {
     detect_system_info();
 
     // Register default run_local_command function associated with terminal
@@ -709,7 +709,7 @@ mcp_service::mcp_service() {
             }
             
             std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
-            auto config = ConfigService::instance();
+            auto config = helpers::ConfigService::instance();
             std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
             std::string extra_cflags = cookie_args.empty() ? "" : (" " + cookie_args);
             std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github " : "";
@@ -1311,7 +1311,7 @@ mcp_service::mcp_service() {
 
                 models::contacts::contacts_repository repo;
                 int64_t saved_id = repo.upsert_contact(c);
-                UniversalSyncService::instance().sync_out("MCP saved contact: " + c.get_full_name());
+                helpers::UniversalSyncService::instance().sync_out("MCP saved contact: " + c.get_full_name());
 
                 return std::format(R"({{"status":"success","message":"Contact saved","id":{}}})", saved_id);
             } catch (const std::exception& e) {
@@ -1336,7 +1336,7 @@ mcp_service::mcp_service() {
 
                 models::contacts::contacts_repository repo;
                 repo.delete_contact(req.id);
-                UniversalSyncService::instance().sync_out("MCP deleted contact ID: " + std::to_string(req.id));
+                helpers::UniversalSyncService::instance().sync_out("MCP deleted contact ID: " + std::to_string(req.id));
 
                 return std::format(R"({{"status":"success","message":"Contact deleted","id":{}}})", req.id);
             } catch (const std::exception& e) {
@@ -1356,7 +1356,7 @@ mcp_service::mcp_service() {
             try {
                 models::contacts::contacts_repository repo;
                 int count = repo.import_macos_contacts();
-                UniversalSyncService::instance().sync_out("Imported macOS contacts via MCP");
+                helpers::UniversalSyncService::instance().sync_out("Imported macOS contacts via MCP");
                 return std::format(R"({{"status":"success","imported_count":{}}})", count);
             } catch (const std::exception& e) {
                 return std::format(R"({{"status":"error","message":"{}"}})", e.what());
@@ -1374,7 +1374,7 @@ mcp_service::mcp_service() {
         R"mcp({"type":"object","properties":{}})mcp",
         [](const std::string& /*params*/) -> std::string {
             try {
-                auto& pm = PersonaManager::instance();
+                auto& pm = helpers::PersonaManager::instance();
                 const auto& personas = pm.get_personas();
                 size_t active_idx = pm.get_active_persona_index();
 
@@ -1407,7 +1407,7 @@ mcp_service::mcp_service() {
                     static_cast<void>(glz::read_json(req, params));
                 }
 
-                auto& pm = PersonaManager::instance();
+                auto& pm = helpers::PersonaManager::instance();
                 const auto& personas = pm.get_personas();
 
                 int target_idx = -1;
@@ -1450,7 +1450,7 @@ mcp_service::mcp_service() {
         R"mcp({"type":"object","properties":{}})mcp",
         [](const std::string& /*params*/) -> std::string {
             try {
-                auto& pm = PersonaManager::instance();
+                auto& pm = helpers::PersonaManager::instance();
                 const auto& active = pm.get_active_persona();
                 size_t active_idx = pm.get_active_persona_index();
 
@@ -1471,7 +1471,7 @@ mcp_service::mcp_service() {
     register_function("persona", get_active_persona_def);
 }
 
-void mcp_service::register_function(const std::string& card_type, const function_definition& func) {
+void mcp_host::register_function(const std::string& card_type, const function_definition& func) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     // Create a copy of the function with the card_type set
@@ -1486,7 +1486,7 @@ void mcp_service::register_function(const std::string& card_type, const function
     DEBUG_TRACE("MCP: Registered function '" + func.name + "' from card '" + card_type + "'");
 }
 
-void mcp_service::unregister_card_functions(const std::string& card_type) {
+void mcp_host::unregister_card_functions(const std::string& card_type) {
     std::lock_guard<std::mutex> lock(mutex_);
     
     auto card_it = card_functions_.find(card_type);
@@ -1504,7 +1504,7 @@ void mcp_service::unregister_card_functions(const std::string& card_type) {
     card_functions_.erase(card_it);
 }
 
-std::vector<mcp_service::function_definition> mcp_service::get_available_functions() const {
+std::vector<mcp_host::function_definition> mcp_host::get_available_functions() const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     std::vector<function_definition> result;
@@ -1517,7 +1517,7 @@ std::vector<mcp_service::function_definition> mcp_service::get_available_functio
     return result;
 }
 
-std::vector<mcp_service::function_definition> mcp_service::get_functions_for_card(const std::string& card_type) const {
+std::vector<mcp_host::function_definition> mcp_host::get_functions_for_card(const std::string& card_type) const {
     std::lock_guard<std::mutex> lock(mutex_);
     
     std::vector<function_definition> result;
@@ -1538,7 +1538,7 @@ std::vector<mcp_service::function_definition> mcp_service::get_functions_for_car
     return result;
 }
 
-std::vector<std::string> mcp_service::get_registered_categories() const {
+std::vector<std::string> mcp_host::get_registered_categories() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<std::string> categories;
     categories.reserve(card_functions_.size());
@@ -1550,7 +1550,7 @@ std::vector<std::string> mcp_service::get_registered_categories() const {
     return categories;
 }
 
-mcp_service::execution_result mcp_service::execute_function(const std::string& name, const std::string& params) {
+mcp_host::execution_result mcp_host::execute_function(const std::string& name, const std::string& params) {
     function_definition func;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1582,12 +1582,12 @@ mcp_service::execution_result mcp_service::execute_function(const std::string& n
     }
 }
 
-bool mcp_service::has_function(const std::string& name) const {
+bool mcp_host::has_function(const std::string& name) const {
     std::lock_guard<std::mutex> lock(mutex_);
     return functions_.find(name) != functions_.end();
 }
 
-std::string mcp_service::get_function_schema(const std::string& name) const {
+std::string mcp_host::get_function_schema(const std::string& name) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto func_it = functions_.find(name);
     if (func_it != functions_.end()) {
@@ -1596,7 +1596,7 @@ std::string mcp_service::get_function_schema(const std::string& name) const {
     return "";
 }
 
-std::string mcp_service::get_functions_description() const {
+std::string mcp_host::get_functions_description() const {
     std::lock_guard<std::mutex> lock(mutex_);
     if (functions_.empty()) {
         return "No functions available.";
@@ -1612,7 +1612,7 @@ std::string mcp_service::get_functions_description() const {
     return ss.str();
 }
 
-bool mcp_service::validate_parameters(const std::string& params, const std::string& schema) {
+bool mcp_host::validate_parameters(const std::string& params, const std::string& schema) {
     // Basic validation - just check if params is valid JSON
     // In a full implementation, we'd validate against the JSON schema
     (void)schema; // Suppress unused parameter warning - schema validation not yet implemented
@@ -1636,7 +1636,7 @@ bool mcp_service::validate_parameters(const std::string& params, const std::stri
     }
 }
 
-void mcp_service::detect_system_info() {
+void mcp_host::detect_system_info() {
     std::string os_type;
     std::string os_version;
     

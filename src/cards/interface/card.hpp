@@ -17,8 +17,11 @@
 #include "../../helpers/ui_context.hpp"
 #include "../../helpers/theme_manager.hpp"
 // Forward declarations to avoid circular dependencies
+namespace rouen::hosts {
+    class mcp_host;
+}
 namespace rouen::helpers {
-    class mcp_service;
+    using mcp_service = ::rouen::hosts::mcp_host;
 }
 
 struct card {

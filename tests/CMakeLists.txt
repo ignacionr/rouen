@@ -259,13 +259,13 @@ add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 # MCP Test
 add_executable(test_mcp 
     test_mcp.cpp 
-    ../src/helpers/mcp_service.cpp
+    ../src/hosts/mcp_host.cpp
     ../src/models/git_process_helper.cpp
     ../src/models/git_scanner.cpp
     ../src/helpers/config_service.cpp
     ../src/cards/interface/card.cpp
     ../src/helpers/theme_manager.cpp
-    ../src/helpers/llm_config.cpp
+    ../src/hosts/llm_host.cpp
 )
 target_link_libraries(test_mcp 
     PRIVATE 

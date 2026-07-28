@@ -1,4 +1,4 @@
-#include "api_server.hpp"
+#include "api_server_host.hpp"
 
 // 1. Standard includes in alphabetic order
 #include <atomic>
@@ -51,9 +51,9 @@ struct error_response {
     std::string error;
 };
 
-namespace rouen::helpers {
+namespace rouen::hosts {
 
-api_server::api_server()
+api_server_host::api_server_host()
     : mgr_(nullptr)
     , conn_(nullptr)
     , initialized_(false)
@@ -61,11 +61,11 @@ api_server::api_server()
     , server_thread_(nullptr) {
 }
 
-api_server::~api_server() {
+api_server_host::~api_server_host() {
     stop();
 }
 
-bool api_server::initialize() {
+bool api_server_host::initialize() {
     if (initialized_) {
         return true;
     }
@@ -82,7 +82,7 @@ bool api_server::initialize() {
     return true;
 }
 
-bool api_server::start(const std::string& address) {
+bool api_server_host::start(const std::string& address) {
     if (!initialized_ && !initialize()) {
         return false;
     }
@@ -100,7 +100,7 @@ bool api_server::start(const std::string& address) {
     // Start the server thread
     running_ = true;
     try {
-        server_thread_ = std::make_unique<std::thread>(&api_server::server_loop, this);
+        server_thread_ = std::make_unique<std::thread>(&api_server_host::server_loop, this);
     } catch (const std::exception& e) {
         std::cerr << "Failed to start server thread: " << e.what() << '\n';
         mg_http_listen(mgr_.get(), nullptr, nullptr, nullptr); // Cancel listening
@@ -113,13 +113,13 @@ bool api_server::start(const std::string& address) {
     return true;
 }
 
-void api_server::server_loop() {
+void api_server_host::server_loop() {
     while (running_) {
         mg_mgr_poll(mgr_.get(), 100); // Poll for events with 100ms timeout
     }
 }
 
-void api_server::stop() {
+void api_server_host::stop() {
     if (running_) {
         running_ = false;
         
@@ -142,14 +142,14 @@ void api_server::stop() {
     initialized_ = false;
 }
 
-void api_server::event_handler(struct mg_connection* c, int ev, void* ev_data) {
+void api_server_host::event_handler(struct mg_connection* c, int ev, void* ev_data) {
     if (ev == MG_EV_HTTP_MSG) {
         auto* hm = static_cast<struct mg_http_message*>(ev_data);
-        api_server::handle_request(c, hm);
+        api_server_host::handle_request(c, hm);
     }
 }
 
-void api_server::handle_request(struct mg_connection* c, struct mg_http_message* hm) {
+void api_server_host::handle_request(struct mg_connection* c, struct mg_http_message* hm) {
     std::string response;
     int status_code = 200;
     std::string content_type = "application/json";
@@ -297,7 +297,7 @@ void api_server::handle_request(struct mg_connection* c, struct mg_http_message*
     mg_http_reply(c, status_code, ("Content-Type: " + content_type + "\r\n").c_str(), "%s", response.c_str());
 }
 
-std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         // Get the create_card service from registrar
         auto create_card_func = registrar::get<std::function<void(std::string const&)>>("create_card");
@@ -328,7 +328,7 @@ std::string api_server::handle_card_creation(struct mg_connection* /*c*/, struct
     }
 }
 
-std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_ai_request(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         // Get the MCP service from registrar
         auto mcp_service = registrar::get<std::shared_ptr<rouen::helpers::mcp_service>>("mcp_service");
@@ -357,7 +357,7 @@ std::string api_server::handle_ai_request(struct mg_connection* /*c*/, struct mg
     }
 }
 
-std::string api_server::handle_schemas_request(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+std::string api_server_host::handle_schemas_request(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         std::vector<std::string> schemas;
         const auto& dict = rouen::cards::factory::dictionary();
@@ -373,7 +373,7 @@ for (const auto& pair : dict) {
     }
 }
 
-std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         auto host = rouen::hosts::VideoFeedHost::get_host();
         bool is_casting = host ? host->is_running() : false;
@@ -472,7 +472,7 @@ std::string api_server::handle_cast_status(struct mg_connection* /*c*/, struct m
     }
 }
 
-std::string api_server::handle_cast_start(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+std::string api_server_host::handle_cast_start(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         auto host = rouen::hosts::VideoFeedHost::get_host();
         if (host) {
@@ -485,7 +485,7 @@ std::string api_server::handle_cast_start(struct mg_connection* /*c*/, struct mg
     }
 }
 
-std::string api_server::handle_cast_play(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_cast_play(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         auto host = rouen::hosts::VideoFeedHost::get_host();
         if (host) {
@@ -513,7 +513,7 @@ std::string api_server::handle_cast_play(struct mg_connection* /*c*/, struct mg_
     }
 }
 
-std::string api_server::handle_camera_status(struct mg_connection*, struct mg_http_message*) {
+std::string api_server_host::handle_camera_status(struct mg_connection*, struct mg_http_message*) {
     try {
         auto fn = registrar::get<std::function<std::string()>>("camera_get_status");
         if (fn && *fn) {
@@ -525,7 +525,7 @@ std::string api_server::handle_camera_status(struct mg_connection*, struct mg_ht
     }
 }
 
-std::string api_server::handle_camera_snapshot(struct mg_connection*, struct mg_http_message*) {
+std::string api_server_host::handle_camera_snapshot(struct mg_connection*, struct mg_http_message*) {
     try {
         auto fn = registrar::get<std::function<std::string(const std::string&)>>("camera_save_snapshot");
         if (fn && *fn) {
@@ -537,7 +537,7 @@ std::string api_server::handle_camera_snapshot(struct mg_connection*, struct mg_
     }
 }
 
-std::string api_server::handle_camera_layout_get(struct mg_connection*, struct mg_http_message*) {
+std::string api_server_host::handle_camera_layout_get(struct mg_connection*, struct mg_http_message*) {
     try {
         auto fn = registrar::get<std::function<std::string()>>("camera_get_layout");
         if (fn && *fn) {
@@ -554,7 +554,7 @@ struct camera_layout_request {
     int preset = -1;
 };
 
-std::string api_server::handle_camera_layout_set(struct mg_connection*, struct mg_http_message* hm) {
+std::string api_server_host::handle_camera_layout_set(struct mg_connection*, struct mg_http_message* hm) {
     try {
         auto fn = registrar::get<std::function<std::string(const std::string&)>>("camera_set_layout");
         if (!fn || !*fn) {
@@ -579,7 +579,7 @@ struct card_focus_request {
     int index{-1};
 };
 
-std::string api_server::handle_card_focus(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_card_focus(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         std::string body(hm->body.buf, hm->body.len);
         card_focus_request req;
@@ -615,7 +615,7 @@ struct deck_scroll_request {
     int section{0};
 };
 
-std::string api_server::handle_deck_scroll(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_deck_scroll(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         std::string body(hm->body.buf, hm->body.len);
         deck_scroll_request req;
@@ -644,7 +644,7 @@ struct window_geometry_request {
     int height{-1};
 };
 
-std::string api_server::handle_window_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+std::string api_server_host::handle_window_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
         if (!get_window_fn || !*get_window_fn) {
@@ -666,7 +666,7 @@ std::string api_server::handle_window_get(struct mg_connection* /*c*/, struct mg
     }
 }
 
-std::string api_server::handle_window_set(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_window_set(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
         if (!get_window_fn || !*get_window_fn) {
@@ -719,7 +719,7 @@ struct screenshot_request {
     int height = 600;
 };
 
-std::string api_server::handle_screenshot(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         std::string body(hm->body.buf, hm->body.len);
         screenshot_request req;
@@ -750,4 +750,4 @@ std::string api_server::handle_screenshot(struct mg_connection* /*c*/, struct mg
     }
 }
 
-} // namespace rouen::helpers
+} // namespace rouen::hosts
