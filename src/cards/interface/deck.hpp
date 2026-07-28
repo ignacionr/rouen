@@ -756,26 +756,109 @@ struct deck {
             }
             float const max_scroll = std::max(0.0f, total_deck_width - size.x);
 
+            // If any card has requested grab_focus this frame, reset manual scroll mode
+            bool grab_focus_requested = false;
+            for (const auto& row : rows) {
+                for (const auto& item : row) {
+                    if (item.card_ptr && item.card_ptr->grab_focus) {
+                        grab_focus_requested = true;
+                        break;
+                    }
+                }
+                if (grab_focus_requested) break;
+            }
+            if (grab_focus_requested) {
+                is_scrolling_manually = false;
+            }
+
+            // Handle trackpad and Shift+mouse wheel horizontal scrolling
+            if (max_scroll > 0.0f) {
+                auto& io = ImGui::GetIO();
+                float wheel_h = io.MouseWheelH;
+                if (io.KeyShift && wheel_h == 0.0f) {
+                    wheel_h = io.MouseWheel;
+                }
+
+                if (wheel_h != 0.0f) {
+                    is_scrolling_manually = true;
+                    float const scroll_speed = 40.0f;
+                    target_scroll_x -= wheel_h * scroll_speed;
+                    target_scroll_x = std::clamp(target_scroll_x, 0.0f, max_scroll);
+                } else if (is_scrolling_manually) {
+                    // Snap to the nearest section boundary when the user stops scrolling
+                    int target_section = static_cast<int>(std::round(target_scroll_x / section_width));
+                    float section_target = static_cast<float>(target_section) * section_width;
+                    target_scroll_x = std::clamp(section_target, 0.0f, max_scroll);
+
+                    // Find the first card in the target section and focus it
+                    card::ptr new_focus_card = nullptr;
+                    for (const auto& row : rows) {
+                        for (const auto& item : row) {
+                            if (item.card_ptr) {
+                                int card_sec_idx = static_cast<int>(item.abs_x / section_width);
+                                if (card_sec_idx == target_section) {
+                                    new_focus_card = item.card_ptr;
+                                    break;
+                                }
+                            }
+                        }
+                        if (new_focus_card) break;
+                    }
+
+                    if (new_focus_card) {
+                        for (auto& c : cards_) {
+                            c->is_focused = false;
+                            c->grab_focus = false;
+                        }
+                        new_focus_card->grab_focus = true;
+                        last_focused_card_ = new_focus_card;
+                    } else {
+                        for (auto& c : cards_) {
+                            c->is_focused = false;
+                            c->grab_focus = false;
+                        }
+                        last_focused_card_.reset();
+                    }
+
+                    is_scrolling_manually = false;
+                }
+            }
+
             // Scan all cards to update target_scroll_x: priority to grab_focus card, then last_focused_card_, then is_focused card
             card::ptr focus_target_card = nullptr;
             float target_card_abs_x = 0.0f;
 
-            for (const auto& row : rows) {
-                for (const auto& item : row) {
-                    if (item.card_ptr && item.card_ptr->grab_focus) {
-                        focus_target_card = item.card_ptr;
-                        target_card_abs_x = item.abs_x;
-                        break;
+            if (!is_scrolling_manually) {
+                for (const auto& row : rows) {
+                    for (const auto& item : row) {
+                        if (item.card_ptr && item.card_ptr->grab_focus) {
+                            focus_target_card = item.card_ptr;
+                            target_card_abs_x = item.abs_x;
+                            break;
+                        }
+                    }
+                    if (focus_target_card) break;
+                }
+
+                if (!focus_target_card) {
+                    if (auto last_locked = last_focused_card_.lock()) {
+                        for (const auto& row : rows) {
+                            for (const auto& item : row) {
+                                if (item.card_ptr && item.card_ptr == last_locked) {
+                                    focus_target_card = item.card_ptr;
+                                    target_card_abs_x = item.abs_x;
+                                    break;
+                                }
+                            }
+                            if (focus_target_card) break;
+                        }
                     }
                 }
-                if (focus_target_card) break;
-            }
 
-            if (!focus_target_card) {
-                if (auto last_locked = last_focused_card_.lock()) {
+                if (!focus_target_card) {
                     for (const auto& row : rows) {
                         for (const auto& item : row) {
-                            if (item.card_ptr && item.card_ptr == last_locked) {
+                            if (item.card_ptr && item.card_ptr->is_focused) {
                                 focus_target_card = item.card_ptr;
                                 target_card_abs_x = item.abs_x;
                                 break;
@@ -786,20 +869,7 @@ struct deck {
                 }
             }
 
-            if (!focus_target_card) {
-                for (const auto& row : rows) {
-                    for (const auto& item : row) {
-                        if (item.card_ptr && item.card_ptr->is_focused) {
-                            focus_target_card = item.card_ptr;
-                            target_card_abs_x = item.abs_x;
-                            break;
-                        }
-                    }
-                    if (focus_target_card) break;
-                }
-            }
-
-            if (focus_target_card) {
+            if (focus_target_card && !is_scrolling_manually) {
                 int section_idx = static_cast<int>(target_card_abs_x / section_width);
                 float section_target = static_cast<float>(section_idx) * section_width;
                 target_scroll_x = std::clamp(section_target, 0.0f, max_scroll);
@@ -992,6 +1062,7 @@ private:
     float start_x {2.0f};
     float current_scroll_x {0.0f};
     float target_scroll_x {0.0f};
+    bool is_scrolling_manually {false};
     rouen::ui::imgui_ui_context_impl ui_context_;
     std::weak_ptr<card> last_focused_card_;
 public:
