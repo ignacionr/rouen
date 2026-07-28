@@ -23,8 +23,9 @@
 #include "AESConstants.h"
 #include <openssl/sha.h>
 #include <openssl/rand.h>
-#ifdef USE_OPENSSL_AES
 #include <openssl/evp.h>
+#ifdef USE_OPENSSL_AES
+// already included above
 #else
 #include "aescpp.h"
 #endif
@@ -78,53 +79,37 @@ static ByteList byteArrayToByteList(const Byte* inArray, size_t inSize) {
 
 
 
-static ByteList createSHA256(const ByteList& inKey) {
+static ByteList createDigest(const ByteList& inKey, const EVP_MD* md, size_t digestLength) {
     ByteList result;
 
     Byte* buffer = byteListToNewByteArray(inKey);
-    Byte bufferResult[SHA256_DIGEST_LENGTH];
+    std::vector<Byte> bufferResult(digestLength);
 
-
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, buffer, inKey.size());
-    SHA256_Final(bufferResult, &ctx);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx) {
+        if (EVP_DigestInit_ex(ctx, md, NULL) == 1 &&
+            EVP_DigestUpdate(ctx, buffer, inKey.size()) == 1) {
+            unsigned int len = 0;
+            EVP_DigestFinal_ex(ctx, bufferResult.data(), &len);
+            result = byteArrayToByteList(bufferResult.data(), len);
+        }
+        EVP_MD_CTX_free(ctx);
+    }
 
     delete[] buffer;
-    return byteArrayToByteList(bufferResult, SHA256_DIGEST_LENGTH);
+    return result;
 }
 
+static ByteList createSHA256(const ByteList& inKey) {
+    return createDigest(inKey, EVP_sha256(), SHA256_DIGEST_LENGTH);
+}
 
 static ByteList createSHA384(const ByteList& inKey) {
-    ByteList result;
-
-    Byte* buffer = byteListToNewByteArray(inKey);
-    Byte bufferResult[SHA384_DIGEST_LENGTH];
-
-    SHA512_CTX ctx;
-    SHA384_Init(&ctx);
-    SHA384_Update(&ctx, buffer, inKey.size());
-    SHA384_Final(bufferResult, &ctx);
-
-    delete[] buffer;
-    return byteArrayToByteList(bufferResult, SHA384_DIGEST_LENGTH);
+    return createDigest(inKey, EVP_sha384(), SHA384_DIGEST_LENGTH);
 }
 
 static ByteList createSHA512(const ByteList& inKey) {
-    ByteList result;
-
-    Byte* buffer = byteListToNewByteArray(inKey);
-    Byte bufferResult[SHA512_DIGEST_LENGTH];
-
-    SHA512_CTX ctx;
-    SHA512_Init(&ctx);
-    SHA512_Update(&ctx, buffer, inKey.size());
-    SHA512_Final(bufferResult, &ctx);
-
-    delete[] buffer;
-    return byteArrayToByteList(bufferResult, SHA512_DIGEST_LENGTH);
-
-    return result;
+    return createDigest(inKey, EVP_sha512(), SHA512_DIGEST_LENGTH);
 }
 
 #ifdef USE_OPENSSL_AES
