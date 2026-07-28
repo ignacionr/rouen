@@ -72,6 +72,7 @@ namespace rouen::cards {
         void generate_commentary_for_full_video();
 
         bool render(rouen::ui::ui_context& ui) override;
+        bool has_video_overlay() const override { return true; }
         void render_video_ui() override;
         void paint_video_surface(SDL_Surface* surface, int surface_w, int surface_h) override;
 

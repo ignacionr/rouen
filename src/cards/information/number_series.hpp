@@ -358,6 +358,8 @@ public:
         });
     }
 
+    bool has_video_overlay() const override { return true; }
+
     void render_video_ui() override {
         if (current_data_.points.empty()) return;
 

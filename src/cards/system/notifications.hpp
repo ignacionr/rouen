@@ -190,6 +190,8 @@ private:
     double last_time = 0.0;
     std::uint64_t last_seen_notification_id = 0;
 
+    bool has_video_overlay() const override { return true; }
+
     void render_video_ui() override {
         auto now_system = std::chrono::system_clock::now();
         std::vector<notify_service::notification_entry> active_notifications;

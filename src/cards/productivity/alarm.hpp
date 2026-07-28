@@ -101,6 +101,8 @@ namespace rouen::cards {
             });
         }
 
+        bool has_video_overlay() const override { return true; }
+
         void render_video_ui() override {
             auto now = std::chrono::system_clock::now();
             auto time_remaining = get_time_remaining(now);

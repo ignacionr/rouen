@@ -1,5 +1,6 @@
 // 1. Standard includes in alphabetic order
-// None in this file's top section
+#include <chrono>
+#include <format>
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers
@@ -18,6 +19,35 @@
 #ifdef __APPLE__
 #include "helpers/mac_menu_helper.hpp"
 #endif
+
+namespace {
+static std::string s_detached_toast_msg;
+static std::chrono::steady_clock::time_point s_detached_toast_expire;
+
+static void set_detached_toast(const std::string& msg) {
+    s_detached_toast_msg = msg;
+    s_detached_toast_expire = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+}
+
+static void render_detached_toast(float win_w, float /*win_h*/) {
+    if (!s_detached_toast_msg.empty() && std::chrono::steady_clock::now() < s_detached_toast_expire) {
+        ImGui::SetNextWindowPos(ImVec2(win_w * 0.5f, 24.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 8.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.12f, 0.20f, 0.90f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.7f, 1.0f, 0.8f));
+
+        if (ImGui::Begin("##DetachedOverlayToast", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoInputs)) {
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "%s", s_detached_toast_msg.c_str());
+            ImGui::End();
+        }
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(3);
+    }
+}
+}
 
 void main_wnd::run() {
     try {
@@ -194,7 +224,7 @@ void main_wnd::run() {
                     // Render video-output UI overlay of all cards in the deck (e.g. notifications card)
                     try {
                         for (const auto& card_ptr : main_deck->get_cards()) {
-                            if (card_ptr) {
+                            if (card_ptr && card_ptr->video_overlay_visible) {
                                 card_ptr->render_video_ui();
                             }
                         }
@@ -491,6 +521,41 @@ bool main_wnd::process_events() {
                                 double dur = detached_item->duration.load();
                                 double target_limit = (dur > 0.0) ? dur : (current + 5.0);
                                 detached_item->seekTo(std::min(target_limit, current + 5.0));
+                            } else {
+                                int overlay_target_idx = -1;
+                                if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+                                    overlay_target_idx = static_cast<int>(event.key.key - SDLK_1);
+                                } else if (event.key.key >= SDLK_KP_1 && event.key.key <= SDLK_KP_9) {
+                                    overlay_target_idx = static_cast<int>(event.key.key - SDLK_KP_1);
+                                }
+
+                                if (overlay_target_idx >= 0) {
+                                    try {
+                                        auto main_deck = registrar::get<deck>("deck");
+                                        if (main_deck) {
+                                            int overlay_count = 0;
+                                            for (const auto& card_ptr : main_deck->get_cards()) {
+                                                if (card_ptr && card_ptr->has_video_overlay()) {
+                                                    if (overlay_count == overlay_target_idx) {
+                                                        card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
+                                                        std::string card_name = card_ptr->window_title;
+                                                        auto hash_pos = card_name.find("###");
+                                                        if (hash_pos != std::string::npos) {
+                                                            card_name = card_name.substr(0, hash_pos);
+                                                        }
+                                                        if (card_name.empty()) {
+                                                            card_name = card_ptr->get_uri();
+                                                        }
+                                                        std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
+                                                        set_detached_toast(std::format("[{}] {}: {}", overlay_target_idx + 1, card_name, status));
+                                                        break;
+                                                    }
+                                                    overlay_count++;
+                                                }
+                                            }
+                                        }
+                                    } catch (...) {}
+                                }
                             }
                         }
                         continue;
@@ -721,12 +786,14 @@ void main_wnd::process_detached_window() {
                         auto main_deck = registrar::get<deck>("deck");
                         if (main_deck) {
                             for (const auto& card_ptr : main_deck->get_cards()) {
-                                if (card_ptr) {
+                                if (card_ptr && card_ptr->video_overlay_visible) {
                                     card_ptr->render_video_ui();
                                 }
                             }
                         }
                     } catch (...) {}
+
+                    render_detached_toast(win_w, win_h);
 
                     // Double clicking detached window re-attaches to full-window mode
                     if (mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {

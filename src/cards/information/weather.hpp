@@ -269,6 +269,8 @@ public:
         });
     }
 
+    bool has_video_overlay() const override { return true; }
+
     void render_video_ui() override {
         auto current_weather = weather_host->getCurrentWeather();
         if (!current_weather) return;

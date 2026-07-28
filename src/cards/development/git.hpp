@@ -114,6 +114,7 @@ struct git : public card {
     [[nodiscard]] std::vector<mcp_function> get_mcp_functions() const override;
     bool render() override;
 
+    bool has_video_overlay() const override { return true; }
     void render_video_ui() override;
 
     void trigger_async_status_update();

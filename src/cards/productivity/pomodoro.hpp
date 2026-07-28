@@ -242,6 +242,8 @@ namespace rouen::cards {
             return "pomodoro";
         }
 
+        bool has_video_overlay() const override { return true; }
+
         void render_video_ui() override {
             auto const now = std::chrono::system_clock::now();
             bool done = is_done(now);

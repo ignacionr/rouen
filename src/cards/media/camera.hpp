@@ -546,6 +546,8 @@ public:
         });
     }
 
+    bool has_video_overlay() const override { return true; }
+
     void render_video_ui() override {
         process_camera_frame();
 

@@ -210,6 +210,8 @@ public:
         });
     }
 
+    bool has_video_overlay() const override { return true; }
+
     void render_video_ui() override {
         if (bound_.body.empty() && bound_.actions.empty()) return;
 
