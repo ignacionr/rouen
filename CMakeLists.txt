@@ -470,6 +470,7 @@ add_executable(${PROJECT_NAME}
   src/cards/information/bybit_registrar.cpp
   src/cards/information/movies_registrar.cpp
   src/cards/information/ai_chat.cpp
+  src/cards/information/rss_item.cpp
   src/models/jira_model_core.cpp
   src/models/jira_model_connection.cpp
   src/models/jira_model_profiles.cpp
