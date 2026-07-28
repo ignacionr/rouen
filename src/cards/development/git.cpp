@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <format>
 #include <map>
+#include <set>
 #include <sstream>
 #include <thread>
 
@@ -164,11 +165,12 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
 
     std::thread([this, repo_path]() {
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
-        std::string cmd = std::format("{} log --since=\"3 months ago\" --format=\"%at\"", git_bin);
+        std::string cmd = std::format("{} log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
         std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
 
         punch_card_info data;
         data.repo_path = repo_path;
+        std::set<std::string> unique_authors;
 
         std::stringstream ss(output);
         std::string line;
@@ -176,41 +178,36 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
             line = trim_copy(line);
             if (line.empty()) continue;
 
+            auto p1 = line.find('|');
+            if (p1 == std::string::npos) continue;
+            auto p2 = line.find('|', p1 + 1);
+            if (p2 == std::string::npos) continue;
+
             try {
-                int64_t ts = std::stoll(line);
-                std::time_t t = static_cast<std::time_t>(ts);
-                std::tm tm_buf{};
-#ifdef _WIN32
-                localtime_s(&tm_buf, &t);
-#else
-                localtime_r(&t, &tm_buf);
-#endif
-                int wday = tm_buf.tm_wday; // 0=Sun..6=Sat
-                int hour = tm_buf.tm_hour; // 0..23
+                int64_t ts = std::stoll(line.substr(0, p1));
+                std::string aname = line.substr(p1 + 1, p2 - (p1 + 1));
+                std::string aemail = line.substr(p2 + 1);
 
-                if (wday >= 0 && wday < 7 && hour >= 0 && hour < 24) {
-                    data.hour_matrix[wday][hour]++;
-                    data.day_of_week_totals[wday]++;
-                    data.hour_totals[hour]++;
-                    data.total_commits++;
-
-                    if (data.hour_matrix[wday][hour] > data.max_commits_per_cell) {
-                        data.max_commits_per_cell = data.hour_matrix[wday][hour];
-                    }
+                if (!aname.empty()) {
+                    unique_authors.insert(aname);
                 }
 
-                char date_buf[32];
-                std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_buf);
-                std::string date_str(date_buf);
-                data.daily_counts[date_str]++;
-                if (data.daily_counts[date_str] > data.max_commits_per_day) {
-                    data.max_commits_per_day = data.daily_counts[date_str];
-                }
+                data.commits.push_back(raw_commit_entry{
+                    .timestamp = ts,
+                    .author_name = aname,
+                    .author_email = aemail
+                });
             } catch (...) {
                 // Ignore conversion errors
             }
         }
 
+        data.author_list = {"All Contributors"};
+        for (const auto& author : unique_authors) {
+            data.author_list.push_back(author);
+        }
+
+        data.recalculate_stats();
         data.loaded = true;
         data.loading = false;
 
@@ -403,6 +400,23 @@ void git::render_punch_card() {
     if (ImGui::CollapsingHeader(ICON_MD_GRID_ON " 3-Month Activity Punch Card", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Spacing();
 
+        if (data.author_list.size() > 1) {
+            ImGui::PushItemWidth(260.0f);
+            int current_idx = data.selected_author_idx;
+            if (ImGui::Combo("Contributor", &current_idx, [](void* data_ptr, int idx, const char** out_text) -> bool {
+                auto& list = *static_cast<const std::vector<std::string>*>(data_ptr);
+                if (idx < 0 || idx >= static_cast<int>(list.size())) return false;
+                *out_text = list[static_cast<size_t>(idx)].c_str();
+                return true;
+            }, const_cast<void*>(static_cast<const void*>(&data.author_list)), static_cast<int>(data.author_list.size()))) {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                punch_card_data_.selected_author_idx = current_idx;
+                punch_card_data_.recalculate_stats();
+            }
+            ImGui::PopItemWidth();
+            ImGui::Spacing();
+        }
+
         constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
         int peak_wday = 0;
@@ -453,13 +467,13 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
     constexpr float label_width = 38.0f;
     constexpr float cell_size = 19.0f;
     constexpr float cell_padding = 2.0f;
-    constexpr float grid_height = 7 * cell_size + 24.0f;
+    constexpr float grid_height = 7.0f * cell_size + 24.0f;
 
     ImGui::Spacing();
     ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    ImGui::Dummy(ImVec2(label_width + 24 * cell_size, grid_height));
+    ImGui::Dummy(ImVec2(label_width + 24.0f * cell_size, grid_height));
 
     for (int w = 0; w < 7; ++w) {
         float wf = static_cast<float>(w);
@@ -473,7 +487,6 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
             ImVec2 cell_min(cursor_pos.x + label_width + hf * cell_size, cursor_pos.y + wf * cell_size);
             ImVec2 cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
 
-            // Draw grid cell background
             draw_list->AddRectFilled(cell_min, cell_max, ImColor(25, 30, 40, 180), 3.0f);
 
             int count = data.hour_matrix[w][h];
@@ -481,7 +494,6 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
                 float relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
                 float radius = 2.5f + 6.0f * std::sqrt(relative_count);
 
-                // Alpha-blending represents relative count smoothly
                 float alpha = 0.35f + 0.65f * relative_count;
                 ImColor circle_color(
                     static_cast<int>(colors[1].x * 255),
@@ -493,7 +505,6 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
                 draw_list->AddCircleFilled(ImVec2(x, y), radius, circle_color, 12);
             }
 
-            // Hover tooltip
             if (ImGui::IsMouseHoveringRect(cell_min, cell_max)) {
                 draw_list->AddRect(cell_min, cell_max, ImColor(255, 255, 255, 200), 3.0f);
                 ImGui::SetTooltip("%s at %02d:00 — %d commit(s)", wday_names[w], h, count);
@@ -501,7 +512,6 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
         }
     }
 
-    // Hour labels under the grid
     float hour_y = cursor_pos.y + 7.0f * cell_size + 4.0f;
     for (int h = 0; h < 24; h += 2) {
         float hf = static_cast<float>(h);
@@ -516,7 +526,6 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
     constexpr float label_width = 38.0f;
     constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-    // Calculate dates for the last 90 days
     std::time_t now_time = std::time(nullptr);
     std::tm now_tm{};
 #ifdef _WIN32
@@ -525,10 +534,8 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
     localtime_r(&now_time, &now_tm);
 #endif
 
-    // Get date 90 days ago
     std::time_t start_time = now_time - static_cast<std::time_t>(90 * 86400);
 
-    // Compute layout: 14 weeks x 7 days
     constexpr int num_weeks = 14;
     ImGui::Spacing();
     ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
@@ -536,7 +543,6 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
 
     ImGui::Dummy(ImVec2(label_width + num_weeks * (tile_size + tile_padding), 7.0f * (tile_size + tile_padding) + 10.0f));
 
-    // Day labels (Sun, Tue, Thu, Sat)
     for (int w : {0, 2, 4, 6}) {
         float wf = static_cast<float>(w);
         float y = cursor_pos.y + wf * (tile_size + tile_padding);
@@ -544,7 +550,6 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
             ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
     }
 
-    // Render daily tiles from 90 days ago up to today
     for (int day_offset = 0; day_offset <= 90; ++day_offset) {
         std::time_t day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
         std::tm day_tm{};
@@ -558,7 +563,7 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
         std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &day_tm);
         std::string date_str(date_buf);
 
-        int wday = day_tm.tm_wday; // 0=Sun..6=Sat
+        int wday = day_tm.tm_wday;
         int week_idx = day_offset / 7;
 
         if (week_idx >= num_weeks) continue;
@@ -585,7 +590,6 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
                 ? static_cast<float>(count) / static_cast<float>(data.max_commits_per_day)
                 : 0.2f;
 
-            // Alpha-blending represents relative count smoothly
             float alpha = 0.35f + 0.65f * relative_count;
             tile_color = ImColor(
                 static_cast<int>(colors[1].x * 255),
@@ -602,6 +606,301 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
             ImGui::SetTooltip("%s: %d commit(s)", date_str.c_str(), count);
         }
     }
+}
+
+void git::render_video_ui() {
+    if (selected_repo.empty()) {
+        return;
+    }
+
+    punch_card_info data;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        data = punch_card_data_;
+    }
+
+    constexpr float win_width = 720.0f;
+    constexpr float win_height = 420.0f;
+    constexpr float margin_right = 60.0f;
+    constexpr float margin_top = 80.0f;
+
+    ImVec2 window_pos(1920.0f - win_width - margin_right, margin_top);
+
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(win_width, win_height), ImGuiCond_Always);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.09f, 0.14f, 0.90f));
+    ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
+
+    std::string window_title = std::format("Git Video Overlay: {}##CastGitOverlay", std::filesystem::path(selected_repo).filename().string());
+
+    if (ImGui::Begin(window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
+        ImGui::TextColored(colors[0], "%s Git Card Video Overlay", ICON_MD_CODE);
+        ImGui::SameLine();
+        ImGui::TextDisabled("— %s", std::filesystem::path(selected_repo).filename().string().c_str());
+        ImGui::Separator();
+
+        constexpr float slide_duration = 6.0f;
+        constexpr float transition_duration = 0.8f;
+        constexpr int num_slides = 3;
+
+        float current_time = static_cast<float>(ImGui::GetTime());
+        float cycle_time = std::fmod(current_time, slide_duration * static_cast<float>(num_slides));
+        int current_slide = static_cast<int>(cycle_time / slide_duration) % num_slides;
+        float slide_elapsed = std::fmod(cycle_time, slide_duration);
+
+        int next_slide = (current_slide + 1) % num_slides;
+        float t = 0.0f;
+        if (slide_elapsed > (slide_duration - transition_duration)) {
+            float raw_t = (slide_elapsed - (slide_duration - transition_duration)) / transition_duration;
+            t = raw_t * raw_t * (3.0f - 2.0f * raw_t);
+        }
+
+        ImVec2 content_pos = ImGui::GetCursorScreenPos();
+        ImVec2 content_size(win_width - 32.0f, win_height - 85.0f);
+
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+        draw_list->PushClipRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y), true);
+
+        // Render current slide
+        ImVec2 pos1(content_pos.x - t * content_size.x, content_pos.y);
+        if (current_slide == 0) {
+            render_video_slide_overview(data, pos1, content_size);
+        } else if (current_slide == 1) {
+            render_video_slide_matrix(data, pos1, content_size);
+        } else {
+            render_video_slide_heatmap(data, pos1, content_size);
+        }
+
+        // Render next slide during transition
+        if (t > 0.001f) {
+            ImVec2 pos2(content_pos.x + (1.0f - t) * content_size.x, content_pos.y);
+            if (next_slide == 0) {
+                render_video_slide_overview(data, pos2, content_size);
+            } else if (next_slide == 1) {
+                render_video_slide_matrix(data, pos2, content_size);
+            } else {
+                render_video_slide_heatmap(data, pos2, content_size);
+            }
+        }
+
+        draw_list->PopClipRect();
+
+        // Carousel progress bar & dots
+        ImGui::SetCursorScreenPos(ImVec2(content_pos.x, content_pos.y + content_size.y + 4.0f));
+        ImGui::Separator();
+        
+        constexpr const char* slide_titles[] = {"1/3 Overview", "2/3 Matrix Graph", "3/3 90-Day Heatmap"};
+        ImGui::TextColored(colors[1], "%s %s", ICON_MD_SLIDESHOW, slide_titles[current_slide]);
+
+        ImVec2 dot_start(content_pos.x + content_size.x - 60.0f, content_pos.y + content_size.y + 12.0f);
+        for (int i = 0; i < num_slides; ++i) {
+            ImVec2 dot_pos(dot_start.x + static_cast<float>(i) * 16.0f, dot_start.y);
+            bool is_active = (i == current_slide);
+            ImColor dot_color = is_active ? ImColor(colors[1]) : ImColor(100, 110, 130, 150);
+            draw_list->AddCircleFilled(dot_pos, is_active ? 4.5f : 3.0f, dot_color);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
+}
+
+void git::render_video_slide_overview(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::BeginGroup();
+
+    ImGui::TextColored(colors[0], "%s Repository General Overview", ICON_MD_INFO);
+    ImGui::Spacing();
+
+    std::string repo_filename = std::filesystem::path(selected_repo).filename().string();
+    ImGui::Text("Repository: %s", repo_filename.c_str());
+    ImGui::TextDisabled("Path: %s", selected_repo.c_str());
+
+    rouen::models::GitRepoStatus status = git_model->getRepoStatus(selected_repo);
+    ImColor status_color = getStatusColor(status);
+    ImGui::Text("Status: ");
+    ImGui::SameLine();
+    ImGui::TextColored(status_color, "%s", git_status_to_string(status).c_str());
+
+    if (!cached_github_repo_name.empty()) {
+        ImGui::TextColored(colors[1], "GitHub: %s", cached_github_repo_name.c_str());
+    }
+
+    if (data.selected_author_idx >= 0 && data.selected_author_idx < static_cast<int>(data.author_list.size())) {
+        ImGui::TextColored(colors[1], "Contributor Filter: %s", data.author_list[static_cast<size_t>(data.selected_author_idx)].c_str());
+    }
+
+    ImGui::Spacing();
+    ImGui::TextColored(colors[0], "Activity Summary (Last 90 Days):");
+    ImGui::BulletText("Filtered Commits: %d", data.total_commits);
+
+    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    int peak_wday = 0, peak_wday_count = -1;
+    for (int w = 0; w < 7; ++w) {
+        if (data.day_of_week_totals[w] > peak_wday_count) {
+            peak_wday_count = data.day_of_week_totals[w];
+            peak_wday = w;
+        }
+    }
+
+    int peak_hour = 0, peak_hour_count = -1;
+    for (int h = 0; h < 24; ++h) {
+        if (data.hour_totals[h] > peak_hour_count) {
+            peak_hour_count = data.hour_totals[h];
+            peak_hour = h;
+        }
+    }
+
+    if (data.total_commits > 0) {
+        ImGui::BulletText("Most Active Day: %s (%d commits)", wday_names[peak_wday], peak_wday_count);
+        ImGui::BulletText("Most Active Hour: %02d:00 (%d commits)", peak_hour, peak_hour_count);
+        ImGui::BulletText("Active Days: %zu / 90 days", data.daily_counts.size());
+    } else {
+        ImGui::TextDisabled("No commit activity recorded for selected contributor.");
+    }
+
+    ImGui::EndGroup();
+}
+
+void git::render_video_slide_matrix(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::BeginGroup();
+
+    ImGui::TextColored(colors[0], "%s Commit Matrix (Day of Week x Hour of Day)", ICON_MD_SCHEDULE);
+    ImGui::Spacing();
+
+    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    constexpr float label_width = 38.0f;
+    constexpr float cell_size = 20.0f;
+    constexpr float cell_padding = 2.0f;
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
+
+    for (int w = 0; w < 7; ++w) {
+        float wf = static_cast<float>(w);
+        float y = grid_pos.y + wf * cell_size + cell_size * 0.5f;
+        draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 6.0f),
+            ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
+
+        for (int h = 0; h < 24; ++h) {
+            float hf = static_cast<float>(h);
+            float x = grid_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
+            ImVec2 cell_min(grid_pos.x + label_width + hf * cell_size, grid_pos.y + wf * cell_size);
+            ImVec2 cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
+
+            draw_list->AddRectFilled(cell_min, cell_max, ImColor(25, 30, 40, 180), 3.0f);
+
+            int count = data.hour_matrix[w][h];
+            if (count > 0 && data.max_commits_per_cell > 0) {
+                float relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
+                float radius = 2.5f + 6.5f * std::sqrt(relative_count);
+
+                float alpha = 0.35f + 0.65f * relative_count;
+                ImColor circle_color(
+                    static_cast<int>(colors[1].x * 255),
+                    static_cast<int>(colors[1].y * 255),
+                    static_cast<int>(colors[1].z * 255),
+                    static_cast<int>(alpha * 255)
+                );
+
+                draw_list->AddCircleFilled(ImVec2(x, y), radius, circle_color, 12);
+            }
+        }
+    }
+
+    float hour_y = grid_pos.y + 7.0f * cell_size + 4.0f;
+    for (int h = 0; h < 24; h += 2) {
+        float hf = static_cast<float>(h);
+        float x = grid_pos.x + label_width + hf * cell_size;
+        draw_list->AddText(ImVec2(x, hour_y), ImGui::GetColorU32(ImGuiCol_TextDisabled), std::format("{:02d}", h).c_str());
+    }
+
+    ImGui::EndGroup();
+}
+
+void git::render_video_slide_heatmap(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::BeginGroup();
+
+    ImGui::TextColored(colors[0], "%s 90-Day Contribution Heatmap", ICON_MD_CALENDAR_VIEW_MONTH);
+    ImGui::Spacing();
+
+    constexpr float tile_size = 18.0f;
+    constexpr float tile_padding = 4.0f;
+    constexpr float label_width = 38.0f;
+    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
+    std::time_t now_time = std::time(nullptr);
+    std::time_t start_time = now_time - static_cast<std::time_t>(90 * 86400);
+
+    constexpr int num_weeks = 14;
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
+
+    for (int w : {0, 2, 4, 6}) {
+        float wf = static_cast<float>(w);
+        float y = grid_pos.y + wf * (tile_size + tile_padding);
+        draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 2.0f),
+            ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
+    }
+
+    for (int day_offset = 0; day_offset <= 90; ++day_offset) {
+        std::time_t day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
+        std::tm day_tm{};
+#ifdef _WIN32
+        localtime_s(&day_tm, &day_time);
+#else
+        localtime_r(&day_time, &day_tm);
+#endif
+
+        char date_buf[32];
+        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &day_tm);
+        std::string date_str(date_buf);
+
+        int wday = day_tm.tm_wday;
+        int week_idx = day_offset / 7;
+
+        if (week_idx >= num_weeks) continue;
+
+        float week_idxf = static_cast<float>(week_idx);
+        float wdayf = static_cast<float>(wday);
+
+        ImVec2 tile_min(
+            grid_pos.x + label_width + week_idxf * (tile_size + tile_padding),
+            grid_pos.y + wdayf * (tile_size + tile_padding)
+        );
+        ImVec2 tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
+
+        int count = 0;
+        if (auto it = data.daily_counts.find(date_str); it != data.daily_counts.end()) {
+            count = it->second;
+        }
+
+        ImColor tile_color;
+        if (count == 0) {
+            tile_color = ImColor(25, 30, 40, 120);
+        } else {
+            float relative_count = (data.max_commits_per_day > 0)
+                ? static_cast<float>(count) / static_cast<float>(data.max_commits_per_day)
+                : 0.2f;
+
+            float alpha = 0.35f + 0.65f * relative_count;
+            tile_color = ImColor(
+                static_cast<int>(colors[1].x * 255),
+                static_cast<int>(colors[1].y * 255),
+                static_cast<int>(colors[1].z * 255),
+                static_cast<int>(alpha * 255)
+            );
+        }
+
+        draw_list->AddRectFilled(tile_min, tile_max, tile_color, 3.0f);
+    }
+
+    ImGui::EndGroup();
 }
 
 bool git::render() {
