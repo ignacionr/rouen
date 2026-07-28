@@ -1019,11 +1019,15 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
             ImGui::TextUnformatted(title.data(), title.data() + title.size());
             double current_pos = item.get_current_position();
             double current_dur = item.duration.load();
-            if (current_pos > 0 && current_dur > 0) {
+            if (current_dur > 0 && current_dur > current_pos) {
                 ImGui::TextColored(info_color, "%s: %s / %s",
                     item.is_paused.load() ? "Paused" : "Playing",
                     item.formatTime(current_pos).c_str(),
                     item.formatTime(current_dur).c_str());
+            } else if (current_pos >= 0) {
+                ImGui::TextColored(info_color, "%s: %s",
+                    item.is_paused.load() ? "Paused" : "Playing",
+                    item.formatTime(current_pos).c_str());
             }
             int vol = item.volume.load();
             ImGui::Text("Volume");
@@ -1039,8 +1043,8 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 item.stopMedia();
             }
             ImGui::SameLine();
-            if (current_dur > 0) {
-                float progress = current_pos > 0 && current_dur > 0 ? 
+            if (current_dur > 0 && current_dur > current_pos) {
+                float progress = current_pos > 0 ? 
                     static_cast<float>(current_pos / current_dur) : 0.0f;
                 progress = std::max(0.0f, std::min(1.0f, progress));
                 float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
@@ -1055,7 +1059,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 }
             } else {
                 float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
-                ImGui::ProgressBar(0.0f, ImVec2(remaining_w, 0), "Loading...");
+                ImGui::ProgressBar(0.0f, ImVec2(remaining_w, 0), item.is_playing ? "Streaming..." : "Loading...");
             }
 
             ImTextureID tex = item.get_texture_id();

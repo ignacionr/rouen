@@ -370,7 +370,7 @@ namespace rouen::cards
                             if (player_item->player_pid > 0 && !player_item->is_paused.load()) {
                                 found_playing = true;
                                 active_url = media_url;
-                                active_pos = player_item->position.load();
+                                active_pos = player_item->get_current_position();
                                 active_dur = player_item->duration.load();
                                 break;
                             }

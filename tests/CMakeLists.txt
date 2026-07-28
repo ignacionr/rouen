@@ -180,6 +180,25 @@ target_link_libraries(test_rss_watermark
 )
 add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 
+# Audio Time Progression Test
+add_gtest_rss_executable(test_audio_time_progression test_audio_time_progression.cpp)
+target_sources(test_audio_time_progression PRIVATE 
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/config_service.cpp
+)
+target_link_libraries(test_audio_time_progression 
+    PRIVATE 
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    imgui::imgui
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+)
+add_test(NAME AudioTimeProgressionTest COMMAND test_audio_time_progression)
+
 # Objectives Test
 add_gtest_executable(test_objectives test_objectives.cpp)
 target_link_libraries(test_objectives 
