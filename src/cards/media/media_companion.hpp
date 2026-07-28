@@ -562,9 +562,10 @@ namespace rouen::cards {
 
                 auto fetch_sub_file = [&](const std::string& cargs) -> std::filesystem::path {
                     std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
-                    std::string cmd = std::format("\"{}\" -q --no-warnings --remote-components ejs:github{} --skip-download --write-sub --write-auto-sub "
+                    std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github" : "";
+                    std::string cmd = std::format("\"{}\" -q --no-warnings {}{} --skip-download --write-sub --write-auto-sub "
                                                   "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
-                                                  ytdlp_path, extra_flags, out_prefix, detected_url);
+                                                  ytdlp_path, remote_flag, extra_flags, out_prefix, detected_url);
                     ProcessHelper::executeCommand(cmd);
                     try {
                         for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {

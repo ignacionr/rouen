@@ -6,6 +6,8 @@
 #include <sstream>
 #include <cstdio>
 #include <iostream>
+#include <mutex>
+#include <unordered_map>
 #include "debug.hpp"
 #include "platform_utils.hpp"
 
@@ -60,5 +62,27 @@ namespace ProcessHelper {
     inline std::string executeCommandInDirectory(const std::string& directory, const std::string& command) {
         std::string fullCommand = "cd \"" + directory + "\" && " + command;
         return executeCommand(fullCommand);
+    }
+
+    /**
+     * Check if a given yt-dlp executable supports the --remote-components option.
+     * Caches the result to avoid invoking the process repeatedly.
+     */
+    inline bool ytdlp_supports_remote_components(const std::string& ytdlp_path) {
+        static std::mutex mutex;
+        static std::unordered_map<std::string, bool> cache;
+        
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = cache.find(ytdlp_path);
+        if (it != cache.end()) {
+            return it->second;
+        }
+        
+        // Execute a quick check command (redirecting stderr to stdout)
+        std::string test_cmd = std::format("\"{}\" --help 2>&1", ytdlp_path);
+        std::string help_output = executeCommand(test_cmd);
+        bool supported = (help_output.find("--remote-components") != std::string::npos);
+        cache[ytdlp_path] = supported;
+        return supported;
     }
 }

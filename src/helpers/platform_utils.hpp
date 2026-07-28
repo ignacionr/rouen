@@ -540,16 +540,10 @@ namespace rouen::platform
         // Windows common paths can be added here if needed
 #else
         // macOS / Linux common paths
-        search_dirs.push_back("/usr/bin");
-        search_dirs.push_back("/bin");
-        search_dirs.push_back("/usr/sbin");
-        search_dirs.push_back("/sbin");
-        search_dirs.push_back("/usr/local/bin");
-        search_dirs.push_back("/opt/homebrew/bin");
-        
-        // Nix profile paths
+        // User local binary paths first (highly likely to have modern hermetic or user-installed environments)
         std::string home_dir = get_env("HOME");
         if (!home_dir.empty()) {
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
             search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
         }
         search_dirs.push_back("/nix/var/nix/profiles/default/bin");
@@ -558,6 +552,16 @@ namespace rouen::platform
         if (!user_env.empty()) {
             search_dirs.push_back(std::filesystem::path("/nix/var/nix/profiles/per-user") / user_env / "profile" / "bin");
         }
+
+        // Homebrew paths next
+        search_dirs.push_back("/opt/homebrew/bin");
+        search_dirs.push_back("/usr/local/bin");
+
+        // Standard system paths last
+        search_dirs.push_back("/usr/bin");
+        search_dirs.push_back("/bin");
+        search_dirs.push_back("/usr/sbin");
+        search_dirs.push_back("/sbin");
 #endif
         
         // Search each directory for the executable
