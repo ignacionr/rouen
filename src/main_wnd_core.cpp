@@ -35,7 +35,14 @@ main_wnd::main_wnd()
 }
 
 main_wnd::~main_wnd() {
-    // Cleanup ImGui only if it was properly initialized
+    // Destroy secondary/detached ImGui context before main ImGui shutdown
+    if (m_detached_imgui_ctx) {
+        ImGui::SetCurrentContext(m_detached_imgui_ctx);
+        ImGui::DestroyContext(m_detached_imgui_ctx);
+        m_detached_imgui_ctx = nullptr;
+    }
+
+    // Cleanup ImGui main context and backends
     if (m_imgui_renderer_initialized) {
         ImGui_ImplSDLGPU3_Shutdown();
     }
@@ -60,10 +67,6 @@ main_wnd::~main_wnd() {
     if (m_device) {
         TextureHelper::shutdown();
         SDL_DestroyGPUDevice(m_device);
-    }
-    if (m_detached_imgui_ctx) {
-        ImGui::DestroyContext(m_detached_imgui_ctx);
-        m_detached_imgui_ctx = nullptr;
     }
     if (m_detached_window) {
         SDL_DestroyWindow(m_detached_window);

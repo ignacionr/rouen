@@ -558,8 +558,12 @@ void main_wnd::process_detached_window() {
     if (!detached_item) {
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
+                ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+                if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
+                ImGui::SetCurrentContext(m_detached_imgui_ctx);
                 ImGui::DestroyContext(m_detached_imgui_ctx);
                 m_detached_imgui_ctx = nullptr;
+                if (main_ctx) ImGui::SetCurrentContext(main_ctx);
             }
             SDL_DestroyWindow(m_detached_window);
             m_detached_window = nullptr;
@@ -573,8 +577,12 @@ void main_wnd::process_detached_window() {
         media_player::clear_detached_item();
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
+                ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+                if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
+                ImGui::SetCurrentContext(m_detached_imgui_ctx);
                 ImGui::DestroyContext(m_detached_imgui_ctx);
                 m_detached_imgui_ctx = nullptr;
+                if (main_ctx) ImGui::SetCurrentContext(main_ctx);
             }
             SDL_DestroyWindow(m_detached_window);
             m_detached_window = nullptr;

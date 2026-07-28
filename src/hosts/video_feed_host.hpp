@@ -686,11 +686,15 @@ private:
         if (video_imgui_ctx_) {
             ImGuiContext* orig_ctx = ImGui::GetCurrentContext();
             if (orig_ctx == video_imgui_ctx_) {
-                ImGui::SetCurrentContext(nullptr);
+                orig_ctx = nullptr;
             }
+            ImGui::SetCurrentContext(video_imgui_ctx_);
             video_imgui_ctx_->FontAtlasOwnedByContext = false;
             ImGui::DestroyContext(video_imgui_ctx_);
             video_imgui_ctx_ = nullptr;
+            if (orig_ctx) {
+                ImGui::SetCurrentContext(orig_ctx);
+            }
         }
         if (offscreen_texture_ || download_buffer_) {
             SDL_GPUDevice* device = nullptr;
