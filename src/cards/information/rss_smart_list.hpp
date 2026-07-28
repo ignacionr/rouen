@@ -66,7 +66,7 @@ namespace rouen::cards
             if (!rss_host)
                 return;
 
-            auto lists = rss_host->getSmartLists();
+            auto lists = rss_host->get_smart_lists();
             auto it = std::find_if(lists.begin(), lists.end(), [this](const auto& sl) {
                 return sl.title == smart_list_title;
             });
@@ -76,7 +76,7 @@ namespace rouen::cards
             } else {
                 filter.op = "AND";
                 filter.conditions.clear();
-                rss_host->saveSmartList(smart_list_title, filter);
+                rss_host->save_smart_list(smart_list_title, filter);
             }
 
             items_limit = 20;
@@ -84,7 +84,7 @@ namespace rouen::cards
 
             std::jthread([this, filter_copy = filter]() {
                 try {
-                    auto loaded_items = rss_host->getFilteredItems(filter_copy);
+                    auto loaded_items = rss_host->get_filtered_items(filter_copy);
                     std::lock_guard<std::mutex> lock(items_mutex_);
                     pending_items_ = std::move(loaded_items);
                     items_loaded_ = true;
@@ -578,11 +578,11 @@ namespace rouen::cards
 
             if (ImGui::Button(ICON_MD_SAVE " Save Filters")) {
                 if (new_title_buffer != smart_list_title && !new_title_buffer.empty()) {
-                    rss_host->deleteSmartList(smart_list_title);
+                    rss_host->delete_smart_list(smart_list_title);
                     smart_list_title = new_title_buffer;
                     name(std::format("{} - Smart List", smart_list_title));
                 }
-                rss_host->saveSmartList(smart_list_title, filter);
+                rss_host->save_smart_list(smart_list_title, filter);
                 is_editing = false;
                 loadSmartList();
             }
@@ -606,7 +606,7 @@ namespace rouen::cards
                 ImGui::Separator();
                 
                 if (ImGui::Button("Yes, Delete", ImVec2(120, 0))) {
-                    rss_host->deleteSmartList(smart_list_title);
+                    rss_host->delete_smart_list(smart_list_title);
                     should_close = true;
                     ImGui::CloseCurrentPopup();
                 }

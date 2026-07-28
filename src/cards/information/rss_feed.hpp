@@ -163,7 +163,7 @@ namespace rouen::cards
                 return;
 
             // Get feed information
-            auto feed_info = rss_host->getFeedInfo(feed_id);
+            auto feed_info = rss_host->get_feed_info(feed_id);
             if (!feed_info)
                 return;
 
@@ -180,7 +180,7 @@ namespace rouen::cards
             // Load feed items asynchronously to prevent UI thread blocking
             std::jthread([this, f_id = feed_id]() {
                 try {
-                    auto loaded_items = rss_host->getFeedItems(f_id, 100); // Limit to 100 items by default
+                    auto loaded_items = rss_host->get_feed_items(f_id, 100); // Limit to 100 items by default
                     std::lock_guard<std::mutex> lock(items_mutex_);
                     pending_items_ = std::move(loaded_items);
                     items_loaded_ = true;
@@ -282,12 +282,12 @@ namespace rouen::cards
             {
                 std::lock_guard<std::mutex> lock(ai_tags_mutex_);
                 if (!pending_ai_tags_.empty()) {
-                    auto current = rss_host->getFeedTags(feed_id);
+                    auto current = rss_host->get_feed_tags(feed_id);
                     for (const auto& t : current) {
-                        rss_host->removeFeedTag(feed_id, t);
+                        rss_host->remove_feed_tag(feed_id, t);
                     }
                     for (const auto& t : pending_ai_tags_) {
-                        rss_host->addFeedTag(feed_id, t);
+                        rss_host->add_feed_tag(feed_id, t);
                     }
                     pending_ai_tags_.clear();
                 }
@@ -337,7 +337,7 @@ namespace rouen::cards
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.9f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x, colors[0].y, colors[0].z, 1.0f));
                     if (ImGui::Button(refresh_in_progress_.load() ? ICON_MD_REFRESH "..." : ICON_MD_REFRESH) && !refresh_in_progress_.load()) {
-                        refreshFeed();
+                        refresh_feed();
                     }
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip(refresh_in_progress_.load() ? "Refreshing feed..." : "Refresh feed");
@@ -427,7 +427,7 @@ namespace rouen::cards
                             for (const auto& [code, label] : languages) {
                                 bool is_selected = (code == current_lang);
                                 if (ImGui::Selectable(label.c_str(), is_selected)) {
-                                    rss_host->setFeedLanguage(feed_id, code);
+                                    rss_host->set_feed_language(feed_id, code);
                                     update_cached_feed_metadata(true);
                                 }
                                 if (is_selected) {
@@ -474,9 +474,9 @@ namespace rouen::cards
                             std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
                             if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
                                 if (has_tag) {
-                                    rss_host->addFeedTag(feed_id, tag_name);
+                                    rss_host->add_feed_tag(feed_id, tag_name);
                                 } else {
-                                    rss_host->removeFeedTag(feed_id, tag_name);
+                                    rss_host->remove_feed_tag(feed_id, tag_name);
                                 }
                                 update_cached_feed_metadata(true);
                             }
@@ -503,7 +503,7 @@ namespace rouen::cards
                                 return !std::isspace(ch);
                             }).base(), tag_to_add.end());
                             if (!tag_to_add.empty()) {
-                                rss_host->addFeedTag(feed_id, tag_to_add);
+                                rss_host->add_feed_tag(feed_id, tag_to_add);
                                 new_tag_buffer[0] = '\0';
                             }
                         }
@@ -541,7 +541,7 @@ namespace rouen::cards
                             
                             if (ImGui::Button("Delete", ImVec2(120.0f * dpi_scale, 0))) {
                                 if (rss_host) {
-                                    rss_host->deleteFeed(feed_url);
+                                    rss_host->delete_feed(feed_url);
                                 }
                                 should_close = true;
                                 ImGui::CloseCurrentPopup();
@@ -979,7 +979,7 @@ namespace rouen::cards
             return std::format("rss-feed:{}", feed_id);
         }
 
-        void refreshFeed()
+        void refresh_feed()
         {
             try
             {
@@ -998,7 +998,7 @@ namespace rouen::cards
 
                 std::jthread([this, f_id = feed_id, f_title = feed_title, f_url = feed_url]() {
                     try {
-                        if (rss_host && rss_host->refreshFeed(f_id))
+                        if (rss_host && rss_host->refresh_feed(f_id))
                         {
                             // Load the updated feed items
                             loadFeed();
@@ -1063,9 +1063,9 @@ namespace rouen::cards
             if (force || cached_available_tags_.empty() || std::chrono::duration_cast<std::chrono::seconds>(now - last_metadata_cache_time_).count() >= 2) {
                 last_metadata_cache_time_ = now;
                 if (rss_host && feed_id >= 0) {
-                    cached_feed_language_ = rss_host->getFeedLanguage(feed_id);
-                    cached_feed_tags_ = rss_host->getFeedTags(feed_id);
-                    cached_available_tags_ = rss_host->getAvailableTags();
+                    cached_feed_language_ = rss_host->get_feed_language(feed_id);
+                    cached_feed_tags_ = rss_host->get_feed_tags(feed_id);
+                    cached_available_tags_ = rss_host->get_available_tags();
                     std::sort(cached_available_tags_.begin(), cached_available_tags_.end());
                 }
             }
@@ -1115,7 +1115,7 @@ namespace rouen::cards
                         feed_info
                     );
                     
-                    std::vector<std::string> all_tags = rss_host->getAvailableTags();
+                    std::vector<std::string> all_tags = rss_host->get_available_tags();
                     for (const auto& tag : all_tags) {
                         prompt += std::format("- {}\n", tag);
                     }
@@ -1217,7 +1217,7 @@ namespace rouen::cards
                     add_item_feedback = "Please enter a URL.";
                     add_item_feedback_success = false;
                 } else {
-                    const bool added = rss_host && rss_host->addFeedItem(feed_id, manual_item_url_buffer);
+                    const bool added = rss_host && rss_host->add_feed_item(feed_id, manual_item_url_buffer);
                     if (added) {
                         add_item_feedback = "Item added to feed.";
                         add_item_feedback_success = true;
@@ -1255,7 +1255,7 @@ namespace rouen::cards
         }
 
         std::pair<std::string, std::string> detect_language_and_select_voice(std::string_view text, std::string_view url) {
-            std::string manual_lang = rss_host->getFeedLanguage(feed_id);
+            std::string manual_lang = rss_host->get_feed_language(feed_id);
             if (manual_lang == "en") return {"en", ""}; // Use system default high-quality voice for English
             if (manual_lang == "es") return {"es", "Mónica"};
             if (manual_lang == "fr") return {"fr", "Flo"};

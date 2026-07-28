@@ -263,7 +263,7 @@ public:
                     ImGui::SetTooltip("Next auto-refresh in %02d:%02d\nDouble-click to refresh now", minutes, seconds);
                     
                     if (ImGui::IsMouseDoubleClicked(0)) {
-                        rss_host->triggerManualRefresh();
+                        rss_host->trigger_manual_refresh();
                     }
                 }
                 
@@ -275,9 +275,9 @@ public:
             if (cached_all_feeds_.empty() || std::chrono::duration_cast<std::chrono::seconds>(cache_now - last_gallery_cache_update_time_).count() >= 20) {
                 last_gallery_cache_update_time_ = cache_now;
                 cached_all_feeds_ = rss_host->feeds();
-                cached_smart_lists_ = rss_host->getSmartLists();
+                cached_smart_lists_ = rss_host->get_smart_lists();
                 
-                std::vector<std::string> avail_tags = rss_host->getAvailableTags();
+                std::vector<std::string> avail_tags = rss_host->get_available_tags();
                 std::unordered_map<std::string, int> tag_counts;
                 for (const auto& feed : cached_all_feeds_) {
                     if (feed) {
@@ -548,7 +548,7 @@ public:
                     
                     // Calculate top 4 fresh tags (excluding "All")
                     std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> tag_freshness;
-                    std::vector<std::string> all_possible_tags = rss_host->getAvailableTags();
+                    std::vector<std::string> all_possible_tags = rss_host->get_available_tags();
                     
                     for (const auto& tag : all_possible_tags) {
                         if (tag == "All") continue;
@@ -612,7 +612,7 @@ public:
                                 }
                             }
 
-                            auto raw_matching_items = rss_host->searchItems(search_text);
+                            auto raw_matching_items = rss_host->search_items(search_text);
                             cached_matching_items_.clear();
                             if (selected_tag_ == "All") {
                                 cached_matching_items_ = std::move(raw_matching_items);
@@ -1017,7 +1017,7 @@ public:
     bool addFeed(const std::string& url) {
         try {
             // Use the RSSHost controller to add the feed
-            return rss_host->addFeed(url);
+            return rss_host->add_feed(url);
         } catch (const std::exception&) {
             // Handle error (could show in UI)
             return false;

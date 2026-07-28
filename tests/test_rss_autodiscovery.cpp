@@ -23,7 +23,7 @@ TEST(RSSAutodiscoveryTest, ExtractRssFromFrequentMilerHtml) {
         </html>
     )";
 
-    std::string rss_url = rouen::hosts::extractRssUrlFromHtml(html, "https://frequentmiler.com");
+    std::string rss_url = rouen::hosts::extract_rss_url_from_html(html, "https://frequentmiler.com");
     EXPECT_EQ(rss_url, "https://frequentmiler.com/feed/");
 }
 
@@ -36,11 +36,11 @@ TEST(RSSAutodiscoveryTest, ResolveRelativeUrl) {
         </html>
     )";
 
-    std::string rss_url = rouen::hosts::extractRssUrlFromHtml(html, "https://daringfireball.net");
+    std::string rss_url = rouen::hosts::extract_rss_url_from_html(html, "https://daringfireball.net");
     EXPECT_EQ(rss_url, "https://daringfireball.net/feeds/main");
 }
 
 TEST(RSSAutodiscoveryTest, ResolveFeedUrlFrequentMilerLive) {
-    std::string resolved = rouen::hosts::resolveFeedUrl("https://frequentmiler.com");
+    std::string resolved = rouen::hosts::resolve_feed_url("https://frequentmiler.com");
     EXPECT_EQ(resolved, "https://frequentmiler.com/feed/");
 }

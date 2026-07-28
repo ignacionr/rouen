@@ -176,7 +176,7 @@ public:
         if (feed_id < 0 || item_link.empty() || !rss_host) return;
         
         // Get the item from the controller
-        auto found_item = rss_host->getFeedItem(feed_id, item_link, item_title);
+        auto found_item = rss_host->get_feed_item(feed_id, item_link, item_title);
         if (!found_item) return;
         
         // Store the item

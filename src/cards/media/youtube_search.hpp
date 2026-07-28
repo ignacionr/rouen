@@ -729,7 +729,7 @@ namespace rouen::cards {
                                 std::string btn_label = std::format("{} Subscribe", ICON_MD_RSS_FEED);
                                 if (ImGui::SmallButton(btn_label.c_str())) {
                                     subscribing_urls.insert(feed_target);
-                                    rss_host->addFeed(feed_target, false);
+                                    rss_host->add_feed(feed_target, false);
                                     update_cached_feeds(true);
                                 }
                                 ImGui::PopStyleColor(3);
