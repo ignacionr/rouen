@@ -9,9 +9,19 @@ double media_player_item::get_speaker_audio_pts() const {
     if (!audio_clock_initialized.load()) {
         return first_audio_pts.load() >= 0.0 ? first_audio_pts.load() : 0.0;
     }
-    double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - audio_callback_time).count();
+    double last_pts = last_audio_pts.load();
+    if (last_pts < 0.0) {
+        return first_audio_pts.load() >= 0.0 ? first_audio_pts.load() : 0.0;
+    }
+    double queue_lag = 0.0;
+    if (local_audio_stream) {
+        int q_bytes = SDL_GetAudioStreamQueued(local_audio_stream);
+        int rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
+        queue_lag = static_cast<double>(q_bytes) / static_cast<double>(static_cast<size_t>(rate) * 2 * sizeof(int16_t));
+    }
+    double current_spk_pts = last_pts - queue_lag;
     double f_a = first_audio_pts.load() >= 0.0 ? first_audio_pts.load() : 0.0;
-    return f_a + elapsed;
+    return std::max(f_a, current_spk_pts);
 }
 
 media_player_item::~media_player_item() {
@@ -680,8 +690,10 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 av_opt_set_int(swr_ctx, "in_sample_rate", audio_codec_ctx->sample_rate, 0);
                 av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", audio_codec_ctx->sample_fmt, 0);
                 
+                int target_rate = audio_codec_ctx->sample_rate > 0 ? audio_codec_ctx->sample_rate : 44100;
+                audio_sample_rate.store(target_rate);
                 av_opt_set_chlayout(swr_ctx, "out_chlayout", &out_layout, 0);
-                av_opt_set_int(swr_ctx, "out_sample_rate", 44100, 0);
+                av_opt_set_int(swr_ctx, "out_sample_rate", target_rate, 0);
                 av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
                 
                 swr_init(swr_ctx);
@@ -1056,10 +1068,10 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
         }
 
         if (video_stream_idx >= 0 && audio_stream_idx >= 0) {
-            // Dual audio/video stream in single container:
-            // Sleep ONLY if BOTH video queue has plenty of frames AND audio queue has plenty of bytes,
-            // OR if video queue is dangerously large.
-            if ((v_q_size >= 60 && queued_audio >= 176400 / 2) || v_q_size >= 90) {
+            // Interleaved audio/video stream in single container:
+            // Sleep ONLY if audio queue has at least 1.5s of buffered audio AND video queue has at least 60 frames.
+            // Never pause demuxing solely on video queue size, as that stops reading audio packets from the container.
+            if (v_q_size >= 60 && queued_audio >= 264600) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
@@ -1174,7 +1186,8 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         for (int i = 0; i < 8; ++i) input_data[i] = frame->data[i];
                         int out_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, input_data, frame->nb_samples);
                         if (out_samples > 0) {
-                            double out_sec = static_cast<double>(out_samples) / 44100.0;
+                            int target_rate = audio_codec_ctx->sample_rate > 0 ? audio_codec_ctx->sample_rate : 44100;
+                            double out_sec = static_cast<double>(out_samples) / static_cast<double>(target_rate);
                             last_audio_pts.store(pts_time + out_sec);
                             size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
                             std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
@@ -1184,13 +1197,17 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 if (push_audio_cb) push_audio_cb(pcm_chunk.data(), pcm_chunk.size());
                             } else {
                                 if (!local_audio_stream) {
-                                    SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                                    SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, target_rate};
                                     local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
                                     if (local_audio_stream) {
                                         SDL_PauseAudioStreamDevice(local_audio_stream);
                                     }
                                 }
                                 if (local_audio_stream) {
+                                    int max_queued = static_cast<int>(static_cast<size_t>(target_rate) * 2 * sizeof(int16_t) / 2); // 0.5s of audio
+                                    while (local_audio_stream && SDL_GetAudioStreamQueued(local_audio_stream) > max_queued && is_playing && !is_paused.load()) {
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                                    }
                                     float vol_factor = static_cast<float>(volume.load()) / 100.0f;
                                     if (vol_factor < 1.0f) {
                                         int16_t* samples = reinterpret_cast<int16_t*>(pcm_chunk.data());

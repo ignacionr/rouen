@@ -84,6 +84,7 @@ struct media_player_item {
     std::atomic<double> initial_pts_offset{0.0};
     std::atomic<double> first_video_pts{-1.0};
     std::atomic<double> first_audio_pts{-1.0};
+    std::atomic<int> audio_sample_rate{44100};
     std::atomic<double> start_offset{0.0};
     mutable std::chrono::steady_clock::time_point playback_start_time{};
     mutable std::chrono::steady_clock::time_point baseline_tp{};
