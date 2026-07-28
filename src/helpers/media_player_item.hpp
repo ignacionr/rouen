@@ -110,6 +110,10 @@ struct media_player_item {
     long long feed_id{-1};
     std::string item_link;
     std::string item_title;
+    std::string rss_image_url;
+    RouenGPUTexture* rss_image_texture{nullptr};
+    int rss_image_width{0};
+    int rss_image_height{0};
     std::optional<double> watermark;
     std::optional<window_rect> last_docked_video_rect;
     bool user_tall_layout{false};

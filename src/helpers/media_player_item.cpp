@@ -90,6 +90,10 @@ void media_player_item::stopMedia() {
             TextureHelper::destroyTexture(video_texture);
             video_texture = nullptr;
         }
+        if (rss_image_texture) {
+            TextureHelper::destroyTexture(rss_image_texture);
+            rss_image_texture = nullptr;
+        }
         if (device && upload_buffer) {
             SDL_ReleaseGPUTransferBuffer(device, upload_buffer);
             upload_buffer = nullptr;
@@ -115,6 +119,9 @@ void media_player_item::stopMedia() {
     frames_dropped.store(0);
     frames_held.store(0);
     audio_clock_initialized.store(false);
+    rss_image_url.clear();
+    rss_image_width = 0;
+    rss_image_height = 0;
 }
 
 std::string media_player_item::urlDecode(const std::string& encoded) {

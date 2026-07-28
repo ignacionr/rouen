@@ -91,6 +91,26 @@ void main_wnd::run() {
                         float win_w = vp->Size.x;
                         float win_h = vp->Size.y;
 
+                        float btn_w = 36.0f;
+                        float btn_h = 36.0f;
+                        float btn_margin = 16.0f;
+
+                        ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+                        bool on_progress_bar = (mouse_pos.y >= win_h - 24.0f);
+                        bool on_detach_button = (mouse_pos.x >= win_w - (btn_w + btn_margin + 4.0f) && mouse_pos.y <= (btn_h + btn_margin + 4.0f));
+
+                        // Hide mouse cursor when hovering the media player content area
+                        if (ImGui::IsWindowHovered() && !on_progress_bar && !on_detach_button) {
+                            ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+                        }
+
+                        // Single click to pause/resume
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                            if (ImGui::IsWindowHovered() && !on_progress_bar && !on_detach_button) {
+                                fs_item->togglePause();
+                            }
+                        }
+
                         ImTextureID tex = fs_item->get_texture_id(m_device);
                         if (tex && fs_item->has_video) {
                             float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
@@ -147,9 +167,6 @@ void main_wnd::run() {
                         }
 
                         // Small icon button to detach media player into a separate OS window
-                        float btn_w = 36.0f;
-                        float btn_h = 36.0f;
-                        float btn_margin = 16.0f;
                         ImGui::SetCursorPos(ImVec2(win_w - btn_w - btn_margin, btn_margin));
                         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.5f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.6f, 1.0f, 0.8f));
@@ -374,8 +391,23 @@ bool main_wnd::process_events() {
             m_immediate = false;
         }
         
+        static bool s_swallowed_escape_down = false;
         while (SDL_PollEvent(&event)) {
             try {
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
+                    if (media_player::has_active_fullscreen_item()) {
+                        media_player::clear_active_fullscreen_item();
+                        s_swallowed_escape_down = true;
+                        continue;
+                    }
+                }
+                if (event.type == SDL_EVENT_KEY_UP && event.key.key == SDLK_ESCAPE) {
+                    if (s_swallowed_escape_down) {
+                        s_swallowed_escape_down = false;
+                        continue;
+                    }
+                }
+
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 
                 if (event.type == SDL_EVENT_QUIT) {

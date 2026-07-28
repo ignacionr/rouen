@@ -1,11 +1,15 @@
 #include "media_player.hpp"
 #include "texture_helper.hpp"
+#include "image_cache.hpp"
+#include "../cards/information/rss.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include <mutex>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <set>
+#include <thread>
 
 std::shared_ptr<media_player_item> media_player::s_active_fullscreen_item{nullptr};
 std::mutex media_player::s_fullscreen_mutex;
@@ -648,7 +652,73 @@ void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float
     ImGui::Dummy(ImVec2(width, height));
 }
 
+static std::shared_ptr<::helpers::ImageCache> get_media_player_image_cache() {
+    static std::mutex cache_mutex;
+    static std::shared_ptr<::helpers::ImageCache> instance;
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    if (!instance) {
+        auto db_path = rouen::platform::get_user_data_path("rss_images.db").string();
+        auto cache_dir = rouen::platform::get_user_data_path("cache/rss_images").string();
+        instance = std::make_shared<::helpers::ImageCache>(db_path, cache_dir, 30);
+    }
+    return instance;
+}
+
 void media_player::draw_full_window_audio_visualization(media_player_item& item, float win_w, float win_h) {
+    // 0. Resolve/load RSS cover art if applicable
+    if (item.feed_id >= 0 && item.rss_image_url.empty()) {
+        auto rss_host = rouen::cards::rss::getHost();
+        if (rss_host) {
+            auto feed_item = rss_host->get_feed_item(item.feed_id, item.item_link, item.item_title);
+            if (feed_item && !feed_item->image_url.empty()) {
+                item.rss_image_url = feed_item->image_url;
+            } else {
+                auto feed_info = rss_host->get_feed_info(item.feed_id);
+                if (feed_info && !feed_info->image_url.empty()) {
+                    item.rss_image_url = feed_info->image_url;
+                }
+            }
+        }
+        if (item.rss_image_url.empty()) {
+            item.rss_image_url = "__none__";
+        }
+    }
+
+    if (!item.rss_image_url.empty() && item.rss_image_url != "__none__" && !item.rss_image_texture) {
+        auto cache = get_media_player_image_cache();
+        if (cache) {
+            int cached_w = 0, cached_h = 0;
+            if (cache->isCached(item.rss_image_url, cached_w, cached_h)) {
+                item.rss_image_texture = cache->getTexture(TextureHelper::g_gpu_device, item.rss_image_url, item.rss_image_width, item.rss_image_height);
+            } else {
+                // Request background download
+                static std::set<std::string> downloading_urls;
+                static std::mutex downloading_mutex;
+                
+                bool already_downloading = false;
+                {
+                    std::lock_guard<std::mutex> lock(downloading_mutex);
+                    if (downloading_urls.contains(item.rss_image_url)) {
+                        already_downloading = true;
+                    } else {
+                        downloading_urls.insert(item.rss_image_url);
+                    }
+                }
+                
+                if (!already_downloading) {
+                    std::thread([cache, url = item.rss_image_url]() {
+                        try {
+                            cache->downloadAndCache(url);
+                        } catch (...) {}
+                        
+                        std::lock_guard<std::mutex> lock(downloading_mutex);
+                        downloading_urls.erase(url);
+                    }).detach();
+                }
+            }
+        }
+    }
+
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     float lvl_l = item.get_vu_level_l();
     float lvl_r = item.get_vu_level_r();
@@ -704,6 +774,80 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
 
         draw_list->AddRectFilled(ImVec2(bx, by_top), ImVec2(bx + bar_w, by_bot), bar_col, 2.0f);
     }
+
+    // 2.5. RSS Cover Art / Fallback Art (Centered in glowing visualizer)
+    float base_art_size = std::min(win_w, win_h) * 0.28f;
+    float art_size = base_art_size + avg_lvl * 30.0f;
+    art_size = std::clamp(art_size, 160.0f, 320.0f);
+    ImVec2 p_min(center.x - art_size * 0.5f, center.y - art_size * 0.5f);
+    ImVec2 p_max(center.x + art_size * 0.5f, center.y + art_size * 0.5f);
+
+    // Subtle drop shadow behind art
+    for (int shadow_ring = 3; shadow_ring >= 1; --shadow_ring) {
+        float offset = static_cast<float>(shadow_ring) * 2.0f;
+        draw_list->AddRect(
+            ImVec2(p_min.x - offset, p_min.y - offset),
+            ImVec2(p_max.x + offset, p_max.y + offset),
+            IM_COL32(0, 0, 0, static_cast<uint8_t>(40 / shadow_ring)),
+            18.0f,
+            0,
+            2.0f
+        );
+    }
+
+    // Background card (solid dark color)
+    draw_list->AddRectFilled(p_min, p_max, IM_COL32(15, 18, 24, 255), 16.0f);
+
+    if (item.rss_image_texture) {
+        ImVec2 uv0(0.0f, 0.0f), uv1(1.0f, 1.0f);
+        if (item.rss_image_width > 0 && item.rss_image_height > 0) {
+            float tex_w = static_cast<float>(item.rss_image_width);
+            float tex_h = static_cast<float>(item.rss_image_height);
+            float target_aspect = 1.0f;
+            float tex_aspect = tex_w / tex_h;
+            if (tex_aspect > target_aspect) {
+                float f = target_aspect / tex_aspect;
+                float c = (1.0f - f) * 0.5f;
+                uv0 = ImVec2(c, 0.0f);
+                uv1 = ImVec2(1.0f - c, 1.0f);
+            } else {
+                float f = tex_aspect / target_aspect;
+                float c = (1.0f - f) * 0.5f;
+                uv0 = ImVec2(0.0f, c);
+                uv1 = ImVec2(1.0f, 1.0f - c);
+            }
+        }
+        draw_list->AddImageRounded(
+            rouen::helpers::texture_id_cast(item.rss_image_texture),
+            p_min,
+            p_max,
+            uv0,
+            uv1,
+            IM_COL32(255, 255, 255, 255),
+            16.0f
+        );
+    } else {
+        // Fallback: gradient background card with RSS or Music Icon
+        draw_list->AddRectFilledMultiColor(
+            p_min,
+            p_max,
+            IM_COL32(32, 44, 72, 255),
+            IM_COL32(20, 24, 36, 255),
+            IM_COL32(16, 20, 28, 255),
+            IM_COL32(28, 38, 60, 255)
+        );
+        
+        const char* icon = (item.feed_id >= 0) ? ICON_MD_RSS_FEED : ICON_MD_MUSIC_NOTE;
+        ImVec2 icon_size = ImGui::CalcTextSize(icon);
+        draw_list->AddText(
+            ImVec2(center.x - icon_size.x * 0.5f, center.y - icon_size.y * 0.5f),
+            IM_COL32(255, 255, 255, 100),
+            icon
+        );
+    }
+
+    // Outer frame/border highlighting the cover art
+    draw_list->AddRect(p_min, p_max, IM_COL32(255, 255, 255, 45), 16.0f, 0, 2.5f);
 
     // 3. Glowing Oscilloscope Wave Line
     constexpr int kWavePoints = 80;
