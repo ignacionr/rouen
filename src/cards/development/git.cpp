@@ -1,4 +1,5 @@
 #include "git.hpp"
+#include "git_overlay.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -165,7 +166,7 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
 
     std::thread([this, repo_path]() {
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
-        std::string cmd = std::format("{} log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
+        std::string cmd = std::format("{} --no-pager log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
         std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
 
         punch_card_info data;
@@ -220,6 +221,172 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
     }).detach();
 }
 
+void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
+    if (repo_path.empty()) return;
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        if (overlay_state_.recent_commits_loaded && overlay_state_.loaded_repo_path == repo_path) {
+            return;
+        }
+        overlay_state_.loading_recent_commits = true;
+        overlay_state_.recent_commits_loaded = false;
+        overlay_state_.loaded_repo_path = repo_path;
+        overlay_state_.recent_commits_7d.clear();
+    }
+
+    std::thread([this, repo_path]() {
+        std::string git_bin = CONFIG_SERVICE()->get_git_path();
+        std::time_t now = std::time(nullptr);
+        std::time_t seven_days_ago = now - static_cast<std::time_t>(7 * 86400);
+
+        std::string cmd = std::format("{} --no-pager log --since=\"{}\" --format=\"%H|%h|%at|%an|%ae|%s\"", git_bin, static_cast<int64_t>(seven_days_ago));
+        std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+
+        std::vector<git_commit_summary> list;
+        std::stringstream ss(output);
+        std::string line;
+        while (std::getline(ss, line)) {
+            line = trim_copy(line);
+            if (line.empty()) continue;
+
+            size_t p1 = line.find('|');
+            if (p1 == std::string::npos) continue;
+            size_t p2 = line.find('|', p1 + 1);
+            if (p2 == std::string::npos) continue;
+            size_t p3 = line.find('|', p2 + 1);
+            if (p3 == std::string::npos) continue;
+            size_t p4 = line.find('|', p3 + 1);
+            if (p4 == std::string::npos) continue;
+            size_t p5 = line.find('|', p4 + 1);
+            if (p5 == std::string::npos) continue;
+
+            git_commit_summary item;
+            item.hash = line.substr(0, p1);
+            item.short_hash = line.substr(p1 + 1, p2 - (p1 + 1));
+            try {
+                item.timestamp = std::stoll(line.substr(p2 + 1, p3 - (p2 + 1)));
+            } catch (...) {
+                item.timestamp = 0;
+            }
+            item.author_name = line.substr(p3 + 1, p4 - (p3 + 1));
+            item.author_email = line.substr(p4 + 1, p5 - (p4 + 1));
+            item.summary = line.substr(p5 + 1);
+
+            std::time_t t = static_cast<std::time_t>(item.timestamp);
+            std::tm tm_buf{};
+#ifdef _WIN32
+            localtime_s(&tm_buf, &t);
+#else
+            localtime_r(&t, &tm_buf);
+#endif
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tm_buf);
+            item.date_str = buf;
+
+            list.push_back(std::move(item));
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            if (selected_repo == repo_path) {
+                overlay_state_.recent_commits_7d = std::move(list);
+                overlay_state_.loading_recent_commits = false;
+                overlay_state_.recent_commits_loaded = true;
+            }
+        }
+    }).detach();
+}
+
+void git::fetch_commit_detail_async(const std::string& repo_path, const std::string& commit_hash) {
+    if (repo_path.empty() || commit_hash.empty()) return;
+
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        if (overlay_state_.selected_commit_detail.loaded && overlay_state_.selected_commit_detail.hash == commit_hash) {
+            return;
+        }
+        overlay_state_.loading_commit_detail = true;
+        overlay_state_.selected_commit_detail = git_commit_detail{};
+        overlay_state_.selected_commit_detail.hash = commit_hash;
+    }
+
+    std::thread([this, repo_path, commit_hash]() {
+        std::string git_bin = CONFIG_SERVICE()->get_git_path();
+        std::string cmd = std::format("{} --no-pager show --stat --format=\"%H%n%h%n%at%n%an%n%ae%n%B%n---END_HEADER---\" {}", git_bin, commit_hash);
+        std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+
+        git_commit_detail detail;
+        detail.hash = commit_hash;
+
+        std::stringstream ss(output);
+        std::string line;
+        std::vector<std::string> header_lines;
+
+        for (int i = 0; i < 5 && std::getline(ss, line); ++i) {
+            header_lines.push_back(trim_copy(line));
+        }
+
+        if (header_lines.size() >= 5) {
+            detail.hash = header_lines[0];
+            detail.short_hash = header_lines[1];
+            try {
+                detail.timestamp = std::stoll(header_lines[2]);
+            } catch (...) {
+                detail.timestamp = 0;
+            }
+            detail.author_name = header_lines[3];
+            detail.author_email = header_lines[4];
+
+            std::time_t t = static_cast<std::time_t>(detail.timestamp);
+            std::tm tm_buf{};
+#ifdef _WIN32
+            localtime_s(&tm_buf, &t);
+#else
+            localtime_r(&t, &tm_buf);
+#endif
+            char buf[64];
+            std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf);
+            detail.date_str = buf;
+        }
+
+        std::string message_body;
+        while (std::getline(ss, line)) {
+            if (line.rfind("---END_HEADER---", 0) == 0) {
+                break;
+            }
+            if (!message_body.empty()) message_body += "\n";
+            message_body += line;
+        }
+        detail.full_message = trim_copy(message_body);
+
+        std::string raw_stat;
+        while (std::getline(ss, line)) {
+            if (line.empty()) continue;
+            raw_stat += line + "\n";
+            std::string trimmed = trim_copy(line);
+            if (trimmed.find('|') != std::string::npos) {
+                std::string file_part = trim_copy(trimmed.substr(0, trimmed.find('|')));
+                if (!file_part.empty()) {
+                    detail.changed_files.push_back(file_part);
+                }
+            } else if (trimmed.find("changed") != std::string::npos || trimmed.find("insertion") != std::string::npos || trimmed.find("deletion") != std::string::npos) {
+                detail.stats_summary = trimmed;
+            }
+        }
+        detail.raw_stat_text = raw_stat;
+        detail.loaded = true;
+
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            if (selected_repo == repo_path && overlay_state_.selected_commit_hash == commit_hash) {
+                overlay_state_.selected_commit_detail = std::move(detail);
+                overlay_state_.loading_commit_detail = false;
+            }
+        }
+    }).detach();
+}
+
 bool git::select(const std::string& repo_path) {
     if (repo_path.empty()) {
         return false;
@@ -238,9 +405,11 @@ bool git::select(const std::string& repo_path) {
         cached_git_remote.clear();
         cached_github_repo_name.clear();
         punch_card_data_ = punch_card_info{};
+        overlay_state_ = git_overlay_state{};
     }
     trigger_async_status_update();
     fetch_punch_card_async(repo_path);
+    fetch_recent_commits_7d_async(repo_path);
     
     return true;
 }
@@ -253,6 +422,7 @@ void git::back_to_list() {
         cached_git_remote.clear();
         cached_github_repo_name.clear();
         punch_card_data_ = punch_card_info{};
+        overlay_state_ = git_overlay_state{};
     }
     trigger_async_status_update();
 }
@@ -276,6 +446,7 @@ bool git::updateRepoStatusSync() {
 bool git::updateRepoStatus() {
     trigger_async_status_update();
     fetch_punch_card_async(selected_repo);
+    fetch_recent_commits_7d_async(selected_repo);
     return true;
 }
 
@@ -376,6 +547,7 @@ void git::render_selected() {
     }
     
     render_github_status_indicator();
+    render_recent_commits_7d();
     render_punch_card();
 }
 
@@ -613,294 +785,98 @@ void git::render_video_ui() {
         return;
     }
 
-    punch_card_info data;
+    punch_card_info punch_data;
+    rouen::models::GitRepoStatus status;
+    std::string github_repo_name;
+    git_overlay_state local_overlay_state;
+
     {
         std::lock_guard<std::mutex> lock(state_mutex);
-        data = punch_card_data_;
+        punch_data = punch_card_data_;
+        github_repo_name = cached_github_repo_name;
+        local_overlay_state = overlay_state_;
     }
 
-    constexpr float win_width = 720.0f;
-    constexpr float win_height = 420.0f;
-    constexpr float margin_right = 60.0f;
-    constexpr float margin_top = 80.0f;
+    status = git_model->getRepoStatus(selected_repo);
 
-    ImVec2 window_pos(1920.0f - win_width - margin_right, margin_top);
+    git_overlay::render(selected_repo, punch_data, status, github_repo_name, local_overlay_state, colors.data());
 
-    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(win_width, win_height), ImGuiCond_Always);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        overlay_state_.position = local_overlay_state.position;
+        overlay_state_.selected_commit_hash = local_overlay_state.selected_commit_hash;
+    }
+}
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 16.0f));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.09f, 0.14f, 0.90f));
-    ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
+void git::render_recent_commits_7d() {
+    git_overlay_state state;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex);
+        state = overlay_state_;
+    }
 
-    std::string overlay_window_title = std::format("Git Video Overlay: {}##CastGitOverlay", std::filesystem::path(selected_repo).filename().string());
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader(ICON_MD_SETTINGS " Video Overlay Position & Recent Commits", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Spacing();
 
-    if (ImGui::Begin(overlay_window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
-        ImGui::TextColored(colors[0], "%s Git Card Video Overlay", ICON_MD_CODE);
-        ImGui::SameLine();
-        ImGui::TextDisabled("— %s", std::filesystem::path(selected_repo).filename().string().c_str());
-        ImGui::Separator();
-
-        constexpr float slide_duration = 6.0f;
-        constexpr float transition_duration = 0.8f;
-        constexpr int num_slides = 3;
-
-        float current_time = static_cast<float>(ImGui::GetTime());
-        float cycle_time = std::fmod(current_time, slide_duration * static_cast<float>(num_slides));
-        int current_slide = static_cast<int>(cycle_time / slide_duration) % num_slides;
-        float slide_elapsed = std::fmod(cycle_time, slide_duration);
-
-        int next_slide = (current_slide + 1) % num_slides;
-        float t = 0.0f;
-        if (slide_elapsed > (slide_duration - transition_duration)) {
-            float raw_t = (slide_elapsed - (slide_duration - transition_duration)) / transition_duration;
-            t = raw_t * raw_t * (3.0f - 2.0f * raw_t);
+        // 1) Overlay Position Selector
+        const char* position_names[] = {
+            "Top-Right", "Top-Left", "Bottom-Right", "Bottom-Left", "Center", "Top-Center", "Bottom-Center"
+        };
+        int current_pos_idx = static_cast<int>(state.position);
+        ImGui::PushItemWidth(220.0f);
+        if (ImGui::Combo("Overlay Screen Position", &current_pos_idx, position_names, IM_ARRAYSIZE(position_names))) {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            overlay_state_.position = static_cast<git_overlay_position>(current_pos_idx);
         }
+        ImGui::PopItemWidth();
 
-        ImVec2 content_pos = ImGui::GetCursorScreenPos();
-        ImVec2 content_size(win_width - 32.0f, win_height - 85.0f);
+        ImGui::Spacing();
 
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        draw_list->PushClipRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y), true);
+        // 2) Recent Commits (Up to 7 Days Ago)
+        ImGui::TextColored(colors[0], "%s Commits (Last 7 Days):", ICON_MD_HISTORY);
+        ImGui::Spacing();
 
-        // Render current slide
-        ImVec2 pos1(content_pos.x - t * content_size.x, content_pos.y);
-        if (current_slide == 0) {
-            render_video_slide_overview(data, pos1, content_size);
-        } else if (current_slide == 1) {
-            render_video_slide_matrix(data, pos1, content_size);
-        } else {
-            render_video_slide_heatmap(data, pos1, content_size);
-        }
-
-        // Render next slide during transition
-        if (t > 0.001f) {
-            ImVec2 pos2(content_pos.x + (1.0f - t) * content_size.x, content_pos.y);
-            if (next_slide == 0) {
-                render_video_slide_overview(data, pos2, content_size);
-            } else if (next_slide == 1) {
-                render_video_slide_matrix(data, pos2, content_size);
-            } else {
-                render_video_slide_heatmap(data, pos2, content_size);
+        if (state.loading_recent_commits) {
+            ImGui::TextColored(colors[1], "%s Loading commits from the last 7 days...", ICON_MD_SYNC);
+        } else if (!state.recent_commits_7d.empty()) {
+            if (!state.selected_commit_hash.empty()) {
+                ImGui::TextColored(colors[1], "Active Overlay Commit: %s", state.selected_commit_hash.substr(0, 7).c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Return to Overview Slideshow")) {
+                    std::lock_guard<std::mutex> lock(state_mutex);
+                    overlay_state_.selected_commit_hash.clear();
+                }
+                ImGui::Spacing();
             }
-        }
 
-        draw_list->PopClipRect();
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.11f, 0.16f, 0.7f));
+            if (ImGui::BeginChild("RecentCommits7dList", ImVec2(0, 160.0f), true)) {
+                for (const auto& commit : state.recent_commits_7d) {
+                    bool is_selected = (commit.hash == state.selected_commit_hash);
 
-        // Carousel progress bar & dots
-        ImGui::SetCursorScreenPos(ImVec2(content_pos.x, content_pos.y + content_size.y + 4.0f));
-        ImGui::Separator();
-        
-        constexpr const char* slide_titles[] = {"1/3 Overview", "2/3 Matrix Graph", "3/3 90-Day Heatmap"};
-        ImGui::TextColored(colors[1], "%s %s", ICON_MD_SLIDESHOW, slide_titles[current_slide]);
-
-        ImVec2 dot_start(content_pos.x + content_size.x - 60.0f, content_pos.y + content_size.y + 12.0f);
-        for (int i = 0; i < num_slides; ++i) {
-            ImVec2 dot_pos(dot_start.x + static_cast<float>(i) * 16.0f, dot_start.y);
-            bool is_active = (i == current_slide);
-            ImColor dot_color = is_active ? ImColor(colors[1]) : ImColor(100, 110, 130, 150);
-            draw_list->AddCircleFilled(dot_pos, is_active ? 4.5f : 3.0f, dot_color);
-        }
-    }
-    ImGui::End();
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
-}
-
-void git::render_video_slide_overview(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
-    ImGui::SetCursorScreenPos(pos);
-    ImGui::BeginGroup();
-
-    ImGui::TextColored(colors[0], "%s Repository General Overview", ICON_MD_INFO);
-    ImGui::Spacing();
-
-    std::string repo_filename = std::filesystem::path(selected_repo).filename().string();
-    ImGui::Text("Repository: %s", repo_filename.c_str());
-    ImGui::TextDisabled("Path: %s", selected_repo.c_str());
-
-    rouen::models::GitRepoStatus status = git_model->getRepoStatus(selected_repo);
-    ImColor status_color = getStatusColor(status);
-    ImGui::Text("Status: ");
-    ImGui::SameLine();
-    ImGui::TextColored(status_color, "%s", git_status_to_string(status).c_str());
-
-    if (!cached_github_repo_name.empty()) {
-        ImGui::TextColored(colors[1], "GitHub: %s", cached_github_repo_name.c_str());
-    }
-
-    if (data.selected_author_idx >= 0 && data.selected_author_idx < static_cast<int>(data.author_list.size())) {
-        ImGui::TextColored(colors[1], "Contributor Filter: %s", data.author_list[static_cast<size_t>(data.selected_author_idx)].c_str());
-    }
-
-    ImGui::Spacing();
-    ImGui::TextColored(colors[0], "Activity Summary (Last 90 Days):");
-    ImGui::BulletText("Filtered Commits: %d", data.total_commits);
-
-    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    int peak_wday = 0, peak_wday_count = -1;
-    for (int w = 0; w < 7; ++w) {
-        if (data.day_of_week_totals[w] > peak_wday_count) {
-            peak_wday_count = data.day_of_week_totals[w];
-            peak_wday = w;
-        }
-    }
-
-    int peak_hour = 0, peak_hour_count = -1;
-    for (int h = 0; h < 24; ++h) {
-        if (data.hour_totals[h] > peak_hour_count) {
-            peak_hour_count = data.hour_totals[h];
-            peak_hour = h;
-        }
-    }
-
-    if (data.total_commits > 0) {
-        ImGui::BulletText("Most Active Day: %s (%d commits)", wday_names[peak_wday], peak_wday_count);
-        ImGui::BulletText("Most Active Hour: %02d:00 (%d commits)", peak_hour, peak_hour_count);
-        ImGui::BulletText("Active Days: %zu / 90 days", data.daily_counts.size());
-    } else {
-        ImGui::TextDisabled("No commit activity recorded for selected contributor.");
-    }
-
-    ImGui::EndGroup();
-}
-
-void git::render_video_slide_matrix(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
-    ImGui::SetCursorScreenPos(pos);
-    ImGui::BeginGroup();
-
-    ImGui::TextColored(colors[0], "%s Commit Matrix (Day of Week x Hour of Day)", ICON_MD_SCHEDULE);
-    ImGui::Spacing();
-
-    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    constexpr float label_width = 38.0f;
-    constexpr float cell_size = 20.0f;
-    constexpr float cell_padding = 2.0f;
-
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
-
-    for (int w = 0; w < 7; ++w) {
-        float wf = static_cast<float>(w);
-        float y = grid_pos.y + wf * cell_size + cell_size * 0.5f;
-        draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 6.0f),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
-
-        for (int h = 0; h < 24; ++h) {
-            float hf = static_cast<float>(h);
-            float x = grid_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
-            ImVec2 cell_min(grid_pos.x + label_width + hf * cell_size, grid_pos.y + wf * cell_size);
-            ImVec2 cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
-
-            draw_list->AddRectFilled(cell_min, cell_max, ImColor(25, 30, 40, 180), 3.0f);
-
-            int count = data.hour_matrix[w][h];
-            if (count > 0 && data.max_commits_per_cell > 0) {
-                float relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
-                float radius = 2.5f + 6.5f * std::sqrt(relative_count);
-
-                float alpha = 0.35f + 0.65f * relative_count;
-                ImColor circle_color(
-                    static_cast<int>(colors[1].x * 255),
-                    static_cast<int>(colors[1].y * 255),
-                    static_cast<int>(colors[1].z * 255),
-                    static_cast<int>(alpha * 255)
-                );
-
-                draw_list->AddCircleFilled(ImVec2(x, y), radius, circle_color, 12);
+                    std::string label = std::format("{} | {} — {}", commit.short_hash, commit.author_name, commit.summary);
+                    if (ImGui::Selectable(label.c_str(), is_selected)) {
+                        std::string target_hash = commit.hash;
+                        std::string target_repo;
+                        {
+                            std::lock_guard<std::mutex> lock(state_mutex);
+                            overlay_state_.selected_commit_hash = target_hash;
+                            target_repo = selected_repo;
+                        }
+                        fetch_commit_detail_async(target_repo, target_hash);
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s\nAuthor: %s <%s>\nDate: %s", commit.summary.c_str(), commit.author_name.c_str(), commit.author_email.c_str(), commit.date_str.c_str());
+                    }
+                }
             }
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+        } else if (state.recent_commits_loaded) {
+            ImGui::TextDisabled("No commits found in the last 7 days.");
         }
     }
-
-    float hour_y = grid_pos.y + 7.0f * cell_size + 4.0f;
-    for (int h = 0; h < 24; h += 2) {
-        float hf = static_cast<float>(h);
-        float x = grid_pos.x + label_width + hf * cell_size;
-        draw_list->AddText(ImVec2(x, hour_y), ImGui::GetColorU32(ImGuiCol_TextDisabled), std::format("{:02d}", h).c_str());
-    }
-
-    ImGui::EndGroup();
-}
-
-void git::render_video_slide_heatmap(const punch_card_info& data, ImVec2 pos, [[maybe_unused]] ImVec2 size) {
-    ImGui::SetCursorScreenPos(pos);
-    ImGui::BeginGroup();
-
-    ImGui::TextColored(colors[0], "%s 90-Day Contribution Heatmap", ICON_MD_CALENDAR_VIEW_MONTH);
-    ImGui::Spacing();
-
-    constexpr float tile_size = 18.0f;
-    constexpr float tile_padding = 4.0f;
-    constexpr float label_width = 38.0f;
-    constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-
-    std::time_t now_time = std::time(nullptr);
-    std::time_t start_time = now_time - static_cast<std::time_t>(90 * 86400);
-
-    constexpr int num_weeks = 14;
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
-
-    for (int w : {0, 2, 4, 6}) {
-        float wf = static_cast<float>(w);
-        float y = grid_pos.y + wf * (tile_size + tile_padding);
-        draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 2.0f),
-            ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
-    }
-
-    for (int day_offset = 0; day_offset <= 90; ++day_offset) {
-        std::time_t day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
-        std::tm day_tm{};
-#ifdef _WIN32
-        localtime_s(&day_tm, &day_time);
-#else
-        localtime_r(&day_time, &day_tm);
-#endif
-
-        char date_buf[32];
-        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &day_tm);
-        std::string date_str(date_buf);
-
-        int wday = day_tm.tm_wday;
-        int week_idx = day_offset / 7;
-
-        if (week_idx >= num_weeks) continue;
-
-        float week_idxf = static_cast<float>(week_idx);
-        float wdayf = static_cast<float>(wday);
-
-        ImVec2 tile_min(
-            grid_pos.x + label_width + week_idxf * (tile_size + tile_padding),
-            grid_pos.y + wdayf * (tile_size + tile_padding)
-        );
-        ImVec2 tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
-
-        int count = 0;
-        if (auto it = data.daily_counts.find(date_str); it != data.daily_counts.end()) {
-            count = it->second;
-        }
-
-        ImColor tile_color;
-        if (count == 0) {
-            tile_color = ImColor(25, 30, 40, 120);
-        } else {
-            float relative_count = (data.max_commits_per_day > 0)
-                ? static_cast<float>(count) / static_cast<float>(data.max_commits_per_day)
-                : 0.2f;
-
-            float alpha = 0.35f + 0.65f * relative_count;
-            tile_color = ImColor(
-                static_cast<int>(colors[1].x * 255),
-                static_cast<int>(colors[1].y * 255),
-                static_cast<int>(colors[1].z * 255),
-                static_cast<int>(alpha * 255)
-            );
-        }
-
-        draw_list->AddRectFilled(tile_min, tile_max, tile_color, 3.0f);
-    }
-
-    ImGui::EndGroup();
 }
 
 bool git::render() {

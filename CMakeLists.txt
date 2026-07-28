@@ -466,6 +466,7 @@ add_executable(${PROJECT_NAME}
   src/cards/development/cmake.cpp
   src/cards/development/fs-directory.cpp
   src/cards/development/git.cpp
+  src/cards/development/git_overlay.cpp
   src/cards/development/github_registrar.cpp
   src/cards/development/github/ci_card.cpp
   src/cards/development/github/github_card.cpp
