@@ -463,8 +463,14 @@ add_executable(${PROJECT_NAME}
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp
   src/cards/interface/card.cpp
+  src/cards/development/cmake.cpp
+  src/cards/development/fs-directory.cpp
+  src/cards/development/git.cpp
   src/cards/development/github_registrar.cpp
   src/cards/development/github/ci_card.cpp
+  src/cards/development/github/github_card.cpp
+  src/cards/development/github/login_screen.cpp
+  src/cards/development/github/repo_screen.cpp
   src/cards/productivity/jira_registrar.cpp
   src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp

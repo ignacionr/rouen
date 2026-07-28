@@ -1645,7 +1645,7 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                 uint64_t sum = 0;
                 size_t count = 0;
                 for (size_t i = 0; i < local_pixels.size(); i += 4096) {
-                    sum += (local_pixels[i] + local_pixels[i + 1] + local_pixels[i + 2]);
+                    sum += static_cast<uint64_t>(local_pixels[i]) + local_pixels[i + 1] + local_pixels[i + 2];
                     count++;
                 }
                 if (count > 0) {
