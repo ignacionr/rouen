@@ -637,8 +637,9 @@ void main_wnd::process_detached_window() {
     }
 
     // Check media status: close second window when media ends or is stopped
+    // Check media status: close second window when media ends or is stopped
     // (Note: is_paused leaves checkMediaStatus() true, so pausing will not close window)
-    if (!detached_item->checkMediaStatus() || !detached_item->has_video) {
+    if (!detached_item->checkMediaStatus()) {
         media_player::clear_detached_item();
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
@@ -691,29 +692,21 @@ void main_wnd::process_detached_window() {
     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
     if (!cmdbuf) return;
 
-    ImTextureID tex = detached_item->get_texture_id(m_device, cmdbuf);
-    if (!tex) {
-        SDL_SubmitGPUCommandBuffer(cmdbuf);
-        return;
-    }
-
-    RouenGPUTexture* rtex = reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex));
-    if (!rtex || !rtex->binding.texture) {
-        SDL_SubmitGPUCommandBuffer(cmdbuf);
-        return;
-    }
-
     last_detached_render_time = now_time;
 
     SDL_GPUColorTargetInfo color_target = {};
     SDL_AcquireGPUSwapchainTexture(cmdbuf, m_detached_window, &color_target.texture, nullptr, nullptr);
-        if (color_target.texture) {
-            int w = 0, h = 0;
-            SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
-            float win_w = static_cast<float>(w > 0 ? w : 960);
-            float win_h = static_cast<float>(h > 0 ? h : 540);
-            float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+    if (color_target.texture) {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
+        float win_w = static_cast<float>(w > 0 ? w : 960);
+        float win_h = static_cast<float>(h > 0 ? h : 540);
 
+        ImTextureID tex = detached_item->get_texture_id(m_device, cmdbuf);
+        RouenGPUTexture* rtex = tex ? reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex)) : nullptr;
+
+        if (rtex && rtex->binding.texture && detached_item->has_video) {
+            float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
             float draw_w, draw_h;
             if (win_w / win_h > aspect) {
                 draw_h = win_h;
@@ -740,89 +733,105 @@ void main_wnd::process_detached_window() {
             blit_info.filter = SDL_GPU_FILTER_LINEAR;
 
             SDL_BlitGPUTexture(cmdbuf, &blit_info);
+        }
 
-            // 2. Render Overlay Cards UI onto m_detached_window using secondary ImGui context
-            ImGuiContext* main_ctx = ImGui::GetCurrentContext();
-            if (main_ctx) {
-                if (!m_detached_imgui_ctx) {
-                    ImFontAtlas* shared_fonts = main_ctx->IO.Fonts;
-                    m_detached_imgui_ctx = ImGui::CreateContext(shared_fonts);
+        // 2. Render Overlay Cards UI onto m_detached_window using secondary ImGui context
+        ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+        if (main_ctx) {
+            if (!m_detached_imgui_ctx) {
+                ImFontAtlas* shared_fonts = main_ctx->IO.Fonts;
+                m_detached_imgui_ctx = ImGui::CreateContext(shared_fonts);
+            }
+
+            if (m_detached_imgui_ctx) {
+                m_detached_imgui_ctx->IO.BackendRendererUserData = main_ctx->IO.BackendRendererUserData;
+                m_detached_imgui_ctx->IO.BackendPlatformUserData = main_ctx->IO.BackendPlatformUserData;
+
+                ImGui::SetCurrentContext(m_detached_imgui_ctx);
+
+                ImGuiIO& io = ImGui::GetIO();
+                io.DisplaySize = ImVec2(win_w, win_h);
+                io.DeltaTime = 1.0f / 60.0f;
+
+                if (main_ctx->IO.Fonts && main_ctx->IO.Fonts->TexID) {
+                    io.Fonts->TexID = main_ctx->IO.Fonts->TexID;
                 }
 
-                if (m_detached_imgui_ctx) {
-                    m_detached_imgui_ctx->IO.BackendRendererUserData = main_ctx->IO.BackendRendererUserData;
-                    m_detached_imgui_ctx->IO.BackendPlatformUserData = main_ctx->IO.BackendPlatformUserData;
+                // Feed mouse events for detached window into secondary ImGui context
+                int win_pt_w = 0, win_pt_h = 0;
+                SDL_GetWindowSize(m_detached_window, &win_pt_w, &win_pt_h);
+                float scale_x = (win_pt_w > 0) ? (win_w / static_cast<float>(win_pt_w)) : 1.0f;
+                float scale_y = (win_pt_h > 0) ? (win_h / static_cast<float>(win_pt_h)) : 1.0f;
 
-                    ImGui::SetCurrentContext(m_detached_imgui_ctx);
+                SDL_Window* mouse_focus = SDL_GetMouseFocus();
+                if (mouse_focus == m_detached_window) {
+                    float raw_mx = 0.0f, raw_my = 0.0f;
+                    Uint32 mouse_buttons = SDL_GetMouseState(&raw_mx, &raw_my);
+                    io.AddMousePosEvent(raw_mx * scale_x, raw_my * scale_y);
+                    io.AddMouseButtonEvent(0, (mouse_buttons & SDL_BUTTON_LMASK) != 0);
+                } else {
+                    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+                    io.AddMouseButtonEvent(0, false);
+                }
 
-                    ImGuiIO& io = ImGui::GetIO();
-                    io.DisplaySize = ImVec2(win_w, win_h);
-                    io.DeltaTime = 1.0f / 60.0f;
+                ImGui::NewFrame();
 
-                    if (main_ctx->IO.Fonts && main_ctx->IO.Fonts->TexID) {
-                        io.Fonts->TexID = main_ctx->IO.Fonts->TexID;
-                    }
+                if (!detached_item->has_video) {
+                    media_player::draw_full_window_audio_visualization(*detached_item, win_w, win_h);
 
-                    // Feed mouse events for detached window into secondary ImGui context
-                    int win_pt_w = 0, win_pt_h = 0;
-                    SDL_GetWindowSize(m_detached_window, &win_pt_w, &win_pt_h);
-                    float scale_x = (win_pt_w > 0) ? (win_w / static_cast<float>(win_pt_w)) : 1.0f;
-                    float scale_y = (win_pt_h > 0) ? (win_h / static_cast<float>(win_pt_h)) : 1.0f;
+                    float vu_w = std::min(win_w * 0.65f, 460.0f);
+                    float vu_h = 110.0f;
+                    float vu_x = (win_w - vu_w) * 0.5f;
+                    float vu_y = win_h - vu_h - 38.0f;
+                    ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
+                    media_player::draw_vintage_110_vu_meter(
+                        detached_item->get_vu_level_l(), detached_item->get_vu_level_r(),
+                        detached_item->get_vu_watermark_l(), detached_item->get_vu_watermark_r(),
+                        vu_w, vu_h, /*is_lit=*/true
+                    );
+                }
 
-                    SDL_Window* mouse_focus = SDL_GetMouseFocus();
-                    if (mouse_focus == m_detached_window) {
-                        float raw_mx = 0.0f, raw_my = 0.0f;
-                        Uint32 mouse_buttons = SDL_GetMouseState(&raw_mx, &raw_my);
-                        io.AddMousePosEvent(raw_mx * scale_x, raw_my * scale_y);
-                        io.AddMouseButtonEvent(0, (mouse_buttons & SDL_BUTTON_LMASK) != 0);
-                    } else {
-                        io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
-                        io.AddMouseButtonEvent(0, false);
-                    }
-
-                    ImGui::NewFrame();
-
-                    try {
-                        auto main_deck = registrar::get<deck>("deck");
-                        if (main_deck) {
-                            for (const auto& card_ptr : main_deck->get_cards()) {
-                                if (card_ptr && card_ptr->video_overlay_visible) {
-                                    card_ptr->render_video_ui();
-                                }
+                try {
+                    auto main_deck = registrar::get<deck>("deck");
+                    if (main_deck) {
+                        for (const auto& card_ptr : main_deck->get_cards()) {
+                            if (card_ptr && card_ptr->video_overlay_visible) {
+                                card_ptr->render_video_ui();
                             }
                         }
-                    } catch (...) {}
-
-                    render_detached_toast(win_w, win_h);
-
-                    // Double clicking detached window re-attaches to full-window mode
-                    if (mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        if (io.MousePos.y < win_h - 24.0f) {
-                            media_player::set_active_fullscreen_item(detached_item);
-                        }
                     }
+                } catch (...) {}
 
-                    // Render progress line for detached window
-                    media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
+                render_detached_toast(win_w, win_h);
 
-                    ImGui::Render();
-
-                    Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
-
-                    SDL_GPUColorTargetInfo ui_target = {};
-                    ui_target.texture = color_target.texture;
-                    ui_target.load_op = SDL_GPU_LOADOP_LOAD;
-                    ui_target.store_op = SDL_GPU_STOREOP_STORE;
-
-                    SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &ui_target, 1, nullptr);
-                    if (render_pass) {
-                        ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
-                        SDL_EndGPURenderPass(render_pass);
+                // Double clicking detached window re-attaches to full-window mode
+                if (mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    if (io.MousePos.y < win_h - 24.0f) {
+                        media_player::set_active_fullscreen_item(detached_item);
                     }
-
-                    ImGui::SetCurrentContext(main_ctx);
                 }
+
+                // Render progress line for detached window
+                media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
+
+                ImGui::Render();
+
+                Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
+
+                SDL_GPUColorTargetInfo ui_target = {};
+                ui_target.texture = color_target.texture;
+                ui_target.load_op = SDL_GPU_LOADOP_LOAD;
+                ui_target.store_op = SDL_GPU_STOREOP_STORE;
+
+                SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &ui_target, 1, nullptr);
+                if (render_pass) {
+                    ImGui_ImplSDLGPU3_RenderDrawData(ImGui::GetDrawData(), cmdbuf, render_pass);
+                    SDL_EndGPURenderPass(render_pass);
+                }
+
+                ImGui::SetCurrentContext(main_ctx);
             }
         }
-        SDL_SubmitGPUCommandBuffer(cmdbuf);
+    }
+    SDL_SubmitGPUCommandBuffer(cmdbuf);
 }

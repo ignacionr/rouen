@@ -178,6 +178,38 @@ bool media_player::has_detached_item() {
     return s_detached_item != nullptr;
 }
 
+std::shared_ptr<media_player_item> media_player::get_currently_playing_item() {
+    {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        if (s_detached_item && s_detached_item->checkMediaStatus()) {
+            return s_detached_item;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+        if (s_active_fullscreen_item && s_active_fullscreen_item->checkMediaStatus()) {
+            return s_active_fullscreen_item;
+        }
+    }
+    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    for (auto& [id, item_ptr] : items()) {
+        if (item_ptr && item_ptr->checkMediaStatus() && !item_ptr->is_paused.load()) {
+            return item_ptr;
+        }
+    }
+    for (auto& [id, item_ptr] : items()) {
+        if (item_ptr && item_ptr->checkMediaStatus()) {
+            return item_ptr;
+        }
+    }
+    for (auto& [id, item_ptr] : items()) {
+        if (item_ptr && (item_ptr->ffmpeg_running.load() || item_ptr->player_pid > 0)) {
+            return item_ptr;
+        }
+    }
+    return nullptr;
+}
+
 void media_player::set_active_fullscreen_item(std::shared_ptr<media_player_item> item) {
     std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
     if (!s_active_fullscreen_item && item) {

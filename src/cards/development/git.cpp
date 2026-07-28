@@ -634,9 +634,9 @@ void git::render_video_ui() {
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.09f, 0.14f, 0.90f));
     ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
 
-    std::string window_title = std::format("Git Video Overlay: {}##CastGitOverlay", std::filesystem::path(selected_repo).filename().string());
+    std::string overlay_window_title = std::format("Git Video Overlay: {}##CastGitOverlay", std::filesystem::path(selected_repo).filename().string());
 
-    if (ImGui::Begin(window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
+    if (ImGui::Begin(overlay_window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
         ImGui::TextColored(colors[0], "%s Git Card Video Overlay", ICON_MD_CODE);
         ImGui::SameLine();
         ImGui::TextDisabled("— %s", std::filesystem::path(selected_repo).filename().string().c_str());

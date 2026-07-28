@@ -14,6 +14,7 @@
 #include <SDL3/SDL.h>
 
 // 3. All other includes
+#include "../../helpers/media_player.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../registrar.hpp"
 #include "card.hpp"
@@ -47,14 +48,12 @@ namespace rouen::cards {
                 const auto& menu_categories = get_categories();
                 
                 // Flatten menu items for search
-                static std::vector<std::tuple<int, int, std::string>> all_menu_items;
-                if (all_menu_items.empty()) {
-                    for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
-                        for (size_t item_idx = 0; item_idx < menu_categories[cat_idx].items.size(); item_idx++) {
-                            all_menu_items.emplace_back(
-                                static_cast<int>(cat_idx), static_cast<int>(item_idx), menu_categories[cat_idx].items[item_idx].first
-                            );
-                        }
+                std::vector<std::tuple<int, int, std::string>> all_menu_items;
+                for (size_t cat_idx = 0; cat_idx < menu_categories.size(); cat_idx++) {
+                    for (size_t item_idx = 0; item_idx < menu_categories[cat_idx].items.size(); item_idx++) {
+                        all_menu_items.emplace_back(
+                            static_cast<int>(cat_idx), static_cast<int>(item_idx), menu_categories[cat_idx].items[item_idx].first
+                        );
                     }
                 }
                 
@@ -292,8 +291,35 @@ namespace rouen::cards {
             std::vector<std::pair<std::string, std::function<void()>>> items;
         };
 
-        static const std::vector<MenuCategory>& get_categories() {
-            static std::vector<MenuCategory> categories = {
+        static std::vector<MenuCategory> get_categories() {
+            std::string detach_title = "Detach Currently Playing Media";
+            auto active_item = media_player::get_currently_playing_item();
+            if (active_item && !active_item->item_title.empty()) {
+                detach_title = "Detach Playing Media (" + active_item->item_title + ")";
+            }
+
+            auto detach_action = []() {
+                auto item = media_player::get_currently_playing_item();
+                if (item) {
+                    media_player::set_detached_item(item);
+                    if (media_player::get_active_fullscreen_item() == item) {
+                        media_player::clear_active_fullscreen_item();
+                    }
+                } else {
+                    std::shared_ptr<media_player_item> fallback = nullptr;
+                    {
+                        std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+                        if (!media_player::items().empty()) {
+                            fallback = media_player::items().begin()->second;
+                        }
+                    }
+                    if (fallback) {
+                        media_player::set_detached_item(fallback);
+                    }
+                }
+            };
+
+            std::vector<MenuCategory> categories = {
                 { "Development", {
                     {"Git", []() { "create_card"_sfn("git"); }},
                     {"GitHub", []() { "create_card"_sfn("github"); }},
@@ -332,6 +358,7 @@ namespace rouen::cards {
                     {"Adaptive Cards", []() { "create_card"_sfn("adaptive-card"); }}
                 }},
                 { "Media", {
+                    {detach_title, detach_action},
                     {"Media Companion", []() { "create_card"_sfn("media-companion"); }},
                     {"Live Camera", []() { "create_card"_sfn("camera"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},

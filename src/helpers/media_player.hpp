@@ -48,6 +48,7 @@ struct media_player {
     static std::shared_ptr<media_player_item> get_detached_item();
     static void clear_detached_item();
     static bool has_detached_item();
+    static std::shared_ptr<media_player_item> get_currently_playing_item();
 
     static void set_active_fullscreen_item(std::shared_ptr<media_player_item> item);
     static std::shared_ptr<media_player_item> get_active_fullscreen_item();
