@@ -163,10 +163,20 @@ add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 
 # RSS Watermark Test
 add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
+target_sources(test_rss_watermark PRIVATE 
+    ../src/helpers/media_player.cpp
+    ../src/helpers/config_service.cpp
+)
 target_link_libraries(test_rss_watermark 
     PRIVATE 
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
+    imgui::imgui
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
 )
 add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 

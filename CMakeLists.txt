@@ -457,6 +457,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/llm_config.cpp
   src/helpers/mcp_service.cpp
   src/helpers/api_server.cpp
+  src/helpers/media_player.cpp
   src/helpers/theme_manager.cpp
   src/cards/interface/card.cpp
   src/cards/development/github_registrar.cpp

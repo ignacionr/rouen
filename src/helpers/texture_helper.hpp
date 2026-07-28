@@ -4,6 +4,7 @@
 #include <SDL3_image/SDL_image.h>
 #include <cstring>
 #include <mutex>
+#include <vector>
 #include "debug.hpp"
 
 // Add texture-specific logging macros
