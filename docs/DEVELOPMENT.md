@@ -120,3 +120,19 @@ Every commit pushed or pull request opened triggers GitHub Actions:
    }}
    ```
 3. **Commit & Pull Request**: Ensure your code is warning-free, formatted, and passes all test suites before submitting a PR.
+
+---
+
+### Designing Integrations & Services: Helpers vs. Hosts
+
+When creating reusable integrations or system services for Rouen, select the appropriate category based on statefulness and lifecycle:
+
+* **Create a Helper (`src/helpers/`) if your module is COMPLETELY STATELESS:**
+  - Standard pure utilities, string/text formatters, mathematical algorithms, data structure transformers, rendering primitives, or raw HTTP protocol call wrappers (e.g., `fetch.hpp`, `markdown_renderer.hpp`, `md5.hpp`).
+  - Must NOT manage session tokens, API keys, persistent background timers, or usage metrics.
+
+* **Create a Host (`src/hosts/`) if your module is STATEFUL or AUTHENTICATED:**
+  - Integrations that manage authentication (API key storage, OAuth tokens, authorization headers, signature generation, token revocation/refresh).
+  - Services that track usage or quotas (e.g. LLM token counters, API request rate limits).
+  - Background processes, socket connections, IPC channels, or polling synchronization loops (e.g., `bybit_host.hpp`, `rss_host.hpp`, `trello_host.hpp`).
+

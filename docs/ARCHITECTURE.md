@@ -44,31 +44,91 @@ The **API Server** ([api_server.hpp](file:///Users/ignaciorodriguez/src/rouen/sr
 
 ---
 
-### 4. Helper Libraries
-To support application logic, Rouen provides several static/service helper modules in `src/helpers/`:
+---
 
-* **Configuration Service** ([config_service.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/config_service.hpp)):
-  - Manages environment variables and local `.env` keys.
-* **HTTP Client** ([fetch.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/fetch.hpp)):
-  - A thread-safe wrapper around `libcurl` providing SSL/TLS modes (`strict`, `relaxed`, `compatible`, `insecure`).
-* **LLM Integration** ([llm_config.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/llm_config.hpp)):
-  - Adapter facilitating switches between LLM API providers (Grok, OpenAI, Groq, Gemini, custom endpoints).
-* **Media Player** ([media_player.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/media_player.hpp)):
-  - Performs native, in-process decoding of multimedia files using FFmpeg (`libavcodec`, `libavformat`, `libswscale`, `libswresample`).
-  - Supports local playback with hardware audio output via SDL3 Audio Streams.
-* **Stream Encoder** ([stream_encoder.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/stream_encoder.hpp)):
-  - In-process H.264 video and AAC stereo audio encoding engine feeding TCP socket streams.
-* **Database Access** ([sqlite.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/sqlite.hpp)):
-  - Thread-safe key-value store wrapper around SQLite3 for config/state caching.
+### 4. Integrations & Unified Services Architecture: Helpers vs. Hosts
+
+Rouen organizes reusable integrations, protocols, external API access, and system services into two distinct categories based on **statefulness**, **authentication lifecycle**, and **usage tracking**:
+
+```
+                       ┌─────────────────────────────────────────────────────────┐
+                       │          Rouen Integrations & Unified Services          │
+                       └────────────────────────────┬────────────────────────────┘
+                                                    │
+                   ┌────────────────────────────────┴────────────────────────────────┐
+                   ▼                                                                 ▼
+      ┌─────────────────────────┐                                       ┌─────────────────────────┐
+      │   Helpers (src/helpers) │                                       │    Hosts (src/hosts)    │
+      ├─────────────────────────┤                                       ├─────────────────────────┤
+      │  • Completely Stateless │                                       │  • Stateful Integrations│
+      │  • Pure Transformations │                                       │  • Auth Keys & OAuth    │
+      │  • Utility Functions    │                                       │  • Token Revocation     │
+      │  • Parsers & Renderers  │                                       │  • Usage & Quota Track  │
+      │  • Zero Session State   │                                       │  • Background Sync Loop │
+      └─────────────────────────┘                                       └─────────────────────────┘
+```
+
+#### A. Stateless Helpers (`src/helpers/`)
+Helpers provide pure, stateless utility functions, text/data transformations, formatting, and protocol parsers. They hold zero persistent connection handles, zero authentication session tokens, and zero usage metrics.
+
+* **HTTP Client Helper** ([fetch.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/fetch.hpp)): Thread-safe, stateless `libcurl` fetch engine supporting configurable TLS security modes (`strict`, `relaxed`, `compatible`, `insecure`).
+* **Markdown & Syntax Renderer** ([markdown_renderer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/markdown_renderer.hpp)): Stateless AST parser and ImGui layout renderer for Markdown documents.
+* **Chess API & PGN Utilities** ([chess_com_api.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/chess_com_api.hpp), [chess_game_analyzer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/chess_game_analyzer.hpp)): Pure JSON parsing and PGN string sanitization helpers.
+* **Email & HTML Metadata Extractors** ([email_metadata_analyzer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/email_metadata_analyzer.hpp), [html_media_extractor.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/html_media_extractor.hpp)): Stateless string/MIME extractors for headers and embedded media URLs.
+* **Platform & OS Utilities** ([platform_utils.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/platform_utils.hpp), [string_helper.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/string_helper.hpp), [md5.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/md5.hpp)): Cross-platform paths, process execution helpers, and hashing algorithms.
+* **UI Widgets & Rendering Contexts** ([imgui_helper.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/imgui_helper.hpp), [flag_renderer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/flag_renderer.hpp), [date_picker.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/date_picker.hpp)): Immediate-mode UI layout helpers and drawing primitives.
+
+#### B. Stateful Hosts (`src/hosts/`)
+Hosts encapsulate long-lived, stateful services, authenticated external API clients, credential managers, background synchronization loops, socket listeners, and usage/token counters.
+
+* **Crypto Exchange Host** ([bybit_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/bybit_host.hpp)): Manages Bybit API authentication (HMAC SHA-256 signing, API key/secret storage), rate-limiting state, asset balance caches, and WebSocket/HTTP connections.
+* **Trello Sync Host** ([trello_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/trello_host.hpp)): Handles Trello OAuth developer keys, secret tokens, token revocation, board caching, and CRUD state synchronization.
+* **RSS Feed Host** ([rss_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/rss_host.hpp)): Manages background feed polling intervals, feed XML model persistence, local SQLite cache state, and podcast watermark extraction.
+* **Weather Service Host** ([weather_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/weather_host.hpp)): Manages weather provider API credentials, location queries, background refresh timers, and cached forecast models.
+* **Travel & Transit Host** ([travel_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/travel_host.hpp)): Manages flight/transit provider authorization headers, live location polling, and schedule state.
+* **Dictation & Speech-to-Text Host** ([dictation_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/dictation_host.hpp)): Manages Whisper server subprocess lifecycle, recording audio stream buffers, and local transcription state.
+* **Video Feed & Broadcast Host** ([video_feed_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/video_feed_host.hpp)): Offscreen 1080p ImGui rendering engine, multi-camera context manager, and TCP streaming broadcast server (`tcp://127.0.0.1:8889`).
 
 ---
 
-### 5. Host Infrastructure & Multi-Modal Streaming
-Hosts in `src/hosts/` manage background data synchronization and caching:
-- **Video Cast Host (`VideoFeedHost`)**: Offscreen 1080p ImGui renderer and TCP unicast streaming server (`tcp://127.0.0.1:8889`).
-- **RSS Host**: Fetches XML feeds, parses enclosures, extracts podcast watermarks, and caches local feed models.
-- **Weather Host**: Fetches meteorological reports and caches forecast results.
-- **Trello Host**: Manages board queries, card listings, and CRUD synchronization.
+### 5. Identified Host Reclassification & Extraction Roadmap
+
+To strictly enforce this architecture across the codebase, several stateful integrations currently located under `src/helpers/` are identified for reclassification and extraction into `src/hosts/`:
+
+1. **LLM Provider Host (`llm_host` / `ai_provider_host`)**
+   - *Current location*: `src/helpers/llm_config.*`, `src/helpers/cppgpt.hpp`, `src/helpers/gemini_adapter.hpp`
+   - *Reason for Reclassification*: Manages API keys (OpenAI, Gemini, Grok), active provider configuration, authentication headers, token usage metrics (prompt/completion tokens), model quotas, and chat conversation history state.
+   - *Target*: Reclassify into `src/hosts/llm_host.hpp`.
+
+2. **Model Context Protocol (MCP) Host (`mcp_host`)**
+   - *Current location*: `src/helpers/mcp_service.*`
+   - *Reason for Reclassification*: Manages MCP server subprocess lifecycles, JSON-RPC connection handles, active tool registration, sub-agent authentication/env injection, and session channels.
+   - *Target*: Reclassify into `src/hosts/mcp_host.hpp`.
+
+3. **Git Synchronization Host (`git_sync_host`)**
+   - *Current location*: `src/helpers/git_sync_service.hpp`
+   - *Reason for Reclassification*: Handles remote repository authentication (SSH keys / HTTPS tokens), git process execution state, remote origin tracking, and background auto-commit/push timers.
+   - *Target*: Reclassify into `src/hosts/git_sync_host.hpp`.
+
+4. **Universal Cloud Sync Host (`universal_sync_host`)**
+   - *Current location*: `src/helpers/universal_sync_service.hpp`
+   - *Reason for Reclassification*: Manages cloud storage authentication tokens, token revocation, background sync scheduling, and remote/local file state comparisons.
+   - *Target*: Reclassify into `src/hosts/universal_sync_host.hpp`.
+
+5. **Embedded REST API Server Host (`api_server_host`)**
+   - *Current location*: `src/helpers/api_server.*`
+   - *Reason for Reclassification*: Manages TCP listener socket binding (port 8081), Mongoose HTTP server context, active client session lifecycle, and dynamic API route handlers.
+   - *Target*: Reclassify into `src/hosts/api_server_host.hpp`.
+
+6. **Configuration & Credentials Store Host (`config_host` / `api_keys_host`)**
+   - *Current location*: `src/helpers/config_service.*`, `src/helpers/api_keys.hpp`
+   - *Reason for Reclassification*: Manages global system environment state, `.env` secret key parsing, persistent `rouen.ini` settings, and subscriber notifications.
+   - *Target*: Reclassify into `src/hosts/config_host.hpp`.
+
+7. **Media Engine & Socket Host (`media_engine_host` / `mpv_socket_host`)**
+   - *Current location*: `src/helpers/media_player.*`, `src/helpers/mpv_socket.hpp`, `src/helpers/stream_encoder.hpp`
+   - *Reason for Reclassification*: Manages FFmpeg demuxer/decoder state, SDL audio output streams, MPV IPC socket handles, and live stream encoding socket servers.
+   - *Target*: Reclassify into `src/hosts/media_engine_host.hpp`.
 
 ---
 

@@ -20,7 +20,7 @@ To make the codebase easy to navigate, the documentation has been split into mod
 
 * 📦 **[Installation Guide](docs/INSTALL.md)**: Steps to install pre-built binaries (MSI, DMG, TAR.GZ) and automated installation scripts for Windows, macOS, and Linux.
 * ⚙️ **[User & Usage Guide](docs/USAGE.md)**: Operating guidelines, dynamic card URIs, REST API reference (Port 8081), keyboard shortcuts, environment variables, and troubleshooting.
-* 🏛️ **[Architecture Guide](docs/ARCHITECTURE.md)**: Architectural design overview, Card system, HTTP REST API, Audio-Master Clock media synchronization pipeline, and architecture diagrams.
+* 🏛️ **[Architecture Guide](docs/ARCHITECTURE.md)**: Architectural design overview, Card system, Integrations & Unified Services (Stateless Helpers vs. Stateful Hosts), HTTP REST API, Audio-Master Clock media synchronization pipeline, and architecture diagrams.
 * 🎥 **[Multi-Modal UI & Video Streaming](docs/MULTIMODAL_UI.md)**: 1080p @ 24fps TCP unicast streaming (`tcp://127.0.0.1:8889`), offscreen ImGui contexts, in-process H.264/AAC encoding, Camera Card with 7 layout presets, and Number Series broadcast presentation.
 * 🧠 **[AI & MCP Integration Guide](docs/AI.md)**: Detailed overview of AI capabilities (AI Chat, command translation, email & chess analysis) and Model Context Protocol (MCP) tool execution.
 * 🛠️ **[Development & Contributing Guide](docs/DEVELOPMENT.md)**: Nix environment setup, compiling from source, building/running tests (Google Test), and guidelines for creating new cards or helpers.
