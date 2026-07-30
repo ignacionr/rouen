@@ -226,7 +226,6 @@ namespace media::rss
                     "('News', 10), "
                     "('Tech / Dev', 20), "
                     "('Podcasts', 30), "
-                    "('YouTube', 40), "
                     "('Music', 50), "
                     "('Science', 55), "
                     "('Comedy', 60), "
@@ -240,6 +239,14 @@ namespace media::rss
                     "('Italy', 150),"
                     "('Russia', 160)"
                 );
+
+                // Migration: purge YouTube and Youtube tags from database
+                try {
+                    db_.exec("DELETE FROM feed_tag WHERE LOWER(tag) = 'youtube'", [](sqlite3_stmt*){});
+                    db_.exec("DELETE FROM rss_tag_definition WHERE LOWER(tag) = 'youtube'", [](sqlite3_stmt*){});
+                } catch (const std::exception& e) {
+                    RSS_WARN_FMT("Failed to purge youtube tags from DB: {}", e.what());
+                }
 
                 // Migration: check if 'media_duration_seconds' column exists, and add it if not
                 try {

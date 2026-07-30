@@ -256,11 +256,11 @@ bool media_player_item::playMedia(const void* owner) {
                 std::string pref_quality = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
                 std::string format_spec;
                 if (pref_quality == "1080p") {
-                    format_spec = "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+                    format_spec = "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
                 } else if (pref_quality == "4k" || pref_quality == "2160p") {
-                    format_spec = "bestvideo[height<=2160][vcodec^=avc1]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/bestvideo+bestaudio/best";
+                    format_spec = "bestvideo[height<=2160][vcodec^=avc1]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
                 } else {
-                    format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+                    format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 }
 
                 auto run_ytdlp = [&](const std::string& cookie_args) -> std::pair<std::vector<std::string>, std::string> {
@@ -320,6 +320,8 @@ bool media_player_item::playMedia(const void* owner) {
                     std::string err_msg;
                     if (clean_resolved.find("Sign in to confirm you") != std::string::npos || clean_resolved.find("not a bot") != std::string::npos) {
                         err_msg = "YouTube Authentication Required:\nYouTube requires cookies for this video.\nSave a cookies.txt file to ~/.config/rouen/cookies.txt or ~/Downloads/cookies.txt, or set ROUEN_COOKIES_FILE in Settings.";
+                    } else if (clean_resolved.find("live event has ended") != std::string::npos || clean_resolved.find("This live event has ended") != std::string::npos) {
+                        err_msg = "YouTube Live Event Processing:\nThis live stream has ended and YouTube is currently processing the recording into a video. Please try again in a few minutes once YouTube finishes processing.";
                     } else {
                         if (clean_resolved.empty()) {
                             clean_resolved = "No output from yt-dlp";
@@ -567,13 +569,28 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
         av_dict_set(&v_opts, "rw_timeout", "10000000", 0);
         av_dict_set(&v_opts, "buffer_size", "1048576", 0);
         av_dict_set(&v_opts, "fifo_size", "1048576", 0);
+        av_dict_set(&v_opts, "user_agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", 0);
     }
 
-    int err = avformat_open_input(&video_format_ctx, video_target.c_str(), nullptr, &v_opts);
+    const AVInputFormat* v_fmt = nullptr;
+    if (video_target.find("/manifest/dash/") != std::string::npos || video_target.find(".mpd") != std::string::npos) {
+        v_fmt = av_find_input_format("dash");
+    } else if (video_target.find("/manifest/hls") != std::string::npos || video_target.find(".m3u8") != std::string::npos) {
+        v_fmt = av_find_input_format("hls");
+    }
+
+    int err = avformat_open_input(&video_format_ctx, video_target.c_str(), v_fmt, &v_opts);
     if (err < 0) {
         if (v_opts) av_dict_free(&v_opts);
         std::string err_msg = get_ffmpeg_error_string(err);
-        std::string final_err = std::format("Media Player Error: Failed to open input ({}): {}", video_target, err_msg);
+        std::string final_err;
+        if (video_target.find("force_finished") != std::string::npos ||
+            video_target.find("yt_live_broadcast") != std::string::npos ||
+            video_target.find("/manifest/dash/") != std::string::npos) {
+            final_err = "YouTube Live Event Processing:\nThis live stream has ended and YouTube is currently processing the recording into a video. Please try again in a few minutes once YouTube finishes processing.";
+        } else {
+            final_err = std::format("Media Player Error: Failed to open input ({}): {}", video_target, err_msg);
+        }
         std::cerr << "[NativePlayer] " << final_err << std::endl;
         try {
             "notify"_sfn(final_err);
@@ -615,8 +632,15 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 av_dict_set(&a_opts, "rw_timeout", "10000000", 0);
                 av_dict_set(&a_opts, "buffer_size", "1048576", 0);
                 av_dict_set(&a_opts, "fifo_size", "1048576", 0);
+                av_dict_set(&a_opts, "user_agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36", 0);
             }
-            if (avformat_open_input(&audio_format_ctx, audio_target.c_str(), nullptr, &a_opts) < 0) {
+            const AVInputFormat* a_fmt = nullptr;
+            if (audio_target.find("/manifest/dash/") != std::string::npos || audio_target.find(".mpd") != std::string::npos) {
+                a_fmt = av_find_input_format("dash");
+            } else if (audio_target.find("/manifest/hls") != std::string::npos || audio_target.find(".m3u8") != std::string::npos) {
+                a_fmt = av_find_input_format("hls");
+            }
+            if (avformat_open_input(&audio_format_ctx, audio_target.c_str(), a_fmt, &a_opts) < 0) {
                 if (a_opts) av_dict_free(&a_opts);
                 avformat_free_context(audio_format_ctx);
                 audio_format_ctx = nullptr;

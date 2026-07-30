@@ -1908,12 +1908,6 @@ std::vector<std::string> RSSHost::classify_feed_dynamically(const std::string& u
         }
     }
     if (is_podcast) tags.push_back("Podcasts");
-    
-    // YouTube
-    if (lower_url.find("youtube.com") != std::string::npos ||
-        lower_url.find("youtu.be") != std::string::npos) {
-        tags.push_back("YouTube");
-    }
 
     // Music
     if (lower_url.find("music") != std::string::npos ||
