@@ -470,11 +470,14 @@ namespace media::rss
                 }, url);
 
                 if (feed_id != -1) {
+                    sql = "DELETE FROM feed_tag WHERE feed_id = ?";
+                    db_.exec(sql, {}, feed_id);
+
                     sql = "DELETE FROM item WHERE feed_id = ?";
                     db_.exec(sql, {}, feed_id);
 
-                    sql = "DELETE FROM feed WHERE url = ?";
-                    db_.exec(sql, {}, url);
+                    sql = "DELETE FROM feed WHERE id = ?";
+                    db_.exec(sql, {}, feed_id);
                 }
                 
                 // Commit transaction

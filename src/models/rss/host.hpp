@@ -158,17 +158,21 @@ namespace media::rss
         void delete_feed(std::string_view url)
         {
             auto feeds = feeds_.load();
+            std::string db_url(url);
             auto pos = std::find_if(feeds->begin(), feeds->end(),
                                     [url](auto const &f)
                                     {
-                                        return f->feed_link == url;
+                                        return f->feed_link == url || f->source_link == url;
                                     });
             if (pos != feeds->end())
             {
+                if (!(*pos)->source_link.empty()) {
+                    db_url = (*pos)->source_link;
+                }
                 feeds->erase(pos);
                 feeds_.store(feeds);
-                repo_.delete_feed(url);
             }
+            repo_.delete_feed(db_url);
         }
 
     private:

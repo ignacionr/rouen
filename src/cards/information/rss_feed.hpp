@@ -551,7 +551,11 @@ namespace rouen::cards
                             
                             if (ImGui::Button("Delete", ImVec2(120.0f * dpi_scale, 0))) {
                                 if (rss_host) {
-                                    rss_host->delete_feed(feed_url);
+                                    try {
+                                        rss_host->delete_feed(feed_url);
+                                    } catch (const std::exception& e) {
+                                        RSS_ERROR_FMT("Error deleting feed: {}", e.what());
+                                    }
                                 }
                                 should_close = true;
                                 ImGui::CloseCurrentPopup();

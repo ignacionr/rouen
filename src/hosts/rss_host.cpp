@@ -679,16 +679,23 @@ std::vector<std::shared_ptr<media::rss::feed>> RSSHost::feeds() const {
 }
 
 void RSSHost::delete_feed(std::string_view url) {
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
-    auto pos = std::find_if(feeds_.begin(), feeds_.end(),
-                           [url](auto const& f) {
-                               return f->feed_link == url || f->source_link == url;
-                           });
-    
-    if (pos != feeds_.end()) {
-        feeds_.erase(pos);
-        repo_.delete_feed(url);
+    std::string db_url(url);
+    {
+        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        auto pos = std::find_if(feeds_.begin(), feeds_.end(),
+                               [url](auto const& f) {
+                                   return f->feed_link == url || f->source_link == url;
+                               });
+        
+        if (pos != feeds_.end()) {
+            if (!(*pos)->source_link.empty()) {
+                db_url = (*pos)->source_link;
+            }
+            feeds_.erase(pos);
+        }
     }
+    repo_.delete_feed(db_url);
+    rebuild_yt_index();
 }
 
 void RSSHost::save_smart_list(const std::string& title, const media::rss::filter_group& filter) {
