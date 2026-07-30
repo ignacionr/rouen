@@ -359,7 +359,7 @@ struct sysinfo_card : public card {
             if (norm_val >= card_render_watermark) {
                 card_render_watermark = norm_val;
             } else {
-		card_render_watermark = std::max(norm_val, card_render_watermark * 0.99f);
+				card_render_watermark = std::max(norm_val, card_render_watermark * 0.99f);
             }
 
             rouen::helpers::vu_meter::VUMeterConfig vu_cfg;
@@ -371,7 +371,7 @@ struct sysinfo_card : public card {
                 { 0.75f, "10.5ms", true },
                 { 1.00f, "14ms", true }
             };
-            vu_cfg.title = std::format("SUM AVG: {:.2f} ms", total_avg_ms);
+            vu_cfg.title = "SUM AVG ms";
             vu_cfg.left_channel_title = "TOTAL RENDER TIME";
             vu_cfg.show_titles = true;
             vu_cfg.style.theme = rouen::helpers::vu_meter::VUMeterTheme::VintageLitAmber;
@@ -536,3 +536,4 @@ private:
 };
 
 } // namespace rouen::cards
+
