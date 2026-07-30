@@ -11,6 +11,7 @@
 #include "../interface/card.hpp"
 #include "../../models/radio.hpp"
 #include "../../helpers/media_player.hpp"
+#include "../../helpers/vu_meter.hpp"
 
 namespace rouen::cards {
     
@@ -476,51 +477,12 @@ namespace rouen::cards {
 
         // Vintage VU Signal strength meter draw helper
         void draw_vu_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size, float signal) {
-            draw_list->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(30, 30, 30, 255), 6.0f);
-            draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), IM_COL32(80, 80, 80, 255), 6.0f, 0, 1.5f);
-            
-            ImVec2 inner_min(pos.x + 5.0f, pos.y + 5.0f);
-            ImVec2 inner_max(pos.x + size.x - 5.0f, pos.y + size.y - 5.0f);
-            draw_list->AddRectFilled(inner_min, inner_max, IM_COL32(245, 240, 215, 255), 4.0f);
-            
-            ImVec2 center(pos.x + size.x * 0.5f, pos.y + size.y * 0.95f);
-            float radius = size.x * 0.42f;
-            
-            float min_angle = -3.14159f * 0.75f;
-            float max_angle = -3.14159f * 0.25f;
-            
-            // Draw clean arc instead of full circle
-            draw_list->PathArcTo(center, radius, min_angle, max_angle, 30);
-            draw_list->PathStroke(IM_COL32(80, 80, 80, 255), 0, 1.0f);
-            
-            for (int i = 0; i <= 5; ++i) {
-                float t = static_cast<float>(i) / 5.0f;
-                float angle = min_angle + t * (max_angle - min_angle);
-                ImVec2 p1(center.x + cosf(angle) * radius, center.y + sinf(angle) * radius);
-                ImVec2 p2(center.x + cosf(angle) * (radius - 6.0f), center.y + sinf(angle) * (radius - 6.0f));
-                draw_list->AddLine(p1, p2, IM_COL32(50, 50, 50, 255), 1.5f);
-                
-                char label_str[4];
-                snprintf(label_str, sizeof(label_str), "%d", i * 2);
-                ImVec2 text_size = ImGui::CalcTextSize(label_str);
-                ImVec2 text_pos(center.x + cosf(angle) * (radius - 15.0f) - text_size.x * 0.5f,
-                               center.y + sinf(angle) * (radius - 15.0f) - text_size.y * 0.5f);
-                
-                draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.7f, text_pos, IM_COL32(80, 80, 80, 255), label_str);
-            }
-            
-            ImVec2 vu_text_pos(center.x, center.y - radius * 0.45f);
-            std::string vu_label = "TUNING / SIGNAL";
-            ImVec2 vu_text_size = ImGui::CalcTextSize(vu_label.c_str());
-            draw_list->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.65f, ImVec2(vu_text_pos.x - vu_text_size.x * 0.5f, vu_text_pos.y), IM_COL32(100, 100, 100, 255), vu_label.c_str());
-            
-            float needle_angle = min_angle + signal * (max_angle - min_angle);
-            float needle_len = radius * 0.9f;
-            ImVec2 needle_end(center.x + cosf(needle_angle) * needle_len, center.y + sinf(needle_angle) * needle_len);
-            draw_list->AddLine(center, needle_end, IM_COL32(220, 20, 20, 255), 1.8f);
-            
-            draw_list->AddCircleFilled(center, 5.0f, IM_COL32(40, 40, 40, 255));
-            draw_list->AddCircle(center, 5.0f, IM_COL32(100, 100, 100, 255), 0, 1.0f);
+            rouen::helpers::vu_meter::VUMeterConfig config;
+            config.scale_type = rouen::helpers::vu_meter::VUMeterScaleType::SignalStrength;
+            config.title = "TUNING / SIGNAL";
+            config.show_titles = true;
+            config.style.theme = rouen::helpers::vu_meter::VUMeterTheme::VintageLitAmber;
+            rouen::helpers::vu_meter::draw_analog_dial(draw_list, pos, size, signal, 0.0f, "", config);
         }
 
         // Rotary knob draw and interaction helper

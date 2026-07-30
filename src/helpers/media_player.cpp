@@ -1,4 +1,5 @@
 #include "media_player.hpp"
+#include "vu_meter.hpp"
 #include "texture_helper.hpp"
 #include "image_cache.hpp"
 #include "../cards/information/rss.hpp"
@@ -476,62 +477,9 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
 }
 
 void media_player::draw_stereo_vu_meter(float level_l, float level_r, float watermark_l, float watermark_r, float width, float height) {
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 pos = ImGui::GetCursorScreenPos();
-
-    float bar_w = (width - 4.0f) / 2.0f;
-    if (bar_w < 3.0f) bar_w = 3.0f;
-
-    level_l = std::clamp(level_l, 0.0f, 1.0f);
-    level_r = std::clamp(level_r, 0.0f, 1.0f);
-    watermark_l = std::clamp(watermark_l, 0.0f, 1.0f);
-    watermark_r = std::clamp(watermark_r, 0.0f, 1.0f);
-
-    // Left Channel Container
-    ImVec2 l_min = pos;
-    ImVec2 l_max = ImVec2(pos.x + bar_w, pos.y + height);
-    draw_list->AddRectFilled(l_min, l_max, IM_COL32(20, 24, 30, 255), 2.0f);
-    draw_list->AddRect(l_min, l_max, IM_COL32(45, 55, 65, 255), 2.0f);
-
-    if (level_l > 0.01f) {
-        float fill_h = (height - 2.0f) * level_l;
-        ImVec2 f_min = ImVec2(l_min.x + 1.0f, l_max.y - 1.0f - fill_h);
-        ImVec2 f_max = ImVec2(l_max.x - 1.0f, l_max.y - 1.0f);
-        ImU32 col = (level_l > 0.85f) ? IM_COL32(231, 76, 60, 255) :
-                    (level_l > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
-        draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
-    }
-
-    if (watermark_l > 0.01f) {
-        float wm_y = l_max.y - 1.0f - ((height - 2.0f) * watermark_l);
-        ImU32 wm_col = (watermark_l > 0.85f) ? IM_COL32(255, 90, 90, 255) :
-                       (watermark_l > 0.70f) ? IM_COL32(255, 220, 80, 255) : IM_COL32(220, 245, 220, 255);
-        draw_list->AddLine(ImVec2(l_min.x + 1.0f, wm_y), ImVec2(l_max.x - 1.0f, wm_y), wm_col, 2.0f);
-    }
-
-    // Right Channel Container
-    ImVec2 r_min = ImVec2(pos.x + bar_w + 4.0f, pos.y);
-    ImVec2 r_max = ImVec2(r_min.x + bar_w, pos.y + height);
-    draw_list->AddRectFilled(r_min, r_max, IM_COL32(20, 24, 30, 255), 2.0f);
-    draw_list->AddRect(r_min, r_max, IM_COL32(45, 55, 65, 255), 2.0f);
-
-    if (level_r > 0.01f) {
-        float fill_h = (height - 2.0f) * level_r;
-        ImVec2 f_min = ImVec2(r_min.x + 1.0f, r_max.y - 1.0f - fill_h);
-        ImVec2 f_max = ImVec2(r_max.x - 1.0f, r_max.y - 1.0f);
-        ImU32 col = (level_r > 0.85f) ? IM_COL32(231, 76, 60, 255) :
-                    (level_r > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
-        draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
-    }
-
-    if (watermark_r > 0.01f) {
-        float wm_y = r_max.y - 1.0f - ((height - 2.0f) * watermark_r);
-        ImU32 wm_col = (watermark_r > 0.85f) ? IM_COL32(255, 90, 90, 255) :
-                       (watermark_r > 0.70f) ? IM_COL32(255, 220, 80, 255) : IM_COL32(220, 245, 220, 255);
-        draw_list->AddLine(ImVec2(r_min.x + 1.0f, wm_y), ImVec2(r_max.x - 1.0f, wm_y), wm_col, 2.0f);
-    }
-
-    ImGui::Dummy(ImVec2(width, height));
+    rouen::helpers::vu_meter::VUMeterConfig cfg;
+    cfg.style.overload_threshold = 0.85f;
+    rouen::helpers::vu_meter::render_bar_meter(ImVec2(width, height), level_l, level_r, watermark_l, watermark_r, cfg);
 }
 
 void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float watermark_l, float watermark_r, float width, float height, bool is_lit) {
@@ -547,161 +495,11 @@ void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float
         }
     }
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 pos = ImGui::GetCursorScreenPos();
-
-    level_l = std::clamp(level_l, 0.0f, 1.0f);
-    level_r = std::clamp(level_r, 0.0f, 1.0f);
-
-    float gap = 6.0f;
-    float meter_w = (width - gap) / 2.0f;
-    if (meter_w < 20.0f) meter_w = 20.0f;
-
-    for (int ch = 0; ch < 2; ++ch) {
-        float level = (ch == 0) ? level_l : level_r;
-        float watermark = (ch == 0) ? watermark_l : watermark_r;
-        float m_x = pos.x + (meter_w + gap) * static_cast<float>(ch);
-        float m_y = pos.y;
-
-        ImVec2 min_p = ImVec2(m_x, m_y);
-        ImVec2 max_p = ImVec2(m_x + meter_w, m_y + height);
-
-        // 1. Frame Bezel
-        draw_list->AddRectFilled(min_p, max_p, IM_COL32(24, 26, 32, 255), 4.0f);
-
-        // 2. Faceplate Background with PushClipRect to strictly constrain all elements inside box
-        ImVec2 inner_min = ImVec2(min_p.x + 2.0f, min_p.y + 2.0f);
-        ImVec2 inner_max = ImVec2(max_p.x - 2.0f, max_p.y - 2.0f);
-        draw_list->PushClipRect(inner_min, inner_max, true);
-
-        if (is_lit) {
-            // Lit Warm Amber Incandescent Glow
-            draw_list->AddRectFilledMultiColor(
-                inner_min, inner_max,
-                IM_COL32(255, 244, 205, 255), // Top Left (warm yellow-amber)
-                IM_COL32(255, 244, 205, 255), // Top Right
-                IM_COL32(235, 212, 150, 255), // Bottom Right (golden warm)
-                IM_COL32(235, 212, 150, 255)  // Bottom Left
-            );
-            // Incandescent bulb warm spot behind upper faceplate (radius constrained to height * 0.35f)
-            ImVec2 spot = ImVec2(m_x + meter_w * 0.5f, m_y + height * 0.35f);
-            draw_list->AddCircleFilled(spot, height * 0.35f, IM_COL32(255, 255, 230, 45), 24);
-        } else {
-            // Unlit Dark Slate Faceplate
-            draw_list->AddRectFilledMultiColor(
-                inner_min, inner_max,
-                IM_COL32(38, 42, 48, 255), // Top Left
-                IM_COL32(38, 42, 48, 255), // Top Right
-                IM_COL32(26, 28, 33, 255), // Bottom Right
-                IM_COL32(26, 28, 33, 255)  // Bottom Left
-            );
-        }
-
-        // 3. 110-Degree Arc Math
-        float cx = m_x + meter_w * 0.5f;
-        float cy = m_y + height * 1.08f;
-        float r_arc = height * 0.72f;
-
-        constexpr float kStartAngle = -2.530727f; // -145 degrees
-        constexpr float kSweepAngle = 1.919862f;  // 110 degrees
-
-        // Scale colors
-        ImU32 norm_col = is_lit ? IM_COL32(25, 25, 25, 240) : IM_COL32(110, 115, 125, 180);
-        ImU32 red_col  = is_lit ? IM_COL32(215, 38, 38, 255) : IM_COL32(130, 50, 50, 180);
-
-        // Draw Scale Arc
-        constexpr int kArcSteps = 24;
-        for (int i = 0; i < kArcSteps; ++i) {
-            float t1 = static_cast<float>(i) / kArcSteps;
-            float t2 = static_cast<float>(i + 1) / kArcSteps;
-            float a1 = kStartAngle + t1 * kSweepAngle;
-            float a2 = kStartAngle + t2 * kSweepAngle;
-            ImU32 seg_col = (t1 >= 0.75f) ? red_col : norm_col;
-            ImVec2 p1 = ImVec2(cx + std::cos(a1) * r_arc, cy + std::sin(a1) * r_arc);
-            ImVec2 p2 = ImVec2(cx + std::cos(a2) * r_arc, cy + std::sin(a2) * r_arc);
-            draw_list->AddLine(p1, p2, seg_col, 1.5f);
-        }
-
-        // Major & Minor Ticks and Text
-        struct db_tick { float t; const char* label; bool major; };
-        static const db_tick ticks[] = {
-            { 0.00f, "-20", true },
-            { 0.28f, "-10", true },
-            { 0.54f, "-5",  true },
-            { 0.64f, "-3",  false },
-            { 0.75f, "0",   true },
-            { 0.83f, "+1",  false },
-            { 1.00f, "+3",  true }
-        };
-
-        for (const auto& tk : ticks) {
-            float a = kStartAngle + tk.t * kSweepAngle;
-            float tick_len = tk.major ? 5.0f : 3.0f;
-            ImU32 t_col = (tk.t >= 0.75f) ? red_col : norm_col;
-
-            ImVec2 p_in  = ImVec2(cx + std::cos(a) * (r_arc - tick_len), cy + std::sin(a) * (r_arc - tick_len));
-            ImVec2 p_out = ImVec2(cx + std::cos(a) * (r_arc + 1.0f), cy + std::sin(a) * (r_arc + 1.0f));
-            draw_list->AddLine(p_in, p_out, t_col, tk.major ? 1.5f : 1.0f);
-
-            if (tk.major && tk.label) {
-                ImVec2 t_pos = ImVec2(cx + std::cos(a) * (r_arc - tick_len - 7.0f), cy + std::sin(a) * (r_arc - tick_len - 7.0f));
-                ImVec2 sz = ImGui::CalcTextSize(tk.label);
-                draw_list->AddText(ImVec2(t_pos.x - sz.x * 0.5f, t_pos.y - sz.y * 0.5f), t_col, tk.label);
-            }
-        }
-
-        // Labels: "VU" & "LEFT" / "RIGHT"
-        ImU32 badge_col = is_lit ? IM_COL32(40, 40, 40, 220) : IM_COL32(110, 115, 125, 160);
-        ImVec2 vu_sz = ImGui::CalcTextSize("VU");
-        draw_list->AddText(ImVec2(cx - vu_sz.x * 0.5f, m_y + height * 0.22f), badge_col, "VU");
-
-        const char* ch_label = (ch == 0) ? "LEFT" : "RIGHT";
-        ImVec2 ch_sz = ImGui::CalcTextSize(ch_label);
-        draw_list->AddText(ImVec2(cx - ch_sz.x * 0.5f, m_y + height * 0.76f), badge_col, ch_label);
-
-        // Watermark Peak Tick Line
-        if (is_lit && watermark > 0.01f) {
-            float act_wm = std::clamp(watermark, 0.0f, 1.0f);
-            float wm_angle = kStartAngle + act_wm * kSweepAngle;
-            ImVec2 wm_p1 = ImVec2(cx + std::cos(wm_angle) * (r_arc - 5.0f), cy + std::sin(wm_angle) * (r_arc - 5.0f));
-            ImVec2 wm_p2 = ImVec2(cx + std::cos(wm_angle) * (r_arc + 3.0f), cy + std::sin(wm_angle) * (r_arc + 3.0f));
-            ImU32 wm_col = (act_wm >= 0.75f) ? IM_COL32(255, 45, 45, 240) : IM_COL32(235, 175, 30, 240);
-            draw_list->AddLine(wm_p1, wm_p2, wm_col, 2.0f);
-        }
-
-        // 4. Needle & Pivot Cap
-        float act_level = is_lit ? level : 0.0f;
-        float needle_angle = kStartAngle + act_level * kSweepAngle;
-        float r_needle = r_arc + 2.0f;
-
-        ImVec2 needle_tip = ImVec2(cx + std::cos(needle_angle) * r_needle, cy + std::sin(needle_angle) * r_needle);
-        ImU32 needle_col = is_lit ? IM_COL32(15, 15, 15, 255) : IM_COL32(75, 80, 90, 220);
-
-        draw_list->AddLine(ImVec2(cx, cy), needle_tip, needle_col, 1.8f);
-        if (is_lit) {
-            // Red accent on needle tip
-            ImVec2 sub_tip = ImVec2(cx + std::cos(needle_angle) * (r_needle - 6.0f), cy + std::sin(needle_angle) * (r_needle - 6.0f));
-            draw_list->AddLine(sub_tip, needle_tip, red_col, 2.0f);
-        }
-
-        // Pivot Cap
-        draw_list->AddCircleFilled(ImVec2(cx, cy), 4.5f, IM_COL32(30, 32, 38, 255));
-        draw_list->AddCircle(ImVec2(cx, cy), 4.5f, is_lit ? IM_COL32(160, 165, 175, 255) : IM_COL32(70, 75, 85, 255), 12, 1.0f);
-
-        // 5. Glass Reflection Overlay
-        ImVec2 g1 = ImVec2(min_p.x + 3.0f, min_p.y + 3.0f);
-        ImVec2 g2 = ImVec2(min_p.x + meter_w * 0.6f, min_p.y + 3.0f);
-        ImVec2 g3 = ImVec2(min_p.x + 3.0f, min_p.y + height * 0.6f);
-        draw_list->AddTriangleFilled(g1, g2, g3, IM_COL32(255, 255, 255, is_lit ? 22 : 10));
-
-        // Pop Clip Rect
-        draw_list->PopClipRect();
-
-        // Inner Border Frame
-        draw_list->AddRect(min_p, max_p, is_lit ? IM_COL32(70, 75, 85, 255) : IM_COL32(45, 50, 60, 255), 4.0f, 0, 1.5f);
-    }
-
-    ImGui::Dummy(ImVec2(width, height));
+    rouen::helpers::vu_meter::VUMeterConfig cfg;
+    cfg.scale_type = rouen::helpers::vu_meter::VUMeterScaleType::AudioVU;
+    cfg.style.theme = is_lit ? rouen::helpers::vu_meter::VUMeterTheme::VintageLitAmber 
+                             : rouen::helpers::vu_meter::VUMeterTheme::VintageUnlitSlate;
+    rouen::helpers::vu_meter::render_stereo_analog_dial(ImVec2(width, height), level_l, level_r, watermark_l, watermark_r, cfg);
 }
 
 static std::shared_ptr<::helpers::ImageCache> get_media_player_image_cache() {

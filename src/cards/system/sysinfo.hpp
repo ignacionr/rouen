@@ -25,6 +25,7 @@
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/drive_benchmark.hpp"
 #include "../../helpers/card_render_metrics.hpp"
+#include "../../helpers/vu_meter.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -344,6 +345,44 @@ struct sysinfo_card : public card {
             // Card Render Times Section
             ui.text("Active Card Render Performance:");
             auto card_metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics();
+
+            float total_avg_ms = 0.0f;
+            for (const auto& metric : card_metrics) {
+                total_avg_ms += static_cast<float>(metric.avg_render_ms);
+            }
+
+            // Render sum average render time VU meter (max 14.0 ms budget)
+            float norm_val = std::clamp(total_avg_ms / 14.0f, 0.0f, 1.0f);
+
+            static float card_render_watermark = 0.0f;
+            if (norm_val >= card_render_watermark) {
+                card_render_watermark = norm_val;
+            } else {
+                card_render_watermark = std::max(norm_val, card_render_watermark * 0.96f);
+            }
+
+            rouen::helpers::vu_meter::VUMeterConfig vu_cfg;
+            vu_cfg.scale_type = rouen::helpers::vu_meter::VUMeterScaleType::Custom;
+            vu_cfg.custom_ticks = {
+                { 0.00f, "0ms", true },
+                { 0.25f, "3.5ms", true },
+                { 0.50f, "7ms", true },
+                { 0.75f, "10.5ms", true },
+                { 1.00f, "14ms", true }
+            };
+            vu_cfg.title = std::format("SUM AVG: {:.2f} ms", total_avg_ms);
+            vu_cfg.left_channel_title = "TOTAL RENDER TIME";
+            vu_cfg.show_titles = true;
+            vu_cfg.style.theme = rouen::helpers::vu_meter::VUMeterTheme::VintageLitAmber;
+            vu_cfg.style.overload_threshold = 0.75f;
+
+            float avail_w = ImGui::GetContentRegionAvail().x;
+            float meter_w = std::min(avail_w, 240.0f);
+            float meter_h = 95.0f;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - meter_w) * 0.5f);
+            rouen::helpers::vu_meter::render_analog_dial(ImVec2(meter_w, meter_h), norm_val, card_render_watermark, "TOTAL RENDER TIME", vu_cfg);
+            ui.spacing();
+
             if (card_metrics.empty()) {
                 ui.text("No active card metrics recorded yet.");
             } else {

@@ -464,6 +464,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp
+  src/helpers/vu_meter.cpp
   src/cards/interface/card.cpp
   src/cards/development/cmake.cpp
   src/cards/development/fs-directory.cpp
