@@ -32,6 +32,9 @@ public:
 };
 
 // Include headers
+#include "../src/helpers/platform_utils.hpp"
+#include "../src/helpers/media_player.hpp"
+#include "../src/helpers/media_player_item.hpp"
 #include "../src/hosts/rss_host.hpp"
 
 // Global/static pointer to keep the host alive to prevent background thread cleanup crashes

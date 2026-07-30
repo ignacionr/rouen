@@ -33,6 +33,10 @@ find_package(imgui CONFIG REQUIRED)
 # Include parent directories for access to source files
 include_directories(..)
 include_directories(../src)
+include_directories(../src/helpers)
+include_directories(../src/hosts)
+include_directories(../src/models)
+include_directories(../src/cards)
 include_directories(../external)
 include_directories(../external/imguicolortextedit)
 include_directories(${SDL3_INCLUDE_DIRS})
@@ -169,13 +173,25 @@ add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 # RSS Watermark Test
 add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
 target_sources(test_rss_watermark PRIVATE 
+    ../src/hosts/rss_host.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
     ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
     ../src/helpers/config_service.cpp
 )
+if(APPLE)
+    target_sources(test_rss_watermark PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(test_rss_watermark PRIVATE "-framework Foundation" "-framework AVFoundation")
+endif()
 target_link_libraries(test_rss_watermark 
     PRIVATE 
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
     imgui::imgui
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
@@ -188,13 +204,25 @@ add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 # Audio Time Progression Test
 add_gtest_rss_executable(test_audio_time_progression test_audio_time_progression.cpp)
 target_sources(test_audio_time_progression PRIVATE 
+    ../src/hosts/rss_host.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
     ../src/helpers/config_service.cpp
 )
+if(APPLE)
+    target_sources(test_audio_time_progression PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(test_audio_time_progression PRIVATE "-framework Foundation" "-framework AVFoundation")
+endif()
 target_link_libraries(test_audio_time_progression 
     PRIVATE 
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
     imgui::imgui
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
@@ -214,7 +242,13 @@ add_test(NAME ObjectivesTest COMMAND test_objectives)
 
 # Deck Scrolling Test
 add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
+target_sources(test_deck_scrolling PRIVATE
+    ../src/cards/interface/card.cpp
+    ../src/helpers/config_service.cpp
+    ../src/helpers/theme_manager.cpp
+)
 target_link_libraries(test_deck_scrolling PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+set_target_properties(test_deck_scrolling PROPERTIES EXCLUDE_FROM_ALL TRUE)
 add_test(NAME DeckScrollingTest COMMAND test_deck_scrolling)
 
 # Camera Device List Test
@@ -265,13 +299,31 @@ add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 add_executable(test_mcp 
     test_mcp.cpp 
     ../src/hosts/mcp_host.cpp
+    ../src/hosts/universal_sync_host.cpp
+    ../src/hosts/git_sync_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/models/rss/rss_url_resolver.cpp
+    ../src/models/rss/rss_date_parser.cpp
+    ../src/models/rss/feed_item.cpp
+    ../src/models/mail/metadata_serialization.cpp
     ../src/models/git_process_helper.cpp
     ../src/models/git_scanner.cpp
     ../src/helpers/config_service.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
     ../src/cards/interface/card.cpp
     ../src/helpers/theme_manager.cpp
     ../src/hosts/llm_host.cpp
 )
+if(APPLE)
+    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(test_mcp PRIVATE "-framework Foundation" "-framework AVFoundation")
+endif()
 target_link_libraries(test_mcp 
     PRIVATE 
     GTest::gtest 
@@ -280,8 +332,10 @@ target_link_libraries(test_mcp
     GTest::gmock_main
     CURL::libcurl
     imgui::imgui
+    tinyxml2
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
     ${AVUTIL_LIBRARIES}
