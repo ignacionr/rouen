@@ -48,6 +48,7 @@
 #include "../media/media_companion.hpp"
 #include "../media/media_card.hpp"
 #include "../productivity/alarm.hpp"
+#include "../productivity/calculator.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
 #include "../productivity/pomodoro.hpp"
@@ -145,6 +146,10 @@ namespace rouen::cards {
                 
                 instance.emplace("converter", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<converter>();
+                });
+                
+                instance.emplace("calculator", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<calculator>();
                 });
                 
                 instance.emplace("sysinfo", [](std::string_view, SDL_Renderer*) {
