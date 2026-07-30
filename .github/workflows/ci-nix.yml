@@ -57,7 +57,7 @@ jobs:
       - name: Run Clang-Tidy static analysis
         run: |
           nix develop --command bash -c "cmake -B build-tidy -S . -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
-          nix develop --command bash -c "run-clang-tidy -clang-tidy-binary ./scripts/run-clang-tidy.sh -p build-tidy -header-filter='src/.*'"
+          nix develop --command bash -c "run-clang-tidy -clang-tidy-binary ./scripts/run-clang-tidy.sh -p build-tidy -header-filter='src/(?!.*[/\\]external[/\\]).*' '^(?!.*external).*'"
 
       - name: Run tests
         run: |

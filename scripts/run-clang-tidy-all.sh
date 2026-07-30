@@ -36,4 +36,8 @@ if [ -n "$NIX_CFLAGS_COMPILE" ]; then
 fi
 
 # Run official parallel runner with automatically determined cores
-exec run-clang-tidy -p=build-cmake-tools "${EXTRA_ARGS[@]}" "$@"
+if [ "$#" -eq 0 ]; then
+    exec run-clang-tidy -p=build-cmake-tools -header-filter='src/(?!.*[/\\]external[/\\]).*' "${EXTRA_ARGS[@]}" '^(?!.*external).*'
+else
+    exec run-clang-tidy -p=build-cmake-tools "${EXTRA_ARGS[@]}" "$@"
+fi
