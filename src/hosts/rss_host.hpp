@@ -15,12 +15,9 @@
 #include "../helpers/html_media_extractor.hpp" // for media::html::extracted_media
 #include "../models/rss/feed.hpp"
 #include "../models/rss/sqliterepo.hpp"
+#include "../models/rss/rss_url_resolver.hpp"
 
 namespace rouen::hosts {
-
-    std::string extract_rss_url_from_html(std::string_view html, std::string_view base_url);
-    std::string resolve_feed_url(const std::string& input_url);
-    std::string resolve_youtube_url(const std::string& input_url);
 
 /**
  * RSS Host Controller

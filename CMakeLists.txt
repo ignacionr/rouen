@@ -508,6 +508,7 @@ add_executable(${PROJECT_NAME}
   src/models/rss/rss_date_parser.cpp
   src/models/rss/feed_xml_parser.cpp
   src/models/rss/rss_item_repo.cpp
+  src/models/rss/rss_url_resolver.cpp
   # Mail model refactor additions
   src/models/mail/metadata_serialization.cpp
   # Git model refactor additions

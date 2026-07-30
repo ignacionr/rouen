@@ -109,6 +109,7 @@ function(add_gtest_rss_executable test_name source_file)
     target_sources(${test_name} PRIVATE
         ../src/models/rss/rss_date_parser.cpp
         ../src/models/rss/feed_item.cpp
+        ../src/models/rss/rss_url_resolver.cpp
     )
 
     # Include directories needed for the test
