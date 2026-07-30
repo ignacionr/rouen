@@ -7,6 +7,8 @@
 #include "registrar.hpp"
 #include "helpers/texture_helper.hpp"
 
+#include "helpers/media_player.hpp"
+
 main_wnd::main_wnd()
     : m_window(nullptr)
     , m_device(nullptr)
@@ -75,6 +77,7 @@ main_wnd::~main_wnd() {
     if (m_window) {
         SDL_DestroyWindow(m_window);
     }
+    media_player::stopAll();
     SDL_Quit();
 }
 

@@ -319,7 +319,7 @@ public:
                 if (get_cards_fn && *get_cards_fn) {
                     auto active_cards = (*get_cards_fn)();
                     for (const auto& card_ptr : active_cards) {
-                        if (card_ptr && card_ptr->video_overlay_visible) {
+                        if (card_ptr && card_ptr->video_overlay_visible && card_ptr->has_video_overlay()) {
                             card_ptr->render_video_ui();
                         }
                     }

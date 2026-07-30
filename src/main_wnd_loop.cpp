@@ -226,7 +226,7 @@ void main_wnd::run() {
                     // Render video-output UI overlay of all cards in the deck (e.g. notifications card)
                     try {
                         for (const auto& card_ptr : main_deck->get_cards()) {
-                            if (card_ptr && card_ptr->video_overlay_visible) {
+                            if (card_ptr && card_ptr->video_overlay_visible && card_ptr->has_video_overlay()) {
                                 card_ptr->render_video_ui();
                             }
                         }
@@ -863,7 +863,7 @@ void main_wnd::process_detached_window() {
                         auto main_deck = registrar::get<deck>("deck");
                         if (main_deck) {
                             for (const auto& card_ptr : main_deck->get_cards()) {
-                                if (card_ptr && card_ptr->video_overlay_visible) {
+                                if (card_ptr && card_ptr->video_overlay_visible && card_ptr->has_video_overlay()) {
                                     card_ptr->render_video_ui();
                                 }
                             }
