@@ -349,12 +349,15 @@ bool media_player_item::playMedia(const void* owner) {
 }
 
 std::string media_player_item::formatTime(double seconds) const {
+    if (seconds < 0.0) seconds = 0.0;
     auto hours = static_cast<int>(seconds) / 3600;
     int minutes = (static_cast<int>(seconds) % 3600) / 60;
     auto secs = static_cast<int>(seconds) % 60;
-    char buffer[100];
-    snprintf(buffer, sizeof(buffer), "%02d:%02d:%02d", hours, minutes, secs);
-    return std::string(buffer);
+    if (hours > 0) {
+        return std::format("{:02d}:{:02d}:{:02d}", hours, minutes, secs);
+    } else {
+        return std::format("{:02d}:{:02d}", minutes, secs);
+    }
 }
 
 bool media_player_item::seekTo(double position_seconds) {
@@ -403,7 +406,7 @@ double media_player_item::get_current_position() const {
 
     if (!is_playing) return position.load();
     if (is_paused.load()) return position.load();
-    if (!has_presented_first_frame.load()) return 0.0;
+    if (!has_presented_first_frame.load()) return std::max(start_offset.load(), position.load());
 
     auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - playback_start_time).count();
     double live_pos = start_offset.load() + elapsed;
@@ -437,8 +440,7 @@ bool media_player_item::setPaused(bool paused) {
         position.store(get_current_position());
         update_watermark();
     } else if (!paused && is_paused.load()) {
-        double cur_pos = position.load();
-        if (!has_presented_first_frame.load() || cur_pos < 1.0) cur_pos = 0.0;
+        double cur_pos = std::max(start_offset.load(), position.load());
         start_offset.store(cur_pos);
         playback_start_time = std::chrono::steady_clock::now();
     }
@@ -1795,8 +1797,9 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                 }
                 if (!has_presented_first_frame.load()) {
                     playback_start_time = std::chrono::steady_clock::now();
-                    start_offset.store(0.0);
-                    position.store(0.0);
+                    double cur_off = std::max(start_offset.load(), position.load());
+                    start_offset.store(cur_off);
+                    position.store(cur_off);
                     has_presented_first_frame.store(true);
                 }
             }

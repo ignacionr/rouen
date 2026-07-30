@@ -921,84 +921,350 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     draw_list->AddText(ImVec2(stat_x, stat_y), item.is_paused.load() ? IM_COL32(240, 180, 60, 240) : IM_COL32(80, 220, 120, 240), status_str.c_str());
 }
 
+static std::string format_time_precise(double seconds) {
+    if (seconds < 0.0) seconds = 0.0;
+    auto hours = static_cast<int>(seconds) / 3600;
+    int minutes = (static_cast<int>(seconds) % 3600) / 60;
+    auto secs = static_cast<int>(seconds) % 60;
+    int tenths = static_cast<int>(seconds * 10.0) % 10;
+    if (hours > 0) {
+        return std::format("{:02d}:{:02d}:{:02d}.{}", hours, minutes, secs, tenths);
+    } else {
+        return std::format("{:02d}:{:02d}.{}", minutes, secs, tenths);
+    }
+}
+
+bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, float width, float height, ImVec4 accent_color) {
+    double current_pos = item.get_current_position();
+    double current_dur = item.duration.load();
+    float avail_w = (width > 0.0f) ? width : ImGui::GetContentRegionAvail().x;
+    avail_w = std::max(60.0f, avail_w);
+
+    if (current_dur <= 0.0) {
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, accent_color);
+        ImGui::ProgressBar(0.0f, ImVec2(avail_w, height), item.is_playing ? "Live Stream" : "Loading...");
+        ImGui::PopStyleColor();
+        return false;
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGuiIO& io = ImGui::GetIO();
+
+    ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+    ImVec2 size(avail_w, height);
+
+    ImGui::PushID(str_id);
+    ImGui::InvisibleButton(str_id, size);
+    bool is_hovered = ImGui::IsItemHovered();
+    bool is_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    ImGuiID item_id = ImGui::GetID(str_id);
+
+    static ImGuiID s_active_seek_id = 0;
+    static double s_drag_target_pos = 0.0;
+    static bool s_precision_mode = false;
+    static ImVec2 s_drag_start_mouse(0.0f, 0.0f);
+    static double s_drag_start_pos = 0.0;
+
+    bool is_dragging = (s_active_seek_id == item_id);
+
+    if ((is_clicked || (is_hovered && io.MouseDown[0])) && s_active_seek_id == 0) {
+        s_active_seek_id = item_id;
+        s_drag_start_mouse = io.MousePos;
+        s_drag_start_pos = current_pos;
+        float rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+        s_drag_target_pos = static_cast<double>(rel_x) * current_dur;
+        is_dragging = true;
+    }
+
+    if (is_dragging) {
+        if (!io.MouseDown[0]) {
+            item.seekTo(s_drag_target_pos);
+            current_pos = s_drag_target_pos;
+            s_active_seek_id = 0;
+            is_dragging = false;
+            s_precision_mode = false;
+        } else {
+            float vertical_dist = std::abs(io.MousePos.y - (cursor_pos.y + height * 0.5f));
+            s_precision_mode = io.KeyShift || (vertical_dist > 25.0f);
+
+            if (s_precision_mode) {
+                float delta_x = io.MousePos.x - s_drag_start_mouse.x;
+                double delta_sec = (static_cast<double>(delta_x) / static_cast<double>(avail_w)) * current_dur * 0.1;
+                s_drag_target_pos = std::clamp(s_drag_start_pos + delta_sec, 0.0, current_dur);
+            } else {
+                float rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+                s_drag_target_pos = static_cast<double>(rel_x) * current_dur;
+            }
+        }
+    }
+
+    // Mouse scroll wheel seeking when hovered
+    if (is_hovered && io.MouseWheel != 0.0f) {
+        double step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
+        double target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
+        item.seekTo(target);
+        current_pos = target;
+    }
+
+    // Keyboard arrow keys seeking when hovered
+    if (is_hovered) {
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+            double step = io.KeyShift ? 1.0 : 5.0;
+            item.seekTo(std::max(0.0, current_pos - step));
+        } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+            double step = io.KeyShift ? 1.0 : 5.0;
+            item.seekTo(std::min(current_dur, current_pos + step));
+        }
+    }
+
+    double display_pos = is_dragging ? s_drag_target_pos : current_pos;
+    float progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
+
+    float track_h = (is_hovered || is_dragging) ? 8.0f : 5.0f;
+    float track_y = cursor_pos.y + (height - track_h) * 0.5f;
+
+    ImVec2 track_min(cursor_pos.x, track_y);
+    ImVec2 track_max(cursor_pos.x + avail_w, track_y + track_h);
+    float rounding = track_h * 0.5f;
+
+    // Track Background
+    draw_list->AddRectFilled(track_min, track_max, IM_COL32(30, 36, 46, 220), rounding);
+    draw_list->AddRect(track_min, track_max, IM_COL32(255, 255, 255, 25), rounding);
+
+    // Track Progress Fill
+    float fill_w = progress * avail_w;
+    if (fill_w > 0.0f) {
+        ImVec2 fill_max(cursor_pos.x + fill_w, track_y + track_h);
+        ImU32 col_start = IM_COL32(
+            static_cast<int>(accent_color.x * 255),
+            static_cast<int>(accent_color.y * 255),
+            static_cast<int>(accent_color.z * 255),
+            255
+        );
+        ImU32 col_end = IM_COL32(
+            std::min(255, static_cast<int>(accent_color.x * 280)),
+            std::min(255, static_cast<int>(accent_color.y * 280)),
+            std::min(255, static_cast<int>(accent_color.z * 300)),
+            255
+        );
+        draw_list->AddRectFilledMultiColor(track_min, fill_max, col_start, col_end, col_end, col_start);
+
+        draw_list->AddLine(
+            ImVec2(track_min.x + 1.0f, track_min.y + 1.0f),
+            ImVec2(cursor_pos.x + fill_w - 1.0f, track_min.y + 1.0f),
+            IM_COL32(255, 255, 255, 80),
+            1.0f
+        );
+    }
+
+    // Draw Watermark / Bookmark tick dot (only if distant from current playback position)
+    if (item.watermark.has_value() && *item.watermark > 0.0 && *item.watermark < current_dur) {
+        if (std::abs(display_pos - *item.watermark) > 4.0) {
+            float mark_rel = static_cast<float>(*item.watermark / current_dur);
+            float mark_x = cursor_pos.x + mark_rel * avail_w;
+            draw_list->AddCircleFilled(ImVec2(mark_x, track_y + track_h + 3.0f), 2.5f, IM_COL32(255, 200, 60, 200));
+        }
+    }
+
+    // Ghost cursor line on hover
+    if (is_hovered && !is_dragging) {
+        float ghost_rel = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+        float ghost_x = cursor_pos.x + ghost_rel * avail_w;
+        draw_list->AddLine(
+            ImVec2(ghost_x, track_min.y - 1.0f),
+            ImVec2(ghost_x, track_max.y + 1.0f),
+            IM_COL32(255, 255, 255, 120),
+            1.5f
+        );
+    }
+
+    // Scrubber Knob (Thumb)
+    float knob_x = std::clamp(cursor_pos.x + fill_w, cursor_pos.x + 4.0f, cursor_pos.x + avail_w - 4.0f);
+    float knob_y = cursor_pos.y + height * 0.5f;
+    float knob_r = (is_hovered || is_dragging) ? 7.0f : 4.5f;
+
+    if (is_hovered || is_dragging) {
+        draw_list->AddCircleFilled(
+            ImVec2(knob_x, knob_y),
+            knob_r + 4.0f,
+            IM_COL32(
+                static_cast<int>(accent_color.x * 255),
+                static_cast<int>(accent_color.y * 255),
+                static_cast<int>(accent_color.z * 255),
+                80
+            )
+        );
+    }
+
+    draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), knob_r, IM_COL32(255, 255, 255, 255));
+    draw_list->AddCircle(
+        ImVec2(knob_x, knob_y),
+        knob_r,
+        IM_COL32(
+            static_cast<int>(accent_color.x * 255),
+            static_cast<int>(accent_color.y * 255),
+            static_cast<int>(accent_color.z * 255),
+            255
+        ),
+        16,
+        1.8f
+    );
+
+    // Precise Floating Tooltip on Hover or Drag
+    if (is_hovered || is_dragging) {
+        double hover_time = is_dragging ? s_drag_target_pos : (static_cast<double>(std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f)) * current_dur);
+        std::string time_str = s_precision_mode ? format_time_precise(hover_time) : item.formatTime(hover_time);
+        if (s_precision_mode) {
+            time_str += "  [Precision ±0.1s]";
+        }
+
+        ImVec2 txt_sz = ImGui::CalcTextSize(time_str.c_str());
+        float tt_x = std::clamp(io.MousePos.x - txt_sz.x * 0.5f, cursor_pos.x, cursor_pos.x + avail_w - txt_sz.x);
+        float tt_y = cursor_pos.y - txt_sz.y - 12.0f;
+
+        draw_list->AddRectFilled(
+            ImVec2(tt_x - 7.0f, tt_y - 4.0f),
+            ImVec2(tt_x + txt_sz.x + 7.0f, tt_y + txt_sz.y + 4.0f),
+            IM_COL32(18, 22, 28, 235),
+            5.0f
+        );
+        draw_list->AddRect(
+            ImVec2(tt_x - 7.0f, tt_y - 4.0f),
+            ImVec2(tt_x + txt_sz.x + 7.0f, tt_y + txt_sz.y + 4.0f),
+            IM_COL32(
+                static_cast<int>(accent_color.x * 255),
+                static_cast<int>(accent_color.y * 255),
+                static_cast<int>(accent_color.z * 255),
+                120
+            ),
+            5.0f
+        );
+        draw_list->AddText(ImVec2(tt_x, tt_y), IM_COL32(245, 245, 250, 255), time_str.c_str());
+    }
+
+    ImGui::PopID();
+    return is_dragging;
+}
+
 void media_player::draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
     if (get_detached_item().get() == &item) return;
     double current_pos = item.get_current_position();
     double current_dur = item.duration.load();
     if (current_dur <= 0.0) return;
 
-    float progress = static_cast<float>(std::clamp(current_pos / current_dur, 0.0, 1.0));
-
     ImDrawList* draw_list = ImGui::GetForegroundDrawList();
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 mouse_pos = io.MousePos;
 
-    float hit_height = 24.0f;
+    float hit_height = 28.0f;
     bool is_bottom_hovered = (mouse_pos.x >= 0.0f && mouse_pos.x <= win_w &&
                               mouse_pos.y >= win_h - hit_height && mouse_pos.y <= win_h + 10.0f);
 
     static bool s_is_dragging = false;
-    if (is_bottom_hovered && io.MouseDown[0] && !io.MouseDownOwned[0]) {
+    static double s_drag_target_pos = 0.0;
+    static bool s_precision_mode = false;
+    static float s_drag_start_x = 0.0f;
+    static double s_drag_start_pos = 0.0;
+
+    if (is_bottom_hovered && io.MouseDown[0] && !io.MouseDownOwned[0] && !s_is_dragging) {
         s_is_dragging = true;
-    }
-    if (!io.MouseDown[0]) {
-        s_is_dragging = false;
+        s_drag_start_x = mouse_pos.x;
+        s_drag_start_pos = current_pos;
+        s_drag_target_pos = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
     }
 
     if (s_is_dragging) {
-        double target_time = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
-        item.seekTo(target_time);
-        current_pos = target_time;
-        progress = static_cast<float>(std::clamp(current_pos / current_dur, 0.0, 1.0));
+        if (!io.MouseDown[0]) {
+            item.seekTo(s_drag_target_pos);
+            s_is_dragging = false;
+            s_precision_mode = false;
+        } else {
+            float vertical_dist = std::abs(mouse_pos.y - (win_h - 10.0f));
+            s_precision_mode = io.KeyShift || (vertical_dist > 30.0f);
+
+            if (s_precision_mode) {
+                float delta_x = mouse_pos.x - s_drag_start_x;
+                double delta_sec = (static_cast<double>(delta_x) / static_cast<double>(win_w)) * current_dur * 0.1;
+                s_drag_target_pos = std::clamp(s_drag_start_pos + delta_sec, 0.0, current_dur);
+            } else {
+                s_drag_target_pos = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
+            }
+        }
     }
+
+    // Scroll wheel seeking near bottom edge
+    if (is_bottom_hovered && io.MouseWheel != 0.0f) {
+        double step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
+        double target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
+        item.seekTo(target);
+        current_pos = target;
+    }
+
+    double display_pos = s_is_dragging ? s_drag_target_pos : current_pos;
+    float progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
 
     float line_h = (is_bottom_hovered || s_is_dragging) ? 8.0f : 4.0f;
     float y1 = win_h - line_h;
     float y2 = win_h;
 
-    // Background track
-    draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(0, 0, 0, 160));
-    draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(255, 255, 255, 50));
+    // Track Background
+    draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(0, 0, 0, 180));
+    draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(255, 255, 255, 40));
 
     // Played progress fill
     float filled_w = progress * win_w;
     if (filled_w > 0.0f) {
-        draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(filled_w, y2), IM_COL32(235, 55, 55, 255));
+        draw_list->AddRectFilledMultiColor(
+            ImVec2(0.0f, y1), ImVec2(filled_w, y2),
+            IM_COL32(0, 210, 255, 255), IM_COL32(110, 80, 255, 255),
+            IM_COL32(110, 80, 255, 255), IM_COL32(0, 210, 255, 255)
+        );
+    }
+
+    // Ghost line on hover
+    if (is_bottom_hovered && !s_is_dragging) {
+        float ghost_x = std::clamp(mouse_pos.x, 0.0f, win_w);
+        draw_list->AddLine(ImVec2(ghost_x, y1 - 4.0f), ImVec2(ghost_x, y2), IM_COL32(255, 255, 255, 140), 1.5f);
     }
 
     // Scrubber handle (knob)
     if (is_bottom_hovered || s_is_dragging) {
         float knob_x = std::clamp(filled_w, 6.0f, win_w - 6.0f);
         float knob_y = y1 + line_h * 0.5f;
+
+        draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), 10.0f, IM_COL32(110, 80, 255, 80));
         draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(255, 255, 255, 255));
-        draw_list->AddCircle(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(235, 55, 55, 255), 12, 1.5f);
+        draw_list->AddCircle(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(0, 210, 255, 255), 16, 1.8f);
 
         // Hover time preview tooltip
-        double hover_target_time = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
-        std::string hover_str = item.formatTime(hover_target_time);
+        double hover_target_time = s_is_dragging ? s_drag_target_pos : std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
+        std::string hover_str = s_precision_mode ? format_time_precise(hover_target_time) : item.formatTime(hover_target_time);
+        if (s_precision_mode) {
+            hover_str += "  [Precision ±0.1s]";
+        }
 
         ImVec2 txt_sz = ImGui::CalcTextSize(hover_str.c_str());
         float tt_x = std::clamp(mouse_pos.x - txt_sz.x * 0.5f, 10.0f, win_w - txt_sz.x - 10.0f);
         float tt_y = y1 - txt_sz.y - 12.0f;
 
         draw_list->AddRectFilled(
-            ImVec2(tt_x - 6.0f, tt_y - 4.0f),
-            ImVec2(tt_x + txt_sz.x + 6.0f, tt_y + txt_sz.y + 4.0f),
-            IM_COL32(20, 20, 25, 220),
-            4.0f
+            ImVec2(tt_x - 7.0f, tt_y - 4.0f),
+            ImVec2(tt_x + txt_sz.x + 7.0f, tt_y + txt_sz.y + 4.0f),
+            IM_COL32(18, 22, 28, 235),
+            5.0f
         );
         draw_list->AddRect(
-            ImVec2(tt_x - 6.0f, tt_y - 4.0f),
-            ImVec2(tt_x + txt_sz.x + 6.0f, tt_y + txt_sz.y + 4.0f),
-            IM_COL32(255, 255, 255, 50),
-            4.0f
+            ImVec2(tt_x - 7.0f, tt_y - 4.0f),
+            ImVec2(tt_x + txt_sz.x + 7.0f, tt_y + txt_sz.y + 4.0f),
+            IM_COL32(0, 210, 255, 120),
+            5.0f
         );
         draw_list->AddText(ImVec2(tt_x, tt_y), IM_COL32(255, 255, 255, 255), hover_str.c_str());
     }
 
     // Time overlay badge (Current / Total)
     if (is_bottom_hovered || s_is_dragging || item.is_paused.load()) {
-        std::string status_text = std::format("{} / {}", item.formatTime(current_pos), item.formatTime(current_dur));
+        std::string status_text = std::format("{} / {}", item.formatTime(display_pos), item.formatTime(current_dur));
         if (item.is_paused.load()) {
             status_text = ICON_MD_PAUSE " " + status_text;
         }
@@ -1052,47 +1318,70 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
             ImGui::TextUnformatted(title.data(), title.data() + title.size());
             double current_pos = item.get_current_position();
             double current_dur = item.duration.load();
-            if (current_dur > 0 && current_dur > current_pos) {
-                ImGui::TextColored(info_color, "%s: %s / %s",
-                    item.is_paused.load() ? "Paused" : "Playing",
-                    item.formatTime(current_pos).c_str(),
-                    item.formatTime(current_dur).c_str());
-            } else if (current_pos >= 0) {
-                ImGui::TextColored(info_color, "%s: %s",
-                    item.is_paused.load() ? "Paused" : "Playing",
-                    item.formatTime(current_pos).c_str());
+
+            // Transport buttons: Jump -10s, Play/Pause, Stop, Jump +10s & Volume
+            if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_REWIND).c_str())) {
+                item.seekTo(std::max(0.0, current_pos - 10.0));
             }
-            int vol = item.volume.load();
-            ImGui::Text("Volume");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump -10 seconds");
+
             ImGui::SameLine();
-            if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
-                item.setVolume(vol);
-            }
             if (ImGui::Button(std::format(" {} ", item.is_paused.load() ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
                 item.togglePause();
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(item.is_paused.load() ? "Resume" : "Pause");
+
             ImGui::SameLine();
             if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
                 item.stopMedia();
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Stop");
+
             ImGui::SameLine();
-            if (current_dur > 0 && current_dur > current_pos) {
-                float progress = current_pos > 0 ? 
-                    static_cast<float>(current_pos / current_dur) : 0.0f;
-                progress = std::max(0.0f, std::min(1.0f, progress));
-                float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
-                ImVec2 progress_bar_pos = ImGui::GetCursorScreenPos();
-                ImGui::ProgressBar(progress, ImVec2(remaining_w, 0), "");
-                if (ImGui::IsItemClicked()) {
-                    auto mouse_x = ImGui::GetIO().MousePos.x;
-                    auto rel_x = (mouse_x - progress_bar_pos.x) / remaining_w;
-                    rel_x = std::max(0.0f, std::min(1.0f, rel_x));
-                    auto target_pos = static_cast<double>(rel_x) * current_dur;
-                    item.seekTo(target_pos);
+            if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_FORWARD).c_str())) {
+                double target = (current_dur > 0.0) ? std::min(current_dur, current_pos + 10.0) : (current_pos + 10.0);
+                item.seekTo(target);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump +10 seconds");
+
+            ImGui::SameLine();
+            int vol = item.volume.load();
+            ImGui::Text(ICON_MD_VOLUME_UP);
+            ImGui::SameLine();
+            float vol_w = std::min(90.0f, player_width * 0.25f);
+            ImGui::SetNextItemWidth(vol_w);
+            if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+                item.setVolume(vol);
+            }
+
+            // Slick Seek Bar
+            ImGui::Spacing();
+            draw_seek_bar("##card_seek_bar", item, player_width, 18.0f, info_color);
+
+            // Timestamp Info Row: Current Pos on left, Toggleable Total/Remaining on right
+            static bool s_show_remaining = false;
+            std::string pos_str = item.formatTime(current_pos);
+            std::string dur_str;
+            if (current_dur > 0.0) {
+                if (s_show_remaining) {
+                    double rem = std::max(0.0, current_dur - current_pos);
+                    dur_str = "-" + item.formatTime(rem);
+                } else {
+                    dur_str = item.formatTime(current_dur);
                 }
-            } else {
-                float remaining_w = std::max(50.0f, ImGui::GetContentRegionAvail().x);
-                ImGui::ProgressBar(0.0f, ImVec2(remaining_w, 0), item.is_playing ? "Streaming..." : "Loading...");
+            }
+
+            ImGui::TextColored(info_color, "%s", pos_str.c_str());
+
+            if (current_dur > 0.0) {
+                ImVec2 dur_sz = ImGui::CalcTextSize(dur_str.c_str());
+                ImGui::SameLine(std::max(0.0f, player_width - dur_sz.x));
+                if (ImGui::Selectable(dur_str.c_str(), false, 0, dur_sz)) {
+                    s_show_remaining = !s_show_remaining;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(s_show_remaining ? "Click to show total duration" : "Click to show remaining time");
+                }
             }
 
             ImTextureID tex = item.get_texture_id();

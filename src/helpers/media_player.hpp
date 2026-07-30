@@ -65,6 +65,7 @@ struct media_player {
     static void draw_vintage_110_vu_meter(float level_l, float level_r, float watermark_l = 0.0f, float watermark_r = 0.0f, float width = 0.0f, float height = 85.0f, bool is_lit = false);
     static void draw_full_window_audio_visualization(media_player_item& item, float win_w, float win_h);
     static void draw_full_window_progress_line(media_player_item& item, float win_w, float win_h);
+    static bool draw_seek_bar(const char* str_id, media_player_item& item, float width = -1.0f, float height = 18.0f, ImVec4 accent_color = ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
 
     static void player(std::string_view url, ImVec4 info_color, std::string_view title = "Media", long long feed_id = -1, std::string_view item_link = "", std::string_view item_title = "", std::optional<double>& initial_watermark = get_dummy_watermark(), bool prefer_tall_layout = false, float max_width = 0.0f, const void* owner_card = nullptr);
 };
