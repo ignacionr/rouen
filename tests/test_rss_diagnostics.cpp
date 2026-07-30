@@ -30,8 +30,8 @@ protected:
 
 TEST_F(RSSDiagnosticsTest, CardRenderMetricsRecording) {
     auto& metrics = rouen::helpers::CardRenderMetrics::instance();
-    metrics.record("Adventures in DevOps", "rss-feed:68", 1050.0);
-    metrics.record("Adventures in DevOps", "rss-feed:68", 950.0);
+    metrics.record("Adventures in DevOps", "rss-feed:68", 1050.0, 10);
+    metrics.record("Adventures in DevOps", "rss-feed:68", 950.0, 10);
 
     auto metric = metrics.get_metric_for_key("rss-feed:68");
     ASSERT_TRUE(metric.has_value());
@@ -43,6 +43,7 @@ TEST_F(RSSDiagnosticsTest, CardRenderMetricsRecording) {
     EXPECT_EQ(metric->render_count, 2);
     EXPECT_EQ(metric->slow_render_count, 2);
     EXPECT_EQ(metric->very_slow_render_count, 2);
+    EXPECT_EQ(metric->requested_fps, 10);
 }
 
 TEST_F(RSSDiagnosticsTest, CardRenderMetricsInactiveFilter) {

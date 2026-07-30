@@ -19,6 +19,7 @@ struct CardMetricEntry {
     uint64_t render_count{0};
     uint64_t slow_render_count{0};
     uint64_t very_slow_render_count{0};
+    int requested_fps{1};
     std::chrono::steady_clock::time_point last_updated{};
 };
 
@@ -29,7 +30,7 @@ public:
         return inst;
     }
 
-    void record(const std::string& title, const std::string& uri, double render_ms) {
+    void record(const std::string& title, const std::string& uri, double render_ms, int requested_fps = 1) {
         std::lock_guard<std::mutex> lock(mutex_);
         std::string key = uri.empty() ? title : uri;
         if (key.empty()) {
@@ -39,6 +40,7 @@ public:
         entry.title = title.empty() ? key : title;
         entry.uri = uri;
         entry.last_render_ms = render_ms;
+        entry.requested_fps = requested_fps;
         if (render_ms > entry.max_render_ms) {
             entry.max_render_ms = render_ms;
         }

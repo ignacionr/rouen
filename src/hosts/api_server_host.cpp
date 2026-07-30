@@ -282,6 +282,7 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                 item["render_count"] = m.render_count;
                 item["slow_render_count"] = m.slow_render_count;
                 item["very_slow_render_count"] = m.very_slow_render_count;
+                item["requested_fps"] = m.requested_fps;
                 arr.push_back(item);
             }
             std::string out;

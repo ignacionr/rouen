@@ -40,7 +40,7 @@ struct sysinfo_card : public card {
         colors[2] = {0.2f, 0.7f, 0.2f, 1.0f}; // Green progress bar color
         
         name("System Info");
-        width = 470.0f; // Increased width to accommodate benchmark results
+        width = 520.0f; // Increased width to accommodate render metrics with requested FPS
         
         // Request higher refresh rate for updating metrics
         requested_fps = 5;  // Update 5 times per second
@@ -387,11 +387,12 @@ struct sysinfo_card : public card {
             if (card_metrics.empty()) {
                 ui.text("No active card metrics recorded yet.");
             } else {
-                if (ui.begin_table("CardRenderMetricsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                if (ui.begin_table("CardRenderMetricsTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
                     ui.table_setup_column("Card Title", ImGuiTableColumnFlags_WidthStretch);
-                    ui.table_setup_column("Last (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-                    ui.table_setup_column("Avg (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-                    ui.table_setup_column("Max (ms)", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+                    ui.table_setup_column("Req FPS", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+                    ui.table_setup_column("Last (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                    ui.table_setup_column("Avg (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+                    ui.table_setup_column("Max (ms)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                     ui.table_headers_row();
 
                     for (const auto& metric : card_metrics) {
@@ -401,12 +402,15 @@ struct sysinfo_card : public card {
                         ui.text(metric.title);
 
                         ui.table_set_column_index(1);
-                        ui.text(std::format("{:.2f}", metric.last_render_ms));
+                        ui.text(std::format("{} fps", metric.requested_fps));
 
                         ui.table_set_column_index(2);
-                        ui.text(std::format("{:.2f}", metric.avg_render_ms));
+                        ui.text(std::format("{:.2f}", metric.last_render_ms));
 
                         ui.table_set_column_index(3);
+                        ui.text(std::format("{:.2f}", metric.avg_render_ms));
+
+                        ui.table_set_column_index(4);
                         ui.text(std::format("{:.2f}", metric.max_render_ms));
                     }
                     ui.end_table();
