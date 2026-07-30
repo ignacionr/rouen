@@ -355,10 +355,11 @@ struct sysinfo_card : public card {
             float norm_val = std::clamp(total_avg_ms / 14.0f, 0.0f, 1.0f);
 
             static float card_render_watermark = 0.0f;
+
             if (norm_val >= card_render_watermark) {
                 card_render_watermark = norm_val;
             } else {
-                card_render_watermark = std::max(norm_val, card_render_watermark * 0.96f);
+		card_render_watermark = std::max(norm_val, card_render_watermark * 0.99f);
             }
 
             rouen::helpers::vu_meter::VUMeterConfig vu_cfg;

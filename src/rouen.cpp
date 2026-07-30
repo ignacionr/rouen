@@ -67,6 +67,7 @@ void setup_windows_debug_console() {
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
+#include <curl/curl.h>
 
 // On Windows, SDL2 requires main to be renamed to SDL_main
 #ifdef _WIN32
@@ -78,7 +79,11 @@ int SDL_main(int argc, char* argv[]) {
     setup_windows_debug_console();
 #else
 int main(int argc, char* argv[]) {
+    (void)argc; // Suppress unused parameter warning
+    (void)argv; // Suppress unused parameter warning
 #endif
+    // Initialize CURL globally on the main thread before starting any threads
+    curl_global_init(CURL_GLOBAL_ALL);
     for (int i = 1; i < argc; ++i) {
         std::string_view arg(argv[i]);
         if (arg == "--no-initial-cards" || arg == "--no-cards") {
@@ -234,5 +239,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    curl_global_cleanup();
     return 0;
 }
