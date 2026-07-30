@@ -1107,6 +1107,11 @@ void RSSHost::remove_feed_tag(long long feed_id, std::string_view tag) {
     }
 }
 
+int RSSHost::delete_unused_tags() {
+    return repo_.delete_unused_tags();
+}
+
+
 std::string RSSHost::get_feed_language(long long feed_id) {
     std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
     for (const auto& feed : feeds_) {

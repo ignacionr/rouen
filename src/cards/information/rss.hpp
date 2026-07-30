@@ -359,9 +359,45 @@ public:
                     
                     ImGui::PopStyleColor(3);
                 }
+
+                // Action button to clean/delete empty unused RSS tags
+                const float clean_btn_width = ImGui::CalcTextSize(ICON_MD_DELETE_SWEEP " Clean Unused Tags").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                if (used_row_width + tag_spacing + clean_btn_width <= tags_row_width) {
+                    ImGui::SameLine(0.0f, tag_spacing);
+                }
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.15f, 0.15f, 0.6f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.2f, 0.2f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.25f, 0.25f, 0.9f));
+                
+                if (ImGui::Button(ICON_MD_DELETE_SWEEP " Clean Unused Tags")) {
+                    if (rss_host) {
+                        int count = rss_host->delete_unused_tags();
+                        last_gallery_cache_update_time_ = std::chrono::steady_clock::time_point{};
+                        cached_all_feeds_.clear();
+                        status_message_ = std::format("Deleted {} unused tag(s)", count);
+                        status_message_time_ = std::chrono::steady_clock::now();
+                    }
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Delete all empty RSS tags not assigned to any feed");
+                }
+                ImGui::PopStyleColor(3);
+
                 ImGui::PopStyleVar(2);
                 ImGui::Spacing();
+
+                if (!status_message_.empty()) {
+                    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - status_message_time_).count();
+                    if (elapsed < 4) {
+                        ImGui::TextColored(colors[3], "%s", status_message_.c_str());
+                        ImGui::Spacing();
+                    } else {
+                        status_message_.clear();
+                    }
+                }
             }
+
 
             // Smart Lists section
             {
@@ -1352,6 +1388,8 @@ private:
     size_t last_all_feeds_size_ = 0;
     std::unordered_map<std::string, FeedCacheState> feed_states_;
     std::set<std::string> top_fresh_tags_;
+    std::string status_message_ = "";
+    std::chrono::steady_clock::time_point status_message_time_{};
 
     // Search debouncing and caching state
     char search_buffer_[256] = "";

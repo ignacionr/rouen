@@ -342,6 +342,22 @@ namespace media::rss
             }
         }
 
+        int delete_unused_tags()
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            int deleted_count = 0;
+            try {
+                db_.exec("DELETE FROM feed_tag WHERE feed_id NOT IN (SELECT id FROM feed)", [](sqlite3_stmt*){});
+                db_.exec("DELETE FROM rss_tag_definition WHERE tag NOT IN (SELECT DISTINCT tag FROM feed_tag)", [](sqlite3_stmt*){});
+                deleted_count = db_.changes();
+                RSS_INFO_FMT("Deleted {} unused RSS tags", deleted_count);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error deleting unused tags: {}", e.what());
+            }
+            return deleted_count;
+        }
+
+
         long long upsert_feed(std::string_view url, std::string_view title, std::string_view image_url)
         {
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety

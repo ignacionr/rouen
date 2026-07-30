@@ -129,6 +129,8 @@ public:
     
     void remove_feed_tag(long long feed_id, std::string_view tag);
 
+    int delete_unused_tags();
+
     std::string get_feed_language(long long feed_id);
     
     void set_feed_language(long long feed_id, std::string_view language);

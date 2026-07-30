@@ -516,6 +516,16 @@ namespace rouen::cards
                                 suggestTagsWithAI();
                             }
                         }
+                        ImGui::SameLine();
+                        if (ImGui::Button(ICON_MD_DELETE_SWEEP " Delete Unused Tags")) {
+                            if (rss_host) {
+                                rss_host->delete_unused_tags();
+                                update_cached_feed_metadata(true);
+                            }
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Delete all empty RSS tags not assigned to any feed");
+                        }
                         if (!ai_tagging_error_.empty()) {
                             ImGui::Spacing();
                             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "AI Error: %s", ai_tagging_error_.c_str());

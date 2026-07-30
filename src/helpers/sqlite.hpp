@@ -260,6 +260,12 @@ namespace hosting::db
             std::lock_guard<std::recursive_mutex> lock(mutex_);
             return sqlite3_last_insert_rowid(db_);
         }
+
+        int changes() const {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            return sqlite3_changes(db_);
+        }
+
         
     private:
         template <typename T>
