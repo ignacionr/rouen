@@ -418,27 +418,42 @@ struct deck {
                             TextureHelper::destroyTexture(snapshot_texture);
                         }
                     }
-            }
-            
-                else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                    // Handle Ctrl+Right Arrow shortcut
-                    auto focused_card = std::find_if(cards_.begin(), cards_.end(),
-                        [](const auto& card) { return card->is_focused; });
-                    if (focused_card != cards_.end()) {
-                        // Move the focused card to the right
-                        if (focused_card + 1 != cards_.end()) {
-                            std::iter_swap(focused_card, focused_card + 1);
-                        }
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_E)) {
+                    // Handle Cmd+Shift+E (macOS) / Ctrl+Shift+E (Windows/Linux) - Full screen width
+                    auto expand_svc = registrar::get<std::function<void()>>("expand_to_full_width");
+                    if (expand_svc) {
+                        (*expand_svc)();
                     }
                 }
-                else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                    // Handle Ctrl+Left Arrow shortcut
-                    auto focused_card = std::find_if(cards_.begin(), cards_.end(),
-                        [](const auto& card) { return card->is_focused; });
-                    if (focused_card != cards_.begin()) {
-                        // Move the focused card to the left
-                        std::iter_swap(focused_card, focused_card - 1);
+            }
+            else if (ImGui::IsKeyPressed(ImGuiKey_W)) {
+                // Handle Cmd+W (macOS) / Ctrl+W (Windows/Linux) - Close focused card
+                if (close_focused_card()) {
+                    auto signal = registrar::get<std::function<void()>>("signal_card_close_handled");
+                    if (signal) {
+                        (*signal)();
                     }
+                }
+            }
+            else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                // Handle Ctrl+Right Arrow shortcut
+                auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                    [](const auto& card) { return card->is_focused; });
+                if (focused_card != cards_.end()) {
+                    // Move the focused card to the right
+                    if (focused_card + 1 != cards_.end()) {
+                        std::iter_swap(focused_card, focused_card + 1);
+                    }
+                }
+            }
+            else if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                // Handle Ctrl+Left Arrow shortcut
+                auto focused_card = std::find_if(cards_.begin(), cards_.end(),
+                    [](const auto& card) { return card->is_focused; });
+                if (focused_card != cards_.begin()) {
+                    // Move the focused card to the left
+                    std::iter_swap(focused_card, focused_card - 1);
                 }
             }
         }

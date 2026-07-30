@@ -31,7 +31,7 @@ The **Deck** ([deck.hpp](file:///Users/ignaciorodriguez/src/rouen/src/cards/inte
   - **Last Fitting Window Expansion**: As cards are laid out sequentially into a row, if adding a card would exceed a section boundary ($\text{sec\_boundary} = (k + 1) \times \text{size.x}$), the layout engine expands the width of the last card fitting in section $k$ so its right edge perfectly aligns to $\text{sec\_boundary}$.
   - **Section Navigation**: When focusing a card, Rouen calculates its section index ($\text{section\_idx} = \lfloor\text{abs\_x} / \text{size.x}\rfloor$) and programmatically performs smooth horizontal scrolling to $\text{target\_scroll\_x} = \text{section\_idx} \times \text{size.x}$.
 - **Persistent Workspace State**: Saves active card URIs and configurations to `rouen.ini` in user config directory.
-- **Global Shortcuts**: Implements shortcuts (`Cmd+W`/`Ctrl+W` to close focused cards, `Cmd+Shift+F`/`Ctrl+Shift+F` fit window width, `Cmd+Shift+S`/`Ctrl+Shift+S` snapshot).
+- **Global Shortcuts**: Implements shortcuts (`Cmd+W`/`Ctrl+W` to close focused cards, `Cmd+Shift+E`/`Ctrl+Shift+E` full display width, `Cmd+Shift+F`/`Ctrl+Shift+F` fit workspace width, `Cmd+Shift+S`/`Ctrl+Shift+S` snapshot).
 
 ---
 

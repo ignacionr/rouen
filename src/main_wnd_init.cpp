@@ -118,6 +118,14 @@ bool main_wnd::initialize() {
             )
         );
 
+        registrar::add<std::function<void()>>("expand_to_full_width", 
+            std::make_shared<std::function<void()>>(
+                [this]() {
+                    expand_to_full_width();
+                }
+            )
+        );
+
         // Register exit function
         registrar::add<std::function<bool()>>("exit", std::make_shared<std::function<bool()>>(
             [this]() {

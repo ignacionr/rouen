@@ -46,6 +46,7 @@ public:
 
     // Window resizing functionality
     void resize_window(int width, int height);
+    void expand_to_full_width();
 
 private:
     bool process_events();

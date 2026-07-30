@@ -93,6 +93,7 @@ Rouen allows creating cards dynamically using URI-like strings in the Command Pa
 | Shortcut | Action |
 | :--- | :--- |
 | **`Cmd+W`** (macOS) / **`Ctrl+W`** (Windows/Linux) | Close the focused card |
+| **`Cmd+Shift+E`** (macOS) / **`Ctrl+Shift+E`** (Windows/Linux) | Expand main window to full display width |
 | **`Cmd+Shift+S`** (macOS) / **`Ctrl+Shift+S`** (Windows/Linux) | Capture a high-res PNG snapshot of the focused card |
 | **`Cmd+Shift+F`** (macOS) / **`Ctrl+Shift+F`** (Windows/Linux) | Fit the parent window window size to the total card workspace width |
 | **`Tab`** | Cycle focus to the next card |

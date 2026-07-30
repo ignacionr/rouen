@@ -378,6 +378,12 @@ namespace rouen::cards {
                 }},
                 { "System", {
                     {"Display Settings", []() { "create_card"_sfn("display"); }},
+                    {"Expand to Full Width", []() {
+                        auto expand_svc = registrar::get<std::function<void()>>("expand_to_full_width");
+                        if (expand_svc) {
+                            (*expand_svc)();
+                        }
+                    }},
                     {"Video Feed & Cast Control", []() { "create_card"_sfn("cast-control"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Notifications", []() { "create_card"_sfn("notifications"); }},

@@ -218,7 +218,7 @@ public:
         // Handle Ctrl+W (Windows/Linux) or Cmd+W (macOS) to close the editor
         auto& io = ImGui::GetIO();
         auto ctrl = io.ConfigMacOSXBehaviors ? io.KeySuper : io.KeyCtrl;
-        if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
+        if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl && !io.KeyAlt && !io.KeyShift) {
             clear();
         }
 

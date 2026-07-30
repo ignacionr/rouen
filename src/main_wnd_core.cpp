@@ -98,3 +98,24 @@ void main_wnd::resize_window(int width, int height) {
         }
     }
 }
+
+void main_wnd::expand_to_full_width() {
+    if (m_window) {
+        SDL_WindowFlags flags = SDL_GetWindowFlags(m_window);
+        if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN)) {
+            SDL_RestoreWindow(m_window);
+        }
+        SDL_DisplayID display_id = SDL_GetDisplayForWindow(m_window);
+        SDL_Rect usable_bounds{};
+        if (SDL_GetDisplayUsableBounds(display_id, &usable_bounds) ||
+            SDL_GetDisplayBounds(display_id, &usable_bounds)) {
+            int current_x = 0, current_y = 0;
+            int current_w = 0, current_h = 0;
+            SDL_GetWindowPosition(m_window, &current_x, &current_y);
+            SDL_GetWindowSize(m_window, &current_w, &current_h);
+            
+            SDL_SetWindowPosition(m_window, usable_bounds.x, current_y);
+            resize_window(usable_bounds.w, current_h);
+        }
+    }
+}

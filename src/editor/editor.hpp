@@ -209,7 +209,7 @@ public:
             if (ImGui::IsKeyPressed(ImGuiKey_S) && ctrl) {
                 saveFile();
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_W) && ctrl && !io.KeyAlt && !io.KeyShift) {
                 requestClose();
             }
         }

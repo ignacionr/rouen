@@ -143,6 +143,14 @@ public:
             if (ImGui::Button("Reset to Default (4x)")) {
                 set_width_factor(4.0f);
             }
+
+            ImGui::Spacing();
+            if (ImGui::Button("Expand Window to Full Display Width", ImVec2(-1, 0))) {
+                auto expand_svc = registrar::get<std::function<void()>>("expand_to_full_width");
+                if (expand_svc) {
+                    (*expand_svc)();
+                }
+            }
         });
     }
 };
