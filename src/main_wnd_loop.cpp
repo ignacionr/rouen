@@ -32,6 +32,36 @@ static void set_detached_toast(const std::string& msg) {
     s_detached_toast_expire = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 }
 
+static bool toggle_overlay_by_index(int target_idx) {
+    if (target_idx < 0) return false;
+    try {
+        auto main_deck = registrar::get<deck>("deck");
+        if (main_deck) {
+            int overlay_count = 0;
+            for (const auto& card_ptr : main_deck->get_cards()) {
+                if (card_ptr && card_ptr->has_video_overlay()) {
+                    if (overlay_count == target_idx) {
+                        card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
+                        std::string card_name = card_ptr->window_title;
+                        auto hash_pos = card_name.find("###");
+                        if (hash_pos != std::string::npos) {
+                            card_name = card_name.substr(0, hash_pos);
+                        }
+                        if (card_name.empty()) {
+                            card_name = card_ptr->get_uri();
+                        }
+                        std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
+                        set_detached_toast(std::format("[{}] {}: {}", target_idx + 1, card_name, status));
+                        return true;
+                    }
+                    overlay_count++;
+                }
+            }
+        }
+    } catch (...) {}
+    return false;
+}
+
 static void render_detached_toast(float win_w, float /*win_h*/) {
     if (!s_detached_toast_msg.empty() && std::chrono::steady_clock::now() < s_detached_toast_expire) {
         ImGui::SetNextWindowPos(ImVec2(win_w * 0.5f, 24.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
@@ -232,6 +262,7 @@ void main_wnd::run() {
                             }
                         }
                     } catch (...) {}
+                    render_detached_toast(io.DisplaySize.x, io.DisplaySize.y);
 
                     // Restore actual scale before rendering so backends work with correct physical coordinates
                     io.DisplayFramebufferScale = ImVec2(actual_scale_x, actual_scale_y);
@@ -564,6 +595,8 @@ bool main_wnd::process_events() {
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
                     bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
+                    bool is_fullscreen_active = media_player::has_active_fullscreen_item();
+
                     if (m_detached_window && event.key.windowID == SDL_GetWindowID(m_detached_window)) {
                         auto detached_item = media_player::get_detached_item();
                         if (event.key.key == SDLK_ESCAPE) {
@@ -609,34 +642,28 @@ bool main_wnd::process_events() {
                             }
 
                             if (overlay_target_idx >= 0) {
-                                try {
-                                    auto main_deck = registrar::get<deck>("deck");
-                                    if (main_deck) {
-                                        int overlay_count = 0;
-                                        for (const auto& card_ptr : main_deck->get_cards()) {
-                                            if (card_ptr && card_ptr->has_video_overlay()) {
-                                                if (overlay_count == overlay_target_idx) {
-                                                    card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
-                                                    std::string card_name = card_ptr->window_title;
-                                                    auto hash_pos = card_name.find("###");
-                                                    if (hash_pos != std::string::npos) {
-                                                        card_name = card_name.substr(0, hash_pos);
-                                                    }
-                                                    if (card_name.empty()) {
-                                                        card_name = card_ptr->get_uri();
-                                                    }
-                                                    std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
-                                                    set_detached_toast(std::format("[{}] {}: {}", overlay_target_idx + 1, card_name, status));
-                                                    break;
-                                                }
-                                                overlay_count++;
-                                            }
-                                        }
-                                    }
-                                } catch (...) {}
+                                toggle_overlay_by_index(overlay_target_idx);
                             }
                         }
                         continue;
+                    }
+
+                    // Key overlay toggling on main window when detached window or fullscreen media is active
+                    if ((is_detached_active || is_fullscreen_active) && !ImGui::GetIO().WantCaptureKeyboard) {
+                        bool no_mods = !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_ALT));
+                        if (no_mods) {
+                            int overlay_target_idx = -1;
+                            if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+                                overlay_target_idx = static_cast<int>(event.key.key - SDLK_1);
+                            } else if (event.key.key >= SDLK_KP_1 && event.key.key <= SDLK_KP_9) {
+                                overlay_target_idx = static_cast<int>(event.key.key - SDLK_KP_1);
+                            }
+
+                            if (overlay_target_idx >= 0) {
+                                toggle_overlay_by_index(overlay_target_idx);
+                                continue;
+                            }
+                        }
                     }
 
                     if (event.key.key == SDLK_ESCAPE) {
@@ -893,31 +920,11 @@ void main_wnd::process_detached_window() {
                 }
 
                 // Allow 1-9 key overlay toggling in detached window
-                try {
-                    auto main_deck = registrar::get<deck>("deck");
-                    if (main_deck) {
-                        for (int k = ImGuiKey_1; k <= ImGuiKey_9; ++k) {
-                            if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
-                                int target_idx = k - ImGuiKey_1;
-                                int overlay_count = 0;
-                                for (const auto& card_ptr : main_deck->get_cards()) {
-                                    if (card_ptr && card_ptr->has_video_overlay()) {
-                                        if (overlay_count == target_idx) {
-                                            card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
-                                            std::string card_name = card_ptr->window_title.empty() ? card_ptr->get_uri() : card_ptr->window_title;
-                                            auto hash_pos = card_name.find("###");
-                                            if (hash_pos != std::string::npos) card_name = card_name.substr(0, hash_pos);
-                                            std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
-                                            set_detached_toast(std::format("[{}] {}: {}", target_idx + 1, card_name, status));
-                                            break;
-                                        }
-                                        overlay_count++;
-                                    }
-                                }
-                            }
-                        }
+                for (int k = ImGuiKey_1; k <= ImGuiKey_9; ++k) {
+                    if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                        toggle_overlay_by_index(k - ImGuiKey_1);
                     }
-                } catch (...) {}
+                }
 
                 bool allow_overlays = true;
                 if (is_adlib_active) {
