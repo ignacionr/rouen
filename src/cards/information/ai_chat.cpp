@@ -49,7 +49,7 @@ namespace rouen::cards {
 
     std::string sanitize_persona_name_for_tool(const std::string& name) {
         std::string sanitized = "call_persona_";
-        for (char c : name) {
+        for (char const c : name) {
             if (std::isalnum(static_cast<unsigned char>(c))) {
                 sanitized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
             } else {
@@ -57,7 +57,7 @@ namespace rouen::cards {
             }
         }
         std::string clean;
-        for (char c : sanitized) {
+        for (char const c : sanitized) {
             if (c == '_' && !clean.empty() && clean.back() == '_') {
                 continue;
             }
@@ -228,7 +228,7 @@ namespace rouen::cards {
             
             auto& pm = helpers::PersonaManager::instance();
             const auto& personas = pm.get_personas();
-            size_t active_idx = pm.get_active_persona_index();
+            size_t const active_idx = pm.get_active_persona_index();
             
             // Sync UI buffers if persona changed externally or wasn't loaded
             if (last_edited_persona_index_ != active_idx) {
@@ -239,7 +239,7 @@ namespace rouen::cards {
             if (active_idx < personas.size()) {
                 if (ImGui::BeginCombo("Active Persona", personas[active_idx].name.c_str())) {
                     for (size_t i = 0; i < personas.size(); ++i) {
-                        bool is_selected = (active_idx == i);
+                        bool const is_selected = (active_idx == i);
                         if (ImGui::Selectable(personas[i].name.c_str(), is_selected)) {
                             pm.select_persona(i);
                             populate_persona_buffers(i);
@@ -286,7 +286,7 @@ namespace rouen::cards {
                 ImGui::SetNextItemWidth(-1);
                 if (ImGui::BeginCombo("##persona_llm_config", current_bound.c_str())) {
                     for (const auto& config : llm_configs) {
-                        bool is_selected = (current_bound == config.name);
+                        bool const is_selected = (current_bound == config.name);
                         if (ImGui::Selectable(config.name.c_str(), is_selected)) {
                             p.llm_config_name = config.name;
                             changed = true;
@@ -328,7 +328,7 @@ namespace rouen::cards {
                 if (mcp_service_) {
                     auto registered_funcs = mcp_service_->get_available_functions();
                     for (const auto& func : registered_funcs) {
-                        std::string cat = get_function_category(func);
+                        std::string const cat = get_function_category(func);
                         if (!cat.empty() && std::find(mcp_options.begin(), mcp_options.end(), cat) == mcp_options.end()) {
                             mcp_options.push_back(cat);
                         }
@@ -414,7 +414,7 @@ namespace rouen::cards {
                     ImGui::SameLine();
                     if (ImGui::Button("Delete Persona")) {
                         pm.delete_persona(active_idx);
-                        size_t new_idx = pm.get_active_persona_index();
+                        size_t const new_idx = pm.get_active_persona_index();
                         populate_persona_buffers(new_idx);
                         refresh_llm_config();
                     }
@@ -425,14 +425,14 @@ namespace rouen::cards {
 
     bool ai_chat::render() {
         if (!initial_message_.empty()) {
-            std::string msg = std::move(initial_message_);
+            std::string const msg = std::move(initial_message_);
             initial_message_.clear();
             send_message(msg);
         }
         
         // Periodically refresh LLM configuration
         static float last_config_refresh = 0.0f;
-        float current_time = static_cast<float>(ImGui::GetTime());
+        float const current_time = static_cast<float>(ImGui::GetTime());
         if (current_time - last_config_refresh > 2.0f) {
             refresh_llm_config();
             last_config_refresh = current_time;
@@ -467,9 +467,9 @@ namespace rouen::cards {
                 process_pending_response();
                 
                 // Check if layout needs to be recalculated
-                float current_width = ImGui::GetContentRegionAvail().x;
+                float const current_width = ImGui::GetContentRegionAvail().x;
                 if (layout_dirty_ || std::abs(last_width_ - current_width) > 1.0f) {
-                    bool force_all = std::abs(last_width_ - current_width) > 1.0f;
+                    bool const force_all = std::abs(last_width_ - current_width) > 1.0f;
                     recalculate_layout(current_width, force_all);
                     last_width_ = current_width;
                     layout_dirty_ = false;
@@ -522,7 +522,7 @@ namespace rouen::cards {
                 std::vector<std::pair<std::string, std::string>> chat_snapshot;
                 std::vector<MessageCache> cache_snapshot;
                 {
-                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_snapshot.reserve(chat_history_.size());
                     cache_snapshot.reserve(message_cache_.size());
                     
@@ -534,16 +534,16 @@ namespace rouen::cards {
                 for (size_t i = 0; i < chat_snapshot.size() && i < cache_snapshot.size(); ++i) {
                     const auto& message = chat_snapshot[i];
                     const auto& cache = cache_snapshot[i];
-                    bool is_user = message.first == "user";
-                    bool is_debug = message.first == "debug";
+                    bool const is_user = message.first == "user";
+                    bool const is_debug = message.first == "debug";
                     
                     // Set background color for message bubbles
-                    ImU32 bg_color = is_user ? user_bg_color : (is_debug ? debug_bg_color : assistant_bg_color);
+                    ImU32 const bg_color = is_user ? user_bg_color : (is_debug ? debug_bg_color : assistant_bg_color);
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
                     
                     // Position user messages to the right
                     if (is_user) {
-                        float available_width = ImGui::GetContentRegionAvail().x;
+                        float const available_width = ImGui::GetContentRegionAvail().x;
                         ImGui::SetCursorPosX(available_width - cache.content_width - 10.0f);
                     }
                     
@@ -558,7 +558,7 @@ namespace rouen::cards {
                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                     
                     // Set text color based on sender
-                    ImU32 txt_color = is_user ? user_text_color : (is_debug ? debug_text_color : assistant_text_color);
+                    ImU32 const txt_color = is_user ? user_text_color : (is_debug ? debug_text_color : assistant_text_color);
                     ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                     
                     // Display sender name
@@ -574,7 +574,7 @@ namespace rouen::cards {
                     
                     // Copy button aligned to the right inside the balloon
                     ImGui::SameLine();
-                    float copy_btn_pos_x = cache.content_width - padding.x * 2.0f - 18.0f;
+                    float const copy_btn_pos_x = cache.content_width - padding.x * 2.0f - 18.0f;
                     if (copy_btn_pos_x > ImGui::GetCursorPosX()) {
                         ImGui::SetCursorPosX(copy_btn_pos_x);
                     }
@@ -586,7 +586,7 @@ namespace rouen::cards {
                     ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
                     
-                    std::string copy_btn_id = std::format("{}##copy_{}", ICON_MD_CONTENT_COPY, i);
+                    std::string const copy_btn_id = std::format("{}##copy_{}", ICON_MD_CONTENT_COPY, i);
                     if (ImGui::Button(copy_btn_id.c_str())) {
                         ImGui::SetClipboardText(message.second.c_str());
                     }
@@ -635,7 +635,7 @@ namespace rouen::cards {
                         }
                         
                         if (ImGui::MenuItem("Copy with Sender")) {
-                            std::string full_message = std::format("{}: {}", sender_name, message.second);
+                            std::string const full_message = std::format("{}: {}", sender_name, message.second);
                             ImGui::SetClipboardText(full_message.c_str());
                         }
                         
@@ -664,13 +664,13 @@ namespace rouen::cards {
                     const float line_height = ImGui::GetTextLineHeightWithSpacing();
                     const float separator_height = ImGui::GetStyle().ItemSpacing.y + 1.0f;
                     
-                    float time = static_cast<float>(ImGui::GetTime());
-                    bool show_cursor = (static_cast<int>(time * 2.0f) % 2) == 0;
-                    std::string cursor_str = show_cursor ? ">" : " ";
+                    float const time = static_cast<float>(ImGui::GetTime());
+                    bool const show_cursor = (static_cast<int>(time * 2.0f) % 2) == 0;
+                    std::string const cursor_str = show_cursor ? ">" : " ";
                     
                     // Bubble dimensions - 1 line of message height
-                    float content_width = std::clamp(32.0f + padding.x * 2.0f + 24.0f, min_width, max_width);
-                    float bubble_height = line_height + separator_height + line_height + 
+                    float const content_width = std::clamp(32.0f + padding.x * 2.0f + 24.0f, min_width, max_width);
+                    float const bubble_height = line_height + separator_height + line_height + 
                                         padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + 6.0f;
                                         
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, assistant_bg_color);
@@ -684,12 +684,12 @@ namespace rouen::cards {
                         
                     ImGui::PushStyleColor(ImGuiCol_Text, assistant_text_color);
                     
-                    std::string sender_name = get_assistant_name();
+                    std::string const sender_name = get_assistant_name();
                     ImGui::Text("%s", sender_name.c_str());
                     
                     // Transparent/subtle copy icon spacing alignment (disabled)
                     ImGui::SameLine();
-                    float copy_btn_pos_x = content_width - padding.x * 2.0f - 18.0f;
+                    float const copy_btn_pos_x = content_width - padding.x * 2.0f - 18.0f;
                     if (copy_btn_pos_x > ImGui::GetCursorPosX()) {
                         ImGui::SetCursorPosX(copy_btn_pos_x);
                     }
@@ -738,7 +738,7 @@ namespace rouen::cards {
             // Process pending dictation transcription if available
             std::string dictation_result;
             {
-                std::lock_guard<std::mutex> lock(dictation_mutex_);
+                std::lock_guard<std::mutex> const lock(dictation_mutex_);
                 if (pending_dictation_result_.has_value()) {
                     dictation_result = std::move(*pending_dictation_result_);
                     pending_dictation_result_.reset();
@@ -774,7 +774,7 @@ namespace rouen::cards {
                 ImGui::SetKeyboardFocusHere();
             }
             
-            bool disable_text_input = !llm_configured_ || waiting_for_response_.load();
+            bool const disable_text_input = !llm_configured_ || waiting_for_response_.load();
             if (disable_text_input) {
                 ImGui::BeginDisabled();
             }
@@ -803,7 +803,7 @@ namespace rouen::cards {
             ImGui::SameLine();
             std::string dict_label;
             ImVec4 dict_normal_col, dict_hover_col, dict_active_col;
-            bool disable_dict_button = (dict_state == rouen::hosts::dictation_host::State::Transcribing);
+            bool const disable_dict_button = (dict_state == rouen::hosts::dictation_host::State::Transcribing);
 
             if (dict_state == rouen::hosts::dictation_host::State::Recording) {
                 // Recording state -> Bright Red color
@@ -844,7 +844,7 @@ namespace rouen::cards {
                     host->start_recording();
                 } else if (dict_state == rouen::hosts::dictation_host::State::Recording || dict_state == rouen::hosts::dictation_host::State::Starting) {
                     host->stop_recording([this](std::string text) {
-                        std::lock_guard<std::mutex> lock(dictation_mutex_);
+                        std::lock_guard<std::mutex> const lock(dictation_mutex_);
                         pending_dictation_result_ = text;
                     });
                 }
@@ -869,7 +869,7 @@ namespace rouen::cards {
             
             ImGui::SameLine();
             if (ImGui::Button("Clear", ImVec2(clear_button_width, 0))) {
-                std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                 chat_history_.clear();
                 message_cache_.clear();
                 layout_dirty_ = true;
@@ -925,7 +925,7 @@ namespace rouen::cards {
 
     std::string ai_chat::execute_function_with_debug(const std::string& function_name, const std::string& args_json, int depth) {
         if (debug_mode_) {
-            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
             chat_history_.emplace_back("debug", std::format("🔧 **Tool Call**: `{}` (depth: {})\n\nArguments:\n```json\n{}\n```", function_name, depth, args_json));
             message_cache_.emplace_back();
             layout_dirty_ = true;
@@ -947,7 +947,7 @@ namespace rouen::cards {
         }
 
         if (debug_mode_) {
-            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
             chat_history_.emplace_back("debug", std::format("📤 **Tool Result**: `{}`\n\n```\n{}\n```", function_name, result));
             message_cache_.emplace_back();
             layout_dirty_ = true;
@@ -993,14 +993,14 @@ namespace rouen::cards {
 
         auto now = std::chrono::system_clock::now();
         auto now_time_t = std::chrono::system_clock::to_time_t(now);
-        std::tm now_tm = *std::localtime(&now_time_t);
+        std::tm const now_tm = *std::localtime(&now_time_t);
         char time_buf[64];
         std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &now_tm);
-        std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
+        std::string const time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
         target_llm.add_instructions(time_instr);
 
         target_llm.add_instructions(target_persona->system_prompt);
-        std::string modular_instr = get_modular_mcp_instructions(target_persona->allowed_mcps);
+        std::string const modular_instr = get_modular_mcp_instructions(target_persona->allowed_mcps);
         if (!modular_instr.empty()) {
             target_llm.add_instructions(modular_instr);
         }
@@ -1022,12 +1022,12 @@ namespace rouen::cards {
 
                 auto functions = mcp_service_->get_available_functions();
                 for (const auto& func : functions) {
-                    std::string cat = get_function_category(func);
+                    std::string const cat = get_function_category(func);
                     if (!has_mcp(cat)) {
                         continue;
                     }
 
-                    std::string raw_schema = std::format(
+                    std::string const raw_schema = std::format(
                         "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
                         func.name, 
                         func.description.empty() ? "Repository operation" : func.description,
@@ -1036,7 +1036,7 @@ namespace rouen::cards {
                     
                     std::string schema;
                     schema.reserve(raw_schema.size());
-                    for (char c : raw_schema) {
+                    for (char const c : raw_schema) {
                         if (c != '\n' && c != '\r' && c != '\t') {
                             schema.push_back(c);
                         }
@@ -1060,7 +1060,7 @@ namespace rouen::cards {
 
             std::string sub_func_name = sanitize_persona_name_for_tool(sub_p->name);
             std::string desc = "Delegates a task or asks a question to the Persona '" + sub_p->name + "'. Description: " + sub_p->description;
-            std::string schema = std::format(
+            std::string const schema = std::format(
                 "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{{\"type\":\"object\",\"properties\":{{\"message\":{{\"type\":\"string\",\"description\":\"The message, query, or instruction to send to the persona.\"}}}},\"required\":[\"message\"]}}}}",
                 sub_func_name, desc
             );
@@ -1164,12 +1164,12 @@ namespace rouen::cards {
 
                 auto functions = mcp_service_->get_available_functions();
                 for (const auto& func : functions) {
-                    std::string cat = get_function_category(func);
+                    std::string const cat = get_function_category(func);
                     if (!has_mcp(cat)) {
                         continue;
                     }
 
-                    std::string raw_schema = std::format(
+                    std::string const raw_schema = std::format(
                         "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
                         func.name, 
                         func.description.empty() ? "Repository operation" : func.description,
@@ -1179,7 +1179,7 @@ namespace rouen::cards {
                     // Strip out control characters like newlines and tabs to ensure a clean JSON string
                     std::string schema;
                     schema.reserve(raw_schema.size());
-                    for (char c : raw_schema) {
+                    for (char const c : raw_schema) {
                         if (c != '\n' && c != '\r' && c != '\t') {
                             schema.push_back(c);
                         }
@@ -1210,7 +1210,7 @@ namespace rouen::cards {
 
                 std::string sub_func_name = sanitize_persona_name_for_tool(sub_p->name);
                 std::string desc = "Delegates a task or asks a question to the Persona '" + sub_p->name + "'. Description: " + sub_p->description;
-                std::string schema = std::format(
+                std::string const schema = std::format(
                     "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{{\"type\":\"object\",\"properties\":{{\"message\":{{\"type\":\"string\",\"description\":\"The message, query, or instruction to send to the persona.\"}}}},\"required\":[\"message\"]}}}}",
                     sub_func_name, desc
                 );
@@ -1244,7 +1244,7 @@ namespace rouen::cards {
             // Determine model and search mode before launching the thread (thread-safe capture)
             std::string model_name = current_llm_settings_.model_name;
             std::string search_mode_str;
-            bool allow_search = helpers::PersonaManager::instance().get_active_persona().enable_search;
+            bool const allow_search = helpers::PersonaManager::instance().get_active_persona().enable_search;
             if ((current_llm_settings_.provider == helpers::LLMConfig::Provider::GROK || 
                  current_llm_settings_.provider == helpers::LLMConfig::Provider::GEMINI) && allow_search) {
                 search_mode_str = "on";
@@ -1263,17 +1263,17 @@ namespace rouen::cards {
                     // Inject current local date and time so the model knows what "today" is
                     auto now = std::chrono::system_clock::now();
                     auto now_time_t = std::chrono::system_clock::to_time_t(now);
-                    std::tm now_tm = *std::localtime(&now_time_t);
+                    std::tm const now_tm = *std::localtime(&now_time_t);
                     char time_buf[64];
                     std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &now_tm);
-                    std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
+                    std::string const time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'yesterday', 'this week', etc.", std::string(time_buf));
                     local_llm.add_instructions(time_instr);
 
                     // Set system instructions based on persona and its allowed MCPs
                     auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
                     local_llm.add_instructions(active_persona.system_prompt);
                     
-                    std::string modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
+                    std::string const modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
                     if (!modular_instr.empty()) {
                         local_llm.add_instructions(modular_instr);
                     }
@@ -1281,7 +1281,7 @@ namespace rouen::cards {
                     // Create conversion from our message format to the format expected by sendMessage with mutex protection
                     std::vector<std::pair<std::string, std::string>> conversation_for_llm;
                     {
-                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                         for (const auto& chat_msg : chat_history_) {
                             if (chat_msg.first == "user" || chat_msg.first == "assistant") {
                                 conversation_for_llm.emplace_back(chat_msg.first, chat_msg.second);
@@ -1318,7 +1318,7 @@ namespace rouen::cards {
                         
                         // Add AI response to history with mutex protection
                         {
-                            std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                             chat_history_.emplace_back("assistant", response);
                             message_cache_.emplace_back();
                             layout_dirty_ = true;
@@ -1328,9 +1328,9 @@ namespace rouen::cards {
                     
                 } catch (const std::exception& e) {
                     // Add error message to chat history with mutex protection
-                    std::string error_msg = "Error: " + std::string(e.what());
+                    std::string const error_msg = "Error: " + std::string(e.what());
                     {
-                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", error_msg);
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
@@ -1344,7 +1344,7 @@ namespace rouen::cards {
             
         } catch (const std::exception& e) {
             waiting_for_response_.store(false);
-            std::string error_msg = "Failed to send message: " + std::string(e.what());
+            std::string const error_msg = "Failed to send message: " + std::string(e.what());
             chat_history_.emplace_back("assistant", error_msg);
             message_cache_.emplace_back();
             layout_dirty_ = true;
@@ -1402,7 +1402,7 @@ namespace rouen::cards {
             // Add persona instructions
             auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
             async_llm_instance->add_instructions(active_persona.system_prompt);
-            std::string modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
+            std::string const modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
             if (!modular_instr.empty()) {
                 async_llm_instance->add_instructions(modular_instr);
             }
@@ -1456,7 +1456,7 @@ namespace rouen::cards {
                     // For now, we rely on the fact that only one async operation runs at a time
                     // due to waiting_for_response_ gate, but we should add proper synchronization
                     {
-                        std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                         chat_history_.emplace_back("assistant", std::move(reply));
                         message_cache_.emplace_back();
                         layout_dirty_ = true;
@@ -1464,22 +1464,22 @@ namespace rouen::cards {
                     maybe_speak_reply(reply_for_tts);
                     
                 } catch (const std::bad_alloc&) {
-                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_history_.emplace_back("assistant", "Memory allocation error");
                     message_cache_.emplace_back();
                     layout_dirty_ = true;
                 } catch (const std::runtime_error& e) {
-                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_history_.emplace_back("assistant", std::string("Runtime error: ") + e.what());
                     message_cache_.emplace_back();
                     layout_dirty_ = true;
                 } catch (const std::exception& e) {
-                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_history_.emplace_back("assistant", std::string("Error [") + typeid(e).name() + "]: " + e.what());
                     message_cache_.emplace_back();
                     layout_dirty_ = true;
                 } catch (...) {
-                    std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                    std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                     chat_history_.emplace_back("assistant", "Unknown error occurred");
                     message_cache_.emplace_back();
                     layout_dirty_ = true;
@@ -1505,7 +1505,7 @@ namespace rouen::cards {
                 pending_response_->get(); // This will rethrow any exception from the async task
             } catch (const std::exception& e) {
                 // Log or handle any unhandled exceptions from the async task
-                std::lock_guard<std::mutex> lock(chat_history_mutex_);
+                std::lock_guard<std::mutex> const lock(chat_history_mutex_);
                 chat_history_.emplace_back("assistant", std::string("Async task error: ") + e.what());
                 message_cache_.emplace_back();
                 layout_dirty_ = true;
@@ -1519,7 +1519,7 @@ namespace rouen::cards {
     }
 
     void ai_chat::recalculate_layout(float width_for_content, bool force_all) {
-        std::lock_guard<std::mutex> lock(chat_history_mutex_);
+        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
         
         // Ensure cache matches history size with exception safety
         try {
@@ -1555,12 +1555,12 @@ namespace rouen::cards {
             
             if (!cache.needs_recalc) continue;
             
-            bool is_user = message.first == "user";
+            bool const is_user = message.first == "user";
             float message_height = 0.0f;
             if (is_user) {
                 // For user messages, simple plain text CalcTextSize is perfectly accurate
                 const float max_text_width = max_width - padding.x * 2.0f - 24.0f;
-                ImVec2 text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, max_text_width);
+                ImVec2 const text_size = ImGui::CalcTextSize(message.second.c_str(), nullptr, true, max_text_width);
                 message_height = std::max(text_size.y, line_height);
                 cache.content_width = std::clamp(text_size.x + padding.x * 2.0f + 24.0f, min_width, max_width);
             } else {
@@ -1584,7 +1584,7 @@ namespace rouen::cards {
                     if (in_code_block) {
                         // Code lines are pre-formatted, but can still wrap if extremely long.
                         // Usually they render as-is.
-                        ImVec2 size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
+                        ImVec2 const size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
                         accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                         max_line_width = std::max(max_line_width, size.x);
                         continue;
@@ -1592,8 +1592,8 @@ namespace rouen::cards {
                     
                     // 2. Headings
                     if (md_line.starts_with("# ")) {
-                        std::string_view content = std::string_view{md_line}.substr(2);
-                        ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
+                        std::string_view const content = std::string_view{md_line}.substr(2);
+                        ImVec2 const size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
                         accumulated_height += std::max(size.y, line_height) + separator_height + ImGui::GetStyle().ItemSpacing.y * 2.0f;
                         max_line_width = std::max(max_line_width, size.x);
                         continue;
@@ -1604,8 +1604,8 @@ namespace rouen::cards {
                         continue;
                     }
                     if (md_line.starts_with("### ")) {
-                        std::string_view content = std::string_view{md_line}.substr(4);
-                        ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
+                        std::string_view const content = std::string_view{md_line}.substr(4);
+                        ImVec2 const size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, max_text_width);
                         accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                         max_line_width = std::max(max_line_width, size.x);
                         continue;
@@ -1619,10 +1619,10 @@ namespace rouen::cards {
                     
                     // 4. Blockquotes
                     if (md_line.starts_with("> ")) {
-                        std::string_view content = std::string_view{md_line}.substr(2);
+                        std::string_view const content = std::string_view{md_line}.substr(2);
                         // Indent reduces available width by 20.0f
-                        float wrap_w = std::max(max_text_width - 20.0f, 50.0f);
-                        ImVec2 size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, wrap_w);
+                        float const wrap_w = std::max(max_text_width - 20.0f, 50.0f);
+                        ImVec2 const size = ImGui::CalcTextSize(content.data(), content.data() + content.size(), true, wrap_w);
                         accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                         max_line_width = std::max(max_line_width, size.x + 20.0f);
                         continue;
@@ -1651,8 +1651,8 @@ namespace rouen::cards {
                     
                     if (is_bullet) {
                         // Bullet spacing reduces wrap width by 24.0f
-                        float wrap_w = std::max(max_text_width - 24.0f, 50.0f);
-                        ImVec2 size = ImGui::CalcTextSize(bullet_content.data(), bullet_content.data() + bullet_content.size(), true, wrap_w);
+                        float const wrap_w = std::max(max_text_width - 24.0f, 50.0f);
+                        ImVec2 const size = ImGui::CalcTextSize(bullet_content.data(), bullet_content.data() + bullet_content.size(), true, wrap_w);
                         accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                         max_line_width = std::max(max_line_width, size.x + 24.0f);
                         continue;
@@ -1673,7 +1673,7 @@ namespace rouen::cards {
                     }
                     
                     // 8. Normal paragraph
-                    ImVec2 size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
+                    ImVec2 const size = ImGui::CalcTextSize(md_line.c_str(), nullptr, true, max_text_width);
                     accumulated_height += std::max(size.y, line_height) + ImGui::GetStyle().ItemSpacing.y;
                     max_line_width = std::max(max_line_width, size.x);
                 }

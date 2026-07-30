@@ -59,7 +59,7 @@ invoice_card::invoice_card() {
         pdf_output_path = "Invoice_INV-2026-001.pdf";
     }
 
-    std::string db_path = rouen::platform::get_user_data_path("contacts.db").string();
+    std::string const db_path = rouen::platform::get_user_data_path("contacts.db").string();
     contacts_repo_ = std::make_unique<rouen::models::contacts::contacts_repository>(db_path);
     refresh_contacts();
 }
@@ -86,7 +86,7 @@ void invoice_card::apply_contact_as_provider(const rouen::models::contacts::cont
 void invoice_card::apply_contact_as_customer(const rouen::models::contacts::contact& c) {
     if (!c.organization.empty()) {
         client_name = c.organization;
-        std::string full_n = c.get_full_name();
+        std::string const full_n = c.get_full_name();
         if (!full_n.empty() && full_n != "Unnamed Contact") {
             client_contact = full_n;
             if (!c.email.empty()) {
@@ -136,7 +136,7 @@ double invoice_card::calculate_total() const {
 
 bool invoice_card::generate_pdf(const std::string& output_path, std::string& error_msg) const {
     try {
-        std::filesystem::path p(output_path);
+        std::filesystem::path const p(output_path);
         if (p.has_parent_path()) {
             std::filesystem::create_directories(p.parent_path());
         }
@@ -158,7 +158,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         }
 
         // Search for standard TTF font
-        std::vector<std::string> font_candidates = {
+        std::vector<std::string> const font_candidates = {
             "/System/Library/Fonts/Supplemental/Arial.ttf",
             "/System/Library/Fonts/Helvetica.ttf",
             "/Library/Fonts/Arial.ttf",
@@ -187,7 +187,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         };
 
         auto write_text_right = [&](const std::string& text, double right_x, double y, double size, double r = 0.0, double g = 0.0, double b = 0.0) {
-            double approx_width = static_cast<double>(text.length()) * size * 0.52;
+            double const approx_width = static_cast<double>(text.length()) * size * 0.52;
             write_text(text, right_x - approx_width, y, size, r, g, b);
         };
 
@@ -291,7 +291,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         draw_rect(40, y - 85, 515, 90, 0.85, 0.88, 0.92, false);
 
         double bank_y = y - 12.0;
-        std::string swift_bic_label = get_swift_bic_label();
+        std::string const swift_bic_label = get_swift_bic_label();
         write_text("INTERNATIONAL PAYMENT DETAILS (" + swift_bic_label + " / IBAN)", 50, bank_y, 10, 0.15, 0.35, 0.65); bank_y -= 15.0;
         write_text("Bank Name: " + bank_name, 50, bank_y, 9, 0.2, 0.2, 0.2);
         write_text(swift_bic_label + ": " + swift_code, 300, bank_y, 9, 0.2, 0.2, 0.2); bank_y -= 14.0;
@@ -328,7 +328,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
 void invoice_card::render_contact_picker_modal(rouen::ui::ui_context& ui) {
     if (!show_contact_picker_) return;
 
-    std::string modal_title = (picker_target_ == contact_picker_target::provider)
+    std::string const modal_title = (picker_target_ == contact_picker_target::provider)
         ? "Select Provider from Contacts"
         : "Select Customer from Contacts";
 
@@ -355,7 +355,7 @@ void invoice_card::render_contact_picker_modal(rouen::ui::ui_context& ui) {
             } else {
                 int match_count = 0;
                 for (const auto& c : cached_contacts_) {
-                    std::string full_name = c.get_full_name();
+                    std::string const full_name = c.get_full_name();
                     std::string search_target = full_name + " " + c.organization + " " + c.email + " " + c.phone;
                     std::transform(search_target.begin(), search_target.end(), search_target.begin(), ::tolower);
 
@@ -467,7 +467,7 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
                 if (!cached_contacts_.empty()) {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(210);
-                    std::string combo_preview = (selected_provider_combo_idx_ >= 0 && selected_provider_combo_idx_ < static_cast<int>(cached_contacts_.size()))
+                    std::string const combo_preview = (selected_provider_combo_idx_ >= 0 && selected_provider_combo_idx_ < static_cast<int>(cached_contacts_.size()))
                         ? cached_contacts_[static_cast<size_t>(selected_provider_combo_idx_)].get_full_name()
                         : "Quick Select Contact...";
                     if (ImGui::BeginCombo("##provider_combo", combo_preview.c_str())) {
@@ -508,7 +508,7 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
                 if (!cached_contacts_.empty()) {
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(210);
-                    std::string combo_preview = (selected_customer_combo_idx_ >= 0 && selected_customer_combo_idx_ < static_cast<int>(cached_contacts_.size()))
+                    std::string const combo_preview = (selected_customer_combo_idx_ >= 0 && selected_customer_combo_idx_ < static_cast<int>(cached_contacts_.size()))
                         ? cached_contacts_[static_cast<size_t>(selected_customer_combo_idx_)].get_full_name()
                         : "Quick Select Contact...";
                     if (ImGui::BeginCombo("##customer_combo", combo_preview.c_str())) {
@@ -616,7 +616,7 @@ bool invoice_card::render(rouen::ui::ui_context& ui) {
                 ImGui::SameLine();
                 ImGui::RadioButton("SWIFT / BIC Code", &swift_bic_type, 2);
 
-                std::string field_label = get_swift_bic_label() + "##bank";
+                std::string const field_label = get_swift_bic_label() + "##bank";
                 draw_input_string(field_label.c_str(), swift_code);
                 draw_input_string("IBAN / Account No.##bank", iban_account);
 

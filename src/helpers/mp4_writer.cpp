@@ -40,7 +40,7 @@ NativeMP4Writer::~NativeMP4Writer() {
 }
 
 bool NativeMP4Writer::open(const std::string& output_filename, int width, int height, int fps, int sample_rate) {
-    std::lock_guard<std::recursive_mutex> lock(write_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(write_mutex_);
     close();
 
     if (width <= 0) width = 1280;
@@ -94,12 +94,12 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
     video_enc_ctx_->thread_count = 1;
     video_enc_ctx_->thread_type = 0;
 
-    std::string res_str = std::to_string(width) + "x" + std::to_string(height);
+    std::string const res_str = std::to_string(width) + "x" + std::to_string(height);
     av_opt_set(video_enc_ctx_, "video_size", res_str.c_str(), 0);
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "threads", "1", 0);
-    std::string codec_name = video_codec->name ? video_codec->name : "";
+    std::string const codec_name = video_codec->name ? video_codec->name : "";
     if (codec_name == "h264_videotoolbox") {
         video_pix_fmt_ = static_cast<int>(AV_PIX_FMT_NV12);
         video_enc_ctx_->pix_fmt = AV_PIX_FMT_NV12;
@@ -117,7 +117,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         video_enc_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     }
 
-    int open_res = avcodec_open2(video_enc_ctx_, video_codec, &opts);
+    int const open_res = avcodec_open2(video_enc_ctx_, video_codec, &opts);
     av_dict_free(&opts);
 
     if (open_res < 0) {
@@ -164,7 +164,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
             video_enc_ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
         }
 
-        int fb_res = avcodec_open2(video_enc_ctx_, video_codec, &fallback_opts);
+        int const fb_res = avcodec_open2(video_enc_ctx_, video_codec, &fallback_opts);
         av_dict_free(&fallback_opts);
 
         if (fb_res < 0) {
@@ -274,7 +274,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         AVChannelLayout out_layout{};
         av_channel_layout_default(&in_layout, 2);
         av_channel_layout_default(&out_layout, 2);
-        int swr_res = swr_alloc_set_opts2(
+        int const swr_res = swr_alloc_set_opts2(
             &swr_ctx_,
             &out_layout,
             audio_enc_ctx_->sample_fmt,
@@ -306,7 +306,7 @@ bool NativeMP4Writer::is_open() const {
 }
 
 void NativeMP4Writer::write_video_frame(const uint8_t* rgba_pixels) {
-    std::lock_guard<std::recursive_mutex> lock(write_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(write_mutex_);
     if (!is_open_.load() || !fmt_ctx_ || !video_enc_ctx_ || !video_stream_ || !sws_ctx_ || !rgba_pixels) return;
 
     AVFrame* frame = av_frame_alloc();
@@ -362,7 +362,7 @@ void NativeMP4Writer::write_video_frame(const uint8_t* rgba_pixels) {
             av_packet_rescale_ts(pkt, video_enc_ctx_->time_base, video_stream_->time_base);
             pkt->stream_index = video_stream_->index;
 
-            int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+            int const ret = av_interleaved_write_frame(fmt_ctx_, pkt);
             if (ret < 0) {
                 char errbuf[256];
                 av_strerror(ret, errbuf, sizeof(errbuf));
@@ -375,7 +375,7 @@ void NativeMP4Writer::write_video_frame(const uint8_t* rgba_pixels) {
 }
 
 void NativeMP4Writer::write_audio_samples(const uint8_t* pcm_s16_data, size_t size_in_bytes) {
-    std::lock_guard<std::recursive_mutex> lock(write_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(write_mutex_);
     static int dbg_call_count = 0;
     if (++dbg_call_count <= 3) {
         std::cout << "[NativeMP4Writer] write_audio_samples called: is_open=" << is_open_.load()
@@ -388,25 +388,25 @@ void NativeMP4Writer::write_audio_samples(const uint8_t* pcm_s16_data, size_t si
     }
 
     if (pcm_s16_data && size_in_bytes > 0) {
-        std::lock_guard<std::recursive_mutex> ab_lock(audio_buf_mutex_);
+        std::lock_guard<std::recursive_mutex> const ab_lock(audio_buf_mutex_);
         audio_buf_.insert(audio_buf_.end(), pcm_s16_data, pcm_s16_data + size_in_bytes);
     }
 
-    int frame_sz = (audio_enc_ctx_ && audio_enc_ctx_->frame_size > 0) ? audio_enc_ctx_->frame_size : 1024;
+    int const frame_sz = (audio_enc_ctx_ && audio_enc_ctx_->frame_size > 0) ? audio_enc_ctx_->frame_size : 1024;
     const size_t bytes_per_frame = static_cast<size_t>(frame_sz) * 4;
     if (bytes_per_frame == 0) return;
 
     while (true) {
         if (video_pts_ > 0) {
-            double current_audio_sec = static_cast<double>(audio_pts_) / 44100.0;
-            double current_video_sec = static_cast<double>(video_pts_) / 30.0;
+            double const current_audio_sec = static_cast<double>(audio_pts_) / 44100.0;
+            double const current_video_sec = static_cast<double>(video_pts_) / 30.0;
             if (current_audio_sec >= current_video_sec + 0.5) {
                 break;
             }
         }
         std::vector<uint8_t> chunk;
         {
-            std::lock_guard<std::recursive_mutex> ab_lock(audio_buf_mutex_);
+            std::lock_guard<std::recursive_mutex> const ab_lock(audio_buf_mutex_);
             if (audio_buf_.size() < bytes_per_frame) break;
             auto offset = static_cast<std::ptrdiff_t>(bytes_per_frame);
             chunk.assign(audio_buf_.begin(), audio_buf_.begin() + offset);
@@ -428,7 +428,7 @@ void NativeMP4Writer::write_audio_samples(const uint8_t* pcm_s16_data, size_t si
         }
 
         const uint8_t* in_data[8] = { chunk.data(), nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
-        int swr_res = swr_convert(
+        int const swr_res = swr_convert(
             swr_ctx_, frame->data, frame->nb_samples,
             in_data, frame->nb_samples
         );
@@ -443,7 +443,7 @@ void NativeMP4Writer::write_audio_samples(const uint8_t* pcm_s16_data, size_t si
         frame->pts = audio_pts_;
         audio_pts_ += audio_enc_ctx_->frame_size;
 
-        int send_res = avcodec_send_frame(audio_enc_ctx_, frame);
+        int const send_res = avcodec_send_frame(audio_enc_ctx_, frame);
         av_frame_free(&frame);
 
         if (send_res < 0) {
@@ -466,7 +466,7 @@ void NativeMP4Writer::write_audio_samples(const uint8_t* pcm_s16_data, size_t si
                 av_packet_rescale_ts(pkt, audio_enc_ctx_->time_base, audio_stream_->time_base);
                 pkt->stream_index = audio_stream_->index;
 
-                int ret = av_interleaved_write_frame(fmt_ctx_, pkt);
+                int const ret = av_interleaved_write_frame(fmt_ctx_, pkt);
                 if (ret < 0) {
                     char errbuf[256];
                     av_strerror(ret, errbuf, sizeof(errbuf));
@@ -493,7 +493,7 @@ void NativeMP4Writer::flush_audio() {
 }
 
 void NativeMP4Writer::close() {
-    std::lock_guard<std::recursive_mutex> close_lock(write_mutex_);
+    std::lock_guard<std::recursive_mutex> const close_lock(write_mutex_);
     if (!fmt_ctx_) {
         is_open_.store(false);
         return;
@@ -502,31 +502,31 @@ void NativeMP4Writer::close() {
     if (audio_enc_ctx_ && audio_stream_ && swr_ctx_) {
         // Trim leftover unencoded audio buffer to match video end PTS cleanly
         if (fps_ > 0 && sample_rate_ > 0 && video_pts_ > 0) {
-            double video_dur_sec = static_cast<double>(video_pts_) / fps_;
-            double audio_dur_sec = static_cast<double>(audio_pts_) / sample_rate_;
+            double const video_dur_sec = static_cast<double>(video_pts_) / fps_;
+            double const audio_dur_sec = static_cast<double>(audio_pts_) / sample_rate_;
             if (audio_dur_sec >= video_dur_sec) {
-                std::lock_guard<std::recursive_mutex> ab_lock(audio_buf_mutex_);
+                std::lock_guard<std::recursive_mutex> const ab_lock(audio_buf_mutex_);
                 audio_buf_.clear();
             }
         }
 
         const size_t bytes_per_frame = static_cast<size_t>(audio_enc_ctx_->frame_size) * 4;
         {
-            std::lock_guard<std::recursive_mutex> ab_lock(audio_buf_mutex_);
+            std::lock_guard<std::recursive_mutex> const ab_lock(audio_buf_mutex_);
             if (audio_buf_.empty() && audio_pts_ == 0) {
                 audio_buf_.resize(bytes_per_frame, 0);
             }
-            size_t rem = audio_buf_.size() % bytes_per_frame;
+            size_t const rem = audio_buf_.size() % bytes_per_frame;
             if (rem > 0) {
                 audio_buf_.resize(audio_buf_.size() + (bytes_per_frame - rem), 0);
             }
         }
-        int saved_fps = fps_;
+        int const saved_fps = fps_;
         fps_ = 0;
         write_audio_samples(nullptr, 0);
         fps_ = saved_fps;
 
-        std::lock_guard<std::recursive_mutex> ab_lock(audio_buf_mutex_);
+        std::lock_guard<std::recursive_mutex> const ab_lock(audio_buf_mutex_);
         audio_buf_.clear();
     }
     is_open_.store(false);
@@ -541,7 +541,7 @@ void NativeMP4Writer::close() {
 
         while (!video_done || !audio_done) {
             if (!video_done) {
-                int res = avcodec_receive_packet(video_enc_ctx_, flush_pkt);
+                int const res = avcodec_receive_packet(video_enc_ctx_, flush_pkt);
                 if (res == 0) {
                     av_packet_rescale_ts(flush_pkt, video_enc_ctx_->time_base, video_stream_->time_base);
                     flush_pkt->stream_index = video_stream_->index;
@@ -552,7 +552,7 @@ void NativeMP4Writer::close() {
                 }
             }
             if (!audio_done) {
-                int res = avcodec_receive_packet(audio_enc_ctx_, flush_pkt);
+                int const res = avcodec_receive_packet(audio_enc_ctx_, flush_pkt);
                 if (res == 0) {
                     if (flush_pkt->duration == 0) flush_pkt->duration = audio_enc_ctx_->frame_size;
                     if (flush_pkt->dts == AV_NOPTS_VALUE) flush_pkt->dts = flush_pkt->pts;
@@ -560,7 +560,7 @@ void NativeMP4Writer::close() {
                         av_packet_rescale_ts(flush_pkt, audio_enc_ctx_->time_base, audio_stream_->time_base);
                     }
                     flush_pkt->stream_index = audio_stream_->index;
-                    int ret = av_interleaved_write_frame(fmt_ctx_, flush_pkt);
+                    int const ret = av_interleaved_write_frame(fmt_ctx_, flush_pkt);
                     if (ret < 0) {
                         char errbuf[256];
                         av_strerror(ret, errbuf, sizeof(errbuf));
@@ -577,7 +577,7 @@ void NativeMP4Writer::close() {
 
     if (fmt_ctx_) {
         if (fmt_ctx_->pb) avio_flush(fmt_ctx_->pb);
-        int ret = av_write_trailer(fmt_ctx_);
+        int const ret = av_write_trailer(fmt_ctx_);
         std::cout << "[NativeMP4Writer] av_write_trailer result: " << ret << std::endl;
         if (fmt_ctx_->pb && !(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
             avio_flush(fmt_ctx_->pb);

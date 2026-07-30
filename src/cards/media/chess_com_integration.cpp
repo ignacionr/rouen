@@ -39,7 +39,7 @@ void ChessComIntegration::render_ui(ImVec4 info_color, ImVec4 error_color, const
             for (const auto& archive : state_.player_archives) {
                 std::string month_display = archive.substr(archive.length() - 7);
                 month_display[4] = '-';
-                bool is_selected = (state_.selected_archive == month_display);
+                bool const is_selected = (state_.selected_archive == month_display);
                 if (ImGui::Selectable(month_display.c_str(), is_selected)) {
                     state_.selected_archive = month_display;
                     fetch_archive_games(archive);
@@ -53,8 +53,8 @@ void ChessComIntegration::render_ui(ImVec4 info_color, ImVec4 error_color, const
             if (ImGui::BeginCombo("##GamesList", state_.selected_game_index < 0 ? "Select Game" : api_.format_game_display(state_.archive_games[static_cast<size_t>(state_.selected_game_index)]).c_str())) {
                 for (size_t i = 0; i < state_.archive_games.size(); ++i) {
                     const auto& chess_game_item = state_.archive_games[i];
-                    std::string game_display = api_.format_game_display(chess_game_item);
-                    bool is_selected = (state_.selected_game_index == static_cast<int>(i));
+                    std::string const game_display = api_.format_game_display(chess_game_item);
+                    bool const is_selected = (state_.selected_game_index == static_cast<int>(i));
                     if (ImGui::Selectable(game_display.c_str(), is_selected)) {
                         state_.selected_game_index = static_cast<int>(i);
                         if (on_game_selected) on_game_selected();
@@ -96,7 +96,7 @@ void ChessComIntegration::process_api_responses() {
             auto [success, result] = state_.archives_future.get();
             state_.is_fetching_archives = false;
             if (success) {
-                bool parsed = api_.process_archives_response(result, state_.player_archives);
+                bool const parsed = api_.process_archives_response(result, state_.player_archives);
                 if (!parsed) state_.api_error = "Error parsing archives response";
             } else {
                 state_.api_error = result;
@@ -109,7 +109,7 @@ void ChessComIntegration::process_api_responses() {
             auto [success, result] = state_.games_future.get();
             state_.is_fetching_games = false;
             if (success) {
-                bool parsed = api_.process_games_response(result, state_.archive_games);
+                bool const parsed = api_.process_games_response(result, state_.archive_games);
                 if (!parsed) state_.api_error = "Error parsing games response";
             } else {
                 state_.api_error = result;

@@ -58,10 +58,10 @@ namespace rouen::cards {
 
     void github_card::save_token_to_file() {
         try {
-            std::filesystem::path config_dir = get_config_directory();
+            std::filesystem::path const config_dir = get_config_directory();
             std::filesystem::create_directories(config_dir);
 
-            std::string filename = get_config_filename();
+            std::string const filename = get_config_filename();
             glz::json_t config;
             config["token"] = login_host_->personal_token();
 
@@ -81,7 +81,7 @@ namespace rouen::cards {
 
     void github_card::load_token_from_file() {
         try {
-            std::string filename = get_config_filename();
+            std::string const filename = get_config_filename();
 
             if (!std::filesystem::exists(filename)) {
                 return;
@@ -96,7 +96,7 @@ namespace rouen::cards {
                 auto ec = glz::read_json(config, json_str);
                 if (!ec && config.contains("token")) {
                     try {
-                        std::string token = config["token"].get<std::string>();
+                        std::string const token = config["token"].get<std::string>();
                         login_host_->set_personal_token(token);
                     } catch (const std::exception&) {
                         // Handle token access error
@@ -110,7 +110,7 @@ namespace rouen::cards {
 
     std::filesystem::path github_card::get_config_directory() const {
         const char* home = std::getenv("HOME");
-        std::filesystem::path base = home ? home : ".";
+        std::filesystem::path const base = home ? home : ".";
         return base / ".config" / "rouen" / "github";
     }
 
@@ -172,27 +172,27 @@ namespace rouen::cards {
                 }
             } else {
                 if (user_info_.contains("login")) {
-                    std::string login = user_info_["login"].get<std::string>();
+                    std::string const login = user_info_["login"].get<std::string>();
                     ImGui::Text("User: %s", login.c_str());
                 }
 
                 if (user_info_.contains("name") && !user_info_["name"].is_null()) {
-                    std::string user_name = user_info_["name"].get<std::string>();
+                    std::string const user_name = user_info_["name"].get<std::string>();
                     ImGui::Text("Name: %s", user_name.c_str());
                 }
 
                 if (user_info_.contains("public_repos")) {
-                    int public_repos = static_cast<int>(user_info_["public_repos"].get<double>());
+                    int const public_repos = static_cast<int>(user_info_["public_repos"].get<double>());
                     ImGui::Text("Public Repositories: %d", public_repos);
                 }
 
                 if (user_info_.contains("followers")) {
-                    int followers = static_cast<int>(user_info_["followers"].get<double>());
+                    int const followers = static_cast<int>(user_info_["followers"].get<double>());
                     ImGui::Text("Followers: %d", followers);
                 }
 
                 if (user_info_.contains("following")) {
-                    int following = static_cast<int>(user_info_["following"].get<double>());
+                    int const following = static_cast<int>(user_info_["following"].get<double>());
                     ImGui::Text("Following: %d", following);
                 }
             }
@@ -275,7 +275,7 @@ namespace rouen::cards {
 
                         ImGui::TableNextColumn();
                         if (repo.json().contains("language") && !repo.json()["language"].is_null()) {
-                            std::string language = repo.json()["language"].get<std::string>();
+                            std::string const language = repo.json()["language"].get<std::string>();
                             ImGui::Text("%s", language.c_str());
                         } else {
                             ImGui::TextColored(colors[5], "—");
@@ -283,7 +283,7 @@ namespace rouen::cards {
 
                         ImGui::TableNextColumn();
                         if (repo.json().contains("stargazers_count")) {
-                            int stars = static_cast<int>(repo.json()["stargazers_count"].get<double>());
+                            int const stars = static_cast<int>(repo.json()["stargazers_count"].get<double>());
                             ImGui::Text("%d", stars);
                         } else {
                             ImGui::TextColored(colors[5], "—");
@@ -294,7 +294,7 @@ namespace rouen::cards {
 
                         if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " View##repo_view")) {
                             if (repo.json().contains("html_url")) {
-                                std::string url = repo.json()["html_url"].get<std::string>();
+                                std::string const url = repo.json()["html_url"].get<std::string>();
                                 host_->open_url(url);
                             }
                         }
@@ -333,7 +333,7 @@ namespace rouen::cards {
                             ImGui::Text("%s:", label);
                             ImGui::TableNextColumn();
 
-                            std::string value = user_info_[key].get<std::string>();
+                            std::string const value = user_info_[key].get<std::string>();
                             if (is_url && !value.empty()) {
                                 if (ImGui::SmallButton(value.c_str())) {
                                     host_->open_url(value);
@@ -383,10 +383,10 @@ namespace rouen::cards {
                     if (organizations_.is_array()) {
                         for (const auto& org : organizations_.get<std::vector<glz::json_t>>()) {
                             if (org.contains("login")) {
-                                std::string org_name = org["login"].get<std::string>();
+                                std::string const org_name = org["login"].get<std::string>();
                                 if (ImGui::SmallButton(org_name.c_str())) {
                                     if (org.contains("html_url")) {
-                                        std::string url = org["html_url"].get<std::string>();
+                                        std::string const url = org["html_url"].get<std::string>();
                                         host_->open_url(url);
                                     }
                                 }
@@ -410,8 +410,8 @@ namespace rouen::cards {
         } else {
             ImGui::TextColored(colors[1], ICON_MD_CHECK_CIRCLE " GitHub token configured");
 
-            std::string token = login_host_->personal_token();
-            std::string masked_token = (token.length() >= 8) 
+            std::string const token = login_host_->personal_token();
+            std::string const masked_token = (token.length() >= 8) 
                 ? (token.substr(0, 4) + "..." + token.substr(token.length() - 4))
                 : "********";
             ImGui::Text("Token: %s", masked_token.c_str());

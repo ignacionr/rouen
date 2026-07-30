@@ -69,7 +69,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
     while ((pos = line.find("\x1b[", last_pos)) != std::string::npos) {
         // Render text up to the escape sequence
         if (pos > last_pos) {
-            std::string segment = line.substr(last_pos, pos - last_pos);
+            std::string const segment = line.substr(last_pos, pos - last_pos);
             if (!first_segment) {
                 ImGui::SameLine(0.0f, 0.0f);
             }
@@ -84,15 +84,15 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
         }
         
         // Find the end of the escape sequence (marked by a command letter like 'm')
-        size_t end_pos = line.find_first_of("ABCDEFGHJKSTm", pos + 2);
+        size_t const end_pos = line.find_first_of("ABCDEFGHJKSTm", pos + 2);
         if (end_pos == std::string::npos) {
             last_pos = pos + 2;
             continue;
         }
         
-        char code_type = line[end_pos];
+        char const code_type = line[end_pos];
         if (code_type == 'm') {
-            std::string params_str = line.substr(pos + 2, end_pos - (pos + 2));
+            std::string const params_str = line.substr(pos + 2, end_pos - (pos + 2));
             std::vector<int> params;
             size_t p_last_pos = 0;
             size_t p_pos = 0;
@@ -113,7 +113,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
             }
             
             // Apply parameters
-            for (int p : params) {
+            for (int const p : params) {
                 if (p == 0 || p == 39) {
                     current_color = default_color;
                     has_color_push = false;
@@ -152,7 +152,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
     
     // Render the final segment
     if (last_pos < line.size()) {
-        std::string segment = line.substr(last_pos);
+        std::string const segment = line.substr(last_pos);
         if (!first_segment) {
             ImGui::SameLine(0.0f, 0.0f);
         }
@@ -170,7 +170,7 @@ void RenderAnsiText(const std::string& line, const ImVec4& default_color) {
 }
 
 void TerminalOutput::add_to_output(const std::string& text, OutputType type) {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     output_buffer.emplace_back(text, type);
     
     // Clear partial buffers of the corresponding type since we now have a new complete line
@@ -189,7 +189,7 @@ void TerminalOutput::add_to_output(const std::string& text, OutputType type) {
 }
 
 void TerminalOutput::add_multiple_outputs(const std::vector<std::pair<std::string, OutputType>>& entries) {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     for (const auto& [text, type] : entries) {
         output_buffer.emplace_back(text, type);
         
@@ -210,7 +210,7 @@ void TerminalOutput::add_multiple_outputs(const std::vector<std::pair<std::strin
 }
 
 void TerminalOutput::clear_terminal(const std::string& cwd) {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     output_buffer.clear();
     stdout_partial.clear();
     stderr_partial.clear();
@@ -224,12 +224,12 @@ void TerminalOutput::clear_terminal(const std::string& cwd) {
 
 void TerminalOutput::add_prompt(const std::string& working_dir) {
     // Add the directory prompt (like "user@host:~/dir$")
-    std::string prompt = std::format("{}$ ", working_dir);
+    std::string const prompt = std::format("{}$ ", working_dir);
     add_to_output(prompt, OutputType::Prompt);
 }
 
 void TerminalOutput::set_partial_line(const std::string& text, OutputType type) {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     if (type == OutputType::StdOut) {
         stdout_partial = text;
     } else if (type == OutputType::StdErr) {
@@ -239,7 +239,7 @@ void TerminalOutput::set_partial_line(const std::string& text, OutputType type) 
 }
 
 std::string TerminalOutput::get_all_text() {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     std::string result;
     for (const auto& [text, type] : output_buffer) {
         if (type == OutputType::Blank) {
@@ -259,7 +259,7 @@ std::string TerminalOutput::get_all_text() {
 }
 
 void TerminalOutput::display_buffer(const ImVec4* colors, bool& auto_scroll) {
-    std::lock_guard<std::mutex> lock(output_mutex);
+    std::lock_guard<std::mutex> const lock(output_mutex);
     for (const auto& [text, type] : output_buffer) {
         ImVec4 default_color;
         switch (type) {

@@ -155,8 +155,8 @@ void main_wnd::run() {
                     
                     // Save actual scale and override to 1.0 for layout phase
                     auto& io = ImGui::GetIO();
-                    float actual_scale_x = io.DisplayFramebufferScale.x;
-                    float actual_scale_y = io.DisplayFramebufferScale.y;
+                    float const actual_scale_x = io.DisplayFramebufferScale.x;
+                    float const actual_scale_y = io.DisplayFramebufferScale.y;
                     io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
                     
                     ImGui::NewFrame();
@@ -170,21 +170,21 @@ void main_wnd::run() {
                     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
                     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 1));
 
-                    ImGuiWindowFlags fs_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                    ImGuiWindowFlags const fs_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
                                                 ImGuiWindowFlags_NoBringToFrontOnFocus;
 
                     if (ImGui::Begin("##FullscreenVideoOverlay", nullptr, fs_flags)) {
-                        float win_w = vp->Size.x;
-                        float win_h = vp->Size.y;
+                        float const win_w = vp->Size.x;
+                        float const win_h = vp->Size.y;
 
-                        float btn_w = 36.0f;
-                        float btn_h = 36.0f;
-                        float btn_margin = 16.0f;
+                        float const btn_w = 36.0f;
+                        float const btn_h = 36.0f;
+                        float const btn_margin = 16.0f;
 
-                        ImVec2 mouse_pos = ImGui::GetIO().MousePos;
-                        bool on_progress_bar = (mouse_pos.y >= win_h - 24.0f);
-                        bool on_detach_button = (mouse_pos.x >= win_w - (btn_w + btn_margin + 4.0f) && mouse_pos.y <= (btn_h + btn_margin + 4.0f));
+                        ImVec2 const mouse_pos = ImGui::GetIO().MousePos;
+                        bool const on_progress_bar = (mouse_pos.y >= win_h - 24.0f);
+                        bool const on_detach_button = (mouse_pos.x >= win_w - (btn_w + btn_margin + 4.0f) && mouse_pos.y <= (btn_h + btn_margin + 4.0f));
 
                         // Hide mouse cursor when hovering the media player content area
                         if (ImGui::IsWindowHovered() && !on_progress_bar && !on_detach_button) {
@@ -198,9 +198,9 @@ void main_wnd::run() {
                             }
                         }
 
-                        ImTextureID tex = fs_item->get_texture_id(m_device);
+                        ImTextureID const tex = fs_item->get_texture_id(m_device);
                         if (tex && fs_item->has_video) {
-                            float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+                            float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
 
                             float draw_w, draw_h;
                             if (win_w / win_h > aspect) {
@@ -210,8 +210,8 @@ void main_wnd::run() {
                                 draw_w = win_w;
                                 draw_h = draw_w / aspect;
                             }
-                            float draw_x = (win_w - draw_w) * 0.5f;
-                            float draw_y = (win_h - draw_h) * 0.5f;
+                            float const draw_x = (win_w - draw_w) * 0.5f;
+                            float const draw_y = (win_h - draw_h) * 0.5f;
 
                             ImGui::SetCursorPos(ImVec2(draw_x, draw_y));
                             ImGui::Image(tex, ImVec2(draw_w, draw_h));
@@ -220,10 +220,10 @@ void main_wnd::run() {
                             media_player::draw_full_window_audio_visualization(*fs_item, win_w, win_h);
 
                             // Render VU-meters on center-bottom
-                            float vu_w = std::min(win_w * 0.65f, 460.0f);
-                            float vu_h = 110.0f;
-                            float vu_x = (win_w - vu_w) * 0.5f;
-                            float vu_y = win_h - vu_h - 38.0f;
+                            float const vu_w = std::min(win_w * 0.65f, 460.0f);
+                            float const vu_h = 110.0f;
+                            float const vu_x = (win_w - vu_w) * 0.5f;
+                            float const vu_y = win_h - vu_h - 38.0f;
                             ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
                             media_player::draw_vintage_110_vu_meter(
                                 fs_item->get_vu_level_l(), fs_item->get_vu_level_r(),
@@ -240,13 +240,13 @@ void main_wnd::run() {
 
                         // Seeking in full-window media mode via Left and Right arrow keys
                         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-                            double current = fs_item->position.load();
+                            double const current = fs_item->position.load();
                             fs_item->seekTo(std::max(0.0, current - 5.0));
                         }
                         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-                            double current = fs_item->position.load();
-                            double dur = fs_item->duration.load();
-                            double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                            double const current = fs_item->position.load();
+                            double const dur = fs_item->duration.load();
+                            double const target_limit = (dur > 0.0) ? dur : (current + 5.0);
                             fs_item->seekTo(std::min(target_limit, current + 5.0));
                         }
                         if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
@@ -319,7 +319,7 @@ void main_wnd::run() {
                 }
 
                 auto video_feed = rouen::hosts::VideoFeedHost::get_host();
-                bool is_casting = (video_feed && video_feed->is_running());
+                bool const is_casting = (video_feed && video_feed->is_running());
                 if (is_casting) {
                     m_requested_fps = std::max(m_requested_fps, 30);
                 }
@@ -335,8 +335,8 @@ void main_wnd::run() {
                 
                 // Save actual scale and override to 1.0 for layout phase
                 auto& io = ImGui::GetIO();
-                float actual_scale_x = io.DisplayFramebufferScale.x;
-                float actual_scale_y = io.DisplayFramebufferScale.y;
+                float const actual_scale_x = io.DisplayFramebufferScale.x;
+                float const actual_scale_y = io.DisplayFramebufferScale.y;
                 io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
                 
                 ImGui::NewFrame();
@@ -353,7 +353,7 @@ void main_wnd::run() {
                     DB_ERROR("Unknown error during deck rendering");
                 }
 
-                bool is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
+                bool const is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
 
                 if (is_detached_active) {
                     m_requested_fps = std::max(m_requested_fps, 60);
@@ -367,7 +367,7 @@ void main_wnd::run() {
 
                 // Update texture for all active playing media items on every 60 FPS frame
                 try {
-                    std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+                    std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
                     for (auto& [id, item_ptr] : media_player::items()) {
                         if (item_ptr && item_ptr->is_playing && !item_ptr->is_paused.load()) {
                             item_ptr->get_texture_id(m_device);
@@ -384,7 +384,7 @@ void main_wnd::run() {
                 bool should_draw_main = true;
                 if (is_detached_active) {
                     auto now = std::chrono::steady_clock::now();
-                    bool user_active = (now < s_input_boost_until);
+                    bool const user_active = (now < s_input_boost_until);
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_main_render_time).count();
                     
                     if (!user_active && elapsed_ms < 1000) {
@@ -472,12 +472,12 @@ bool main_wnd::process_events() {
 
         // Poll events
         SDL_Event event;
-        bool is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
+        bool const is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
         auto now_time = std::chrono::steady_clock::now();
-        bool user_recently_active = (now_time < s_input_boost_until);
+        bool const user_recently_active = (now_time < s_input_boost_until);
 
         if (!m_immediate) {
-            bool is_media_playing = media_player::is_any_playing_non_cast() || media_player_item::is_cast_active.load();
+            bool const is_media_playing = media_player::is_any_playing_non_cast() || media_player_item::is_cast_active.load();
             int effective_fps = 60;
             if (is_detached_active && !user_recently_active && !is_media_playing) {
                 effective_fps = 1;
@@ -495,7 +495,7 @@ bool main_wnd::process_events() {
             try {
                 bool is_main_window_event = true;
                 if (m_detached_window) {
-                    Uint32 detached_id = SDL_GetWindowID(m_detached_window);
+                    Uint32 const detached_id = SDL_GetWindowID(m_detached_window);
                     if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST) {
                         if (event.window.windowID == detached_id) is_main_window_event = false;
                     } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
@@ -570,8 +570,8 @@ bool main_wnd::process_events() {
 
                     if (event.window.windowID == SDL_GetWindowID(m_window)) {
                         // Check if this close event was triggered by Cmd+W or Ctrl+W shortcut
-                        SDL_Keymod mod = SDL_GetModState();
-                        bool modifier_down = (mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI));
+                        SDL_Keymod const mod = SDL_GetModState();
+                        bool const modifier_down = (mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI));
                         
                         if (modifier_down) {
                             // Do not close the app; clear the editor instead
@@ -618,8 +618,8 @@ bool main_wnd::process_events() {
                     }
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
-                    bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
-                    bool is_fullscreen_active = media_player::has_active_fullscreen_item();
+                    bool const is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
+                    bool const is_fullscreen_active = media_player::has_active_fullscreen_item();
 
                     if (m_detached_window && event.key.windowID == SDL_GetWindowID(m_detached_window)) {
                         auto detached_item = media_player::get_detached_item();
@@ -649,13 +649,13 @@ bool main_wnd::process_events() {
                             if (is_adlib_active) {
                                 rouen::helpers::AdLibEngine::instance().next_stage();
                             } else if (detached_item) {
-                                double current = detached_item->position.load();
-                                double dur = detached_item->duration.load();
-                                double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                                double const current = detached_item->position.load();
+                                double const dur = detached_item->duration.load();
+                                double const target_limit = (dur > 0.0) ? dur : (current + 5.0);
                                 detached_item->seekTo(std::min(target_limit, current + 5.0));
                             }
                         } else if (event.key.key == SDLK_LEFT && detached_item) {
-                            double current = detached_item->position.load();
+                            double const current = detached_item->position.load();
                             detached_item->seekTo(std::max(0.0, current - 5.0));
                         } else {
                             int overlay_target_idx = -1;
@@ -674,7 +674,7 @@ bool main_wnd::process_events() {
 
                     // Key overlay toggling on main window when detached window or fullscreen media is active
                     if ((is_detached_active || is_fullscreen_active) && !ImGui::GetIO().WantCaptureKeyboard) {
-                        bool no_mods = !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_ALT));
+                        bool const no_mods = !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_ALT));
                         if (no_mods) {
                             int overlay_target_idx = -1;
                             if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
@@ -697,7 +697,7 @@ bool main_wnd::process_events() {
                     }
                     // F11 toggles fullscreen
                     else if (event.key.key == SDLK_F11) {
-                        Uint64 flags = SDL_GetWindowFlags(m_window);
+                        Uint64 const flags = SDL_GetWindowFlags(m_window);
                         if (flags & SDL_WINDOW_FULLSCREEN) {
                             SDL_SetWindowFullscreen(m_window, false);
                         } else {
@@ -749,8 +749,8 @@ bool main_wnd::process_events() {
 
 void main_wnd::process_detached_window() {
     auto detached_item = media_player::get_detached_item();
-    bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
-    bool is_detached_mode = media_player::is_detached_mode_active();
+    bool const is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
+    bool const is_detached_mode = media_player::is_detached_mode_active();
 
     if (!is_detached_mode && !detached_item && !is_adlib_active) {
         if (m_detached_window) {
@@ -776,9 +776,9 @@ void main_wnd::process_detached_window() {
 
     // Create detached OS Window if not created yet
     if (!m_detached_window) {
-        int default_w = 960;
-        int default_h = 540;
-        std::string title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
+        int const default_w = 960;
+        int const default_h = 540;
+        std::string const title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
         m_detached_window = SDL_CreateWindow(
             title.c_str(),
             default_w, default_h,
@@ -800,7 +800,7 @@ void main_wnd::process_detached_window() {
         }
     } else {
         static std::string s_last_title;
-        std::string current_title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
+        std::string const current_title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
         if (current_title != s_last_title) {
             SDL_SetWindowTitle(m_detached_window, current_title.c_str());
             s_last_title = current_title;
@@ -825,17 +825,17 @@ void main_wnd::process_detached_window() {
     if (color_target.texture) {
         int w = 0, h = 0;
         SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
-        float win_w = static_cast<float>(w > 0 ? w : 960);
-        float win_h = static_cast<float>(h > 0 ? h : 540);
+        float const win_w = static_cast<float>(w > 0 ? w : 960);
+        float const win_h = static_cast<float>(h > 0 ? h : 540);
 
-        ImTextureID tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
+        ImTextureID const tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
         RouenGPUTexture* rtex = tex ? reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex)) : nullptr;
         if (!rtex && is_adlib_active) {
             rtex = rouen::helpers::AdLibEngine::instance().get_background_texture(m_device, cmdbuf);
         }
 
         if (rtex && rtex->binding.texture) {
-            float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+            float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
             float draw_w, draw_h;
             if (win_w / win_h > aspect) {
                 draw_h = win_h;
@@ -844,8 +844,8 @@ void main_wnd::process_detached_window() {
                 draw_w = win_w;
                 draw_h = draw_w / aspect;
             }
-            float draw_x = (win_w - draw_w) * 0.5f;
-            float draw_y = (win_h - draw_h) * 0.5f;
+            float const draw_x = (win_w - draw_w) * 0.5f;
+            float const draw_y = (win_h - draw_h) * 0.5f;
 
             // 1. Blit video / background texture onto swapchain
             SDL_GPUBlitInfo blit_info = {};
@@ -890,13 +890,13 @@ void main_wnd::process_detached_window() {
                 // Feed mouse events for detached window into secondary ImGui context
                 int win_pt_w = 0, win_pt_h = 0;
                 SDL_GetWindowSize(m_detached_window, &win_pt_w, &win_pt_h);
-                float scale_x = (win_pt_w > 0) ? (win_w / static_cast<float>(win_pt_w)) : 1.0f;
-                float scale_y = (win_pt_h > 0) ? (win_h / static_cast<float>(win_pt_h)) : 1.0f;
+                float const scale_x = (win_pt_w > 0) ? (win_w / static_cast<float>(win_pt_w)) : 1.0f;
+                float const scale_y = (win_pt_h > 0) ? (win_h / static_cast<float>(win_pt_h)) : 1.0f;
 
                 SDL_Window* mouse_focus = SDL_GetMouseFocus();
                 if (mouse_focus == m_detached_window) {
                     float raw_mx = 0.0f, raw_my = 0.0f;
-                    Uint32 mouse_buttons = SDL_GetMouseState(&raw_mx, &raw_my);
+                    Uint32 const mouse_buttons = SDL_GetMouseState(&raw_mx, &raw_my);
                     io.AddMousePosEvent(raw_mx * scale_x, raw_my * scale_y);
                     io.AddMouseButtonEvent(0, (mouse_buttons & SDL_BUTTON_LMASK) != 0);
                 } else {
@@ -909,10 +909,10 @@ void main_wnd::process_detached_window() {
                 if (detached_item && !detached_item->has_video) {
                     media_player::draw_full_window_audio_visualization(*detached_item, win_w, win_h);
 
-                    float vu_w = std::min(win_w * 0.65f, 460.0f);
-                    float vu_h = 110.0f;
-                    float vu_x = (win_w - vu_w) * 0.5f;
-                    float vu_y = win_h - vu_h - 38.0f;
+                    float const vu_w = std::min(win_w * 0.65f, 460.0f);
+                    float const vu_h = 110.0f;
+                    float const vu_x = (win_w - vu_w) * 0.5f;
+                    float const vu_y = win_h - vu_h - 38.0f;
                     ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
                     media_player::draw_vintage_110_vu_meter(
                         detached_item->get_vu_level_l(), detached_item->get_vu_level_r(),
@@ -922,8 +922,8 @@ void main_wnd::process_detached_window() {
                 } else if (!detached_item && !is_adlib_active) {
                     const char* idle_title = ICON_MD_DESKTOP_WINDOWS " Rouen Detached Window";
                     const char* idle_sub = "Ready for media playback...";
-                    ImVec2 title_sz = ImGui::CalcTextSize(idle_title);
-                    ImVec2 sub_sz = ImGui::CalcTextSize(idle_sub);
+                    ImVec2 const title_sz = ImGui::CalcTextSize(idle_title);
+                    ImVec2 const sub_sz = ImGui::CalcTextSize(idle_sub);
 
                     ImGui::SetCursorPos(ImVec2((win_w - title_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f));
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.9f, 0.8f), "%s", idle_title);
@@ -1011,8 +1011,8 @@ void main_wnd::process_detached_window() {
     if (is_adlib_active && m_detached_window && rouen::helpers::AdLibEngine::instance().is_recording()) {
         int w = 0, h = 0;
         SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
-        int cap_w = (w > 0) ? w : 1280;
-        int cap_h = (h > 0) ? h : 720;
+        int const cap_w = (w > 0) ? w : 1280;
+        int const cap_h = (h > 0) ? h : 720;
 
         RouenGPUTexture target_tex;
         target_tex.binding.texture = color_target.texture;
@@ -1022,7 +1022,7 @@ void main_wnd::process_detached_window() {
 
         RouenGPUTexture* rec_rtex = &target_tex;
         if (!rec_rtex->binding.texture) {
-            ImTextureID detached_tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
+            ImTextureID const detached_tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
             rec_rtex = detached_tex ? reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(detached_tex)) : nullptr;
             if (!rec_rtex) {
                 rec_rtex = rouen::helpers::AdLibEngine::instance().get_background_texture(m_device, cmdbuf);
@@ -1030,8 +1030,8 @@ void main_wnd::process_detached_window() {
         }
 
         if (rec_rtex && rec_rtex->binding.texture) {
-            int final_w = (rec_rtex->width > 0) ? rec_rtex->width : cap_w;
-            int final_h = (rec_rtex->height > 0) ? rec_rtex->height : cap_h;
+            int const final_w = (rec_rtex->width > 0) ? rec_rtex->width : cap_w;
+            int const final_h = (rec_rtex->height > 0) ? rec_rtex->height : cap_h;
             SDL_Surface* surf = rouen::helpers::download_gpu_texture(m_device, rec_rtex, final_w, final_h, cmdbuf);
             if (surf) {
                 rouen::helpers::AdLibEngine::instance().on_detached_frame_rendered(

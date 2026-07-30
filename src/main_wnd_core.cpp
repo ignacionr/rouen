@@ -111,11 +111,11 @@ void main_wnd::resize_window(int width, int height) {
 
 void main_wnd::expand_to_full_width() {
     if (m_window) {
-        SDL_WindowFlags flags = SDL_GetWindowFlags(m_window);
+        SDL_WindowFlags const flags = SDL_GetWindowFlags(m_window);
         if (flags & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN)) {
             SDL_RestoreWindow(m_window);
         }
-        SDL_DisplayID display_id = SDL_GetDisplayForWindow(m_window);
+        SDL_DisplayID const display_id = SDL_GetDisplayForWindow(m_window);
         SDL_Rect usable_bounds{};
         if (SDL_GetDisplayUsableBounds(display_id, &usable_bounds) ||
             SDL_GetDisplayBounds(display_id, &usable_bounds)) {

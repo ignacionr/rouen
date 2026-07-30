@@ -26,14 +26,14 @@
 namespace rouen::helpers {
 
 bool AdLibEngine::prepare(const AdLibConfig& config) {
-    std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
     stop();
 
     config_ = config;
 
     auto audio_cb = [this](const uint8_t* pcm_s16_data, size_t size_in_bytes) {
         if (pcm_s16_data && size_in_bytes > 0) {
-            std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+            std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
             video_audio_buf_.insert(video_audio_buf_.end(), pcm_s16_data, pcm_s16_data + size_in_bytes);
         }
     };
@@ -94,7 +94,7 @@ bool AdLibEngine::prepare(const AdLibConfig& config) {
 }
 
 bool AdLibEngine::start() {
-    std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
 
     if (stage_.load() == AdLibStage::Idle) {
         return false;
@@ -112,7 +112,7 @@ bool AdLibEngine::start() {
         }
         if (mp4_writer_.open(out_path, 1280, 720, 30, 44100)) {
             {
-                std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+                std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
                 last_rendered_pixels_.clear();
             }
             has_new_ui_frame_.store(false);
@@ -120,7 +120,7 @@ bool AdLibEngine::start() {
             std::cout << "[AdLibEngine] MP4 recording initialized successfully on file: " << out_path << std::endl;
             SDL_AudioDeviceID dev_id = config_.mic_device_id;
             if (!config_.mic_device_name.empty()) {
-                SDL_AudioDeviceID found = audio_capture_.find_device_id_by_name(config_.mic_device_name);
+                SDL_AudioDeviceID const found = audio_capture_.find_device_id_by_name(config_.mic_device_name);
                 if (found != 0) dev_id = found;
             }
             audio_capture_.start(dev_id, 44100, 2);
@@ -136,12 +136,12 @@ bool AdLibEngine::start() {
     last_rendered_frame_time_ = start_time_;
     last_written_mp4_frame_time_ = start_time_;
     {
-        std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+        std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
         last_rendered_pixels_.clear();
     }
     has_new_ui_frame_.store(false);
     {
-        std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+        std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
         video_audio_buf_.clear();
     }
     if (intro_item_) {
@@ -150,15 +150,15 @@ bool AdLibEngine::start() {
     is_paused_.store(false);
 
     rec_thread_ = std::thread([this]() {
-        double pres_dur = auto_stop_seconds_.load();
-        double max_total_dur = (pres_dur > 0.0) ? (7.958 + pres_dur + 8.0 + 3.0) : 0.0;
+        double const pres_dur = auto_stop_seconds_.load();
+        double const max_total_dur = (pres_dur > 0.0) ? (7.958 + pres_dur + 8.0 + 3.0) : 0.0;
         auto start_tp = std::chrono::steady_clock::now();
         auto next_tick = start_tp;
         while (recording_active_.load()) {
             next_tick += std::chrono::microseconds(33333);
             update_frame_tick();
             if (max_total_dur > 0.0) {
-                double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_tp).count();
+                double const elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_tp).count();
                 if (elapsed >= max_total_dur) {
                     std::cout << "[AdLibEngine] Total safety timeout (" << max_total_dur << "s) reached. Stopping recording." << std::endl;
                     transition_to_stage(AdLibStage::Finished);
@@ -185,11 +185,11 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
 
     if (new_stage == AdLibStage::Intro) {
         {
-            std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+            std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
             video_audio_buf_.clear();
         }
         {
-            std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+            std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
             last_rendered_pixels_.clear();
         }
         has_new_ui_frame_.store(false);
@@ -208,7 +208,7 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
         }
     } else if (new_stage == AdLibStage::Middle) {
         {
-            std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+            std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
             last_rendered_pixels_.clear();
             if (bg_surface_) {
                 SDL_Surface* converted = SDL_ConvertSurface(bg_surface_, SDL_PIXELFORMAT_RGBA32);
@@ -224,12 +224,12 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
             }
         }
         {
-            std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+            std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
             if (!video_audio_buf_.empty() && mp4_writer_.is_open()) {
-                int64_t target_audio_pts = mp4_writer_.get_video_pts() * 1470;
-                int64_t current_audio_pts = mp4_writer_.get_audio_pts();
+                int64_t const target_audio_pts = mp4_writer_.get_video_pts() * 1470;
+                int64_t const current_audio_pts = mp4_writer_.get_audio_pts();
                 if (target_audio_pts > current_audio_pts) {
-                    size_t max_allowed_bytes = static_cast<size_t>(target_audio_pts - current_audio_pts) * 4;
+                    size_t const max_allowed_bytes = static_cast<size_t>(target_audio_pts - current_audio_pts) * 4;
                     if (video_audio_buf_.size() > max_allowed_bytes) {
                         video_audio_buf_.resize(max_allowed_bytes);
                     }
@@ -247,10 +247,10 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
     } else if (new_stage == AdLibStage::Outro) {
         std::vector<uint8_t> mic_pcm = audio_capture_.read_audio_data();
         if (!mic_pcm.empty() && mp4_writer_.is_open()) {
-            int64_t target_audio_pts = mp4_writer_.get_video_pts() * 1470;
-            int64_t current_audio_pts = mp4_writer_.get_audio_pts();
+            int64_t const target_audio_pts = mp4_writer_.get_video_pts() * 1470;
+            int64_t const current_audio_pts = mp4_writer_.get_audio_pts();
             if (target_audio_pts > current_audio_pts) {
-                size_t max_allowed_bytes = static_cast<size_t>(target_audio_pts - current_audio_pts) * 4;
+                size_t const max_allowed_bytes = static_cast<size_t>(target_audio_pts - current_audio_pts) * 4;
                 if (mic_pcm.size() > max_allowed_bytes) {
                     mic_pcm.resize(max_allowed_bytes);
                 }
@@ -259,7 +259,7 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
         }
         mp4_writer_.flush_audio();
         {
-            std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+            std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
             video_audio_buf_.clear();
         }
         if (outro_item_) {
@@ -276,7 +276,7 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
     } else if (new_stage == AdLibStage::Finished) {
         audio_capture_.stop();
         {
-            std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+            std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
             video_audio_buf_.clear();
         }
         if (intro_item_) intro_item_->pauseMedia();
@@ -290,13 +290,13 @@ void AdLibEngine::update_frame_tick() {
     try {
         if (is_paused_.load()) return;
         if (stage_.load() == AdLibStage::Intro && intro_item_ && !intro_item_->has_presented_first_frame.load()) {
-            std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+            std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
             last_rendered_pixels_.clear();
             has_new_ui_frame_.store(false);
             return;
         }
 
-        std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+        std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
         std::cout << "[AdLibEngine] tick: rec_active=" << recording_active_.load() << " writer_open=" << mp4_writer_.is_open() << " elapsed=" << get_elapsed_seconds() << "s" << std::endl;
 
         auto current_stage = stage_.load();
@@ -305,8 +305,8 @@ void AdLibEngine::update_frame_tick() {
         if (current_stage == AdLibStage::Intro && intro_item_) {
             double dur = intro_item_->duration.load();
             if (dur < 7.95) dur = 7.958333;
-            int target_intro_frames = static_cast<int>(std::round(dur * 30.0));
-            int written_intro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
+            int const target_intro_frames = static_cast<int>(std::round(dur * 30.0));
+            int const written_intro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
             if (written_intro_frames >= target_intro_frames) {
                 std::cout << "[AdLibEngine] Intro video finished (written_intro_frames=" << written_intro_frames << " dur=" << dur << "s). Auto-transitioning to Presentation phase (Middle)." << std::endl;
                 transition_to_stage(AdLibStage::Middle);
@@ -314,9 +314,9 @@ void AdLibEngine::update_frame_tick() {
         }
         // 2. Auto-transition from Middle (Presentation) to Outro when presentation stage_elapsed reaches target duration (if configured)
         else if (current_stage == AdLibStage::Middle) {
-            double target_middle_dur = auto_stop_seconds_.load();
+            double const target_middle_dur = auto_stop_seconds_.load();
             if (target_middle_dur > 0.0) {
-                double stage_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
+                double const stage_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
                 if (stage_elapsed >= target_middle_dur) {
                     std::cout << "[AdLibEngine] Presentation phase (Middle) duration (" << target_middle_dur << "s) completed. Auto-transitioning to Outro phase." << std::endl;
                     if (outro_item_) {
@@ -331,8 +331,8 @@ void AdLibEngine::update_frame_tick() {
         else if (current_stage == AdLibStage::Outro && outro_item_) {
             double dur = outro_item_->duration.load();
             if (dur <= 0.0) dur = 10.005;
-            int target_outro_frames = static_cast<int>(std::round(dur * 30.0));
-            int written_outro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
+            int const target_outro_frames = static_cast<int>(std::round(dur * 30.0));
+            int const written_outro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
             if (written_outro_frames >= target_outro_frames) {
                 std::cout << "[AdLibEngine] Outro video finished (written_outro_frames=" << written_outro_frames << " dur=" << dur << "s). Auto-transitioning to Finished phase." << std::endl;
                 transition_to_stage(AdLibStage::Finished);
@@ -353,7 +353,7 @@ void AdLibEngine::update_frame_tick() {
 
             if (video_has_audio) {
                 // In Intro/Outro stage with video audio: move available video audio samples
-                std::lock_guard<std::mutex> va_lock(video_audio_mutex_);
+                std::lock_guard<std::mutex> const va_lock(video_audio_mutex_);
                 if (!video_audio_buf_.empty()) {
                     audio_to_write = std::move(video_audio_buf_);
                     video_audio_buf_.clear();
@@ -379,13 +379,13 @@ void AdLibEngine::update_frame_tick() {
             if (current_stage == AdLibStage::Intro && intro_item_ && !intro_item_->has_presented_first_frame.load()) {
                 can_write_video = false;
             }
-            bool is_first_frame = (mp4_writer_.get_video_pts() == 0);
+            bool const is_first_frame = (mp4_writer_.get_video_pts() == 0);
             if (is_first_frame && (last_rendered_pixels_.empty() || !has_new_ui_frame_.load())) {
                 can_write_video = false;
             }
-            double stage_elapsed = std::chrono::duration<double>(now - stage_start_time_).count();
+            double const stage_elapsed = std::chrono::duration<double>(now - stage_start_time_).count();
             int target_frames = static_cast<int>(std::floor(stage_elapsed * 30.0));
-            int written_stage_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
+            int const written_stage_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
             if (current_stage == AdLibStage::Intro || current_stage == AdLibStage::Outro || config_.mode == AdLibMode::Recorded) {
                 target_frames = written_stage_frames + 1;
             }
@@ -398,7 +398,7 @@ void AdLibEngine::update_frame_tick() {
                     local_frame = outro_item_->get_current_adlib_frame_pixels();
                 }
                 if (local_frame.empty()) {
-                    std::lock_guard<std::mutex> fb_lock(frame_buffer_mutex_);
+                    std::lock_guard<std::mutex> const fb_lock(frame_buffer_mutex_);
                     local_frame = last_rendered_pixels_;
                 }
                 if (!local_frame.empty()) {
@@ -437,7 +437,7 @@ void AdLibEngine::toggle_pause() {
 }
 
 void AdLibEngine::next_stage() {
-    std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
     auto current = stage_.load();
 
     if (current == AdLibStage::Prepared) {
@@ -457,7 +457,7 @@ void AdLibEngine::next_stage() {
 
 void AdLibEngine::stop() {
     {
-        std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+        std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
         if (stage_.load() == AdLibStage::Idle) return;
         std::cout << "[AdLibEngine] stop() called." << std::endl;
         stage_.store(AdLibStage::Finished);
@@ -473,7 +473,7 @@ void AdLibEngine::stop() {
         }
     }
 
-    std::lock_guard<std::recursive_mutex> lock(engine_mutex_);
+    std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
     audio_capture_.stop();
     mp4_writer_.close();
 
@@ -513,7 +513,7 @@ std::shared_ptr<media_player_item> AdLibEngine::get_current_detached_item() {
 RouenGPUTexture* AdLibEngine::get_background_texture(SDL_GPUDevice* device, SDL_GPUCommandBuffer* cmd_buf) {
     if (!device) return nullptr;
     static std::mutex bg_tex_mutex;
-    std::lock_guard<std::mutex> lock(bg_tex_mutex);
+    std::lock_guard<std::mutex> const lock(bg_tex_mutex);
     if (!bg_texture_) {
         if (bg_surface_) {
             bg_texture_ = TextureHelper::createTextureFromSurface(device, bg_surface_, cmd_buf);
@@ -533,13 +533,13 @@ void AdLibEngine::on_detached_frame_rendered(const uint8_t* rgba_pixels, int wid
     if (stage_.load() == AdLibStage::Middle && bg_surface_) {
         uint64_t sum_y = 0;
         const uint8_t* pix = static_cast<const uint8_t*>(rgba_pixels);
-        size_t total_px = static_cast<size_t>(width * height);
-        size_t step = (total_px > 1000) ? (total_px / 1000) * 4 : 4;
+        size_t const total_px = static_cast<size_t>(width * height);
+        size_t const step = (total_px > 1000) ? (total_px / 1000) * 4 : 4;
         size_t samples = 0;
         for (size_t i = 0; i + 3 < total_px * 4; i += step) {
-            uint8_t r = pix[i + 0];
-            uint8_t g = pix[i + 1];
-            uint8_t b = pix[i + 2];
+            uint8_t const r = pix[i + 0];
+            uint8_t const g = pix[i + 1];
+            uint8_t const b = pix[i + 2];
             sum_y += static_cast<uint64_t>(0.299 * r + 0.587 * g + 0.114 * b);
             samples++;
         }
@@ -548,14 +548,14 @@ void AdLibEngine::on_detached_frame_rendered(const uint8_t* rgba_pixels, int wid
         }
     }
 
-    int line_pitch = (pitch > 0) ? pitch : (width * 4);
+    int const line_pitch = (pitch > 0) ? pitch : (width * 4);
 
     SDL_Surface* src_surf = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32, const_cast<void*>(static_cast<const void*>(rgba_pixels)), line_pitch);
     if (src_surf) {
         SDL_Surface* dst_surf = SDL_ScaleSurface(src_surf, 1280, 720, SDL_SCALEMODE_LINEAR);
         if (dst_surf) {
             {
-                std::lock_guard<std::mutex> lock(frame_buffer_mutex_);
+                std::lock_guard<std::mutex> const lock(frame_buffer_mutex_);
                 if (last_rendered_pixels_.size() != 1280 * 720 * 4) {
                     last_rendered_pixels_.resize(1280 * 720 * 4);
                 }
@@ -585,7 +585,7 @@ double AdLibEngine::get_elapsed_seconds() const {
 
 double AdLibEngine::get_stage_written_seconds() const {
     if (!mp4_writer_.is_open()) return 0.0;
-    int64_t diff = mp4_writer_.get_video_pts() - stage_start_pts_;
+    int64_t const diff = mp4_writer_.get_video_pts() - stage_start_pts_;
     return std::max(0.0, static_cast<double>(diff) * (1.0 / 30.0));
 }
 

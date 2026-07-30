@@ -170,7 +170,7 @@ void api_server_host::event_handler(struct mg_connection* c, int ev, void* ev_da
 void api_server_host::handle_request(struct mg_connection* c, struct mg_http_message* hm) {
     std::string response;
     int status_code = 200;
-    std::string content_type = "application/json";
+    std::string const content_type = "application/json";
 
     if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
@@ -278,7 +278,7 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             bool include_all = false;
             if (hm->query.len > 0) {
-                std::string q(hm->query.buf, hm->query.len);
+                std::string const q(hm->query.buf, hm->query.len);
                 if (q.find("all=true") != std::string::npos || q.find("active=false") != std::string::npos) {
                     include_all = true;
                 }
@@ -461,7 +461,7 @@ for (const auto& pair : dict) {
 std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         auto host = rouen::hosts::VideoFeedHost::get_host();
-        bool is_casting = host ? host->is_running() : false;
+        bool const is_casting = host ? host->is_running() : false;
         size_t audio_queued = host ? host->get_cast_queued_bytes() : 0;
         
         bool is_playing = false;
@@ -489,7 +489,7 @@ std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, str
         double audio_queue_seconds = 0.0;
         
         {
-            std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+            std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
             for (auto& [id, item_ptr] : media_player::items()) {
                 if (item_ptr && item_ptr->is_playing) {
                     is_playing = true;
@@ -502,7 +502,7 @@ std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, str
                     vu_l = item_ptr->get_vu_level_l();
                     vu_r = item_ptr->get_vu_level_r();
                     {
-                        std::lock_guard<std::mutex> q_lock(item_ptr->video_queue_mutex);
+                        std::lock_guard<std::mutex> const q_lock(item_ptr->video_queue_mutex);
                         video_q_size = item_ptr->decoded_video_queue.size();
                     }
                     // A/V sync diagnostics
@@ -516,8 +516,8 @@ std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, str
                     gpu_frames_rendered = item_ptr->gpu_frames_rendered.load();
                     actual_rendering_fps = item_ptr->actual_rendering_fps.load();
                     if (item_ptr->local_audio_stream) {
-                        int q_bytes = SDL_GetAudioStreamQueued(item_ptr->local_audio_stream);
-                        int rate = item_ptr->audio_sample_rate.load() > 0 ? item_ptr->audio_sample_rate.load() : 44100;
+                        int const q_bytes = SDL_GetAudioStreamQueued(item_ptr->local_audio_stream);
+                        int const rate = item_ptr->audio_sample_rate.load() > 0 ? item_ptr->audio_sample_rate.load() : 44100;
                         audio_queue_seconds = static_cast<double>(q_bytes) / static_cast<double>(rate * 4);
                     }
                     break;
@@ -525,7 +525,7 @@ std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, str
             }
         }
         
-        bool eof_reached = (dur > 0.0 && pos >= dur - 0.3);
+        bool const eof_reached = (dur > 0.0 && pos >= dur - 0.3);
         
         return std::format(
             R"({{"is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.3f},"duration":{:.3f},"audio_queued_bytes":{},"eof_reached":{},"has_video":{},"texture_ready":{},"luminance":{:.4f},"vu_level_l":{:.4f},"vu_level_r":{:.4f},"video_queue_size":{},"first_video_pts":{:.6f},"first_audio_pts":{:.6f},"last_presented_pts":{:.6f},"av_sync_delta_ms":{:.3f},"frames_presented":{},"frames_dropped":{},"frames_held":{},"audio_queue_seconds":{:.4f},"gpu_frames_rendered":{},"actual_rendering_fps":{:.1f}}})",
@@ -653,7 +653,7 @@ std::string api_server_host::handle_camera_layout_set(struct mg_connection*, str
             (void)glz::read_json(req, body);
         }
 
-        std::string target = !req.layout.empty() ? req.layout : (req.preset >= 0 ? std::to_string(req.preset) : "0");
+        std::string const target = !req.layout.empty() ? req.layout : (req.preset >= 0 ? std::to_string(req.preset) : "0");
         return (*fn)(target);
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
@@ -883,7 +883,7 @@ std::string api_server_host::handle_adlib_prepare(struct mg_connection* /*c*/, s
         cfg.output_mp4_path = req.output_mp4_path;
         cfg.mode = (req.mode == "live") ? rouen::helpers::AdLibMode::Live : rouen::helpers::AdLibMode::Recorded;
 
-        bool prepared = rouen::helpers::AdLibEngine::instance().prepare(cfg);
+        bool const prepared = rouen::helpers::AdLibEngine::instance().prepare(cfg);
         return std::format(R"({{"success":{},"message":"Ad-Lib scene prepared","stage":"Prepared"}})", prepared ? "true" : "false");
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
@@ -892,7 +892,7 @@ std::string api_server_host::handle_adlib_prepare(struct mg_connection* /*c*/, s
 
 std::string api_server_host::handle_adlib_start(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
-        bool started = rouen::helpers::AdLibEngine::instance().start();
+        bool const started = rouen::helpers::AdLibEngine::instance().start();
         return std::format(R"({{"success":{},"message":"Ad-Lib presentation started"}})", started ? "true" : "false");
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
@@ -981,7 +981,7 @@ std::string api_server_host::handle_adlib_test_audio(struct mg_connection* /*c*/
     try {
         auto devices = rouen::helpers::AudioCapture::get_input_devices();
         rouen::helpers::AudioCapture cap;
-        bool started = cap.start(0, 44100, 2);
+        bool const started = cap.start(0, 44100, 2);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         auto pcm = cap.read_audio_data();
         float peak = cap.get_current_peak();

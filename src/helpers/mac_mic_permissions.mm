@@ -8,7 +8,7 @@ namespace rouen::platform {
 void request_mac_microphone_permission() {
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     @try {
-        AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
+        AVAuthorizationStatus const status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
         if (status == AVAuthorizationStatusNotDetermined) {
             std::cout << "[Rouen] Requesting macOS Microphone Permission..." << std::endl;
             [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {

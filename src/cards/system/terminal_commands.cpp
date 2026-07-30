@@ -27,7 +27,7 @@ void TerminalCommands::execute_command(const std::string& command, bool use_llm,
     std::string cmd_to_execute = command;
     
     if (use_llm) {
-        std::string generated_cmd = generate_shell_command(command, output);
+        std::string const generated_cmd = generate_shell_command(command, output);
         if (!generated_cmd.empty()) {
             cmd_to_execute = generated_cmd;
         } else {
@@ -155,7 +155,7 @@ void TerminalCommands::execute_external_command(const std::string& command,
     
     {
         // Lock the command_pipe_mutex to ensure thread safety
-        std::lock_guard<std::mutex> lock(command_pipe_mutex);
+        std::lock_guard<std::mutex> const lock(command_pipe_mutex);
         
 #ifdef _WIN32
         command_pipe = _popen(full_command.c_str(), "r");
@@ -180,7 +180,7 @@ void TerminalCommands::execute_external_command(const std::string& command,
             // Safely access the command_pipe with proper synchronization
             FILE* pipe_to_read = nullptr;
             {
-                std::lock_guard<std::mutex> lock(command_pipe_mutex);
+                std::lock_guard<std::mutex> const lock(command_pipe_mutex);
                 if (command_pipe == nullptr) {
                     break; // Pipe has been closed
                 }
@@ -189,7 +189,7 @@ void TerminalCommands::execute_external_command(const std::string& command,
             
             if (fgets(buffer, sizeof(buffer), pipe_to_read) != nullptr) {
                 // Remove trailing newline if present
-                size_t len = strlen(buffer);
+                size_t const len = strlen(buffer);
                 if (len > 0 && buffer[len-1] == '\n') {
                     buffer[len-1] = '\0';
                 }
@@ -213,7 +213,7 @@ void TerminalCommands::check_command_output(bool use_interactive_bash, std::atom
         bool should_close = false;
         
         {
-            std::lock_guard<std::mutex> lock(command_pipe_mutex);
+            std::lock_guard<std::mutex> const lock(command_pipe_mutex);
             if (command_pipe != nullptr) {
                 // Don't close the pipe here, just check if we should
                 should_close = true;
@@ -224,7 +224,7 @@ void TerminalCommands::check_command_output(bool use_interactive_bash, std::atom
             // We need to close the pipe in a thread-safe manner
             FILE* pipe_to_close = nullptr;
             {
-                std::lock_guard<std::mutex> lock(command_pipe_mutex);
+                std::lock_guard<std::mutex> const lock(command_pipe_mutex);
                 pipe_to_close = command_pipe;
                 command_pipe = nullptr; // Prevent other threads from using it
             }
@@ -264,7 +264,7 @@ void TerminalCommands::terminate_current_process(std::atomic<bool>& is_command_r
         // Close the pipe in a thread-safe manner
         FILE* pipe_to_close = nullptr;
         {
-            std::lock_guard<std::mutex> lock(command_pipe_mutex);
+            std::lock_guard<std::mutex> const lock(command_pipe_mutex);
             pipe_to_close = command_pipe;
             command_pipe = nullptr; // Prevent other threads from using it
         }

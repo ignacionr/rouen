@@ -113,7 +113,7 @@ void terminal::test_stderr_output() {
 
 bool terminal::render() {
     return render_window([this]() {
-        rouen::fonts::with_font fnt{rouen::fonts::FontType::Mono};
+        rouen::fonts::with_font const fnt{rouen::fonts::FontType::Mono};
         // Calculate window dimensions
         const float window_width = ImGui::GetContentRegionAvail().x;
         const float footer_height = ImGui::GetFrameHeightWithSpacing() + (ImGui::GetStyle().ItemSpacing.y * 2);
@@ -160,7 +160,7 @@ void terminal::render_sudo_prompt(float window_width) {
     static char password_buffer[128] = "";
     float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
     ImGui::SetNextItemWidth(window_width - (70.0f * dpi_scale));
-    bool enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, static_cast<int>(sizeof(password_buffer)), 
+    bool const enter_pressed = ImGui::InputText("##SudoPassword", password_buffer, static_cast<int>(sizeof(password_buffer)), 
                                         ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue,
                                         nullptr, nullptr);
     
@@ -268,11 +268,11 @@ void terminal::render_command_input(float window_width) {
     
     // Process the command if enter was pressed
     if (enter_pressed && input_buffer[0] != '\0') {
-        bool ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
-        std::string user_cmd = input_buffer;
+        bool const ctrl_down = ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl);
+        std::string const user_cmd = input_buffer;
         // Always update current_working_dir from bash before handling shortcuts, but only if no command is running
         if (bash.is_interactive() && !is_command_running.load()) {
-            std::string new_cwd = bash.get_cwd();
+            std::string const new_cwd = bash.get_cwd();
             if (!new_cwd.empty()) current_working_dir = new_cwd;
         }
         if (handle_slash_command(user_cmd)) {
@@ -295,7 +295,7 @@ void terminal::render_command_input(float window_width) {
                 bash.send_to_bash(user_cmd, true); // raw = true
             }
         } else {
-            bool use_llm = ctrl_down;
+            bool const use_llm = ctrl_down;
             std::string actual_command;
             commands.execute_command(input_buffer, use_llm, output, current_working_dir, 
                                  command_history, history_index, is_command_running, 
@@ -346,7 +346,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
 
     // Ensure working directory is up to date from interactive bash session
     if (bash.is_interactive()) {
-        std::string new_cwd = bash.get_cwd();
+        std::string const new_cwd = bash.get_cwd();
         if (!new_cwd.empty()) {
             current_working_dir = new_cwd;
         }
@@ -409,8 +409,8 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         output.add_prompt(current_working_dir);
     }
     else if (clean_cmd == "/edit" || clean_cmd.starts_with("/edit ") || clean_cmd.starts_with("/edit\t")) {
-        size_t space_pos = clean_cmd.find_first_of(" \t");
-        std::string raw_arg = (space_pos != std::string::npos) ? clean_cmd.substr(space_pos + 1) : "";
+        size_t const space_pos = clean_cmd.find_first_of(" \t");
+        std::string const raw_arg = (space_pos != std::string::npos) ? clean_cmd.substr(space_pos + 1) : "";
         std::string resolved_path = resolve_terminal_file_path(raw_arg, current_working_dir);
 
         if (resolved_path.empty()) {
@@ -425,7 +425,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         }
     }
     else if (clean_cmd == "/copy" || clean_cmd == "/copy-all" || clean_cmd == "/copyall" || clean_cmd == "/clipboard") {
-        std::string full_text = output.get_all_text();
+        std::string const full_text = output.get_all_text();
         ImGui::SetClipboardText(full_text.c_str());
         output.add_to_output("Copied all terminal contents to clipboard.", OutputType::System);
         output.add_to_output("", OutputType::Blank);
@@ -444,7 +444,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
         } else {
             // Escape special shell characters in the prompt
             std::string escaped_prompt;
-            for (char c : prompt) {
+            for (char const c : prompt) {
                 if (c == '"' || c == '\\' || c == '`' || c == '$') {
                     escaped_prompt += '\\';
                 }
@@ -452,11 +452,11 @@ bool terminal::handle_slash_command(const std::string& cmd) {
             }
             
             const char* home_env = std::getenv("HOME");
-            std::string home_dir = home_env ? home_env : "";
+            std::string const home_dir = home_env ? home_env : "";
             std::string agy_path = home_dir.empty() ? "" : (std::filesystem::path(home_dir) / ".local" / "bin" / "agy").string();
             std::string src_path = home_dir.empty() ? "" : (std::filesystem::path(home_dir) / "src").string();
             
-            std::string agy_cmd = std::format(
+            std::string const agy_cmd = std::format(
                 R"((if command -v agy >/dev/null 2>&1; then agy --add-dir "$PWD" --prompt "{0}" < /dev/null; elif [ -n "{1}" ] && [ -f "{1}" ]; then "{1}" --add-dir "$PWD" --prompt "{0}" < /dev/null; elif [ -n "{2}" ] && [ -d "{2}" ] && [ -f "{2}/flake.nix" ]; then NIXPKGS_ALLOW_UNFREE=1 nix shell "{2}" -c agy --add-dir "$PWD" --prompt "{0}" < /dev/null; else NIXPKGS_ALLOW_UNFREE=1 nix shell . -c agy --add-dir "$PWD" --prompt "{0}" < /dev/null; fi))",
                 escaped_prompt, agy_path, src_path);
             
@@ -482,7 +482,7 @@ bool terminal::handle_slash_command(const std::string& cmd) {
 
 std::string terminal::get_uri() const {
     const char* home = std::getenv("HOME");
-    std::string home_dir = (home && home[0] != '\0') ? home : std::filesystem::current_path().string();
+    std::string const home_dir = (home && home[0] != '\0') ? home : std::filesystem::current_path().string();
     if (current_working_dir.empty() || current_working_dir == home_dir) {
         return "terminal";
     }

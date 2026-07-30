@@ -33,8 +33,8 @@ std::string jira_model::make_request(const std::string& endpoint,
     DB_INFO_FMT("JIRA API Request: {} {}", method.empty() ? "GET" : method, url);
     
     // Create authentication string for Basic Auth
-    std::string auth_string = current_profile_.username + ":" + current_profile_.api_token;
-    std::string base64_auth = base64_encode(auth_string);
+    std::string const auth_string = current_profile_.username + ":" + current_profile_.api_token;
+    std::string const base64_auth = base64_encode(auth_string);
     
     // Create HTTP client
     http::fetch fetcher;

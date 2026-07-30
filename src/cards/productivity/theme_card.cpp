@@ -21,7 +21,7 @@ namespace rouen::cards {
         return render_window([this]() {
             auto& tm = rouen::theme::theme_manager::get();
             auto& themes = tm.get_themes();
-            size_t active_idx = tm.get_active_theme_index();
+            size_t const active_idx = tm.get_active_theme_index();
 
             ImGui::TextColored(colors[0], ICON_MD_PALETTE " Color Themes");
             ImGui::Separator();
@@ -31,7 +31,7 @@ namespace rouen::cards {
             ImGui::TextUnformatted("Select Active Theme:");
             if (ImGui::BeginCombo("##theme_select", themes[active_idx].name.c_str())) {
                 for (size_t i = 0; i < themes.size(); ++i) {
-                    bool is_selected = (active_idx == i);
+                    bool const is_selected = (active_idx == i);
                     if (ImGui::Selectable(themes[i].name.c_str(), is_selected)) {
                         tm.select_theme(i);
                     }

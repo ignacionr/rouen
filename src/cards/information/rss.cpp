@@ -1,6 +1,5 @@
 #include "rss.hpp"
 
-#include <__chrono/duration.h>
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -111,18 +110,18 @@ void rss::render_add_feed() {
     ImGui::TextColored(colors[0], "Add RSS Feed:");
     
     float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    float add_btn_w = ImGui::CalcTextSize("Add").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    float ai_btn_w = ImGui::CalcTextSize("AI Search").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    float input_w = ImGui::GetContentRegionAvail().x - add_btn_w - ai_btn_w - ImGui::GetStyle().ItemSpacing.x * 2.0f - 8.0f * dpi_scale;
+    float const add_btn_w = ImGui::CalcTextSize("Add").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    float const ai_btn_w = ImGui::CalcTextSize("AI Search").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    float const input_w = ImGui::GetContentRegionAvail().x - add_btn_w - ai_btn_w - ImGui::GetStyle().ItemSpacing.x * 2.0f - 8.0f * dpi_scale;
     
     ImGui::PushItemWidth(input_w);
-    bool url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
+    bool const url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
         ImGuiInputTextFlags_EnterReturnsTrue);
     
     // Check for Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux) to trigger AI search
     bool ai_search_requested = false;
     if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO const& io = ImGui::GetIO();
         if ((io.KeySuper && !io.KeyCtrl) || (!io.KeySuper && io.KeyCtrl)) { // Cmd on Mac, Ctrl on others
             ai_search_requested = true;
         }
@@ -140,10 +139,10 @@ void rss::render_add_feed() {
     ImGui::PopItemWidth();
     
     ImGui::SameLine();
-    bool add_clicked = ImGui::Button("Add");
+    bool const add_clicked = ImGui::Button("Add");
     
     ImGui::SameLine();
-    bool ai_search_clicked = ImGui::Button("AI Search");
+    bool const ai_search_clicked = ImGui::Button("AI Search");
     
     // Show AI search status on the following line (when needed)
     if (ai_search_in_progress_) {
@@ -245,12 +244,12 @@ bool rss::render() {
             if (ratio < 0.0f) ratio = 0.0f;
             if (ratio > 1.0f) ratio = 1.0f;
             
-            ImVec2 pos = ImGui::GetCursorScreenPos();
-            float bar_width = ImGui::GetContentRegionAvail().x;
-            float height = 2.0f;
+            ImVec2 const pos = ImGui::GetCursorScreenPos();
+            float const bar_width = ImGui::GetContentRegionAvail().x;
+            float const height = 2.0f;
             
-            ImVec2 p_min = pos;
-            ImVec2 p_max = ImVec2(pos.x + bar_width * ratio, pos.y + height);
+            ImVec2 const p_min = pos;
+            ImVec2 const p_max = ImVec2(pos.x + bar_width * ratio, pos.y + height);
             
             ImGui::GetWindowDrawList()->AddRectFilled(
                 p_min, 
@@ -267,9 +266,9 @@ bool rss::render() {
             ImGui::SetCursorScreenPos(pos);
             ImGui::InvisibleButton("##refresh_progress_bar", ImVec2(bar_width, height + 4.0f));
             if (ImGui::IsItemHovered()) {
-                int seconds_left = std::max(0, static_cast<int>(interval - elapsed));
-                int minutes = seconds_left / 60;
-                int seconds = seconds_left % 60;
+                int const seconds_left = std::max(0, static_cast<int>(interval - elapsed));
+                int const minutes = seconds_left / 60;
+                int const seconds = seconds_left % 60;
                 ImGui::SetTooltip("Next auto-refresh in %02d:%02d\nDouble-click to refresh now", minutes, seconds);
                 
                 if (ImGui::IsMouseDoubleClicked(0)) {
@@ -298,8 +297,8 @@ bool rss::render() {
             }
             
             std::sort(avail_tags.begin(), avail_tags.end(), [&tag_counts](const std::string& a, const std::string& b) {
-                int count_a = tag_counts.contains(a) ? tag_counts.at(a) : 0;
-                int count_b = tag_counts.contains(b) ? tag_counts.at(b) : 0;
+                int const count_a = tag_counts.contains(a) ? tag_counts.at(a) : 0;
+                int const count_b = tag_counts.contains(b) ? tag_counts.at(b) : 0;
                 if (count_a != count_b) {
                     return count_a > count_b;
                 }
@@ -359,7 +358,7 @@ bool rss::render() {
 
             for (size_t i = 0; i < render_count; ++i) {
                 const auto& tag = tags[i];
-                bool is_selected = (selected_tag_ == tag);
+                bool const is_selected = (selected_tag_ == tag);
                 const bool is_top_fresh = (tag != "All" && top_fresh_tags_.contains(tag));
                 
                 const float pill_width =
@@ -383,9 +382,9 @@ bool rss::render() {
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colors[0].x * 0.9f, colors[0].y * 0.9f, colors[0].z * 0.9f, colors[0].w));
                 } else if (is_top_fresh) {
                     // Distinctive styling for top 4 fresh tags: a warm rose/gold tone matching theme colors
-                    ImVec4 fresh_base = ImVec4(colors[0].x * 0.35f, colors[0].y * 0.15f, colors[0].z * 0.15f, 0.65f);
-                    ImVec4 fresh_hover = ImVec4(colors[0].x * 0.5f, colors[0].y * 0.22f, colors[0].z * 0.22f, 0.85f);
-                    ImVec4 fresh_active = ImVec4(colors[0].x * 0.3f, colors[0].y * 0.12f, colors[0].z * 0.12f, 0.95f);
+                    ImVec4 const fresh_base = ImVec4(colors[0].x * 0.35f, colors[0].y * 0.15f, colors[0].z * 0.15f, 0.65f);
+                    ImVec4 const fresh_hover = ImVec4(colors[0].x * 0.5f, colors[0].y * 0.22f, colors[0].z * 0.22f, 0.85f);
+                    ImVec4 const fresh_active = ImVec4(colors[0].x * 0.3f, colors[0].y * 0.12f, colors[0].z * 0.12f, 0.95f);
                     
                     ImGui::PushStyleColor(ImGuiCol_Button, fresh_base);
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, fresh_hover);
@@ -506,7 +505,7 @@ bool rss::render() {
                 for (size_t i = 0; i < smart_lists.size(); ++i) {
                     const auto& sl = smart_lists[i];
                     std::string label = ICON_MD_FILTER_LIST " " + sl.title;
-                    float btn_width = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                    float const btn_width = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                     
                     const bool fits_same_line =
                         i > 0 &&
@@ -523,7 +522,7 @@ bool rss::render() {
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 0.7f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.4f, 0.3f, 0.9f));
                     
-                    std::string btn_id = std::format("{}##smart_list_btn_{}", label, sl.title);
+                    std::string const btn_id = std::format("{}##smart_list_btn_{}", label, sl.title);
                     if (ImGui::Button(btn_id.c_str())) {
                         "create_card"_sfn("rss-smart-list:" + sl.title);
                     }
@@ -545,11 +544,11 @@ bool rss::render() {
         
         // Calculate width for input field to leave space for clear button
         float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        float clear_button_width = 20.0f * dpi_scale;
-        float input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
+        float const clear_button_width = 20.0f * dpi_scale;
+        float const input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
         ImGui::PushItemWidth(input_width);
         
-        bool changed = ImGui::InputText("##search", search_buffer_, static_cast<int>(sizeof(search_buffer_)));
+        bool const changed = ImGui::InputText("##search", search_buffer_, static_cast<int>(sizeof(search_buffer_)));
         if (changed) {
             last_search_type_time_ = std::chrono::system_clock::now();
             search_pending_ = true;
@@ -603,11 +602,11 @@ bool rss::render() {
         ImGui::Separator();
         
         static bool settings_open = false;
-        float bottom_margin = (settings_open ? 210.0f : 120.0f) * dpi_scale;
+        float const bottom_margin = (settings_open ? 210.0f : 120.0f) * dpi_scale;
         
         // Create scrollable area for feeds
         auto available_size = ImGui::GetContentRegionAvail();
-        ImVec2 scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
+        ImVec2 const scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
         if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, false, ImGuiWindowFlags_NavFlattened)) {
             const auto& all_feeds = cached_all_feeds_;
             
@@ -666,14 +665,14 @@ bool rss::render() {
                     if (freshness_a != freshness_b) {
                         return freshness_a > freshness_b;
                     }
-                    std::string title_a = a->feed_title.empty() ? a->source_link : a->feed_title;
-                    std::string title_b = b->feed_title.empty() ? b->source_link : b->feed_title;
+                    std::string const title_a = a->feed_title.empty() ? a->source_link : a->feed_title;
+                    std::string const title_b = b->feed_title.empty() ? b->source_link : b->feed_title;
                     return title_a < title_b;
                 });
                 
                 // Calculate top 4 fresh tags (excluding "All")
                 std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> tag_freshness;
-                std::vector<std::string> all_possible_tags = rss_host->get_available_tags();
+                std::vector<std::string> const all_possible_tags = rss_host->get_available_tags();
                 
                 for (const auto& tag : all_possible_tags) {
                     if (tag == "All") continue;
@@ -730,7 +729,7 @@ bool rss::render() {
                     {
                         cached_matching_feeds_.clear();
                         for (const auto& feed : feeds) {
-                            std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+                            std::string const title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
                             if (::helpers::StringHelper::contains_case_insensitive(title, search_text) ||
                                 ::helpers::StringHelper::contains_case_insensitive(feed->source_link, search_text)) {
                                 cached_matching_feeds_.push_back(feed);
@@ -804,8 +803,8 @@ bool rss::render() {
                                         }
                                     }
 
-                                    bool has_item_image = (item_tex != nullptr);
-                                    float avail_width = ImGui::GetContentRegionAvail().x;
+                                    bool const has_item_image = (item_tex != nullptr);
+                                    float const avail_width = ImGui::GetContentRegionAvail().x;
 
                                     if (has_item_image) {
                                         ImGui::BeginGroup();
@@ -820,7 +819,7 @@ bool rss::render() {
                                     
                                     // Title (selectable to open item)
                                     if (ImGui::Selectable(item.title.c_str(), false, 0, ImVec2(has_item_image ? avail_width - 130.0f : avail_width, 0))) {
-                                        std::string item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
+                                        std::string const item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
                                         "create_card"_sfn(item_uri);
                                     }
 
@@ -829,7 +828,7 @@ bool rss::render() {
                                     std::tm* tm = std::localtime(&time);
                                     char date_str[64];
                                     std::strftime(date_str, sizeof(date_str), "%d %b %Y %H:%M", tm);
-                                    std::string age_str = media::rss::format_rss_age(item.publish_date);
+                                    std::string const age_str = media::rss::format_rss_age(item.publish_date);
                                     ImGui::TextColored(colors[1], "%s (%s)", date_str, age_str.c_str());
 
                                     // Description
@@ -847,8 +846,8 @@ bool rss::render() {
                                         ImGui::EndGroup();
                                         ImGui::SameLine(avail_width - 120.0f);
 
-                                        ImVec2 thumb_size(120.0f, 80.0f);
-                                        ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
+                                        ImVec2 const thumb_size(120.0f, 80.0f);
+                                        ImVec2 const thumb_pos = ImGui::GetCursorScreenPos();
 
                                         ImVec2 uv0, uv1;
                                         calculate_cover_uvs(thumb_size.x, thumb_size.y, static_cast<float>(item_tex_w), static_cast<float>(item_tex_h), uv0, uv1);
@@ -866,7 +865,7 @@ bool rss::render() {
                                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
                                         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
                                         if (ImGui::Button(std::format("##thumb_btn_{}", i).c_str(), thumb_size)) {
-                                            std::string item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
+                                            std::string const item_uri = std::format("rss-item:{}|||{}|||{}", item.feed_id, item.link, item.title);
                                             "create_card"_sfn(item_uri);
                                         }
                                         ImGui::PopStyleColor(3);
@@ -937,19 +936,19 @@ void rss::calculate_cover_uvs(float target_w, float target_h, float tex_w, float
         uv1 = ImVec2(1.0f, 1.0f);
         return;
     }
-    float target_aspect = target_w / target_h;
-    float tex_aspect = tex_w / tex_h;
+    float const target_aspect = target_w / target_h;
+    float const tex_aspect = tex_w / tex_h;
 
     if (tex_aspect > target_aspect) {
         // Texture is wider than target, crop sides
-        float f = target_aspect / tex_aspect;
-        float c = (1.0f - f) * 0.5f;
+        float const f = target_aspect / tex_aspect;
+        float const c = (1.0f - f) * 0.5f;
         uv0 = ImVec2(c, 0.0f);
         uv1 = ImVec2(1.0f - c, 1.0f);
     } else {
         // Texture is taller than target, crop top/bottom
-        float f = tex_aspect / target_aspect;
-        float c = (1.0f - f) * 0.5f;
+        float const f = tex_aspect / target_aspect;
+        float const c = (1.0f - f) * 0.5f;
         uv0 = ImVec2(0.0f, c);
         uv1 = ImVec2(1.0f, 1.0f - c);
     }
@@ -979,7 +978,7 @@ SDL_Texture* rss::get_feed_texture(const std::string& url, ::helpers::ImageCache
     }
 
     {
-        std::lock_guard<std::mutex> lock(downloading_mutex_);
+        std::lock_guard<std::mutex> const lock(downloading_mutex_);
         if (failed_downloads_.contains(url)) {
             feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
             return nullptr;
@@ -1008,11 +1007,11 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
     auto now = std::chrono::system_clock::now();
 
     float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-    float card_width = 180.0f * dpi_scale;
-    float card_height = 290.0f * dpi_scale;
-    float spacing = 12.0f * dpi_scale;
-    float avail_width = ImGui::GetContentRegionAvail().x;
-    int cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
+    float const card_width = 180.0f * dpi_scale;
+    float const card_height = 290.0f * dpi_scale;
+    float const spacing = 12.0f * dpi_scale;
+    float const avail_width = ImGui::GetContentRegionAvail().x;
+    int const cols = std::max(1, static_cast<int>(avail_width / (card_width + spacing)));
     
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(spacing, spacing));
     
@@ -1021,7 +1020,7 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
     {
         ImGui::PushID(feed->source_link.c_str());
 
-        std::string title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
+        std::string const title = feed->feed_title.empty() ? feed->source_link : feed->feed_title;
 
         // Filter based on search query if search text is present
         if (!search_text.empty() &&
@@ -1038,27 +1037,27 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
             ImGui::SameLine();
         }
 
-        ImVec2 start_pos = ImGui::GetCursorScreenPos();
-        ImVec2 end_pos = ImVec2(start_pos.x + card_width, start_pos.y + card_height);
+        ImVec2 const start_pos = ImGui::GetCursorScreenPos();
+        ImVec2 const end_pos = ImVec2(start_pos.x + card_width, start_pos.y + card_height);
 
         ImGui::SetCursorScreenPos(start_pos);
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0, 0, 0, 0));
-        bool card_activated = ImGui::Selectable(
+        bool const card_activated = ImGui::Selectable(
             std::format("##feed_card_nav_{}", feed->repo_id).c_str(),
             false,
             ImGuiSelectableFlags_AllowOverlap,
             ImVec2(card_width, card_height)
         );
-        bool is_emphasized = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+        bool const is_emphasized = ImGui::IsItemHovered() || ImGui::IsItemFocused();
         if (is_emphasized) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         }
         ImGui::PopStyleColor(3);
         
         // Draw background
-        ImVec4 bg_color = is_emphasized ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
+        ImVec4 const bg_color = is_emphasized ? ImVec4(0.22f, 0.22f, 0.26f, 0.8f) : ImVec4(0.14f, 0.14f, 0.17f, 0.6f);
         
         draw_list->AddRectFilled(start_pos, end_pos, ImGui::GetColorU32(bg_color), 8.0f * dpi_scale);
         
@@ -1067,15 +1066,15 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         ImGui::BeginGroup();
         
         // 1. Draw Image / Placeholder
-        ImVec2 img_size(card_width - 12.0f * dpi_scale, 220.0f * dpi_scale);
-        ImVec2 img_pos = ImGui::GetCursorScreenPos();
+        ImVec2 const img_size(card_width - 12.0f * dpi_scale, 220.0f * dpi_scale);
+        ImVec2 const img_pos = ImGui::GetCursorScreenPos();
         
         // Invisible button to capture click on cover
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f * dpi_scale);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1,1,1,0.05f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1,1,1,0.1f));
-        bool cover_clicked = ImGui::Button(std::format("##cover_btn_{}", feed->repo_id).c_str(), img_size);
+        bool const cover_clicked = ImGui::Button(std::format("##cover_btn_{}", feed->repo_id).c_str(), img_size);
         if (ImGui::IsItemHovered()) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         }
@@ -1083,7 +1082,7 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         ImGui::PopStyleVar();
         
         // Render the actual image or placeholder on the draw list
-        std::string img_url = feed->image_url();
+        std::string const img_url = feed->image_url();
         SDL_Texture* tex = nullptr;
         int img_w = 0, img_h = 0;
         if (renderer && image_cache && !img_url.empty()) {
@@ -1110,9 +1109,9 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         } else {
             // Draw placeholder
             draw_list->AddRectFilled(img_pos, ImVec2(img_pos.x + img_size.x, img_pos.y + img_size.y), ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.25f, 0.5f)), 4.0f * dpi_scale);
-            std::string placeholder_icon = ICON_MD_RSS_FEED;
-            ImVec2 icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
-            ImVec2 icon_pos = ImVec2(img_pos.x + (img_size.x - icon_size.x) * 0.5f, img_pos.y + (img_size.y - icon_size.y) * 0.5f);
+            std::string const placeholder_icon = ICON_MD_RSS_FEED;
+            ImVec2 const icon_size = ImGui::CalcTextSize(placeholder_icon.c_str());
+            ImVec2 const icon_pos = ImVec2(img_pos.x + (img_size.x - icon_size.x) * 0.5f, img_pos.y + (img_size.y - icon_size.y) * 0.5f);
             draw_list->AddText(icon_pos, ImGui::GetColorU32(colors[1]), placeholder_icon.c_str());
         }
         
@@ -1124,7 +1123,7 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         ImGui::PopTextWrapPos();
         
         // 3. Draw freshness right after title
-        std::string freshness_text = get_freshness_text(feed, now);
+        std::string const freshness_text = get_freshness_text(feed, now);
         ImGui::TextColored(text_color, "●");
         ImGui::SameLine();
         ImGui::TextColored(text_color, "%s", freshness_text.c_str());
@@ -1139,11 +1138,11 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
         ImGui::EndGroup();
         
         if ((card_activated || cover_clicked) && !play_clicked) {
-            std::string feed_uri = std::format("rss-feed:{}", feed->repo_id);
+            std::string const feed_uri = std::format("rss-feed:{}", feed->repo_id);
             "create_card"_sfn(feed_uri);
         }
         if (play_clicked) {
-            std::string feed_uri = std::format("rss-feed:{}:play", feed->repo_id);
+            std::string const feed_uri = std::format("rss-feed:{}:play", feed->repo_id);
             "create_card"_sfn(feed_uri);
         }
         
@@ -1169,7 +1168,7 @@ bool rss::addFeed(const std::string& url) {
 std::shared_ptr<hosts::RSSHost> rss::getHost() {
     static std::mutex host_mutex;
     static std::shared_ptr<hosts::RSSHost> instance;
-    std::lock_guard<std::mutex> lock(host_mutex);
+    std::lock_guard<std::mutex> const lock(host_mutex);
     if (!instance) {
         RSS_INFO("Creating persistent shared RSSHost instance");
         instance = std::make_shared<hosts::RSSHost>();
@@ -1219,7 +1218,7 @@ std::vector<rss::AISearchResult> rss::performAIFeedSearch(const std::string& top
         return results;
     }
     
-    std::string search_prompt = std::format(
+    std::string const search_prompt = std::format(
         "Find RSS feeds related to the topic: {}\n\n"
         "Please search the internet and provide a list of RSS feed URLs related to this topic. "
         "Include podcasts, news feeds, blogs, and other relevant RSS sources. "
@@ -1276,17 +1275,17 @@ std::vector<rss::AISearchResult> rss::performAIFeedSearch(const std::string& top
 std::vector<rss::AISearchResult> rss::parseAIFeedResponse(const std::string& response) {
     std::vector<AISearchResult> results;
     
-    std::regex entry_separator(R"(---\s*)");
+    std::regex const entry_separator(R"(---\s*)");
     std::sregex_token_iterator iter(response.begin(), response.end(), entry_separator, -1);
-    std::sregex_token_iterator end;
+    std::sregex_token_iterator const end;
     
     for (; iter != end; ++iter) {
-        std::string entry = iter->str();
+        std::string const entry = iter->str();
         if (entry.empty()) continue;
         
         AISearchResult result;
         
-        std::regex url_regex(R"(URL:\s*(.+))");
+        std::regex const url_regex(R"(URL:\s*(.+))");
         std::smatch url_match;
         if (std::regex_search(entry, url_match, url_regex)) {
             result.url = url_match[1].str();
@@ -1294,7 +1293,7 @@ std::vector<rss::AISearchResult> rss::parseAIFeedResponse(const std::string& res
             result.url.erase(result.url.find_last_not_of(" \t\r\n") + 1);
         }
         
-        std::regex title_regex(R"(TITLE:\s*(.+))");
+        std::regex const title_regex(R"(TITLE:\s*(.+))");
         std::smatch title_match;
         if (std::regex_search(entry, title_match, title_regex)) {
             result.title = title_match[1].str();
@@ -1302,7 +1301,7 @@ std::vector<rss::AISearchResult> rss::parseAIFeedResponse(const std::string& res
             result.title.erase(result.title.find_last_not_of(" \t\r\n") + 1);
         }
         
-        std::regex desc_regex(R"(DESCRIPTION:\s*(.+))");
+        std::regex const desc_regex(R"(DESCRIPTION:\s*(.+))");
         std::smatch desc_match;
         if (std::regex_search(entry, desc_match, desc_regex)) {
             result.description = desc_match[1].str();
@@ -1418,7 +1417,7 @@ void rss::request_image_download(const std::string& url) {
     static std::set<std::string> downloading_urls;
 
     {
-        std::lock_guard<std::mutex> lock(downloading_mutex_);
+        std::lock_guard<std::mutex> const lock(downloading_mutex_);
         if (downloading_urls.contains(url) || failed_downloads_.contains(url)) {
             return;
         }
@@ -1433,7 +1432,7 @@ void rss::request_image_download(const std::string& url) {
         } catch (...) {}
         
         {
-            std::lock_guard<std::mutex> lock(downloading_mutex_);
+            std::lock_guard<std::mutex> const lock(downloading_mutex_);
             downloading_urls.erase(url);
             if (!success) {
                 failed_downloads_.insert(url);

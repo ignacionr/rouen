@@ -78,7 +78,7 @@ namespace rouen::cards::github {
             ImGui::TextUnformatted(repo_name.data(), repo_name.data() + repo_name.size());
             
             if (repo_.contains("description") && !repo_["description"].is_null()) {
-                std::string description = repo_["description"].get<std::string>();
+                std::string const description = repo_["description"].get<std::string>();
                 if (!description.empty()) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", description.c_str());
                 }
@@ -86,19 +86,19 @@ namespace rouen::cards::github {
             
             ImGui::BeginGroup();
             if (repo_.contains("language") && !repo_["language"].is_null()) {
-                std::string language = repo_["language"].get<std::string>();
+                std::string const language = repo_["language"].get<std::string>();
                 ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.9f, 1.0f), ICON_MD_CODE " %s", language.c_str());
                 ImGui::SameLine();
             }
             
             if (repo_.contains("stargazers_count")) {
-                int stars = static_cast<int>(repo_["stargazers_count"].get<double>());
+                int const stars = static_cast<int>(repo_["stargazers_count"].get<double>());
                 ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), ICON_MD_STAR " %d", stars);
                 ImGui::SameLine();
             }
             
             if (repo_.contains("forks_count")) {
-                int forks = static_cast<int>(repo_["forks_count"].get<double>());
+                int const forks = static_cast<int>(repo_["forks_count"].get<double>());
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), ICON_MD_CALL_SPLIT " %d", forks);
             }
             ImGui::EndGroup();
@@ -145,13 +145,13 @@ namespace rouen::cards::github {
             
             ImGui::SameLine();
             if (ImGui::SmallButton(ICON_MD_BUILD " Actions")) {
-                std::string actions_url = detail::safe_get_string(repo_, "html_url") + "/actions";
+                std::string const actions_url = detail::safe_get_string(repo_, "html_url") + "/actions";
                 host_->open_url(actions_url);
             }
             
             ImGui::SameLine();
             if (ImGui::SmallButton(ICON_MD_SETTINGS " Settings")) {
-                std::string settings_url = detail::safe_get_string(repo_, "html_url") + "/settings";
+                std::string const settings_url = detail::safe_get_string(repo_, "html_url") + "/settings";
                 host_->open_url(settings_url);
             }
         }
@@ -167,14 +167,14 @@ namespace rouen::cards::github {
         
         try {
             auto workflows_array = workflows_["workflows"].get<std::vector<glz::json_t>>();
-            int total_workflows = static_cast<int>(workflows_array.size());
+            int const total_workflows = static_cast<int>(workflows_array.size());
             
             ImGui::Text("Workflows: %d", total_workflows);
             
             for (const auto& workflow : workflows_array) {
                 if (workflow.contains("state")) {
-                    std::string state = workflow["state"].get<std::string>();
-                    ImVec4 color = (state == "active") ? 
+                    std::string const state = workflow["state"].get<std::string>();
+                    ImVec4 const color = (state == "active") ? 
                         ImVec4(0.0f, 0.8f, 0.2f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
                     
                     ImGui::SameLine();
@@ -201,10 +201,10 @@ namespace rouen::cards::github {
                     
                     for (const auto& workflow : workflows_array) {
                         if (workflow.contains("name") && workflow.contains("state")) {
-                            std::string name = workflow["name"].get<std::string>();
-                            std::string state = workflow["state"].get<std::string>();
+                            std::string const name = workflow["name"].get<std::string>();
+                            std::string const state = workflow["state"].get<std::string>();
                             
-                            ImVec4 state_color = (state == "active") ? 
+                            ImVec4 const state_color = (state == "active") ? 
                                 ImVec4(0.0f, 0.8f, 0.2f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
                             
                             ImGui::TextColored(state_color, ICON_MD_SETTINGS " %s", name.c_str());
@@ -212,7 +212,7 @@ namespace rouen::cards::github {
                             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "(%s)", state.c_str());
                             
                             if (workflow.contains("id")) {
-                                std::string workflow_id = std::to_string(static_cast<int64_t>(workflow["id"].get<double>()));
+                                std::string const workflow_id = std::to_string(static_cast<int64_t>(workflow["id"].get<double>()));
                                 
                                 ImGui::SameLine();
                                 ImGui::PushID(workflow_id.c_str());
@@ -248,7 +248,7 @@ namespace rouen::cards::github {
                 
                 for (const auto& workflow : workflows_array) {
                     if (workflow.contains("id")) {
-                        std::string workflow_id = std::to_string(static_cast<int64_t>(workflow["id"].get<double>()));
+                        std::string const workflow_id = std::to_string(static_cast<int64_t>(workflow["id"].get<double>()));
                         load_workflow_runs(workflow_id);
                     }
                 }
@@ -260,7 +260,7 @@ namespace rouen::cards::github {
 
     void repo_screen::load_workflow_runs(const std::string& workflow_id) {
         try {
-            std::string runs_url = std::format(
+            std::string const runs_url = std::format(
                 "https://api.github.com/repos/{}/actions/workflows/{}/runs?per_page=5",
                 full_name(), workflow_id);
             
@@ -289,15 +289,15 @@ namespace rouen::cards::github {
             
             for (const auto& run : runs_array) {
                 if (run.contains("status") && run.contains("conclusion") && run.contains("run_number")) {
-                    std::string status = run["status"].get<std::string>();
-                    int run_number = static_cast<int>(run["run_number"].get<double>());
+                    std::string const status = run["status"].get<std::string>();
+                    int const run_number = static_cast<int>(run["run_number"].get<double>());
                     
                     ImVec4 status_color;
                     const char* status_icon;
                     
                     if (status == "completed") {
                         if (run.contains("conclusion") && !run["conclusion"].is_null()) {
-                            std::string conclusion = run["conclusion"].get<std::string>();
+                            std::string const conclusion = run["conclusion"].get<std::string>();
                             if (conclusion == "success") {
                                 status_color = ImVec4(0.0f, 0.8f, 0.2f, 1.0f);
                                 status_icon = ICON_MD_CHECK_CIRCLE;
@@ -326,7 +326,7 @@ namespace rouen::cards::github {
                         ImGui::SameLine();
                         ImGui::PushID((workflow_id + std::to_string(run_number)).c_str());
                         if (ImGui::SmallButton("View")) {
-                            std::string url = run["html_url"].get<std::string>();
+                            std::string const url = run["html_url"].get<std::string>();
                             host_->open_url(url);
                         }
                         ImGui::PopID();

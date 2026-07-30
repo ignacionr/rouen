@@ -361,14 +361,14 @@ void converter::perform_numeric_conversion() {
         }
 
         // Parse input value
-        double input_value = std::stod(std::string(numeric_input_.data()));
+        double const input_value = std::stod(std::string(numeric_input_.data()));
         
         // Convert to base unit, then to target unit
         const auto& from_unit = units[from_unit_index_];
         const auto& to_unit = units[to_unit_index_];
         
-        double base_value = from_unit.to_base(input_value);
-        double result_value = to_unit.from_base(base_value);
+        double const base_value = from_unit.to_base(input_value);
+        double const result_value = to_unit.from_base(base_value);
         
         conversion_result_ = category->format_result(result_value, to_unit);
         
@@ -386,7 +386,7 @@ void converter::perform_encoding_conversion() {
     conversion_result_.clear();
     
     try {
-        std::string input(text_input_.data());
+        std::string const input(text_input_.data());
         
         if (input.empty()) {
             conversion_result_ = "";
@@ -454,7 +454,7 @@ std::string converter::decode_base64(const std::string& input) {
     std::string result;
     int val = 0, valb = -8;
     
-    for (char c : input) {
+    for (char const c : input) {
         if (lookup[static_cast<unsigned char>(c)] == -1) break;
         val = (val << 6) + lookup[static_cast<unsigned char>(c)];
         valb += 6;
@@ -481,7 +481,7 @@ std::string converter::decode_hex(const std::string& input) {
     
     std::string result;
     for (size_t i = 0; i < input.length(); i += 2) {
-        std::string byte = input.substr(i, 2);
+        std::string const byte = input.substr(i, 2);
         auto chr = static_cast<char>(std::stoi(byte, nullptr, 16));
         result.push_back(chr);
     }
@@ -504,7 +504,7 @@ std::string converter::decode_url(const std::string& input) {
     std::string result;
     for (size_t i = 0; i < input.length(); ++i) {
         if (input[i] == '%' && i + 2 < input.length()) {
-            std::string hex = input.substr(i + 1, 2);
+            std::string const hex = input.substr(i + 1, 2);
             auto chr = static_cast<char>(std::stoi(hex, nullptr, 16));
             result.push_back(chr);
             i += 2;

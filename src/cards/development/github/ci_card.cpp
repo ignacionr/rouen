@@ -392,7 +392,7 @@ namespace rouen::cards::github {
                 
                 ImGui::PushID(static_cast<int>(i)); // Unique ID per repository
                 
-                bool is_selected = (repo == selected_repo_full_name_);
+                bool const is_selected = (repo == selected_repo_full_name_);
                 if (ImGui::Selectable(repo.c_str(), is_selected)) {
                     selected_repo_full_name_ = repo;
                     selected_workflow_id_.clear();
@@ -614,7 +614,7 @@ namespace rouen::cards::github {
         ImGui::Text("Event: %s", run.event_type.c_str());
         
         // Status with color
-        ImVec4 status_color = WorkflowRun::get_status_color(run.status);
+        ImVec4 const status_color = WorkflowRun::get_status_color(run.status);
         const char* status_icon = WorkflowRun::get_status_icon(run.status);
         const char* status_text = WorkflowRun::get_status_text(run.status);
         
@@ -650,14 +650,14 @@ namespace rouen::cards::github {
     }
 
     void github_ci_card::render_workflow_status_indicator(const Workflow& workflow) {
-        ImVec4 color = WorkflowRun::get_status_color(workflow.latest_status);
+        ImVec4 const color = WorkflowRun::get_status_color(workflow.latest_status);
         const char* icon = WorkflowRun::get_status_icon(workflow.latest_status);
         
         ImGui::TextColored(color, "%s", icon);
     }
 
     void github_ci_card::render_run_status_badge(const WorkflowRun& run) {
-        ImVec4 color = WorkflowRun::get_status_color(run.status);
+        ImVec4 const color = WorkflowRun::get_status_color(run.status);
         const char* icon = WorkflowRun::get_status_icon(run.status);
         
         ImGui::TextColored(color, "%s", icon);
@@ -828,7 +828,7 @@ namespace rouen::cards::github {
                 result.repo_full_name = repo_full_name;
                 result.workflow_id = workflow_id;
                 try {
-                    std::string runs_url = std::format(
+                    std::string const runs_url = std::format(
                         "https://api.github.com/repos/{}/actions/workflows/{}/runs",
                         repo_full_name, workflow_id);
 
@@ -868,7 +868,7 @@ namespace rouen::cards::github {
                 result.repo_full_name = repo_full_name;
                 result.run_id = run_id;
                 try {
-                    std::string jobs_url = std::format(
+                    std::string const jobs_url = std::format(
                         "https://api.github.com/repos/{}/actions/runs/{}/jobs",
                         repo_full_name, run_id);
                     result.jobs = host->fetch(jobs_url);

@@ -81,8 +81,8 @@ void main_wnd::configure_highdpi_settings() {
     SDL_GetWindowSize(m_window, &window_w, &window_h);
     SDL_GetWindowSizeInPixels(m_window, &drawable_w, &drawable_h);
     
-    float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
-    float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
+    float const scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
+    float const scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
     
     std::cout << "Configuring high-DPI settings:" << '\n';
     std::cout << "  Window size: " << window_w << "x" << window_h << '\n';
@@ -114,8 +114,8 @@ void main_wnd::update_imgui_display_settings() {
     io.DisplaySize.y = static_cast<float>(window_h);
     
     // Update framebuffer scale
-    float scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
-    float scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
+    float const scale_x = window_w > 0 ? static_cast<float>(drawable_w) / static_cast<float>(window_w) : 1.0f;
+    float const scale_y = window_h > 0 ? static_cast<float>(drawable_h) / static_cast<float>(window_h) : 1.0f;
     
     io.DisplayFramebufferScale.x = scale_x;
     io.DisplayFramebufferScale.y = scale_y;

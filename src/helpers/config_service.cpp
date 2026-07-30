@@ -50,7 +50,7 @@ namespace rouen::helpers {
     std::mutex ConfigService::instance_mutex_;
 
     std::shared_ptr<ConfigService> ConfigService::instance() {
-        std::lock_guard<std::mutex> lock(instance_mutex_);
+        std::lock_guard<std::mutex> const lock(instance_mutex_);
         if (!instance_) {
             instance_ = std::shared_ptr<ConfigService>(new ConfigService());
             // Load .env file if it exists
@@ -62,7 +62,7 @@ namespace rouen::helpers {
     }
 
     std::string ConfigService::get_env(const std::string& name) const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         // Check cache first
         auto cache_it = cache_.find(name);
@@ -93,7 +93,7 @@ namespace rouen::helpers {
         std::function<void(const std::string&, const std::string&)> callback;
 
         {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::lock_guard<std::mutex> const lock(mutex_);
 
             if (!set_process_environment_variable(name, value)) {
                 CONFIG_ERROR_FMT("Failed to set environment variable '{}'", name);
@@ -129,14 +129,14 @@ namespace rouen::helpers {
                                        bool is_required, bool is_sensitive,
                                        const std::string& description,
                                        const std::optional<std::string>& default_value) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         // Respect configured priority (.env first, then process environment)
         // and avoid clobbering existing cache entries populated during .env load.
-        std::string env_value = get_env_value_priority(name);
+        std::string const env_value = get_env_value_priority(name);
         cache_.insert_or_assign(name, env_value);
         
-        ConfigEntry entry{
+        ConfigEntry const entry{
             .key = name,
             .value = env_value,
             .category = category,
@@ -153,7 +153,7 @@ namespace rouen::helpers {
     }
 
     std::vector<std::string> ConfigService::validate_required_configs() const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         std::vector<std::string> missing_configs;
         
         for (const auto& [name, config] : registered_configs_) {
@@ -167,7 +167,7 @@ namespace rouen::helpers {
     }
 
     std::vector<ConfigService::ConfigEntry> ConfigService::get_configs_by_category(Category category) const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         std::vector<ConfigEntry> result;
         
         for (const auto& [name, config] : registered_configs_) {
@@ -197,7 +197,7 @@ namespace rouen::helpers {
     }
 
     void ConfigService::update_cache_entry(const std::string& name) const {
-        std::string value = get_env_value_priority(name);
+        std::string const value = get_env_value_priority(name);
         cache_[name] = value;
     }
 
@@ -241,11 +241,11 @@ namespace rouen::helpers {
         #else
             for (char **env = environ; *env != nullptr; ++env) {
         #endif
-                std::string entry = *env;
+                std::string const entry = *env;
                 auto pos = entry.find('=');
                 if (pos != std::string::npos) {
-                    std::string key = entry.substr(0, pos);
-                    std::string value = entry.substr(pos + 1);
+                    std::string const key = entry.substr(0, pos);
+                    std::string const value = entry.substr(pos + 1);
                     env_vars[key] = value;
                 }
             }
@@ -381,7 +381,7 @@ namespace rouen::helpers {
     }
 
     void ConfigService::log_configuration_status() const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         CONFIG_INFO("=== Configuration Service Status ===");
         CONFIG_INFO_FMT("Total registered configurations: {}", registered_configs_.size());
@@ -426,7 +426,7 @@ namespace rouen::helpers {
 
     std::string ConfigService::get_api_key(const std::string& service_name) const {
         // Try multiple common patterns for API keys
-        std::vector<std::string> patterns = {
+        std::vector<std::string> const patterns = {
             service_name + "_API_KEY",
             service_name + "_KEY",
             service_name + "_TOKEN",
@@ -450,17 +450,17 @@ namespace rouen::helpers {
         std::vector<std::string> profiles;
         
         // Common JIRA profile prefixes
-        std::vector<std::string> prefixes = {"JIRA", "ATLASSIAN"};
+        std::vector<std::string> const prefixes = {"JIRA", "ATLASSIAN"};
         
         for (const auto& prefix : prefixes) {
             // Look for patterns like JIRA_ORG1_URL, JIRA_ORG2_URL, etc.
-            std::regex pattern(prefix + R"(_([A-Z0-9_]+)_URL)");
+            std::regex const pattern(prefix + R"(_([A-Z0-9_]+)_URL)");
             
             // Get all environment variables and check for matches
             for (const auto& [key, value] : get_all_env_vars()) {
                 std::smatch match;
                 if (std::regex_match(key, match, pattern)) {
-                    std::string profile = match[1].str();
+                    std::string const profile = match[1].str();
                     if (std::find(profiles.begin(), profiles.end(), profile) == profiles.end()) {
                         profiles.push_back(profile);
                     }
@@ -474,7 +474,7 @@ namespace rouen::helpers {
 
     std::string ConfigService::get_jira_config(const std::string& profile, const std::string& key) const {
         // Try multiple patterns for JIRA configuration
-        std::vector<std::string> patterns = {
+        std::vector<std::string> const patterns = {
             "JIRA_" + profile + "_" + key,
             "ATLASSIAN_" + profile + "_" + key,
             profile + "_" + key
@@ -515,16 +515,16 @@ namespace rouen::helpers {
 
     std::string ConfigService::resolve_path_with_env(const std::string& path) const {
         std::string result = path;
-        std::regex env_var_regex(R"(\$\{?(\w+)\}?)");
+        std::regex const env_var_regex(R"(\$\{?(\w+)\}?)");
         
         std::smatch match;
         std::string temp = result;
         while (std::regex_search(temp, match, env_var_regex)) {
-            std::string var_name = match[1].str();
-            std::string var_value = get_env(var_name);
+            std::string const var_name = match[1].str();
+            std::string const var_value = get_env(var_name);
             
             // Replace the variable with its value
-            size_t pos = result.find(match[0].str());
+            size_t const pos = result.find(match[0].str());
             if (pos != std::string::npos) {
                 result.replace(pos, static_cast<size_t>(match[0].length()), var_value);
             }
@@ -555,7 +555,7 @@ bool ConfigService::validate_executable_path(const std::string& path) {
     }
     
     // Check if the file exists and is executable
-    std::filesystem::path file_path(path);
+    std::filesystem::path const file_path(path);
     if (!std::filesystem::exists(file_path)) {
         return false;
     }
@@ -570,7 +570,7 @@ bool ConfigService::validate_executable_path(const std::string& path) {
     // On POSIX systems, check if the file has execute permission
     namespace fs = std::filesystem;
     try {
-        fs::perms p = fs::status(file_path).permissions();
+        fs::perms const p = fs::status(file_path).permissions();
         return (p & fs::perms::owner_exec) != fs::perms::none ||
                (p & fs::perms::group_exec) != fs::perms::none ||
                (p & fs::perms::others_exec) != fs::perms::none;
@@ -647,9 +647,9 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
     }
 
     const char* home = getenv("HOME");
-    std::string home_dir = home ? home : "";
+    std::string const home_dir = home ? home : "";
     if (!home_dir.empty()) {
-        std::vector<std::string> auto_cookie_paths = {
+        std::vector<std::string> const auto_cookie_paths = {
             home_dir + "/.config/rouen/cookies.txt",
             home_dir + "/Library/Application Support/Rouen/cookies.txt",
             home_dir + "/Downloads/cookies.txt",
@@ -671,7 +671,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
 }
 
     void ConfigService::refresh_cache() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         CONFIG_DEBUG("Refreshing configuration cache");
         
@@ -690,7 +690,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
     }
 
     void ConfigService::set_change_callback(std::function<void(const std::string&, const std::string&)> callback) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         change_callback_ = std::move(callback);
     }
 
@@ -750,7 +750,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
 
     // .env file support implementation
     bool ConfigService::load_env_file(const std::string& file_path) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         CONFIG_DEBUG_FMT("ConfigService::load_env_file() called with file_path: '{}'", file_path);
         
@@ -813,7 +813,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
     }
 
     bool ConfigService::export_to_env_file(const std::string& file_path) const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         
         std::string env_file_path = file_path.empty() ? get_env_file_path() : file_path;
         
@@ -929,7 +929,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
         }
         
         // 4. Try some common project root locations (for VS Code debugging)
-        std::vector<std::string> common_locations = {
+        std::vector<std::string> const common_locations = {
             "/Users/inz/src/rouen/.env",  // Hardcoded project root as fallback
             std::filesystem::current_path().parent_path().string() + "/.env",
         };
@@ -950,7 +950,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
     // Private helper methods
     std::pair<std::string, std::string> ConfigService::parse_env_line(const std::string& line) {
         // Find the first = character
-        size_t eq_pos = line.find('=');
+        size_t const eq_pos = line.find('=');
         if (eq_pos == std::string::npos) {
             return {"", ""};  // Invalid line
         }

@@ -188,7 +188,7 @@ bool main_wnd::initialize() {
         m_imgui_sdl_initialized = true;
 
         // Initialize ImGui SDL GPU3 backend
-        SDL_GPUTextureFormat swapchain_format = SDL_GetGPUSwapchainTextureFormat(m_device, m_window);
+        SDL_GPUTextureFormat const swapchain_format = SDL_GetGPUSwapchainTextureFormat(m_device, m_window);
         ImGui_ImplSDLGPU3_InitInfo init_info = {};
         init_info.GpuDevice = m_device;
         init_info.ColorTargetFormat = swapchain_format;

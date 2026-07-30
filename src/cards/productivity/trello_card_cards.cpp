@@ -113,7 +113,7 @@ void trello_card::render_card_overview() {
     // Due date
     if (current_card_.due.has_value() && !current_card_.due->empty()) {
         ImGui::Spacing();
-        ImVec4 due_color = current_card_.dueComplete ? colors[3] : colors[2];
+        ImVec4 const due_color = current_card_.dueComplete ? colors[3] : colors[2];
         ImGui::TextColored(due_color, "%s Due: %s", 
                           ICON_MD_SCHEDULE, format_due_date(*current_card_.due).c_str());
         if (current_card_.dueComplete) {
@@ -178,8 +178,8 @@ void trello_card::render_card_edit_form() {
         if (ImGui::BeginCombo("##target_list", combo_preview.c_str())) {
             for (const auto& list : parent_board_.lists) {
                 if (!list.closed) {
-                    bool is_selected = (target_list_id_ == list.id);
-                    bool is_current = (list.id == current_card_.idList);
+                    bool const is_selected = (target_list_id_ == list.id);
+                    bool const is_current = (list.id == current_card_.idList);
                     
                     std::string display_name = list.name;
                     if (is_current) {
@@ -201,7 +201,7 @@ void trello_card::render_card_edit_form() {
     ImGui::Separator();
     
     // Action buttons
-    bool can_update = strlen(edit_card_name_) > 0 && !updating_card_;
+    bool const can_update = strlen(edit_card_name_) > 0 && !updating_card_;
     
     if (!can_update) {
         ImGui::BeginDisabled();

@@ -14,7 +14,7 @@ namespace media::rss {
         : db_ptr_(db_ptr), mutex_(mtx) {}
         
     void rss_item_repo::batch_upsert_items(long long feed_id, const std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string>>& items) {
-        std::lock_guard<std::mutex> lock(*mutex_); // Thread safety
+        std::lock_guard<std::mutex> const lock(*mutex_); // Thread safety
         
         hosting::db::sqlite& db = *static_cast<hosting::db::sqlite*>(db_ptr_);
         
@@ -26,7 +26,7 @@ namespace media::rss {
             db.exec("BEGIN TRANSACTION");
             
             for (const auto& [title, enclosure, link, description, pub_date, image_url] : items) {
-                std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
+                std::string const sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
                                 "VALUES (?, ?, ?, ?, ?, ?, ?) "
                                 "ON CONFLICT(feed_id, link, title) DO "
                                 "UPDATE SET enclosure=excluded.enclosure, "
@@ -49,14 +49,14 @@ namespace media::rss {
     void rss_item_repo::upsert_item(long long feed_id, std::string_view title, std::string_view enclosure, 
                          std::string_view link, std::string_view description, 
                          std::string_view pub_date, std::string_view image_url) {
-        std::lock_guard<std::mutex> lock(*mutex_); // Thread safety
+        std::lock_guard<std::mutex> const lock(*mutex_); // Thread safety
         
         hosting::db::sqlite& db = *static_cast<hosting::db::sqlite*>(db_ptr_);
         
         RSS_DEBUG_FMT("upsert_item starting for feed_id={}, link={}", feed_id, link);
         
         try {
-            std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
+            std::string const sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url) "
                           "VALUES (?, ?, ?, ?, ?, ?, ?) "
                           "ON CONFLICT(feed_id, link, title) DO "
                           "UPDATE SET enclosure=excluded.enclosure, "
@@ -73,7 +73,7 @@ namespace media::rss {
 
     template<typename Sink>
     void rss_item_repo::scan_items(long long feed_id, Sink sink) {
-        std::lock_guard<std::mutex> lock(*mutex_); // Thread safety
+        std::lock_guard<std::mutex> const lock(*mutex_); // Thread safety
         
         hosting::db::sqlite& db = *static_cast<hosting::db::sqlite*>(db_ptr_);
         

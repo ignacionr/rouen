@@ -196,7 +196,7 @@ void rss_item::request_image_download(const std::string& url) {
     static std::mutex downloading_mutex;
 
     {
-        std::lock_guard<std::mutex> lock(downloading_mutex);
+        std::lock_guard<std::mutex> const lock(downloading_mutex);
         if (downloading_urls.contains(url)) {
             return; // Already downloading
         }
@@ -210,7 +210,7 @@ void rss_item::request_image_download(const std::string& url) {
         } catch (...) {}
 
         {
-            std::lock_guard<std::mutex> lock(downloading_mutex);
+            std::lock_guard<std::mutex> const lock(downloading_mutex);
             downloading_urls.erase(url);
         }
     }).detach();
@@ -277,7 +277,7 @@ bool rss_item::render() {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Open in Browser")) {
                     const auto command = rouen::platform::open_file(item_link, true);
-                    [[maybe_unused]] int system_result = std::system(command.c_str());
+                    [[maybe_unused]] int const system_result = std::system(command.c_str());
                 }
                 if (feed_id >= 0) {
                     ImGui::SameLine();

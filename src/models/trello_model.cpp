@@ -31,7 +31,7 @@ namespace rouen::models::trello {
 
 std::shared_ptr<trello_model> get_trello_model() {
     static std::mutex g_trello_model_mutex;
-    std::lock_guard<std::mutex> lock(g_trello_model_mutex);
+    std::lock_guard<std::mutex> const lock(g_trello_model_mutex);
     static std::shared_ptr<trello_model> g_trello_model;
     if (!g_trello_model) {
         g_trello_model = std::make_shared<trello_model>();
@@ -90,7 +90,7 @@ bool trello_model::connect(const trello_connection_profile& profile) {
         
         // Save profile if it's not from environment and not already saved
         if (!profile.is_environment) {
-            std::lock_guard<std::mutex> lock(profiles_mutex_);
+            std::lock_guard<std::mutex> const lock(profiles_mutex_);
             auto it = std::find_if(saved_profiles_.begin(), saved_profiles_.end(),
                                  [&profile](const auto& p) { return p.name == profile.name; });
             if (it == saved_profiles_.end()) {
@@ -132,9 +132,9 @@ bool trello_model::connect(const trello_connection_profile& profile) {
 bool trello_model::connect_from_environment() {
     auto config_service = rouen::helpers::ConfigService::instance();
     
-    std::string api_key = config_service->get_api_key("TRELLO");
-    std::string api_secret = config_service->get_env("TRELLO_API_SECRET");
-    std::string token = config_service->get_env("TRELLO_TOKEN");
+    std::string const api_key = config_service->get_api_key("TRELLO");
+    std::string const api_secret = config_service->get_env("TRELLO_API_SECRET");
+    std::string const token = config_service->get_env("TRELLO_TOKEN");
     
     if (api_key.empty() || token.empty()) {
         TRELLO_INFO("Trello environment variables not found or incomplete");
@@ -163,12 +163,12 @@ void trello_model::disconnect() {
 }
 
 std::vector<trello_connection_profile> trello_model::get_saved_profiles() const {
-    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    std::lock_guard<std::mutex> const lock(profiles_mutex_);
     return saved_profiles_;
 }
 
 void trello_model::save_profile(const trello_connection_profile& profile) {
-    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    std::lock_guard<std::mutex> const lock(profiles_mutex_);
     
     // Remove existing profile with same name
     auto it = std::remove_if(saved_profiles_.begin(), saved_profiles_.end(),
@@ -191,7 +191,7 @@ void trello_model::save_profile(const trello_connection_profile& profile) {
 }
 
 void trello_model::delete_profile(const std::string& profile_name) {
-    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    std::lock_guard<std::mutex> const lock(profiles_mutex_);
     
     auto it = std::remove_if(saved_profiles_.begin(), saved_profiles_.end(),
                            [&profile_name](const auto& p) { return p.name == profile_name; });
@@ -213,7 +213,7 @@ void trello_model::delete_profile(const std::string& profile_name) {
 std::future<std::vector<trello_board>> trello_model::get_user_boards() {
     return std::async(std::launch::async, [this]() {
         try {
-            std::string response = make_request("members/me/boards?lists=all&cards=open&labels=all&members=all");
+            std::string const response = make_request("members/me/boards?lists=all&cards=open&labels=all&members=all");
             return parse_boards(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to get user boards: {}", e.what());
@@ -230,7 +230,7 @@ std::future<trello_board> trello_model::get_board(const std::string& board_id, b
             if (include_cards) endpoint += "cards=open&";
             endpoint += "labels=all&members=all";
             
-            std::string response = make_request(endpoint);
+            std::string const response = make_request(endpoint);
             return parse_board(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to get board {}: {}", board_id, e.what());
@@ -246,7 +246,7 @@ std::future<bool> trello_model::create_board(const std::string& name, const std:
             if (!desc.empty()) {
                 data += "&desc=" + desc;
             }
-            std::string response = make_request("boards", "POST", data);
+            std::string const response = make_request("boards", "POST", data);
             return !response.empty();
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to create board '{}': {}", name, e.what());
@@ -259,7 +259,7 @@ std::future<bool> trello_model::create_board(const std::string& name, const std:
 std::future<std::vector<trello_list>> trello_model::get_board_lists(const std::string& board_id) {
     return std::async(std::launch::async, [this, board_id]() { // NOLINT(bugprone-exception-escape)
         try {
-            std::string response = make_request("boards/" + board_id + "/lists");
+            std::string const response = make_request("boards/" + board_id + "/lists");
             return parse_lists(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to get lists for board {}: {}", board_id, e.what());
@@ -275,7 +275,7 @@ std::future<trello_list> trello_model::create_list(const std::string& board_id, 
             if (pos > 0) {
                 data += "&pos=" + std::to_string(pos);
             }
-            std::string response = make_request("lists", "POST", data);
+            std::string const response = make_request("lists", "POST", data);
             return parse_list(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to create list '{}' in board {}: {}", name, board_id, e.what());
@@ -288,7 +288,7 @@ std::future<trello_list> trello_model::create_list(const std::string& board_id, 
 std::future<std::vector<trello_card>> trello_model::get_board_cards(const std::string& board_id) {
     return std::async(std::launch::async, [this, board_id]() { // NOLINT(bugprone-exception-escape)
         try {
-            std::string response = make_request("boards/" + board_id + "/cards");
+            std::string const response = make_request("boards/" + board_id + "/cards");
             return parse_cards(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to get cards for board {}: {}", board_id, e.what());
@@ -307,7 +307,7 @@ std::future<trello_card> trello_model::create_card(const std::string& list_id, c
             if (pos > 0) {
                 data += "&pos=" + std::to_string(pos);
             }
-            std::string response = make_request("cards", "POST", data);
+            std::string const response = make_request("cards", "POST", data);
             return parse_card(response);
         } catch (const std::exception& e) {
             TRELLO_ERROR_FMT("Failed to create card '{}' in list {}: {}", name, list_id, e.what());
@@ -477,7 +477,7 @@ std::string trello_model::build_url(const std::string& endpoint) const {
     std::string url = base_url + "/1/" + endpoint;
     
     // Add authentication parameters
-    std::string separator = (endpoint.find('?') != std::string::npos) ? "&" : "?";
+    std::string const separator = (endpoint.find('?') != std::string::npos) ? "&" : "?";
     url += separator + "key=" + current_profile_.api_key + "&token=" + current_profile_.token;
     
     return url;
@@ -506,7 +506,7 @@ std::filesystem::path trello_model::get_profiles_path() {
 }
 
 void trello_model::load_saved_profiles() {
-    std::lock_guard<std::mutex> lock(profiles_mutex_);
+    std::lock_guard<std::mutex> const lock(profiles_mutex_);
     
     auto profiles_path = get_profiles_path();
     if (!std::filesystem::exists(profiles_path)) {
@@ -515,7 +515,7 @@ void trello_model::load_saved_profiles() {
     }
     
     try {
-        std::ifstream file(profiles_path);
+        std::ifstream const file(profiles_path);
         if (file.is_open() && file.good()) {
             std::string json_content;
             

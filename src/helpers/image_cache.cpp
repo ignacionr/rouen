@@ -108,11 +108,11 @@ bool ImageCache::downloadAndCache(const std::string& url) {
 }
 
 void ImageCache::clearCache() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     // Get all file paths first
     std::vector<std::string> file_paths;
-    std::string sql = "SELECT file_path FROM image_cache";
+    std::string const sql = "SELECT file_path FROM image_cache";
     db_.exec(sql, [&file_paths](sqlite3_stmt* stmt) {
         const char* path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         if (path) {
@@ -135,7 +135,7 @@ void ImageCache::clearCache() {
 }
 
 void ImageCache::removeFromCache(const std::string& url) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     for (const auto& cache_key : {makeCacheKey(url, Variant::Color), makeCacheKey(url, Variant::Grayscale)}) {
         std::string file_path;
@@ -292,10 +292,10 @@ bool ImageCache::createGrayscaleImage(const std::string& source_path, const std:
 }
 
 std::optional<std::string> ImageCache::getImageFromCache(const std::string& url, int& width, int& height) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     std::optional<std::string> result;
-    std::string sql = "SELECT file_path, width, height FROM image_cache WHERE url = ?";
+    std::string const sql = "SELECT file_path, width, height FROM image_cache WHERE url = ?";
     
     db_.exec(sql, [&result, &width, &height](sqlite3_stmt* stmt) {
         const char* file_path = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
@@ -313,14 +313,14 @@ std::optional<std::string> ImageCache::getImageFromCache(const std::string& url,
 }
 
 bool ImageCache::storeImageInCache(const std::string& url, const std::string& file_path, int width, int height) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     try {
         // Get mime type
-        std::string mime_type = getMimeType(file_path);
+        std::string const mime_type = getMimeType(file_path);
         
         // Store in database
-        std::string sql = "INSERT OR REPLACE INTO image_cache (url, file_path, width, height, mime_type, fetched_at, last_accessed) "
+        std::string const sql = "INSERT OR REPLACE INTO image_cache (url, file_path, width, height, mime_type, fetched_at, last_accessed) "
                           "VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))";
         
         db_.exec(sql, {}, url, file_path, width, height, mime_type);
@@ -333,9 +333,9 @@ bool ImageCache::storeImageInCache(const std::string& url, const std::string& fi
 }
 
 void ImageCache::updateLastAccessed(const std::string& url) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
-    std::string sql = "UPDATE image_cache SET last_accessed = datetime('now') WHERE url = ?";
+    std::string const sql = "UPDATE image_cache SET last_accessed = datetime('now') WHERE url = ?";
     db_.exec(sql, {}, url);
 }
 
@@ -344,7 +344,7 @@ void ImageCache::cleanupExpiredImages() {
         return;
     }
     
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     // Get expired file paths first
     std::vector<std::string> expired_files;
@@ -376,7 +376,7 @@ void ImageCache::cleanupExpiredImages() {
 }
 
 std::string ImageCache::getMimeType(const std::string& file_path) {
-    std::string ext = std::filesystem::path(file_path).extension().string();
+    std::string const ext = std::filesystem::path(file_path).extension().string();
     
     if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
     if (ext == ".png") return "image/png";

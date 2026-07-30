@@ -29,24 +29,24 @@ namespace rouen::hosts {
     }
 
     bool GitSyncHost::is_configured() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
         return !repo_url_.empty() && !cache_path_.empty();
     }
 
     std::filesystem::path GitSyncHost::get_cache_path() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
         return std::filesystem::path(cache_path_);
     }
 
     std::string GitSyncHost::get_status_message() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         return status_message_;
     }
 
     bool GitSyncHost::initialize() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
 
         if (cache_path_.empty()) {
@@ -55,7 +55,7 @@ namespace rouen::hosts {
             return false;
         }
 
-        std::filesystem::path cache_dir(cache_path_);
+        std::filesystem::path const cache_dir(cache_path_);
 
         if (std::filesystem::exists(cache_dir / ".git")) {
             status_message_ = "Repository cache directory already initialized";
@@ -97,7 +97,7 @@ namespace rouen::hosts {
     }
 
     bool GitSyncHost::pull() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
 
         if (!ensure_cache_ready()) {
@@ -133,7 +133,7 @@ namespace rouen::hosts {
     }
 
     bool GitSyncHost::commit_and_push(const std::string& commit_message) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
 
         if (!ensure_cache_ready()) {
@@ -162,7 +162,7 @@ namespace rouen::hosts {
             shell_escape(commit_message)
         );
 
-        bool commit_ok = run_shell(commit_cmd);
+        bool const commit_ok = run_shell(commit_cmd);
         if (!commit_ok) {
             if (status_message_.find("nothing to commit") != std::string::npos ||
                 status_message_.find("working tree clean") != std::string::npos) {
@@ -196,7 +196,7 @@ namespace rouen::hosts {
         repo_url_ = config->get_env("ROUEN_SYNC_GIT_URL");
         token_ = config->get_env("ROUEN_SYNC_TOKEN");
 
-        std::string path = config->get_env("ROUEN_SYNC_CACHE_PATH");
+        std::string const path = config->get_env("ROUEN_SYNC_CACHE_PATH");
         if (path.empty()) {
             cache_path_ = rouen::platform::get_user_data_path("rouen-sync", false).string();
         } else {
@@ -218,7 +218,7 @@ namespace rouen::hosts {
 
     std::string GitSyncHost::shell_escape(const std::string& value) {
         std::string escaped{"'"};
-        for (char c : value) {
+        for (char const c : value) {
             if (c == '\'') {
                 escaped += "'\\''";
             } else {

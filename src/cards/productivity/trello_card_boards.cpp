@@ -73,7 +73,7 @@ void trello_card::render_board_selector() {
             // Skip closed boards
             if (board.closed) continue;
             
-            bool is_selected = (selected_board_id_ == board.id);
+            bool const is_selected = (selected_board_id_ == board.id);
             if (ImGui::Selectable(board.name.c_str(), is_selected)) {
                 select_board(board.id, board.name);
             }

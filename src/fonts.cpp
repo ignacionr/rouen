@@ -35,7 +35,7 @@ namespace rouen::fonts {
     // Helper function to find font file
     std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
         for (const auto& base_path : search_paths) {
-            std::filesystem::path full_path = std::filesystem::path(base_path) / filename;
+            std::filesystem::path const full_path = std::filesystem::path(base_path) / filename;
             if (std::filesystem::exists(full_path)) {
                 return full_path.string();
             }
@@ -90,7 +90,7 @@ namespace rouen::fonts {
         auto & io = ImGui::GetIO();
         
         // Get DPI scale from ImGui's already configured display scale
-        float dpi_scale = io.DisplayFramebufferScale.x;
+        float const dpi_scale = io.DisplayFramebufferScale.x;
         
         std::cout << "Font setup using DPI scale: " << dpi_scale << '\n';
         
@@ -208,14 +208,14 @@ namespace rouen::fonts {
         
         // Fallback to old method if not found
         if (!std::filesystem::exists(material_icons_path)) {
-            std::vector<std::string> icon_search_paths = {
+            std::vector<std::string> const icon_search_paths = {
                 app_path,                              // Current working directory
                 app_path + "/external",                // /external subdirectory 
                 app_path + "/../external",             // One level up, for running from build dir
                 std::string(app_path + "/../../external") // Two levels up, alternative build layout
             };
             
-            std::string fallback_path = find_font_path("MaterialIcons-Regular.ttf", icon_search_paths);
+            std::string const fallback_path = find_font_path("MaterialIcons-Regular.ttf", icon_search_paths);
             if (!fallback_path.empty()) {
                 material_icons_path = fallback_path;
             }
@@ -455,7 +455,7 @@ namespace rouen::fonts {
         
         // For standard codepoints, check in the requested font
         if (codepoint <= 0xFFFF) {
-            bool available = is_glyph_available(static_cast<ImWchar>(codepoint), type);
+            bool const available = is_glyph_available(static_cast<ImWchar>(codepoint), type);
             SYS_DEBUG_FMT("Codepoint U+{:04X} available in requested font: {}", 
                     static_cast<unsigned int>(codepoint), available ? "yes" : "no");
             return available;

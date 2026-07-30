@@ -65,7 +65,7 @@ std::string base64_encode(const std::string& input) {
     unsigned char char_array_3[3];
     unsigned char char_array_4[4];
 
-    for (char c : input) {
+    for (char const c : input) {
         char_array_3[i++] = static_cast<unsigned char>(c);
         if (i == 3) {
             char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
@@ -119,7 +119,7 @@ std::filesystem::path jira_model::get_profiles_path() {
         }
     }
     #elif defined(__APPLE__)
-    std::string home_dir = config_service->get_env("HOME");
+    std::string const home_dir = config_service->get_env("HOME");
     if (!home_dir.empty()) {
         app_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
     } else {

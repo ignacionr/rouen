@@ -53,7 +53,7 @@ struct math_parser {
 
     double parse() {
         if (text.empty()) return 0.0;
-        double res = parse_expression();
+        double const res = parse_expression();
         skip_ws();
         if (pos < text.size()) {
             throw std::runtime_error(std::format("Unexpected character '{}'", text[pos]));
@@ -66,10 +66,10 @@ struct math_parser {
     double parse_expression() {
         double left = parse_term();
         while (true) {
-            char op = peek();
+            char const op = peek();
             if (op == '+' || op == '-') {
                 get();
-                double right = parse_term();
+                double const right = parse_term();
                 if (op == '+') left += right;
                 else left -= right;
             } else {
@@ -82,10 +82,10 @@ struct math_parser {
     double parse_term() {
         double left = parse_unary();
         while (true) {
-            char op = peek();
+            char const op = peek();
             if (op == '*' || op == '/' || op == '%') {
                 get();
-                double right = parse_unary();
+                double const right = parse_unary();
                 if (op == '*') left *= right;
                 else if (op == '/') {
                     if (right == 0.0) throw std::runtime_error("Division by zero");
@@ -96,7 +96,7 @@ struct math_parser {
                 }
             } else if (peek() == '(' || std::isalpha(static_cast<unsigned char>(peek()))) {
                 // Implicit multiplication, e.g. 2(3+4) or 3pi or 2sqrt(9)
-                double right = parse_unary();
+                double const right = parse_unary();
                 left *= right;
             } else {
                 break;
@@ -112,9 +112,9 @@ struct math_parser {
     }
 
     double parse_power() {
-        double base = parse_postfix();
+        double const base = parse_postfix();
         if (match('^')) {
-            double exponent = parse_unary();
+            double const exponent = parse_unary();
             return std::pow(base, exponent);
         }
         return base;
@@ -139,7 +139,7 @@ struct math_parser {
 
         if (c == '(') {
             get();
-            double val = parse_expression();
+            double const val = parse_expression();
             if (!match(')')) throw std::runtime_error("Missing ')'");
             return val;
         }
@@ -160,12 +160,12 @@ struct math_parser {
     }
 
     double parse_number() {
-        size_t start = pos;
+        size_t const start = pos;
         bool has_dot = false;
         bool has_e = false;
 
         while (pos < text.size()) {
-            char ch = text[pos];
+            char const ch = text[pos];
             if (std::isdigit(static_cast<unsigned char>(ch))) {
                 pos++;
             } else if (ch == '.' && !has_dot && !has_e) {
@@ -186,7 +186,7 @@ struct math_parser {
             }
         }
 
-        std::string num_str = text.substr(start, pos - start);
+        std::string const num_str = text.substr(start, pos - start);
         try {
             return std::stod(num_str);
         } catch (...) {
@@ -195,7 +195,7 @@ struct math_parser {
     }
 
     double parse_identifier() {
-        size_t start = pos;
+        size_t const start = pos;
         while (pos < text.size() && (std::isalnum(static_cast<unsigned char>(text[pos])) || text[pos] == '_')) {
             pos++;
         }
@@ -208,7 +208,7 @@ struct math_parser {
 
         if (peek() == '(') {
             get(); // consume '('
-            double arg = parse_expression();
+            double const arg = parse_expression();
             if (!match(')')) throw std::runtime_error("Missing ')' for " + name);
 
             if (name == "sqrt") {
@@ -281,7 +281,7 @@ std::string calculator::get_uri() const {
 std::pair<std::string, std::string> calculator::evaluate(const std::string& expr, double ans_val) {
     math_parser parser(expr, ans_val);
     try {
-        double val = parser.parse();
+        double const val = parser.parse();
         return {format_number(val), ""};
     } catch (const std::exception& e) {
         return {"", e.what()};
@@ -376,10 +376,10 @@ void calculator::negate_current() {
 }
 
 void calculator::handle_keyboard_input() {
-    bool active_focus = is_focused || ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+    bool const active_focus = is_focused || ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
     if (!active_focus) return;
 
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO const& io = ImGui::GetIO();
 
     if (flash_timer_ > 0.0f) {
         flash_timer_ -= io.DeltaTime;
@@ -388,8 +388,8 @@ void calculator::handle_keyboard_input() {
         }
     }
 
-    bool shift = io.KeyShift;
-    bool ctrl = io.KeyCtrl || io.KeySuper;
+    bool const shift = io.KeyShift;
+    bool const ctrl = io.KeyCtrl || io.KeySuper;
 
     // Do not interfere with Ctrl/Cmd shortcuts
     if (ctrl) return;
@@ -474,7 +474,7 @@ void calculator::handle_keyboard_input() {
 }
 
 void calculator::render_display_panel() {
-    float avail_width = ImGui::GetContentRegionAvail().x;
+    float const avail_width = ImGui::GetContentRegionAvail().x;
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.10f, 0.14f, 0.95f));
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.20f, 0.55f, 0.90f, 0.4f));
@@ -501,7 +501,7 @@ void calculator::render_display_panel() {
 
         // Display expression text right-aligned
         ImGui::SetWindowFontScale(1.35f);
-        float text_width = ImGui::CalcTextSize(display_expr_.c_str()).x;
+        float const text_width = ImGui::CalcTextSize(display_expr_.c_str()).x;
         if (text_width < avail_width - 20.0f) {
             ImGui::SetCursorPosX(avail_width - text_width - 15.0f);
         }
@@ -515,14 +515,14 @@ void calculator::render_display_panel() {
 
 void calculator::render_mode_bar() {
     ImGui::Spacing();
-    float avail_width = ImGui::GetContentRegionAvail().x;
-    float btn_w = (avail_width - 24.0f) / 4.0f;
+    float const avail_width = ImGui::GetContentRegionAvail().x;
+    float const btn_w = (avail_width - 24.0f) / 4.0f;
 
     if (ImGui::Button(show_scientific_ ? "[Sci]" : "Sci", ImVec2(btn_w, 26.0f))) {
         show_scientific_ = !show_scientific_;
     }
     ImGui::SameLine();
-    std::string hist_label = std::format("Hist ({})", history_.size());
+    std::string const hist_label = std::format("Hist ({})", history_.size());
     if (ImGui::Button(show_history_ ? "[Hist]" : hist_label.c_str(), ImVec2(btn_w, 26.0f))) {
         show_history_ = !show_history_;
     }
@@ -543,27 +543,27 @@ void calculator::render_mode_bar() {
 }
 
 void calculator::render_buttons_grid() {
-    float avail_width = ImGui::GetContentRegionAvail().x;
-    int cols = show_scientific_ ? 5 : 4;
+    float const avail_width = ImGui::GetContentRegionAvail().x;
+    int const cols = show_scientific_ ? 5 : 4;
     float spacing = ImGui::GetStyle().ItemSpacing.x;
     float btn_w = (avail_width - spacing * static_cast<float>(cols - 1)) / static_cast<float>(cols);
     float btn_h = show_scientific_ ? 32.0f : 40.0f;
 
-    ImVec4 num_bg{0.18f, 0.22f, 0.28f, 0.9f};
-    ImVec4 num_text{1.0f, 1.0f, 1.0f, 1.0f};
+    ImVec4 const num_bg{0.18f, 0.22f, 0.28f, 0.9f};
+    ImVec4 const num_text{1.0f, 1.0f, 1.0f, 1.0f};
 
-    ImVec4 op_bg{0.12f, 0.35f, 0.50f, 0.9f};
-    ImVec4 op_text{0.4f, 0.85f, 1.0f, 1.0f};
+    ImVec4 const op_bg{0.12f, 0.35f, 0.50f, 0.9f};
+    ImVec4 const op_text{0.4f, 0.85f, 1.0f, 1.0f};
 
-    ImVec4 eq_bg{0.20f, 0.55f, 0.90f, 1.0f};
-    ImVec4 eq_text{1.0f, 1.0f, 1.0f, 1.0f};
+    ImVec4 const eq_bg{0.20f, 0.55f, 0.90f, 1.0f};
+    ImVec4 const eq_text{1.0f, 1.0f, 1.0f, 1.0f};
 
-    ImVec4 sci_bg{0.14f, 0.16f, 0.20f, 0.9f};
-    ImVec4 sci_text{0.8f, 0.8f, 0.9f, 1.0f};
+    ImVec4 const sci_bg{0.14f, 0.16f, 0.20f, 0.9f};
+    ImVec4 const sci_text{0.8f, 0.8f, 0.9f, 1.0f};
 
     auto make_btn = [&](const char* label, std::string_view key_id, std::string_view append_str, const ImVec4& bg, const ImVec4& txt, float width_mult = 1.0f) {
-        ImVec2 size(btn_w * width_mult + (width_mult > 1.0f ? spacing * (width_mult - 1.0f) : 0.0f), btn_h);
-        bool flashed = is_key_flashed(key_id);
+        ImVec2 const size(btn_w * width_mult + (width_mult > 1.0f ? spacing * (width_mult - 1.0f) : 0.0f), btn_h);
+        bool const flashed = is_key_flashed(key_id);
 
         ImGui::PushStyleColor(ImGuiCol_Button, flashed ? ImVec4(1.0f, 0.8f, 0.2f, 1.0f) : bg);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(bg.x * 1.25f, bg.y * 1.25f, bg.z * 1.25f, bg.w));
@@ -626,7 +626,7 @@ void calculator::render_buttons_grid() {
         make_btn("1", "1", "1", num_bg, num_text); ImGui::SameLine();
         make_btn("2", "2", "2", num_bg, num_text); ImGui::SameLine();
         make_btn("3", "3", "3", num_bg, num_text); ImGui::SameLine();
-        ImVec2 pm_size(btn_w, btn_h);
+        ImVec2 const pm_size(btn_w, btn_h);
         if (ImGui::Button("±", pm_size)) { negate_current(); } ImGui::SameLine();
         make_btn("+", "+", " + ", op_bg, op_text);
 
@@ -634,8 +634,8 @@ void calculator::render_buttons_grid() {
         make_btn("0", "0", "0", num_bg, num_text); ImGui::SameLine();
         make_btn(".", ".", ".", num_bg, num_text); ImGui::SameLine();
 
-        ImVec2 eq_size(btn_w * 3.0f + spacing * 2.0f, btn_h);
-        bool eq_flashed = is_key_flashed("=");
+        ImVec2 const eq_size(btn_w * 3.0f + spacing * 2.0f, btn_h);
+        bool const eq_flashed = is_key_flashed("=");
         ImGui::PushStyleColor(ImGuiCol_Button, eq_flashed ? ImVec4(1.0f, 0.8f, 0.2f, 1.0f) : eq_bg);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.65f, 1.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, eq_text);
@@ -671,7 +671,7 @@ void calculator::render_buttons_grid() {
         make_btn("+", "+", " + ", op_bg, op_text);
 
         // Row 5
-        ImVec2 pm_size(btn_w, btn_h);
+        ImVec2 const pm_size(btn_w, btn_h);
         if (ImGui::Button("±", pm_size)) {
             negate_current();
         }
@@ -680,8 +680,8 @@ void calculator::render_buttons_grid() {
         make_btn("0", "0", "0", num_bg, num_text); ImGui::SameLine();
         make_btn(".", ".", ".", num_bg, num_text); ImGui::SameLine();
 
-        ImVec2 eq_size(btn_w, btn_h);
-        bool eq_flashed = is_key_flashed("=");
+        ImVec2 const eq_size(btn_w, btn_h);
+        bool const eq_flashed = is_key_flashed("=");
         ImGui::PushStyleColor(ImGuiCol_Button, eq_flashed ? ImVec4(1.0f, 0.8f, 0.2f, 1.0f) : eq_bg);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.65f, 1.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, eq_text);
@@ -697,7 +697,7 @@ void calculator::render_buttons_grid() {
 }
 
 void calculator::render_history_panel() {
-    float avail_width = ImGui::GetContentRegionAvail().x;
+    float const avail_width = ImGui::GetContentRegionAvail().x;
     ImGui::TextDisabled("Calculation History (%zu entries)", history_.size());
     ImGui::SameLine();
     if (ImGui::SmallButton("Clear History")) {
@@ -714,7 +714,7 @@ void calculator::render_history_panel() {
         for (int i = static_cast<int>(history_.size()) - 1; i >= 0; --i) {
             const auto& item = history_[static_cast<size_t>(i)];
             ImGui::PushID(i);
-            std::string label = std::format("{} = {}", item.expression, item.result);
+            std::string const label = std::format("{} = {}", item.expression, item.result);
             if (ImGui::Selectable(label.c_str())) {
                 display_expr_ = item.expression;
                 evaluated_result_ = item.result;

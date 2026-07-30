@@ -418,7 +418,7 @@ mcp_host::mcp_host() {
     detect_system_info();
 
     // Register default run_local_command function associated with terminal
-    function_definition run_cmd_def(
+    function_definition const run_cmd_def(
         "run_local_command",
         "Execute a local shell command and return combined stdout/stderr output. Supports any local command, including curl. Host system info: " + cached_system_info_,
         R"mcp({"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute locally (for example: curl -sS http://127.0.0.1:8099/health)"},"working_directory":{"type":"string","description":"Optional directory where the command should run"}},"required":["command"]})mcp",
@@ -451,7 +451,7 @@ mcp_host::mcp_host() {
     register_function("terminal", run_cmd_def);
 
     // Register global create_card function
-    function_definition create_card_def(
+    function_definition const create_card_def(
         "create_card",
         "Create and add a new card to Rouen by its URI (e.g. 'pomodoro', 'terminal', 'git', 'calendar'). Use 'pomodoro' to open/create a Pomodoro timer card.",
         R"mcp({"type":"object","properties":{"uri":{"type":"string","description":"The URI of the card to create (e.g. 'pomodoro')"}},"required":["uri"]})mcp",
@@ -480,7 +480,7 @@ mcp_host::mcp_host() {
     register_function("deck", create_card_def);
 
     // Register global create_number_series_card function
-    function_definition create_time_series_def(
+    function_definition const create_time_series_def(
         "create_number_series_card",
         "Create a card with a custom number series, category comparison, or time series visualization (e.g. monthly sales, country achievements, or system stats).",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"Title of the visualization"},"unit":{"type":"string","description":"Unit of measurement label (e.g. '$', '%', 'wins', 'C')"},"is_bar_chart":{"type":"boolean","description":"True for a bar chart, false for a line chart"},"color_index":{"type":"integer","description":"Accent color index: 0=Accent, 1=Secondary, 2=Error, 3=Success, 4=Warning, 5=Info, 6=Purple, 7=Pink, 8=Orange, 9=Gray"},"points":{"type":"array","description":"Array of data points","items":{"type":"object","properties":{"label":{"type":"string","description":"X-axis label (can be a date, name, country, or category, e.g. 'Jan', 'Brazil', 'To Do', 'Day 1')"},"value":{"type":"number","description":"Data value"}},"required":["label","value"]}}},"required":["title","points"]})mcp",
@@ -510,7 +510,7 @@ mcp_host::mcp_host() {
                 repo.save_series(series_rec);
 
                 auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                std::string card_uri = std::format("number-series:{}", series_rec.name);
+                std::string const card_uri = std::format("number-series:{}", series_rec.name);
                 (*create_card_fn)(card_uri);
                 
                 return R"({"status":"success","message":"Number series card created and persisted successfully"})";
@@ -524,7 +524,7 @@ mcp_host::mcp_host() {
     register_function("deck", create_time_series_def);
 
     // Register global create_adaptive_card function
-    function_definition create_adaptive_card_def(
+    function_definition const create_adaptive_card_def(
         "create_adaptive_card",
         "Create, persist, and present an Adaptive Card in Rouen. Accepts card title, JSON template structure, optional context data, and optional name/slug.",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"Title of the Adaptive Card"},"card_json":{"type":"string","description":"Adaptive Card JSON template structure"},"context_json":{"type":"string","description":"Optional context JSON data object for template variable binding (e.g. '{\"name\":\"Rouen\"}')"},"name":{"type":"string","description":"Optional unique slug or identifier for the card"}},"required":["title","card_json"]})mcp",
@@ -569,7 +569,7 @@ mcp_host::mcp_host() {
     register_function("deck", create_adaptive_card_def);
 
     // Register list_adaptive_cards function
-    function_definition list_adaptive_cards_def(
+    function_definition const list_adaptive_cards_def(
         "list_adaptive_cards",
         "List all persisted Adaptive Cards in Rouen.",
         R"mcp({"type":"object","properties":{}})mcp",
@@ -593,7 +593,7 @@ mcp_host::mcp_host() {
     register_function("adaptive_card", list_adaptive_cards_def);
 
     // Register get_adaptive_card function
-    function_definition get_adaptive_card_def(
+    function_definition const get_adaptive_card_def(
         "get_adaptive_card",
         "Get definition and data of a persisted Adaptive Card by name.",
         R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Unique slug or name of the Adaptive Card"}},"required":["name"]})mcp",
@@ -629,7 +629,7 @@ mcp_host::mcp_host() {
     register_function("adaptive_card", get_adaptive_card_def);
 
     // Register global create_alarm function
-    function_definition create_alarm_def(
+    function_definition const create_alarm_def(
         "create_alarm",
         "Create a new alarm card in the deck for a specific date and time. The datetime should be in ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. If only a relative time is requested (e.g., 'in 20 minutes'), calculate the target date and time based on the current local time first and pass it to this tool.",
         R"mcp({"type":"object","properties":{"datetime":{"type":"string","description":"The target date and time. Can be full ISO format 'YYYY-MM-DDTHH:MM:SS' or 'YYYY-MM-DD HH:MM'. For relative times (e.g. 'in 20 minutes') or natural language (e.g. '5pm'), calculate the exact future date/time first based on the current local time."}},"required":["datetime"]})mcp",
@@ -646,7 +646,7 @@ mcp_host::mcp_host() {
             
             try {
                 auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                std::string card_uri = "alarm:" + request.datetime;
+                std::string const card_uri = "alarm:" + request.datetime;
                 (*create_card_fn)(card_uri);
                 return R"({"status":"success","message":"Alarm created successfully"})";
             } catch (const std::exception& e) {
@@ -659,7 +659,7 @@ mcp_host::mcp_host() {
     register_function("deck", create_alarm_def);
 
     // Register default edit_file function associated with editor
-    function_definition edit_file_def(
+    function_definition const edit_file_def(
         "edit_file",
         "Open a file in the Rouen internal text/image editor for viewing or editing. Accepts a file path.",
         R"mcp({
@@ -698,7 +698,7 @@ mcp_host::mcp_host() {
     register_function("editor", edit_file_def);
 
     // Register YouTube search videos function
-    function_definition youtube_search_def(
+    function_definition const youtube_search_def(
         "youtube_search_videos",
         "Search YouTube for videos using yt-dlp. Returns a list of video objects with id, title, url, duration, and channel.",
         R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query term (e.g. 'cpp tutorial' or 'lofi hip hop')"}},"required":["query"]})mcp",
@@ -714,7 +714,7 @@ mcp_host::mcp_host() {
             }
             
             std::string escaped_query;
-            for (char c : request.query) {
+            for (char const c : request.query) {
                 if (c == '"' || c == '\\' || c == '$' || c == '`') {
                     escaped_query += '\\';
                 }
@@ -723,11 +723,11 @@ mcp_host::mcp_host() {
             
             std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
             auto config = helpers::ConfigService::instance();
-            std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
+            std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
             std::string extra_cflags = cookie_args.empty() ? "" : (" " + cookie_args);
             std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github " : "";
-            std::string cmd = std::format("\"{}\" {}--flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, remote_flag, extra_cflags, escaped_query);
-            std::string output = ProcessHelper::executeCommand(cmd);
+            std::string const cmd = std::format("\"{}\" {}--flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, remote_flag, extra_cflags, escaped_query);
+            std::string const output = ProcessHelper::executeCommand(cmd);
             
             std::stringstream ss(output);
             std::string line;
@@ -777,7 +777,7 @@ mcp_host::mcp_host() {
     register_function("deck", youtube_search_def);
 
     // Register YouTube play video function
-    function_definition youtube_play_def(
+    function_definition const youtube_play_def(
         "youtube_play_video",
         "Play a YouTube video in the media player and bring up the YouTube card.",
         R"mcp({"type":"object","properties":{"url":{"type":"string","description":"The YouTube video URL to play"},"title":{"type":"string","description":"The title of the video"}},"required":["url","title"]})mcp",
@@ -795,7 +795,7 @@ mcp_host::mcp_host() {
             try {
                 auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
                 if (create_card_fn) {
-                    std::string card_uri = "youtube:play:" + ::helpers::StringHelper::url_encode(request.url) + "|" + ::helpers::StringHelper::url_encode(request.title);
+                    std::string const card_uri = "youtube:play:" + ::helpers::StringHelper::url_encode(request.url) + "|" + ::helpers::StringHelper::url_encode(request.title);
                     (*create_card_fn)(card_uri);
                     return R"({"status":"success","message":"Started playing video"})";
                 }
@@ -810,7 +810,7 @@ mcp_host::mcp_host() {
     register_function("deck", youtube_play_def);
 
     // Register YouTube create search card function
-    function_definition youtube_create_card_def(
+    function_definition const youtube_create_card_def(
         "youtube_create_search_card",
         "Create a new YouTube search card with the search query pre-filled.",
         R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query to pre-fill"}},"required":["query"]})mcp",
@@ -828,7 +828,7 @@ mcp_host::mcp_host() {
             try {
                 auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
                 if (create_card_fn) {
-                    std::string card_uri = "youtube:" + ::helpers::StringHelper::url_encode(request.query);
+                    std::string const card_uri = "youtube:" + ::helpers::StringHelper::url_encode(request.query);
                     (*create_card_fn)(card_uri);
                     return R"({"status":"success","message":"YouTube search card created successfully"})";
                 }
@@ -843,7 +843,7 @@ mcp_host::mcp_host() {
     register_function("deck", youtube_create_card_def);
 
     // Register Wikipedia search concepts function
-    function_definition wikipedia_search_def(
+    function_definition const wikipedia_search_def(
         "wikipedia_search_concepts",
         "Search Wikipedia for articles/concepts and return a list of matching titles and snippets. Use this first when asked to summarize or answer questions about a topic to find the correct title.",
         R"mcp({"type":"object","properties":{"query":{"type":"string","description":"The search query term (e.g. 'c++' or 'albert einstein')"}},"required":["query"]})mcp",
@@ -859,10 +859,10 @@ mcp_host::mcp_host() {
             }
             
             try {
-                std::string encoded_query = ::helpers::StringHelper::url_encode(request.query);
-                std::string url = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encoded_query + "&format=json&utf8=";
+                std::string const encoded_query = ::helpers::StringHelper::url_encode(request.query);
+                std::string const url = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encoded_query + "&format=json&utf8=";
                 
-                std::vector<std::string> headers = {
+                std::vector<std::string> const headers = {
                     "User-Agent: RouenWikipediaCard/1.0 (ignacionr@github.com; ignacionr) libcurl/8.x",
                     "Accept: application/json"
                 };
@@ -904,7 +904,7 @@ mcp_host::mcp_host() {
     register_function("deck", wikipedia_search_def);
 
     // Register Wikipedia get article text function
-    function_definition wikipedia_get_article_def(
+    function_definition const wikipedia_get_article_def(
         "wikipedia_get_article_text",
         "Obtain the full plain text content and URL of a Wikipedia article by its title. Use this to read the article contents to summarize or answer questions in the chat. DO NOT open a card on the screen unless the user explicitly requests to show/view the Wikipedia card.",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the Wikipedia page (e.g. 'C++' or 'Albert Einstein')"}},"required":["title"]})mcp",
@@ -920,10 +920,10 @@ mcp_host::mcp_host() {
             }
             
             try {
-                std::string encoded_title = ::helpers::StringHelper::url_encode(request.title);
-                std::string url = "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=" + encoded_title + "&format=json";
+                std::string const encoded_title = ::helpers::StringHelper::url_encode(request.title);
+                std::string const url = "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&titles=" + encoded_title + "&format=json";
                 
-                std::vector<std::string> headers = {
+                std::vector<std::string> const headers = {
                     "User-Agent: RouenWikipediaCard/1.0 (ignacionr@github.com; ignacionr) libcurl/8.x",
                     "Accept: application/json"
                 };
@@ -973,7 +973,7 @@ mcp_host::mcp_host() {
     register_function("deck", wikipedia_get_article_def);
 
     // Register Wikipedia create card function
-    function_definition wikipedia_create_card_def(
+    function_definition const wikipedia_create_card_def(
         "wikipedia_create_card",
         "Create a Wikipedia search and browsing card on the user's screen for them to browse. DO NOT use this if you need to summarize or answer questions in the chat - use wikipedia_get_article_text instead.",
         R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Optional search query or page title to display (e.g. 'c++' or 'title:C++')"}},"required":[]})mcp",
@@ -1008,7 +1008,7 @@ mcp_host::mcp_host() {
     register_function("deck", wikipedia_create_card_def);
 
     // Register notes functions
-    function_definition notes_list_def(
+    function_definition const notes_list_def(
         "notes_list",
         "Search and list markdown notes. Call this with empty parameters {} to list all note titles currently available. You can also filter by an optional search query or a specific tag. Returns title and tags for each matching note.",
         R"mcp({"type":"object","properties":{"search":{"type":"string","description":"Optional search term to match in note title or content"},"tag":{"type":"string","description":"Optional tag to filter notes by"}}})mcp",
@@ -1053,7 +1053,7 @@ mcp_host::mcp_host() {
     register_function("notes", notes_list_def);
 
     // 2. notes_get
-    function_definition notes_get_def(
+    function_definition const notes_get_def(
         "notes_get",
         "Retrieve the full markdown content, title, tags, and timestamps of a specific note by its title (for example, 'Personal Data').",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the note to retrieve"}},"required":["title"]})mcp",
@@ -1098,7 +1098,7 @@ mcp_host::mcp_host() {
     register_function("notes", notes_get_def);
 
     // 3. notes_save
-    function_definition notes_save_def(
+    function_definition const notes_save_def(
         "notes_save",
         "Create a new markdown note or overwrite an existing one with the specified title, content, and tags.",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The title of the note"},"content":{"type":"string","description":"The full markdown content of the note"},"tags":{"type":"string","description":"Optional comma-separated tags (e.g. 'work,notes')"}},"required":["title","content"]})mcp",
@@ -1115,7 +1115,7 @@ mcp_host::mcp_host() {
 
             try {
                 models::notes::notes_repository repo;
-                int note_id = repo.save_note(request.title, request.content, request.tags);
+                int const note_id = repo.save_note(request.title, request.content, request.tags);
                 
                 mcp_notes_operation_result result{"success", "Note saved successfully", note_id};
                 std::string response;
@@ -1133,7 +1133,7 @@ mcp_host::mcp_host() {
     register_function("notes", notes_save_def);
 
     // 4. notes_append
-    function_definition notes_append_def(
+    function_definition const notes_append_def(
         "notes_append",
         "Append text content to the end of an existing note. If the note does not exist, an error is returned.",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The title of the note to append to"},"content_to_append":{"type":"string","description":"The text content to append to the end of the note"}},"required":["title","content_to_append"]})mcp",
@@ -1164,7 +1164,7 @@ mcp_host::mcp_host() {
                 }
                 new_content += request.content_to_append;
 
-                int note_id = repo.save_note(note->title, new_content, note->tags);
+                int const note_id = repo.save_note(note->title, new_content, note->tags);
                 
                 mcp_notes_operation_result result{"success", "Content appended successfully", note_id};
                 std::string response;
@@ -1182,7 +1182,7 @@ mcp_host::mcp_host() {
     register_function("notes", notes_append_def);
 
     // 5. notes_delete
-    function_definition notes_delete_def(
+    function_definition const notes_delete_def(
         "notes_delete",
         "Delete a note by its title.",
         R"mcp({"type":"object","properties":{"title":{"type":"string","description":"The exact title of the note to delete"}},"required":["title"]})mcp",
@@ -1204,7 +1204,7 @@ mcp_host::mcp_host() {
                     return std::format(R"({{"status":"error","message":"Note with title '{}' not found"}})", request.title);
                 }
 
-                bool deleted = repo.delete_note(note->id);
+                bool const deleted = repo.delete_note(note->id);
                 if (!deleted) {
                     return R"({"status":"error","message":"Failed to delete note"})";
                 }
@@ -1227,7 +1227,7 @@ mcp_host::mcp_host() {
     // ----------------------------------------------------
     // Contacts Directory MCP Functions
     // ----------------------------------------------------
-    function_definition contacts_list_def(
+    function_definition const contacts_list_def(
         "contacts_list",
         "List or search contacts in the Directory card database.",
         R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Search term to filter contacts"}},"required":[]})mcp",
@@ -1259,7 +1259,7 @@ mcp_host::mcp_host() {
     register_function("directory", contacts_list_def);
     register_function("contacts", contacts_list_def);
 
-    function_definition contacts_get_def(
+    function_definition const contacts_get_def(
         "contacts_get",
         "Get detailed information about a specific contact by ID or name.",
         R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"Contact ID"},"name":{"type":"string","description":"Contact display name"}},"required":[]})mcp",
@@ -1297,7 +1297,7 @@ mcp_host::mcp_host() {
     register_function("directory", contacts_get_def);
     register_function("contacts", contacts_get_def);
 
-    function_definition contacts_save_def(
+    function_definition const contacts_save_def(
         "contacts_save",
         "Create a new contact or update an existing contact in the Contacts Directory.",
         R"mcp({"type":"object","properties":{"id":{"type":"integer"},"first_name":{"type":"string"},"last_name":{"type":"string"},"display_name":{"type":"string"},"organization":{"type":"string"},"job_title":{"type":"string"},"email":{"type":"string"},"phone":{"type":"string"},"address":{"type":"string"},"notes":{"type":"string"},"picture_url":{"type":"string"}},"required":["display_name"]})mcp",
@@ -1336,7 +1336,7 @@ mcp_host::mcp_host() {
     register_function("directory", contacts_save_def);
     register_function("contacts", contacts_save_def);
 
-    function_definition contacts_delete_def(
+    function_definition const contacts_delete_def(
         "contacts_delete",
         "Delete a contact by ID from the directory.",
         R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"ID of contact to delete"}},"required":["id"]})mcp",
@@ -1361,7 +1361,7 @@ mcp_host::mcp_host() {
     register_function("directory", contacts_delete_def);
     register_function("contacts", contacts_delete_def);
 
-    function_definition contacts_import_macos_def(
+    function_definition const contacts_import_macos_def(
         "contacts_import_macos",
         "Import contacts from local macOS Contacts app into the directory.",
         R"mcp({"type":"object","properties":{}})mcp",
@@ -1381,7 +1381,7 @@ mcp_host::mcp_host() {
     register_function("contacts", contacts_import_macos_def);
 
     // Register Persona MCP functions
-    function_definition list_personas_def(
+    function_definition const list_personas_def(
         "list_personas",
         "List all available AI personas in Rouen, including their descriptions, system prompts, allowed MCP tools, and current active selection status.",
         R"mcp({"type":"object","properties":{}})mcp",
@@ -1409,7 +1409,7 @@ mcp_host::mcp_host() {
     register_function("deck", list_personas_def);
     register_function("persona", list_personas_def);
 
-    function_definition enable_persona_def(
+    function_definition const enable_persona_def(
         "enable_persona",
         "Enable or switch the active AI persona in Rouen by name or 0-based index (e.g. 'Data Cruncher', 'Terminal Hack', 'Rouen Assistant').",
         R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Name of the persona to enable (e.g. 'Data Cruncher', 'Terminal Hack', 'Rouen Assistant')"},"index":{"type":"integer","description":"0-based index of the persona in the persona list"}},"required":[]})mcp",
@@ -1425,7 +1425,7 @@ mcp_host::mcp_host() {
 
                 int target_idx = -1;
                 if (!req.name.empty()) {
-                    std::string target_name = ::helpers::StringHelper::to_lower(req.name);
+                    std::string const target_name = ::helpers::StringHelper::to_lower(req.name);
                     for (size_t i = 0; i < personas.size(); ++i) {
                         if (::helpers::StringHelper::to_lower(personas[i].name) == target_name) {
                             target_idx = static_cast<int>(i);
@@ -1457,7 +1457,7 @@ mcp_host::mcp_host() {
     register_function("deck", enable_persona_def);
     register_function("persona", enable_persona_def);
 
-    function_definition get_active_persona_def(
+    function_definition const get_active_persona_def(
         "get_active_persona",
         "Get information about the currently active AI persona in Rouen.",
         R"mcp({"type":"object","properties":{}})mcp",
@@ -1485,7 +1485,7 @@ mcp_host::mcp_host() {
 }
 
 void mcp_host::register_function(const std::string& card_type, const function_definition& func) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     // Create a copy of the function with the card_type set
     function_definition func_copy(func.name, func.description, func.schema, func.handler, card_type);
@@ -1500,7 +1500,7 @@ void mcp_host::register_function(const std::string& card_type, const function_de
 }
 
 void mcp_host::unregister_card_functions(const std::string& card_type) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     auto card_it = card_functions_.find(card_type);
     if (card_it == card_functions_.end()) {
@@ -1518,7 +1518,7 @@ void mcp_host::unregister_card_functions(const std::string& card_type) {
 }
 
 std::vector<mcp_host::function_definition> mcp_host::get_available_functions() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     std::vector<function_definition> result;
     result.reserve(functions_.size());
@@ -1531,7 +1531,7 @@ std::vector<mcp_host::function_definition> mcp_host::get_available_functions() c
 }
 
 std::vector<mcp_host::function_definition> mcp_host::get_functions_for_card(const std::string& card_type) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     
     std::vector<function_definition> result;
     
@@ -1552,7 +1552,7 @@ std::vector<mcp_host::function_definition> mcp_host::get_functions_for_card(cons
 }
 
 std::vector<std::string> mcp_host::get_registered_categories() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     std::vector<std::string> categories;
     categories.reserve(card_functions_.size());
     for (const auto& [card_type, funcs] : card_functions_) {
@@ -1566,7 +1566,7 @@ std::vector<std::string> mcp_host::get_registered_categories() const {
 mcp_host::execution_result mcp_host::execute_function(const std::string& name, const std::string& params) {
     function_definition func;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         auto func_it = functions_.find(name);
         if (func_it == functions_.end()) {
             return {false, "", "Function '" + name + "' not found"};
@@ -1596,12 +1596,12 @@ mcp_host::execution_result mcp_host::execute_function(const std::string& name, c
 }
 
 bool mcp_host::has_function(const std::string& name) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     return functions_.find(name) != functions_.end();
 }
 
 std::string mcp_host::get_function_schema(const std::string& name) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     auto func_it = functions_.find(name);
     if (func_it != functions_.end()) {
         return func_it->second.schema;
@@ -1610,7 +1610,7 @@ std::string mcp_host::get_function_schema(const std::string& name) const {
 }
 
 std::string mcp_host::get_functions_description() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::mutex> const lock(mutex_);
     if (functions_.empty()) {
         return "No functions available.";
     }
@@ -1704,8 +1704,8 @@ void mcp_host::detect_system_info() {
 
     std::vector<std::string> found;
 #if defined(__APPLE__) || defined(__linux__)
-    std::string cmd = "for cmd in brew nix apt dnf pacman yum zypper apk port; do command -v $cmd >/dev/null 2>&1 && echo $cmd; done";
-    std::string output = ProcessHelper::executeCommand(cmd);
+    std::string const cmd = "for cmd in brew nix apt dnf pacman yum zypper apk port; do command -v $cmd >/dev/null 2>&1 && echo $cmd; done";
+    std::string const output = ProcessHelper::executeCommand(cmd);
     std::stringstream ss(output);
     std::string line;
     while (std::getline(ss, line)) {

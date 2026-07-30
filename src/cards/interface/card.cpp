@@ -28,7 +28,7 @@ void card::register_mcp_functions() {
         auto functions = get_mcp_functions();
         for (const auto& func : functions) {
             // Convert card::mcp_function to mcp_service::function_definition
-            rouen::helpers::mcp_service::function_definition def(
+            rouen::helpers::mcp_service::function_definition const def(
                 func.name,
                 func.description,
                 func.schema,

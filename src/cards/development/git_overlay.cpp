@@ -42,11 +42,11 @@ std::string git_overlay::git_status_to_string(rouen::models::GitRepoStatus statu
 }
 
 ImVec2 git_overlay::calculate_position(git_overlay_position pos, ImVec2 win_size, ImVec2 display_size) {
-    float display_w = (display_size.x > 0.0f) ? display_size.x : 1920.0f;
-    float display_h = (display_size.y > 0.0f) ? display_size.y : 1080.0f;
+    float const display_w = (display_size.x > 0.0f) ? display_size.x : 1920.0f;
+    float const display_h = (display_size.y > 0.0f) ? display_size.y : 1080.0f;
 
-    float margin_x = std::max(20.0f, display_w * 0.03f);
-    float margin_y = std::max(40.0f, display_h * 0.05f);
+    float const margin_x = std::max(20.0f, display_w * 0.03f);
+    float const margin_y = std::max(40.0f, display_h * 0.05f);
 
     float x = display_w - win_size.x - margin_x;
     float y = margin_y;
@@ -97,15 +97,15 @@ void git_overlay::render(
         return;
     }
 
-    ImVec2 display_size = ImGui::GetIO().DisplaySize;
+    ImVec2 const display_size = ImGui::GetIO().DisplaySize;
     constexpr float win_width = 720.0f;
     constexpr float win_height = 430.0f;
-    ImVec2 win_size(
+    ImVec2 const win_size(
         std::min(win_width, display_size.x > 0.0f ? display_size.x * 0.9f : win_width),
         std::min(win_height, display_size.y > 0.0f ? display_size.y * 0.9f : win_height)
     );
 
-    ImVec2 window_pos = calculate_position(overlay_state.position, win_size, display_size);
+    ImVec2 const window_pos = calculate_position(overlay_state.position, win_size, display_size);
 
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(win_size, ImGuiCond_Always);
@@ -116,7 +116,7 @@ void git_overlay::render(
     ImGui::PushStyleColor(ImGuiCol_Border, colors[0]);
 
     std::string repo_filename = std::filesystem::path(repo_path).filename().string();
-    std::string overlay_window_title = std::format("Git Video Overlay: {}##CastGitOverlay", repo_filename);
+    std::string const overlay_window_title = std::format("Git Video Overlay: {}##CastGitOverlay", repo_filename);
 
     if (ImGui::Begin(overlay_window_title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
         ImGui::TextColored(colors[0], "%s Git Overlay", ICON_MD_CODE);
@@ -124,7 +124,7 @@ void git_overlay::render(
         ImGui::TextDisabled("— %s", repo_filename.c_str());
 
         // Header controls (Position Selector & Close/Deselect button)
-        float available_w = ImGui::GetContentRegionAvail().x;
+        float const available_w = ImGui::GetContentRegionAvail().x;
         ImGui::SameLine(available_w - 230.0f);
 
         if (!overlay_state.selected_commit_hash.empty()) {
@@ -146,8 +146,8 @@ void git_overlay::render(
 
         ImGui::Separator();
 
-        ImVec2 content_pos = ImGui::GetCursorScreenPos();
-        ImVec2 content_size(win_size.x - 32.0f, win_size.y - 85.0f);
+        ImVec2 const content_pos = ImGui::GetCursorScreenPos();
+        ImVec2 const content_size(win_size.x - 32.0f, win_size.y - 85.0f);
 
         if (overlay_state.selected_commit_hash.empty()) {
             render_slideshow(repo_path, punch_data, repo_status, github_repo_name, content_pos, content_size, colors);
@@ -173,15 +173,15 @@ void git_overlay::render_slideshow(
     constexpr float transition_duration = 0.8f;
     constexpr int num_slides = 3;
 
-    float current_time = static_cast<float>(ImGui::GetTime());
-    float cycle_time = std::fmod(current_time, slide_duration * static_cast<float>(num_slides));
-    int current_slide = static_cast<int>(cycle_time / slide_duration) % num_slides;
-    float slide_elapsed = std::fmod(cycle_time, slide_duration);
+    float const current_time = static_cast<float>(ImGui::GetTime());
+    float const cycle_time = std::fmod(current_time, slide_duration * static_cast<float>(num_slides));
+    int const current_slide = static_cast<int>(cycle_time / slide_duration) % num_slides;
+    float const slide_elapsed = std::fmod(cycle_time, slide_duration);
 
-    int next_slide = (current_slide + 1) % num_slides;
+    int const next_slide = (current_slide + 1) % num_slides;
     float t = 0.0f;
     if (slide_elapsed > (slide_duration - transition_duration)) {
-        float raw_t = (slide_elapsed - (slide_duration - transition_duration)) / transition_duration;
+        float const raw_t = (slide_elapsed - (slide_duration - transition_duration)) / transition_duration;
         t = raw_t * raw_t * (3.0f - 2.0f * raw_t);
     }
 
@@ -189,7 +189,7 @@ void git_overlay::render_slideshow(
     draw_list->PushClipRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), true);
 
     // Render current slide
-    ImVec2 pos1(pos.x - t * size.x, pos.y);
+    ImVec2 const pos1(pos.x - t * size.x, pos.y);
     if (current_slide == 0) {
         render_video_slide_overview(repo_path, data, repo_status, github_repo_name, pos1, size, colors);
     } else if (current_slide == 1) {
@@ -200,7 +200,7 @@ void git_overlay::render_slideshow(
 
     // Render next slide during transition
     if (t > 0.001f) {
-        ImVec2 pos2(pos.x + (1.0f - t) * size.x, pos.y);
+        ImVec2 const pos2(pos.x + (1.0f - t) * size.x, pos.y);
         if (next_slide == 0) {
             render_video_slide_overview(repo_path, data, repo_status, github_repo_name, pos2, size, colors);
         } else if (next_slide == 1) {
@@ -219,11 +219,11 @@ void git_overlay::render_slideshow(
     constexpr const char* slide_titles[] = {"1/3 Overview", "2/3 Matrix Graph", "3/3 90-Day Heatmap"};
     ImGui::TextColored(colors[1], "%s %s", ICON_MD_SLIDESHOW, slide_titles[current_slide]);
 
-    ImVec2 dot_start(pos.x + size.x - 60.0f, pos.y + size.y + 12.0f);
+    ImVec2 const dot_start(pos.x + size.x - 60.0f, pos.y + size.y + 12.0f);
     for (int i = 0; i < num_slides; ++i) {
-        ImVec2 dot_pos(dot_start.x + static_cast<float>(i) * 16.0f, dot_start.y);
-        bool is_active = (i == current_slide);
-        ImColor dot_color = is_active ? ImColor(colors[1]) : ImColor(100, 110, 130, 150);
+        ImVec2 const dot_pos(dot_start.x + static_cast<float>(i) * 16.0f, dot_start.y);
+        bool const is_active = (i == current_slide);
+        ImColor const dot_color = is_active ? ImColor(colors[1]) : ImColor(100, 110, 130, 150);
         draw_list->AddCircleFilled(dot_pos, is_active ? 4.5f : 3.0f, dot_color);
     }
 }
@@ -273,7 +273,7 @@ void git_overlay::render_commit_detail_view(
     // Commit Message Body
     ImGui::TextColored(colors[0], "%s Description & Commit Message", ICON_MD_DESCRIPTION);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.11f, 0.16f, 0.9f));
-    float message_box_h = size.y - 180.0f;
+    float const message_box_h = size.y - 180.0f;
     if (ImGui::BeginChild("CommitMessageBox", ImVec2(size.x, std::max(80.0f, message_box_h)), true)) {
         ImGui::TextWrapped("%s", detail.full_message.c_str());
     }
@@ -311,11 +311,11 @@ void git_overlay::render_video_slide_overview(
     ImGui::TextColored(colors[0], "%s Repository General Overview", ICON_MD_INFO);
     ImGui::Spacing();
 
-    std::string repo_filename = std::filesystem::path(repo_path).filename().string();
+    std::string const repo_filename = std::filesystem::path(repo_path).filename().string();
     ImGui::Text("Repository: %s", repo_filename.c_str());
     ImGui::TextDisabled("Path: %s", repo_path.c_str());
 
-    ImColor status_color = getStatusColor(repo_status);
+    ImColor const status_color = getStatusColor(repo_status);
     ImGui::Text("Status: ");
     ImGui::SameLine();
     ImGui::TextColored(status_color, "%s", git_status_to_string(repo_status).c_str());
@@ -378,29 +378,29 @@ void git_overlay::render_video_slide_matrix(
     constexpr float cell_padding = 2.0f;
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
+    ImVec2 const grid_pos(pos.x, pos.y + 30.0f);
 
     for (int w = 0; w < 7; ++w) {
-        float wf = static_cast<float>(w);
-        float y = grid_pos.y + wf * cell_size + cell_size * 0.5f;
+        float const wf = static_cast<float>(w);
+        float const y = grid_pos.y + wf * cell_size + cell_size * 0.5f;
         draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 6.0f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
 
         for (int h = 0; h < 24; ++h) {
-            float hf = static_cast<float>(h);
-            float x = grid_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
-            ImVec2 cell_min(grid_pos.x + label_width + hf * cell_size, grid_pos.y + wf * cell_size);
-            ImVec2 cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
+            float const hf = static_cast<float>(h);
+            float const x = grid_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
+            ImVec2 const cell_min(grid_pos.x + label_width + hf * cell_size, grid_pos.y + wf * cell_size);
+            ImVec2 const cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
 
             draw_list->AddRectFilled(cell_min, cell_max, ImColor(25, 30, 40, 180), 3.0f);
 
-            int count = data.hour_matrix[w][h];
+            int const count = data.hour_matrix[w][h];
             if (count > 0 && data.max_commits_per_cell > 0) {
-                float relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
-                float radius = 2.5f + 6.5f * std::sqrt(relative_count);
+                float const relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
+                float const radius = 2.5f + 6.5f * std::sqrt(relative_count);
 
-                float alpha = 0.35f + 0.65f * relative_count;
-                ImColor circle_color(
+                float const alpha = 0.35f + 0.65f * relative_count;
+                ImColor const circle_color(
                     static_cast<int>(colors[1].x * 255),
                     static_cast<int>(colors[1].y * 255),
                     static_cast<int>(colors[1].z * 255),
@@ -412,10 +412,10 @@ void git_overlay::render_video_slide_matrix(
         }
     }
 
-    float hour_y = grid_pos.y + 7.0f * cell_size + 4.0f;
+    float const hour_y = grid_pos.y + 7.0f * cell_size + 4.0f;
     for (int h = 0; h < 24; h += 2) {
-        float hf = static_cast<float>(h);
-        float x = grid_pos.x + label_width + hf * cell_size;
+        float const hf = static_cast<float>(h);
+        float const x = grid_pos.x + label_width + hf * cell_size;
         draw_list->AddText(ImVec2(x, hour_y), ImGui::GetColorU32(ImGuiCol_TextDisabled), std::format("{:02d}", h).c_str());
     }
 
@@ -439,22 +439,22 @@ void git_overlay::render_video_slide_heatmap(
     constexpr float label_width = 38.0f;
     constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-    std::time_t now_time = std::time(nullptr);
-    std::time_t start_time = now_time - static_cast<std::time_t>(90 * 86400);
+    std::time_t const now_time = std::time(nullptr);
+    std::time_t const start_time = now_time - static_cast<std::time_t>(90 * 86400);
 
     constexpr int num_weeks = 14;
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 grid_pos(pos.x, pos.y + 30.0f);
+    ImVec2 const grid_pos(pos.x, pos.y + 30.0f);
 
-    for (int w : {0, 2, 4, 6}) {
-        float wf = static_cast<float>(w);
-        float y = grid_pos.y + wf * (tile_size + tile_padding);
+    for (int const w : {0, 2, 4, 6}) {
+        float const wf = static_cast<float>(w);
+        float const y = grid_pos.y + wf * (tile_size + tile_padding);
         draw_list->AddText(ImVec2(grid_pos.x + 4.0f, y - 2.0f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
     }
 
     for (int day_offset = 0; day_offset <= 90; ++day_offset) {
-        std::time_t day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
+        std::time_t const day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
         std::tm day_tm{};
 #ifdef _WIN32
         localtime_s(&day_tm, &day_time);
@@ -464,21 +464,21 @@ void git_overlay::render_video_slide_heatmap(
 
         char date_buf[32];
         std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &day_tm);
-        std::string date_str(date_buf);
+        std::string const date_str(date_buf);
 
-        int wday = day_tm.tm_wday;
-        int week_idx = day_offset / 7;
+        int const wday = day_tm.tm_wday;
+        int const week_idx = day_offset / 7;
 
         if (week_idx >= num_weeks) continue;
 
-        float week_idxf = static_cast<float>(week_idx);
-        float wdayf = static_cast<float>(wday);
+        float const week_idxf = static_cast<float>(week_idx);
+        float const wdayf = static_cast<float>(wday);
 
-        ImVec2 tile_min(
+        ImVec2 const tile_min(
             grid_pos.x + label_width + week_idxf * (tile_size + tile_padding),
             grid_pos.y + wdayf * (tile_size + tile_padding)
         );
-        ImVec2 tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
+        ImVec2 const tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
 
         int count = 0;
         if (auto it = data.daily_counts.find(date_str); it != data.daily_counts.end()) {
@@ -489,11 +489,11 @@ void git_overlay::render_video_slide_heatmap(
         if (count == 0) {
             tile_color = ImColor(25, 30, 40, 100);
         } else {
-            float relative_count = (data.max_commits_per_day > 0)
+            float const relative_count = (data.max_commits_per_day > 0)
                 ? static_cast<float>(count) / static_cast<float>(data.max_commits_per_day)
                 : 0.2f;
 
-            float alpha = 0.35f + 0.65f * relative_count;
+            float const alpha = 0.35f + 0.65f * relative_count;
             tile_color = ImColor(
                 static_cast<int>(colors[1].x * 255),
                 static_cast<int>(colors[1].y * 255),

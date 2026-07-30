@@ -41,7 +41,7 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
     
     const auto* entry = LLMConfigManager::instance().get_config(name);
     if (!entry) {
-        std::string def_name = LLMConfigManager::instance().get_default_config_name();
+        std::string const def_name = LLMConfigManager::instance().get_default_config_name();
         entry = LLMConfigManager::instance().get_config(def_name);
     }
     
@@ -65,7 +65,7 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
         }
     } else {
         ensure_config_service();
-        std::string provider_str = config_service_->get_env_optional("LLM_PROVIDER").value_or("grok");
+        std::string const provider_str = config_service_->get_env_optional("LLM_PROVIDER").value_or("grok");
         settings.provider = string_to_provider(provider_str);
         settings.config_name = "Global Env";
         

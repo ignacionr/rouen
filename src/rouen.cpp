@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     // Initialize CURL globally on the main thread before starting any threads
     curl_global_init(CURL_GLOBAL_ALL);
     for (int i = 1; i < argc; ++i) {
-        std::string_view arg(argv[i]);
+        std::string_view const arg(argv[i]);
         if (arg == "--no-initial-cards" || arg == "--no-cards") {
             deck::no_initial_cards = true;
         }
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << '\n';
     std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << '\n';
     
-    notify_service notify; // Initialize the notify service
+    notify_service const notify; // Initialize the notify service
     
     // Initialize the configuration service
     rouen::helpers::ConfigServiceInitializer::initialize();

@@ -16,20 +16,20 @@ namespace media::rss {
             s.erase(s.find_last_not_of(" \t\r\n") + 1);
             
             // 1. Check for numeric offset: +hhmm, -hhmm, +hh:mm, -hh:mm at the end
-            std::regex num_tz_regex(R"raw(([+-])(\d{2}):?(\d{2})$)raw");
+            std::regex const num_tz_regex(R"raw(([+-])(\d{2}):?(\d{2})$)raw");
             std::smatch match;
             if (std::regex_search(s, match, num_tz_regex)) {
-                char sign = match.str(1)[0];
-                int hours = std::stoi(match.str(2));
-                int minutes = std::stoi(match.str(3));
-                long offset_sec = (static_cast<long>(hours) * 3600L) + (static_cast<long>(minutes) * 60L);
+                char const sign = match.str(1)[0];
+                int const hours = std::stoi(match.str(2));
+                int const minutes = std::stoi(match.str(3));
+                long const offset_sec = (static_cast<long>(hours) * 3600L) + (static_cast<long>(minutes) * 60L);
                 return (sign == '-') ? -offset_sec : offset_sec;
             }
             
             // 2. Check for named timezone abbreviations at the end
-            std::regex alpha_tz_regex(R"raw(([A-Z]{3,4})$)raw");
+            std::regex const alpha_tz_regex(R"raw(([A-Z]{3,4})$)raw");
             if (std::regex_search(s, match, alpha_tz_regex)) {
-                std::string tz = match.str(1);
+                std::string const tz = match.str(1);
                 if (tz == "GMT" || tz == "UTC" || tz == "UT" || tz == "Z") return 0;
                 if (tz == "EST") return -5 * 3600L;
                 if (tz == "EDT") return -4 * 3600L;
@@ -59,7 +59,7 @@ namespace media::rss {
         }
         std::tm tm = {};
         bool parsed = false;
-        std::string date_string = date_str;
+        std::string const date_string = date_str;
         // Try RFC 822
         std::istringstream ss1(date_string);
         ss1.imbue(std::locale::classic());
@@ -80,7 +80,7 @@ namespace media::rss {
             auto parsed_tp = sys_days{date} + time;
             
             // Adjust by the parsed timezone offset (utc_time = local_time - offset)
-            long offset_sec = parse_tz_offset(date_string);
+            long const offset_sec = parse_tz_offset(date_string);
             return parsed_tp - seconds{offset_sec};
         }
         return std::chrono::system_clock::now();

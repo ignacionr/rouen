@@ -61,8 +61,8 @@ namespace rouen::cards {
             while (std::getline(file, line)) {
                 // Extract project name
                 if (auto pos = line.find("project("); pos != std::string::npos) {
-                    size_t start = pos + 8;
-                    size_t end = line.find(")", start);
+                    size_t const start = pos + 8;
+                    size_t const end = line.find(")", start);
                     if (end != std::string::npos) {
                         project_name_ = line.substr(start, end - start);
                         while (!project_name_.empty() && (project_name_.front() == ' ' || project_name_.front() == '"')) {
@@ -76,7 +76,7 @@ namespace rouen::cards {
 
                 // Extract version if available
                 if (line.find("VERSION") != std::string::npos && project_version_.empty()) {
-                    size_t start = line.find("VERSION") + 7;
+                    size_t const start = line.find("VERSION") + 7;
                     size_t end = line.find(")", start);
                     if (end == std::string::npos) {
                         end = line.size();
@@ -93,8 +93,8 @@ namespace rouen::cards {
                 // Add to list of targets
                 if (line.find("add_executable(") != std::string::npos || 
                     line.find("add_library(") != std::string::npos) {
-                    size_t start = line.find('(') + 1;
-                    size_t end = line.find(' ', start);
+                    size_t const start = line.find('(') + 1;
+                    size_t const end = line.find(' ', start);
                     if (end != std::string::npos) {
                         std::string target = line.substr(start, end - start);
                         while (!target.empty() && (target.front() == ' ' || target.front() == '"')) {
@@ -214,7 +214,7 @@ namespace rouen::cards {
 #ifdef _WIN32
             std::string kill_cmd = std::format("taskkill /F /T /PID {}", process_pid_);
 #else
-            std::string kill_cmd = std::format("kill -TERM -{}", process_pid_);
+            std::string const kill_cmd = std::format("kill -TERM -{}", process_pid_);
 #endif
             auto output_func = std::make_shared<std::function<void(std::string)>>(
                 [this](std::string output) {
@@ -259,9 +259,9 @@ namespace rouen::cards {
                 }
             };
 
-            bool current_cmd_running = cmd_running_;
+            bool const current_cmd_running = cmd_running_;
             {
-                DisabledGuard disabled_guard(current_cmd_running);
+                DisabledGuard const disabled_guard(current_cmd_running);
 
                 if (ImGui::Button("Configure")) {
                     run_cmake_action("configure", "Configuring CMake project");

@@ -166,7 +166,7 @@ SDL_Surface* download_gpu_texture(
     static SDL_GPUTransferBuffer* s_download_buffer = nullptr;
     static Uint32 s_buffer_capacity = 0;
 
-    Uint32 required_size = static_cast<Uint32>(width * height * 4);
+    Uint32 const required_size = static_cast<Uint32>(width * height * 4);
     if (!s_download_buffer || s_buffer_capacity < required_size) {
         if (s_download_buffer) {
             SDL_ReleaseGPUTransferBuffer(device, s_download_buffer);

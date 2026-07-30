@@ -29,7 +29,7 @@ std::shared_ptr<trello_host> get_trello_host() {
     static std::mutex g_trello_host_mutex;
     static std::shared_ptr<trello_host> g_trello_host;
 
-    std::lock_guard<std::mutex> lock(g_trello_host_mutex);
+    std::lock_guard<std::mutex> const lock(g_trello_host_mutex);
     if (!g_trello_host) {
         g_trello_host = std::make_shared<trello_host>();
     }
@@ -50,7 +50,7 @@ trello_host::trello_host() : model_(models::trello::get_trello_model()) {
 bool trello_host::connect_from_environment() {
     clear_error();
     try {
-        bool result = model_->connect_from_environment();
+        bool const result = model_->connect_from_environment();
         if (!result) {
             set_error("Failed to connect using environment variables");
         }
@@ -70,7 +70,7 @@ bool trello_host::connect_with_credentials(const std::string& api_key, const std
         profile.token = token;
         profile.is_environment = false;
         
-        bool result = model_->connect(profile);
+        bool const result = model_->connect(profile);
         if (!result) {
             set_error("Failed to connect with provided credentials");
         }

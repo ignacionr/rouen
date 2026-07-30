@@ -80,7 +80,7 @@ static void load_profiles_from_env() {
             std::string legacy_profile_name = prefix.empty() ? "Default" : prefix.substr(0, prefix.size() - 1);
             
             // Check if we already have this profile from the discovery process
-            bool already_exists = std::any_of(jira_model::get_environment_profiles_ref().begin(), jira_model::get_environment_profiles_ref().end(),
+            bool const already_exists = std::any_of(jira_model::get_environment_profiles_ref().begin(), jira_model::get_environment_profiles_ref().end(),
                 [&legacy_profile_name](const auto& p) { return p.name == legacy_profile_name; });
             
             if (!already_exists) {
@@ -104,7 +104,7 @@ static void load_profiles_from_env() {
 
 // Static method to load saved connection profiles
 std::vector<jira_connection_profile> jira_model::load_profiles() {
-    std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+    std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
     
     // If profiles already loaded, return them
     if (!jira_model::get_saved_profiles_ref().empty()) {
@@ -112,7 +112,7 @@ std::vector<jira_connection_profile> jira_model::load_profiles() {
     }
     
     // Get path to saved profiles file
-    fs::path profiles_path = jira_model::get_profiles_file_path();
+    fs::path const profiles_path = jira_model::get_profiles_file_path();
     
     // Check if file exists
     if (fs::exists(profiles_path)) {
@@ -150,7 +150,7 @@ std::vector<jira_connection_profile> jira_model::load_profiles() {
 
 // Static method to save a profile
 void jira_model::save_profile(const jira_connection_profile& profile) {
-    std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+    std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
     
     auto& saved = jira_model::get_saved_profiles_ref();
     // Check if profile already exists
@@ -171,7 +171,7 @@ void jira_model::save_profile(const jira_connection_profile& profile) {
 
 // Static method to delete a profile
 void jira_model::delete_profile(const std::string& profile_name) {
-    std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+    std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
     
     auto& saved = jira_model::get_saved_profiles_ref();
     // Remove profile if it exists
@@ -198,21 +198,21 @@ std::vector<jira_connection_profile> jira_model::detect_environment_profiles() {
 
 // Static method to save profiles (wrapper for the static function)
 void jira_model::save_profiles(const std::vector<jira_connection_profile>& profiles) {
-    std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+    std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
     jira_model::get_saved_profiles_ref() = profiles;
     ::rouen::models::save_profiles(profiles);
 }
 
 // Static method to get environment profiles
 std::vector<jira_connection_profile> jira_model::get_env_profiles() {
-    std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+    std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
     return jira_model::get_environment_profiles_ref();
 }
 
 // Helper to save profiles to disk
 static bool save_profiles(const std::vector<jira_connection_profile>& profiles) {
     // Get path from the class directly using the static method
-    fs::path profiles_path = jira_model::get_profiles_file_path();
+    fs::path const profiles_path = jira_model::get_profiles_file_path();
     
     try {
         // Ensure directory exists

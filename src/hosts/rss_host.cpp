@@ -89,7 +89,7 @@ static std::string decode_json_string(std::string value) {
 }
 
 static bool is_youtube_media_url(const std::string& url) {
-    std::string lower = ::helpers::StringHelper::to_lower(url);
+    std::string const lower = ::helpers::StringHelper::to_lower(url);
     return lower.find("youtube.com") != std::string::npos || lower.find("youtu.be") != std::string::npos;
 }
 
@@ -125,7 +125,7 @@ static std::optional<std::string> extract_meta_content(std::string_view html, st
         std::regex::icase
     );
     std::smatch match;
-    std::string html_copy(html);
+    std::string const html_copy(html);
     if (std::regex_search(html_copy, match, rx) && match.size() > 1) {
         return ::helpers::StringHelper::strip_html_tags(match[1].str());
     }
@@ -218,7 +218,7 @@ static std::optional<double> parse_mp4_duration_bytes(const unsigned char* data,
     size_t offset = 0;
     while (offset + 8 <= size) {
         uint64_t box_size = read_u32_be(data + offset);
-        std::string_view box_type(reinterpret_cast<const char*>(data + offset + 4), 4);
+        std::string_view const box_type(reinterpret_cast<const char*>(data + offset + 4), 4);
         
         size_t header_size = 8;
         if (box_size == 1) {
@@ -235,10 +235,10 @@ static std::optional<double> parse_mp4_duration_bytes(const unsigned char* data,
         
         if (box_type == "moov") {
             size_t sub_offset = offset + header_size;
-            size_t sub_limit = offset + box_size;
+            size_t const sub_limit = offset + box_size;
             while (sub_offset + 8 <= sub_limit) {
                 uint64_t sub_size = read_u32_be(data + sub_offset);
-                std::string_view sub_type(reinterpret_cast<const char*>(data + sub_offset + 4), 4);
+                std::string_view const sub_type(reinterpret_cast<const char*>(data + sub_offset + 4), 4);
                 
                 size_t sub_header = 8;
                 if (sub_size == 1) {
@@ -254,21 +254,21 @@ static std::optional<double> parse_mp4_duration_bytes(const unsigned char* data,
                 }
                 
                 if (sub_type == "mvhd") {
-                    size_t mvhd_data_offset = sub_offset + sub_header;
+                    size_t const mvhd_data_offset = sub_offset + sub_header;
                     if (mvhd_data_offset + 4 > sub_limit) break;
                     
-                    uint8_t version = data[mvhd_data_offset];
+                    uint8_t const version = data[mvhd_data_offset];
                     if (version == 0) {
                         if (mvhd_data_offset + 12 + 8 > sub_limit) break;
-                        uint32_t timescale = read_u32_be(data + mvhd_data_offset + 12);
-                        uint32_t duration = read_u32_be(data + mvhd_data_offset + 16);
+                        uint32_t const timescale = read_u32_be(data + mvhd_data_offset + 12);
+                        uint32_t const duration = read_u32_be(data + mvhd_data_offset + 16);
                         if (timescale > 0 && duration > 0 && duration != 0xFFFFFFFF) {
                             return static_cast<double>(duration) / timescale;
                         }
                     } else if (version == 1) {
                         if (mvhd_data_offset + 20 + 12 > sub_limit) break;
-                        uint32_t timescale = read_u32_be(data + mvhd_data_offset + 20);
-                        uint64_t duration = read_u64_be(data + mvhd_data_offset + 24);
+                        uint32_t const timescale = read_u32_be(data + mvhd_data_offset + 20);
+                        uint64_t const duration = read_u64_be(data + mvhd_data_offset + 24);
                         if (timescale > 0 && duration > 0 && duration != 0xFFFFFFFFFFFFFFFF) {
                             return static_cast<double>(duration) / timescale;
                         }
@@ -286,7 +286,7 @@ static std::optional<double> probe_mp4_duration(const std::string& url) {
     try {
         http::fetch client{5}; // 5-second timeout for header probe
         // Request the first 256KB
-        std::vector<std::string> headers = {
+        std::vector<std::string> const headers = {
             "Range: bytes=0-262144",
             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         };
@@ -304,7 +304,7 @@ static std::string shell_quote(std::string_view value) {
     std::string out;
     out.reserve(value.size() + 2);
     out.push_back('\'');
-    for (char c : value) {
+    for (char const c : value) {
         if (c == '\'') {
             out += "'\\''";
         } else {
@@ -341,10 +341,10 @@ static std::optional<double> probe_youtube_duration(const std::string& url) {
     // Fast Primary Path: Direct HTTP fetch & regex scrape lengthSeconds / approxDurationMs (~20ms)
     try {
         http::fetch client{4};
-        std::vector<std::string> headers = {
+        std::vector<std::string> const headers = {
             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         };
-        std::string html = client(watch_url, headers);
+        std::string const html = client(watch_url, headers);
         if (!html.empty()) {
             std::smatch match;
             static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
@@ -385,7 +385,7 @@ static std::optional<double> probe_youtube_duration(const std::string& url) {
             while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
                 output += buffer.data();
             }
-            [[maybe_unused]] int close_rc = pclose(pipe);
+            [[maybe_unused]] int const close_rc = pclose(pipe);
             auto dur = parse_duration_seconds(output);
             if (dur.has_value()) {
                 return dur;
@@ -420,7 +420,7 @@ static std::optional<double> probe_media_duration_ffprobe(const std::string& url
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
         output += buffer.data();
     }
-    [[maybe_unused]] int close_rc = pclose(pipe);
+    [[maybe_unused]] int const close_rc = pclose(pipe);
 
     return parse_duration_seconds(output);
 }
@@ -476,19 +476,19 @@ RSSHost::RSSHost()
     : repo_(rouen::platform::get_user_data_path("rss.db").string()) {
     // Load settings from database
     try {
-        std::string t_str = repo_.get_setting("timeout", "60");
+        std::string const t_str = repo_.get_setting("timeout", "60");
         timeout_s_ = std::stoi(t_str);
     } catch (...) {
         timeout_s_ = 60;
     }
     try {
-        std::string auto_str = repo_.get_setting("auto_timeout", "1");
+        std::string const auto_str = repo_.get_setting("auto_timeout", "1");
         auto_timeout_enabled_ = (auto_str == "1");
     } catch (...) {
         auto_timeout_enabled_ = true;
     }
     try {
-        std::string interval_str = repo_.get_setting("refresh_interval", "3600");
+        std::string const interval_str = repo_.get_setting("refresh_interval", "3600");
         refresh_interval_s_ = std::stoi(interval_str);
     } catch (...) {
         refresh_interval_s_ = 3600;
@@ -557,7 +557,7 @@ RSSHost::RSSHost()
                 feed_ptr->tags = std::set<std::string>(default_tags.begin(), default_tags.end());
             }
 
-            std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+            std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
             feeds_.emplace_back(feed_ptr);
             urls.emplace_back(url ? url : "");
             RSS_DEBUG_FMT("Added feed ID={} to collection with {} cached items", feed_id, feed_ptr->items.size());
@@ -568,12 +568,12 @@ RSSHost::RSSHost()
 
     // Initialize staggered last refresh times to spread background updates evenly
     {
-        std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+        std::lock_guard<std::mutex> const lock(last_refresh_mutex_);
         auto now = std::chrono::system_clock::now();
         for (const auto& url : urls) {
             if (!url.empty()) {
                 // Stagger between now and refresh_interval_s_ seconds in the past
-                int offset_s = std::rand() % refresh_interval_s_;
+                int const offset_s = std::rand() % refresh_interval_s_;
                 feed_last_refresh_times_[url] = now - std::chrono::seconds(offset_s);
             }
         }
@@ -614,7 +614,7 @@ RSSHost::~RSSHost() {
     }
     periodic_refresh_thread_.request_stop();
     {
-        std::lock_guard<std::mutex> lock(fetch_threads_mutex_);
+        std::lock_guard<std::mutex> const lock(fetch_threads_mutex_);
         for (auto& t : active_fetch_threads_) {
             t.request_stop();
         }
@@ -700,14 +700,14 @@ bool RSSHost::add_feed(const std::string& url, bool open_added_card) {
 }
 
 std::vector<std::shared_ptr<media::rss::feed>> RSSHost::feeds() const {
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     return feeds_;
 }
 
 void RSSHost::delete_feed(std::string_view url) {
     std::string db_url(url);
     {
-        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
         auto pos = std::find_if(feeds_.begin(), feeds_.end(),
                                [url](auto const& f) {
                                    return f->feed_link == url || f->source_link == url;
@@ -725,7 +725,7 @@ void RSSHost::delete_feed(std::string_view url) {
 }
 
 void RSSHost::save_smart_list(const std::string& title, const media::rss::filter_group& filter) {
-    std::string filter_json = glz::write_json(filter).value_or("");
+    std::string const filter_json = glz::write_json(filter).value_or("");
     if (!filter_json.empty()) {
         repo_.save_smart_list(title, filter_json);
     }
@@ -736,7 +736,7 @@ void RSSHost::delete_smart_list(const std::string& title) {
 }
 
 long long RSSHost::find_subscribed_youtube_feed_id(const std::string& channel_id, const std::string& feed_url, const std::string& channel_title) const {
-    std::lock_guard<std::mutex> lock(yt_sub_mutex_);
+    std::lock_guard<std::mutex> const lock(yt_sub_mutex_);
     if (!channel_id.empty()) {
         auto it = yt_channel_id_map_.find(channel_id);
         if (it != yt_channel_id_map_.end()) return it->second;
@@ -760,30 +760,30 @@ void RSSHost::rebuild_yt_index() {
     std::unordered_map<std::string, long long> title_map;
 
     {
-        std::lock_guard<std::mutex> lock(feeds_mutex_);
+        std::lock_guard<std::mutex> const lock(feeds_mutex_);
         for (const auto& f : feeds_) {
             if (!f) continue;
-            bool is_yt = (f->feed_link.find("youtube.com") != std::string::npos || 
+            bool const is_yt = (f->feed_link.find("youtube.com") != std::string::npos || 
                           f->source_link.find("youtube.com") != std::string::npos ||
                           f->feed_title.find("YouTube") != std::string::npos);
             if (!is_yt) continue;
 
             if (!f->feed_link.empty()) {
                 url_map[f->feed_link] = f->repo_id;
-                size_t cid_pos = f->feed_link.find("channel_id=");
+                size_t const cid_pos = f->feed_link.find("channel_id=");
                 if (cid_pos != std::string::npos) {
                     std::string cid = f->feed_link.substr(cid_pos + 11);
-                    size_t amp = cid.find('&');
+                    size_t const amp = cid.find('&');
                     if (amp != std::string::npos) cid = cid.substr(0, amp);
                     if (!cid.empty()) cid_map[cid] = f->repo_id;
                 }
             }
             if (!f->source_link.empty()) {
                 url_map[f->source_link] = f->repo_id;
-                size_t cid_pos = f->source_link.find("channel_id=");
+                size_t const cid_pos = f->source_link.find("channel_id=");
                 if (cid_pos != std::string::npos) {
                     std::string cid = f->source_link.substr(cid_pos + 11);
-                    size_t amp = cid.find('&');
+                    size_t const amp = cid.find('&');
                     if (amp != std::string::npos) cid = cid.substr(0, amp);
                     if (!cid.empty()) cid_map[cid] = f->repo_id;
                 }
@@ -794,7 +794,7 @@ void RSSHost::rebuild_yt_index() {
         }
     }
 
-    std::lock_guard<std::mutex> lock(yt_sub_mutex_);
+    std::lock_guard<std::mutex> const lock(yt_sub_mutex_);
     yt_channel_id_map_ = std::move(cid_map);
     yt_url_map_ = std::move(url_map);
     yt_title_map_ = std::move(title_map);
@@ -859,7 +859,7 @@ void RSSHost::add_feed_tag(long long feed_id, std::string_view tag) {
     repo_.add_feed_tag(feed_id, tag);
     
     // Also update memory representation
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
             feed->tags.insert(std::string(tag));
@@ -872,7 +872,7 @@ void RSSHost::remove_feed_tag(long long feed_id, std::string_view tag) {
     repo_.remove_feed_tag(feed_id, tag);
     
     // Also update memory representation
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
             feed->tags.erase(std::string(tag));
@@ -887,7 +887,7 @@ int RSSHost::delete_unused_tags() {
 
 
 std::string RSSHost::get_feed_language(long long feed_id) {
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (const auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
             return feed->language;
@@ -900,7 +900,7 @@ void RSSHost::set_feed_language(long long feed_id, std::string_view language) {
     repo_.update_feed_language(feed_id, language);
     
     // Also update memory representation
-    std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
             feed->language = std::string(language);
@@ -995,10 +995,10 @@ bool RSSHost::add_feed_item(long long feed_id, std::string_view item_link, std::
     }
 
     auto now = std::chrono::system_clock::now();
-    std::string pub_date = std::format("{:%F %T}", now, now);
+    std::string const pub_date = std::format("{:%F %T}", now, now);
     repo_.upsert_item_by_link(feed_id, link, title, "", metadata.description, pub_date, metadata.image_url);
 
-    std::lock_guard<std::mutex> lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id != feed_id) {
             continue;
@@ -1076,7 +1076,7 @@ void RSSHost::update_watermark(long long feed_id, const std::string& item_link, 
     repo_.update_watermark(feed_id, item_link, item_title, watermark);
     
     // Update in-memory cache
-    std::lock_guard<std::mutex> lock(feeds_mutex_);
+    std::lock_guard<std::mutex> const lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
             for (auto& item : feed->items) {
@@ -1151,7 +1151,7 @@ void RSSHost::load_podcasts_from_file() {
         // First check if this URL already exists in the repository
         bool exists = false;
         {
-            std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+            std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
             for (const auto& feed : feeds_) {
                 if (feed->source_link == url || feed->feed_link == url) {
                     RSS_WARN_FMT("Podcast already exists: {}", url);
@@ -1175,7 +1175,7 @@ void RSSHost::load_podcasts_from_file() {
                 feed_ptr->repo_id = feed_id;
                 
                 // Add to in-memory collection
-                std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+                std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
                 feeds_.emplace_back(feed_ptr);
                 added_count++;
                 RSS_WARN_FMT("Added feed ID={} to database and memory", feed_id);
@@ -1219,7 +1219,7 @@ bool RSSHost::refresh_feed(long long feed_id) {
         if (refreshed_feed) {
             RSS_INFO_FMT("Successfully refreshed feed ID: {}", feed_id);
             {
-                std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+                std::lock_guard<std::mutex> const lock(last_refresh_mutex_);
                 feed_last_refresh_times_[*feed_url] = std::chrono::system_clock::now();
             }
             return true;
@@ -1241,7 +1241,7 @@ size_t RSSHost::write_callback(void* contents, size_t size, size_t nmemb, void* 
 }
 
 void RSSHost::refresh_feeds(std::vector<std::string> urls, bool open_added_card) {
-    std::lock_guard<std::mutex> threads_lock(fetch_threads_mutex_);
+    std::lock_guard<std::mutex> const threads_lock(fetch_threads_mutex_);
     
     // Clean up any finished threads
     active_fetch_threads_.erase(
@@ -1263,7 +1263,7 @@ void RSSHost::refresh_feeds(std::vector<std::string> urls, bool open_added_card)
             
             // Add a polite spacing delay between requests (except the first request)
             if (j > 0) {
-                int delay_ms = 500 + (std::rand() % 500); // 500ms to 1000ms
+                int const delay_ms = 500 + (std::rand() % 500); // 500ms to 1000ms
                 for (int d = 0; d < delay_ms; d += 50) {
                     if (quit_job()) break;
                     std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -1277,7 +1277,7 @@ void RSSHost::refresh_feeds(std::vector<std::string> urls, bool open_added_card)
 
                 // Respect per-feed backoff if set (e.g., after recent 429)
                 {
-                    std::lock_guard<std::mutex> lock(backoff_mutex_);
+                    std::lock_guard<std::mutex> const lock(backoff_mutex_);
                     if (auto it = feed_backoff_until_.find(url_list[j]); it != feed_backoff_until_.end()) {
                         auto now = std::chrono::system_clock::now();
                         if (now < it->second) {
@@ -1298,7 +1298,7 @@ void RSSHost::refresh_feeds(std::vector<std::string> urls, bool open_added_card)
                     RSS_INFO_FMT("Successfully fetched and processed feed: {}", url_list[j]);
                     ++success_count;
                     if (open_added_card && feed_ptr->repo_id > 0) {
-                        std::string feed_uri = std::format("rss-feed:{}", feed_ptr->repo_id);
+                        std::string const feed_uri = std::format("rss-feed:{}", feed_ptr->repo_id);
                         "create_card"_sfn(feed_uri);
                     }
                 } else {
@@ -1337,7 +1337,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
         } catch (const std::exception& e) {
             // If this is a YouTube feed, create a placeholder instead of failing completely,
             // since YouTube RSS endpoints frequently return 404/500 errors.
-            bool is_youtube = (resolved_url.find("youtube.com/feeds/videos.xml") != std::string::npos);
+            bool const is_youtube = (resolved_url.find("youtube.com/feeds/videos.xml") != std::string::npos);
             if (is_youtube) {
                 RSS_WARN_FMT("YouTube feed fetch failed: {}. Creating placeholder feed.", e.what());
                 feed_ptr = std::make_shared<media::rss::feed>();
@@ -1347,11 +1347,11 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                 
                 // Extract channel name/handle for title
                 std::string title = std::string(url);
-                size_t at_pos = title.find("@");
+                size_t const at_pos = title.find("@");
                 if (at_pos != std::string::npos) {
                     title = title.substr(at_pos);
                 } else {
-                    size_t ch_pos = title.find("channel_id=");
+                    size_t const ch_pos = title.find("channel_id=");
                     if (ch_pos != std::string::npos) {
                         title = "YouTube Channel: " + title.substr(ch_pos + 11);
                     }
@@ -1385,7 +1385,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                 break;
             }
             if (!item.media_duration_seconds.has_value() || item.media_duration_seconds.value() <= 0.0) {
-                std::string media_url = item.get_best_media_url();
+                std::string const media_url = item.get_best_media_url();
                 if (!media_url.empty() && is_youtube_media_url(media_url)) {
                     if (quitting()) break;
                     if (duration_probe_attempts >= k_max_duration_probe_attempts_per_feed ||
@@ -1425,7 +1425,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
             }
         }
 
-        std::lock_guard<std::mutex> feeds_lock(feeds_mutex_);
+        std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
         auto& feeds = feeds_;
         
         // Check if the feed already exists
@@ -1467,7 +1467,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
         feed_ptr->repo_id = repo_.upsert_feed(feed_ptr->source_link, feed_ptr->feed_title, feed_ptr->image_url());
         
         {
-            std::lock_guard<std::mutex> lock(last_refresh_mutex_);
+            std::lock_guard<std::mutex> const lock(last_refresh_mutex_);
             feed_last_refresh_times_[feed_ptr->source_link] = std::chrono::system_clock::now();
         }
         
@@ -1526,10 +1526,10 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
 }
 
 media::rss::feed RSSHost::get_feed(std::string_view url) {
-    std::string url_str{url};
+    std::string const url_str{url};
     int failure_count = 0;
     {
-        std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+        std::lock_guard<std::mutex> const lock(failure_counts_mutex_);
         if (auto it = feed_failure_counts_.find(url_str); it != feed_failure_counts_.end()) {
             failure_count = it->second;
         }
@@ -1569,11 +1569,11 @@ media::rss::feed RSSHost::get_feed(std::string_view url) {
         
         // Reset failure count on success and clear any backoff
         {
-            std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+            std::lock_guard<std::mutex> const lock(failure_counts_mutex_);
             feed_failure_counts_[url_str] = 0;
         }
         {
-            std::lock_guard<std::mutex> lock(backoff_mutex_);
+            std::lock_guard<std::mutex> const lock(backoff_mutex_);
             feed_backoff_until_.erase(url_str);
         }
 
@@ -1592,27 +1592,27 @@ media::rss::feed RSSHost::get_feed(std::string_view url) {
     } catch (const std::exception& e) {
         // Increment failure count on failure
         {
-            std::lock_guard<std::mutex> lock(failure_counts_mutex_);
+            std::lock_guard<std::mutex> const lock(failure_counts_mutex_);
             feed_failure_counts_[url_str] = failure_count + 1;
         }
 
         // If this was a rate-limit (HTTP 429) we should back off intelligently
         try {
-            std::string err = e.what();
+            std::string const err = e.what();
             if (err.find("HTTP error 429") != std::string::npos) {
                 using namespace std::chrono;
                 auto now = system_clock::now();
                 // Exponential backoff in minutes: 5, 10, 20, 40, 60 (cap at 60)
                 int minutes = std::min((failure_count + 1) * 5, 60);
                 // Add small jitter of up to 30% to avoid herd effects
-                int max_jitter = std::max(1, (minutes * 30) / 100);
-                int jitter = std::rand() % (max_jitter + 1);
+                int const max_jitter = std::max(1, (minutes * 30) / 100);
+                int const jitter = std::rand() % (max_jitter + 1);
                 minutes += jitter;
 
                 auto until = now + std::chrono::minutes(minutes);
 
                 {
-                    std::lock_guard<std::mutex> lock(backoff_mutex_);
+                    std::lock_guard<std::mutex> const lock(backoff_mutex_);
                     feed_backoff_until_[url_str] = until;
                 }
                 RSS_WARN_FMT("Received HTTP 429 for {}. Backing off for {} minutes (with jitter).", url, minutes);
@@ -1773,13 +1773,13 @@ void RSSHost::start_refresh_loop() {
             
             if (quit_job()) break;
             
-            bool force = should_force_refresh_.exchange(false);
+            bool const force = should_force_refresh_.exchange(false);
             std::vector<std::string> urls_to_refresh;
             auto now = std::chrono::system_clock::now();
             
             {
-                std::lock_guard<std::mutex> lock(feeds_mutex_);
-                std::lock_guard<std::mutex> r_lock(last_refresh_mutex_);
+                std::lock_guard<std::mutex> const lock(feeds_mutex_);
+                std::lock_guard<std::mutex> const r_lock(last_refresh_mutex_);
                 
                 for (auto const& f : feeds_) {
                     bool due = false;
@@ -1850,7 +1850,7 @@ void RSSHost::start_duration_backfill() {
                 if (quit_job()) return;
 
                 // Prefer the stored enclosure; fall back to deriving a watch URL from the item link.
-                std::string probe_url = enclosure.empty() ? link : enclosure;
+                std::string const probe_url = enclosure.empty() ? link : enclosure;
                 auto dur = probe_youtube_duration(probe_url);
                 if (!dur.has_value() && probe_url != link) {
                     dur = probe_youtube_duration(link);
@@ -1899,7 +1899,7 @@ RSSHost::RSSDiagnostics RSSHost::get_rss_diagnostics() {
         auto tags = get_feed_tags(f->repo_id);
         info.tag_count = tags.size();
 
-        std::string uri = std::format("rss-feed:{}", f->repo_id);
+        std::string const uri = std::format("rss-feed:{}", f->repo_id);
         auto metric = rouen::helpers::CardRenderMetrics::instance().get_metric_for_key(uri);
         if (!metric.has_value()) {
             metric = rouen::helpers::CardRenderMetrics::instance().get_metric_for_key(f->feed_title);

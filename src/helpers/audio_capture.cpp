@@ -109,7 +109,7 @@ void AudioCapture::stop() {
             SDL_DestroyAudioStream(stream_);
             stream_ = nullptr;
         }
-        std::lock_guard<std::mutex> lock(buffer_mutex_);
+        std::lock_guard<std::mutex> const lock(buffer_mutex_);
         pcm_buffer_.clear();
         std::cout << "[AudioCapture] Stopped audio capture" << std::endl;
     }
@@ -120,7 +120,7 @@ bool AudioCapture::is_recording() const {
 }
 
 std::vector<uint8_t> AudioCapture::read_audio_data() {
-    std::lock_guard<std::mutex> lock(buffer_mutex_);
+    std::lock_guard<std::mutex> const lock(buffer_mutex_);
     std::vector<uint8_t> result = std::move(pcm_buffer_);
     pcm_buffer_.clear();
     return result;
@@ -134,25 +134,25 @@ void SDLCALL AudioCapture::audio_stream_callback(void* userdata, SDL_AudioStream
     auto* self = static_cast<AudioCapture*>(userdata);
     if (!self || !self->recording_.load()) return;
 
-    int bytes_to_read = (additional_amount > 0) ? additional_amount : SDL_GetAudioStreamAvailable(stream);
+    int const bytes_to_read = (additional_amount > 0) ? additional_amount : SDL_GetAudioStreamAvailable(stream);
     if (bytes_to_read > 0) {
         std::vector<uint8_t> temp(static_cast<size_t>(bytes_to_read));
-        int bytes_read = SDL_GetAudioStreamData(stream, temp.data(), bytes_to_read);
+        int const bytes_read = SDL_GetAudioStreamData(stream, temp.data(), bytes_to_read);
         if (bytes_read > 0) {
             temp.resize(static_cast<size_t>(bytes_read));
             
             // Calculate VU peak for visualization
             const int16_t* samples = reinterpret_cast<const int16_t*>(temp.data());
-            size_t num_samples = static_cast<size_t>(bytes_read) / sizeof(int16_t);
+            size_t const num_samples = static_cast<size_t>(bytes_read) / sizeof(int16_t);
             int16_t max_val = 0;
             for (size_t i = 0; i < num_samples; ++i) {
-                int16_t val = static_cast<int16_t>(std::abs(static_cast<int>(samples[i])));
+                int16_t const val = static_cast<int16_t>(std::abs(static_cast<int>(samples[i])));
                 if (val > max_val) max_val = val;
             }
-            float peak = static_cast<float>(max_val) / 32767.0f;
+            float const peak = static_cast<float>(max_val) / 32767.0f;
             self->current_peak_.store(peak);
 
-            std::lock_guard<std::mutex> lock(self->buffer_mutex_);
+            std::lock_guard<std::mutex> const lock(self->buffer_mutex_);
             self->pcm_buffer_.insert(self->pcm_buffer_.end(), temp.begin(), temp.end());
         }
     }

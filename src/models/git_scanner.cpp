@@ -18,7 +18,7 @@ namespace rouen::models {
             env_root = std::getenv("DEVELOPMENT_SRC_DIR");
         }
         if (env_root && *env_root) {
-            std::filesystem::path p(env_root);
+            std::filesystem::path const p(env_root);
             if (std::filesystem::exists(p) && std::filesystem::is_directory(p)) {
                 scan_roots.push_back(p);
             }
@@ -27,8 +27,8 @@ namespace rouen::models {
         // 2. Add common user development directories
         const char* home_env = std::getenv("HOME");
         if (home_env && *home_env) {
-            std::filesystem::path home(home_env);
-            std::vector<std::filesystem::path> common_dirs = {
+            std::filesystem::path const home(home_env);
+            std::vector<std::filesystem::path> const common_dirs = {
                 home / "src",
                 home / "Development",
                 home / "Projects",
@@ -43,7 +43,7 @@ namespace rouen::models {
         
         // 3. Add current working directory (skip root directory)
         try {
-            std::filesystem::path cwd = std::filesystem::current_path();
+            std::filesystem::path const cwd = std::filesystem::current_path();
             if (cwd != "/" && cwd != "C:\\" && cwd != "c:\\") {
                 scan_roots.push_back(cwd);
             }

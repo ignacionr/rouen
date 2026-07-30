@@ -107,8 +107,8 @@ void trello_card::attempt_connection() {
     if (!validate_connection_form()) return;
     
     try {
-        std::string profile_name = strlen(profile_name_buffer_) > 0 ? profile_name_buffer_ : "Manual Connection";
-        bool success = trello_host_->connect_with_credentials(api_key_buffer_, token_buffer_, profile_name);
+        std::string const profile_name = strlen(profile_name_buffer_) > 0 ? profile_name_buffer_ : "Manual Connection";
+        bool const success = trello_host_->connect_with_credentials(api_key_buffer_, token_buffer_, profile_name);
         
         if (success) {
             clear_error();
@@ -123,7 +123,7 @@ void trello_card::attempt_connection() {
 
 void trello_card::try_environment_connection() {
     try {
-        bool success = trello_host_->connect_from_environment();
+        bool const success = trello_host_->connect_from_environment();
         if (success) {
             clear_error();
             reset_ui_state();

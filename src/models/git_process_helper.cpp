@@ -11,7 +11,7 @@
 
 namespace rouen::models {
     std::string GitProcessHelper::executeCommandInDirectory(const std::string& dir, const std::string& command) {
-        std::string full_cmd = "cd '" + dir + "' && " + command + " 2>&1";
+        std::string const full_cmd = "cd '" + dir + "' && " + command + " 2>&1";
         std::array<char, 128> buffer;
         std::string result;
         FILE* pipe = popen(full_cmd.c_str(), "r"); // NOLINT(cert-env33-c)

@@ -54,8 +54,8 @@ static jira_server_info get_server_info(const jira_connection_profile& profile) 
         DB_INFO_FMT("  From Environment: {}", profile.is_environment ? "true" : "false");
         
         // Create authentication string for Basic Auth
-        std::string auth_string = profile.username + ":" + profile.api_token;
-        std::string base64_auth = base64_encode(auth_string);
+        std::string const auth_string = profile.username + ":" + profile.api_token;
+        std::string const base64_auth = base64_encode(auth_string);
         
         // Create HTTP client
         http::fetch fetcher;
@@ -183,7 +183,7 @@ void jira_model::connect(const jira_connection_profile& profile) {
             if (std::find_if(saved.begin(), saved.end(),
                            [&profile](const auto& p) { return p.name == profile.name; }) == saved.end()) {
                 // Add to saved profiles
-                std::lock_guard<std::mutex> lock(jira_model::get_profiles_mutex());
+                std::lock_guard<std::mutex> const lock(jira_model::get_profiles_mutex());
                 saved.push_back(profile);
                 jira_model::get_profiles_modified() = true;
                 DB_INFO_FMT("Saved profile '{}' to disk", profile.name);
@@ -192,7 +192,7 @@ void jira_model::connect(const jira_connection_profile& profile) {
         
     } catch (const std::exception& e) {
         connected_ = false;
-        std::string error_msg = e.what();
+        std::string const error_msg = e.what();
         std::string detailed_error;
         
         // Check for specific SSL cipher errors and provide targeted guidance

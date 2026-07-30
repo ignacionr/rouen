@@ -35,7 +35,7 @@ void trello_card::render_main_interface() {
     }
     
     // General context - show full interface with tabs
-    bool is_board_selected = !selected_board_id_.empty();
+    bool const is_board_selected = !selected_board_id_.empty();
     if (!initialized_) {
         fetch_boards();  // Need this for the board selector to work
         if (is_board_selected) {
@@ -149,7 +149,7 @@ void trello_card::render_create_tab() {
         if (ImGui::BeginCombo("##list_selector", selected_list_id_.empty() ? "Choose a list..." : "Selected")) {
             for (const auto& list : current_board_.lists) {
                 if (!list.closed) {
-                    bool is_selected = (selected_list_id_ == list.id);
+                    bool const is_selected = (selected_list_id_ == list.id);
                     if (ImGui::Selectable(list.name.c_str(), is_selected)) {
                         selected_list_id_ = list.id;
                     }
@@ -171,7 +171,7 @@ void trello_card::render_create_tab() {
         
         // Create button
         ImGui::Separator();
-        bool can_create = !selected_list_id_.empty() && strlen(new_card_name_) > 0 && !creating_card_;
+        bool const can_create = !selected_list_id_.empty() && strlen(new_card_name_) > 0 && !creating_card_;
         
         if (!can_create) {
             ImGui::BeginDisabled();
@@ -226,7 +226,7 @@ void trello_card::render_search_section() {
     ImGui::InputText("##search", search_query_, sizeof(search_query_));
     ImGui::SameLine();
     
-    bool can_search = strlen(search_query_) > 0 && !searching_;
+    bool const can_search = strlen(search_query_) > 0 && !searching_;
     if (!can_search) {
         ImGui::BeginDisabled();
     }

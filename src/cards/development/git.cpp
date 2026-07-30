@@ -93,7 +93,7 @@ bool git::matches_uri(std::string_view uri) const {
 
 void git::handle_uri(std::string_view uri) {
     if (uri.starts_with("git:")) {
-        std::string path = std::string(uri.substr(4));
+        std::string const path = std::string(uri.substr(4));
         if (!path.empty()) {
             select(path);
         } else {
@@ -134,17 +134,17 @@ void git::trigger_async_status_update() {
 
     std::string current_repo;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         current_repo = selected_repo;
     }
 
     std::thread([this, current_repo]() {
         if (!current_repo.empty()) {
-            std::string status = git_model->getGitStatus(current_repo);
-            std::string git_remote = git_model->getGitRemote(current_repo);
-            std::string repo_name = extract_github_repo_name(git_remote);
+            std::string const status = git_model->getGitStatus(current_repo);
+            std::string const git_remote = git_model->getGitRemote(current_repo);
+            std::string const repo_name = extract_github_repo_name(git_remote);
 
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             if (selected_repo == current_repo) {
                 repo_status = status;
                 cached_git_remote = git_remote;
@@ -163,7 +163,7 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
     if (repo_path.empty()) return;
 
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         if (punch_card_data_.loaded && punch_card_data_.repo_path == repo_path) {
             return; // Already loaded in memory for this repo
         }
@@ -174,8 +174,8 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
 
     std::thread([this, repo_path]() {
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
-        std::string cmd = std::format("{} --no-pager log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
-        std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const cmd = std::format("{} --no-pager log --since=\"3 months ago\" --format=\"%at|%an|%ae\"", git_bin);
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
 
         punch_card_info data;
         data.repo_path = repo_path;
@@ -193,9 +193,9 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
             if (p2 == std::string::npos) continue;
 
             try {
-                int64_t ts = std::stoll(line.substr(0, p1));
-                std::string aname = line.substr(p1 + 1, p2 - (p1 + 1));
-                std::string aemail = line.substr(p2 + 1);
+                int64_t const ts = std::stoll(line.substr(0, p1));
+                std::string const aname = line.substr(p1 + 1, p2 - (p1 + 1));
+                std::string const aemail = line.substr(p2 + 1);
 
                 if (!aname.empty()) {
                     unique_authors.insert(aname);
@@ -221,7 +221,7 @@ void git::fetch_punch_card_async(const std::string& repo_path) {
         data.loading = false;
 
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             if (selected_repo == repo_path) {
                 punch_card_data_ = std::move(data);
             }
@@ -233,7 +233,7 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
     if (repo_path.empty()) return;
 
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         if (overlay_state_.recent_commits_loaded && overlay_state_.loaded_repo_path == repo_path) {
             return;
         }
@@ -245,11 +245,11 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
 
     std::thread([this, repo_path]() {
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
-        std::time_t now = std::time(nullptr);
+        std::time_t const now = std::time(nullptr);
         std::time_t seven_days_ago = now - static_cast<std::time_t>(7 * 86400);
 
-        std::string cmd = std::format("{} --no-pager log --since=\"{}\" --format=\"%H|%h|%at|%an|%ae|%s\"", git_bin, static_cast<int64_t>(seven_days_ago));
-        std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const cmd = std::format("{} --no-pager log --since=\"{}\" --format=\"%H|%h|%at|%an|%ae|%s\"", git_bin, static_cast<int64_t>(seven_days_ago));
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
 
         std::vector<git_commit_summary> list;
         std::stringstream ss(output);
@@ -258,15 +258,15 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
             line = trim_copy(line);
             if (line.empty()) continue;
 
-            size_t p1 = line.find('|');
+            size_t const p1 = line.find('|');
             if (p1 == std::string::npos) continue;
-            size_t p2 = line.find('|', p1 + 1);
+            size_t const p2 = line.find('|', p1 + 1);
             if (p2 == std::string::npos) continue;
-            size_t p3 = line.find('|', p2 + 1);
+            size_t const p3 = line.find('|', p2 + 1);
             if (p3 == std::string::npos) continue;
-            size_t p4 = line.find('|', p3 + 1);
+            size_t const p4 = line.find('|', p3 + 1);
             if (p4 == std::string::npos) continue;
-            size_t p5 = line.find('|', p4 + 1);
+            size_t const p5 = line.find('|', p4 + 1);
             if (p5 == std::string::npos) continue;
 
             git_commit_summary item;
@@ -281,7 +281,7 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
             item.author_email = line.substr(p4 + 1, p5 - (p4 + 1));
             item.summary = line.substr(p5 + 1);
 
-            std::time_t t = static_cast<std::time_t>(item.timestamp);
+            std::time_t const t = static_cast<std::time_t>(item.timestamp);
             std::tm tm_buf{};
 #ifdef _WIN32
             localtime_s(&tm_buf, &t);
@@ -296,7 +296,7 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
         }
 
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             if (selected_repo == repo_path) {
                 overlay_state_.recent_commits_7d = std::move(list);
                 overlay_state_.loading_recent_commits = false;
@@ -310,7 +310,7 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
     if (repo_path.empty() || commit_hash.empty()) return;
 
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         if (overlay_state_.selected_commit_detail.loaded && overlay_state_.selected_commit_detail.hash == commit_hash) {
             return;
         }
@@ -321,8 +321,8 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
 
     std::thread([this, repo_path, commit_hash]() {
         std::string git_bin = CONFIG_SERVICE()->get_git_path();
-        std::string cmd = std::format("{} --no-pager show --stat --format=\"%H%n%h%n%at%n%an%n%ae%n%B%n---END_HEADER---\" {}", git_bin, commit_hash);
-        std::string output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
+        std::string const cmd = std::format("{} --no-pager show --stat --format=\"%H%n%h%n%at%n%an%n%ae%n%B%n---END_HEADER---\" {}", git_bin, commit_hash);
+        std::string const output = rouen::models::GitProcessHelper::executeCommandInDirectory(repo_path, cmd);
 
         git_commit_detail detail;
         detail.hash = commit_hash;
@@ -346,7 +346,7 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
             detail.author_name = header_lines[3];
             detail.author_email = header_lines[4];
 
-            std::time_t t = static_cast<std::time_t>(detail.timestamp);
+            std::time_t const t = static_cast<std::time_t>(detail.timestamp);
             std::tm tm_buf{};
 #ifdef _WIN32
             localtime_s(&tm_buf, &t);
@@ -372,9 +372,9 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
         while (std::getline(ss, line)) {
             if (line.empty()) continue;
             raw_stat += line + "\n";
-            std::string trimmed = trim_copy(line);
+            std::string const trimmed = trim_copy(line);
             if (trimmed.find('|') != std::string::npos) {
-                std::string file_part = trim_copy(trimmed.substr(0, trimmed.find('|')));
+                std::string const file_part = trim_copy(trimmed.substr(0, trimmed.find('|')));
                 if (!file_part.empty()) {
                     detail.changed_files.push_back(file_part);
                 }
@@ -386,7 +386,7 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
         detail.loaded = true;
 
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             if (selected_repo == repo_path && overlay_state_.selected_commit_hash == commit_hash) {
                 overlay_state_.selected_commit_detail = std::move(detail);
                 overlay_state_.loading_commit_detail = false;
@@ -409,7 +409,7 @@ bool git::select(const std::string& repo_path) {
     this->selected_repo = repo_path;
     name(std::format("Git: {}", std::filesystem::path(selected_repo).filename().string()));
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         cached_git_remote.clear();
         cached_github_repo_name.clear();
         punch_card_data_ = punch_card_info{};
@@ -426,7 +426,7 @@ void git::back_to_list() {
     selected_repo.clear();
     name("Git Repos");
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         cached_git_remote.clear();
         cached_github_repo_name.clear();
         punch_card_data_ = punch_card_info{};
@@ -440,11 +440,11 @@ bool git::updateRepoStatusSync() {
         return false;
     }
     
-    std::string status = git_model->getGitStatus(selected_repo);
-    std::string git_remote = git_model->getGitRemote(selected_repo);
-    std::string repo_name = extract_github_repo_name(git_remote);
+    std::string const status = git_model->getGitStatus(selected_repo);
+    std::string const git_remote = git_model->getGitRemote(selected_repo);
+    std::string const repo_name = extract_github_repo_name(git_remote);
 
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard<std::mutex> const lock(state_mutex);
     repo_status = status;
     cached_git_remote = git_remote;
     cached_github_repo_name = repo_name;
@@ -459,13 +459,13 @@ bool git::updateRepoStatus() {
 }
 
 void git::render_ai_busy_cue() {
-    double time = ImGui::GetTime();
+    double const time = ImGui::GetTime();
     auto dot_count = static_cast<std::size_t>(static_cast<long long>(time * 3.0) % 4);
-    std::string dots(dot_count, '.');
+    std::string const dots(dot_count, '.');
 
     std::string cue_text;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         cue_text = ai_status_cue.empty() ? "AI request in progress" : ai_status_cue;
     }
 
@@ -485,7 +485,7 @@ void git::render_selected() {
     std::string current_status;
     std::string current_commit_msg;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         current_status = repo_status;
         current_commit_msg = last_commit_message;
     }
@@ -520,7 +520,7 @@ void git::render_selected() {
     if (ImGui::SmallButton("GitHub CI")) {
         std::string repo_name;
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             repo_name = cached_github_repo_name;
         }
         if (!repo_name.empty()) {
@@ -562,7 +562,7 @@ void git::render_selected() {
 void git::render_punch_card() {
     punch_card_info data;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         data = punch_card_data_;
     }
 
@@ -589,7 +589,7 @@ void git::render_punch_card() {
                 *out_text = list[static_cast<size_t>(idx)].c_str();
                 return true;
             }, const_cast<void*>(static_cast<const void*>(&data.author_list)), static_cast<int>(data.author_list.size()))) {
-                std::lock_guard<std::mutex> lock(state_mutex);
+                std::lock_guard<std::mutex> const lock(state_mutex);
                 punch_card_data_.selected_author_idx = current_idx;
                 punch_card_data_.recalculate_stats();
             }
@@ -650,32 +650,32 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
     constexpr float grid_height = 7.0f * cell_size + 24.0f;
 
     ImGui::Spacing();
-    ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+    ImVec2 const cursor_pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     ImGui::Dummy(ImVec2(label_width + 24.0f * cell_size, grid_height));
 
     for (int w = 0; w < 7; ++w) {
-        float wf = static_cast<float>(w);
-        float y = cursor_pos.y + wf * cell_size + cell_size * 0.5f;
+        float const wf = static_cast<float>(w);
+        float const y = cursor_pos.y + wf * cell_size + cell_size * 0.5f;
         draw_list->AddText(ImVec2(cursor_pos.x + 4.0f, y - 6.0f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
 
         for (int h = 0; h < 24; ++h) {
-            float hf = static_cast<float>(h);
-            float x = cursor_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
-            ImVec2 cell_min(cursor_pos.x + label_width + hf * cell_size, cursor_pos.y + wf * cell_size);
-            ImVec2 cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
+            float const hf = static_cast<float>(h);
+            float const x = cursor_pos.x + label_width + hf * cell_size + cell_size * 0.5f;
+            ImVec2 const cell_min(cursor_pos.x + label_width + hf * cell_size, cursor_pos.y + wf * cell_size);
+            ImVec2 const cell_max(cell_min.x + cell_size - cell_padding, cell_min.y + cell_size - cell_padding);
 
             draw_list->AddRectFilled(cell_min, cell_max, ImColor(25, 30, 40, 180), 3.0f);
 
-            int count = data.hour_matrix[w][h];
+            int const count = data.hour_matrix[w][h];
             if (count > 0 && data.max_commits_per_cell > 0) {
-                float relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
-                float radius = 2.5f + 6.0f * std::sqrt(relative_count);
+                float const relative_count = static_cast<float>(count) / static_cast<float>(data.max_commits_per_cell);
+                float const radius = 2.5f + 6.0f * std::sqrt(relative_count);
 
-                float alpha = 0.35f + 0.65f * relative_count;
-                ImColor circle_color(
+                float const alpha = 0.35f + 0.65f * relative_count;
+                ImColor const circle_color(
                     static_cast<int>(colors[1].x * 255),
                     static_cast<int>(colors[1].y * 255),
                     static_cast<int>(colors[1].z * 255),
@@ -692,10 +692,10 @@ void git::render_punch_card_matrix(const punch_card_info& data) {
         }
     }
 
-    float hour_y = cursor_pos.y + 7.0f * cell_size + 4.0f;
+    float const hour_y = cursor_pos.y + 7.0f * cell_size + 4.0f;
     for (int h = 0; h < 24; h += 2) {
-        float hf = static_cast<float>(h);
-        float x = cursor_pos.x + label_width + hf * cell_size;
+        float const hf = static_cast<float>(h);
+        float const x = cursor_pos.x + label_width + hf * cell_size;
         draw_list->AddText(ImVec2(x, hour_y), ImGui::GetColorU32(ImGuiCol_TextDisabled), std::format("{:02d}", h).c_str());
     }
 }
@@ -706,7 +706,7 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
     constexpr float label_width = 38.0f;
     constexpr const char* wday_names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
-    std::time_t now_time = std::time(nullptr);
+    std::time_t const now_time = std::time(nullptr);
     std::tm now_tm{};
 #ifdef _WIN32
     localtime_s(&now_tm, &now_time);
@@ -714,24 +714,24 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
     localtime_r(&now_time, &now_tm);
 #endif
 
-    std::time_t start_time = now_time - static_cast<std::time_t>(90 * 86400);
+    std::time_t const start_time = now_time - static_cast<std::time_t>(90 * 86400);
 
     constexpr int num_weeks = 14;
     ImGui::Spacing();
-    ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+    ImVec2 const cursor_pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     ImGui::Dummy(ImVec2(label_width + num_weeks * (tile_size + tile_padding), 7.0f * (tile_size + tile_padding) + 10.0f));
 
-    for (int w : {0, 2, 4, 6}) {
-        float wf = static_cast<float>(w);
-        float y = cursor_pos.y + wf * (tile_size + tile_padding);
+    for (int const w : {0, 2, 4, 6}) {
+        float const wf = static_cast<float>(w);
+        float const y = cursor_pos.y + wf * (tile_size + tile_padding);
         draw_list->AddText(ImVec2(cursor_pos.x + 4.0f, y - 2.0f),
             ImGui::GetColorU32(ImGuiCol_TextDisabled), wday_names[w]);
     }
 
     for (int day_offset = 0; day_offset <= 90; ++day_offset) {
-        std::time_t day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
+        std::time_t const day_time = start_time + static_cast<std::time_t>(day_offset * 86400);
         std::tm day_tm{};
 #ifdef _WIN32
         localtime_s(&day_tm, &day_time);
@@ -741,21 +741,21 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
 
         char date_buf[32];
         std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &day_tm);
-        std::string date_str(date_buf);
+        std::string const date_str(date_buf);
 
-        int wday = day_tm.tm_wday;
-        int week_idx = day_offset / 7;
+        int const wday = day_tm.tm_wday;
+        int const week_idx = day_offset / 7;
 
         if (week_idx >= num_weeks) continue;
 
-        float week_idxf = static_cast<float>(week_idx);
-        float wdayf = static_cast<float>(wday);
+        float const week_idxf = static_cast<float>(week_idx);
+        float const wdayf = static_cast<float>(wday);
 
-        ImVec2 tile_min(
+        ImVec2 const tile_min(
             cursor_pos.x + label_width + week_idxf * (tile_size + tile_padding),
             cursor_pos.y + wdayf * (tile_size + tile_padding)
         );
-        ImVec2 tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
+        ImVec2 const tile_max(tile_min.x + tile_size, tile_min.y + tile_size);
 
         int count = 0;
         if (auto it = data.daily_counts.find(date_str); it != data.daily_counts.end()) {
@@ -766,11 +766,11 @@ void git::render_punch_card_heatmap(const punch_card_info& data) {
         if (count == 0) {
             tile_color = ImColor(25, 30, 40, 100);
         } else {
-            float relative_count = (data.max_commits_per_day > 0)
+            float const relative_count = (data.max_commits_per_day > 0)
                 ? static_cast<float>(count) / static_cast<float>(data.max_commits_per_day)
                 : 0.2f;
 
-            float alpha = 0.35f + 0.65f * relative_count;
+            float const alpha = 0.35f + 0.65f * relative_count;
             tile_color = ImColor(
                 static_cast<int>(colors[1].x * 255),
                 static_cast<int>(colors[1].y * 255),
@@ -799,7 +799,7 @@ void git::render_video_ui() {
     git_overlay_state local_overlay_state;
 
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         punch_data = punch_card_data_;
         github_repo_name = cached_github_repo_name;
         local_overlay_state = overlay_state_;
@@ -810,7 +810,7 @@ void git::render_video_ui() {
     git_overlay::render(selected_repo, punch_data, status, github_repo_name, local_overlay_state, colors.data());
 
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         overlay_state_.position = local_overlay_state.position;
         overlay_state_.selected_commit_hash = local_overlay_state.selected_commit_hash;
     }
@@ -819,7 +819,7 @@ void git::render_video_ui() {
 void git::render_recent_commits_7d() {
     git_overlay_state state;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         state = overlay_state_;
     }
 
@@ -834,7 +834,7 @@ void git::render_recent_commits_7d() {
         int current_pos_idx = static_cast<int>(state.position);
         ImGui::PushItemWidth(220.0f);
         if (ImGui::Combo("Overlay Screen Position", &current_pos_idx, position_names, IM_ARRAYSIZE(position_names))) {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             overlay_state_.position = static_cast<git_overlay_position>(current_pos_idx);
         }
         ImGui::PopItemWidth();
@@ -852,7 +852,7 @@ void git::render_recent_commits_7d() {
                 ImGui::TextColored(colors[1], "Active Overlay Commit: %s", state.selected_commit_hash.substr(0, 7).c_str());
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Return to Overview Slideshow")) {
-                    std::lock_guard<std::mutex> lock(state_mutex);
+                    std::lock_guard<std::mutex> const lock(state_mutex);
                     overlay_state_.selected_commit_hash.clear();
                 }
                 ImGui::Spacing();
@@ -861,14 +861,14 @@ void git::render_recent_commits_7d() {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.11f, 0.16f, 0.7f));
             if (ImGui::BeginChild("RecentCommits7dList", ImVec2(0, 160.0f), true)) {
                 for (const auto& commit : state.recent_commits_7d) {
-                    bool is_selected = (commit.hash == state.selected_commit_hash);
+                    bool const is_selected = (commit.hash == state.selected_commit_hash);
 
-                    std::string label = std::format("{} | {} — {}", commit.short_hash, commit.author_name, commit.summary);
+                    std::string const label = std::format("{} | {} — {}", commit.short_hash, commit.author_name, commit.summary);
                     if (ImGui::Selectable(label.c_str(), is_selected)) {
-                        std::string target_hash = commit.hash;
+                        std::string const target_hash = commit.hash;
                         std::string target_repo;
                         {
-                            std::lock_guard<std::mutex> lock(state_mutex);
+                            std::lock_guard<std::mutex> const lock(state_mutex);
                             overlay_state_.selected_commit_hash = target_hash;
                             target_repo = selected_repo;
                         }
@@ -895,7 +895,7 @@ bool git::render() {
     }
 
     return render_window([this]() {
-        bool disabled = ai_request_pending.load();
+        bool const disabled = ai_request_pending.load();
 
         if (disabled) {
             render_ai_busy_cue();
@@ -918,16 +918,16 @@ void git::render_index() {
     const auto& repo_paths = git_model->getRepoPaths();
 
     for (const auto& repo_path : repo_paths) {
-        rouen::models::GitRepoStatus status = git_model->getRepoStatus(repo_path);
-        ImColor dotColor = getStatusColor(status);
+        rouen::models::GitRepoStatus const status = git_model->getRepoStatus(repo_path);
+        ImColor const dotColor = getStatusColor(status);
         
         ImGui::BeginGroup();
         
-        float dotRadius = 4.0f;
-        ImVec2 cursorPos = ImGui::GetCursorPos();
-        ImVec2 dotPos(cursorPos.x + dotRadius + 4.0f, cursorPos.y + ImGui::GetTextLineHeight() / 2.0f);
-        ImVec2 windowPos = ImGui::GetWindowPos();
-        ImVec2 absoluteDotPos(windowPos.x + dotPos.x, windowPos.y + dotPos.y);
+        float const dotRadius = 4.0f;
+        ImVec2 const cursorPos = ImGui::GetCursorPos();
+        ImVec2 const dotPos(cursorPos.x + dotRadius + 4.0f, cursorPos.y + ImGui::GetTextLineHeight() / 2.0f);
+        ImVec2 const windowPos = ImGui::GetWindowPos();
+        ImVec2 const absoluteDotPos(windowPos.x + dotPos.x, windowPos.y + dotPos.y);
         ImGui::GetWindowDrawList()->AddCircleFilled(
             absoluteDotPos, 
             dotRadius, 
@@ -960,7 +960,7 @@ void git::prepend_action_result(const std::string& action_name, const std::strin
         output = std::format("{} completed.", action_name);
     }
 
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard<std::mutex> const lock(state_mutex);
     repo_status = std::format("{} result:\n{}\n\n{}", action_name, output, repo_status);
 }
 
@@ -985,7 +985,7 @@ std::string git::generate_ai_commit_message(const std::string& staged_context, c
         "Do not wrap the message in quotes or markdown."
     );
 
-    std::string prompt = std::format(
+    std::string const prompt = std::format(
         "Repository: {}\n\n"
         "Write a git commit message for these staged changes.\n\n"
         "Staged context:\n{}\n",
@@ -1015,18 +1015,18 @@ void git::generate_ai_summary() {
 
     ai_request_pending = true;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         ai_status_cue = "Generating AI repository summary";
     }
 
-    std::string repo = selected_repo;
+    std::string const repo = selected_repo;
 
     std::thread([this, repo]() {
         std::string status_output = git_model->getGitStatus(repo);
         std::string diff_context = git_model->getCachedDiff(repo);
 
         if (diff_context.empty() || diff_context.find("---DIFF---") == std::string::npos) {
-            std::string git_path = CONFIG_SERVICE()->get_git_path();
+            std::string const git_path = CONFIG_SERVICE()->get_git_path();
             diff_context = rouen::models::GitProcessHelper::executeCommandInDirectory(
                 repo,
                 git_path + " diff --stat && printf '\\n---DIFF---\\n' && " + git_path + " diff"
@@ -1039,7 +1039,7 @@ void git::generate_ai_summary() {
             diff_context += "\n\n[truncated]";
         }
 
-        std::string prompt = std::format(
+        std::string const prompt = std::format(
             "Repository: {}\n\n"
             "Provide a concise summary of the current git status and changes.\n\n"
             "Git Status:\n{}\n\n"
@@ -1094,15 +1094,15 @@ void git::commit_all_with_ai_message() {
 
     ai_request_pending = true;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         ai_status_cue = "Generating AI commit message & committing...";
         last_commit_message.clear();
     }
 
-    std::string repo = selected_repo;
+    std::string const repo = selected_repo;
 
     std::thread([this, repo]() {
-        std::string add_result = git_model->gitAddAll(repo);
+        std::string const add_result = git_model->gitAddAll(repo);
         std::string staged_context = git_model->getCachedDiff(repo);
 
         if (!git_model->hasStagedChanges(repo)) {
@@ -1138,7 +1138,7 @@ void git::commit_all_with_ai_message() {
 
         std::string commit_result = git_model->gitCommit(repo, commit_message);
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
+            std::lock_guard<std::mutex> const lock(state_mutex);
             last_commit_message = commit_message;
         }
         prepend_action_result(
@@ -1151,7 +1151,7 @@ void git::commit_all_with_ai_message() {
 }
 
 std::string git::extract_github_repo_name(const std::string& remote_url) {
-    size_t github_pos = remote_url.find("github.com");
+    size_t const github_pos = remote_url.find("github.com");
     if (github_pos == std::string::npos) {
         return "";
     }
@@ -1178,7 +1178,7 @@ void git::render_github_status_indicator() {
     std::string git_remote;
     std::string repo_name;
     {
-        std::lock_guard<std::mutex> lock(state_mutex);
+        std::lock_guard<std::mutex> const lock(state_mutex);
         git_remote = cached_git_remote;
         repo_name = cached_github_repo_name;
     }
@@ -1194,13 +1194,13 @@ void git::render_github_status_indicator() {
         ImGui::Text("Repository: %s", repo_name.c_str());
         
         if (ImGui::SmallButton(ICON_MD_OPEN_IN_BROWSER " Open on GitHub")) {
-            std::string github_url = std::format("https://github.com/{}", repo_name);
+            std::string const github_url = std::format("https://github.com/{}", repo_name);
             rouen::platform::open_file(github_url);
         }
         
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_MD_BUILD " CI/CD Status")) {
-            std::string actions_url = std::format("https://github.com/{}/actions", repo_name);
+            std::string const actions_url = std::format("https://github.com/{}/actions", repo_name);
             rouen::platform::open_file(actions_url);
         }
         

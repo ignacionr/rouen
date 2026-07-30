@@ -32,17 +32,17 @@ namespace rouen::hosts {
     }
 
     std::string UniversalSyncHost::get_status_message() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         return status_message_;
     }
 
     bool UniversalSyncHost::is_syncing() {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         return is_syncing_;
     }
 
     bool UniversalSyncHost::sync_in(bool import_config) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         if (is_syncing_) return false;
         is_syncing_ = true;
         status_message_ = "Sync In: Starting...";
@@ -150,7 +150,7 @@ namespace rouen::hosts {
     }
 
     bool UniversalSyncHost::sync_out(const std::string& commit_message) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> const lock(mutex_);
         if (is_syncing_) return false;
         is_syncing_ = true;
         status_message_ = "Sync Out: Starting...";

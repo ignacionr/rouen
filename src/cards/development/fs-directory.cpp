@@ -30,10 +30,10 @@ namespace rouen::cards {
         std::smatch match;
         std::string temp = result;
         while (std::regex_search(temp, match, env_var_regex)) {
-            std::string var_name = match[1].str();
-            std::string var_value = config_service->get_env(var_name);
+            std::string const var_name = match[1].str();
+            std::string const var_value = config_service->get_env(var_name);
 
-            size_t pos = result.find("$" + var_name);
+            size_t const pos = result.find("$" + var_name);
             if (pos != std::string::npos) {
                 result.replace(pos, var_name.length() + 1, var_value);
             }
@@ -101,7 +101,7 @@ namespace rouen::cards {
         search_results_.clear();
         if (query.empty()) return;
 
-        std::string q_lower = to_lower(query);
+        std::string const q_lower = to_lower(query);
         std::error_code ec;
 
         auto options = std::filesystem::directory_options::skip_permission_denied;
@@ -118,7 +118,7 @@ namespace rouen::cards {
             }
 
             const auto& entry = *iter;
-            std::string filename = entry.path().filename().string();
+            std::string const filename = entry.path().filename().string();
 
             if (entry.is_directory() && (filename == ".git" || filename == "node_modules" || filename == "build" || filename == ".agent")) {
                 iter.disable_recursion_pending();
@@ -126,7 +126,7 @@ namespace rouen::cards {
 
             std::error_code rel_ec;
             auto rel_path = std::filesystem::relative(entry.path(), path_, rel_ec);
-            std::string target_str = rel_ec ? filename : rel_path.string();
+            std::string const target_str = rel_ec ? filename : rel_path.string();
 
             if (to_lower(target_str).find(q_lower) != std::string::npos) {
                 search_results_.push_back(entry);
@@ -148,7 +148,7 @@ namespace rouen::cards {
         if (entry.is_directory()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
         } else if (entry.is_regular_file()) {
-            std::string ext = entry.path().extension().string();
+            std::string const ext = entry.path().extension().string();
             if (ext == ".cpp" || ext == ".hpp" || ext == ".h" || ext == ".c" || ext == ".cc") {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[3]));
             } else if (ext == ".txt" || ext == ".md" || ext == ".json" || ext == ".yaml" || ext == ".yml") {
@@ -235,7 +235,7 @@ namespace rouen::cards {
             return;
         }
 
-        for (char c : "keystrokes"_fns()) {
+        for (char const c : "keystrokes"_fns()) {
             if (c == '\b') {
                 if (!filter_.empty()) {
                     filter_.pop_back();
@@ -266,7 +266,7 @@ namespace rouen::cards {
                     ImGui::SetKeyboardFocusHere(0);
                     focus_search_input_ = false;
                 }
-                float avail_width = ImGui::GetContentRegionAvail().x;
+                float const avail_width = ImGui::GetContentRegionAvail().x;
                 ImGui::PushItemWidth(std::max(100.0f, avail_width - 35.0f));
                 ImGui::InputTextWithHint("##find_input", ICON_MD_SEARCH " Find file or directory...", search_query_buf_, sizeof(search_query_buf_));
                 ImGui::PopItemWidth();
@@ -333,14 +333,14 @@ namespace rouen::cards {
                 for (const auto& entry : search_results_) {
                     std::error_code rel_ec;
                     auto rel_path = std::filesystem::relative(entry.path(), path_, rel_ec);
-                    std::string prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
-                    std::string display_label = prefix + (rel_ec ? entry.path().filename().string() : rel_path.string());
+                    std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
+                    std::string const display_label = prefix + (rel_ec ? entry.path().filename().string() : rel_path.string());
                     render_entry(entry, display_label);
                 }
             } else {
                 for (const auto& entry : cached_entries_) {
                     if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
-                        std::string prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
+                        std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
                         render_entry(entry, prefix + entry.path().filename().string());
                     }
                 }

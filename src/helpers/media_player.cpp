@@ -52,7 +52,7 @@ media_player::item_map & media_player::items() {
 }
 
 void media_player::stopAll() {
-    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    std::lock_guard<std::recursive_mutex> const lock(items_mutex());
     for (auto &[k,v]: items()) {
         if (v) v->stopMedia();
     }
@@ -61,18 +61,18 @@ void media_player::stopAll() {
 
 void media_player::stopForOwner(const void* owner) {
     if (!owner) return;
-    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    std::lock_guard<std::recursive_mutex> const lock(items_mutex());
     for (auto &[k, v]: items()) {
         if (v && v->owner_card == owner) {
             v->stopMedia();
         }
     }
-    std::lock_guard<std::mutex> detached_lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const detached_lock(s_detached_mutex);
     if (s_detached_item && s_detached_item->owner_card == owner) {
         s_detached_item->stopMedia();
         s_detached_item = nullptr;
     }
-    std::lock_guard<std::mutex> fs_lock(s_fullscreen_mutex);
+    std::lock_guard<std::mutex> const fs_lock(s_fullscreen_mutex);
     if (s_active_fullscreen_item && s_active_fullscreen_item->owner_card == owner) {
         s_active_fullscreen_item->stopMedia();
         s_active_fullscreen_item = nullptr;
@@ -81,7 +81,7 @@ void media_player::stopForOwner(const void* owner) {
 }
 
 bool media_player::is_any_playing_non_cast() {
-    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    std::lock_guard<std::recursive_mutex> const lock(items_mutex());
     for (auto &[k, v] : items()) {
         if (v && v->is_playing && !v->is_paused.load()) {
             return true;
@@ -101,7 +101,7 @@ ImGuiID media_player::get_item_id(std::string_view url) {
 }
 
 std::shared_ptr<media_player_item> media_player::get_item_ptr(ImGuiID id) {
-    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    std::lock_guard<std::recursive_mutex> const lock(items_mutex());
     auto& item_ptr = items()[id];
     if (!item_ptr) {
         item_ptr = std::make_shared<media_player_item>();
@@ -178,23 +178,23 @@ void media_player::restore_fullscreen_origin_focus() {
 }
 
 void media_player::set_detached_item(std::shared_ptr<media_player_item> item) {
-    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const lock(s_detached_mutex);
     s_detached_item = item;
     s_detached_mode_active.store(true);
 }
 
 std::shared_ptr<media_player_item> media_player::get_detached_item() {
-    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const lock(s_detached_mutex);
     return s_detached_item;
 }
 
 void media_player::clear_detached_item() {
-    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const lock(s_detached_mutex);
     s_detached_item = nullptr;
 }
 
 bool media_player::has_detached_item() {
-    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const lock(s_detached_mutex);
     return s_detached_item != nullptr;
 }
 
@@ -205,31 +205,31 @@ bool media_player::is_detached_mode_active() {
 void media_player::set_detached_mode_active(bool active) {
     s_detached_mode_active.store(active);
     if (!active) {
-        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        std::lock_guard<std::mutex> const lock(s_detached_mutex);
         s_detached_item = nullptr;
     }
 }
 
 void media_player::close_detached_window() {
-    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    std::lock_guard<std::mutex> const lock(s_detached_mutex);
     s_detached_item = nullptr;
     s_detached_mode_active.store(false);
 }
 
 std::shared_ptr<media_player_item> media_player::get_currently_playing_item() {
     {
-        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        std::lock_guard<std::mutex> const lock(s_detached_mutex);
         if (s_detached_item && s_detached_item->checkMediaStatus()) {
             return s_detached_item;
         }
     }
     {
-        std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+        std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
         if (s_active_fullscreen_item && s_active_fullscreen_item->checkMediaStatus()) {
             return s_active_fullscreen_item;
         }
     }
-    std::lock_guard<std::recursive_mutex> lock(items_mutex());
+    std::lock_guard<std::recursive_mutex> const lock(items_mutex());
     for (auto& [id, item_ptr] : items()) {
         if (item_ptr && item_ptr->checkMediaStatus() && !item_ptr->is_paused.load()) {
             return item_ptr;
@@ -249,7 +249,7 @@ std::shared_ptr<media_player_item> media_player::get_currently_playing_item() {
 }
 
 void media_player::set_active_fullscreen_item(std::shared_ptr<media_player_item> item) {
-    std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+    std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
     if (!s_active_fullscreen_item && item) {
         save_fullscreen_origin_card(item);
     }
@@ -260,12 +260,12 @@ void media_player::set_active_fullscreen_item(std::shared_ptr<media_player_item>
 }
 
 std::shared_ptr<media_player_item> media_player::get_active_fullscreen_item() {
-    std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+    std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
     return s_active_fullscreen_item;
 }
 
 void media_player::clear_active_fullscreen_item() {
-    std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+    std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
     if (s_active_fullscreen_item) {
         s_active_fullscreen_item = nullptr;
         restore_fullscreen_origin_focus();
@@ -273,7 +273,7 @@ void media_player::clear_active_fullscreen_item() {
 }
 
 bool media_player::has_active_fullscreen_item() {
-    std::lock_guard<std::mutex> lock(s_fullscreen_mutex);
+    std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
     return s_active_fullscreen_item != nullptr;
 }
 
@@ -286,7 +286,7 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
     }
     if (!device) return ImTextureID{};
 
-    std::lock_guard<std::mutex> lock(s_unlit_vu_mutex);
+    std::lock_guard<std::mutex> const lock(s_unlit_vu_mutex);
     if (s_unlit_vu_texture) {
         return rouen::helpers::texture_id_cast(s_unlit_vu_texture);
     }
@@ -297,14 +297,14 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
 
     auto blend_pixel = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b, float a_factor) {
         if (x < 0 || x >= kTexW || y < 0 || y >= kTexH) return;
-        size_t idx = static_cast<size_t>((y * kTexW + x) * 4);
-        float src_a = a_factor;
-        float dst_a = static_cast<float>(pixels[idx + 3]) / 255.0f;
-        float out_a = src_a + dst_a * (1.0f - src_a);
+        size_t const idx = static_cast<size_t>((y * kTexW + x) * 4);
+        float const src_a = a_factor;
+        float const dst_a = static_cast<float>(pixels[idx + 3]) / 255.0f;
+        float const out_a = src_a + dst_a * (1.0f - src_a);
         if (out_a <= 0.0f) return;
-        float out_r = (static_cast<float>(r) * src_a + static_cast<float>(pixels[idx + 0]) * dst_a * (1.0f - src_a)) / out_a;
-        float out_g = (static_cast<float>(g) * src_a + static_cast<float>(pixels[idx + 1]) * dst_a * (1.0f - src_a)) / out_a;
-        float out_b = (static_cast<float>(b) * src_a + static_cast<float>(pixels[idx + 2]) * dst_a * (1.0f - src_a)) / out_a;
+        float const out_r = (static_cast<float>(r) * src_a + static_cast<float>(pixels[idx + 0]) * dst_a * (1.0f - src_a)) / out_a;
+        float const out_g = (static_cast<float>(g) * src_a + static_cast<float>(pixels[idx + 1]) * dst_a * (1.0f - src_a)) / out_a;
+        float const out_b = (static_cast<float>(b) * src_a + static_cast<float>(pixels[idx + 2]) * dst_a * (1.0f - src_a)) / out_a;
         pixels[idx + 0] = static_cast<uint8_t>(std::clamp(out_r, 0.0f, 255.0f));
         pixels[idx + 1] = static_cast<uint8_t>(std::clamp(out_g, 0.0f, 255.0f));
         pixels[idx + 2] = static_cast<uint8_t>(std::clamp(out_b, 0.0f, 255.0f));
@@ -312,7 +312,7 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
     };
 
     auto draw_rect = [&](int min_x, int min_y, int max_x, int max_y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
-        float af = static_cast<float>(a) / 255.0f;
+        float const af = static_cast<float>(a) / 255.0f;
         for (int y = min_y; y < max_y; ++y) {
             for (int x = min_x; x < max_x; ++x) {
                 blend_pixel(x, y, r, g, b, af);
@@ -321,53 +321,53 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
     };
 
     auto dist_to_segment = [](float px, float py, float ax, float ay, float bx, float by) {
-        float l2 = (bx - ax)*(bx - ax) + (by - ay)*(by - ay);
+        float const l2 = (bx - ax)*(bx - ax) + (by - ay)*(by - ay);
         if (l2 == 0.0f) return std::hypot(px - ax, py - ay);
-        float t = std::max(0.0f, std::min(1.0f, ((px - ax)*(bx - ax) + (py - ay)*(by - ay)) / l2));
-        float proj_x = ax + t * (bx - ax);
-        float proj_y = ay + t * (by - ay);
+        float const t = std::max(0.0f, std::min(1.0f, ((px - ax)*(bx - ax) + (py - ay)*(by - ay)) / l2));
+        float const proj_x = ax + t * (bx - ax);
+        float const proj_y = ay + t * (by - ay);
         return std::hypot(px - proj_x, py - proj_y);
     };
 
     auto draw_aa_line = [&](float x1, float y1, float x2, float y2, uint8_t r, uint8_t g, uint8_t b, uint8_t a, float thick) {
-        int min_x = std::clamp(static_cast<int>(std::floor(std::min(x1, x2) - thick - 1.0f)), 0, kTexW - 1);
-        int max_x = std::clamp(static_cast<int>(std::ceil(std::max(x1, x2) + thick + 1.0f)), 0, kTexW - 1);
-        int min_y = std::clamp(static_cast<int>(std::floor(std::min(y1, y2) - thick - 1.0f)), 0, kTexH - 1);
-        int max_y = std::clamp(static_cast<int>(std::ceil(std::max(y1, y2) + thick + 1.0f)), 0, kTexH - 1);
-        float half_t = thick * 0.5f;
+        int const min_x = std::clamp(static_cast<int>(std::floor(std::min(x1, x2) - thick - 1.0f)), 0, kTexW - 1);
+        int const max_x = std::clamp(static_cast<int>(std::ceil(std::max(x1, x2) + thick + 1.0f)), 0, kTexW - 1);
+        int const min_y = std::clamp(static_cast<int>(std::floor(std::min(y1, y2) - thick - 1.0f)), 0, kTexH - 1);
+        int const max_y = std::clamp(static_cast<int>(std::ceil(std::max(y1, y2) + thick + 1.0f)), 0, kTexH - 1);
+        float const half_t = thick * 0.5f;
         for (int y = min_y; y <= max_y; ++y) {
             for (int x = min_x; x <= max_x; ++x) {
-                float d = dist_to_segment(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f, x1, y1, x2, y2);
+                float const d = dist_to_segment(static_cast<float>(x) + 0.5f, static_cast<float>(y) + 0.5f, x1, y1, x2, y2);
                 if (d <= half_t + 0.75f) {
-                    float cov = std::clamp((half_t + 0.75f - d) / 1.0f, 0.0f, 1.0f);
+                    float const cov = std::clamp((half_t + 0.75f - d) / 1.0f, 0.0f, 1.0f);
                     blend_pixel(x, y, r, g, b, cov * (static_cast<float>(a) / 255.0f));
                 }
             }
         }
     };
 
-    float gap = 12.0f;
-    float meter_w = (512.0f - gap - 8.0f) / 2.0f;
-    float meter_h = 248.0f;
+    float const gap = 12.0f;
+    float const meter_w = (512.0f - gap - 8.0f) / 2.0f;
+    float const meter_h = 248.0f;
 
     for (int ch = 0; ch < 2; ++ch) {
-        float m_x = 4.0f + (meter_w + gap) * static_cast<float>(ch);
-        float m_y = 4.0f;
+        float const m_x = 4.0f + (meter_w + gap) * static_cast<float>(ch);
+        float const m_y = 4.0f;
 
         // Frame Bezel
         draw_rect(static_cast<int>(m_x), static_cast<int>(m_y), static_cast<int>(m_x + meter_w), static_cast<int>(m_y + meter_h), 24, 26, 32, 255);
 
         // Faceplate Background
-        int in_min_x = static_cast<int>(m_x + 3.0f);
-        int in_min_y = static_cast<int>(m_y + 3.0f);
-        int in_max_x = static_cast<int>(m_x + meter_w - 3.0f);
-        int in_max_y = static_cast<int>(m_y + meter_h - 3.0f);
+        int const in_min_x = static_cast<int>(m_x + 3.0f);
+        int const in_min_y = static_cast<int>(m_y + 3.0f);
+        int const in_max_x = static_cast<int>(m_x + meter_w - 3.0f);
+        int const in_max_y = static_cast<int>(m_y + meter_h - 3.0f);
 
         for (int y = in_min_y; y < in_max_y; ++y) {
-            float t = static_cast<float>(y - in_min_y) / static_cast<float>(in_max_y - in_min_y);
-            uint8_t r = static_cast<uint8_t>(38.0f * (1.0f - t) + 26.0f * t);
-            uint8_t g = static_cast<uint8_t>(42.0f * (1.0f - t) + 28.0f * t);
-            uint8_t b = static_cast<uint8_t>(48.0f * (1.0f - t) + 33.0f * t);
+            float const t = static_cast<float>(y - in_min_y) / static_cast<float>(in_max_y - in_min_y);
+            uint8_t const r = static_cast<uint8_t>(38.0f * (1.0f - t) + 26.0f * t);
+            uint8_t const g = static_cast<uint8_t>(42.0f * (1.0f - t) + 28.0f * t);
+            uint8_t const b = static_cast<uint8_t>(48.0f * (1.0f - t) + 33.0f * t);
             for (int x = in_min_x; x < in_max_x; ++x) {
                 blend_pixel(x, y, r, g, b, 1.0f);
             }
@@ -380,22 +380,22 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
         draw_aa_line(m_x + 2, m_y + meter_h - 2, m_x + 2, m_y + 2, 45, 50, 60, 255, 1.5f);
 
         // 110-Degree Arc Math
-        float cx = m_x + meter_w * 0.5f;
-        float cy = m_y + meter_h * 1.08f;
-        float r_arc = meter_h * 0.72f;
+        float const cx = m_x + meter_w * 0.5f;
+        float const cy = m_y + meter_h * 1.08f;
+        float const r_arc = meter_h * 0.72f;
 
         constexpr float kStartAngle = -2.530727f; // -145 deg
         constexpr float kSweepAngle = 1.919862f;  // 110 deg
 
         constexpr int kArcSteps = 32;
         for (int i = 0; i < kArcSteps; ++i) {
-            float t1 = static_cast<float>(i) / kArcSteps;
-            float t2 = static_cast<float>(i + 1) / kArcSteps;
-            float a1 = kStartAngle + t1 * kSweepAngle;
-            float a2 = kStartAngle + t2 * kSweepAngle;
-            uint8_t cr = (t1 >= 0.75f) ? 130 : 110;
-            uint8_t cg = (t1 >= 0.75f) ? 50  : 115;
-            uint8_t cb = (t1 >= 0.75f) ? 50  : 125;
+            float const t1 = static_cast<float>(i) / kArcSteps;
+            float const t2 = static_cast<float>(i + 1) / kArcSteps;
+            float const a1 = kStartAngle + t1 * kSweepAngle;
+            float const a2 = kStartAngle + t2 * kSweepAngle;
+            uint8_t const cr = (t1 >= 0.75f) ? 130 : 110;
+            uint8_t const cg = (t1 >= 0.75f) ? 50  : 115;
+            uint8_t const cb = (t1 >= 0.75f) ? 50  : 125;
             draw_aa_line(cx + std::cos(a1) * r_arc, cy + std::sin(a1) * r_arc, cx + std::cos(a2) * r_arc, cy + std::sin(a2) * r_arc, cr, cg, cb, 200, 2.0f);
         }
 
@@ -406,27 +406,27 @@ ImTextureID media_player::get_unlit_vu_texture_id(SDL_GPUDevice* device) {
             { 0.75f, true }, { 0.83f, false }, { 1.00f, true }
         };
         for (const auto& tk : ticks) {
-            float a = kStartAngle + tk.t * kSweepAngle;
-            float tick_len = tk.major ? 10.0f : 6.0f;
-            uint8_t cr = (tk.t >= 0.75f) ? 130 : 110;
-            uint8_t cg = (tk.t >= 0.75f) ? 50  : 115;
-            uint8_t cb = (tk.t >= 0.75f) ? 50  : 125;
-            float px1 = cx + std::cos(a) * (r_arc - tick_len);
-            float py1 = cy + std::sin(a) * (r_arc - tick_len);
-            float px2 = cx + std::cos(a) * (r_arc + 2.0f);
-            float py2 = cy + std::sin(a) * (r_arc + 2.0f);
+            float const a = kStartAngle + tk.t * kSweepAngle;
+            float const tick_len = tk.major ? 10.0f : 6.0f;
+            uint8_t const cr = (tk.t >= 0.75f) ? 130 : 110;
+            uint8_t const cg = (tk.t >= 0.75f) ? 50  : 115;
+            uint8_t const cb = (tk.t >= 0.75f) ? 50  : 125;
+            float const px1 = cx + std::cos(a) * (r_arc - tick_len);
+            float const py1 = cy + std::sin(a) * (r_arc - tick_len);
+            float const px2 = cx + std::cos(a) * (r_arc + 2.0f);
+            float const py2 = cy + std::sin(a) * (r_arc + 2.0f);
             draw_aa_line(px1, py1, px2, py2, cr, cg, cb, 200, tk.major ? 2.2f : 1.5f);
         }
 
         // Needle at Minimum (-145 deg)
-        float needle_angle = kStartAngle;
-        float r_needle = r_arc + 4.0f;
+        float const needle_angle = kStartAngle;
+        float const r_needle = r_arc + 4.0f;
         draw_aa_line(cx, cy, cx + std::cos(needle_angle) * r_needle, cy + std::sin(needle_angle) * r_needle, 75, 80, 90, 220, 2.5f);
 
         // Pivot Cap
         for (int py = static_cast<int>(cy - 8); py <= static_cast<int>(cy + 8); ++py) {
             for (int px = static_cast<int>(cx - 8); px <= static_cast<int>(cx + 8); ++px) {
-                float d = std::hypot(static_cast<float>(px) - cx, static_cast<float>(py) - cy);
+                float const d = std::hypot(static_cast<float>(px) - cx, static_cast<float>(py) - cy);
                 if (d <= 8.0f) {
                     blend_pixel(px, py, 30, 32, 38, 1.0f);
                 }
@@ -505,7 +505,7 @@ void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float
     if (height <= 0.0f) height = 85.0f;
 
     if (!is_lit) {
-        ImTextureID unlit_id = get_unlit_vu_texture_id();
+        ImTextureID const unlit_id = get_unlit_vu_texture_id();
         if (unlit_id) {
             ImGui::Image(unlit_id, ImVec2(width, height));
             return;
@@ -522,7 +522,7 @@ void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float
 static std::shared_ptr<::helpers::ImageCache> get_media_player_image_cache() {
     static std::mutex cache_mutex;
     static std::shared_ptr<::helpers::ImageCache> instance;
-    std::lock_guard<std::mutex> lock(cache_mutex);
+    std::lock_guard<std::mutex> const lock(cache_mutex);
     if (!instance) {
         auto db_path = rouen::platform::get_user_data_path("rss_images.db").string();
         auto cache_dir = rouen::platform::get_user_data_path("cache/rss_images").string();
@@ -564,7 +564,7 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
                 
                 bool already_downloading = false;
                 {
-                    std::lock_guard<std::mutex> lock(downloading_mutex);
+                    std::lock_guard<std::mutex> const lock(downloading_mutex);
                     if (downloading_urls.contains(item.rss_image_url)) {
                         already_downloading = true;
                     } else {
@@ -578,7 +578,7 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
                             cache->downloadAndCache(url);
                         } catch (...) {}
                         
-                        std::lock_guard<std::mutex> lock(downloading_mutex);
+                        std::lock_guard<std::mutex> const lock(downloading_mutex);
                         downloading_urls.erase(url);
                     }).detach();
                 }
@@ -587,48 +587,48 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    float lvl_l = item.get_vu_level_l();
-    float lvl_r = item.get_vu_level_r();
-    float avg_lvl = (lvl_l + lvl_r) * 0.5f;
+    float const lvl_l = item.get_vu_level_l();
+    float const lvl_r = item.get_vu_level_r();
+    float const avg_lvl = (lvl_l + lvl_r) * 0.5f;
 
     static float anim_time = 0.0f;
     anim_time += ImGui::GetIO().DeltaTime;
 
     // 1. Ambient radial background glow pulse
-    ImVec2 center(win_w * 0.5f, win_h * 0.38f);
-    float glow_radius = std::min(win_w, win_h) * (0.35f + avg_lvl * 0.15f);
+    ImVec2 const center(win_w * 0.5f, win_h * 0.38f);
+    float const glow_radius = std::min(win_w, win_h) * (0.35f + avg_lvl * 0.15f);
 
     for (int ring = 5; ring >= 1; --ring) {
-        float r = glow_radius * (static_cast<float>(ring) / 5.0f);
-        uint8_t alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (20.0f + avg_lvl * 40.0f));
+        float const r = glow_radius * (static_cast<float>(ring) / 5.0f);
+        uint8_t const alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (20.0f + avg_lvl * 40.0f));
         draw_list->AddCircleFilled(center, r, IM_COL32(40, 90, 180, alpha), 32);
     }
 
     // 2. Frequency Spectrum Bars (Centered Waveform / Bars)
     constexpr int kBarCount = 48;
-    float bar_gap = 4.0f;
-    float total_bars_w = std::min(win_w * 0.85f, 900.0f);
-    float bar_w = (total_bars_w - (static_cast<float>(kBarCount) - 1.0f) * bar_gap) / static_cast<float>(kBarCount);
-    float start_x = (win_w - total_bars_w) * 0.5f;
-    float base_y = win_h * 0.44f;
-    float max_bar_h = win_h * 0.26f;
+    float const bar_gap = 4.0f;
+    float const total_bars_w = std::min(win_w * 0.85f, 900.0f);
+    float const bar_w = (total_bars_w - (static_cast<float>(kBarCount) - 1.0f) * bar_gap) / static_cast<float>(kBarCount);
+    float const start_x = (win_w - total_bars_w) * 0.5f;
+    float const base_y = win_h * 0.44f;
+    float const max_bar_h = win_h * 0.26f;
 
     for (int i = 0; i < kBarCount; ++i) {
-        float t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
-        float dist_from_center = std::abs(t - 0.5f) * 2.0f;
+        float const t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
+        float const dist_from_center = std::abs(t - 0.5f) * 2.0f;
 
-        float freq_val = std::sin(t * 3.14159f * 3.0f + anim_time * 4.0f) * 0.3f
+        float const freq_val = std::sin(t * 3.14159f * 3.0f + anim_time * 4.0f) * 0.3f
                        + std::cos(t * 3.14159f * 7.0f - anim_time * 2.5f) * 0.2f
                        + 0.5f;
 
-        float ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
+        float const ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
         float height_factor = (0.08f + ch_lvl * 0.85f * (1.0f - dist_from_center * 0.4f)) * freq_val;
         height_factor = std::clamp(height_factor, 0.04f, 1.0f);
 
-        float bar_h = max_bar_h * height_factor;
-        float bx = start_x + static_cast<float>(i) * (bar_w + bar_gap);
-        float by_top = base_y - bar_h * 0.5f;
-        float by_bot = base_y + bar_h * 0.5f;
+        float const bar_h = max_bar_h * height_factor;
+        float const bx = start_x + static_cast<float>(i) * (bar_w + bar_gap);
+        float const by_top = base_y - bar_h * 0.5f;
+        float const by_bot = base_y + bar_h * 0.5f;
 
         ImU32 bar_col;
         if (height_factor > 0.75f) {
@@ -643,15 +643,15 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     }
 
     // 2.5. RSS Cover Art / Fallback Art (Centered in glowing visualizer)
-    float base_art_size = std::min(win_w, win_h) * 0.28f;
+    float const base_art_size = std::min(win_w, win_h) * 0.28f;
     float art_size = base_art_size + avg_lvl * 30.0f;
     art_size = std::clamp(art_size, 160.0f, 320.0f);
-    ImVec2 p_min(center.x - art_size * 0.5f, center.y - art_size * 0.5f);
-    ImVec2 p_max(center.x + art_size * 0.5f, center.y + art_size * 0.5f);
+    ImVec2 const p_min(center.x - art_size * 0.5f, center.y - art_size * 0.5f);
+    ImVec2 const p_max(center.x + art_size * 0.5f, center.y + art_size * 0.5f);
 
     // Subtle drop shadow behind art
     for (int shadow_ring = 3; shadow_ring >= 1; --shadow_ring) {
-        float offset = static_cast<float>(shadow_ring) * 2.0f;
+        float const offset = static_cast<float>(shadow_ring) * 2.0f;
         draw_list->AddRect(
             ImVec2(p_min.x - offset, p_min.y - offset),
             ImVec2(p_max.x + offset, p_max.y + offset),
@@ -668,18 +668,18 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     if (item.rss_image_texture) {
         ImVec2 uv0(0.0f, 0.0f), uv1(1.0f, 1.0f);
         if (item.rss_image_width > 0 && item.rss_image_height > 0) {
-            float tex_w = static_cast<float>(item.rss_image_width);
-            float tex_h = static_cast<float>(item.rss_image_height);
-            float target_aspect = 1.0f;
-            float tex_aspect = tex_w / tex_h;
+            float const tex_w = static_cast<float>(item.rss_image_width);
+            float const tex_h = static_cast<float>(item.rss_image_height);
+            float const target_aspect = 1.0f;
+            float const tex_aspect = tex_w / tex_h;
             if (tex_aspect > target_aspect) {
-                float f = target_aspect / tex_aspect;
-                float c = (1.0f - f) * 0.5f;
+                float const f = target_aspect / tex_aspect;
+                float const c = (1.0f - f) * 0.5f;
                 uv0 = ImVec2(c, 0.0f);
                 uv1 = ImVec2(1.0f - c, 1.0f);
             } else {
-                float f = tex_aspect / target_aspect;
-                float c = (1.0f - f) * 0.5f;
+                float const f = tex_aspect / target_aspect;
+                float const c = (1.0f - f) * 0.5f;
                 uv0 = ImVec2(0.0f, c);
                 uv1 = ImVec2(1.0f, 1.0f - c);
             }
@@ -705,7 +705,7 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
         );
         
         const char* icon = (item.feed_id >= 0) ? ICON_MD_RSS_FEED : ICON_MD_MUSIC_NOTE;
-        ImVec2 icon_size = ImGui::CalcTextSize(icon);
+        ImVec2 const icon_size = ImGui::CalcTextSize(icon);
         draw_list->AddText(
             ImVec2(center.x - icon_size.x * 0.5f, center.y - icon_size.y * 0.5f),
             IM_COL32(255, 255, 255, 100),
@@ -720,20 +720,20 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     constexpr int kWavePoints = 80;
     ImVec2 wave_pts[kWavePoints];
     for (int i = 0; i < kWavePoints; ++i) {
-        float t = static_cast<float>(i) / static_cast<float>(kWavePoints - 1);
-        float wx = start_x + t * total_bars_w;
-        float wave_amp = (lvl_l * 0.5f + lvl_r * 0.5f) * 45.0f + 5.0f;
-        float wy = base_y + std::sin(t * 3.14159f * 6.0f + anim_time * 6.0f) * wave_amp
+        float const t = static_cast<float>(i) / static_cast<float>(kWavePoints - 1);
+        float const wx = start_x + t * total_bars_w;
+        float const wave_amp = (lvl_l * 0.5f + lvl_r * 0.5f) * 45.0f + 5.0f;
+        float const wy = base_y + std::sin(t * 3.14159f * 6.0f + anim_time * 6.0f) * wave_amp
                           + std::cos(t * 3.14159f * 12.0f - anim_time * 8.0f) * (wave_amp * 0.3f);
         wave_pts[i] = ImVec2(wx, wy);
     }
     draw_list->AddPolyline(wave_pts, kWavePoints, IM_COL32(255, 255, 255, 180), 0, 2.5f);
 
     // 4. Centered Media Title & Status Info (Upper Center)
-    std::string display_title = item.item_title.empty() ? (item.url.empty() ? "Audio Stream" : item.url) : item.item_title;
-    ImVec2 title_sz = ImGui::CalcTextSize(display_title.c_str());
-    float title_x = std::max(20.0f, (win_w - title_sz.x) * 0.5f);
-    float title_y = win_h * 0.12f;
+    std::string const display_title = item.item_title.empty() ? (item.url.empty() ? "Audio Stream" : item.url) : item.item_title;
+    ImVec2 const title_sz = ImGui::CalcTextSize(display_title.c_str());
+    float const title_x = std::max(20.0f, (win_w - title_sz.x) * 0.5f);
+    float const title_y = win_h * 0.12f;
 
     draw_list->AddRectFilled(
         ImVec2(title_x - 16.0f, title_y - 8.0f),
@@ -749,10 +749,10 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     );
     draw_list->AddText(ImVec2(title_x, title_y), IM_COL32(240, 245, 255, 255), display_title.c_str());
 
-    std::string status_str = item.is_paused.load() ? ICON_MD_PAUSE " PAUSED" : ICON_MD_MUSIC_NOTE " NOW PLAYING";
-    ImVec2 stat_sz = ImGui::CalcTextSize(status_str.c_str());
-    float stat_x = (win_w - stat_sz.x) * 0.5f;
-    float stat_y = title_y + title_sz.y + 14.0f;
+    std::string const status_str = item.is_paused.load() ? ICON_MD_PAUSE " PAUSED" : ICON_MD_MUSIC_NOTE " NOW PLAYING";
+    ImVec2 const stat_sz = ImGui::CalcTextSize(status_str.c_str());
+    float const stat_x = (win_w - stat_sz.x) * 0.5f;
+    float const stat_y = title_y + title_sz.y + 14.0f;
     draw_list->AddText(ImVec2(stat_x, stat_y), item.is_paused.load() ? IM_COL32(240, 180, 60, 240) : IM_COL32(80, 220, 120, 240), status_str.c_str());
 }
 
@@ -771,7 +771,7 @@ static std::string format_time_precise(double seconds) {
 
 bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, float width, float height, ImVec4 accent_color) {
     double current_pos = item.get_current_position();
-    double current_dur = item.duration.load();
+    double const current_dur = item.duration.load();
     float avail_w = (width > 0.0f) ? width : ImGui::GetContentRegionAvail().x;
     avail_w = std::max(60.0f, avail_w);
 
@@ -783,16 +783,16 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
     }
 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO const& io = ImGui::GetIO();
 
-    ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
-    ImVec2 size(avail_w, height);
+    ImVec2 const cursor_pos = ImGui::GetCursorScreenPos();
+    ImVec2 const size(avail_w, height);
 
     ImGui::PushID(str_id);
     ImGui::InvisibleButton(str_id, size);
-    bool is_hovered = ImGui::IsItemHovered();
-    bool is_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
-    ImGuiID item_id = ImGui::GetID(str_id);
+    bool const is_hovered = ImGui::IsItemHovered();
+    bool const is_clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+    ImGuiID const item_id = ImGui::GetID(str_id);
 
     static ImGuiID s_active_seek_id = 0;
     static double s_drag_target_pos = 0.0;
@@ -806,7 +806,7 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
         s_active_seek_id = item_id;
         s_drag_start_mouse = io.MousePos;
         s_drag_start_pos = current_pos;
-        float rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+        float const rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
         s_drag_target_pos = static_cast<double>(rel_x) * current_dur;
         is_dragging = true;
     }
@@ -819,15 +819,15 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
             is_dragging = false;
             s_precision_mode = false;
         } else {
-            float vertical_dist = std::abs(io.MousePos.y - (cursor_pos.y + height * 0.5f));
+            float const vertical_dist = std::abs(io.MousePos.y - (cursor_pos.y + height * 0.5f));
             s_precision_mode = io.KeyShift || (vertical_dist > 25.0f);
 
             if (s_precision_mode) {
-                float delta_x = io.MousePos.x - s_drag_start_mouse.x;
-                double delta_sec = (static_cast<double>(delta_x) / static_cast<double>(avail_w)) * current_dur * 0.1;
+                float const delta_x = io.MousePos.x - s_drag_start_mouse.x;
+                double const delta_sec = (static_cast<double>(delta_x) / static_cast<double>(avail_w)) * current_dur * 0.1;
                 s_drag_target_pos = std::clamp(s_drag_start_pos + delta_sec, 0.0, current_dur);
             } else {
-                float rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+                float const rel_x = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
                 s_drag_target_pos = static_cast<double>(rel_x) * current_dur;
             }
         }
@@ -835,8 +835,8 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
 
     // Mouse scroll wheel seeking when hovered
     if (is_hovered && io.MouseWheel != 0.0f) {
-        double step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
-        double target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
+        double const step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
+        double const target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
         item.seekTo(target);
         current_pos = target;
     }
@@ -844,39 +844,39 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
     // Keyboard arrow keys seeking when hovered
     if (is_hovered) {
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-            double step = io.KeyShift ? 1.0 : 5.0;
+            double const step = io.KeyShift ? 1.0 : 5.0;
             item.seekTo(std::max(0.0, current_pos - step));
         } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-            double step = io.KeyShift ? 1.0 : 5.0;
+            double const step = io.KeyShift ? 1.0 : 5.0;
             item.seekTo(std::min(current_dur, current_pos + step));
         }
     }
 
-    double display_pos = is_dragging ? s_drag_target_pos : current_pos;
-    float progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
+    double const display_pos = is_dragging ? s_drag_target_pos : current_pos;
+    float const progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
 
-    float track_h = (is_hovered || is_dragging) ? 8.0f : 5.0f;
-    float track_y = cursor_pos.y + (height - track_h) * 0.5f;
+    float const track_h = (is_hovered || is_dragging) ? 8.0f : 5.0f;
+    float const track_y = cursor_pos.y + (height - track_h) * 0.5f;
 
-    ImVec2 track_min(cursor_pos.x, track_y);
-    ImVec2 track_max(cursor_pos.x + avail_w, track_y + track_h);
-    float rounding = track_h * 0.5f;
+    ImVec2 const track_min(cursor_pos.x, track_y);
+    ImVec2 const track_max(cursor_pos.x + avail_w, track_y + track_h);
+    float const rounding = track_h * 0.5f;
 
     // Track Background
     draw_list->AddRectFilled(track_min, track_max, IM_COL32(30, 36, 46, 220), rounding);
     draw_list->AddRect(track_min, track_max, IM_COL32(255, 255, 255, 25), rounding);
 
     // Track Progress Fill
-    float fill_w = progress * avail_w;
+    float const fill_w = progress * avail_w;
     if (fill_w > 0.0f) {
-        ImVec2 fill_max(cursor_pos.x + fill_w, track_y + track_h);
-        ImU32 col_start = IM_COL32(
+        ImVec2 const fill_max(cursor_pos.x + fill_w, track_y + track_h);
+        ImU32 const col_start = IM_COL32(
             static_cast<int>(accent_color.x * 255),
             static_cast<int>(accent_color.y * 255),
             static_cast<int>(accent_color.z * 255),
             255
         );
-        ImU32 col_end = IM_COL32(
+        ImU32 const col_end = IM_COL32(
             std::min(255, static_cast<int>(accent_color.x * 280)),
             std::min(255, static_cast<int>(accent_color.y * 280)),
             std::min(255, static_cast<int>(accent_color.z * 300)),
@@ -895,16 +895,16 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
     // Draw Watermark / Bookmark tick dot (only if distant from current playback position)
     if (item.watermark.has_value() && *item.watermark > 0.0 && *item.watermark < current_dur) {
         if (std::abs(display_pos - *item.watermark) > 4.0) {
-            float mark_rel = static_cast<float>(*item.watermark / current_dur);
-            float mark_x = cursor_pos.x + mark_rel * avail_w;
+            float const mark_rel = static_cast<float>(*item.watermark / current_dur);
+            float const mark_x = cursor_pos.x + mark_rel * avail_w;
             draw_list->AddCircleFilled(ImVec2(mark_x, track_y + track_h + 3.0f), 2.5f, IM_COL32(255, 200, 60, 200));
         }
     }
 
     // Ghost cursor line on hover
     if (is_hovered && !is_dragging) {
-        float ghost_rel = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
-        float ghost_x = cursor_pos.x + ghost_rel * avail_w;
+        float const ghost_rel = std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f);
+        float const ghost_x = cursor_pos.x + ghost_rel * avail_w;
         draw_list->AddLine(
             ImVec2(ghost_x, track_min.y - 1.0f),
             ImVec2(ghost_x, track_max.y + 1.0f),
@@ -914,9 +914,9 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
     }
 
     // Scrubber Knob (Thumb)
-    float knob_x = std::clamp(cursor_pos.x + fill_w, cursor_pos.x + 4.0f, cursor_pos.x + avail_w - 4.0f);
-    float knob_y = cursor_pos.y + height * 0.5f;
-    float knob_r = (is_hovered || is_dragging) ? 7.0f : 4.5f;
+    float const knob_x = std::clamp(cursor_pos.x + fill_w, cursor_pos.x + 4.0f, cursor_pos.x + avail_w - 4.0f);
+    float const knob_y = cursor_pos.y + height * 0.5f;
+    float const knob_r = (is_hovered || is_dragging) ? 7.0f : 4.5f;
 
     if (is_hovered || is_dragging) {
         draw_list->AddCircleFilled(
@@ -947,15 +947,15 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
 
     // Precise Floating Tooltip on Hover or Drag
     if (is_hovered || is_dragging) {
-        double hover_time = is_dragging ? s_drag_target_pos : (static_cast<double>(std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f)) * current_dur);
+        double const hover_time = is_dragging ? s_drag_target_pos : (static_cast<double>(std::clamp((io.MousePos.x - cursor_pos.x) / avail_w, 0.0f, 1.0f)) * current_dur);
         std::string time_str = s_precision_mode ? format_time_precise(hover_time) : item.formatTime(hover_time);
         if (s_precision_mode) {
             time_str += "  [Precision ±0.1s]";
         }
 
-        ImVec2 txt_sz = ImGui::CalcTextSize(time_str.c_str());
-        float tt_x = std::clamp(io.MousePos.x - txt_sz.x * 0.5f, cursor_pos.x, cursor_pos.x + avail_w - txt_sz.x);
-        float tt_y = cursor_pos.y - txt_sz.y - 12.0f;
+        ImVec2 const txt_sz = ImGui::CalcTextSize(time_str.c_str());
+        float const tt_x = std::clamp(io.MousePos.x - txt_sz.x * 0.5f, cursor_pos.x, cursor_pos.x + avail_w - txt_sz.x);
+        float const tt_y = cursor_pos.y - txt_sz.y - 12.0f;
 
         draw_list->AddRectFilled(
             ImVec2(tt_x - 7.0f, tt_y - 4.0f),
@@ -983,15 +983,15 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
 
 void media_player::draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
     double current_pos = item.get_current_position();
-    double current_dur = item.duration.load();
+    double const current_dur = item.duration.load();
     if (current_dur <= 0.0) return;
 
     ImDrawList* draw_list = ImGui::GetForegroundDrawList();
-    ImGuiIO& io = ImGui::GetIO();
-    ImVec2 mouse_pos = io.MousePos;
+    ImGuiIO const& io = ImGui::GetIO();
+    ImVec2 const mouse_pos = io.MousePos;
 
-    float hit_height = 90.0f;
-    bool is_bottom_hovered = (mouse_pos.x >= 0.0f && mouse_pos.x <= win_w &&
+    float const hit_height = 90.0f;
+    bool const is_bottom_hovered = (mouse_pos.x >= 0.0f && mouse_pos.x <= win_w &&
                               mouse_pos.y >= win_h - hit_height && mouse_pos.y <= win_h + 10.0f);
 
     static bool s_is_dragging = false;
@@ -1017,12 +1017,12 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
             s_is_dragging = false;
             s_precision_mode = false;
         } else {
-            float vertical_dist = std::abs(mouse_pos.y - (win_h - 10.0f));
+            float const vertical_dist = std::abs(mouse_pos.y - (win_h - 10.0f));
             s_precision_mode = io.KeyShift || (vertical_dist > 30.0f);
 
             if (s_precision_mode) {
-                float delta_x = mouse_pos.x - s_drag_start_x;
-                double delta_sec = (static_cast<double>(delta_x) / static_cast<double>(win_w)) * current_dur * 0.1;
+                float const delta_x = mouse_pos.x - s_drag_start_x;
+                double const delta_sec = (static_cast<double>(delta_x) / static_cast<double>(win_w)) * current_dur * 0.1;
                 s_drag_target_pos = std::clamp(s_drag_start_pos + delta_sec, 0.0, current_dur);
             } else {
                 s_drag_target_pos = std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
@@ -1032,25 +1032,25 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
 
     // Scroll wheel seeking near bottom edge
     if (is_bottom_hovered && io.MouseWheel != 0.0f) {
-        double step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
-        double target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
+        double const step = io.KeyShift ? 0.1 : (io.KeyAlt || io.KeyCtrl ? 10.0 : 2.0);
+        double const target = std::clamp(current_pos + (io.MouseWheel > 0.0f ? step : -step), 0.0, current_dur);
         item.seekTo(target);
         current_pos = target;
     }
 
-    double display_pos = s_is_dragging ? s_drag_target_pos : current_pos;
-    float progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
+    double const display_pos = s_is_dragging ? s_drag_target_pos : current_pos;
+    float const progress = static_cast<float>(std::clamp(display_pos / current_dur, 0.0, 1.0));
 
-    float line_h = (is_bottom_hovered || s_is_dragging) ? 8.0f : 4.0f;
-    float y1 = win_h - line_h;
-    float y2 = win_h;
+    float const line_h = (is_bottom_hovered || s_is_dragging) ? 8.0f : 4.0f;
+    float const y1 = win_h - line_h;
+    float const y2 = win_h;
 
     // Track Background
     draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(0, 0, 0, 180));
     draw_list->AddRectFilled(ImVec2(0.0f, y1), ImVec2(win_w, y2), IM_COL32(255, 255, 255, 40));
 
     // Played progress fill
-    float filled_w = progress * win_w;
+    float const filled_w = progress * win_w;
     if (filled_w > 0.0f) {
         draw_list->AddRectFilledMultiColor(
             ImVec2(0.0f, y1), ImVec2(filled_w, y2),
@@ -1061,29 +1061,29 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
 
     // Ghost line on hover
     if (is_bottom_hovered && !s_is_dragging) {
-        float ghost_x = std::clamp(mouse_pos.x, 0.0f, win_w);
+        float const ghost_x = std::clamp(mouse_pos.x, 0.0f, win_w);
         draw_list->AddLine(ImVec2(ghost_x, y1 - 4.0f), ImVec2(ghost_x, y2), IM_COL32(255, 255, 255, 140), 1.5f);
     }
 
     // Scrubber handle (knob)
     if (is_bottom_hovered || s_is_dragging) {
-        float knob_x = std::clamp(filled_w, 6.0f, win_w - 6.0f);
-        float knob_y = y1 + line_h * 0.5f;
+        float const knob_x = std::clamp(filled_w, 6.0f, win_w - 6.0f);
+        float const knob_y = y1 + line_h * 0.5f;
 
         draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), 10.0f, IM_COL32(110, 80, 255, 80));
         draw_list->AddCircleFilled(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(255, 255, 255, 255));
         draw_list->AddCircle(ImVec2(knob_x, knob_y), 6.0f, IM_COL32(0, 210, 255, 255), 16, 1.8f);
 
         // Hover time preview tooltip
-        double hover_target_time = s_is_dragging ? s_drag_target_pos : std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
+        double const hover_target_time = s_is_dragging ? s_drag_target_pos : std::clamp(static_cast<double>(mouse_pos.x / win_w) * current_dur, 0.0, current_dur);
         std::string hover_str = s_precision_mode ? format_time_precise(hover_target_time) : item.formatTime(hover_target_time);
         if (s_precision_mode) {
             hover_str += "  [Precision ±0.1s]";
         }
 
-        ImVec2 txt_sz = ImGui::CalcTextSize(hover_str.c_str());
-        float tt_x = std::clamp(mouse_pos.x - txt_sz.x * 0.5f, 10.0f, win_w - txt_sz.x - 10.0f);
-        float tt_y = y1 - txt_sz.y - 12.0f;
+        ImVec2 const txt_sz = ImGui::CalcTextSize(hover_str.c_str());
+        float const tt_x = std::clamp(mouse_pos.x - txt_sz.x * 0.5f, 10.0f, win_w - txt_sz.x - 10.0f);
+        float const tt_y = y1 - txt_sz.y - 12.0f;
 
         draw_list->AddRectFilled(
             ImVec2(tt_x - 7.0f, tt_y - 4.0f),
@@ -1106,9 +1106,9 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
         if (item.is_paused.load()) {
             status_text = ICON_MD_PAUSE " " + status_text;
         }
-        ImVec2 status_size = ImGui::CalcTextSize(status_text.c_str());
-        float badge_x = 12.0f;
-        float badge_y = y1 - status_size.y - 12.0f;
+        ImVec2 const status_size = ImGui::CalcTextSize(status_text.c_str());
+        float const badge_x = 12.0f;
+        float const badge_y = y1 - status_size.y - 12.0f;
         draw_list->AddRectFilled(
             ImVec2(badge_x - 6.0f, badge_y - 4.0f),
             ImVec2(badge_x + status_size.x + 6.0f, badge_y + status_size.y + 4.0f),
@@ -1130,7 +1130,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
     float const player_width = (max_width > 0.0f) ? max_width : ImGui::GetContentRegionAvail().x;
     ImGui::PushID(url.data(), url.data() + url.size());
     try {
-        ImGuiID item_id = get_item_id(url);
+        ImGuiID const item_id = get_item_id(url);
         auto item_ptr = get_item_ptr(item_id);
         auto &item = *item_ptr;
         if (owner_card) {
@@ -1154,25 +1154,25 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
         }
         if (has_active_media) {
             ImGui::TextUnformatted(title.data(), title.data() + title.size());
-            double current_pos = item.get_current_position();
-            double current_dur = item.duration.load();
+            double const current_pos = item.get_current_position();
+            double const current_dur = item.duration.load();
 
-            ImTextureID tex = item.get_texture_id();
-            bool cast_active = media_player_item::is_cast_active.load();
-            bool detached_active = has_detached_item();
+            ImTextureID const tex = item.get_texture_id();
+            bool const cast_active = media_player_item::is_cast_active.load();
+            bool const detached_active = has_detached_item();
 
-            ImVec2 media_start_pos = ImGui::GetCursorScreenPos();
+            ImVec2 const media_start_pos = ImGui::GetCursorScreenPos();
 
             if (tex && item.has_video.load()) {
                 float thumb_w = 120.0f;
                 float thumb_h = 67.5f;
                 if (!cast_active && !detached_active) {
-                    float avail_w = player_width;
+                    float const avail_w = player_width;
                     thumb_w = std::max(120.0f, avail_w - 26.0f);
                     thumb_h = thumb_w * 9.0f / 16.0f;
                 }
                 ImGui::Spacing();
-                ImVec2 img_screen_pos = ImGui::GetCursorScreenPos();
+                ImVec2 const img_screen_pos = ImGui::GetCursorScreenPos();
                 ImGui::Image(tex, ImVec2(thumb_w, thumb_h));
                 ImGui::SetCursorScreenPos(img_screen_pos);
                 ImGui::InvisibleButton("##video_fullscreen_surface", ImVec2(thumb_w, thumb_h));
@@ -1183,7 +1183,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, thumb_h);
             } else {
                 ImGui::Spacing();
-                ImVec2 vu_screen_pos = ImGui::GetCursorScreenPos();
+                ImVec2 const vu_screen_pos = ImGui::GetCursorScreenPos();
                 draw_vintage_110_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), player_width, 85.0f, /*is_lit=*/true);
                 ImGui::SetCursorScreenPos(vu_screen_pos);
                 ImGui::InvisibleButton("##audio_fullscreen_surface", ImVec2(player_width, 85.0f));
@@ -1195,15 +1195,15 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 }
             }
 
-            ImVec2 media_end_pos = ImGui::GetCursorScreenPos();
-            ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+            ImVec2 const media_end_pos = ImGui::GetCursorScreenPos();
+            ImVec2 const mouse_pos = ImGui::GetIO().MousePos;
 
-            bool is_player_hovered = (mouse_pos.x >= media_start_pos.x - 10.0f &&
+            bool const is_player_hovered = (mouse_pos.x >= media_start_pos.x - 10.0f &&
                                       mouse_pos.x <= media_start_pos.x + player_width + 10.0f &&
                                       mouse_pos.y >= media_start_pos.y - 30.0f &&
                                       mouse_pos.y <= media_end_pos.y + 110.0f);
 
-            bool show_controls = is_player_hovered || item.is_paused.load() || (ImGui::GetActiveID() != 0);
+            bool const show_controls = is_player_hovered || item.is_paused.load() || (ImGui::GetActiveID() != 0);
 
             if (show_controls) {
                 // Transport buttons: Jump -10s, Play/Pause, Stop, Jump +10s & Volume
@@ -1227,7 +1227,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
 
                 ImGui::SameLine();
                 if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_FORWARD).c_str())) {
-                    double target = (current_dur > 0.0) ? std::min(current_dur, current_pos + 10.0) : (current_pos + 10.0);
+                    double const target = (current_dur > 0.0) ? std::min(current_dur, current_pos + 10.0) : (current_pos + 10.0);
                     item.seekTo(target);
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump +10 seconds");
@@ -1236,7 +1236,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 int vol = item.volume.load();
                 ImGui::Text(ICON_MD_VOLUME_UP);
                 ImGui::SameLine();
-                float vol_w = std::min(90.0f, player_width * 0.25f);
+                float const vol_w = std::min(90.0f, player_width * 0.25f);
                 ImGui::SetNextItemWidth(vol_w);
                 if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
                     item.setVolume(vol);
@@ -1248,11 +1248,11 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
 
                 // Timestamp Info Row: Current Pos on left, Toggleable Total/Remaining on right
                 static bool s_show_remaining = false;
-                std::string pos_str = item.formatTime(current_pos);
+                std::string const pos_str = item.formatTime(current_pos);
                 std::string dur_str;
                 if (current_dur > 0.0) {
                     if (s_show_remaining) {
-                        double rem = std::max(0.0, current_dur - current_pos);
+                        double const rem = std::max(0.0, current_dur - current_pos);
                         dur_str = "-" + item.formatTime(rem);
                     } else {
                         dur_str = item.formatTime(current_dur);
@@ -1262,7 +1262,7 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 ImGui::TextColored(info_color, "%s", pos_str.c_str());
 
                 if (current_dur > 0.0) {
-                    ImVec2 dur_sz = ImGui::CalcTextSize(dur_str.c_str());
+                    ImVec2 const dur_sz = ImGui::CalcTextSize(dur_str.c_str());
                     ImGui::SameLine(std::max(0.0f, player_width - dur_sz.x));
                     if (ImGui::Selectable(dur_str.c_str(), false, 0, dur_sz)) {
                         s_show_remaining = !s_show_remaining;
@@ -1275,12 +1275,12 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
         } else {
             // Stopped / Idle state: render clean Play/Resume button without premature VU meter
             ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-            bool has_bookmark = item.watermark.has_value() && *item.watermark > 0.0;
+            bool const has_bookmark = item.watermark.has_value() && *item.watermark > 0.0;
             
             if (has_bookmark) {
                 std::string formatted_bookmark = item.formatTime(*item.watermark);
-                float restart_btn_w = ImGui::CalcTextSize("Restart").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-                float play_btn_w = player_width - restart_btn_w - ImGui::GetStyle().ItemSpacing.x;
+                float const restart_btn_w = ImGui::CalcTextSize("Restart").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                float const play_btn_w = player_width - restart_btn_w - ImGui::GetStyle().ItemSpacing.x;
                 
                 if (ImGui::Button(std::format(" {} Resume ({})", ICON_MD_PLAY_ARROW, formatted_bookmark).c_str(), ImVec2(play_btn_w, 0))) {
                     stopAll();

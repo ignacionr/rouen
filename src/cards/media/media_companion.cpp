@@ -40,7 +40,7 @@ namespace rouen::cards {
 
         double parse_time_str_to_seconds(const std::string& ts_str) {
             std::string clean;
-            for (char c : ts_str) {
+            for (char const c : ts_str) {
                 if (std::isdigit(c) || c == ':' || c == '.' || c == ',') {
                     if (c == ',') clean += '.';
                     else clean += c;
@@ -61,7 +61,7 @@ namespace rouen::cards {
         }
 
         std::string format_seconds_to_timestamp(double sec) {
-            int total_s = static_cast<int>(sec);
+            int const total_s = static_cast<int>(sec);
             int h = total_s / 3600;
             int m = (total_s % 3600) / 60;
             int s = total_s % 60;
@@ -76,7 +76,7 @@ namespace rouen::cards {
             int h = 0, m = 0, s = 0, ms = 0;
             if (sscanf(ts_str.c_str(), "%d:%d:%d,%d", &h, &m, &s, &ms) == 4 ||
                 sscanf(ts_str.c_str(), "%d:%d:%d.%d", &h, &m, &s, &ms) == 4) {
-                double total_sec = h * 3600.0 + m * 60.0 + s + (ms / 1000.0);
+                double const total_sec = h * 3600.0 + m * 60.0 + s + (ms / 1000.0);
                 if (h > 0) {
                     formatted_str = std::format("{:02d}:{:02d}:{:02d}", h, m, s);
                 } else {
@@ -85,7 +85,7 @@ namespace rouen::cards {
                 return total_sec;
             } else if (sscanf(ts_str.c_str(), "%d:%d,%d", &m, &s, &ms) == 3 ||
                        sscanf(ts_str.c_str(), "%d:%d.%d", &m, &s, &ms) == 3) {
-                double total_sec = m * 60.0 + s + (ms / 1000.0);
+                double const total_sec = m * 60.0 + s + (ms / 1000.0);
                 formatted_str = std::format("{:02d}:{:02d}", m, s);
                 return total_sec;
             }
@@ -105,7 +105,7 @@ namespace rouen::cards {
 
             auto push_current_entry = [&]() {
                 if (!current_block_text.empty() && !current_ts_str.empty()) {
-                    size_t end = current_block_text.find_last_not_of(" \t\r\n");
+                    size_t const end = current_block_text.find_last_not_of(" \t\r\n");
                     if (end != std::string::npos) {
                         current_block_text = current_block_text.substr(0, end + 1);
                     }
@@ -129,8 +129,8 @@ namespace rouen::cards {
                 if (arrow_pos != std::string::npos) {
                     push_current_entry();
                     std::string start_ts_raw = line.substr(0, arrow_pos);
-                    size_t s_first = start_ts_raw.find_first_not_of(" \t");
-                    size_t s_last = start_ts_raw.find_last_not_of(" \t");
+                    size_t const s_first = start_ts_raw.find_first_not_of(" \t");
+                    size_t const s_last = start_ts_raw.find_last_not_of(" \t");
                     if (s_first != std::string::npos && s_last != std::string::npos) {
                         start_ts_raw = start_ts_raw.substr(s_first, s_last - s_first + 1);
                     }
@@ -140,16 +140,16 @@ namespace rouen::cards {
 
                 std::string clean_line;
                 bool in_tag = false;
-                for (char c : line) {
+                for (char const c : line) {
                     if (c == '<') in_tag = true;
                     else if (c == '>') in_tag = false;
                     else if (!in_tag) clean_line += c;
                 }
 
-                size_t start = clean_line.find_first_not_of(" \t");
+                size_t const start = clean_line.find_first_not_of(" \t");
                 if (start == std::string::npos) continue;
                 clean_line = clean_line.substr(start);
-                size_t end = clean_line.find_last_not_of(" \t");
+                size_t const end = clean_line.find_last_not_of(" \t");
                 if (end != std::string::npos) clean_line = clean_line.substr(0, end + 1);
 
                 if (!clean_line.empty()) {
@@ -165,16 +165,16 @@ namespace rouen::cards {
             std::vector<media_companion::dynamic_commentary_point> points;
 
             auto extract_field_val = [](const std::string& obj_str, const std::string& key) -> std::string {
-                size_t pos = obj_str.find("\"" + key + "\"");
+                size_t const pos = obj_str.find("\"" + key + "\"");
                 if (pos == std::string::npos) return "";
-                size_t colon = obj_str.find(':', pos);
+                size_t const colon = obj_str.find(':', pos);
                 if (colon == std::string::npos) return "";
-                size_t q1 = obj_str.find('"', colon);
+                size_t const q1 = obj_str.find('"', colon);
                 if (q1 == std::string::npos) return "";
                 std::string val;
                 bool escaped = false;
                 for (size_t k = q1 + 1; k < obj_str.size(); ++k) {
-                    char ch = obj_str[k];
+                    char const ch = obj_str[k];
                     if (escaped) {
                         if (ch == 'n') val += '\n';
                         else if (ch == 'r') val += '\r';
@@ -193,11 +193,11 @@ namespace rouen::cards {
             };
 
             auto extract_field_num = [](const std::string& obj_str, const std::string& key) -> double {
-                size_t pos = obj_str.find("\"" + key + "\"");
+                size_t const pos = obj_str.find("\"" + key + "\"");
                 if (pos == std::string::npos) return 0.0;
-                size_t colon = obj_str.find(':', pos);
+                size_t const colon = obj_str.find(':', pos);
                 if (colon == std::string::npos) return 0.0;
-                size_t start = obj_str.find_first_of("-0123456789.", colon + 1);
+                size_t const start = obj_str.find_first_of("-0123456789.", colon + 1);
                 if (start == std::string::npos) return 0.0;
                 double val = 0.0;
                 if (sscanf(obj_str.c_str() + start, "%lf", &val) == 1) {
@@ -214,15 +214,15 @@ namespace rouen::cards {
                     raw_ts.pop_back();
                 }
 
-                size_t c_start = comment.find_first_not_of(" \t\r\n");
-                size_t c_end = comment.find_last_not_of(" \t\r\n");
+                size_t const c_start = comment.find_first_not_of(" \t\r\n");
+                size_t const c_end = comment.find_last_not_of(" \t\r\n");
                 if (c_start != std::string::npos && c_end != std::string::npos) {
                     comment = comment.substr(c_start, c_end - c_start + 1);
                 }
                 if (raw_ts.empty() || comment.empty()) return;
 
-                double sec = parse_time_str_to_seconds(raw_ts);
-                std::string formatted_ts = format_seconds_to_timestamp(sec);
+                double const sec = parse_time_str_to_seconds(raw_ts);
+                std::string const formatted_ts = format_seconds_to_timestamp(sec);
                 points.push_back({sec, formatted_ts, comment, assertions});
             };
 
@@ -230,8 +230,8 @@ namespace rouen::cards {
             std::string json_str = ai_response;
             size_t code_fence = json_str.find("```json");
             if (code_fence != std::string::npos) {
-                size_t fence_start = code_fence + 7;
-                size_t fence_end = json_str.find("```", fence_start);
+                size_t const fence_start = code_fence + 7;
+                size_t const fence_end = json_str.find("```", fence_start);
                 if (fence_end != std::string::npos) {
                     json_str = json_str.substr(fence_start, fence_end - fence_start);
                 } else {
@@ -240,23 +240,23 @@ namespace rouen::cards {
             } else {
                 code_fence = json_str.find("```");
                 if (code_fence != std::string::npos) {
-                    size_t fence_start = code_fence + 3;
-                    size_t fence_end = json_str.find("```", fence_start);
+                    size_t const fence_start = code_fence + 3;
+                    size_t const fence_end = json_str.find("```", fence_start);
                     if (fence_end != std::string::npos) {
                         json_str = json_str.substr(fence_start, fence_end - fence_start);
                     }
                 }
             }
 
-            size_t arr_start = json_str.find('[');
-            size_t arr_end = json_str.rfind(']');
+            size_t const arr_start = json_str.find('[');
+            size_t const arr_end = json_str.rfind(']');
             if (arr_start != std::string::npos && arr_end != std::string::npos && arr_end > arr_start) {
                 std::string array_content = json_str.substr(arr_start, arr_end - arr_start + 1);
                 bool inside_obj = false;
                 int brace_depth = 0;
                 size_t obj_start = 0;
                 for (size_t i = 0; i < array_content.size(); ++i) {
-                    char c = array_content[i];
+                    char const c = array_content[i];
                     if (c == '{') {
                         if (brace_depth == 0) {
                             obj_start = i;
@@ -266,7 +266,7 @@ namespace rouen::cards {
                     } else if (c == '}') {
                         brace_depth--;
                         if (brace_depth == 0 && inside_obj) {
-                            std::string obj_str = array_content.substr(obj_start, i - obj_start + 1);
+                            std::string const obj_str = array_content.substr(obj_start, i - obj_start + 1);
 
                             std::string ts_val = extract_field_val(obj_str, "timestamp");
                             if (ts_val.empty()) ts_val = extract_field_val(obj_str, "time");
@@ -277,23 +277,23 @@ namespace rouen::cards {
                             if (comment_val.empty()) comment_val = extract_field_val(obj_str, "commentary");
 
                             std::vector<media_companion::fact_check_assertion> assertions;
-                            size_t assertions_pos = obj_str.find("\"assertions\"");
+                            size_t const assertions_pos = obj_str.find("\"assertions\"");
                             if (assertions_pos != std::string::npos) {
-                                size_t a_start = obj_str.find('[', assertions_pos);
-                                size_t a_end = (a_start != std::string::npos) ? obj_str.find(']', a_start) : std::string::npos;
+                                size_t const a_start = obj_str.find('[', assertions_pos);
+                                size_t const a_end = (a_start != std::string::npos) ? obj_str.find(']', a_start) : std::string::npos;
                                 if (a_start != std::string::npos && a_end != std::string::npos) {
                                     std::string a_arr = obj_str.substr(a_start, a_end - a_start + 1);
                                     int a_depth = 0;
                                     size_t sub_obj_start = 0;
                                     for (size_t k = 0; k < a_arr.size(); ++k) {
-                                        char ch = a_arr[k];
+                                        char const ch = a_arr[k];
                                         if (ch == '{') {
                                             if (a_depth == 0) sub_obj_start = k;
                                             a_depth++;
                                         } else if (ch == '}') {
                                             a_depth--;
                                             if (a_depth == 0) {
-                                                std::string a_obj = a_arr.substr(sub_obj_start, k - sub_obj_start + 1);
+                                                std::string const a_obj = a_arr.substr(sub_obj_start, k - sub_obj_start + 1);
                                                 std::string claim = extract_field_val(a_obj, "claim");
                                                 if (claim.empty()) claim = extract_field_val(a_obj, "statement");
 
@@ -334,13 +334,13 @@ namespace rouen::cards {
                 while (std::getline(iss, line)) {
                     if (!line.empty() && line.back() == '\r') line.pop_back();
 
-                    size_t b_open = line.find('[');
-                    size_t b_close = line.find(']', b_open != std::string::npos ? b_open : 0);
+                    size_t const b_open = line.find('[');
+                    size_t const b_close = line.find(']', b_open != std::string::npos ? b_open : 0);
                     bool found_header = false;
                     std::string found_ts;
 
                     if (b_open != std::string::npos && b_close != std::string::npos && b_close > b_open) {
-                        std::string inside = line.substr(b_open + 1, b_close - b_open - 1);
+                        std::string const inside = line.substr(b_open + 1, b_close - b_open - 1);
                         if (inside.find(':') != std::string::npos) {
                             found_ts = inside;
                             found_header = true;
@@ -349,7 +349,7 @@ namespace rouen::cards {
 
                     if (!found_header) {
                         std::string trimmed = line;
-                        size_t s = trimmed.find_first_not_of(" \t#*");
+                        size_t const s = trimmed.find_first_not_of(" \t#*");
                         if (s != std::string::npos) trimmed = trimmed.substr(s);
                         int h = 0, m = 0, sec = 0;
                         if (sscanf(trimmed.c_str(), "%d:%d:%d", &h, &m, &sec) == 3 ||
@@ -365,10 +365,10 @@ namespace rouen::cards {
                         }
                         current_ts = found_ts;
                         current_comment.clear();
-                        size_t remainder_pos = (b_close != std::string::npos && b_close > b_open) ? b_close + 1 : 0;
+                        size_t const remainder_pos = (b_close != std::string::npos && b_close > b_open) ? b_close + 1 : 0;
                         if (remainder_pos < line.size()) {
-                            std::string rem = line.substr(remainder_pos);
-                            size_t rs = rem.find_first_not_of(" \t:-*#");
+                            std::string const rem = line.substr(remainder_pos);
+                            size_t const rs = rem.find_first_not_of(" \t:-*#");
                             if (rs != std::string::npos) {
                                 current_comment = rem.substr(rs);
                             }
@@ -476,7 +476,7 @@ namespace rouen::cards {
 
     media_companion::~media_companion() {
         if (state) {
-            std::lock_guard<std::mutex> lock(state->mutex);
+            std::lock_guard<std::mutex> const lock(state->mutex);
             state->card_alive = false;
         }
     }
@@ -490,7 +490,7 @@ namespace rouen::cards {
     }
 
     void media_companion::seek_to(double seconds) {
-        std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+        std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
         for (auto& [id, item_ptr] : media_player::items()) {
             if (item_ptr && (item_ptr->is_playing || item_ptr->ffmpeg_running.load() || item_ptr->player_pid > 0)) {
                 item_ptr->seekTo(seconds);
@@ -506,11 +506,11 @@ namespace rouen::cards {
         double detected_duration = 0.0;
 
         {
-            std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+            std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
             for (auto& [id, item_ptr] : media_player::items()) {
                 if (item_ptr && (item_ptr->is_playing || item_ptr->ffmpeg_running.load() || item_ptr->player_pid > 0)) {
-                    std::string u = item_ptr->url;
-                    std::string l = item_ptr->item_link;
+                    std::string const u = item_ptr->url;
+                    std::string const l = item_ptr->item_link;
                     if (u.find("youtube.com") != std::string::npos || u.find("youtu.be") != std::string::npos) {
                         detected_url = u;
                         detected_title = item_ptr->item_title;
@@ -530,7 +530,7 @@ namespace rouen::cards {
         }
 
         {
-            std::lock_guard<std::mutex> lock(state->mutex);
+            std::lock_guard<std::mutex> const lock(state->mutex);
             if (state->is_fetching) return;
 
             if (!active_item || detected_url.empty()) {
@@ -558,18 +558,18 @@ namespace rouen::cards {
 
             std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
             auto config = rouen::helpers::ConfigService::instance();
-            std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
+            std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
             auto fetch_sub_file = [&](const std::string& cargs) -> std::filesystem::path {
                 std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
                 std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github" : "";
-                std::string cmd = std::format("\"{}\" -q --no-warnings {}{} --skip-download --write-sub --write-auto-sub "
+                std::string const cmd = std::format("\"{}\" -q --no-warnings {}{} --skip-download --write-sub --write-auto-sub "
                                               "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
                                               ytdlp_path, remote_flag, extra_flags, out_prefix, detected_url);
                 ProcessHelper::executeCommand(cmd);
                 try {
                     for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
-                        std::string fname = entry.path().string();
+                        std::string const fname = entry.path().string();
                         if (fname.starts_with(out_prefix)) {
                             return entry.path();
                         }
@@ -581,10 +581,10 @@ namespace rouen::cards {
             std::filesystem::path found_file = fetch_sub_file(cookie_args);
             if (found_file.empty()) {
                 static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "arc", "vivaldi", "opera"};
-                std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+                std::string const configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
                 for (const auto& browser : candidate_browsers) {
                     if (browser == configured_browser) continue;
-                    std::string fb_args = std::format("--cookies-from-browser {}", browser);
+                    std::string const fb_args = std::format("--cookies-from-browser {}", browser);
                     found_file = fetch_sub_file(fb_args);
                     if (!found_file.empty()) {
                         if (config) {
@@ -597,7 +597,7 @@ namespace rouen::cards {
 
             std::string raw_content;
             if (!found_file.empty() && std::filesystem::exists(found_file)) {
-                std::ifstream ifs(found_file);
+                std::ifstream const ifs(found_file);
                 if (ifs.is_open()) {
                     std::stringstream ss;
                     ss << ifs.rdbuf();
@@ -607,7 +607,7 @@ namespace rouen::cards {
                 std::filesystem::remove(found_file, ec);
             }
 
-            std::lock_guard<std::mutex> lock(st->mutex);
+            std::lock_guard<std::mutex> const lock(st->mutex);
             if (!st->card_alive) return;
 
             st->is_fetching = false;
@@ -639,13 +639,13 @@ namespace rouen::cards {
     void media_companion::generate_commentary_for_full_video() {
         std::string transcript_text;
         std::string title;
-        std::string config_name = selected_llm_config;
+        std::string const config_name = selected_llm_config;
         std::string lang_name = selected_language;
-        bool do_fact_check = enable_fact_check;
-        bool do_web_search = enable_web_search;
+        bool const do_fact_check = enable_fact_check;
+        bool const do_web_search = enable_web_search;
 
         {
-            std::lock_guard<std::mutex> lock(state->mutex);
+            std::lock_guard<std::mutex> const lock(state->mutex);
             if (state->is_generating || state->timestamped_transcript.empty()) return;
             state->is_generating = true;
             transcript_text = state->timestamped_transcript;
@@ -670,12 +670,12 @@ namespace rouen::cards {
                     auto settings = rouen::helpers::LLMConfig::get_current_config(config_name);
                     auto fetcher = std::make_shared<http::fetch>(300);
 
-                    bool adapter_allows_search = (settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
+                    bool const adapter_allows_search = (settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
                                                   settings.provider == rouen::helpers::LLMConfig::Provider::GEMINI ||
                                                   settings.provider == rouen::helpers::LLMConfig::Provider::OPENAI);
 
-                    bool use_search = adapter_allows_search && (do_web_search || do_fact_check);
-                    std::string search_mode = use_search ? "on" : "";
+                    bool const use_search = adapter_allows_search && (do_web_search || do_fact_check);
+                    std::string const search_mode = use_search ? "on" : "";
 
                     std::string lang_directive = (lang_name == "Original / Auto-detect")
                         ? "Write all comments in the primary language of the transcript."
@@ -717,7 +717,7 @@ namespace rouen::cards {
                         )
                     );
 
-                    std::string prompt = std::format(
+                    std::string const prompt = std::format(
                         "Video Title: {}\n"
                         "Target Language: {}\n"
                         "Fact-Checking Requested: {}\n\n"
@@ -751,7 +751,7 @@ namespace rouen::cards {
 
             auto parsed_points = parse_ai_commentary_response(raw_response);
 
-            std::lock_guard<std::mutex> lock(st->mutex);
+            std::lock_guard<std::mutex> const lock(st->mutex);
             if (!st->card_alive) return;
 
             st->is_generating = false;
@@ -779,7 +779,7 @@ namespace rouen::cards {
             std::string url;
 
             {
-                std::lock_guard<std::mutex> lock(state->mutex);
+                std::lock_guard<std::mutex> const lock(state->mutex);
                 fetching = state->is_fetching;
                 is_generating = state->is_generating;
                 status = state->status_message;
@@ -798,11 +798,11 @@ namespace rouen::cards {
             double total_duration = 0.0;
 
             {
-                std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+                std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
                 for (auto& [id, item_ptr] : media_player::items()) {
                     if (item_ptr && (item_ptr->is_playing || item_ptr->ffmpeg_running.load() || item_ptr->player_pid > 0)) {
-                        std::string u = item_ptr->url;
-                        std::string l = item_ptr->item_link;
+                        std::string const u = item_ptr->url;
+                        std::string const l = item_ptr->item_link;
                         if (u.find("youtube.com") != std::string::npos || u.find("youtu.be") != std::string::npos ||
                             l.find("youtube.com") != std::string::npos || l.find("youtu.be") != std::string::npos) {
                             yt_active = true;
@@ -821,9 +821,9 @@ namespace rouen::cards {
             int current_active_point = -1;
             if (yt_active && !points_copy.empty()) {
                 for (size_t i = 0; i < points_copy.size(); ++i) {
-                    double start_t = points_copy[i].timestamp_seconds;
-                    double next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
-                    double dur = std::min(30.0, std::max(12.0, next_t - start_t));
+                    double const start_t = points_copy[i].timestamp_seconds;
+                    double const next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
+                    double const dur = std::min(30.0, std::max(12.0, next_t - start_t));
 
                     if (current_pos >= start_t && current_pos < (start_t + dur)) {
                         current_active_point = static_cast<int>(i);
@@ -863,7 +863,7 @@ namespace rouen::cards {
             ImGui::SetNextItemWidth(140.0f);
             if (ImGui::BeginCombo("##media_companion_llm_config", current_config_label.c_str())) {
                 for (const auto& cfg : llm_configs) {
-                    bool is_selected = (selected_llm_config == cfg.name);
+                    bool const is_selected = (selected_llm_config == cfg.name);
                     if (ImGui::Selectable(cfg.name.c_str(), is_selected)) {
                         selected_llm_config = cfg.name;
                     }
@@ -880,7 +880,7 @@ namespace rouen::cards {
             ImGui::SetNextItemWidth(140.0f);
             if (ImGui::BeginCombo("##media_companion_language", selected_language.c_str())) {
                 for (const auto& lang : supported_languages) {
-                    bool is_selected = (selected_language == lang.name);
+                    bool const is_selected = (selected_language == lang.name);
                     if (ImGui::Selectable(lang.name.c_str(), is_selected)) {
                         selected_language = lang.name;
                     }
@@ -973,7 +973,7 @@ namespace rouen::cards {
                     ui.checkbox("Fact-Check", &enable_fact_check);
 
                     auto current_cfg_settings = rouen::helpers::LLMConfig::get_current_config(selected_llm_config);
-                    bool adapter_allows_search = (current_cfg_settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
+                    bool const adapter_allows_search = (current_cfg_settings.provider == rouen::helpers::LLMConfig::Provider::GROK ||
                                                   current_cfg_settings.provider == rouen::helpers::LLMConfig::Provider::GEMINI ||
                                                   current_cfg_settings.provider == rouen::helpers::LLMConfig::Provider::OPENAI);
 
@@ -988,7 +988,7 @@ namespace rouen::cards {
                         ui.button(std::format("{} Analyzing Full Video...", ICON_MD_HOURGLASS_EMPTY));
                         ImGui::EndDisabled();
                     } else {
-                        std::string gen_btn_label = points_copy.empty()
+                        std::string const gen_btn_label = points_copy.empty()
                             ? std::format("{} Generate AI Commentary", ICON_MD_AUTO_AWESOME)
                             : std::format("{} Regenerate AI Commentary", ICON_MD_REFRESH);
 
@@ -1006,8 +1006,8 @@ namespace rouen::cards {
                             for (size_t p = 0; p < points_copy.size(); ++p) {
                                 if (p > 0) ui.same_line();
 
-                                bool is_current_playing = (yt_active && static_cast<int>(p) == current_active_point);
-                                bool is_selected = (static_cast<int>(p) == selected_point_index);
+                                bool const is_current_playing = (yt_active && static_cast<int>(p) == current_active_point);
+                                bool const is_selected = (static_cast<int>(p) == selected_point_index);
 
                                 std::string label = points_copy[p].timestamp_str;
                                 if (!points_copy[p].assertions.empty()) {
@@ -1193,7 +1193,7 @@ namespace rouen::cards {
         std::vector<dynamic_commentary_point> points_copy;
 
         {
-            std::lock_guard<std::mutex> lock(state->mutex);
+            std::lock_guard<std::mutex> const lock(state->mutex);
             points_copy = state->commentary_points;
         }
 
@@ -1204,11 +1204,11 @@ namespace rouen::cards {
         double current_pos = 0.0;
 
         {
-            std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+            std::lock_guard<std::recursive_mutex> const lock(media_player::items_mutex());
             for (auto& [id, item_ptr] : media_player::items()) {
                 if (item_ptr && (item_ptr->is_playing || item_ptr->ffmpeg_running.load() || item_ptr->player_pid > 0)) {
-                    std::string u = item_ptr->url;
-                    std::string l = item_ptr->item_link;
+                    std::string const u = item_ptr->url;
+                    std::string const l = item_ptr->item_link;
                     if (u.find("youtube.com") != std::string::npos || u.find("youtu.be") != std::string::npos ||
                         l.find("youtube.com") != std::string::npos || l.find("youtu.be") != std::string::npos) {
                         yt_active = true;
@@ -1230,9 +1230,9 @@ namespace rouen::cards {
         double active_duration = 20.0;
 
         for (size_t i = 0; i < points_copy.size(); ++i) {
-            double start_t = points_copy[i].timestamp_seconds;
-            double next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
-            double dur = std::min(30.0, std::max(12.0, next_t - start_t));
+            double const start_t = points_copy[i].timestamp_seconds;
+            double const next_t = (i + 1 < points_copy.size()) ? points_copy[i + 1].timestamp_seconds : (start_t + 30.0);
+            double const dur = std::min(30.0, std::max(12.0, next_t - start_t));
 
             if (current_pos >= start_t && current_pos < (start_t + dur)) {
                 active_idx = static_cast<int>(i);
@@ -1258,11 +1258,11 @@ namespace rouen::cards {
         const auto& active_point = points_copy[static_cast<size_t>(active_idx)];
 
         constexpr float kFullHeight = 680.0f;
-        float current_height = kFullHeight * anim_factor;
+        float const current_height = kFullHeight * anim_factor;
 
         // Translucent dark background with matching alpha animation
-        ImVec4 bg_color = ImVec4(0.04f, 0.05f, 0.09f, 0.90f * anim_factor);
-        ImVec4 border_color = ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.60f * anim_factor);
+        ImVec4 const bg_color = ImVec4(0.04f, 0.05f, 0.09f, 0.90f * anim_factor);
+        ImVec4 const border_color = ImVec4(colors[0].x, colors[0].y, colors[0].z, 0.60f * anim_factor);
 
         // Half-width text container (880px)
         ImGui::SetNextWindowPos(ImVec2(80.0f, 100.0f), ImGuiCond_Always);
@@ -1285,7 +1285,7 @@ namespace rouen::cards {
                 ImGui::SetWindowFontScale(2.5f);
                 ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 800.0f);
 
-                std::string header_text = std::format("[{}] ", active_point.timestamp_str);
+                std::string const header_text = std::format("[{}] ", active_point.timestamp_str);
                 std::string full_text = header_text + active_point.commentary_md;
 
                 if (!active_point.assertions.empty()) {
@@ -1299,9 +1299,9 @@ namespace rouen::cards {
                     }
                 }
 
-                std::string wrapped_commentary = wrap_text_soft_breaks(full_text, 58);
+                std::string const wrapped_commentary = wrap_text_soft_breaks(full_text, 58);
 
-                float child_h = std::max(1.0f, current_height - 56.0f);
+                float const child_h = std::max(1.0f, current_height - 56.0f);
                 if (ImGui::BeginChild("##VideoCastScrollRegion", ImVec2(816.0f, child_h), false,
                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoInputs)) {
 
@@ -1318,9 +1318,9 @@ namespace rouen::cards {
                     );
 
                     // Calculate internal scroll animation progress if text height exceeds container
-                    float max_scroll_y = ImGui::GetScrollMaxY();
+                    float const max_scroll_y = ImGui::GetScrollMaxY();
                     if (max_scroll_y > 0.0f) {
-                        float scroll_progress = std::clamp(static_cast<float>((rel_sec - 0.5) / std::max(1.0, active_duration - 1.3)), 0.0f, 1.0f);
+                        float const scroll_progress = std::clamp(static_cast<float>((rel_sec - 0.5) / std::max(1.0, active_duration - 1.3)), 0.0f, 1.0f);
                         ImGui::SetScrollY(scroll_progress * max_scroll_y);
                     }
 
@@ -1350,10 +1350,10 @@ namespace rouen::cards {
                 "Request or retrieve the YouTube transcript and dynamic time-marked AI commentaries with fact-check truth scores for the currently playing media item.",
                 R"({"type":"object","properties":{}})",
                 [this](const std::string&) -> std::string {
-                    std::lock_guard<std::mutex> lock(state->mutex);
+                    std::lock_guard<std::mutex> const lock(state->mutex);
                     auto escape_json = [](const std::string& input) {
                         std::string out;
-                        for (char c : input) {
+                        for (char const c : input) {
                             if (c == '"') out += "\\\"";
                             else if (c == '\\') out += "\\\\";
                             else if (c == '\n') out += "\\n";

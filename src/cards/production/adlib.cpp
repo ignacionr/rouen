@@ -44,7 +44,7 @@ void adlib_card::refresh_audio_devices() {
 
 static std::string get_adlib_config_file() {
     const char* home = std::getenv("HOME");
-    std::filesystem::path dir = home ? std::filesystem::path(home) / ".config" / "rouen" : std::filesystem::current_path();
+    std::filesystem::path const dir = home ? std::filesystem::path(home) / ".config" / "rouen" : std::filesystem::current_path();
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return (dir / "adlib_card.json").string();
@@ -54,7 +54,7 @@ void adlib_card::load_config_from_ini() {
     std::string intro, bg, outro, output, mic_name, trans_str;
     int mode = 0;
 
-    std::string cfg_file = get_adlib_config_file();
+    std::string const cfg_file = get_adlib_config_file();
     std::ifstream ifs(cfg_file);
     if (ifs.is_open()) {
         std::string content((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
@@ -72,7 +72,7 @@ void adlib_card::load_config_from_ini() {
         outro = extract_json("outro_video_path");
         output = extract_json("output_mp4_path");
         mic_name = extract_json("mic_device_name");
-        std::string mode_str = extract_json("mode");
+        std::string const mode_str = extract_json("mode");
         if (!mode_str.empty()) {
             try { mode = std::stoi(mode_str); } catch (...) {}
         }
@@ -128,7 +128,7 @@ void adlib_card::save_config_to_ini() {
         cfg->set_env_value("ROUEN_ADLIB_MIC_NAME", mic_name, true);
     }
 
-    std::string cfg_file = get_adlib_config_file();
+    std::string const cfg_file = get_adlib_config_file();
     std::ofstream ofs(cfg_file);
     if (ofs.is_open()) {
         ofs << "{\n"
@@ -177,7 +177,7 @@ bool adlib_card::validate_config(std::string& out_error_msg) {
             return false;
         }
 
-        std::filesystem::path p(output_path_buf_);
+        std::filesystem::path const p(output_path_buf_);
         if (p.has_parent_path() && !p.parent_path().empty()) {
             if (!std::filesystem::exists(p.parent_path())) {
                 out_error_msg = std::format("Target output folder does not exist: {}", p.parent_path().string());
@@ -209,9 +209,9 @@ void adlib_card::render_content() {
 void adlib_card::draw_execution_deck() {
     auto& engine = rouen::helpers::AdLibEngine::instance();
     auto stage = engine.get_stage();
-    bool is_active = engine.is_active();
-    bool is_paused = engine.is_paused();
-    bool is_recording = engine.is_recording();
+    bool const is_active = engine.is_active();
+    bool const is_paused = engine.is_paused();
+    bool const is_recording = engine.is_recording();
 
     // Stage Badge & Title
     ImGui::TextColored(colors[0], "%s Ad-Lib Production Control", ICON_MD_VIDEO_CAMERA_FRONT);
@@ -248,12 +248,12 @@ void adlib_card::draw_execution_deck() {
     }
 
     if (is_active) {
-        double elapsed = engine.get_elapsed_seconds();
-        int mins = static_cast<int>(elapsed) / 60;
-        int secs = static_cast<int>(elapsed) % 60;
+        double const elapsed = engine.get_elapsed_seconds();
+        int const mins = static_cast<int>(elapsed) / 60;
+        int const secs = static_cast<int>(elapsed) % 60;
         if (stage == rouen::helpers::AdLibStage::Middle) {
-            double stage_elapsed = engine.get_stage_elapsed_seconds();
-            double target_dur = engine.get_auto_stop_seconds();
+            double const stage_elapsed = engine.get_stage_elapsed_seconds();
+            double const target_dur = engine.get_auto_stop_seconds();
             if (target_dur > 0.0) {
                 ImGui::Text(ICON_MD_TIMER " Stage 2: %.1f / %.1f s (Total: %02d:%02d)", stage_elapsed, target_dur, mins, secs);
             } else {
@@ -268,7 +268,7 @@ void adlib_card::draw_execution_deck() {
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), ICON_MD_FIBER_MANUAL_RECORD " REC");
 
             // Mic VU Peak Meter
-            float mic_peak = engine.get_mic_peak();
+            float const mic_peak = engine.get_mic_peak();
             ImGui::SameLine(320.0f);
             ImGui::Text(ICON_MD_MIC " Mic:");
             ImGui::SameLine();
@@ -283,7 +283,7 @@ void adlib_card::draw_execution_deck() {
     ImGui::Spacing();
     ImGui::Text(ICON_MD_TIMER " Stage 2 Transition:");
     ImGui::SameLine();
-    bool is_manual_deck = (stage2_transition_seconds_ <= 0.0f);
+    bool const is_manual_deck = (stage2_transition_seconds_ <= 0.0f);
     if (ImGui::RadioButton("Manual##deck", is_manual_deck)) {
         stage2_transition_seconds_ = 0.0f;
         save_config_to_ini();
@@ -380,7 +380,7 @@ void adlib_card::draw_template_config() {
     ImGui::Spacing();
 
     // Intro Video File
-    bool intro_error = std::strlen(intro_path_buf_) > 0 && !std::filesystem::exists(intro_path_buf_);
+    bool const intro_error = std::strlen(intro_path_buf_) > 0 && !std::filesystem::exists(intro_path_buf_);
     ImGui::Text(ICON_MD_MOVIE " Intro Video File (Stage 1):");
     if (intro_error) ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.5f, 0.1f, 0.1f, 0.6f));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0f);
@@ -392,7 +392,7 @@ void adlib_card::draw_template_config() {
 
     ImGui::SameLine();
     if (ImGui::Button("Browse##intro")) {
-        std::string selected = rouen::platform::select_file_dialog("Select Intro Video", "mp4;mov;mkv;avi");
+        std::string const selected = rouen::platform::select_file_dialog("Select Intro Video", "mp4;mov;mkv;avi");
         if (!selected.empty()) {
             std::strncpy(intro_path_buf_, selected.c_str(), sizeof(intro_path_buf_) - 1);
             save_config_to_ini();
@@ -401,7 +401,7 @@ void adlib_card::draw_template_config() {
     }
 
     // Fixed Background Image
-    bool bg_error = std::strlen(bg_path_buf_) > 0 && !std::filesystem::exists(bg_path_buf_);
+    bool const bg_error = std::strlen(bg_path_buf_) > 0 && !std::filesystem::exists(bg_path_buf_);
     ImGui::Text(ICON_MD_IMAGE " Fixed Background Image (Stage 2):");
     if (bg_error) ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.5f, 0.1f, 0.1f, 0.6f));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0f);
@@ -413,7 +413,7 @@ void adlib_card::draw_template_config() {
 
     ImGui::SameLine();
     if (ImGui::Button("Browse##bg")) {
-        std::string selected = rouen::platform::select_file_dialog("Select Background Image", "png;jpg;jpeg;bmp");
+        std::string const selected = rouen::platform::select_file_dialog("Select Background Image", "png;jpg;jpeg;bmp");
         if (!selected.empty()) {
             std::strncpy(bg_path_buf_, selected.c_str(), sizeof(bg_path_buf_) - 1);
             save_config_to_ini();
@@ -422,7 +422,7 @@ void adlib_card::draw_template_config() {
     }
 
     // Outro Video File
-    bool outro_error = std::strlen(outro_path_buf_) > 0 && !std::filesystem::exists(outro_path_buf_);
+    bool const outro_error = std::strlen(outro_path_buf_) > 0 && !std::filesystem::exists(outro_path_buf_);
     ImGui::Text(ICON_MD_MOVIE " Transition-Out Video File (Stage 3):");
     if (outro_error) ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.5f, 0.1f, 0.1f, 0.6f));
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0f);
@@ -434,7 +434,7 @@ void adlib_card::draw_template_config() {
 
     ImGui::SameLine();
     if (ImGui::Button("Browse##outro")) {
-        std::string selected = rouen::platform::select_file_dialog("Select Outro Video", "mp4;mov;mkv;avi");
+        std::string const selected = rouen::platform::select_file_dialog("Select Outro Video", "mp4;mov;mkv;avi");
         if (!selected.empty()) {
             std::strncpy(outro_path_buf_, selected.c_str(), sizeof(outro_path_buf_) - 1);
             save_config_to_ini();
@@ -458,7 +458,7 @@ void adlib_card::draw_template_config() {
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90.0f);
         if (ImGui::BeginCombo("##mic_combo", current_mic_label.c_str())) {
             for (int i = 0; i < static_cast<int>(audio_devices_.size()); ++i) {
-                bool is_selected = (selected_mic_idx_ == i);
+                bool const is_selected = (selected_mic_idx_ == i);
                 if (ImGui::Selectable(audio_devices_[static_cast<size_t>(i)].name.c_str(), is_selected)) {
                     selected_mic_idx_ = i;
                     save_config_to_ini();
@@ -474,7 +474,7 @@ void adlib_card::draw_template_config() {
             refresh_audio_devices();
         }
 
-        bool output_error = (std::strlen(output_path_buf_) == 0);
+        bool const output_error = (std::strlen(output_path_buf_) == 0);
         ImGui::Text(ICON_MD_FOLDER " Output MP4 Filename / Target Path:");
         if (output_error) ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.5f, 0.1f, 0.1f, 0.6f));
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0f);
@@ -486,7 +486,7 @@ void adlib_card::draw_template_config() {
 
         ImGui::SameLine();
         if (ImGui::Button("Browse##output")) {
-            std::string selected = rouen::platform::save_file_dialog("Save Recorded MP4 As", "mp4");
+            std::string const selected = rouen::platform::save_file_dialog("Save Recorded MP4 As", "mp4");
             if (!selected.empty()) {
                 std::strncpy(output_path_buf_, selected.c_str(), sizeof(output_path_buf_) - 1);
                 save_config_to_ini();

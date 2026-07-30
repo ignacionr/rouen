@@ -41,8 +41,8 @@ static RouenGPUTexture* get_cached_faceplate_texture(VUMeterTheme theme, int w, 
     }
     if (!device) return nullptr;
 
-    std::lock_guard<std::mutex> lock(s_bg_cache_mutex);
-    TextureKey key{ theme, w, h };
+    std::lock_guard<std::mutex> const lock(s_bg_cache_mutex);
+    TextureKey const key{ theme, w, h };
     auto it = s_bg_texture_cache.find(key);
     if (it != s_bg_texture_cache.end()) {
         return it->second;
@@ -53,18 +53,18 @@ static RouenGPUTexture* get_cached_faceplate_texture(VUMeterTheme theme, int w, 
     if (!surface) return nullptr;
 
     Uint32* pixels = static_cast<Uint32*>(surface->pixels);
-    int pitch_px = surface->pitch / 4;
+    int const pitch_px = surface->pitch / 4;
 
     for (int y = 0; y < h; ++y) {
-        float ny = static_cast<float>(y) / static_cast<float>(h);
+        float const ny = static_cast<float>(y) / static_cast<float>(h);
         for (int x = 0; x < w; ++x) {
-            float nx = static_cast<float>(x) / static_cast<float>(w);
+            float const nx = static_cast<float>(x) / static_cast<float>(w);
 
             Uint8 r = 240, g = 230, b = 200, a = 255;
             switch (theme) {
                 case VUMeterTheme::VintageLitAmber: {
-                    float dist = std::sqrt((nx - 0.5f) * (nx - 0.5f) + (ny - 0.35f) * (ny - 0.35f));
-                    float vig = std::clamp(1.0f - dist * 0.40f, 0.0f, 1.0f);
+                    float const dist = std::sqrt((nx - 0.5f) * (nx - 0.5f) + (ny - 0.35f) * (ny - 0.35f));
+                    float const vig = std::clamp(1.0f - dist * 0.40f, 0.0f, 1.0f);
                     r = static_cast<Uint8>(std::clamp((255.0f * (1.0f - ny * 0.12f)) * vig, 0.0f, 255.0f));
                     g = static_cast<Uint8>(std::clamp((242.0f * (1.0f - ny * 0.18f)) * vig, 0.0f, 255.0f));
                     b = static_cast<Uint8>(std::clamp((200.0f * (1.0f - ny * 0.25f)) * vig, 0.0f, 255.0f));
@@ -77,8 +77,8 @@ static RouenGPUTexture* get_cached_faceplate_texture(VUMeterTheme theme, int w, 
                     break;
                 }
                 case VUMeterTheme::ModernDark: {
-                    float dist = std::sqrt((nx - 0.5f) * (nx - 0.5f) + (ny - 0.5f) * (ny - 0.5f));
-                    float vig = std::clamp(1.0f - dist * 0.55f, 0.0f, 1.0f);
+                    float const dist = std::sqrt((nx - 0.5f) * (nx - 0.5f) + (ny - 0.5f) * (ny - 0.5f));
+                    float const vig = std::clamp(1.0f - dist * 0.55f, 0.0f, 1.0f);
                     r = static_cast<Uint8>(std::clamp(18.0f * vig, 0.0f, 255.0f));
                     g = static_cast<Uint8>(std::clamp(20.0f * vig, 0.0f, 255.0f));
                     b = static_cast<Uint8>(std::clamp(26.0f * vig, 0.0f, 255.0f));
@@ -161,8 +161,8 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
                       const VUMeterConfig& config) {
     if (!draw_list || size.x <= 0.0f || size.y <= 0.0f) return;
 
-    ImVec2 min_p = pos;
-    ImVec2 max_p = ImVec2(pos.x + size.x, pos.y + size.y);
+    ImVec2 const min_p = pos;
+    ImVec2 const max_p = ImVec2(pos.x + size.x, pos.y + size.y);
 
     // Determine colors based on theme & style overrides
     ImU32 bg_top, bg_bottom, bezel_col, scale_norm_col, scale_overload_col, label_col, needle_col, pivot_col;
@@ -238,16 +238,16 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
     draw_list->AddRectFilled(min_p, max_p, bezel_col, 4.0f);
 
     // 2. Faceplate Background: Use cached background texture if available
-    ImVec2 inner_min(min_p.x + 2.0f, min_p.y + 2.0f);
-    ImVec2 inner_max(max_p.x - 2.0f, max_p.y - 2.0f);
+    ImVec2 const inner_min(min_p.x + 2.0f, min_p.y + 2.0f);
+    ImVec2 const inner_max(max_p.x - 2.0f, max_p.y - 2.0f);
     draw_list->PushClipRect(inner_min, inner_max, true);
 
-    int inner_w = static_cast<int>(inner_max.x - inner_min.x);
-    int inner_h = static_cast<int>(inner_max.y - inner_min.y);
+    int const inner_w = static_cast<int>(inner_max.x - inner_min.x);
+    int const inner_h = static_cast<int>(inner_max.y - inner_min.y);
 
     RouenGPUTexture* bg_tex = get_cached_faceplate_texture(config.style.theme, inner_w, inner_h);
     if (bg_tex) {
-        ImTextureID tex_id = rouen::helpers::texture_id_cast(bg_tex);
+        ImTextureID const tex_id = rouen::helpers::texture_id_cast(bg_tex);
         draw_list->AddImage(tex_id, inner_min, inner_max);
     } else {
         draw_list->AddRectFilledMultiColor(
@@ -258,52 +258,52 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
 
     // Dynamic Lighting Effect (Sinusoidal + Exponential response)
     if (config.style.enable_dynamic_lighting && config.style.theme != VUMeterTheme::VintageUnlitSlate) {
-        float time_sec = static_cast<float>(ImGui::GetTime());
+        float const time_sec = static_cast<float>(ImGui::GetTime());
 
         // Sinusoidal ambient pulse (subtle vintage incandescent bulb flicker / power oscillation)
-        float sine_wave = (std::sin(time_sec * 2.8f) * 0.5f + 0.5f);
-        float sine_flicker = (std::sin(time_sec * 7.5f) * 0.5f + 0.5f);
+        float const sine_wave = (std::sin(time_sec * 2.8f) * 0.5f + 0.5f);
+        float const sine_flicker = (std::sin(time_sec * 7.5f) * 0.5f + 0.5f);
 
         // Exponential light response based on signal level
-        float exp_signal = std::pow(std::clamp(value, 0.0f, 1.0f), 1.8f);
+        float const exp_signal = std::pow(std::clamp(value, 0.0f, 1.0f), 1.8f);
 
         // Dynamic light intensity factor [0.35 .. 1.0]
-        float light_intensity = std::clamp(0.35f + 0.45f * exp_signal + 0.15f * sine_wave + 0.05f * sine_flicker, 0.0f, 1.0f);
+        float const light_intensity = std::clamp(0.35f + 0.45f * exp_signal + 0.15f * sine_wave + 0.05f * sine_flicker, 0.0f, 1.0f);
 
         if (config.style.theme == VUMeterTheme::VintageLitAmber) {
-            ImVec2 spot(pos.x + size.x * 0.5f, pos.y + size.y * 0.35f);
-            float spot_r = size.y * (0.32f + 0.08f * light_intensity);
-            Uint8 alpha_outer = static_cast<Uint8>(std::clamp(35.0f + 65.0f * light_intensity, 0.0f, 255.0f));
+            ImVec2 const spot(pos.x + size.x * 0.5f, pos.y + size.y * 0.35f);
+            float const spot_r = size.y * (0.32f + 0.08f * light_intensity);
+            Uint8 const alpha_outer = static_cast<Uint8>(std::clamp(35.0f + 65.0f * light_intensity, 0.0f, 255.0f));
             draw_list->AddCircleFilled(spot, spot_r, IM_COL32(255, 245, 190, alpha_outer), 28);
 
             // Intense inner white-warm filament core glow
-            Uint8 alpha_core = static_cast<Uint8>(std::clamp(20.0f + 75.0f * exp_signal, 0.0f, 255.0f));
+            Uint8 const alpha_core = static_cast<Uint8>(std::clamp(20.0f + 75.0f * exp_signal, 0.0f, 255.0f));
             draw_list->AddCircleFilled(spot, spot_r * 0.45f, IM_COL32(255, 255, 235, alpha_core), 20);
         } else if (config.style.theme == VUMeterTheme::ModernDark) {
-            ImVec2 spot(pos.x + size.x * 0.5f, pos.y + size.y * 0.35f);
-            float spot_r = size.y * (0.30f + 0.06f * light_intensity);
-            Uint8 alpha_glow = static_cast<Uint8>(std::clamp(30.0f + 60.0f * light_intensity, 0.0f, 255.0f));
+            ImVec2 const spot(pos.x + size.x * 0.5f, pos.y + size.y * 0.35f);
+            float const spot_r = size.y * (0.30f + 0.06f * light_intensity);
+            Uint8 const alpha_glow = static_cast<Uint8>(std::clamp(30.0f + 60.0f * light_intensity, 0.0f, 255.0f));
             draw_list->AddCircleFilled(spot, spot_r, IM_COL32(0, 210, 255, alpha_glow), 24);
         }
     }
 
     // 3. Scale Arc & Ticks
-    float cx = pos.x + size.x * 0.5f;
-    float cy = pos.y + size.y * 1.08f;
-    float r_arc = size.y * 0.72f;
+    float const cx = pos.x + size.x * 0.5f;
+    float const cy = pos.y + size.y * 1.08f;
+    float const r_arc = size.y * 0.72f;
 
-    float start_angle = config.start_angle_rad;
-    float sweep_angle = config.sweep_angle_rad;
+    float const start_angle = config.start_angle_rad;
+    float const sweep_angle = config.sweep_angle_rad;
 
     constexpr int kArcSteps = 24;
     for (int i = 0; i < kArcSteps; ++i) {
-        float t1 = static_cast<float>(i) / kArcSteps;
-        float t2 = static_cast<float>(i + 1) / kArcSteps;
-        float a1 = start_angle + t1 * sweep_angle;
-        float a2 = start_angle + t2 * sweep_angle;
-        ImU32 seg_col = (t1 >= config.style.overload_threshold) ? scale_overload_col : scale_norm_col;
-        ImVec2 p1(cx + std::cos(a1) * r_arc, cy + std::sin(a1) * r_arc);
-        ImVec2 p2(cx + std::cos(a2) * r_arc, cy + std::sin(a2) * r_arc);
+        float const t1 = static_cast<float>(i) / kArcSteps;
+        float const t2 = static_cast<float>(i + 1) / kArcSteps;
+        float const a1 = start_angle + t1 * sweep_angle;
+        float const a2 = start_angle + t2 * sweep_angle;
+        ImU32 const seg_col = (t1 >= config.style.overload_threshold) ? scale_overload_col : scale_norm_col;
+        ImVec2 const p1(cx + std::cos(a1) * r_arc, cy + std::sin(a1) * r_arc);
+        ImVec2 const p2(cx + std::cos(a2) * r_arc, cy + std::sin(a2) * r_arc);
         draw_list->AddLine(p1, p2, seg_col, 1.5f);
     }
 
@@ -314,18 +314,18 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
     }
 
     for (const auto& tk : ticks) {
-        float a = start_angle + tk.norm_val * sweep_angle;
-        float tick_len = tk.major ? 5.0f : 3.0f;
-        ImU32 t_col = tk.color ? *tk.color :
+        float const a = start_angle + tk.norm_val * sweep_angle;
+        float const tick_len = tk.major ? 5.0f : 3.0f;
+        ImU32 const t_col = tk.color ? *tk.color :
                       ((tk.norm_val >= config.style.overload_threshold) ? scale_overload_col : scale_norm_col);
 
-        ImVec2 p_in(cx + std::cos(a) * (r_arc - tick_len), cy + std::sin(a) * (r_arc - tick_len));
-        ImVec2 p_out(cx + std::cos(a) * (r_arc + 1.0f), cy + std::sin(a) * (r_arc + 1.0f));
+        ImVec2 const p_in(cx + std::cos(a) * (r_arc - tick_len), cy + std::sin(a) * (r_arc - tick_len));
+        ImVec2 const p_out(cx + std::cos(a) * (r_arc + 1.0f), cy + std::sin(a) * (r_arc + 1.0f));
         draw_list->AddLine(p_in, p_out, t_col, tk.major ? 1.5f : 1.0f);
 
         if (tk.major && !tk.label.empty()) {
-            ImVec2 t_pos(cx + std::cos(a) * (r_arc - tick_len - 7.0f), cy + std::sin(a) * (r_arc - tick_len - 7.0f));
-            ImVec2 sz = ImGui::CalcTextSize(tk.label.c_str());
+            ImVec2 const t_pos(cx + std::cos(a) * (r_arc - tick_len - 7.0f), cy + std::sin(a) * (r_arc - tick_len - 7.0f));
+            ImVec2 const sz = ImGui::CalcTextSize(tk.label.c_str());
             draw_list->AddText(ImVec2(t_pos.x - sz.x * 0.5f, t_pos.y - sz.y * 0.5f), t_col, tk.label.c_str());
         }
     }
@@ -333,37 +333,37 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
     // 4. Badges / Titles
     if (config.show_titles) {
         if (!config.title.empty()) {
-            ImVec2 vu_sz = ImGui::CalcTextSize(config.title.c_str());
+            ImVec2 const vu_sz = ImGui::CalcTextSize(config.title.c_str());
             draw_list->AddText(ImVec2(cx - vu_sz.x * 0.5f, pos.y + size.y * 0.22f), label_col, config.title.c_str());
         }
 
         if (!ch_label.empty()) {
-            ImVec2 ch_sz = ImGui::CalcTextSize(ch_label.c_str());
+            ImVec2 const ch_sz = ImGui::CalcTextSize(ch_label.c_str());
             draw_list->AddText(ImVec2(cx - ch_sz.x * 0.5f, pos.y + size.y * 0.76f), label_col, ch_label.c_str());
         }
     }
 
     // 5. Watermark Peak Tick
     if (config.style.show_peak_watermark && watermark > 0.01f) {
-        float act_wm = std::clamp(watermark, 0.0f, 1.0f);
-        float wm_angle = start_angle + act_wm * sweep_angle;
-        ImVec2 wm_p1(cx + std::cos(wm_angle) * (r_arc - 5.0f), cy + std::sin(wm_angle) * (r_arc - 5.0f));
-        ImVec2 wm_p2(cx + std::cos(wm_angle) * (r_arc + 3.0f), cy + std::sin(wm_angle) * (r_arc + 3.0f));
-        ImU32 wm_col = IM_COL32(235, 40, 40, 240);
+        float const act_wm = std::clamp(watermark, 0.0f, 1.0f);
+        float const wm_angle = start_angle + act_wm * sweep_angle;
+        ImVec2 const wm_p1(cx + std::cos(wm_angle) * (r_arc - 5.0f), cy + std::sin(wm_angle) * (r_arc - 5.0f));
+        ImVec2 const wm_p2(cx + std::cos(wm_angle) * (r_arc + 3.0f), cy + std::sin(wm_angle) * (r_arc + 3.0f));
+        ImU32 const wm_col = IM_COL32(235, 40, 40, 240);
         draw_list->AddLine(wm_p1, wm_p2, wm_col, 2.0f);
     }
 
     // 6. Needle & Pivot Cap
-    float act_level = std::clamp(value, 0.0f, 1.0f);
-    float needle_angle = start_angle + act_level * sweep_angle;
-    float r_needle = r_arc + 2.0f;
+    float const act_level = std::clamp(value, 0.0f, 1.0f);
+    float const needle_angle = start_angle + act_level * sweep_angle;
+    float const r_needle = r_arc + 2.0f;
 
-    ImVec2 needle_tip(cx + std::cos(needle_angle) * r_needle, cy + std::sin(needle_angle) * r_needle);
+    ImVec2 const needle_tip(cx + std::cos(needle_angle) * r_needle, cy + std::sin(needle_angle) * r_needle);
     draw_list->AddLine(ImVec2(cx, cy), needle_tip, needle_col, 1.8f);
 
     if (act_level >= config.style.overload_threshold || config.style.theme == VUMeterTheme::VintageLitAmber) {
         // Red accent on needle tip
-        ImVec2 sub_tip(cx + std::cos(needle_angle) * (r_needle - 6.0f), cy + std::sin(needle_angle) * (r_needle - 6.0f));
+        ImVec2 const sub_tip(cx + std::cos(needle_angle) * (r_needle - 6.0f), cy + std::sin(needle_angle) * (r_needle - 6.0f));
         draw_list->AddLine(sub_tip, needle_tip, scale_overload_col, 2.0f);
     }
 
@@ -373,10 +373,10 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
 
     // 7. Glass Reflection Overlay
     if (config.style.draw_glass_reflection) {
-        ImVec2 g1(min_p.x + 3.0f, min_p.y + 3.0f);
-        ImVec2 g2(min_p.x + size.x * 0.6f, min_p.y + 3.0f);
-        ImVec2 g3(min_p.x + 3.0f, min_p.y + size.y * 0.6f);
-        ImU32 glass_alpha = (config.style.theme == VUMeterTheme::VintageLitAmber) ? 22 : 10;
+        ImVec2 const g1(min_p.x + 3.0f, min_p.y + 3.0f);
+        ImVec2 const g2(min_p.x + size.x * 0.6f, min_p.y + 3.0f);
+        ImVec2 const g3(min_p.x + 3.0f, min_p.y + size.y * 0.6f);
+        ImU32 const glass_alpha = (config.style.theme == VUMeterTheme::VintageLitAmber) ? 22 : 10;
         draw_list->AddTriangleFilled(g1, g2, g3, IM_COL32(255, 255, 255, glass_alpha));
     }
 
@@ -390,16 +390,16 @@ void draw_stereo_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImV
                              float level_l, float level_r,
                              float watermark_l, float watermark_r,
                              const VUMeterConfig& config) {
-    float gap = 6.0f;
+    float const gap = 6.0f;
     float meter_w = (size.x - gap) / 2.0f;
     if (meter_w < 20.0f) meter_w = 20.0f;
 
-    ImVec2 l_pos = pos;
-    ImVec2 l_size(meter_w, size.y);
+    ImVec2 const l_pos = pos;
+    ImVec2 const l_size(meter_w, size.y);
     draw_analog_dial(draw_list, l_pos, l_size, level_l, watermark_l, config.left_channel_title, config);
 
-    ImVec2 r_pos(pos.x + meter_w + gap, pos.y);
-    ImVec2 r_size(meter_w, size.y);
+    ImVec2 const r_pos(pos.x + meter_w + gap, pos.y);
+    ImVec2 const r_size(meter_w, size.y);
     draw_analog_dial(draw_list, r_pos, r_size, level_r, watermark_r, config.right_channel_title, config);
 }
 
@@ -409,19 +409,19 @@ void draw_bar_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size
                     const VUMeterConfig& config) {
     if (!draw_list || size.x <= 0.0f || size.y <= 0.0f) return;
 
-    bool is_stereo = (level_r >= 0.0f);
-    int num_channels = is_stereo ? 2 : 1;
+    bool const is_stereo = (level_r >= 0.0f);
+    int const num_channels = is_stereo ? 2 : 1;
 
     float bar_w = is_stereo ? (size.x - 4.0f) / 2.0f : size.x;
     if (bar_w < 3.0f) bar_w = 3.0f;
 
     for (int ch = 0; ch < num_channels; ++ch) {
-        float level = (ch == 0) ? std::clamp(level_l, 0.0f, 1.0f) : std::clamp(level_r, 0.0f, 1.0f);
-        float watermark = (ch == 0) ? std::clamp(watermark_l, 0.0f, 1.0f) : std::clamp(watermark_r, 0.0f, 1.0f);
+        float const level = (ch == 0) ? std::clamp(level_l, 0.0f, 1.0f) : std::clamp(level_r, 0.0f, 1.0f);
+        float const watermark = (ch == 0) ? std::clamp(watermark_l, 0.0f, 1.0f) : std::clamp(watermark_r, 0.0f, 1.0f);
 
-        float ch_x = pos.x + (is_stereo ? static_cast<float>(ch) * (bar_w + 4.0f) : 0.0f);
-        ImVec2 ch_min(ch_x, pos.y);
-        ImVec2 ch_max(ch_x + bar_w, pos.y + size.y);
+        float const ch_x = pos.x + (is_stereo ? static_cast<float>(ch) * (bar_w + 4.0f) : 0.0f);
+        ImVec2 const ch_min(ch_x, pos.y);
+        ImVec2 const ch_max(ch_x + bar_w, pos.y + size.y);
 
         // Container background
         draw_list->AddRectFilled(ch_min, ch_max, IM_COL32(20, 24, 30, 255), 2.0f);
@@ -429,18 +429,18 @@ void draw_bar_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size
 
         // Level fill
         if (level > 0.005f) {
-            float fill_h = (size.y - 2.0f) * level;
-            ImVec2 f_min(ch_min.x + 1.0f, ch_max.y - 1.0f - fill_h);
-            ImVec2 f_max(ch_max.x - 1.0f, ch_max.y - 1.0f);
-            ImU32 col = (level > config.style.overload_threshold) ? IM_COL32(231, 76, 60, 255) :
+            float const fill_h = (size.y - 2.0f) * level;
+            ImVec2 const f_min(ch_min.x + 1.0f, ch_max.y - 1.0f - fill_h);
+            ImVec2 const f_max(ch_max.x - 1.0f, ch_max.y - 1.0f);
+            ImU32 const col = (level > config.style.overload_threshold) ? IM_COL32(231, 76, 60, 255) :
                         (level > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
             draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
         }
 
         // Peak Watermark Line
         if (config.style.show_peak_watermark && watermark > 0.005f) {
-            float wm_y = ch_max.y - 1.0f - ((size.y - 2.0f) * watermark);
-            ImU32 wm_col = (watermark > config.style.overload_threshold) ? IM_COL32(255, 90, 90, 255) :
+            float const wm_y = ch_max.y - 1.0f - ((size.y - 2.0f) * watermark);
+            ImU32 const wm_col = (watermark > config.style.overload_threshold) ? IM_COL32(255, 90, 90, 255) :
                            (watermark > 0.70f) ? IM_COL32(255, 220, 80, 255) : IM_COL32(220, 245, 220, 255);
             draw_list->AddLine(ImVec2(ch_min.x + 1.0f, wm_y), ImVec2(ch_max.x - 1.0f, wm_y), wm_col, 2.0f);
         }
@@ -450,7 +450,7 @@ void draw_bar_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size
 void render_analog_dial(const ImVec2& size, float value, float watermark,
                         const std::string& ch_label,
                         const VUMeterConfig& config) {
-    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 const pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_analog_dial(draw_list, pos, size, value, watermark, ch_label, config);
     ImGui::Dummy(size);
@@ -459,7 +459,7 @@ void render_analog_dial(const ImVec2& size, float value, float watermark,
 void render_stereo_analog_dial(const ImVec2& size, float level_l, float level_r,
                                float watermark_l, float watermark_r,
                                const VUMeterConfig& config) {
-    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 const pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_stereo_analog_dial(draw_list, pos, size, level_l, level_r, watermark_l, watermark_r, config);
     ImGui::Dummy(size);
@@ -468,7 +468,7 @@ void render_stereo_analog_dial(const ImVec2& size, float level_l, float level_r,
 void render_bar_meter(const ImVec2& size, float level_l, float level_r,
                       float watermark_l, float watermark_r,
                       const VUMeterConfig& config) {
-    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 const pos = ImGui::GetCursorScreenPos();
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_bar_meter(draw_list, pos, size, level_l, level_r, watermark_l, watermark_r, config);
     ImGui::Dummy(size);

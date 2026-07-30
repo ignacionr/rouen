@@ -42,12 +42,12 @@ std::string ProcessCarriageReturns(const std::string& input) {
         return input;
     }
     
-    size_t last_r = input.find_last_of('\r');
+    size_t const last_r = input.find_last_of('\r');
     if (last_r != std::string::npos) {
         if (last_r + 1 < input.size()) {
             return input.substr(last_r + 1);
         }
-        size_t prev_r = input.find_last_of('\r', last_r - 1);
+        size_t const prev_r = input.find_last_of('\r', last_r - 1);
         if (prev_r != std::string::npos) {
             return input.substr(prev_r + 1, last_r - (prev_r + 1));
         }
@@ -143,7 +143,7 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
     ws.ws_xpixel = 0;
     ws.ws_ypixel = 0;
     
-    std::string bash_path = CONFIG_SERVICE()->get_bash_path();
+    std::string const bash_path = CONFIG_SERVICE()->get_bash_path();
     
     // Fork a child process with a pseudo-terminal (PTY) master-slave pair
     bash_pid = forkpty(&bash_master_fd, nullptr, &tio, &ws);
@@ -165,8 +165,8 @@ void TerminalBash::initialize_bash_session(const std::string& initial_dir, Termi
         // Parent process
         
         // Set master PTY fd to non-blocking mode
-        int flags = fcntl(bash_master_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
+        int const flags = fcntl(bash_master_fd, F_GETFL, 0);
+        [[maybe_unused]] int const fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
         
         // Reset stop flag before starting thread
         should_stop_threads = false;
@@ -235,11 +235,11 @@ void TerminalBash::terminate_bash_session() {
 void TerminalBash::send_to_bash(const std::string& command, bool raw) const {
 #ifndef _WIN32
     if (bash_master_fd >= 0) {
-        std::string cmd_with_nl = command + "\n";
+        std::string const cmd_with_nl = command + "\n";
         [[maybe_unused]] auto write_result1 = write(bash_master_fd, cmd_with_nl.c_str(), cmd_with_nl.length());
         
         if (!raw) {
-            std::string end_marker = "echo ROUEN_CMD_DONE\n";
+            std::string const end_marker = "echo ROUEN_CMD_DONE\n";
             [[maybe_unused]] auto write_result2 = write(bash_master_fd, end_marker.c_str(), end_marker.length());
         }
     }
@@ -250,12 +250,12 @@ void TerminalBash::send_to_bash(const std::string& command, bool raw) const {
 }
 
 std::string TerminalBash::get_cwd() {
-    std::lock_guard<std::mutex> lock(cwd_mutex);
+    std::lock_guard<std::mutex> const lock(cwd_mutex);
     return current_working_dir;
 }
 
 void TerminalBash::set_cwd(const std::string& cwd) {
-    std::lock_guard<std::mutex> lock(cwd_mutex);
+    std::lock_guard<std::mutex> const lock(cwd_mutex);
     current_working_dir = cwd;
 }
 
@@ -278,10 +278,10 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
     pfd.events = POLLIN;
     
     while (!should_stop_threads.load()) {
-        int poll_result = poll(&pfd, 1, 10);
+        int const poll_result = poll(&pfd, 1, 10);
         
         if (poll_result > 0 && (pfd.revents & POLLIN)) {
-            ssize_t bytes_read = read(pipe_fd, buffer, sizeof(buffer) - 1);
+            ssize_t const bytes_read = read(pipe_fd, buffer, sizeof(buffer) - 1);
             
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
@@ -291,7 +291,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                 size_t end_line{0};
                 
                 while ((end_line = accumulated_output.find('\n', pos)) != std::string::npos) {
-                    std::string line = accumulated_output.substr(pos, end_line - pos);
+                    std::string const line = accumulated_output.substr(pos, end_line - pos);
                     pos = end_line + 1;
                     
                     if (line.find("cannot set terminal process group") != std::string::npos ||
@@ -300,7 +300,7 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                     }
                     
                     // Collapse any carriage returns (like progress update bars)
-                    std::string clean_line = ProcessCarriageReturns(line);
+                    std::string const clean_line = ProcessCarriageReturns(line);
                     
                     const std::string control_stripped_line = StripAnsiSequences(clean_line);
 
@@ -309,8 +309,8 @@ void TerminalBash::read_bash_stream(int pipe_fd, OutputType output_type,
                         command_running = false;
                         
                         std::string parsed_cwd;
-                        size_t first_pipe = control_stripped_line.find('|');
-                        size_t second_pipe = control_stripped_line.find('|', first_pipe + 1);
+                        size_t const first_pipe = control_stripped_line.find('|');
+                        size_t const second_pipe = control_stripped_line.find('|', first_pipe + 1);
                         if (first_pipe != std::string::npos && second_pipe != std::string::npos) {
                             parsed_cwd = control_stripped_line.substr(first_pipe + 1, second_pipe - first_pipe - 1);
                         }
@@ -395,8 +395,8 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
     ws.ws_xpixel = 0;
     ws.ws_ypixel = 0;
     
-    std::string sudo_path = CONFIG_SERVICE()->get_sudo_path();
-    std::string bash_path = CONFIG_SERVICE()->get_bash_path();
+    std::string const sudo_path = CONFIG_SERVICE()->get_sudo_path();
+    std::string const bash_path = CONFIG_SERVICE()->get_bash_path();
     
     bash_pid = forkpty(&bash_master_fd, nullptr, &tio, &ws);
     
@@ -411,15 +411,15 @@ void TerminalBash::restart_with_sudo(const char* password, const std::string& pr
         perror("execl");
         exit(1);
     } else {
-        int flags = fcntl(bash_master_fd, F_GETFL, 0);
-        [[maybe_unused]] int fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
+        int const flags = fcntl(bash_master_fd, F_GETFL, 0);
+        [[maybe_unused]] int const fcntl_result = fcntl(bash_master_fd, F_SETFL, flags | O_NONBLOCK);
         
         should_stop_threads = false;
         bash_stdout_reader_thread = std::thread([this, &output]() {
             read_bash_stream(bash_master_fd, OutputType::StdOut, output, *is_command_running_ptr);
         });
         
-        std::string pass_str = std::string(password) + "\n";
+        std::string const pass_str = std::string(password) + "\n";
         [[maybe_unused]] auto write_result = write(bash_master_fd, pass_str.c_str(), pass_str.length());
         
         send_to_bash("export PATH=\"$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin\"", true);
@@ -463,14 +463,14 @@ void TerminalBash::send_sigint() {
         
         // Also send SIGINT directly to direct child processes of the bash session
         // (This acts as a robust backup if process group propagation is hindered)
-        std::string cmd = std::format("pgrep -P {}", bash_pid);
+        std::string const cmd = std::format("pgrep -P {}", bash_pid);
         FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
         if (pipe) {
             char buffer[128];
             std::vector<pid_t> child_pids;
             while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
                 try {
-                    pid_t pid = std::stoi(buffer);
+                    pid_t const pid = std::stoi(buffer);
                     if (pid > 0) {
                         child_pids.push_back(pid);
                     }
@@ -495,14 +495,14 @@ void TerminalBash::send_sigkill() {
 #ifndef _WIN32
     if (bash_pid > 0) {
         // Query child PIDs of bash_pid using pgrep -P
-        std::string cmd = std::format("pgrep -P {}", bash_pid);
+        std::string const cmd = std::format("pgrep -P {}", bash_pid);
         FILE* pipe = popen(cmd.c_str(), "r"); // NOLINT(cert-env33-c)
         if (pipe) {
             char buffer[128];
             std::vector<pid_t> child_pids;
             while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
                 try {
-                    pid_t pid = std::stoi(buffer);
+                    pid_t const pid = std::stoi(buffer);
                     if (pid > 0) {
                         child_pids.push_back(pid);
                     }
