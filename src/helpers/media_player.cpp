@@ -922,6 +922,7 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
 }
 
 void media_player::draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
+    if (get_detached_item().get() == &item) return;
     double current_pos = item.get_current_position();
     double current_dur = item.duration.load();
     if (current_dur <= 0.0) return;

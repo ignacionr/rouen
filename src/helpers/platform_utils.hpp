@@ -43,6 +43,44 @@ namespace rouen::platform
     constexpr bool is_linux = false;
 #endif
 
+    inline std::string select_file_dialog(const std::string& prompt, const std::string& /*extension*/ = "") {
+#if defined(__APPLE__)
+        std::string cmd = std::format("osascript -e 'POSIX path of (choose file with prompt \"{}\")' 2>/dev/null", prompt);
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return "";
+        char buffer[1024] = {0};
+        if (fgets(buffer, sizeof(buffer), pipe)) {
+            pclose(pipe);
+            std::string result(buffer);
+            while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+                result.pop_back();
+            }
+            return result;
+        }
+        pclose(pipe);
+#endif
+        return "";
+    }
+
+    inline std::string save_file_dialog(const std::string& prompt, const std::string& default_ext = "mp4") {
+#if defined(__APPLE__)
+        std::string cmd = std::format("osascript -e 'POSIX path of (choose file name with prompt \"{}\" default name \"adlib_output.{}\")' 2>/dev/null", prompt, default_ext);
+        FILE* pipe = popen(cmd.c_str(), "r");
+        if (!pipe) return "";
+        char buffer[1024] = {0};
+        if (fgets(buffer, sizeof(buffer), pipe)) {
+            pclose(pipe);
+            std::string result(buffer);
+            while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
+                result.pop_back();
+            }
+            return result;
+        }
+        pclose(pipe);
+#endif
+        return "";
+    }
+
     /**
      * Opens a file or URL with the default system application
      * Uses 'open' on macOS and 'xdg-open' on Linux

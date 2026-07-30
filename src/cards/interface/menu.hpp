@@ -35,6 +35,9 @@ namespace rouen::cards {
             width = 320.0f; // Slightly wider for better menu display
         }
 
+        bool has_video_overlay() const override { return false; }
+        void render_video_ui() override {}
+
         std::string get_uri() const override {
             return "menu";
         }
@@ -361,6 +364,7 @@ namespace rouen::cards {
                     {detach_title, detach_action},
                     {"Media Companion", []() { "create_card"_sfn("media-companion"); }},
                     {"Live Camera", []() { "create_card"_sfn("camera"); }},
+                    {"Ad-Lib Studio", []() { "create_card"_sfn("adlib"); }},
                     {"Radio", []() { "create_card"_sfn("radio"); }},
                     {"RadioCut Client", []() { "create_card"_sfn("radiocut"); }},
                     {"YouTube Search", []() { "create_card"_sfn("youtube"); }},

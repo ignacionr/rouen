@@ -77,10 +77,13 @@ struct media_player_item {
     std::deque<audio_peak_sample> audio_peak_queue;
     std::atomic<float> video_aspect_ratio{16.0f / 9.0f};
     std::atomic<bool> has_video{false};
+    std::atomic<bool> has_audio{false};
     std::atomic<float> current_luminance{0.0f};
     std::atomic<float> current_audio_peak_l{0.0f};
     std::atomic<float> current_audio_peak_r{0.0f};
     std::atomic<bool> has_presented_first_frame{false};
+    std::atomic<bool> is_adlib_item{false};
+    std::vector<uint8_t> get_current_adlib_frame_pixels() const;
     std::atomic<double> initial_pts_offset{0.0};
     std::atomic<double> first_video_pts{-1.0};
     std::atomic<double> first_audio_pts{-1.0};
@@ -126,6 +129,7 @@ struct media_player_item {
     static inline std::function<void()> reset_sync_cb;
     static inline std::function<size_t()> get_cast_queue_size_cb;
     static inline std::function<bool()> is_offscreen_ctx_cb;
+    std::function<void(const uint8_t* pcm_s16_data, size_t size_in_bytes)> on_audio_pcm_cb;
 
     // FFmpeg Engine Members
     std::thread ffmpeg_thread;

@@ -85,6 +85,9 @@ int main(int argc, char* argv[]) {
             deck::no_initial_cards = true;
         }
     }
+#ifndef _WIN32
+    signal(SIGPIPE, SIG_IGN);
+#endif
     try {
     // Debug: Print working directory at startup
     std::cout << "[DEBUG] Application starting from: " << std::filesystem::current_path() << '\n';

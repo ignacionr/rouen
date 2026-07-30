@@ -170,7 +170,7 @@ namespace TextureHelper {
     }
 
     // Function to create a solid color texture using SDL3 GPU API
-    inline RouenGPUTexture* createSolidColorTexture(SDL_GPUDevice* device, int width, int height, Uint8 r, Uint8 g, Uint8 b, Uint8 a) {
+    inline RouenGPUTexture* createSolidColorTexture(SDL_GPUDevice* device, int width, int height, Uint8 r, Uint8 g, Uint8 b, Uint8 a, SDL_GPUCommandBuffer* existing_cmd_buf = nullptr) {
         if (!device) {
             TEXTURE_ERROR("Cannot create texture: device is null")
             return nullptr;
@@ -204,25 +204,28 @@ namespace TextureHelper {
             return nullptr;
         }
 
-        // Upload to GPU
+        // Create a Transfer Buffer
         SDL_GPUTransferBufferCreateInfo transfer_info = {};
         transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         transfer_info.size = static_cast<Uint32>(height * surface->pitch);
-
+        
         SDL_GPUTransferBuffer* transfer_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
         if (!transfer_buffer) {
+            TEXTURE_ERROR_FMT("Failed to create transfer buffer: {}", SDL_GetError())
             SDL_ReleaseGPUTexture(device, texture);
             SDL_DestroySurface(surface);
             return nullptr;
         }
 
+        // Copy pixel data to the Transfer Buffer
         Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, transfer_buffer, false));
         if (map) {
             std::memcpy(map, surface->pixels, static_cast<size_t>(height) * static_cast<size_t>(surface->pitch));
             SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
         }
 
-        SDL_GPUCommandBuffer* cmd_buf = SDL_AcquireGPUCommandBuffer(device);
+        // Upload to GPU
+        SDL_GPUCommandBuffer* cmd_buf = (existing_cmd_buf != nullptr) ? existing_cmd_buf : SDL_AcquireGPUCommandBuffer(device);
         if (cmd_buf) {
             SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
             if (copy_pass) {
@@ -241,7 +244,9 @@ namespace TextureHelper {
                 SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
                 SDL_EndGPUCopyPass(copy_pass);
             }
-            SDL_SubmitGPUCommandBuffer(cmd_buf);
+            if (!existing_cmd_buf) {
+                SDL_SubmitGPUCommandBuffer(cmd_buf);
+            }
         }
 
         SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);
@@ -257,7 +262,7 @@ namespace TextureHelper {
     }
 
     // Function to create a GPU texture from an SDL_Surface
-    inline RouenGPUTexture* createTextureFromSurface(SDL_GPUDevice* device, SDL_Surface* surface) {
+    inline RouenGPUTexture* createTextureFromSurface(SDL_GPUDevice* device, SDL_Surface* surface, SDL_GPUCommandBuffer* existing_cmd_buf = nullptr) {
         if (!device || !surface) {
             TEXTURE_ERROR("Cannot create texture from surface: device or surface is null");
             return nullptr;
@@ -308,7 +313,7 @@ namespace TextureHelper {
             SDL_UnmapGPUTransferBuffer(device, transfer_buffer);
         }
 
-        SDL_GPUCommandBuffer* cmd_buf = SDL_AcquireGPUCommandBuffer(device);
+        SDL_GPUCommandBuffer* cmd_buf = (existing_cmd_buf != nullptr) ? existing_cmd_buf : SDL_AcquireGPUCommandBuffer(device);
         if (cmd_buf) {
             SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(cmd_buf);
             if (copy_pass) {
@@ -327,7 +332,9 @@ namespace TextureHelper {
                 SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
                 SDL_EndGPUCopyPass(copy_pass);
             }
-            SDL_SubmitGPUCommandBuffer(cmd_buf);
+            if (!existing_cmd_buf) {
+                SDL_SubmitGPUCommandBuffer(cmd_buf);
+            }
         }
 
         SDL_ReleaseGPUTransferBuffer(device, transfer_buffer);

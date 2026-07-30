@@ -46,6 +46,15 @@ private:
     static std::string handle_window_get(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_window_set(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_screenshot(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_prepare(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_start(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_next_stage(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_stop(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_run(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_test_audio(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_test_video(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_adlib_test_mux(struct mg_connection* c, struct mg_http_message* hm);
 
     std::unique_ptr<struct mg_mgr> mgr_;
     struct mg_connection* conn_;

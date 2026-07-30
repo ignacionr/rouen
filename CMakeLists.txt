@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.30)
+set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
 
 # Enforce build job pools to prevent memory exhaustion (OOM) on 16GB RAM machines
 set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=2 link_job_pool=1)
 set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
-set(CMAKE_JOB_POOL_LINK link_job_pool)
+set(CMAKE_DISABLE_PRECOMPILED_HEADERS ON)
 
-# Set build type to Debug if not specified
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
 endif()
@@ -163,6 +163,8 @@ else()
   pkg_check_modules(AVUTIL REQUIRED libavutil)
   pkg_check_modules(SWSCALE REQUIRED libswscale)
   pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
+  pkg_get_variable(AVCODEC_INCLUDEDIR libavcodec includedir)
+  message(STATUS "FFmpeg AVCODEC_INCLUDEDIR: ${AVCODEC_INCLUDEDIR}")
   
   # Create imported targets for SDL3 if they don't exist
   if(SDL3_FOUND AND NOT TARGET SDL3::SDL3)
@@ -225,11 +227,11 @@ else()
     find_package(pdfium QUIET)
   endif()
   if(NOT PDFium_FOUND AND NOT TARGET pdfium)
-    find_path(PDFium_INCLUDE_DIR fpdfview.h
-      PATHS /opt/homebrew/include /usr/local/include /usr/include
-      PATH_SUFFIXES pdfium)
-    find_library(PDFium_LIBRARY NAMES pdfium
-      PATHS /opt/homebrew/lib /usr/local/lib /usr/lib)
+      find_path(PDFium_INCLUDE_DIR fpdfview.h
+        PATHS /usr/local/include /usr/include
+        PATH_SUFFIXES pdfium)
+      find_library(PDFium_LIBRARY NAMES pdfium
+        PATHS /usr/local/lib /usr/lib)
     if(PDFium_INCLUDE_DIR AND PDFium_LIBRARY)
       add_library(pdfium SHARED IMPORTED)
       set_target_properties(pdfium PROPERTIES
@@ -439,8 +441,8 @@ include(cmake/warnings.cmake)
 
 set(MAC_SOURCES)
 if(APPLE)
-  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm)
-  set_source_files_properties(src/helpers/mac_menu_helper.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm)
+  set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
 # Add the executable
@@ -497,6 +499,10 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/trello_card_async.cpp
   src/cards/media/chess_com_integration.cpp
   src/cards/media/media_companion.cpp
+  src/helpers/adlib_engine.cpp
+  src/helpers/mp4_writer.cpp
+  src/helpers/audio_capture.cpp
+  src/cards/production/adlib.cpp
   # RSS model refactor additions
   src/models/rss/feed_item.cpp
   src/models/rss/rss_date_parser.cpp
@@ -514,7 +520,10 @@ add_executable(${PROJECT_NAME}
   src/cards/system/terminal_commands.cpp
 )
 
-target_include_directories(${PROJECT_NAME} PRIVATE 
+set_source_files_properties(src/helpers/mp4_writer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
+target_include_directories(${PROJECT_NAME} SYSTEM BEFORE PRIVATE "${AVCODEC_INCLUDEDIR}")
+target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
   ${CMAKE_SOURCE_DIR}/external
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CMAKE_SOURCE_DIR}/external/mongoose-7.15
@@ -538,9 +547,15 @@ elseif(TARGET imgui::imgui)
   )
 endif()
 
-# Platform-specific include directories (conditional based on vcpkg vs system)
 if(NOT (DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg"))
-  # Only add these for system builds - vcpkg handles includes automatically
+  target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
+    ${AVCODEC_INCLUDEDIR}
+    ${AVFORMAT_INCLUDE_DIRS}
+    ${AVCODEC_INCLUDE_DIRS}
+    ${AVUTIL_INCLUDE_DIRS}
+    ${SWSCALE_INCLUDE_DIRS}
+    ${SWRESAMPLE_INCLUDE_DIRS}
+  )
   target_include_directories(${PROJECT_NAME} PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${SQLite3_INCLUDE_DIRS}

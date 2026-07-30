@@ -43,5 +43,7 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>Rouen requires access to camera devices for real-time video feed cards and casting.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Rouen requires access to the microphone for Ad-Lib presentation recording and live audio feeds.</string>
 </dict>
 </plist>

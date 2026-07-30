@@ -56,6 +56,7 @@
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
 #include "../productivity/invoice_card.hpp"
+#include "../production/adlib.hpp"
 #include "../system/about.hpp"
 #include "../system/cast_control.hpp"
 #include "../system/dbrepair.hpp"
@@ -204,6 +205,10 @@ namespace rouen::cards {
 
                 instance.emplace("cast-control", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<cast_control>();
+                });
+
+                instance.emplace("adlib", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<adlib_card>(locator);
                 });
 
                 instance.emplace("cast-start", [](std::string_view, SDL_Renderer*) {

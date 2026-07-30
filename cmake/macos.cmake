@@ -31,8 +31,6 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   
   # Set LLDB debugging helper macros
   add_compile_definitions(
-    _LIBCPP_DEBUG=1           # Enable libcxx debug mode for container checks
-    _GLIBCXX_DEBUG=1          # Enable debug mode for standard containers
     DEBUG_ROUEN=1             # Custom macro for conditional debug code
   )
   
@@ -43,9 +41,7 @@ endif()
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
   message(STATUS "Configuring for Apple Silicon (ARM64)")
   
-  # Add Homebrew paths for Apple Silicon
-  include_directories(SYSTEM /opt/homebrew/include)
-  link_directories(/opt/homebrew/lib)
+# Homebrew inclusion disabled in Nix build environment
 endif()
 
 # Special handling for GL on macOS
@@ -56,6 +52,7 @@ find_library(COCOA_LIBRARY Cocoa REQUIRED)
 find_library(IOKIT_LIBRARY IOKit REQUIRED)
 find_library(COREVIDEO_LIBRARY CoreVideo REQUIRED)
 find_library(AUDIOTOOLBOX_LIBRARY AudioToolbox REQUIRED)
+find_library(AVFOUNDATION_LIBRARY AVFoundation REQUIRED)
 find_library(COREHAPTICS_LIBRARY CoreHaptics REQUIRED)
 find_library(GAMECONTROLLER_LIBRARY GameController REQUIRED)
 find_library(METAL_LIBRARY Metal REQUIRED)
@@ -71,6 +68,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${IOKIT_LIBRARY}
   ${COREVIDEO_LIBRARY}
   ${AUDIOTOOLBOX_LIBRARY}
+  ${AVFOUNDATION_LIBRARY}
   ${COREHAPTICS_LIBRARY}
   ${GAMECONTROLLER_LIBRARY}
   ${METAL_LIBRARY}

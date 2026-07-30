@@ -87,10 +87,13 @@ struct card {
     virtual void paint_video_surface(SDL_Surface* /*surface*/, int /*surface_w*/, int /*surface_h*/) {}
 
     /// Returns true if this card provides a video overlay UI
-    virtual bool has_video_overlay() const { return false; }
+    virtual bool has_video_overlay() const { return true; }
 
     /// Optional virtual method for cards to render rich ImGui UI onto the video feed
-    virtual void render_video_ui() {}
+    virtual void render_video_ui() {
+        if (!has_video_overlay()) return;
+        render();
+    }
 
     bool run_focused_handlers() {
         is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);

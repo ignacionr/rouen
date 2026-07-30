@@ -36,7 +36,8 @@ SDL_Surface* download_gpu_texture(
     SDL_GPUDevice* device,
     RouenGPUTexture* texture,
     int width,
-    int height
+    int height,
+    SDL_GPUCommandBuffer* cmdbuf = nullptr
 );
 
 } // namespace rouen::helpers

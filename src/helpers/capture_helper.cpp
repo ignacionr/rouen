@@ -142,17 +142,34 @@ SDL_Surface* download_gpu_texture(
     SDL_GPUDevice* device,
     RouenGPUTexture* texture,
     int width,
-    int height
+    int height,
+    SDL_GPUCommandBuffer* cmdbuf
 ) {
-    if (!device || !texture) return nullptr;
-    
-    SDL_GPUTransferBufferCreateInfo transferInfo = {};
-    transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-    transferInfo.size = static_cast<Uint32>(width * height * 4);
-    SDL_GPUTransferBuffer* download_buffer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
-    if (!download_buffer) return nullptr;
-    
-    SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
+    if (!device || !texture || !texture->binding.texture) return nullptr;
+
+    static SDL_GPUTransferBuffer* s_download_buffer = nullptr;
+    static Uint32 s_buffer_capacity = 0;
+
+    Uint32 required_size = static_cast<Uint32>(width * height * 4);
+    if (!s_download_buffer || s_buffer_capacity < required_size) {
+        if (s_download_buffer) {
+            SDL_ReleaseGPUTransferBuffer(device, s_download_buffer);
+            s_download_buffer = nullptr;
+        }
+        SDL_GPUTransferBufferCreateInfo transferInfo = {};
+        transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+        transferInfo.size = required_size;
+        s_download_buffer = SDL_CreateGPUTransferBuffer(device, &transferInfo);
+        s_buffer_capacity = required_size;
+        if (!s_download_buffer) return nullptr;
+    }
+
+    bool own_cmdbuf = false;
+    if (!cmdbuf) {
+        cmdbuf = SDL_AcquireGPUCommandBuffer(device);
+        own_cmdbuf = true;
+    }
+
     if (cmdbuf) {
         SDL_GPUCopyPass* copyPass = SDL_BeginGPUCopyPass(cmdbuf);
         if (copyPass) {
@@ -163,7 +180,7 @@ SDL_Surface* download_gpu_texture(
             sourceRegion.d = 1;
 
             SDL_GPUTextureTransferInfo destInfo = {};
-            destInfo.transfer_buffer = download_buffer;
+            destInfo.transfer_buffer = s_download_buffer;
             destInfo.offset = 0;
             destInfo.pixels_per_row = static_cast<Uint32>(width);
             destInfo.rows_per_layer = static_cast<Uint32>(height);
@@ -171,24 +188,33 @@ SDL_Surface* download_gpu_texture(
             SDL_DownloadFromGPUTexture(copyPass, &sourceRegion, &destInfo);
             SDL_EndGPUCopyPass(copyPass);
         }
-        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
-        if (fence) {
-            SDL_WaitForGPUFences(device, true, &fence, 1);
-            SDL_ReleaseGPUFence(device, fence);
+        if (own_cmdbuf) {
+            SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+            if (fence) {
+                SDL_WaitForGPUFences(device, true, &fence, 1);
+                SDL_ReleaseGPUFence(device, fence);
+            }
         }
     }
-    
+
     SDL_Surface* surface = nullptr;
-    void* map = SDL_MapGPUTransferBuffer(device, download_buffer, false);
+    void* map = SDL_MapGPUTransferBuffer(device, s_download_buffer, false);
     if (map) {
         surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGBA32);
         if (surface) {
-            std::memcpy(surface->pixels, map, static_cast<size_t>(width * height * 4));
+            uint8_t* dst = static_cast<uint8_t*>(surface->pixels);
+            const uint8_t* src = static_cast<const uint8_t*>(map);
+            if (surface->pitch == width * 4) {
+                std::memcpy(dst, src, static_cast<size_t>(width * height * 4));
+            } else {
+                for (int y = 0; y < height; ++y) {
+                    std::memcpy(dst + y * surface->pitch, src + y * (width * 4), static_cast<size_t>(width * 4));
+                }
+            }
         }
-        SDL_UnmapGPUTransferBuffer(device, download_buffer);
+        SDL_UnmapGPUTransferBuffer(device, s_download_buffer);
     }
-    
-    SDL_ReleaseGPUTransferBuffer(device, download_buffer);
+
     return surface;
 }
 

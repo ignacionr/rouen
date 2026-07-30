@@ -11,6 +11,8 @@
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
 #include "helpers/media_player.hpp"
+#include "helpers/adlib_engine.hpp"
+#include "helpers/capture_helper.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
@@ -441,8 +443,10 @@ bool main_wnd::process_events() {
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 
                 if (event.type == SDL_EVENT_QUIT) {
-                    m_done = true;
-                    return false;
+                    if (!rouen::helpers::AdLibEngine::instance().is_recording()) {
+                        m_done = true;
+                        return false;
+                    }
                 }
                 
                 // SDL3 Window close event
@@ -504,23 +508,36 @@ bool main_wnd::process_events() {
                     }
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {
+                    bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
                     if (m_detached_window && event.key.windowID == SDL_GetWindowID(m_detached_window)) {
                         auto detached_item = media_player::get_detached_item();
-                        if (detached_item) {
+                        if (detached_item || is_adlib_active) {
                             if (event.key.key == SDLK_ESCAPE) {
-                                media_player::clear_detached_item();
-                                SDL_DestroyWindow(m_detached_window);
-                                m_detached_window = nullptr;
+                                if (is_adlib_active) {
+                                    rouen::helpers::AdLibEngine::instance().stop();
+                                } else if (detached_item) {
+                                    media_player::clear_detached_item();
+                                    SDL_DestroyWindow(m_detached_window);
+                                    m_detached_window = nullptr;
+                                }
                             } else if (event.key.key == SDLK_SPACE) {
-                                detached_item->togglePause();
-                            } else if (event.key.key == SDLK_LEFT) {
+                                if (is_adlib_active) {
+                                    rouen::helpers::AdLibEngine::instance().toggle_pause();
+                                } else if (detached_item) {
+                                    detached_item->togglePause();
+                                }
+                            } else if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_N) {
+                                if (is_adlib_active) {
+                                    rouen::helpers::AdLibEngine::instance().next_stage();
+                                } else if (detached_item) {
+                                    double current = detached_item->position.load();
+                                    double dur = detached_item->duration.load();
+                                    double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                                    detached_item->seekTo(std::min(target_limit, current + 5.0));
+                                }
+                            } else if (event.key.key == SDLK_LEFT && detached_item) {
                                 double current = detached_item->position.load();
                                 detached_item->seekTo(std::max(0.0, current - 5.0));
-                            } else if (event.key.key == SDLK_RIGHT) {
-                                double current = detached_item->position.load();
-                                double dur = detached_item->duration.load();
-                                double target_limit = (dur > 0.0) ? dur : (current + 5.0);
-                                detached_item->seekTo(std::min(target_limit, current + 5.0));
                             } else {
                                 int overlay_target_idx = -1;
                                 if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
@@ -620,7 +637,9 @@ bool main_wnd::process_events() {
 
 void main_wnd::process_detached_window() {
     auto detached_item = media_player::get_detached_item();
-    if (!detached_item) {
+    bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
+
+    if (!detached_item && !is_adlib_active) {
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
                 ImGuiContext* main_ctx = ImGui::GetCurrentContext();
@@ -636,10 +655,8 @@ void main_wnd::process_detached_window() {
         return;
     }
 
-    // Check media status: close second window when media ends or is stopped
-    // Check media status: close second window when media ends or is stopped
-    // (Note: is_paused leaves checkMediaStatus() true, so pausing will not close window)
-    if (!detached_item->checkMediaStatus()) {
+    // Check media status when a standalone media item is attached (non-adlib)
+    if (detached_item && !is_adlib_active && !detached_item->checkMediaStatus()) {
         media_player::clear_detached_item();
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
@@ -660,7 +677,7 @@ void main_wnd::process_detached_window() {
     if (!m_detached_window) {
         int default_w = 960;
         int default_h = 540;
-        std::string title = detached_item->item_title.empty() ? "Rouen Media Player" : detached_item->item_title;
+        std::string title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
         m_detached_window = SDL_CreateWindow(
             title.c_str(),
             default_w, default_h,
@@ -702,10 +719,13 @@ void main_wnd::process_detached_window() {
         float win_w = static_cast<float>(w > 0 ? w : 960);
         float win_h = static_cast<float>(h > 0 ? h : 540);
 
-        ImTextureID tex = detached_item->get_texture_id(m_device, cmdbuf);
+        ImTextureID tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
         RouenGPUTexture* rtex = tex ? reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(tex)) : nullptr;
+        if (!rtex && is_adlib_active) {
+            rtex = rouen::helpers::AdLibEngine::instance().get_background_texture(m_device, cmdbuf);
+        }
 
-        if (rtex && rtex->binding.texture && detached_item->has_video) {
+        if (rtex && rtex->binding.texture) {
             float aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
             float draw_w, draw_h;
             if (win_w / win_h > aspect) {
@@ -718,18 +738,18 @@ void main_wnd::process_detached_window() {
             float draw_x = (win_w - draw_w) * 0.5f;
             float draw_y = (win_h - draw_h) * 0.5f;
 
-            // 1. Blit video frame texture onto swapchain
+            // 1. Blit video / background texture onto swapchain
             SDL_GPUBlitInfo blit_info = {};
             blit_info.source.texture = rtex->binding.texture;
-            blit_info.source.w = media_player_item::kWidth;
-            blit_info.source.h = media_player_item::kHeight;
+            blit_info.source.w = static_cast<Uint32>(rtex->width > 0 ? rtex->width : media_player_item::kWidth);
+            blit_info.source.h = static_cast<Uint32>(rtex->height > 0 ? rtex->height : media_player_item::kHeight);
             blit_info.destination.texture = color_target.texture;
             blit_info.destination.x = static_cast<Uint32>(std::max(0.0f, draw_x));
             blit_info.destination.y = static_cast<Uint32>(std::max(0.0f, draw_y));
             blit_info.destination.w = static_cast<Uint32>(std::max(0.0f, draw_w));
             blit_info.destination.h = static_cast<Uint32>(std::max(0.0f, draw_h));
             blit_info.load_op = SDL_GPU_LOADOP_CLEAR;
-            blit_info.clear_color = SDL_FColor{ 0.0f, 0.0f, 0.0f, 1.0f };
+            blit_info.clear_color = SDL_FColor{ 0.12f, 0.10f, 0.18f, 1.0f };
             blit_info.filter = SDL_GPU_FILTER_LINEAR;
 
             SDL_BlitGPUTexture(cmdbuf, &blit_info);
@@ -746,6 +766,7 @@ void main_wnd::process_detached_window() {
             if (m_detached_imgui_ctx) {
                 m_detached_imgui_ctx->IO.BackendRendererUserData = main_ctx->IO.BackendRendererUserData;
                 m_detached_imgui_ctx->IO.BackendPlatformUserData = main_ctx->IO.BackendPlatformUserData;
+                m_detached_imgui_ctx->Style = main_ctx->Style;
 
                 ImGui::SetCurrentContext(m_detached_imgui_ctx);
 
@@ -776,7 +797,7 @@ void main_wnd::process_detached_window() {
 
                 ImGui::NewFrame();
 
-                if (!detached_item->has_video) {
+                if (detached_item && !detached_item->has_video) {
                     media_player::draw_full_window_audio_visualization(*detached_item, win_w, win_h);
 
                     float vu_w = std::min(win_w * 0.65f, 460.0f);
@@ -791,28 +812,80 @@ void main_wnd::process_detached_window() {
                     );
                 }
 
+                // Keyboard hotkeys for AdLib in detached window
+                if (is_adlib_active) {
+                    if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                        rouen::helpers::AdLibEngine::instance().toggle_pause();
+                    } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_N)) {
+                        rouen::helpers::AdLibEngine::instance().next_stage();
+                    } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_S)) {
+                        rouen::helpers::AdLibEngine::instance().stop();
+                    }
+                }
+
+                // Allow 1-9 key overlay toggling in detached window
                 try {
                     auto main_deck = registrar::get<deck>("deck");
                     if (main_deck) {
-                        for (const auto& card_ptr : main_deck->get_cards()) {
-                            if (card_ptr && card_ptr->video_overlay_visible) {
-                                card_ptr->render_video_ui();
+                        for (int k = ImGuiKey_1; k <= ImGuiKey_9; ++k) {
+                            if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                                int target_idx = k - ImGuiKey_1;
+                                int overlay_count = 0;
+                                for (const auto& card_ptr : main_deck->get_cards()) {
+                                    if (card_ptr && card_ptr->has_video_overlay()) {
+                                        if (overlay_count == target_idx) {
+                                            card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
+                                            std::string card_name = card_ptr->window_title.empty() ? card_ptr->get_uri() : card_ptr->window_title;
+                                            auto hash_pos = card_name.find("###");
+                                            if (hash_pos != std::string::npos) card_name = card_name.substr(0, hash_pos);
+                                            std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
+                                            set_detached_toast(std::format("[{}] {}: {}", target_idx + 1, card_name, status));
+                                            break;
+                                        }
+                                        overlay_count++;
+                                    }
+                                }
                             }
                         }
                     }
                 } catch (...) {}
 
+                bool allow_overlays = true;
+                if (is_adlib_active) {
+                    auto adlib_stage = rouen::helpers::AdLibEngine::instance().get_stage();
+                    if (adlib_stage == rouen::helpers::AdLibStage::Intro || adlib_stage == rouen::helpers::AdLibStage::Outro) {
+                        allow_overlays = false;
+                    }
+                }
+
+                if (allow_overlays) {
+                    try {
+                        auto main_deck = registrar::get<deck>("deck");
+                        if (main_deck) {
+                            for (const auto& card_ptr : main_deck->get_cards()) {
+                                if (card_ptr && card_ptr->video_overlay_visible) {
+                                    card_ptr->render_video_ui();
+                                }
+                            }
+                        }
+                    } catch (...) {}
+                }
+
                 render_detached_toast(win_w, win_h);
 
                 // Double clicking detached window re-attaches to full-window mode
-                if (mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (detached_item && mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     if (io.MousePos.y < win_h - 24.0f) {
                         media_player::set_active_fullscreen_item(detached_item);
                     }
                 }
 
                 // Render progress line for detached window
-                media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
+                if (detached_item) {
+                    media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
+                }
+
+
 
                 ImGui::Render();
 
@@ -833,5 +906,43 @@ void main_wnd::process_detached_window() {
             }
         }
     }
+
+    if (is_adlib_active && m_detached_window && rouen::helpers::AdLibEngine::instance().is_recording()) {
+        int w = 0, h = 0;
+        SDL_GetWindowSizeInPixels(m_detached_window, &w, &h);
+        int cap_w = (w > 0) ? w : 1280;
+        int cap_h = (h > 0) ? h : 720;
+
+        RouenGPUTexture target_tex;
+        target_tex.binding.texture = color_target.texture;
+        target_tex.binding.sampler = nullptr;
+        target_tex.width = cap_w;
+        target_tex.height = cap_h;
+
+        RouenGPUTexture* rec_rtex = &target_tex;
+        if (!rec_rtex->binding.texture) {
+            ImTextureID detached_tex = detached_item ? detached_item->get_texture_id(m_device, cmdbuf) : ImTextureID{0};
+            rec_rtex = detached_tex ? reinterpret_cast<RouenGPUTexture*>(static_cast<uintptr_t>(detached_tex)) : nullptr;
+            if (!rec_rtex) {
+                rec_rtex = rouen::helpers::AdLibEngine::instance().get_background_texture(m_device, cmdbuf);
+            }
+        }
+
+        if (rec_rtex && rec_rtex->binding.texture) {
+            int final_w = (rec_rtex->width > 0) ? rec_rtex->width : cap_w;
+            int final_h = (rec_rtex->height > 0) ? rec_rtex->height : cap_h;
+            SDL_Surface* surf = rouen::helpers::download_gpu_texture(m_device, rec_rtex, final_w, final_h, cmdbuf);
+            if (surf) {
+                rouen::helpers::AdLibEngine::instance().on_detached_frame_rendered(
+                    static_cast<const uint8_t*>(surf->pixels),
+                    surf->w,
+                    surf->h,
+                    surf->pitch
+                );
+                SDL_DestroySurface(surf);
+            }
+        }
+    }
+
     SDL_SubmitGPUCommandBuffer(cmdbuf);
 }
