@@ -44,7 +44,7 @@ static std::string get_adlib_config_file() {
 }
 
 void adlib_card::load_config_from_ini() {
-    std::string intro, bg, outro, output, mic_name;
+    std::string intro, bg, outro, output, mic_name, trans_str;
     int mode = 0;
 
     std::string cfg_file = get_adlib_config_file();
@@ -69,6 +69,10 @@ void adlib_card::load_config_from_ini() {
         if (!mode_str.empty()) {
             try { mode = std::stoi(mode_str); } catch (...) {}
         }
+        trans_str = extract_json("stage2_transition_seconds");
+        if (!trans_str.empty()) {
+            try { stage2_transition_seconds_ = std::stof(trans_str); } catch (...) {}
+        }
     }
 
     auto cfg = rouen::helpers::ConfigService::instance();
@@ -77,6 +81,12 @@ void adlib_card::load_config_from_ini() {
     if (outro.empty()) outro = cfg->get_env_optional("ROUEN_ADLIB_OUTRO_PATH").value_or("");
     if (output.empty()) output = cfg->get_env_optional("ROUEN_ADLIB_OUTPUT_PATH").value_or("");
     if (mic_name.empty()) mic_name = cfg->get_env_optional("ROUEN_ADLIB_MIC_NAME").value_or("");
+    if (trans_str.empty()) {
+        auto env_trans = cfg->get_env_optional("ROUEN_ADLIB_STAGE2_TRANSITION_SECONDS");
+        if (env_trans.has_value()) {
+            try { stage2_transition_seconds_ = std::stof(*env_trans); } catch (...) {}
+        }
+    }
 
     std::strncpy(intro_path_buf_, intro.c_str(), sizeof(intro_path_buf_) - 1);
     std::strncpy(bg_path_buf_, bg.c_str(), sizeof(bg_path_buf_) - 1);
@@ -103,6 +113,7 @@ void adlib_card::save_config_to_ini() {
     cfg->set_env_value("ROUEN_ADLIB_OUTRO_PATH", outro_path_buf_, true);
     cfg->set_env_value("ROUEN_ADLIB_OUTPUT_PATH", output_path_buf_, true);
     cfg->set_env_value("ROUEN_ADLIB_MODE", std::to_string(selected_mode_), true);
+    cfg->set_env_value("ROUEN_ADLIB_STAGE2_TRANSITION_SECONDS", std::to_string(stage2_transition_seconds_), true);
 
     std::string mic_name = "";
     if (selected_mic_idx_ >= 0 && static_cast<size_t>(selected_mic_idx_) < audio_devices_.size()) {
@@ -119,7 +130,8 @@ void adlib_card::save_config_to_ini() {
             << "  \"outro_video_path\": \"" << outro_path_buf_ << "\",\n"
             << "  \"output_mp4_path\": \"" << output_path_buf_ << "\",\n"
             << "  \"mic_device_name\": \"" << mic_name << "\",\n"
-            << "  \"mode\": \"" << std::to_string(selected_mode_) << "\"\n"
+            << "  \"mode\": \"" << std::to_string(selected_mode_) << "\",\n"
+            << "  \"stage2_transition_seconds\": \"" << std::to_string(stage2_transition_seconds_) << "\"\n"
             << "}\n";
     }
 }
@@ -207,7 +219,7 @@ void adlib_card::draw_execution_deck() {
         stage_str = "STAGE 1: INTRO (AUTO-NEXT)";
         badge_color = ImVec4(0.2f, 0.7f, 1.0f, 1.0f);
     } else if (stage == rouen::helpers::AdLibStage::Middle) {
-        stage_str = "STAGE 2: PRESENTATION (LIVE)";
+        stage_str = (engine.get_auto_stop_seconds() > 0.0) ? "STAGE 2: PRESENTATION (AUTO)" : "STAGE 2: PRESENTATION (MANUAL)";
         badge_color = ImVec4(0.9f, 0.2f, 0.3f, 1.0f);
     } else if (stage == rouen::helpers::AdLibStage::Outro) {
         stage_str = "STAGE 3: OUTRO (AUTO-STOP)";
@@ -232,21 +244,59 @@ void adlib_card::draw_execution_deck() {
         double elapsed = engine.get_elapsed_seconds();
         int mins = static_cast<int>(elapsed) / 60;
         int secs = static_cast<int>(elapsed) % 60;
-        ImGui::Text(ICON_MD_TIMER " Elapsed Time: %02d:%02d", mins, secs);
+        if (stage == rouen::helpers::AdLibStage::Middle) {
+            double stage_elapsed = engine.get_stage_elapsed_seconds();
+            double target_dur = engine.get_auto_stop_seconds();
+            if (target_dur > 0.0) {
+                ImGui::Text(ICON_MD_TIMER " Stage 2: %.1f / %.1f s (Total: %02d:%02d)", stage_elapsed, target_dur, mins, secs);
+            } else {
+                ImGui::Text(ICON_MD_TIMER " Stage 2: %.1f s (Manual Mode) (Total: %02d:%02d)", stage_elapsed, mins, secs);
+            }
+        } else {
+            ImGui::Text(ICON_MD_TIMER " Elapsed Time: %02d:%02d", mins, secs);
+        }
 
         if (is_recording) {
-            ImGui::SameLine(220.0f);
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), ICON_MD_FIBER_MANUAL_RECORD " REC (MP4 Output Active)");
+            ImGui::SameLine(250.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), ICON_MD_FIBER_MANUAL_RECORD " REC");
 
             // Mic VU Peak Meter
             float mic_peak = engine.get_mic_peak();
-            ImGui::SameLine(420.0f);
+            ImGui::SameLine(320.0f);
             ImGui::Text(ICON_MD_MIC " Mic:");
             ImGui::SameLine();
-            ImGui::ProgressBar(mic_peak, ImVec2(120, 16), "");
+            ImGui::ProgressBar(mic_peak, ImVec2(100, 16), "");
         } else if (stage == rouen::helpers::AdLibStage::Prepared) {
-            ImGui::SameLine(220.0f);
-            ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.1f, 1.0f), ICON_MD_PREVIEW " Prepared: Test card overlays on detached window");
+            ImGui::SameLine(250.0f);
+            ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.1f, 1.0f), ICON_MD_PREVIEW " Prepared (Paused)");
+        }
+    }
+
+    // Direct Stage 2 Transition Settings on Execution Deck
+    ImGui::Spacing();
+    ImGui::Text(ICON_MD_TIMER " Stage 2 Transition:");
+    ImGui::SameLine();
+    bool is_manual_deck = (stage2_transition_seconds_ <= 0.0f);
+    if (ImGui::RadioButton("Manual##deck", is_manual_deck)) {
+        stage2_transition_seconds_ = 0.0f;
+        save_config_to_ini();
+        engine.set_auto_stop_seconds(0.0);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Timed##deck", !is_manual_deck)) {
+        if (stage2_transition_seconds_ <= 0.0f) {
+            stage2_transition_seconds_ = 10.0f;
+        }
+        save_config_to_ini();
+        engine.set_auto_stop_seconds(static_cast<double>(stage2_transition_seconds_));
+    }
+    if (stage2_transition_seconds_ > 0.0f) {
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(100.0f);
+        if (ImGui::InputFloat("sec##deck_trans_val", &stage2_transition_seconds_, 1.0f, 5.0f, "%.1f s")) {
+            if (stage2_transition_seconds_ < 0.5f) stage2_transition_seconds_ = 0.5f;
+            save_config_to_ini();
+            engine.set_auto_stop_seconds(static_cast<double>(stage2_transition_seconds_));
         }
     }
 
@@ -266,6 +316,7 @@ void adlib_card::draw_execution_deck() {
                 cfg.outro_video_path = outro_path_buf_;
                 cfg.output_mp4_path = output_path_buf_;
                 cfg.mode = (selected_mode_ == 0) ? rouen::helpers::AdLibMode::Live : rouen::helpers::AdLibMode::Recorded;
+                cfg.presentation_duration_seconds = static_cast<double>(stage2_transition_seconds_);
                 if (audio_devices_.empty()) {
                     refresh_audio_devices();
                 }

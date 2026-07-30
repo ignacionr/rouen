@@ -34,6 +34,7 @@ private:
 
     int selected_mode_{0}; // 0 = Live, 1 = Recorded
     int selected_mic_idx_{0};
+    float stage2_transition_seconds_{0.0f}; // 0.0 = Manual, >0 = auto-transition after N seconds
     std::string validation_error_;
     std::vector<rouen::helpers::AudioInputDevice> audio_devices_;
 };

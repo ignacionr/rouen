@@ -61,6 +61,7 @@ bool AdLibEngine::prepare(const AdLibConfig& config) {
     stage_.store(AdLibStage::Prepared);
     is_paused_.store(true);
     recording_active_.store(false);
+    auto_stop_seconds_.store(config_.presentation_duration_seconds);
     accumulated_paused_duration_ = std::chrono::milliseconds(0);
 
     // Set initial item on detached window so user sees paused intro frame or background
@@ -131,8 +132,8 @@ bool AdLibEngine::start() {
     is_paused_.store(false);
 
     rec_thread_ = std::thread([this]() {
-        double pres_dur = auto_stop_seconds_.load() > 0.0 ? auto_stop_seconds_.load() : 3.0;
-        double max_total_dur = 7.958 + pres_dur + 8.0 + 3.0;
+        double pres_dur = auto_stop_seconds_.load();
+        double max_total_dur = (pres_dur > 0.0) ? (7.958 + pres_dur + 8.0 + 3.0) : 0.0;
         auto start_tp = std::chrono::steady_clock::now();
         auto next_tick = start_tp;
         while (recording_active_.load()) {
@@ -293,16 +294,18 @@ void AdLibEngine::update_frame_tick() {
                 transition_to_stage(AdLibStage::Middle);
             }
         }
-        // 2. Auto-transition from Middle (Presentation) to Outro when presentation stage_elapsed reaches target duration
+        // 2. Auto-transition from Middle (Presentation) to Outro when presentation stage_elapsed reaches target duration (if configured)
         else if (current_stage == AdLibStage::Middle) {
-            double target_middle_dur = auto_stop_seconds_.load() > 0.0 ? auto_stop_seconds_.load() : 3.0;
-            double stage_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
-            if (stage_elapsed >= target_middle_dur) {
-                std::cout << "[AdLibEngine] Presentation phase (Middle) duration (" << target_middle_dur << "s) completed. Auto-transitioning to Outro phase." << std::endl;
-                if (outro_item_) {
-                    transition_to_stage(AdLibStage::Outro);
-                } else {
-                    transition_to_stage(AdLibStage::Finished);
+            double target_middle_dur = auto_stop_seconds_.load();
+            if (target_middle_dur > 0.0) {
+                double stage_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
+                if (stage_elapsed >= target_middle_dur) {
+                    std::cout << "[AdLibEngine] Presentation phase (Middle) duration (" << target_middle_dur << "s) completed. Auto-transitioning to Outro phase." << std::endl;
+                    if (outro_item_) {
+                        transition_to_stage(AdLibStage::Outro);
+                    } else {
+                        transition_to_stage(AdLibStage::Finished);
+                    }
                 }
             }
         }

@@ -36,6 +36,7 @@ struct AdLibConfig {
     std::string mic_device_name;
     std::string output_mp4_path;
     AdLibMode mode{AdLibMode::Live};
+    double presentation_duration_seconds{0.0}; // 0.0 means Manual transition
 };
 
 class AdLibEngine {
@@ -72,6 +73,7 @@ public:
     void on_detached_frame_rendered(const uint8_t* rgba_pixels, int width, int height, int pitch = 0);
     float get_mic_peak() const { return audio_capture_.get_current_peak(); }
     void set_auto_stop_seconds(double sec) { auto_stop_seconds_.store(sec); }
+    double get_auto_stop_seconds() const { return auto_stop_seconds_.load(); }
     double get_elapsed_seconds() const;
     double get_stage_written_seconds() const;
     double get_stage_elapsed_seconds() const;
