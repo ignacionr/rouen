@@ -1,10 +1,30 @@
 // 1. Standard includes in alphabetic order
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_video.h>
+#include <algorithm>
+#include <cfloat>
 #include <chrono>
+#include <cstdint>
+#include <exception>
 #include <format>
+#include <functional>
+#include <imgui.h>
+#include <imgui_internal.h>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <string>
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers
-#include "helpers/imgui_include.hpp"
+#include "cards/interface/card.hpp"
 
 // 3. All other includes
 #include "cards/interface/deck.hpp"
@@ -14,9 +34,13 @@
 #include "helpers/adlib_engine.hpp"
 #include "helpers/capture_helper.hpp"
 #include "hosts/video_feed_host.hpp"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlgpu3.h"
 #include "main_wnd.hpp"
+#include "media_player_item.hpp"
 #include "registrar.hpp"
 #include "../external/IconsMaterialDesign.h"
+#include "texture_helper.hpp"
 
 #ifdef __APPLE__
 #include "helpers/mac_menu_helper.hpp"

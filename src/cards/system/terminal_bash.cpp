@@ -1,6 +1,31 @@
 #include "terminal_bash.hpp"
-#include "../../helpers/debug.hpp"
 #include "../../helpers/config_service.hpp"
+#include "cards/system/terminal_output.hpp"
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <csignal>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <format>
+#include <mutex>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string>
+#include <sys/_types/_pid_t.h>
+#include <sys/_types/_ssize_t.h>
+#include <sys/fcntl.h>
+#include <sys/poll.h>
+#include <sys/signal.h>
+#include <sys/ttycom.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <thread>
+#include <unistd.h>
+#include <util.h>
 #include <vector>
 
 namespace rouen::cards {

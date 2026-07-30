@@ -1,12 +1,17 @@
 #include "vu_meter.hpp"
+#include "registrar.hpp"
 #include "texture_helper.hpp"
 #include "texture_utils.hpp"
-#include "../cards/interface/card.hpp"
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_surface.h>
 #include <algorithm>
-#include <cstdio>
+#include <imgui.h>
 #include <map>
 #include <mutex>
 #include <cmath>
+#include <vector>
 
 namespace rouen::helpers::vu_meter {
 

@@ -5,9 +5,12 @@
 #include <ctime>
 #include <filesystem>
 #include <format>
+#include <imgui.h>
 #include <map>
+#include <string>
 
 #include "../../../external/IconsMaterialDesign.h"
+#include "models/git.hpp"
 
 namespace {
     ImColor getStatusColor(rouen::models::GitRepoStatus status) {

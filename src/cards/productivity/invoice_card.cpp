@@ -1,12 +1,21 @@
 #include "invoice_card.hpp"
+#include "cards/interface/card.hpp"
+#include "models/contacts/contact.hpp"
+#include "models/contacts/contacts_repository.hpp"
 
+#include <EPDFVersion.h>
+#include <EStatusCode.h>
 #include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <cstdlib>
+#include <cstring>
+#include <exception>
 #include <filesystem>
 #include <format>
-#include <fstream>
-#include <iomanip>
-#include <sstream>
+#include <imgui.h>
+#include <memory>
+#include <vector>
 
 #if defined(__clang__)
 #pragma clang diagnostic push
@@ -26,7 +35,6 @@
 #endif
 
 #include "../../helpers/platform_utils.hpp"
-#include "../../helpers/string_helper.hpp"
 #include "../../helpers/ui_context.hpp"
 #include "../../registrar.hpp"
 #include "../../../external/IconsMaterialDesign.h"

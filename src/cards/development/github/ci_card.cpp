@@ -1,7 +1,22 @@
 #include "ci_card.hpp"
+#include "IconsMaterialDesign.h"
+#include "models/github/host.hpp"
+#include "models/github/login_host.hpp"
+#include "registrar.hpp"
 #include <algorithm>
-#include <iomanip>
-#include <sstream>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <format>
+#include <future>
+#include <glaze/json/json_t.hpp>
+#include <imgui.h>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace rouen::cards::github {
 

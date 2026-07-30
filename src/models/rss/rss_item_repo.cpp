@@ -1,7 +1,12 @@
 #include "rss_item_repo.hpp"
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
+#include <exception>
+#include <mutex>
+#include <sqlite3.h>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace media::rss {

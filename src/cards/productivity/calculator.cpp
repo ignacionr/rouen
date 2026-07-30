@@ -1,13 +1,20 @@
 #include "calculator.hpp"
-#include "../../external/IconsMaterialDesign.h"
-#include "../../helpers/glaze_include.hpp"
+#include "cards/interface/card.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
+#include <exception>
 #include <format>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <imgui.h>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace rouen::cards {
 

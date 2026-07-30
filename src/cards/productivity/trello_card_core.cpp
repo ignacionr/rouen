@@ -1,10 +1,9 @@
 #include "trello_card.hpp"
 
 // 1. Standard includes in alphabetic order
-#include <algorithm>
-#include <chrono>
 #include <cstring>
 #include <format>
+#include <string>
 
 // 2. Libraries used in the project, in alphabetic order
 // None
@@ -13,6 +12,7 @@
 #include "../../helpers/api_keys.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../registrar.hpp"
+#include "trello_host.hpp"
 
 namespace rouen::cards {
 

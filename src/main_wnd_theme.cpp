@@ -3,13 +3,12 @@
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers
-#include "helpers/imgui_include.hpp"
 
 // 3. All other includes
-#include "cards/interface/deck.hpp"
-#include "fonts.hpp"
-#include "helpers/debug.hpp"
 #include "main_wnd.hpp"
+#include <SDL3/SDL_video.h>
+#include <imgui.h>
+#include <iostream>
 
 void main_wnd::setup_dark_theme() {
     ImGuiStyle& style = ImGui::GetStyle();

@@ -1,4 +1,14 @@
 #include "converter.hpp"
+#include <array>
+#include <cctype>
+#include <cstddef>
+#include <exception>
+#include <format>
+#include <imgui.h>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 // Implementation of converter class
 

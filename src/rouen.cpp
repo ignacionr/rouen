@@ -1,12 +1,23 @@
 // 1. Standard includes in alphabetic order
+#include <array>
+#include <csignal>
+#include <cstdio>
+#include <exception>
 #include <filesystem>
+#include <format>
+#include <functional>
 #include <iostream>
-#include <mutex>
+#include <memory>
+#include <stdio.h>
+#include <string>
+#include <string_view>
+#include <sys/signal.h>
 #include <thread>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "helpers/imgui_include.hpp"
-#include <SDL3/SDL.h>  // Changed from SDL2/SDL.h to SDL.h for macOS compatibility
+#include "config_service.hpp"
+#include "media_player.hpp"
+#include "universal_sync_host.hpp"
 
 // Platform-specific includes for process status handling
 #ifdef _WIN32
@@ -59,11 +70,8 @@ void setup_windows_debug_console() {
 // 3. All other includes
 #include "cards/interface/deck.hpp"
 #include "helpers/debug.hpp"
-#include "helpers/deferred_operations.hpp" // For deferred operations
 #include "helpers/notify_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
-#include "helpers/process_helper.hpp" // Added this include for ProcessHelper
-#include "helpers/universal_sync_service.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"

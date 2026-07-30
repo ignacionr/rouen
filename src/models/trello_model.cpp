@@ -1,15 +1,31 @@
 #include "trello_model.hpp"
 
 // 1. Standard includes in alphabetic order
+#include <algorithm>
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <format>
 #include <fstream>
 #include <future>
+#include <glaze/core/opts.hpp>
+#include <glaze/core/read.hpp>
+#include <glaze/core/reflect.hpp>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <memory>
+#include <mutex>
 #include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "../helpers/glaze_include.hpp"
 
 // 3. All other includes
-#include "../helpers/string_helper.hpp"
+#include "config_service.hpp"
+#include "fetch.hpp"
 
 namespace rouen::models::trello {
 

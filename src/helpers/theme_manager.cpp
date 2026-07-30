@@ -1,8 +1,18 @@
 #include "theme_manager.hpp"
 #include "../cards/interface/card.hpp"
 #include "platform_utils.hpp"
+#include <cstddef>
+#include <exception>
+#include <filesystem>
 #include <fstream>
+#include <glaze/core/common.hpp>
+#include <glaze/core/reflect.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <imgui.h>
 #include <iostream>
+#include <iterator>
+#include <vector>
 
 namespace rouen::theme {
 

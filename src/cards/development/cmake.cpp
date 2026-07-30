@@ -1,18 +1,24 @@
 #include "cmake.hpp"
 
+#include <chrono>
 #include <cstring>
+#include <exception>
+#include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
+#include <imgui.h>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <thread>
 
 #ifdef _WIN32
 #include <tlhelp32.h>
 #else
-#include <signal.h>
 #endif
 
 #include "../../helpers/config_service.hpp"
-#include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../registrar.hpp"
 

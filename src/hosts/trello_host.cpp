@@ -1,14 +1,19 @@
 #include "trello_host.hpp"
 
 // 1. Standard includes in alphabetic order
+#include <exception>
 #include <format>
+#include <future>
+#include <memory>
 #include <mutex>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 // None
 
 // 3. All other includes
 #include "../helpers/debug.hpp"
+#include "models/trello_model.hpp"
 
 // Trello Host Debug Macros - only define the ones actually used
 #define TRELLO_HOST_ERROR(message) LOG_COMPONENT("TRELLO_HOST", LOG_LEVEL_ERROR, message)

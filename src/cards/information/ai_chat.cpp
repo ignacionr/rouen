@@ -1,39 +1,48 @@
 #include "ai_chat.hpp"
 
-#include "../../helpers/imgui_include.hpp"
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
-#include "../../helpers/api_keys.hpp"
-#include "../../helpers/llm_config.hpp"
 #include "../../helpers/markdown_renderer.hpp"
-#include "../../helpers/mcp_service.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
-#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/persona_manager.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../fonts.hpp"
 #include "../../registrar.hpp"
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../hosts/dictation_host.hpp"
+#include "llm_host.hpp"
+#include "mcp_host.hpp"
 
+#include <cctype>
+#include <cstdlib>
+#include <ctime>
+#include <exception>
+#include <glaze/core/common.hpp>
+#include <glaze/json/read.hpp>
+#include <imgui.h>
+#include <new>
+#include <stdexcept>
 #include <string>
 #include <deque>
 #include <future>
 #include <optional>
 #include <array>
 #include <atomic>
+#include <string_view>
 #include <typeinfo>
 #include <format>
 #include <memory>
 #include <mutex>
+#include <utility>
 #include <variant>
 #include <cstring>
 #include <algorithm>
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <vector>
 
 namespace rouen::cards {
     namespace {

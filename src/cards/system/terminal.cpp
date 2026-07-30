@@ -1,7 +1,14 @@
 #include "terminal.hpp"
 #include "../../registrar.hpp"
 #include "../../fonts.hpp"
+#include "cards/system/terminal_output.hpp"
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <format>
+#include <imgui.h>
+#include <string>
+#include <string_view>
 
 namespace rouen::cards {
 

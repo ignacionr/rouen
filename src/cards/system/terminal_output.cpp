@@ -1,4 +1,10 @@
 #include "terminal_output.hpp"
+#include <cstddef>
+#include <format>
+#include <imgui.h>
+#include <mutex>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace rouen::cards {

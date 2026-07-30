@@ -1,13 +1,27 @@
 #include "mp4_writer.hpp"
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
+#include <string>
+#include <system_error>
+#include <vector>
 
 extern "C" {
+#include <libavcodec/codec.h>
+#include <libavcodec/codec_id.h>
+#include <libavcodec/defs.h>
+#include <libavcodec/packet.h>
+#include <libavformat/avio.h>
+#include <libavutil/avutil.h>
+#include <libavutil/error.h>
+#include <libavutil/pixfmt.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
-#include <libavutil/imgutils.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/samplefmt.h>
 #include <libavutil/frame.h>
@@ -16,7 +30,6 @@ extern "C" {
 }
 
 #include <iostream>
-#include <algorithm>
 
 namespace rouen::helpers {
 

@@ -1,7 +1,7 @@
 #include "feed_xml_parser.hpp"
 #include "feed_item.hpp"
-#include "rss_date_parser.hpp"
 #include <string>
+#include <tinyxml2.h>
 #include <vector>
 
 namespace media::rss {

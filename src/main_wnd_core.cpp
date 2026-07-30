@@ -1,9 +1,19 @@
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_video.h>
+#include <functional>
+#include <imgui.h>
+#include <iostream>
+#include <memory>
+#include <string>
 #include <utility>
 
+#include "api_server_host.hpp"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlgpu3.h"
 #include "main_wnd.hpp"
 #include "helpers/deferred_operations.hpp"
-#include "helpers/api_server.hpp"
-#include "helpers/debug.hpp"
 #include "registrar.hpp"
 #include "helpers/texture_helper.hpp"
 

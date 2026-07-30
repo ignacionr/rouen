@@ -1,6 +1,12 @@
 #include "../interface/factory.hpp"
+#include "cards/interface/card.hpp"
 #include "jira_card.hpp"
 #include "jira_projects.hpp"
+#include "sdl_compat.hpp"
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 // This file provides Jira card registration for Rouen
 // It's compiled separately to avoid circular dependency issues

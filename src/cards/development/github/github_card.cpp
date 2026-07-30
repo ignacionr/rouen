@@ -1,14 +1,25 @@
 #include "github_card.hpp"
 
 #include <cstdlib>
+#include <exception>
+#include <filesystem>
 #include <fstream>
 #include <format>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <imgui.h>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "../../../../external/IconsMaterialDesign.h"
-#include "../../../helpers/imgui_include.hpp"
 #include "../../../models/github/host.hpp"
 #include "../../../models/github/login_host.hpp"
 #include "../../../registrar.hpp"
+#include "cards/development/github/login_screen.hpp"
 
 namespace rouen::cards {
 

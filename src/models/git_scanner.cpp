@@ -1,11 +1,11 @@
 #include "git_scanner.hpp"
 #include "git.hpp"
-#include "git_process_helper.hpp"
-#include "../helpers/debug.hpp"
-#include "../helpers/config_service.hpp"
 #include <filesystem>
 #include <cstdlib>
 #include <algorithm>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace rouen::models {
     void GitScanner::scanForRepositories(std::map<std::string, GitRepoStatus>& repos, std::vector<std::string>& repo_paths) {

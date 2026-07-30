@@ -3,15 +3,16 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm>
 #include <chrono>
+#include <cstring>
+#include <exception>
 #include <format>
+#include <future>
+#include <utility>
 
 // 2. Libraries used in the project, in alphabetic order
 // None
 
 // 3. All other includes
-#include "../../helpers/api_keys.hpp"
-#include "../../helpers/platform_utils.hpp"
-#include "../../registrar.hpp"
 
 namespace rouen::cards {
 

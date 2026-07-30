@@ -1,4 +1,9 @@
 #include "theme_card.hpp"
+#include "IconsMaterialDesign.h"
+#include "theme_manager.hpp"
+#include <cstddef>
+#include <imgui.h>
+#include <string>
 
 namespace rouen::cards {
 

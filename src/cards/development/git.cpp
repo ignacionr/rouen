@@ -1,29 +1,37 @@
 #include "git.hpp"
+#include "cards/interface/card.hpp"
 #include "git_overlay.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <format>
+#include <imgui.h>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <thread>
 
-#include <SDL3/SDL.h>
-#include <SDL3_image/SDL_image.h>
+#include <utility>
+#include <vector>
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/fetch.hpp"
-#include "../../helpers/glaze_include.hpp"
-#include "../../helpers/imgui_include.hpp"
-#include "../../helpers/llm_config.hpp"
 #include "../../helpers/platform_utils.hpp"
-#include "../../helpers/texture_helper.hpp"
 #include "../../registrar.hpp"
+#include "llm_host.hpp"
+#include "models/git.hpp"
+#include "models/git_process_helper.hpp"
 
 namespace {
     ImColor getStatusColor(rouen::models::GitRepoStatus status) {

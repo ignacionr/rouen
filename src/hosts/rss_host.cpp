@@ -1,10 +1,21 @@
 #include "rss_host.hpp"
 
 #include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
 #include <ctime>
+#include <exception>
+#include <format>
 #include <functional>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
 #include <iomanip>
-#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
 #include <sstream>
 #include <fstream>
 #include <filesystem>
@@ -12,8 +23,17 @@
 #include <array>
 #include <cstdio>
 #include <cmath>
+#include <stdexcept>
+#include <stdio.h>
+#include <stop_token>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
-#include "../helpers/compat/compat.hpp"
 #include "../helpers/html_media_extractor.hpp"
 #include "../helpers/platform_utils.hpp"
 #include "../helpers/media_player.hpp"
@@ -23,7 +43,12 @@
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/debug.hpp"
-#include "../helpers/glaze_include.hpp"
+#include "media_player_item.hpp"
+#include "models/rss/feed.hpp"
+#include "models/rss/feed_item.hpp"
+#include "models/rss/rss_date_parser.hpp"
+#include "models/rss/rss_url_resolver.hpp"
+#include "models/rss/smart_list_filter.hpp"
 
 namespace rouen::hosts {
 

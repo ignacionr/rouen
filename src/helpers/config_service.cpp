@@ -1,6 +1,12 @@
 #include "config_service.hpp"
 #include "platform_utils.hpp"
-#include <sstream>
+#include <exception>
+#include <format>
+#include <functional>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <regex>
 #include <algorithm>
 #include <cctype>
@@ -8,10 +14,11 @@
 #include <filesystem>
 #include <ranges>
 #include <chrono>
+#include <string>
+#include <utility>
+#include <vector>
 
 #if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#include <climits>
 #elif defined(__linux__)
 #include <unistd.h>
 #include <climits>

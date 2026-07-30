@@ -6,9 +6,11 @@
 
 // 3. All other includes
 #include "card.hpp"
-#include "../../helpers/mcp_service.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/debug.hpp"
+#include "hosts/mcp_host.hpp"
+#include <exception>
+#include <string>
 
 void card::register_mcp_functions() {
     try {

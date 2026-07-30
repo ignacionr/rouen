@@ -1,6 +1,19 @@
 #include "terminal_commands.hpp"
-#include "../../helpers/debug.hpp"
-#include "../../helpers/llm_config.hpp"
+#include "cards/system/terminal_output.hpp"
+#include "fetch.hpp"
+#include "llm_host.hpp"
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <exception>
+#include <format>
+#include <mutex>
+#include <stdio.h>
+#include <string>
+#include <thread>
+#include <vector>
 
 namespace rouen::cards {
 

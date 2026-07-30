@@ -1,5 +1,11 @@
 #include "../interface/factory.hpp"
+#include "cards/interface/card.hpp"
+#include "sdl_compat.hpp"
 #include "trello_card.hpp"
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 // This file provides Trello card registration for Rouen
 // It's compiled separately to avoid circular dependency issues

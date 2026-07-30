@@ -1,5 +1,15 @@
+#include "debug.hpp"
+#include "fetch.hpp"
 #include "jira_model.hpp"
-#include "../helpers/glaze_include.hpp"
+#include <algorithm>
+#include <exception>
+#include <format>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <mutex>
+#include <stdexcept>
+#include <string>
 
 namespace rouen::models {
 

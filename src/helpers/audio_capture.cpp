@@ -1,7 +1,17 @@
 #include "audio_capture.hpp"
 #include "mac_mic_permissions.h"
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_stdinc.h>
+#include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <cmath>
+#include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace rouen::helpers {
 

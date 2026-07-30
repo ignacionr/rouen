@@ -1,4 +1,9 @@
 #include "metadata_serialization.hpp"
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace mail {
     bool serialize_tags(const std::vector<std::string>& tags, std::string& out_json) {

@@ -1,26 +1,38 @@
 #include "media_companion.hpp"
 
+#include <SDL3/SDL_surface.h>
 #include <algorithm>
 #include <chrono>
 #include <cctype>
-#include <cmath>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <functional>
+#include <imgui.h>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <sstream>
+#include <string>
+#include <system_error>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 
 #include "../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"
 #include "../../helpers/fetch.hpp"
-#include "../../helpers/llm_config.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/process_helper.hpp"
+#include "cards/interface/card.hpp"
+#include "config_service.hpp"
+#include "llm_host.hpp"
+#include "media_player_item.hpp"
+#include "ui_context.hpp"
 
 namespace rouen::cards {
 

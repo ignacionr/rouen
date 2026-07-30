@@ -1,6 +1,9 @@
 #include "chess_com_integration.hpp"
+#include <chrono>
+#include <cstddef>
+#include <functional>
+#include <future>
 #include <imgui.h>
-#include <algorithm>
 
 namespace rouen::cards {
 

@@ -1,6 +1,22 @@
 #include "capture_helper.hpp"
 #include "../fonts.hpp"
+#include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlgpu3.h"
+#include "registrar.hpp"
+#include "texture_helper.hpp"
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_video.h>
+#include <cstdint>
 #include <cstring>
+#include <exception>
+#include <functional>
+#include <imgui.h>
+#include <imgui_internal.h>
+#include <stdexcept>
 
 namespace rouen::helpers {
 

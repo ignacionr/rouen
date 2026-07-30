@@ -1,12 +1,29 @@
 #include "api_server_host.hpp"
+#include "audio_capture.hpp"
+#include "mp4_writer.hpp"
 
 // 1. Standard includes in alphabetic order
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_video.h>
+#include <algorithm>
 #include <atomic>
-#include <cmath>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <filesystem>
+#include <format>
+#include <functional>
+#include <glaze/core/reflect.hpp>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
 #include <iostream>
+#include <memory>
 #include <mutex>
-#include <sstream>
+#include <string>
 #include <thread>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 // Suppress mongoose reserved macro warnings (Clang only)
@@ -20,13 +37,10 @@
 #endif
 
 // Glaze for JSON parsing
-#include <glaze/glaze.hpp>
 
 // 3. All other includes
-#include <SDL3/SDL.h>
 #include "../registrar.hpp"
 #include "deferred_operations.hpp"
-#include "mcp_service.hpp"
 #include "media_player.hpp"
 #include "card_render_metrics.hpp"
 #include "../helpers/adlib_engine.hpp"

@@ -2,16 +2,22 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstddef>
+#include <filesystem>
 #include <format>
+#include <imgui.h>
 #include <regex>
+#include <string>
+#include <string_view>
+#include <system_error>
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
-#include "../../helpers/imgui_include.hpp"
-#include "../../helpers/platform_utils.hpp"
 
 #include "../information/image_viewer.hpp"
 #include "../media/media_card.hpp"
+#include "registrar.hpp"
 
 namespace rouen::cards {
 

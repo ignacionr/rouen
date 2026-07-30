@@ -1,12 +1,24 @@
 #include "image_cache.hpp"
 
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_surface.h>
 #include <cstdio>
+#include <exception>
+#include <filesystem>
 #include <format>
-#include <fstream>
 
 #include <SDL3_image/SDL_image.h>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <sqlite3.h>
+#include <string>
+#include <vector>
 
 #include "fetch.hpp"
+#include "texture_helper.hpp"
 
 namespace helpers {
 

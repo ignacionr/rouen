@@ -1,8 +1,11 @@
 #include "rss_url_resolver.hpp"
 
-#include <algorithm>
-#include <iostream>
+#include <cstddef>
+#include <exception>
 #include <regex>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/string_helper.hpp"

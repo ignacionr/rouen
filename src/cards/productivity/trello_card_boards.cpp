@@ -1,16 +1,15 @@
+#include "IconsMaterialDesign.h"
+#include "models/trello_model.hpp"
 #include "trello_card.hpp"
 
 // 1. Standard includes in alphabetic order
-#include <algorithm>
-#include <chrono>
 #include <format>
+#include <imgui.h>
 
 // 2. Libraries used in the project, in alphabetic order
 // None
 
 // 3. All other includes
-#include "../../helpers/api_keys.hpp"
-#include "../../helpers/platform_utils.hpp"
 #include "../../registrar.hpp"
 
 namespace rouen::cards {

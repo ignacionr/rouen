@@ -1,16 +1,29 @@
 // 1. Standard includes in alphabetic order
 #include <algorithm>
-#include <fstream>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
+#include <format>
+#include <functional>
+#include <glaze/core/common.hpp>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/read.hpp>
+#include <glaze/json/write.hpp>
+#include <mutex>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
-#include "glaze_include.hpp"
+#include "config_service.hpp"
 
 // 3. All other includes
 #include "debug.hpp"
 #include "mcp_host.hpp"
+#include "models/contacts/contact.hpp"
 #include "platform_utils.hpp"
-#include "media_player.hpp"
 #include "process_helper.hpp"
 #include "string_helper.hpp"
 #include "fetch.hpp"
@@ -19,7 +32,7 @@
 #include "../models/series/series_repository.hpp"
 #include "../models/adaptive_cards/adaptive_cards_repository.hpp"
 #include "../models/contacts/contacts_repository.hpp"
-#include "universal_sync_service.hpp"
+#include "universal_sync_host.hpp"
 #include "persona_manager.hpp"
 
 namespace rouen::hosts {

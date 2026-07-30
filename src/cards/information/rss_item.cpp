@@ -1,19 +1,27 @@
 #include "rss_item.hpp"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
+#include <exception>
 #include <format>
+#include <imgui.h>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <utility>
 
 #include "../../helpers/debug.hpp"
 #include "../../helpers/image_cache.hpp"
-#include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "media_player.hpp"
+#include "registrar.hpp"
 #include "rss.hpp"
+#include "sdl_compat.hpp"
+#include "texture_utils.hpp"
 
 namespace rouen::cards {
 

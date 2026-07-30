@@ -1,10 +1,19 @@
 #include "repo_screen.hpp"
 
+#include <cstdint>
+#include <exception>
+#include <glaze/json/json_t.hpp>
+#include <glaze/json/write.hpp>
+#include <imgui.h>
 #include <iostream>
 #include <format>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "../../../../external/IconsMaterialDesign.h"
-#include "../../../helpers/imgui_include.hpp"
 #include "../../../models/github/host.hpp"
 
 namespace rouen::cards::github {

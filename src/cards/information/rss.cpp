@@ -1,25 +1,39 @@
 #include "rss.hpp"
 
+#include <__chrono/duration.h>
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
+#include <ctime>
+#include <exception>
 #include <format>
-#include <iostream>
+#include <functional>
+#include <future>
+#include <imgui.h>
+#include <memory>
 #include <mutex>
 #include <regex>
+#include <set>
+#include <string>
 #include <thread>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/fetch.hpp"
-#include "../../helpers/imgui_include.hpp"
-#include "../../helpers/llm_config.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
-#include "../../helpers/texture_helper.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../models/rss/rss_date_parser.hpp"
 #include "../../registrar.hpp"
+#include "image_cache.hpp"
+#include "llm_host.hpp"
+#include "models/rss/feed.hpp"
+#include "rss_host.hpp"
+#include "sdl_compat.hpp"
 
 namespace rouen::cards {
 

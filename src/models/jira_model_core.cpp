@@ -1,18 +1,9 @@
 #include "jira_model.hpp"
-#include "../helpers/glaze_include.hpp"
-#include <algorithm>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
 #include <mutex>
-#include <format>
-#include <regex>
-#include "../helpers/fetch.hpp"
-#include "../helpers/api_keys.hpp"
-#include "../helpers/debug.hpp"
-#include "../helpers/platform_utils.hpp"
 #include "../helpers/config_service.hpp"
 
 namespace fs = std::filesystem;

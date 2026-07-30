@@ -1,5 +1,10 @@
 #include "../interface/factory.hpp"
 #include "movies.hpp"
+#include "sdl_compat.hpp"
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 // This file provides Movies card registration for Rouen
 // It's compiled separately to avoid circular dependency issues

@@ -1,17 +1,20 @@
-#include <codecvt>
-#include <locale>
+#include <SDL3/SDL_video.h>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <functional>
+#include <imgui.h>
 #include <filesystem>
 #include <iostream>
+#include <string>
 #include <vector>  // Added missing header for std::vector
-#include <sstream> // Added for std::stringstream
-#include <iomanip> // Added for std::setw and std::setfill
 #include <format>  // C++23 std::format
 
 #include "fonts.hpp"
+#include "IconsMaterialDesign.h"
 #include "helpers/debug.hpp"  // For logging
 #include "helpers/platform_utils.hpp"  // For resource path utilities
 #include "registrar.hpp"  // For accessing registered services
-#include <SDL3/SDL.h>  // For SDL DPI functions
 
 namespace rouen::fonts {
     namespace {

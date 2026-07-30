@@ -1,9 +1,27 @@
 #include "adlib_engine.hpp"
 #include "media_player.hpp"
+#include "media_player_item.hpp"
 #include "texture_helper.hpp"
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_surface.h>
 #include <SDL3_image/SDL_image.h>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <exception>
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace rouen::helpers {
 
