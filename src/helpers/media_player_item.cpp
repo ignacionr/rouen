@@ -814,7 +814,8 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 if (frame->best_effort_timestamp != AV_NOPTS_VALUE) {
                     pts_time = static_cast<double>(frame->best_effort_timestamp) * av_q2d(video_format_ctx->streams[audio_stream_idx]->time_base);
                 } else {
-                    pts_time = position.load() + (static_cast<double>(frame->nb_samples) / 44100.0);
+                    int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
+                    pts_time = position.load() + (static_cast<double>(frame->nb_samples) / static_cast<double>(target_rate));
                 }
                 last_audio_pts.store(pts_time);
                 double cur_dur = duration.load();
@@ -828,8 +829,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 if (out_samples > 0) {
                     size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
                     std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
+                    int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
                     if (!local_audio_stream) {
-                        SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                        SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, target_rate};
                         local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
                         if (local_audio_stream) SDL_ResumeAudioStreamDevice(local_audio_stream);
                     }
@@ -847,7 +849,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                             on_audio_pcm_cb(pcm_chunk.data(), pcm_chunk.size());
                         }
                         int q_bytes = SDL_GetAudioStreamQueued(local_audio_stream);
-                        double q_sec = static_cast<double>(q_bytes) / 176400.0;
+                        double q_sec = static_cast<double>(q_bytes) / static_cast<double>(target_rate * 4);
                         double cur_pos = std::max(0.0, pts_time - q_sec);
                         position.store(cur_pos);
                     }
@@ -866,7 +868,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         {
                             std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
                             // Compute wall-clock time when this audio will reach the speaker
-                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / static_cast<double>(target_rate * 4) : 0.0;
                             double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
                             audio_peak_queue.push_back({arrival, peak_l, peak_r});
                             if (audio_peak_queue.size() > 300) {
@@ -919,8 +921,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
                 }
+                int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
                 int queued_audio = local_audio_stream ? SDL_GetAudioStreamQueued(local_audio_stream) : 0;
-                if (queued_audio >= 176400 / 4) {
+                if (queued_audio >= (target_rate * 4) / 4) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     continue;
                 }
@@ -944,7 +947,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 } else if (a_frm->best_effort_timestamp != AV_NOPTS_VALUE) {
                                     pts_time = static_cast<double>(a_frm->best_effort_timestamp) * av_q2d(audio_format_ctx->streams[audio_stream_idx]->time_base);
                                 } else {
-                                    pts_time = std::max(0.0, position.load()) + (static_cast<double>(a_frm->nb_samples) / 44100.0);
+                                    pts_time = std::max(0.0, position.load()) + (static_cast<double>(a_frm->nb_samples) / static_cast<double>(target_rate));
                                 }
                                 if (first_audio_pts.load() < 0.0 && pts_time >= 0.0) {
                                     first_audio_pts.store(pts_time);
@@ -953,8 +956,8 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 last_audio_pts.store(pts_time);
 
                                 int needed_out_samples = static_cast<int>(av_rescale_rnd(
-                                    swr_get_delay(swr_ctx, 44100) + a_frm->nb_samples,
-                                    44100, audio_codec_ctx->sample_rate, AV_ROUND_UP));
+                                    swr_get_delay(swr_ctx, target_rate) + a_frm->nb_samples,
+                                    target_rate, audio_codec_ctx->sample_rate, AV_ROUND_UP));
                                 if (needed_out_samples > a_out_max_samples) {
                                     if (a_out_buf) av_freep(&a_out_buf);
                                     av_samples_alloc(&a_out_buf, nullptr, 2, needed_out_samples, AV_SAMPLE_FMT_S16, 0);
@@ -965,7 +968,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 for (int i = 0; i < 8; ++i) input_data[i] = a_frm->data[i];
                                 int out_samples = swr_convert(swr_ctx, &a_out_buf, a_out_max_samples, input_data, a_frm->nb_samples);
                                 if (out_samples > 0) {
-                                    double out_sec = static_cast<double>(out_samples) / 44100.0;
+                                    double out_sec = static_cast<double>(out_samples) / static_cast<double>(target_rate);
                                     last_audio_pts.store(pts_time + out_sec);
                                     size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
                                     std::vector<uint8_t> pcm_chunk(a_out_buf, a_out_buf + pcm_bytes);
@@ -973,7 +976,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         on_audio_pcm_cb(pcm_chunk.data(), pcm_chunk.size());
                                     }
                                     if (!local_audio_stream) {
-                                         SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                                         SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, target_rate};
                                          local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
                                          if (local_audio_stream) {
                                              if (audio_clock_initialized.load() || decoded_video_queue.size() >= 15 || !has_video.load()) {
@@ -1008,7 +1011,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         float peak_r = static_cast<float>(max_r) / 32768.0f;
                                         {
                                             std::lock_guard<std::mutex> p_lock(audio_peak_mutex);
-                                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / 176400.0 : 0.0;
+                                            double buf_lag = local_audio_stream ? static_cast<double>(SDL_GetAudioStreamQueued(local_audio_stream)) / static_cast<double>(target_rate * 4) : 0.0;
                                             double arrival = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() + buf_lag;
                                             audio_peak_queue.push_back({arrival, peak_l, peak_r});
                                             if (audio_peak_queue.size() > 300) {
@@ -1098,9 +1101,13 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
                 }
-            } else if (v_q_size >= 60 && queued_audio >= 264600) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                continue;
+            } else {
+                int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
+                int bytes_per_sec = target_rate * 4;
+                if (v_q_size >= 60 && queued_audio >= (bytes_per_sec * 3) / 2) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    continue;
+                }
             }
         } else if (video_stream_idx >= 0) {
             // Video-only stream
@@ -1110,7 +1117,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
             }
         } else if (audio_stream_idx >= 0) {
             // Audio-only stream
-            if (queued_audio >= 176400 / 2) {
+            int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
+            int bytes_per_sec = target_rate * 4;
+            if (queued_audio >= bytes_per_sec / 2) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
@@ -1260,18 +1269,13 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                     SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, target_rate};
                                     local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
                                     if (local_audio_stream) {
-                                        SDL_PauseAudioStreamDevice(local_audio_stream);
+                                        SDL_ResumeAudioStreamDevice(local_audio_stream);
                                     }
                                 }
                                 if (local_audio_stream) {
                                     int max_queued = static_cast<int>(static_cast<size_t>(target_rate) * 2 * sizeof(int16_t) / 2); // 0.5s of audio
-                                    bool is_audio_paused = SDL_AudioStreamDevicePaused(local_audio_stream);
-                                    if (!is_audio_paused) {
-                                        while (ffmpeg_running.load() && local_audio_stream && SDL_GetAudioStreamQueued(local_audio_stream) > max_queued && is_playing && !is_paused.load()) {
-                                            std::this_thread::sleep_for(std::chrono::milliseconds(5));
-                                        }
-                                    } else {
-                                        SDL_ClearAudioStream(local_audio_stream);
+                                    while (ffmpeg_running.load() && local_audio_stream && SDL_GetAudioStreamQueued(local_audio_stream) > max_queued && is_playing && !is_paused.load()) {
+                                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
                                     }
                                     float vol_factor = static_cast<float>(volume.load()) / 100.0f;
                                     if (vol_factor < 1.0f) {
@@ -1432,7 +1436,8 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 for (int i = 0; i < 8; ++i) input_data[i] = frame->data[i];
                                 int out_samples = swr_convert(swr_ctx, &audio_out_buf, max_audio_out_samples, input_data, frame->nb_samples);
                                 if (out_samples > 0) {
-                                    double out_sec = static_cast<double>(out_samples) / 44100.0;
+                                    int target_rate = audio_sample_rate.load() > 0 ? audio_sample_rate.load() : 44100;
+                                    double out_sec = static_cast<double>(out_samples) / static_cast<double>(target_rate);
                                     last_audio_pts.store(pts_time + out_sec);
                                     size_t pcm_bytes = static_cast<size_t>(out_samples) * 2 * sizeof(int16_t);
                                     std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
@@ -1441,7 +1446,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                     }
 
                                     if (!local_audio_stream) {
-                                        SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, 44100};
+                                        SDL_AudioSpec spec{SDL_AUDIO_S16LE, 2, target_rate};
                                         local_audio_stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
                                         if (local_audio_stream) SDL_ResumeAudioStreamDevice(local_audio_stream);
                                     }
@@ -1675,15 +1680,11 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
             double speaker_pts = get_speaker_audio_pts();
 
             if (!decoded_video_queue.empty()) {
-                double v_0 = first_video_pts.load();
-                double a_0 = first_audio_pts.load() >= 0.0 ? first_audio_pts.load() : 0.0;
-
-                // If video queue has accumulated frames far behind current speaker PTS (> 100ms in the past),
-                // catch up by discarding old frames so we present the current frame.
+                // Keep video synchronized with speaker audio:
+                // Advance video queue until the front frame's display interval covers speaker_pts.
                 while (decoded_video_queue.size() > 1 && audio_clock_initialized.load()) {
-                    double front_pts = decoded_video_queue.front().pts;
-                    double norm_pts = (v_0 >= 0.0) ? (front_pts - v_0 + a_0) : front_pts;
-                    if (norm_pts >= 0.0 && speaker_pts > norm_pts + 0.100) {
+                    double next_pts = decoded_video_queue[1].pts;
+                    if (next_pts >= 0.0 && speaker_pts >= next_pts) {
                         decoded_video_queue.pop_front();
                     } else {
                         break;
@@ -1691,7 +1692,7 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                 }
 
                 const auto& front = decoded_video_queue.front();
-                double video_pts = (v_0 >= 0.0) ? (front.pts - v_0 + a_0) : front.pts;
+                double video_pts = front.pts;
                 double delta = video_pts - speaker_pts;
 
                 last_av_sync_delta_ms.store(delta * 1000.0);

@@ -483,7 +483,8 @@ std::string api_server_host::handle_cast_status(struct mg_connection* /*c*/, str
                     actual_rendering_fps = item_ptr->actual_rendering_fps.load();
                     if (item_ptr->local_audio_stream) {
                         int q_bytes = SDL_GetAudioStreamQueued(item_ptr->local_audio_stream);
-                        audio_queue_seconds = static_cast<double>(q_bytes) / 176400.0;
+                        int rate = item_ptr->audio_sample_rate.load() > 0 ? item_ptr->audio_sample_rate.load() : 44100;
+                        audio_queue_seconds = static_cast<double>(q_bytes) / static_cast<double>(rate * 4);
                     }
                     break;
                 }
