@@ -1,4 +1,5 @@
 #include "mp4_writer.hpp"
+#include <cstring>
 #include <filesystem>
 
 extern "C" {
@@ -182,14 +183,23 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
 
         audio_enc_ctx_->codec_type = AVMEDIA_TYPE_AUDIO;
         audio_enc_ctx_->codec_id = AV_CODEC_ID_AAC;
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
         if (audio_codec->sample_fmts) {
             audio_enc_ctx_->sample_fmt = audio_codec->sample_fmts[0];
         } else {
             audio_enc_ctx_->sample_fmt = AV_SAMPLE_FMT_FLTP;
         }
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
         std::cout << "[NativeMP4Writer] Selected audio sample_fmt: " << av_get_sample_fmt_name(audio_enc_ctx_->sample_fmt) << std::endl;
         audio_enc_ctx_->sample_rate = sample_rate;
         
