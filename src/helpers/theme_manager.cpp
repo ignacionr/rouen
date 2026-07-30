@@ -233,6 +233,8 @@ namespace rouen::theme {
         ImGuiStyle& style = ImGui::GetStyle();
         ImVec4* colors = style.Colors;
 
+        style.WindowBorderSize = active.draw_card_outline ? 1.0f : 0.0f;
+
         // Apply theme window background
         colors[ImGuiCol_WindowBg] = ImVec4(active.window_bg[0], active.window_bg[1], active.window_bg[2], active.window_bg[3]);
         

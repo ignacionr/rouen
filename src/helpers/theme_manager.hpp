@@ -14,6 +14,7 @@ namespace rouen::theme {
 
     struct theme_palette {
         std::string name;
+        bool draw_card_outline = true;
         
         // ImGui core style colors
         std::array<float, 4> window_bg;
@@ -38,6 +39,7 @@ namespace rouen::theme {
             using T = theme_palette;
             static constexpr auto value = glz::object(
                 "name", &T::name,
+                "draw_card_outline", &T::draw_card_outline,
                 "window_bg", &T::window_bg,
                 "text", &T::text,
                 "text_disabled", &T::text_disabled,

@@ -478,6 +478,7 @@ add_executable(${PROJECT_NAME}
   src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp
   src/cards/productivity/invoice_card.cpp
+  src/cards/productivity/theme_card.cpp
   src/cards/information/bybit_registrar.cpp
   src/cards/information/movies_registrar.cpp
   src/cards/information/ai_chat.cpp
