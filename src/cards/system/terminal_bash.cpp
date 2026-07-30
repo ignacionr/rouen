@@ -11,21 +11,8 @@
 #include <cstring>
 #include <format>
 #include <mutex>
-#include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string>
-#include <sys/_types/_pid_t.h>
-#include <sys/_types/_ssize_t.h>
-#include <sys/fcntl.h>
-#include <sys/poll.h>
-#include <sys/signal.h>
-#include <sys/ttycom.h>
-#include <sys/wait.h>
-#include <termios.h>
 #include <thread>
-#include <unistd.h>
-#include <util.h>
 #include <vector>
 
 namespace rouen::cards {
