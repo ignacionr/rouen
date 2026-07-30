@@ -39,6 +39,7 @@ struct media_player {
     static std::weak_ptr<card> s_fullscreen_origin_card;
 
     static std::shared_ptr<media_player_item> s_detached_item;
+    static std::atomic<bool> s_detached_mode_active;
     static std::mutex s_detached_mutex;
 
     static void save_fullscreen_origin_card(const std::shared_ptr<media_player_item>& item);
@@ -48,6 +49,9 @@ struct media_player {
     static std::shared_ptr<media_player_item> get_detached_item();
     static void clear_detached_item();
     static bool has_detached_item();
+    static bool is_detached_mode_active();
+    static void set_detached_mode_active(bool active);
+    static void close_detached_window();
     static std::shared_ptr<media_player_item> get_currently_playing_item();
 
     static void set_active_fullscreen_item(std::shared_ptr<media_player_item> item);

@@ -16,6 +16,7 @@ std::mutex media_player::s_fullscreen_mutex;
 std::weak_ptr<card> media_player::s_fullscreen_origin_card;
 
 std::shared_ptr<media_player_item> media_player::s_detached_item{nullptr};
+std::atomic<bool> media_player::s_detached_mode_active{false};
 std::mutex media_player::s_detached_mutex;
 
 RouenGPUTexture* media_player::s_unlit_vu_texture{nullptr};
@@ -161,6 +162,7 @@ void media_player::restore_fullscreen_origin_focus() {
 void media_player::set_detached_item(std::shared_ptr<media_player_item> item) {
     std::lock_guard<std::mutex> lock(s_detached_mutex);
     s_detached_item = item;
+    s_detached_mode_active.store(true);
 }
 
 std::shared_ptr<media_player_item> media_player::get_detached_item() {
@@ -176,6 +178,24 @@ void media_player::clear_detached_item() {
 bool media_player::has_detached_item() {
     std::lock_guard<std::mutex> lock(s_detached_mutex);
     return s_detached_item != nullptr;
+}
+
+bool media_player::is_detached_mode_active() {
+    return s_detached_mode_active.load();
+}
+
+void media_player::set_detached_mode_active(bool active) {
+    s_detached_mode_active.store(active);
+    if (!active) {
+        std::lock_guard<std::mutex> lock(s_detached_mutex);
+        s_detached_item = nullptr;
+    }
+}
+
+void media_player::close_detached_window() {
+    std::lock_guard<std::mutex> lock(s_detached_mutex);
+    s_detached_item = nullptr;
+    s_detached_mode_active.store(false);
 }
 
 std::shared_ptr<media_player_item> media_player::get_currently_playing_item() {

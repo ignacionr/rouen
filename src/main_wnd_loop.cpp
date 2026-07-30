@@ -25,6 +25,7 @@
 namespace {
 static std::string s_detached_toast_msg;
 static std::chrono::steady_clock::time_point s_detached_toast_expire;
+static std::chrono::steady_clock::time_point s_input_boost_until;
 
 static void set_detached_toast(const std::string& msg) {
     s_detached_toast_msg = msg;
@@ -297,9 +298,9 @@ void main_wnd::run() {
                     DB_ERROR("Unknown error during deck rendering");
                 }
 
-                bool has_detached = media_player::has_detached_item();
+                bool is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
 
-                if (has_detached) {
+                if (is_detached_active) {
                     m_requested_fps = std::max(m_requested_fps, 60);
                 } else if (media_player::is_any_playing_non_cast()) {
                     m_requested_fps = std::max(m_requested_fps, 60);
@@ -326,10 +327,12 @@ void main_wnd::run() {
                 ImGui::Render();
 
                 bool should_draw_main = true;
-                if (has_detached) {
+                if (is_detached_active) {
                     auto now = std::chrono::steady_clock::now();
+                    bool user_active = (now < s_input_boost_until);
                     auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_last_main_render_time).count();
-                    if (elapsed_ms < 1000) {
+                    
+                    if (!user_active && elapsed_ms < 1000) {
                         should_draw_main = false;
                     } else {
                         m_last_main_render_time = now;
@@ -414,9 +417,18 @@ bool main_wnd::process_events() {
 
         // Poll events
         SDL_Event event;
+        bool is_detached_active = (m_detached_window != nullptr) || media_player::is_detached_mode_active() || media_player::has_detached_item();
+        auto now_time = std::chrono::steady_clock::now();
+        bool user_recently_active = (now_time < s_input_boost_until);
+
         if (!m_immediate) {
             bool is_media_playing = media_player::is_any_playing_non_cast() || media_player_item::is_cast_active.load();
-            int effective_fps = is_media_playing ? 60 : std::max(1, m_requested_fps);
+            int effective_fps = 60;
+            if (is_detached_active && !user_recently_active && !is_media_playing) {
+                effective_fps = 1;
+            } else {
+                effective_fps = is_media_playing ? 60 : std::max(1, m_requested_fps);
+            }
             SDL_WaitEventTimeout(nullptr, 1000 / effective_fps);
         }
         else {
@@ -426,6 +438,41 @@ bool main_wnd::process_events() {
         static bool s_swallowed_escape_down = false;
         while (SDL_PollEvent(&event)) {
             try {
+                bool is_main_window_event = true;
+                if (m_detached_window) {
+                    Uint32 detached_id = SDL_GetWindowID(m_detached_window);
+                    if (event.type >= SDL_EVENT_WINDOW_FIRST && event.type <= SDL_EVENT_WINDOW_LAST) {
+                        if (event.window.windowID == detached_id) is_main_window_event = false;
+                    } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                        if (event.key.windowID == detached_id) is_main_window_event = false;
+                    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                        if (event.motion.windowID == detached_id) is_main_window_event = false;
+                    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                        if (event.button.windowID == detached_id) is_main_window_event = false;
+                    } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                        if (event.wheel.windowID == detached_id) is_main_window_event = false;
+                    }
+                }
+
+                if (is_main_window_event) {
+                    switch (event.type) {
+                        case SDL_EVENT_MOUSE_MOTION:
+                        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                        case SDL_EVENT_MOUSE_BUTTON_UP:
+                        case SDL_EVENT_MOUSE_WHEEL:
+                        case SDL_EVENT_KEY_DOWN:
+                        case SDL_EVENT_KEY_UP:
+                        case SDL_EVENT_TEXT_INPUT:
+                        case SDL_EVENT_DROP_FILE:
+                        case SDL_EVENT_DROP_TEXT:
+                        case SDL_EVENT_WINDOW_MOUSE_ENTER:
+                            s_input_boost_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+                            m_immediate = true;
+                            break;
+                        default:
+                            break;
+                    }
+                }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
                     if (media_player::has_active_fullscreen_item()) {
                         media_player::clear_active_fullscreen_item();
@@ -452,7 +499,15 @@ bool main_wnd::process_events() {
                 // SDL3 Window close event
                 if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                     if (m_detached_window && event.window.windowID == SDL_GetWindowID(m_detached_window)) {
-                        media_player::clear_detached_item();
+                        media_player::close_detached_window();
+                        if (m_detached_imgui_ctx) {
+                            ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+                            if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
+                            ImGui::SetCurrentContext(m_detached_imgui_ctx);
+                            ImGui::DestroyContext(m_detached_imgui_ctx);
+                            m_detached_imgui_ctx = nullptr;
+                            if (main_ctx) ImGui::SetCurrentContext(main_ctx);
+                        }
                         SDL_DestroyWindow(m_detached_window);
                         m_detached_window = nullptr;
                         continue;
@@ -511,68 +566,74 @@ bool main_wnd::process_events() {
                     bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
                     if (m_detached_window && event.key.windowID == SDL_GetWindowID(m_detached_window)) {
                         auto detached_item = media_player::get_detached_item();
-                        if (detached_item || is_adlib_active) {
-                            if (event.key.key == SDLK_ESCAPE) {
-                                if (is_adlib_active) {
-                                    rouen::helpers::AdLibEngine::instance().stop();
-                                } else if (detached_item) {
-                                    media_player::clear_detached_item();
-                                    SDL_DestroyWindow(m_detached_window);
-                                    m_detached_window = nullptr;
-                                }
-                            } else if (event.key.key == SDLK_SPACE) {
-                                if (is_adlib_active) {
-                                    rouen::helpers::AdLibEngine::instance().toggle_pause();
-                                } else if (detached_item) {
-                                    detached_item->togglePause();
-                                }
-                            } else if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_N) {
-                                if (is_adlib_active) {
-                                    rouen::helpers::AdLibEngine::instance().next_stage();
-                                } else if (detached_item) {
-                                    double current = detached_item->position.load();
-                                    double dur = detached_item->duration.load();
-                                    double target_limit = (dur > 0.0) ? dur : (current + 5.0);
-                                    detached_item->seekTo(std::min(target_limit, current + 5.0));
-                                }
-                            } else if (event.key.key == SDLK_LEFT && detached_item) {
-                                double current = detached_item->position.load();
-                                detached_item->seekTo(std::max(0.0, current - 5.0));
+                        if (event.key.key == SDLK_ESCAPE) {
+                            if (is_adlib_active) {
+                                rouen::helpers::AdLibEngine::instance().stop();
                             } else {
-                                int overlay_target_idx = -1;
-                                if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
-                                    overlay_target_idx = static_cast<int>(event.key.key - SDLK_1);
-                                } else if (event.key.key >= SDLK_KP_1 && event.key.key <= SDLK_KP_9) {
-                                    overlay_target_idx = static_cast<int>(event.key.key - SDLK_KP_1);
+                                media_player::close_detached_window();
+                                if (m_detached_imgui_ctx) {
+                                    ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+                                    if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
+                                    ImGui::SetCurrentContext(m_detached_imgui_ctx);
+                                    ImGui::DestroyContext(m_detached_imgui_ctx);
+                                    m_detached_imgui_ctx = nullptr;
+                                    if (main_ctx) ImGui::SetCurrentContext(main_ctx);
                                 }
+                                SDL_DestroyWindow(m_detached_window);
+                                m_detached_window = nullptr;
+                            }
+                        } else if (event.key.key == SDLK_SPACE) {
+                            if (is_adlib_active) {
+                                rouen::helpers::AdLibEngine::instance().toggle_pause();
+                            } else if (detached_item) {
+                                detached_item->togglePause();
+                            }
+                        } else if (event.key.key == SDLK_RIGHT || event.key.key == SDLK_N) {
+                            if (is_adlib_active) {
+                                rouen::helpers::AdLibEngine::instance().next_stage();
+                            } else if (detached_item) {
+                                double current = detached_item->position.load();
+                                double dur = detached_item->duration.load();
+                                double target_limit = (dur > 0.0) ? dur : (current + 5.0);
+                                detached_item->seekTo(std::min(target_limit, current + 5.0));
+                            }
+                        } else if (event.key.key == SDLK_LEFT && detached_item) {
+                            double current = detached_item->position.load();
+                            detached_item->seekTo(std::max(0.0, current - 5.0));
+                        } else {
+                            int overlay_target_idx = -1;
+                            if (event.key.key >= SDLK_1 && event.key.key <= SDLK_9) {
+                                overlay_target_idx = static_cast<int>(event.key.key - SDLK_1);
+                            } else if (event.key.key >= SDLK_KP_1 && event.key.key <= SDLK_KP_9) {
+                                overlay_target_idx = static_cast<int>(event.key.key - SDLK_KP_1);
+                            }
 
-                                if (overlay_target_idx >= 0) {
-                                    try {
-                                        auto main_deck = registrar::get<deck>("deck");
-                                        if (main_deck) {
-                                            int overlay_count = 0;
-                                            for (const auto& card_ptr : main_deck->get_cards()) {
-                                                if (card_ptr && card_ptr->has_video_overlay()) {
-                                                    if (overlay_count == overlay_target_idx) {
-                                                        card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
-                                                        std::string card_name = card_ptr->window_title;
-                                                        auto hash_pos = card_name.find("###");
-                                                        if (hash_pos != std::string::npos) {
-                                                            card_name = card_name.substr(0, hash_pos);
-                                                        }
-                                                        if (card_name.empty()) {
-                                                            card_name = card_ptr->get_uri();
-                                                        }
-                                                        std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
-                                                        set_detached_toast(std::format("[{}] {}: {}", overlay_target_idx + 1, card_name, status));
-                                                        break;
+                            if (overlay_target_idx >= 0) {
+                                try {
+                                    auto main_deck = registrar::get<deck>("deck");
+                                    if (main_deck) {
+                                        int overlay_count = 0;
+                                        for (const auto& card_ptr : main_deck->get_cards()) {
+                                            if (card_ptr && card_ptr->has_video_overlay()) {
+                                                if (overlay_count == overlay_target_idx) {
+                                                    card_ptr->video_overlay_visible = !card_ptr->video_overlay_visible;
+                                                    std::string card_name = card_ptr->window_title;
+                                                    auto hash_pos = card_name.find("###");
+                                                    if (hash_pos != std::string::npos) {
+                                                        card_name = card_name.substr(0, hash_pos);
                                                     }
-                                                    overlay_count++;
+                                                    if (card_name.empty()) {
+                                                        card_name = card_ptr->get_uri();
+                                                    }
+                                                    std::string status = card_ptr->video_overlay_visible ? "Visible" : "Hidden";
+                                                    set_detached_toast(std::format("[{}] {}: {}", overlay_target_idx + 1, card_name, status));
+                                                    break;
                                                 }
+                                                overlay_count++;
                                             }
                                         }
-                                    } catch (...) {}
-                                }
+                                    }
+                                } catch (...) {}
                             }
                         }
                         continue;
@@ -638,8 +699,9 @@ bool main_wnd::process_events() {
 void main_wnd::process_detached_window() {
     auto detached_item = media_player::get_detached_item();
     bool is_adlib_active = rouen::helpers::AdLibEngine::instance().is_active();
+    bool is_detached_mode = media_player::is_detached_mode_active();
 
-    if (!detached_item && !is_adlib_active) {
+    if (!is_detached_mode && !detached_item && !is_adlib_active) {
         if (m_detached_window) {
             if (m_detached_imgui_ctx) {
                 ImGuiContext* main_ctx = ImGui::GetCurrentContext();
@@ -658,19 +720,7 @@ void main_wnd::process_detached_window() {
     // Check media status when a standalone media item is attached (non-adlib)
     if (detached_item && !is_adlib_active && !detached_item->checkMediaStatus()) {
         media_player::clear_detached_item();
-        if (m_detached_window) {
-            if (m_detached_imgui_ctx) {
-                ImGuiContext* main_ctx = ImGui::GetCurrentContext();
-                if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
-                ImGui::SetCurrentContext(m_detached_imgui_ctx);
-                ImGui::DestroyContext(m_detached_imgui_ctx);
-                m_detached_imgui_ctx = nullptr;
-                if (main_ctx) ImGui::SetCurrentContext(main_ctx);
-            }
-            SDL_DestroyWindow(m_detached_window);
-            m_detached_window = nullptr;
-        }
-        return;
+        detached_item = nullptr;
     }
 
     // Create detached OS Window if not created yet
@@ -688,13 +738,21 @@ void main_wnd::process_detached_window() {
                 DB_ERROR_FMT("Error claiming detached window for GPU device: {}", SDL_GetError());
                 SDL_DestroyWindow(m_detached_window);
                 m_detached_window = nullptr;
-                media_player::clear_detached_item();
+                media_player::close_detached_window();
                 return;
             }
+            media_player::set_detached_mode_active(true);
         } else {
             DB_ERROR_FMT("Error creating detached window: {}", SDL_GetError());
-            media_player::clear_detached_item();
+            media_player::close_detached_window();
             return;
+        }
+    } else {
+        static std::string s_last_title;
+        std::string current_title = (detached_item && !detached_item->item_title.empty()) ? detached_item->item_title : "Rouen Presentation";
+        if (current_title != s_last_title) {
+            SDL_SetWindowTitle(m_detached_window, current_title.c_str());
+            s_last_title = current_title;
         }
     }
 
@@ -810,6 +868,17 @@ void main_wnd::process_detached_window() {
                         detached_item->get_vu_watermark_l(), detached_item->get_vu_watermark_r(),
                         vu_w, vu_h, /*is_lit=*/true
                     );
+                } else if (!detached_item && !is_adlib_active) {
+                    const char* idle_title = ICON_MD_DESKTOP_WINDOWS " Rouen Detached Window";
+                    const char* idle_sub = "Ready for media playback...";
+                    ImVec2 title_sz = ImGui::CalcTextSize(idle_title);
+                    ImVec2 sub_sz = ImGui::CalcTextSize(idle_sub);
+
+                    ImGui::SetCursorPos(ImVec2((win_w - title_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f));
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.9f, 0.8f), "%s", idle_title);
+
+                    ImGui::SetCursorPos(ImVec2((win_w - sub_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f + title_sz.y + 8.0f));
+                    ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.6f, 0.6f), "%s", idle_sub);
                 }
 
                 // Keyboard hotkeys for AdLib in detached window
@@ -893,7 +962,8 @@ void main_wnd::process_detached_window() {
 
                 SDL_GPUColorTargetInfo ui_target = {};
                 ui_target.texture = color_target.texture;
-                ui_target.load_op = SDL_GPU_LOADOP_LOAD;
+                ui_target.load_op = (rtex && rtex->binding.texture) ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
+                ui_target.clear_color = SDL_FColor{ 0.12f, 0.10f, 0.18f, 1.0f };
                 ui_target.store_op = SDL_GPU_STOREOP_STORE;
 
                 SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &ui_target, 1, nullptr);

@@ -318,6 +318,8 @@ namespace rouen::cards {
                     }
                     if (fallback) {
                         media_player::set_detached_item(fallback);
+                    } else {
+                        media_player::set_detached_mode_active(true);
                     }
                 }
             };

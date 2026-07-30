@@ -173,6 +173,23 @@ bool media_player_item::playMedia(const void* owner) {
     has_video.store(false);
     is_paused = false;
 
+    if (media_player::is_detached_mode_active()) {
+        std::shared_ptr<media_player_item> self_ptr = nullptr;
+        try {
+            self_ptr = shared_from_this();
+        } catch (...) {
+            if (!url.empty()) {
+                self_ptr = media_player::get_item_ptr(url);
+            }
+        }
+        if (self_ptr) {
+            media_player::set_detached_item(self_ptr);
+            if (media_player::get_active_fullscreen_item() == self_ptr) {
+                media_player::clear_active_fullscreen_item();
+            }
+        }
+    }
+
     std::string sanitized_url = sanitizeURL(url);
 
     ffmpeg_running.store(true);
@@ -871,6 +888,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                             }
                         }
                         SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                        if (SDL_AudioStreamDevicePaused(local_audio_stream) && !is_paused.load()) {
+                            SDL_ResumeAudioStreamDevice(local_audio_stream);
+                        }
                         if (on_audio_pcm_cb) {
                             on_audio_pcm_cb(pcm_chunk.data(), pcm_chunk.size());
                         }
@@ -910,6 +930,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 std::vector<uint8_t> pcm_chunk(audio_out_buf, audio_out_buf + pcm_bytes);
                 if (local_audio_stream) {
                     SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                    if (SDL_AudioStreamDevicePaused(local_audio_stream) && !is_paused.load()) {
+                        SDL_ResumeAudioStreamDevice(local_audio_stream);
+                    }
                 }
             }
         };
@@ -1022,6 +1045,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                             }
                                         }
                                         SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                                        if (SDL_AudioStreamDevicePaused(local_audio_stream) && !is_paused.load()) {
+                                            SDL_ResumeAudioStreamDevice(local_audio_stream);
+                                        }
                                     }
                                     if (!pcm_chunk.empty()) {
                                         const int16_t* samples = reinterpret_cast<const int16_t*>(pcm_chunk.data());
@@ -1313,6 +1339,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                     }
                                      if (!is_adlib_item.load()) {
                                          SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                                         if (SDL_AudioStreamDevicePaused(local_audio_stream) && !is_paused.load()) {
+                                             SDL_ResumeAudioStreamDevice(local_audio_stream);
+                                         }
                                      }
                                     if (audio_clock_initialized.load()) {
                                         double spk_pts = get_speaker_audio_pts();
@@ -1487,6 +1516,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         }
                                          if (!is_adlib_item.load()) {
                                              SDL_PutAudioStreamData(local_audio_stream, pcm_chunk.data(), static_cast<int>(pcm_chunk.size()));
+                                             if (SDL_AudioStreamDevicePaused(local_audio_stream) && !is_paused.load()) {
+                                                 SDL_ResumeAudioStreamDevice(local_audio_stream);
+                                             }
                                          }
                                     }
                                 }

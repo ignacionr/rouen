@@ -44,7 +44,7 @@ extern "C" {
  *  - Feeds audio PCM chunks directly to VideoFeedHost.
  *  - Uploads video frames directly to SDL3 GPU textures.
  */
-struct media_player_item {
+struct media_player_item : public std::enable_shared_from_this<media_player_item> {
     static constexpr int kWidth = 1280;
     static constexpr int kHeight = 720;
     static constexpr int kFps = 30;
