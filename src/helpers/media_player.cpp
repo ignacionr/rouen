@@ -1112,11 +1112,8 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                 ImGui::Image(tex, ImVec2(thumb_w, thumb_h));
                 ImGui::SetCursorScreenPos(img_screen_pos);
                 ImGui::InvisibleButton("##video_fullscreen_surface", ImVec2(thumb_w, thumb_h));
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Double-click for Fullscreen");
-                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                        set_active_fullscreen_item(item_ptr);
-                    }
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                    set_active_fullscreen_item(item_ptr);
                 }
                 ImGui::SameLine();
                 draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, thumb_h);
@@ -1169,3 +1166,4 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
     }
     ImGui::PopID();
 }
+
