@@ -136,7 +136,7 @@ if [[ $validation_errors -eq 0 ]]; then
     echo "  3. ~/.secrets file (via setup scripts)"
     echo ""
     echo "You can now build and run the project:"
-    echo "  nix develop --command bash -c 'cmake -B build && cmake --build build'"
+    echo "  nix develop --command bash -c 'cmake -G Ninja -B build && cmake --build build'"
     echo "  ./build/rouen.app/Contents/MacOS/rouen  # macOS"
     echo "  ./build/rouen  # Linux"
     echo ""

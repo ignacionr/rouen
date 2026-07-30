@@ -165,14 +165,14 @@ if [[ -n "$nix_method" ]]; then
     echo ""
     echo -e "${BLUE}Next steps:${NC}"
     echo "1. Enter Nix environment: $nix_method"
-    echo "2. Build the project: cmake -B build && cmake --build build"
+    echo "2. Build the project: cmake -G Ninja -B build && cmake --build build"
     echo "3. Run the application: ./build/rouen.app/Contents/MacOS/rouen (macOS) or ./build/rouen (Linux)"
 elif [[ ${#tools_needed[@]} -eq 0 ]]; then
     echo -e "${GREEN}✓${NC} Basic development tools available"
     echo ""
     echo -e "${BLUE}Next steps:${NC}"
     echo "1. Install additional dependencies (SDL2, OpenSSL, etc.)"
-    echo "2. Build the project: cmake -B build && cmake --build build"
+    echo "2. Build the project: cmake -G Ninja -B build && cmake --build build"
     echo "3. Run the application"
 else
     echo -e "${YELLOW}⚠${NC} Some development tools are missing: ${tools_needed[*]}"

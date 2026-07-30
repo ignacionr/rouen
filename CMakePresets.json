@@ -5,6 +5,7 @@
             "name": "default",
             "displayName": "Rouen Application (Nix)",
             "description": "Default application configuration using Nix toolchain",
+            "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-cmake-tools",
             "cacheVariables": {
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",
@@ -21,6 +22,7 @@
             "name": "default-tests",
             "displayName": "Rouen Tests (Nix)",
             "description": "Test configuration using Nix toolchain",
+            "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-tests",
             "cacheVariables": {
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",
@@ -42,6 +44,7 @@
             "name": "ci-tests",
             "displayName": "Rouen Tests (CI Strictness)",
             "description": "Test configuration with CI-level strictness",
+            "generator": "Ninja",
             "binaryDir": "${sourceDir}/build-tests-ci",
             "cacheVariables": {
                 "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/nix-toolchain.cmake",

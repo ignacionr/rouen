@@ -1,9 +1,10 @@
 # Rouen Project Rules
 
 ## Build System
-- Prefer local (nix-aware) incremental quick builds using:
+- Prefer local (nix-aware) incremental quick builds using Ninja:
   `nix develop --command cmake --build build --target rouen -j2`
-  (If configuring or reconfiguring the `build` directory, use `nix develop --command cmake -B build -S .`).
+  (If configuring or reconfiguring the `build` directory, use `nix develop --command cmake -G Ninja -B build -S .`).
+- Always prefer Ninja generator (`-G Ninja`) for CMake builds.
 - Use full `nix build --max-jobs 2` when validating full Nix derivation packages.
 - Before starting any task, read [README.md](README.md) and relevant docs if unfamiliar with the project conventions.
 

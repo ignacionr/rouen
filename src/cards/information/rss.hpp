@@ -3,6 +3,8 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <atomic>
+#include <mutex>
 #include <set>
 #include <string>
 #include <string_view>
@@ -19,6 +21,19 @@ namespace rouen::cards {
 // Main RSS card that displays all feeds
 class rss : public card {
 public:
+    enum class TextureStatus {
+        Pending,
+        Loaded,
+        Failed
+    };
+
+    struct LoadedFeedTexture {
+        SDL_Texture* texture = nullptr;
+        int width = 0;
+        int height = 0;
+        TextureStatus status = TextureStatus::Pending;
+    };
+
     struct AISearchResult {
         std::string title;
         std::string url;
@@ -104,12 +119,10 @@ private:
     SDL_Renderer* renderer = nullptr;
     std::shared_ptr<::helpers::ImageCache> image_cache;
 
-    struct LoadedFeedTexture {
-        SDL_Texture* texture = nullptr;
-        int width = 0;
-        int height = 0;
-    };
     std::unordered_map<std::string, LoadedFeedTexture> feed_textures;
+    std::set<std::string> failed_downloads_;
+    std::mutex downloading_mutex_;
+    std::atomic<bool> image_downloaded_signal_{false};
 };
 
 } // namespace rouen::cards

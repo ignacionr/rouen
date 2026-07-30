@@ -12,7 +12,7 @@ echo "1. Cleaning existing builds..."
 rm -rf build-nix build-test-* || true
 
 echo "2. Testing normal build (should work)..."
-nix develop --command bash -c "cmake -B build-normal -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
+nix develop --command bash -c "cmake -G Ninja -B build-normal -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug"
 echo "✓ Normal build configuration succeeded"
 
 echo "3. Building project..."
@@ -20,7 +20,7 @@ nix develop --command bash -c "cmake --build build-normal --parallel 4"
 echo "✓ Normal build succeeded"
 
 echo "4. Testing network isolation (should fail fast)..."
-if nix develop --command bash -c "cmake -B build-isolated -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_DISABLE_FIND_PACKAGE_imgui=ON" 2>&1 | grep -q "ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON"; then
+if nix develop --command bash -c "cmake -G Ninja -B build-isolated -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_DISABLE_FIND_PACKAGE_imgui=ON" 2>&1 | grep -q "ImGui requires FetchContent but FETCHCONTENT_FULLY_DISCONNECTED=ON"; then
     echo "✓ Network isolation test succeeded (failed as expected with clear error)"
 else
     echo "✗ Network isolation test failed (should have failed with clear error message)"

@@ -190,6 +190,16 @@ void rss::render_add_feed() {
 }
 
 bool rss::render() {
+    if (image_downloaded_signal_.exchange(false)) {
+        for (auto it = feed_textures.begin(); it != feed_textures.end(); ) {
+            if (it->second.status == TextureStatus::Pending) {
+                it = feed_textures.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     // Check if AI search is complete
     if (ai_search_in_progress_ && ai_search_future_.valid()) {
         if (ai_search_future_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -944,23 +954,37 @@ SDL_Texture* rss::get_feed_texture(const std::string& url, ::helpers::ImageCache
     }
 
     const auto cache_key = feed_texture_cache_key(url, variant);
-    if (feed_textures.contains(cache_key)) {
-        auto& loaded = feed_textures[cache_key];
-        texture_width = loaded.width;
-        texture_height = loaded.height;
-        return loaded.texture;
+    auto it = feed_textures.find(cache_key);
+    if (it != feed_textures.end()) {
+        if (it->second.status == TextureStatus::Loaded) {
+            texture_width = it->second.width;
+            texture_height = it->second.height;
+            return it->second.texture;
+        }
+        return nullptr;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(downloading_mutex_);
+        if (failed_downloads_.contains(url)) {
+            feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
+            return nullptr;
+        }
     }
 
     int cached_w = 0, cached_h = 0;
     if (image_cache->isCached(url, cached_w, cached_h, variant)) {
         SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
         if (texture) {
-            feed_textures[cache_key] = {texture, texture_width, texture_height};
+            feed_textures[cache_key] = {texture, texture_width, texture_height, TextureStatus::Loaded};
             return texture;
+        } else {
+            feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
+            return nullptr;
         }
     }
 
-    feed_textures[cache_key] = {nullptr, 0, 0};
+    feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Pending};
     request_image_download(url);
     return nullptr;
 }
@@ -1378,25 +1402,32 @@ std::string rss::get_freshness_text(const std::shared_ptr<media::rss::feed>& fee
 
 void rss::request_image_download(const std::string& url) {
     static std::set<std::string> downloading_urls;
-    static std::mutex downloading_mutex;
 
     {
-        std::lock_guard<std::mutex> lock(downloading_mutex);
-        if (downloading_urls.contains(url)) {
+        std::lock_guard<std::mutex> lock(downloading_mutex_);
+        if (downloading_urls.contains(url) || failed_downloads_.contains(url)) {
             return;
         }
         downloading_urls.insert(url);
     }
 
     auto cache = image_cache;
-    std::thread([cache, url]() {
+    std::thread([this, cache, url]() {
+        bool success = false;
         try {
-            cache->downloadAndCache(url);
+            success = cache->downloadAndCache(url);
         } catch (...) {}
         
         {
-            std::lock_guard<std::mutex> lock(downloading_mutex);
+            std::lock_guard<std::mutex> lock(downloading_mutex_);
             downloading_urls.erase(url);
+            if (!success) {
+                failed_downloads_.insert(url);
+            }
+        }
+
+        if (success) {
+            image_downloaded_signal_ = true;
         }
     }).detach();
 }

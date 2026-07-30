@@ -4,7 +4,7 @@
 		{
 			"type": "shell",
 			"label": "Nix Build (Debug)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake && cmake --build build-nix --parallel'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake -G Ninja -B build-nix -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake && cmake --build build-nix --parallel'",
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -25,7 +25,7 @@
 		{
 			"type": "shell",
 			"label": "Nix Build (CI Strictness)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake -B build-ci-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CI_STRICTNESS=ON && cmake --build build-ci-strict --parallel'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake -G Ninja -B build-ci-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DENABLE_CI_STRICTNESS=ON && cmake --build build-ci-strict --parallel'",
 			"group": "build",
 			"presentation": {
 				"echo": true,
@@ -43,7 +43,7 @@
 		{
 			"type": "shell",
 			"label": "Nix Build (GCC Linux-like)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'CC=gcc CXX=g++ cmake -B build-gcc-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=\"-Wall -Wextra -Werror=unused-result\" && cmake --build build-gcc-strict --parallel'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'CC=gcc CXX=g++ cmake -G Ninja -B build-gcc-strict -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS=\"-Wall -Wextra -Werror=unused-result\" && cmake --build build-gcc-strict --parallel'",
 			"group": "build",
 			"presentation": {
 				"echo": true,
@@ -61,7 +61,7 @@
 		{
 			"type": "shell",
 			"label": "Configure Tests (Nix)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake -G Ninja -B build-tests -S tests -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -99,7 +99,7 @@
 		{
 			"type": "shell",
 			"label": "Run All Tests (Nix)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cd build-tests && make run_all_tests'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake --build build-tests --target run_all_tests'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -115,7 +115,7 @@
 		{
 			"type": "shell",
 			"label": "Run Google Tests Only (Nix)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cd build-tests && make run_gtest_only'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake --build build-tests --target run_gtest_only'",
 			"group": "test",
 			"presentation": {
 				"echo": true,
@@ -131,7 +131,7 @@
 		{
 			"type": "shell",
 			"label": "Run Legacy Tests Only (Nix)",
-			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cd build-tests && make run_legacy_tests'",
+			"command": "nix --extra-experimental-features nix-command --extra-experimental-features flakes develop -c bash -c 'cmake --build build-tests --target run_legacy_tests'",
 			"group": "test",
 			"presentation": {
 				"echo": true,

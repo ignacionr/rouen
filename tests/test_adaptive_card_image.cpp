@@ -86,3 +86,25 @@ TEST(AdaptiveCardImageSnapshotTest, OpensCardWithImageAndCreatesSnapshot) {
               << " | Is cached: " << is_cached
               << " | Dimensions: " << img_w << "x" << img_h << std::endl;
 }
+
+TEST(ImageCacheTest, GrayscaleIsCachedFallback) {
+    const std::string db_path = "/tmp/test_image_cache_grayscale.db";
+    const std::string cache_dir = "/tmp/test_image_cache_grayscale";
+    if (std::filesystem::exists(db_path)) std::filesystem::remove(db_path);
+    if (std::filesystem::exists(cache_dir)) std::filesystem::remove_all(cache_dir);
+
+    ::helpers::ImageCache image_cache(db_path, cache_dir, 30);
+    const std::string img_url = "https://adaptivecards.io/content/cats/1.png";
+
+    bool download_success = image_cache.downloadAndCache(img_url);
+    if (download_success) {
+        int w = 0, h = 0;
+        EXPECT_TRUE(image_cache.isCached(img_url, w, h, ::helpers::ImageCache::Variant::Color));
+        int gw = 0, gh = 0;
+        EXPECT_TRUE(image_cache.isCached(img_url, gw, gh, ::helpers::ImageCache::Variant::Grayscale));
+        EXPECT_GT(gw, 0);
+        EXPECT_GT(gh, 0);
+        EXPECT_EQ(w, gw);
+        EXPECT_EQ(h, gh);
+    }
+}

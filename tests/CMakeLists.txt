@@ -152,6 +152,7 @@ target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -W
 add_gtest_executable(test_adaptive_cards_repository test_adaptive_cards_repository.cpp)
 target_link_libraries(test_adaptive_cards_repository PRIVATE SQLite::SQLite3)
 add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)
+target_sources(test_adaptive_card_image PRIVATE ../src/helpers/image_cache.cpp)
 target_link_libraries(test_adaptive_card_image PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES})
 target_compile_options(test_adaptive_card_image PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 add_gtest_executable(test_markdown_renderer test_markdown_renderer.cpp)

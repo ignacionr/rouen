@@ -456,6 +456,7 @@ add_executable(${PROJECT_NAME}
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
+  src/helpers/image_cache.cpp
   src/hosts/llm_host.cpp
   src/hosts/mcp_host.cpp
   src/hosts/api_server_host.cpp

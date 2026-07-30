@@ -19,7 +19,7 @@ rouen_auto_env() {
                 echo "Available commands:"
                 echo "  ./scripts/validate-environment.sh  - Validate environment setup"
                 echo "  nix develop                        - Enter Nix development shell"
-                echo "  cmake -B build && cmake --build build  - Build the project"
+                echo "  cmake -G Ninja -B build && cmake --build build  - Build the project"
                 echo ""
             fi
         fi
