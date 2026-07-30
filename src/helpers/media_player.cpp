@@ -965,7 +965,6 @@ bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, fl
 }
 
 void media_player::draw_full_window_progress_line(media_player_item& item, float win_w, float win_h) {
-    if (get_detached_item().get() == &item) return;
     double current_pos = item.get_current_position();
     double current_dur = item.duration.load();
     if (current_dur <= 0.0) return;
@@ -974,7 +973,7 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 mouse_pos = io.MousePos;
 
-    float hit_height = 28.0f;
+    float hit_height = 90.0f;
     bool is_bottom_hovered = (mouse_pos.x >= 0.0f && mouse_pos.x <= win_w &&
                               mouse_pos.y >= win_h - hit_height && mouse_pos.y <= win_h + 10.0f);
 
@@ -983,6 +982,10 @@ void media_player::draw_full_window_progress_line(media_player_item& item, float
     static bool s_precision_mode = false;
     static float s_drag_start_x = 0.0f;
     static double s_drag_start_pos = 0.0;
+
+    if (!is_bottom_hovered && !s_is_dragging && !item.is_paused.load()) {
+        return;
+    }
 
     if (is_bottom_hovered && io.MouseDown[0] && !io.MouseDownOwned[0] && !s_is_dragging) {
         s_is_dragging = true;
@@ -1137,74 +1140,11 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
             double current_pos = item.get_current_position();
             double current_dur = item.duration.load();
 
-            // Transport buttons: Jump -10s, Play/Pause, Stop, Jump +10s & Volume
-            if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_REWIND).c_str())) {
-                item.seekTo(std::max(0.0, current_pos - 10.0));
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump -10 seconds");
-
-            ImGui::SameLine();
-            if (ImGui::Button(std::format(" {} ", item.is_paused.load() ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
-                item.togglePause();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(item.is_paused.load() ? "Resume" : "Pause");
-
-            ImGui::SameLine();
-            if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
-                item.stopMedia();
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Stop");
-
-            ImGui::SameLine();
-            if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_FORWARD).c_str())) {
-                double target = (current_dur > 0.0) ? std::min(current_dur, current_pos + 10.0) : (current_pos + 10.0);
-                item.seekTo(target);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump +10 seconds");
-
-            ImGui::SameLine();
-            int vol = item.volume.load();
-            ImGui::Text(ICON_MD_VOLUME_UP);
-            ImGui::SameLine();
-            float vol_w = std::min(90.0f, player_width * 0.25f);
-            ImGui::SetNextItemWidth(vol_w);
-            if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
-                item.setVolume(vol);
-            }
-
-            // Slick Seek Bar
-            ImGui::Spacing();
-            draw_seek_bar("##card_seek_bar", item, player_width, 18.0f, info_color);
-
-            // Timestamp Info Row: Current Pos on left, Toggleable Total/Remaining on right
-            static bool s_show_remaining = false;
-            std::string pos_str = item.formatTime(current_pos);
-            std::string dur_str;
-            if (current_dur > 0.0) {
-                if (s_show_remaining) {
-                    double rem = std::max(0.0, current_dur - current_pos);
-                    dur_str = "-" + item.formatTime(rem);
-                } else {
-                    dur_str = item.formatTime(current_dur);
-                }
-            }
-
-            ImGui::TextColored(info_color, "%s", pos_str.c_str());
-
-            if (current_dur > 0.0) {
-                ImVec2 dur_sz = ImGui::CalcTextSize(dur_str.c_str());
-                ImGui::SameLine(std::max(0.0f, player_width - dur_sz.x));
-                if (ImGui::Selectable(dur_str.c_str(), false, 0, dur_sz)) {
-                    s_show_remaining = !s_show_remaining;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip(s_show_remaining ? "Click to show total duration" : "Click to show remaining time");
-                }
-            }
-
             ImTextureID tex = item.get_texture_id();
             bool cast_active = media_player_item::is_cast_active.load();
             bool detached_active = has_detached_item();
+
+            ImVec2 media_start_pos = ImGui::GetCursorScreenPos();
 
             if (tex && item.has_video.load()) {
                 float thumb_w = 120.0f;
@@ -1234,6 +1174,84 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                     ImGui::SetTooltip("Double-click for Fullscreen");
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         set_active_fullscreen_item(item_ptr);
+                    }
+                }
+            }
+
+            ImVec2 media_end_pos = ImGui::GetCursorScreenPos();
+            ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+
+            bool is_player_hovered = (mouse_pos.x >= media_start_pos.x - 10.0f &&
+                                      mouse_pos.x <= media_start_pos.x + player_width + 10.0f &&
+                                      mouse_pos.y >= media_start_pos.y - 30.0f &&
+                                      mouse_pos.y <= media_end_pos.y + 110.0f);
+
+            bool show_controls = is_player_hovered || item.is_paused.load() || (ImGui::GetActiveID() != 0);
+
+            if (show_controls) {
+                // Transport buttons: Jump -10s, Play/Pause, Stop, Jump +10s & Volume
+                ImGui::Spacing();
+                if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_REWIND).c_str())) {
+                    item.seekTo(std::max(0.0, current_pos - 10.0));
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump -10 seconds");
+
+                ImGui::SameLine();
+                if (ImGui::Button(std::format(" {} ", item.is_paused.load() ? ICON_MD_PLAY_ARROW : ICON_MD_PAUSE).c_str())) {
+                    item.togglePause();
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(item.is_paused.load() ? "Resume" : "Pause");
+
+                ImGui::SameLine();
+                if (ImGui::Button(std::format(" {} ", ICON_MD_STOP).c_str())) {
+                    item.stopMedia();
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Stop");
+
+                ImGui::SameLine();
+                if (ImGui::Button(std::format(" {} ", ICON_MD_FAST_FORWARD).c_str())) {
+                    double target = (current_dur > 0.0) ? std::min(current_dur, current_pos + 10.0) : (current_pos + 10.0);
+                    item.seekTo(target);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump +10 seconds");
+
+                ImGui::SameLine();
+                int vol = item.volume.load();
+                ImGui::Text(ICON_MD_VOLUME_UP);
+                ImGui::SameLine();
+                float vol_w = std::min(90.0f, player_width * 0.25f);
+                ImGui::SetNextItemWidth(vol_w);
+                if (ImGui::SliderInt("##VolumeSlider", &vol, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+                    item.setVolume(vol);
+                }
+
+                // Slick Seek Bar
+                ImGui::Spacing();
+                draw_seek_bar("##card_seek_bar", item, player_width, 18.0f, info_color);
+
+                // Timestamp Info Row: Current Pos on left, Toggleable Total/Remaining on right
+                static bool s_show_remaining = false;
+                std::string pos_str = item.formatTime(current_pos);
+                std::string dur_str;
+                if (current_dur > 0.0) {
+                    if (s_show_remaining) {
+                        double rem = std::max(0.0, current_dur - current_pos);
+                        dur_str = "-" + item.formatTime(rem);
+                    } else {
+                        dur_str = item.formatTime(current_dur);
+                    }
+                }
+
+                ImGui::TextColored(info_color, "%s", pos_str.c_str());
+
+                if (current_dur > 0.0) {
+                    ImVec2 dur_sz = ImGui::CalcTextSize(dur_str.c_str());
+                    ImGui::SameLine(std::max(0.0f, player_width - dur_sz.x));
+                    if (ImGui::Selectable(dur_str.c_str(), false, 0, dur_sz)) {
+                        s_show_remaining = !s_show_remaining;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(s_show_remaining ? "Click to show total duration" : "Click to show remaining time");
                     }
                 }
             }
