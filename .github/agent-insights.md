@@ -10,9 +10,10 @@ Welcome! This guide outlines key patterns, architecture insights, and build syst
   * Always execute builds, runs, or test commands wrapped in `nix develop` (e.g., `nix develop --command cmake --build build-cmake-tools`).
   * Nix packages Clang 19, SDL2, Curl, OpenSSL, Google Test, Glaze, and SQLite.
 * **C++23 Standards:** The project utilizes latest C++23 features (e.g., `std::format`, `std::string_view` matches). On macOS, the deployment target is set to `15.4` to ensure compile compatibility with std::format support.
+* **Build Generator:** Rouen explicitly uses **Ninja** (`-G Ninja`). All build scripts, presets, and agent rules default to Ninja for faster incremental builds.
 * **CMake Presets:**
-  * Configure build: `cmake --preset default`
-  * Configure test suite: `cmake -S . -B build-tests -DBUILD_TESTS=ON`
+  * Configure build: `cmake --preset default` (uses Ninja)
+  * Configure test suite: `cmake -G Ninja -S . -B build-tests -DBUILD_TESTS=ON`
   * Run tests: `ctest --test-dir build-tests --output-on-failure`
 * **Local Installation:** On macOS, the target builds an app bundle under `build-cmake-tools/rouen.app`. Installing it locally to `/Applications/rouen.app` is done via `cmake --install build-cmake-tools`.
 

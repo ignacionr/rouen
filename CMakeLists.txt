@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.30)
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Enforce build job pools to prevent memory exhaustion (OOM) on 16GB RAM machines
 set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=2 link_job_pool=1)
 set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
+set(CMAKE_JOB_POOL_LINK link_job_pool)
 set(CMAKE_DISABLE_PRECOMPILED_HEADERS ON)
 
 if(NOT CMAKE_BUILD_TYPE)
