@@ -261,7 +261,7 @@ std::string format_number(double val) {
 calculator::calculator() {
     name("Calculator");
     width = 330.0f;
-    requested_fps = 60;
+    requested_fps = 4;
 
     colors[0] = ImVec4{0.20f, 0.55f, 0.90f, 1.0f}; // Primary accent
     colors[1] = ImVec4{0.15f, 0.75f, 0.65f, 0.8f}; // Secondary accent
