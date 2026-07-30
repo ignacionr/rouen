@@ -62,7 +62,7 @@ namespace rouen::cards {
                 // Extract project name
                 if (auto pos = line.find("project("); pos != std::string::npos) {
                     size_t const start = pos + 8;
-                    size_t const end = line.find(")", start);
+                    size_t const end = line.find(')', start);
                     if (end != std::string::npos) {
                         project_name_ = line.substr(start, end - start);
                         while (!project_name_.empty() && (project_name_.front() == ' ' || project_name_.front() == '"')) {
@@ -77,7 +77,7 @@ namespace rouen::cards {
                 // Extract version if available
                 if (line.find("VERSION") != std::string::npos && project_version_.empty()) {
                     size_t const start = line.find("VERSION") + 7;
-                    size_t end = line.find(")", start);
+                    size_t end = line.find(')', start);
                     if (end == std::string::npos) {
                         end = line.size();
                     }

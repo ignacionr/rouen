@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cctype>
 #include <mutex>
-#include <stdio.h>
 
 #include "config_service.hpp"
 #include "platform_utils.hpp"

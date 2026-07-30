@@ -348,7 +348,10 @@ add_executable(test_mcp
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/image_cache.cpp
     ../src/cards/interface/card.cpp
+    ../src/cards/information/rss.cpp
     ../src/helpers/theme_manager.cpp
     ../src/hosts/llm_host.cpp
 )

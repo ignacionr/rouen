@@ -301,7 +301,7 @@ void adlib_card::draw_execution_deck() {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(100.0f);
         if (ImGui::InputFloat("sec##deck_trans_val", &stage2_transition_seconds_, 1.0f, 5.0f, "%.1f s")) {
-            if (stage2_transition_seconds_ < 0.5f) stage2_transition_seconds_ = 0.5f;
+            stage2_transition_seconds_ = std::max(stage2_transition_seconds_, 0.5f);
             save_config_to_ini();
             engine.set_auto_stop_seconds(static_cast<double>(stage2_transition_seconds_));
         }

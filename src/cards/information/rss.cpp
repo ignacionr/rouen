@@ -240,9 +240,7 @@ bool rss::render() {
             auto const now {std::chrono::system_clock::now()};
             
             auto elapsed = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh).count()) / 1000.0;
-            float ratio = static_cast<float>(elapsed / interval);
-            if (ratio < 0.0f) ratio = 0.0f;
-            if (ratio > 1.0f) ratio = 1.0f;
+            float ratio = std::clamp(static_cast<float>(elapsed / interval), 0.0f, 1.0f);
             
             ImVec2 const pos = ImGui::GetCursorScreenPos();
             float const bar_width = ImGui::GetContentRegionAvail().x;

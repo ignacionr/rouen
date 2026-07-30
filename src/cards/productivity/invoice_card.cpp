@@ -680,12 +680,12 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
                 std::string path = pdf_output_path;
                 auto start = params.find("\"output_path\"");
                 if (start != std::string::npos) {
-                    start = params.find(":", start);
+                    start = params.find(':', start);
                     if (start != std::string::npos) {
-                        start = params.find("\"", start);
+                        start = params.find('"', start);
                         if (start != std::string::npos) {
                             start++;
-                            auto end = params.find("\"", start);
+                            auto end = params.find('"', start);
                             if (end != std::string::npos) {
                                 path = params.substr(start, end - start);
                             }
@@ -696,9 +696,8 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
                 std::string err;
                 if (generate_pdf(path, err)) {
                     return std::format(R"({{"status": "success", "path": "{}"}})", path);
-                } else {
-                    return std::format(R"({{"status": "error", "message": "{}"}})", err);
                 }
+                return std::format(R"({{"status": "error", "message": "{}"}})", err);
             }
         ),
         mcp_function(
@@ -709,12 +708,12 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
                 std::string query;
                 auto start = params.find("\"query\"");
                 if (start != std::string::npos) {
-                    start = params.find(":", start);
+                    start = params.find(':', start);
                     if (start != std::string::npos) {
-                        start = params.find("\"", start);
+                        start = params.find('"', start);
                         if (start != std::string::npos) {
                             start++;
-                            auto end = params.find("\"", start);
+                            auto end = params.find('"', start);
                             if (end != std::string::npos) {
                                 query = params.substr(start, end - start);
                             }
@@ -744,12 +743,12 @@ std::vector<card::mcp_function> invoice_card::get_mcp_functions() const {
                 std::string query;
                 auto start = params.find("\"query\"");
                 if (start != std::string::npos) {
-                    start = params.find(":", start);
+                    start = params.find(':', start);
                     if (start != std::string::npos) {
-                        start = params.find("\"", start);
+                        start = params.find('"', start);
                         if (start != std::string::npos) {
                             start++;
-                            auto end = params.find("\"", start);
+                            auto end = params.find('"', start);
                             if (end != std::string::npos) {
                                 query = params.substr(start, end - start);
                             }

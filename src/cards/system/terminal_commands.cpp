@@ -10,7 +10,6 @@
 #include <exception>
 #include <format>
 #include <mutex>
-#include <stdio.h>
 #include <string>
 #include <thread>
 #include <vector>

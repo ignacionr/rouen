@@ -24,7 +24,6 @@
 #include <cstdio>
 #include <cmath>
 #include <stdexcept>
-#include <stdio.h>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -1347,7 +1346,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                 
                 // Extract channel name/handle for title
                 std::string title = std::string(url);
-                size_t const at_pos = title.find("@");
+                size_t const at_pos = title.find('@');
                 if (at_pos != std::string::npos) {
                     title = title.substr(at_pos);
                 } else {

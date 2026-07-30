@@ -1,7 +1,6 @@
 #include "git_process_helper.hpp"
 #include <cstdio>
 #include <array>
-#include <stdio.h>
 #include <string>
 
 #ifdef _WIN32

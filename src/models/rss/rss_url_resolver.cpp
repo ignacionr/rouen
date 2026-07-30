@@ -24,7 +24,9 @@ std::string trim_copy(std::string value) {
     return value;
 }
 
-static std::string extract_youtube_channel_id(const std::string& html) {
+namespace {
+
+std::string extract_youtube_channel_id(const std::string& html) {
     std::smatch match;
     
     // 1. Try to find the RSS feed link directly
@@ -33,35 +35,26 @@ static std::string extract_youtube_channel_id(const std::string& html) {
         return match.str(1);
     }
     
-    // 2. Try metadata channelId field in page JSON
-    std::regex const r2(R"raw("channelId"\s*:\s*"(UC[A-Za-z0-9_-]{22})")raw");
-    if (std::regex_search(html, match, r2) && match.size() > 1) {
-        return match.str(1);
+    // 2. Try to find channel_id in meta tag / page content
+    std::regex const r2(R"raw(("channelId"|"externalId")\s*:\s*"(UC[A-Za-z0-9_-]{22})")raw");
+    if (std::regex_search(html, match, r2) && match.size() > 2) {
+        return match.str(2);
     }
     
-    // 3. Try browseId field in page JSON
-    std::regex const r3(R"raw("browseId"\s*:\s*"(UC[A-Za-z0-9_-]{22})")raw");
+    // 3. Alternate meta content format
+    std::regex const r3(R"raw(<meta\s+itemprop="channelId"\s+content="(UC[A-Za-z0-9_-]{22})">)raw");
     if (std::regex_search(html, match, r3) && match.size() > 1) {
         return match.str(1);
     }
-    
-    // 4. Try itemprop="channelId"
-    std::regex const r4(R"raw(itemprop="channelId"\s+content="(UC[A-Za-z0-9_-]{22})")raw");
-    if (std::regex_search(html, match, r4) && match.size() > 1) {
-        return match.str(1);
-    }
-    
+
     return "";
 }
 
+} // namespace
+
 std::string resolve_youtube_url(const std::string& input_url) {
-    std::string url = input_url;
-    url.erase(0, url.find_first_not_of(" \t\r\n"));
-    url.erase(url.find_last_not_of(" \t\r\n") + 1);
-    
-    if (url.empty()) {
-        return url;
-    }
+    std::string const url = trim_copy(input_url);
+    if (url.empty()) return url;
     
     if (url.find("youtube.com/feeds/videos.xml") != std::string::npos) {
         return url;
@@ -81,7 +74,7 @@ std::string resolve_youtube_url(const std::string& input_url) {
     
     try {
         std::string fetch_url = url;
-        if (fetch_url.find("http://") != 0 && fetch_url.find("https://") != 0) {
+        if (!fetch_url.starts_with("http://") && !fetch_url.starts_with("https://")) {
             fetch_url = "https://" + fetch_url;
         }
         
@@ -105,19 +98,19 @@ std::string resolve_youtube_url(const std::string& input_url) {
 std::string resolve_relative_url(std::string_view href, std::string_view base_url) {
     std::string h = trim_copy(std::string(href));
     if (h.empty()) return "";
-    if (h.find("http://") == 0 || h.find("https://") == 0) {
+    if (h.starts_with("http://") || h.starts_with("https://")) {
         return h;
     }
 
     std::string base = trim_copy(std::string(base_url));
-    if (base.find("http://") != 0 && base.find("https://") != 0) {
+    if (!base.starts_with("http://") && !base.starts_with("https://")) {
         base = "https://" + base;
     }
 
     size_t const scheme_end = base.find("://");
     std::string const scheme = (scheme_end != std::string::npos) ? base.substr(0, scheme_end) : "https";
 
-    if (h.find("//") == 0) {
+    if (h.starts_with("//")) {
         return scheme + ":" + h;
     }
 
@@ -220,7 +213,7 @@ std::string resolve_feed_url(const std::string& input_url) {
     std::string url = trim_copy(input_url);
     if (url.empty()) return url;
 
-    if (url.find("http://") != 0 && url.find("https://") != 0) {
+    if (!url.starts_with("http://") && !url.starts_with("https://")) {
         url = "https://" + url;
     }
 

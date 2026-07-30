@@ -8,7 +8,6 @@
 #include <functional>
 #include <iostream>
 #include <memory>
-#include <stdio.h>
 #include <string>
 #include <string_view>
 #include <sys/signal.h>

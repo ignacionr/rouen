@@ -360,7 +360,7 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
 
         std::string message_body;
         while (std::getline(ss, line)) {
-            if (line.rfind("---END_HEADER---", 0) == 0) {
+            if (line.starts_with("---END_HEADER---")) {
                 break;
             }
             if (!message_body.empty()) message_body += "\n";
@@ -1218,12 +1218,12 @@ std::string git::get_repository_status_json(const std::string& params) const {
         if (!params.empty() && params.find("repo_path") != std::string::npos) {
             auto start = params.find("\"repo_path\"");
             if (start != std::string::npos) {
-                start = params.find(":", start);
+                start = params.find(':', start);
                 if (start != std::string::npos) {
-                    start = params.find("\"", start);
+                    start = params.find('"', start);
                     if (start != std::string::npos) {
                         start++;
-                        auto end = params.find("\"", start);
+                        auto end = params.find('"', start);
                         if (end != std::string::npos) {
                             requested_repo = params.substr(start, end - start);
                         }

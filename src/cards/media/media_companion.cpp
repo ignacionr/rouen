@@ -52,9 +52,11 @@ namespace rouen::cards {
             double s = 0.0;
             if (sscanf(clean.c_str(), "%d:%d:%lf", &h, &m, &s) == 3) {
                 return h * 3600.0 + m * 60.0 + s;
-            } else if (sscanf(clean.c_str(), "%d:%lf", &m, &s) == 2) {
+            }
+            if (sscanf(clean.c_str(), "%d:%lf", &m, &s) == 2) {
                 return m * 60.0 + s;
-            } else if (sscanf(clean.c_str(), "%lf", &s) == 1) {
+            }
+            if (sscanf(clean.c_str(), "%lf", &s) == 1) {
                 return s;
             }
             return 0.0;
@@ -67,9 +69,8 @@ namespace rouen::cards {
             int s = total_s % 60;
             if (h > 0) {
                 return std::format("{:02d}:{:02d}:{:02d}", h, m, s);
-            } else {
-                return std::format("{:02d}:{:02d}", m, s);
             }
+            return std::format("{:02d}:{:02d}", m, s);
         }
 
         double parse_srt_timestamp(const std::string& ts_str, std::string& formatted_str) {
@@ -83,8 +84,9 @@ namespace rouen::cards {
                     formatted_str = std::format("{:02d}:{:02d}", m, s);
                 }
                 return total_sec;
-            } else if (sscanf(ts_str.c_str(), "%d:%d,%d", &m, &s, &ms) == 3 ||
-                       sscanf(ts_str.c_str(), "%d:%d.%d", &m, &s, &ms) == 3) {
+            }
+            if (sscanf(ts_str.c_str(), "%d:%d,%d", &m, &s, &ms) == 3 ||
+                sscanf(ts_str.c_str(), "%d:%d.%d", &m, &s, &ms) == 3) {
                 double const total_sec = m * 60.0 + s + (ms / 1000.0);
                 formatted_str = std::format("{:02d}:{:02d}", m, s);
                 return total_sec;
@@ -445,15 +447,17 @@ namespace rouen::cards {
         score = std::clamp(score, -1.0, 1.0);
         if (score >= 0.7) {
             return {ICON_MD_VERIFIED, "Certain Truth", ImVec4(0.25f, 0.90f, 0.45f, 1.0f)};
-        } else if (score >= 0.3) {
-            return {ICON_MD_GPP_GOOD, "Mostly True", ImVec4(0.40f, 0.85f, 0.60f, 1.0f)};
-        } else if (score > -0.3) {
-            return {ICON_MD_GPP_MAYBE, "Uncertain / Mixed", ImVec4(0.95f, 0.75f, 0.25f, 1.0f)};
-        } else if (score > -0.7) {
-            return {ICON_MD_WARNING, "Mostly False", ImVec4(0.95f, 0.50f, 0.20f, 1.0f)};
-        } else {
-            return {ICON_MD_GPP_BAD, "Complete Lie", ImVec4(0.95f, 0.25f, 0.25f, 1.0f)};
         }
+        if (score >= 0.3) {
+            return {ICON_MD_GPP_GOOD, "Mostly True", ImVec4(0.40f, 0.85f, 0.60f, 1.0f)};
+        }
+        if (score > -0.3) {
+            return {ICON_MD_GPP_MAYBE, "Uncertain / Mixed", ImVec4(0.95f, 0.75f, 0.25f, 1.0f)};
+        }
+        if (score > -0.7) {
+            return {ICON_MD_WARNING, "Mostly False", ImVec4(0.95f, 0.50f, 0.20f, 1.0f)};
+        }
+        return {ICON_MD_GPP_BAD, "Complete Lie", ImVec4(0.95f, 0.25f, 0.25f, 1.0f)};
     }
 
     media_companion::media_companion() {

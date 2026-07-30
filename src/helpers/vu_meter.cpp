@@ -391,8 +391,7 @@ void draw_stereo_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImV
                              float watermark_l, float watermark_r,
                              const VUMeterConfig& config) {
     float const gap = 6.0f;
-    float meter_w = (size.x - gap) / 2.0f;
-    if (meter_w < 20.0f) meter_w = 20.0f;
+    float meter_w = std::max((size.x - gap) / 2.0f, 20.0f);
 
     ImVec2 const l_pos = pos;
     ImVec2 const l_size(meter_w, size.y);
@@ -412,8 +411,7 @@ void draw_bar_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size
     bool const is_stereo = (level_r >= 0.0f);
     int const num_channels = is_stereo ? 2 : 1;
 
-    float bar_w = is_stereo ? (size.x - 4.0f) / 2.0f : size.x;
-    if (bar_w < 3.0f) bar_w = 3.0f;
+    float bar_w = std::max(is_stereo ? (size.x - 4.0f) / 2.0f : size.x, 3.0f);
 
     for (int ch = 0; ch < num_channels; ++ch) {
         float const level = (ch == 0) ? std::clamp(level_l, 0.0f, 1.0f) : std::clamp(level_r, 0.0f, 1.0f);
