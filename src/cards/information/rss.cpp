@@ -951,11 +951,18 @@ SDL_Texture* rss::get_feed_texture(const std::string& url, ::helpers::ImageCache
         return loaded.texture;
     }
 
-    SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
-    if (texture) {
-        feed_textures[cache_key] = {texture, texture_width, texture_height};
+    int cached_w = 0, cached_h = 0;
+    if (image_cache->isCached(url, cached_w, cached_h, variant)) {
+        SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
+        if (texture) {
+            feed_textures[cache_key] = {texture, texture_width, texture_height};
+            return texture;
+        }
     }
-    return texture;
+
+    feed_textures[cache_key] = {nullptr, 0, 0};
+    request_image_download(url);
+    return nullptr;
 }
 
 void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>& feeds, std::string& search_text, bool& has_matches) {

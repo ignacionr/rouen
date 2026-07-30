@@ -106,6 +106,10 @@ namespace rouen::cards
                 }
             }
             item_textures.clear();
+            {
+                std::lock_guard<std::mutex> lock(downloading_mutex_);
+                failed_downloads_.clear();
+            }
         }
 
         void calculate_cover_uvs(float target_w, float target_h, float tex_w, float tex_h, ImVec2& uv0, ImVec2& uv1) {
@@ -143,18 +147,39 @@ namespace rouen::cards
             }
 
             const auto cache_key = item_texture_cache_key(url, variant);
-            if (item_textures.contains(cache_key)) {
-                auto& loaded = item_textures[cache_key];
-                texture_width = loaded.width;
-                texture_height = loaded.height;
-                return loaded.texture;
+            auto it = item_textures.find(cache_key);
+            if (it != item_textures.end()) {
+                if (it->second.status == TextureStatus::Loaded) {
+                    texture_width = it->second.width;
+                    texture_height = it->second.height;
+                    return it->second.texture;
+                }
+                return nullptr;
             }
 
-            SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
-            if (texture) {
-                item_textures[cache_key] = {texture, texture_width, texture_height};
+            {
+                std::lock_guard<std::mutex> lock(downloading_mutex_);
+                if (failed_downloads_.contains(url)) {
+                    item_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
+                    return nullptr;
+                }
             }
-            return texture;
+
+            int cached_w = 0, cached_h = 0;
+            if (image_cache->isCached(url, cached_w, cached_h, variant)) {
+                SDL_Texture* texture = image_cache->getTexture(renderer, url, texture_width, texture_height, false, variant);
+                if (texture) {
+                    item_textures[cache_key] = {texture, texture_width, texture_height, TextureStatus::Loaded};
+                    return texture;
+                } else {
+                    item_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
+                    return nullptr;
+                }
+            }
+
+            item_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Pending};
+            request_image_download(url);
+            return nullptr;
         }
 
         void loadFeed()
@@ -253,6 +278,17 @@ namespace rouen::cards
             {
                 feed_image_downloaded_ = false;
                 loadFeedImage();
+            }
+
+            if (image_downloaded_signal_.exchange(false))
+            {
+                for (auto it = item_textures.begin(); it != item_textures.end(); ) {
+                    if (it->second.status == TextureStatus::Pending) {
+                        it = item_textures.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
             }
 
             if (items_loaded_.load())
@@ -1196,12 +1232,22 @@ namespace rouen::cards
         std::vector<rouen::hosts::RSSHost::FeedItem> pending_items_;
         std::mutex items_mutex_;
 
+        enum class TextureStatus {
+            Pending,
+            Loaded,
+            Failed
+        };
+
         struct LoadedItemTexture {
             SDL_Texture* texture = nullptr;
             int width = 0;
             int height = 0;
+            TextureStatus status = TextureStatus::Pending;
         };
         std::unordered_map<std::string, LoadedItemTexture> item_textures;
+        std::set<std::string> failed_downloads_;
+        std::mutex downloading_mutex_;
+        std::atomic<bool> image_downloaded_signal_{false};
         char manual_item_url_buffer[1024] = "";
         std::string add_item_feedback;
         bool add_item_feedback_success = false;
@@ -1331,25 +1377,32 @@ namespace rouen::cards
 
         void request_image_download(const std::string& url) {
             static std::set<std::string> downloading_urls;
-            static std::mutex downloading_mutex;
 
             {
-                std::lock_guard<std::mutex> lock(downloading_mutex);
-                if (downloading_urls.contains(url)) {
-                    return; // Already downloading
+                std::lock_guard<std::mutex> lock(downloading_mutex_);
+                if (downloading_urls.contains(url) || failed_downloads_.contains(url)) {
+                    return; // Already downloading or previously failed
                 }
                 downloading_urls.insert(url);
             }
 
             auto cache = image_cache;
-            std::thread([cache, url]() {
+            std::thread([this, cache, url]() {
+                bool success = false;
                 try {
-                    cache->downloadAndCache(url);
+                    success = cache->downloadAndCache(url);
                 } catch (...) {}
                 
                 {
-                    std::lock_guard<std::mutex> lock(downloading_mutex);
+                    std::lock_guard<std::mutex> lock(downloading_mutex_);
                     downloading_urls.erase(url);
+                    if (!success) {
+                        failed_downloads_.insert(url);
+                    }
+                }
+
+                if (success) {
+                    image_downloaded_signal_ = true;
                 }
             }).detach();
         }

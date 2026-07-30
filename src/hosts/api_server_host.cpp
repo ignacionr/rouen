@@ -33,6 +33,7 @@
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
+#include "../cards/information/rss.hpp"
 
 // JSON structures for API requests
 struct card_creation_request {
@@ -261,7 +262,14 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         }
     } else if (mg_match(hm->uri, mg_str("/api/metrics"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
-            auto metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics();
+            bool include_all = false;
+            if (hm->query.len > 0) {
+                std::string q(hm->query.buf, hm->query.len);
+                if (q.find("all=true") != std::string::npos || q.find("active=false") != std::string::npos) {
+                    include_all = true;
+                }
+            }
+            auto metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics(include_all);
             std::vector<glz::json_t> arr;
             for (const auto& m : metrics) {
                 glz::json_t item;
@@ -270,7 +278,10 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                 item["last_render_ms"] = m.last_render_ms;
                 item["avg_render_ms"] = m.avg_render_ms;
                 item["max_render_ms"] = m.max_render_ms;
+                item["min_render_ms"] = m.min_render_ms;
                 item["render_count"] = m.render_count;
+                item["slow_render_count"] = m.slow_render_count;
+                item["very_slow_render_count"] = m.very_slow_render_count;
                 arr.push_back(item);
             }
             std::string out;
@@ -279,6 +290,14 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
             rouen::helpers::CardRenderMetrics::instance().reset();
             response = R"({"status":"ok","message":"Metrics reset"})";
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/rss/diagnostics"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/diagnostics/rss"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_rss_diagnostics(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -1014,6 +1033,50 @@ std::string api_server_host::handle_adlib_test_mux(struct mg_connection* /*c*/, 
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }
+}
+
+std::string api_server_host::handle_rss_diagnostics(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto rss_host = rouen::cards::rss::getHost();
+    if (!rss_host) {
+        return R"({"error":"RSS Host not available"})";
+    }
+
+    auto diag = rss_host->get_rss_diagnostics();
+
+    glz::json_t root;
+    root["status"] = "ok";
+
+    glz::json_t data;
+    data["total_feeds"] = diag.total_feeds;
+    data["total_items"] = diag.total_items;
+    data["slowest_feed_title"] = diag.slowest_feed_title;
+    data["slowest_feed_uri"] = diag.slowest_feed_uri;
+    data["slowest_feed_render_ms"] = diag.slowest_feed_render_ms;
+
+    std::vector<glz::json_t> feeds_arr;
+    for (const auto& f : diag.feeds) {
+        glz::json_t item;
+        item["feed_id"] = f.id;
+        item["title"] = f.title;
+        item["url"] = f.url;
+        item["language"] = f.language;
+        item["item_count"] = f.item_count;
+        item["tag_count"] = f.tag_count;
+        item["last_render_ms"] = f.last_render_ms;
+        item["avg_render_ms"] = f.avg_render_ms;
+        item["max_render_ms"] = f.max_render_ms;
+        item["min_render_ms"] = f.min_render_ms;
+        item["render_count"] = f.render_count;
+        item["slow_render_count"] = f.slow_render_count;
+        item["is_slow"] = f.is_slow;
+        feeds_arr.push_back(item);
+    }
+    data["feeds"] = feeds_arr;
+    root["diagnostics"] = data;
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
 }
 
 } // namespace rouen::hosts

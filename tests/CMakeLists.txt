@@ -201,6 +201,37 @@ target_link_libraries(test_rss_watermark
 )
 add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 
+# RSS Diagnostics Test
+add_gtest_rss_executable(test_rss_diagnostics test_rss_diagnostics.cpp)
+target_sources(test_rss_diagnostics PRIVATE 
+    ../src/hosts/rss_host.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/config_service.cpp
+)
+if(APPLE)
+    target_sources(test_rss_diagnostics PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(test_rss_diagnostics PRIVATE "-framework Foundation" "-framework AVFoundation")
+endif()
+target_link_libraries(test_rss_diagnostics 
+    PRIVATE 
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+    imgui::imgui
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+)
+add_test(NAME RSSDiagnosticsTest COMMAND test_rss_diagnostics)
+
 # Audio Time Progression Test
 add_gtest_rss_executable(test_audio_time_progression test_audio_time_progression.cpp)
 target_sources(test_audio_time_progression PRIVATE 

@@ -18,6 +18,7 @@
 #include "../helpers/platform_utils.hpp"
 #include "../helpers/media_player.hpp"
 #include "../helpers/string_helper.hpp"
+#include "../helpers/card_render_metrics.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -1849,6 +1850,57 @@ void RSSHost::start_duration_backfill() {
             }
         }
     });
+}
+
+RSSHost::RSSDiagnostics RSSHost::get_rss_diagnostics() {
+    RSSDiagnostics diag;
+    auto all_feeds = feeds();
+    diag.total_feeds = all_feeds.size();
+
+    double max_slowest = 0.0;
+
+    for (const auto& f : all_feeds) {
+        if (!f) continue;
+        FeedDiagnosticInfo info;
+        info.id = f->repo_id;
+        info.title = f->feed_title;
+        info.url = f->feed_link;
+        info.language = get_feed_language(f->repo_id);
+
+        auto items = get_feed_items(f->repo_id, 1000);
+        info.item_count = items.size();
+        diag.total_items += info.item_count;
+
+        auto tags = get_feed_tags(f->repo_id);
+        info.tag_count = tags.size();
+
+        std::string uri = std::format("rss-feed:{}", f->repo_id);
+        auto metric = rouen::helpers::CardRenderMetrics::instance().get_metric_for_key(uri);
+        if (!metric.has_value()) {
+            metric = rouen::helpers::CardRenderMetrics::instance().get_metric_for_key(f->feed_title);
+        }
+
+        if (metric.has_value()) {
+            info.last_render_ms = metric->last_render_ms;
+            info.avg_render_ms = metric->avg_render_ms;
+            info.max_render_ms = metric->max_render_ms;
+            info.min_render_ms = metric->min_render_ms;
+            info.render_count = metric->render_count;
+            info.slow_render_count = metric->slow_render_count;
+            info.is_slow = (info.max_render_ms >= 500.0 || info.avg_render_ms >= 100.0);
+
+            if (info.max_render_ms > max_slowest) {
+                max_slowest = info.max_render_ms;
+                diag.slowest_feed_title = info.title;
+                diag.slowest_feed_uri = uri;
+                diag.slowest_feed_render_ms = info.max_render_ms;
+            }
+        }
+
+        diag.feeds.push_back(info);
+    }
+
+    return diag;
 }
 
 } // namespace rouen::hosts

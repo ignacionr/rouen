@@ -164,6 +164,36 @@ public:
      */
     bool refresh_feed(long long feed_id);
 
+    struct FeedDiagnosticInfo {
+        long long id = -1;
+        std::string title;
+        std::string url;
+        std::string language;
+        size_t item_count = 0;
+        size_t tag_count = 0;
+        double last_render_ms = 0.0;
+        double avg_render_ms = 0.0;
+        double max_render_ms = 0.0;
+        double min_render_ms = 0.0;
+        uint64_t render_count = 0;
+        uint64_t slow_render_count = 0;
+        bool is_slow = false;
+    };
+
+    struct RSSDiagnostics {
+        size_t total_feeds = 0;
+        size_t total_items = 0;
+        std::string slowest_feed_title;
+        std::string slowest_feed_uri;
+        double slowest_feed_render_ms = 0.0;
+        std::vector<FeedDiagnosticInfo> feeds;
+    };
+
+    /**
+     * Diagnostic report on RSS feeds and card render times
+     */
+    RSSDiagnostics get_rss_diagnostics();
+
 private:
     // Callback for the HTTP fetch operation
     static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp);
