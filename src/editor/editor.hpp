@@ -63,7 +63,7 @@ public:
             "take_screenshot",
             std::make_shared<std::function<std::string(const std::string&, const std::string&, int, int)>>(
                 [this](const std::string& target, const std::string& path, int w, int h) {
-                    if (target == "editor" || target.empty()) {
+                    if (target == "editor" && active_editor_ && !active_editor_->empty()) {
                         return take_snapshot(path, w, h);
                     }
                     try {
@@ -72,7 +72,7 @@ public:
                             return (*card_fn)(target, path, w, h);
                         }
                     } catch (...) {}
-                    return std::string(R"({"success":false,"error":"Unknown screenshot target"})");
+                    return take_app_snapshot(path, w, h);
                 }
             )
         );
@@ -86,6 +86,51 @@ public:
             registrar::remove<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
             registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
         } catch (...) {}
+    }
+
+    std::string take_app_snapshot(const std::string& filepath, int width = 0, int height = 0) {
+        SDL_GPUDevice* device = nullptr;
+        try {
+            auto device_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
+            if (device_ptr && *device_ptr) {
+                device = *device_ptr;
+            }
+        } catch (...) {}
+
+        ImGuiIO& io = ImGui::GetIO();
+        int capture_w = (width > 0) ? width : static_cast<int>(io.DisplaySize.x);
+        int capture_h = (height > 0) ? height : static_cast<int>(io.DisplaySize.y);
+        if (capture_w <= 0) capture_w = 800;
+        if (capture_h <= 0) capture_h = 600;
+
+        RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
+            capture_w, capture_h, nullptr, device
+        );
+
+        if (!snapshot_texture) {
+            return R"({"success":false,"error":"Failed to create snapshot texture"})";
+        }
+
+        SDL_Surface* surface = rouen::helpers::download_gpu_texture(
+            device, snapshot_texture, capture_w, capture_h
+        );
+
+        if (!surface) {
+            TextureHelper::destroyTexture(snapshot_texture);
+            return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
+        }
+
+        std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
+        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        SDL_DestroySurface(surface);
+        TextureHelper::destroyTexture(snapshot_texture);
+
+        if (saved) {
+            return std::format(R"({{"success":true,"message":"Application snapshot saved","file":"{}","width":{},"height":{}}})",
+                target_path, capture_w, capture_h);
+        } else {
+            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+        }
     }
 
     std::string take_snapshot(const std::string& filepath, int width = 800, int height = 600) {

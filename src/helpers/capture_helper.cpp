@@ -55,66 +55,68 @@ RouenGPUTexture* capture_imgui(
     
     // Save the current ImGui context
     ImGuiContext* original_context = ImGui::GetCurrentContext();
-    
-    // Create a dummy window for SDL3 backend
-    SDL_Window* dummy_window = SDL_CreateWindow(
-        "Capture Helper Dummy Window", 
-        width, height, 
-        SDL_WINDOW_HIDDEN
-    );
-    if (!dummy_window) {
-        CAPTURE_ERROR_FMT("Failed to create dummy window: {}", SDL_GetError());
-        SDL_ReleaseGPUTexture(device, capture_texture);
-        return nullptr;
+
+    if (!render_callback && original_context) {
+        // Capture current active main app window draw data
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        if (draw_data) {
+            SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
+            if (cmdbuf) {
+                Imgui_ImplSDLGPU3_PrepareDrawData(draw_data, cmdbuf);
+                SDL_GPUColorTargetInfo color_target = {};
+                color_target.texture = capture_texture;
+                color_target.clear_color = SDL_FColor{ 40.0f / 255.0f, 40.0f / 255.0f, 40.0f / 255.0f, 1.0f };
+                color_target.load_op = SDL_GPU_LOADOP_CLEAR;
+                color_target.store_op = SDL_GPU_STOREOP_STORE;
+
+                SDL_GPURenderPass* render_pass = SDL_BeginGPURenderPass(cmdbuf, &color_target, 1, nullptr);
+                if (render_pass) {
+                    ImGui_ImplSDLGPU3_RenderDrawData(draw_data, cmdbuf, render_pass);
+                    SDL_EndGPURenderPass(render_pass);
+                }
+                SDL_SubmitGPUCommandBuffer(cmdbuf);
+            }
+        }
+        RouenGPUTexture* rouen_tex = new RouenGPUTexture();
+        rouen_tex->binding.texture = capture_texture;
+        rouen_tex->binding.sampler = TextureHelper::getDefaultSampler(device);
+        rouen_tex->width = width;
+        rouen_tex->height = height;
+        return rouen_tex;
     }
-    
-    // Create a new ImGui context
-    ImGuiContext* capture_context = ImGui::CreateContext();
+
+    // Offscreen component rendering using a secondary ImGui context
+    ImFontAtlas* shared_fonts = (original_context && original_context->IO.Fonts) ? original_context->IO.Fonts : nullptr;
+    ImGuiContext* capture_context = ImGui::CreateContext(shared_fonts);
     ImGui::SetCurrentContext(capture_context);
-    
-    // Initialize ImGui IO parameters
+
     ImGuiIO& io = ImGui::GetIO();
-    if (original_context && original_context->IO.Fonts && !original_context->IO.Fonts->Fonts.empty()) {
-        io.Fonts = original_context->IO.Fonts;
-    } else {
-        rouen::fonts::setup();
+    if (original_context) {
+        io.BackendRendererUserData = original_context->IO.BackendRendererUserData;
+        io.BackendPlatformUserData = original_context->IO.BackendPlatformUserData;
     }
-    io.Fonts->TexID = 0;
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = 1.0f / 60.0f;
 
-    
-    // Initialize ImGui backends for this context
-    ImGui_ImplSDL3_InitForSDLGPU(dummy_window);
-    ImGui_ImplSDLGPU3_InitInfo init_info = {};
-    init_info.GpuDevice = device;
-    init_info.ColorTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    init_info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
-    ImGui_ImplSDLGPU3_Init(&init_info);
-    
     try {
-        // Run 2 passes so ImGui window layout and child window dimensions settle
         for (int frame = 0; frame < 2; ++frame) {
-            ImGui_ImplSDLGPU3_NewFrame();
-            ImGui_ImplSDL3_NewFrame();
             ImGui::NewFrame();
             
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-            
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
             
-            render_callback();
+            if (render_callback) {
+                render_callback();
+            }
             
             ImGui::PopStyleVar(2);
             ImGui::Render();
         }
 
-        // Acquire command buffer and begin render pass onto our texture
         SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(device);
         if (cmdbuf) {
-            // Prepare the ImGui draw data
             Imgui_ImplSDLGPU3_PrepareDrawData(ImGui::GetDrawData(), cmdbuf);
             SDL_GPUColorTargetInfo color_target = {};
             color_target.texture = capture_texture;
@@ -129,23 +131,15 @@ RouenGPUTexture* capture_imgui(
             }
             SDL_SubmitGPUCommandBuffer(cmdbuf);
         }
-    } 
-    catch (const std::exception& e) {
+    } catch (const std::exception& e) {
         CAPTURE_ERROR_FMT("Exception during capture: {}", e.what());
     }
-    
-    // Cleanup the temporary ImGui context
-    ImGui_ImplSDLGPU3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
+
     ImGui::DestroyContext(capture_context);
-    
-    // Restore the original ImGui context
-    ImGui::SetCurrentContext(original_context);
-    
-    // Destroy the dummy window
-    SDL_DestroyWindow(dummy_window);
-    
-    // Return the texture with the captured content wrapped in RouenGPUTexture
+    if (original_context) {
+        ImGui::SetCurrentContext(original_context);
+    }
+
     RouenGPUTexture* rouen_tex = new RouenGPUTexture();
     rouen_tex->binding.texture = capture_texture;
     rouen_tex->binding.sampler = TextureHelper::getDefaultSampler(device);

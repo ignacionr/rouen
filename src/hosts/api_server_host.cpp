@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <future>
 #include <glaze/core/reflect.hpp>
 #include <glaze/json/json_t.hpp>
 #include <glaze/json/read.hpp>
@@ -860,6 +861,40 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
         }
         if (req.width <= 0) req.width = 800;
         if (req.height <= 0) req.height = 600;
+
+        auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+        if (deferred_ops) {
+            auto promise = std::make_shared<std::promise<std::string>>();
+            auto future = promise->get_future();
+
+            deferred_ops->queue([req, promise]() {
+                try {
+                    auto screenshot_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
+                    if (screenshot_fn && *screenshot_fn) {
+                        promise->set_value((*screenshot_fn)(req.target, req.filename, req.width, req.height));
+                        return;
+                    }
+
+                    if (req.target == "editor" || req.target.empty()) {
+                        auto ed_fn = registrar::get<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
+                        if (ed_fn && *ed_fn) {
+                            promise->set_value((*ed_fn)(req.filename, req.width, req.height));
+                            return;
+                        }
+                    }
+
+                    promise->set_value(R"({"success":false,"error":"Screenshot service not available"})");
+                } catch (const std::exception& e) {
+                    promise->set_value(std::format(R"({{"success":false,"error":"{}"}})", e.what()));
+                }
+            });
+
+            if (future.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+                return future.get();
+            } else {
+                return R"({"success":false,"error":"Screenshot operation timed out waiting for main thread"})";
+            }
+        }
 
         auto screenshot_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
         if (screenshot_fn && *screenshot_fn) {

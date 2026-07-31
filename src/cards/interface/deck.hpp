@@ -101,6 +101,15 @@ struct deck {
                 }
             )
         );
+
+        registrar::add<std::function<std::string(const std::string&, const std::string&, int, int)>>(
+            "card_save_snapshot",
+            std::make_shared<std::function<std::string(const std::string&, const std::string&, int, int)>>(
+                [this](const std::string& target, const std::string& path, int w, int h) {
+                    return take_card_snapshot(target, path, w, h);
+                }
+            )
+        );
         
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
@@ -118,6 +127,105 @@ struct deck {
         registrar::remove<std::function<void(size_t)>>("focus_card_index");
         registrar::remove<std::function<void(int)>>("scroll_to_section");
         registrar::remove<std::function<std::string()>>("get_deck_status");
+        registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("card_save_snapshot");
+    }
+
+    std::string take_card_snapshot(const std::string& target, const std::string& filepath, int req_width, int req_height) {
+        if (target == "deck" || target == "app" || target == "main" || target == "full") {
+            ImGuiIO& io = ImGui::GetIO();
+            int w = (req_width > 0) ? req_width : static_cast<int>(io.DisplaySize.x);
+            int h = (req_height > 0) ? req_height : static_cast<int>(io.DisplaySize.y);
+            if (w <= 0) w = 800;
+            if (h <= 0) h = 600;
+
+            RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
+                w, h, nullptr, renderer
+            );
+            if (!snapshot_texture) {
+                return R"({"success":false,"error":"Failed to create snapshot texture"})";
+            }
+            SDL_Surface* surface = rouen::helpers::download_gpu_texture(
+                renderer, snapshot_texture, w, h
+            );
+            if (!surface) {
+                TextureHelper::destroyTexture(snapshot_texture);
+                return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
+            }
+            std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
+            bool saved = IMG_SavePNG(surface, target_path.c_str());
+            SDL_DestroySurface(surface);
+            TextureHelper::destroyTexture(snapshot_texture);
+
+            if (saved) {
+                return std::format(R"({{"success":true,"message":"Deck snapshot saved","file":"{}","width":{},"height":{}}})",
+                    target_path, w, h);
+            } else {
+                return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+            }
+        }
+
+        auto card_it = cards_.end();
+        if (target == "card" || target == "focused") {
+            card_it = std::find_if(cards_.begin(), cards_.end(), [](const auto& c) { return c->is_focused; });
+            if (card_it == cards_.end() && !cards_.empty()) {
+                card_it = cards_.begin();
+            }
+        } else if (!target.empty()) {
+            card_it = std::find_if(cards_.begin(), cards_.end(), [&target](const auto& c) {
+                return c->matches_uri(target) || c->window_title.find(target) != std::string::npos;
+            });
+        }
+
+        if (card_it == cards_.end()) {
+            return take_card_snapshot("deck", filepath, req_width, req_height);
+        }
+
+        auto& c = *(*card_it);
+        int width = (req_width > 0) ? req_width : static_cast<int>(c.width);
+        int height = (req_height > 0) ? req_height : 450;
+
+        auto render_fn = [this, &c]() {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+            ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
+            ImGui::PushStyleColor(ImGuiCol_Text, text_color);                
+            color_setup colors(c.get_color(0), c.get_color(1));
+            
+            ui_context_.prepare();
+            c.render(ui_context_);
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(2);
+        };
+
+        RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
+            width, height, render_fn, renderer
+        );
+
+        if (!snapshot_texture) {
+            return R"({"success":false,"error":"Failed to create snapshot texture"})";
+        }
+
+        SDL_Surface* surface = rouen::helpers::download_gpu_texture(
+            renderer, snapshot_texture, width, height
+        );
+
+        if (!surface) {
+            TextureHelper::destroyTexture(snapshot_texture);
+            return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
+        }
+
+        std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
+        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        SDL_DestroySurface(surface);
+        TextureHelper::destroyTexture(snapshot_texture);
+
+        if (saved) {
+            return std::format(R"({{"success":true,"message":"Card snapshot saved","file":"{}","width":{},"height":{}}})",
+                target_path, width, height);
+        } else {
+            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+        }
     }
 
     void create_card(std::string_view uri, bool move_first = false) {
