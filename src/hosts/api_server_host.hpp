@@ -32,6 +32,7 @@ private:
     static void event_handler(struct mg_connection* c, int ev, void* ev_data);
     static void handle_request(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_card_creation(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_cards_get(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_ai_request(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_schemas_request(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_cast_status(struct mg_connection* c, struct mg_http_message* hm);

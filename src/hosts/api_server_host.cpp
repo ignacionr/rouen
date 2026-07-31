@@ -221,6 +221,8 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/cards"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_card_creation(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_cards_get(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -451,6 +453,37 @@ std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, s
         (*create_card_func)(request.uri);
 
         return R"({"success":true,"message":"Card created successfully","uri":")" + request.uri + "\"}";
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+std::string api_server_host::handle_cards_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+        if (!active_cards_func || !*active_cards_func) {
+            error_response response{"Active cards service not available"};
+            return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+        }
+
+        auto cards = (*active_cards_func)();
+        std::vector<glz::json_t> cards_arr;
+        cards_arr.reserve(cards.size());
+
+        for (size_t i = 0; i < cards.size(); ++i) {
+            if (!cards[i]) continue;
+            glz::json_t card_obj;
+            card_obj["index"] = static_cast<double>(i);
+            card_obj["title"] = cards[i]->window_title;
+            card_obj["uri"] = cards[i]->get_uri();
+            card_obj["width"] = static_cast<double>(cards[i]->width);
+            cards_arr.push_back(std::move(card_obj));
+        }
+
+        std::string out;
+        (void)glz::write_json(cards_arr, out);
+        return out;
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
         return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
@@ -1323,6 +1356,32 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
       }
     },
     "/api/cards": {
+      "get": {
+        "tags": ["Cards"],
+        "summary": "Get array of currently active cards",
+        "operationId": "getCards",
+        "responses": {
+          "200": {
+            "description": "List of active cards with URIs and widths",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "index": {"type": "integer", "example": 0},
+                      "title": {"type": "string", "example": "Menu"},
+                      "uri": {"type": "string", "example": "menu"},
+                      "width": {"type": "number", "example": 300.0}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": ["Cards"],
         "summary": "Create a new card by URI",

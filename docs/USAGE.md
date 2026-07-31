@@ -77,7 +77,7 @@ Rouen allows creating cards dynamically using URI-like strings in the Command Pa
 
 | Endpoint | Method | Payload | Action |
 | :--- | :--- | :--- | :--- |
-| `/api/cards` | `GET` | N/A | List all active cards and URIs |
+| `/api/cards` | `GET` | N/A | List all active cards with index, title, URI, and width |
 | `/api/cards` | `POST` | `{"uri":"camera:1:1"}` | Open a new card |
 | `/api/cards` | `DELETE` | N/A | Close an active card |
 | `/api/camera/layout` | `GET` | N/A | Query active camera layout preset |
