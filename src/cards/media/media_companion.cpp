@@ -565,12 +565,13 @@ namespace rouen::cards {
             auto config = rouen::helpers::ConfigService::instance();
             std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-            auto fetch_sub_file = [&](const std::string& cargs) -> std::filesystem::path {
+            auto fetch_sub_file = [&](const std::string& cargs, const std::string& extra_ext_args = "") -> std::filesystem::path {
                 std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
+                std::string ext_flags = extra_ext_args.empty() ? "" : (" " + extra_ext_args);
                 std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github" : "";
-                std::string const cmd = std::format("\"{}\" -q --no-warnings {}{} --skip-download --write-sub --write-auto-sub "
+                std::string const cmd = std::format("\"{}\" -q --no-warnings {}{}{} --skip-download --write-sub --write-auto-sub "
                                               "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
-                                              ytdlp_path, remote_flag, extra_flags, out_prefix, detected_url);
+                                              ytdlp_path, remote_flag, extra_flags, ext_flags, out_prefix, detected_url);
                 ProcessHelper::executeCommand(cmd);
                 try {
                     for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
@@ -585,12 +586,23 @@ namespace rouen::cards {
 
             std::filesystem::path found_file = fetch_sub_file(cookie_args);
             if (found_file.empty()) {
-                static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "arc", "vivaldi", "opera"};
+                std::string const client_fb = "--extractor-args \"youtube:player_client=tv,mweb,android,web\"";
+                found_file = fetch_sub_file(cookie_args, client_fb);
+                if (found_file.empty() && !cookie_args.empty()) {
+                    found_file = fetch_sub_file("", client_fb);
+                }
+            }
+
+            if (found_file.empty()) {
+                static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
                 std::string const configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
                 for (const auto& browser : candidate_browsers) {
                     if (browser == configured_browser) continue;
                     std::string const fb_args = std::format("--cookies-from-browser {}", browser);
                     found_file = fetch_sub_file(fb_args);
+                    if (found_file.empty()) {
+                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web\"");
+                    }
                     if (!found_file.empty()) {
                         if (config) {
                             config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);

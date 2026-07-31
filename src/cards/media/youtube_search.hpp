@@ -399,8 +399,11 @@ namespace rouen::cards {
                 };
 
                 std::vector<youtube_result> temp_results = run_yt_search(cookie_args);
+                if (temp_results.empty() && !cookie_args.empty()) {
+                    temp_results = run_yt_search("");
+                }
                 if (temp_results.empty()) {
-                    static const std::vector<std::string> candidate_browsers = {"chrome", "safari", "firefox", "brave", "edge"};
+                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
                     std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
                     for (const auto& browser : candidate_browsers) {
                         if (browser == configured_browser) continue;

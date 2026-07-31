@@ -95,6 +95,7 @@ namespace rouen::helpers {
 
         // yt-dlp cookie options helper
         std::string get_ytdlp_cookie_args() const;
+        bool refresh_youtube_cookies() const;
 
         // Path validation helpers
         static bool validate_executable_path(const std::string& path);

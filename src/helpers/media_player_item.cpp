@@ -323,14 +323,12 @@ bool media_player_item::playMedia(const void* owner) {
                     format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 }
 
-                auto run_ytdlp = [&](const std::string& cookie_args) -> std::pair<std::vector<std::string>, std::string> {
+                auto run_ytdlp = [&](const std::string& cookie_args, const std::string& extra_extractor_args = "") -> std::pair<std::vector<std::string>, std::string> {
                     std::string cmd;
                     std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdl_exe) ? "--remote-components ejs:github " : "";
-                    if (!cookie_args.empty()) {
-                        cmd = std::format("\"{}\" --no-warnings {}--socket-timeout 10 {} -g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, cookie_args, format_spec, sanitized_url);
-                    } else {
-                        cmd = std::format("\"{}\" --no-warnings {}--socket-timeout 10 -g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, format_spec, sanitized_url);
-                    }
+                    std::string ext_flag = extra_extractor_args.empty() ? "" : (extra_extractor_args + " ");
+                    std::string cook_flag = cookie_args.empty() ? "" : (cookie_args + " ");
+                    cmd = std::format("\"{}\" --no-warnings {}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ext_flag, cook_flag, format_spec, sanitized_url);
                     std::string const output = ProcessHelper::executeCommand(cmd);
                     std::stringstream ss(output);
                     std::string line;
@@ -346,15 +344,40 @@ bool media_player_item::playMedia(const void* owner) {
 
                 auto [urls, resolved] = run_ytdlp(initial_cookie_args);
 
-                // If yt-dlp failed to resolve YouTube URL, attempt browser cookies auto-detection fallback
+                // Fallback pass 1: try player client fallback without cookies if cookies failed
                 if (urls.empty()) {
-                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "arc", "vivaldi", "opera"};
+                    std::string const client_fallback = "--extractor-args \"youtube:player_client=tv,mweb,android,web\"";
+                    auto [fb_urls, fb_output] = run_ytdlp("--no-cookies", client_fallback);
+                    if (!fb_urls.empty()) {
+                        urls = fb_urls;
+                        resolved = fb_output;
+                    }
+                }
+
+                // Fallback pass 2: try automated cookie refresh from installed browsers if no-cookies failed
+                if (urls.empty() && config) {
+                    if (config->refresh_youtube_cookies()) {
+                        std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
+                        auto [ref_urls, ref_output] = run_ytdlp(fresh_cookie_args);
+                        if (!ref_urls.empty()) {
+                            urls = ref_urls;
+                            resolved = ref_output;
+                        }
+                    }
+                }
+
+                // Fallback pass 3: attempt browser cookies auto-detection fallback across valid browsers
+                if (urls.empty()) {
+                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
                     std::string const configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
 
                     for (const auto& browser : candidate_browsers) {
                         if (browser == configured_browser) continue;
                         std::string const fallback_args = std::format("--cookies-from-browser {}", browser);
                         auto [fb_urls, fb_output] = run_ytdlp(fallback_args);
+                        if (fb_urls.empty()) {
+                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web\"");
+                        }
                         if (!fb_urls.empty()) {
                             urls = fb_urls;
                             resolved = fb_output;
@@ -364,6 +387,15 @@ bool media_player_item::playMedia(const void* owner) {
                             std::cout << "[NativePlayer] Successfully resolved YouTube URL using cookies from browser: " << browser << '\n';
                             break;
                         }
+                    }
+                }
+
+                // Fallback pass 4: final attempt with alternative client ios/web and no cookies
+                if (urls.empty()) {
+                    auto [ios_urls, ios_output] = run_ytdlp("--no-cookies", "--extractor-args \"youtube:player_client=ios,web,mweb\"");
+                    if (!ios_urls.empty()) {
+                        urls = ios_urls;
+                        resolved = ios_output;
                     }
                 }
 

@@ -1,5 +1,6 @@
 #include "config_service.hpp"
 #include "platform_utils.hpp"
+#include "process_helper.hpp"
 #include <exception>
 #include <format>
 #include <functional>
@@ -653,6 +654,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
             home_dir + "/.config/rouen/cookies.txt",
             home_dir + "/Library/Application Support/Rouen/cookies.txt",
             home_dir + "/Downloads/cookies.txt",
+            home_dir + "/Desktop/cookies.txt",
             home_dir + "/cookies.txt",
             home_dir + "/.cookies.txt"
         };
@@ -665,9 +667,65 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
 
     std::string browser = get_env("ROUEN_COOKIES_BROWSER");
     if (!browser.empty()) {
-        return std::format("--cookies-from-browser {}", browser);
+        static const std::vector<std::string> valid_browsers = {
+            "safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium", "whale"
+        };
+        bool is_valid = false;
+        for (const auto& vb : valid_browsers) {
+            if (browser == vb) {
+                is_valid = true;
+                break;
+            }
+        }
+        if (is_valid) {
+            return std::format("--cookies-from-browser {}", browser);
+        }
     }
     return "";
+}
+
+bool ConfigService::refresh_youtube_cookies() const {
+    std::string const ytdl_exe = rouen::platform::find_executable("yt-dlp");
+    if (ytdl_exe.empty()) return false;
+
+    const char* home = getenv("HOME");
+    std::string const home_dir = home ? home : "";
+    if (home_dir.empty()) return false;
+
+    std::filesystem::path const target_dir = std::filesystem::path(home_dir) / ".config" / "rouen";
+    std::error_code ec;
+    std::filesystem::create_directories(target_dir, ec);
+    std::filesystem::path const target_file = target_dir / "cookies.txt";
+
+    static const std::vector<std::string> candidate_browsers = {
+        "safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"
+    };
+
+    for (const auto& browser : candidate_browsers) {
+        std::string const cmd = std::format("\"{}\" --cookies-from-browser {} --cookies \"{}\" --skip-download \"https://www.youtube.com\" 2>&1",
+                                            ytdl_exe, browser, target_file.string());
+        ProcessHelper::executeCommand(cmd);
+
+        if (std::filesystem::exists(target_file) && std::filesystem::file_size(target_file) > 0) {
+            std::string const test_cmd = std::format("\"{}\" --cookies \"{}\" --skip-download --socket-timeout 5 \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" 2>&1",
+                                                     ytdl_exe, target_file.string());
+            std::string const test_out = ProcessHelper::executeCommand(test_cmd);
+
+            if (test_out.find("cookies are no longer valid") != std::string::npos ||
+                test_out.find("Sign in to confirm you") != std::string::npos) {
+                std::filesystem::remove(target_file, ec);
+                continue;
+            }
+
+            CONFIG_INFO_FMT("Successfully refreshed YouTube cookies from browser: {}", browser);
+            return true;
+        }
+    }
+
+    if (std::filesystem::exists(target_file)) {
+        std::filesystem::remove(target_file, ec);
+    }
+    return false;
 }
 
     void ConfigService::refresh_cache() {
