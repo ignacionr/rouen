@@ -783,6 +783,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
             video_codec_ctx->thread_count = std::min(4, static_cast<int>(std::thread::hardware_concurrency()));
             video_codec_ctx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
             if (avcodec_open2(video_codec_ctx, video_codec, nullptr) >= 0) {
+                has_video.store(true);
                 if (video_codec_ctx->width > 0 && video_codec_ctx->height > 0) {
                     last_src_w = video_codec_ctx->width;
                     last_src_h = video_codec_ctx->height;

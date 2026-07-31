@@ -200,24 +200,26 @@ void main_wnd::run() {
                             }
                         }
 
-                        ImTextureID const tex = fs_item->get_texture_id(m_device);
-                        if (tex && fs_item->has_video) {
-                            float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+                        if (fs_item->has_video.load()) {
+                            ImTextureID const tex = fs_item->get_texture_id(m_device);
+                            if (tex) {
+                                float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
 
-                            float draw_w = 0.0f;
-                            float draw_h = 0.0f;
-                            if (win_w / win_h > aspect) {
-                                draw_h = win_h;
-                                draw_w = draw_h * aspect;
-                            } else {
-                                draw_w = win_w;
-                                draw_h = draw_w / aspect;
+                                float draw_w = 0.0f;
+                                float draw_h = 0.0f;
+                                if (win_w / win_h > aspect) {
+                                    draw_h = win_h;
+                                    draw_w = draw_h * aspect;
+                                } else {
+                                    draw_w = win_w;
+                                    draw_h = draw_w / aspect;
+                                }
+                                float const draw_x = (win_w - draw_w) * 0.5f;
+                                float const draw_y = (win_h - draw_h) * 0.5f;
+
+                                ImGui::SetCursorPos(ImVec2(draw_x, draw_y));
+                                ImGui::Image(tex, ImVec2(draw_w, draw_h));
                             }
-                            float const draw_x = (win_w - draw_w) * 0.5f;
-                            float const draw_y = (win_h - draw_h) * 0.5f;
-
-                            ImGui::SetCursorPos(ImVec2(draw_x, draw_y));
-                            ImGui::Image(tex, ImVec2(draw_w, draw_h));
                         } else {
                             // Render audio background visualization
                             media_player::draw_full_window_audio_visualization(*fs_item, win_w, win_h);
@@ -918,86 +920,100 @@ void main_wnd::process_detached_window() {
 
                 ImGui::NewFrame();
 
-                if (detached_item && !detached_item->has_video) {
-                    media_player::draw_full_window_audio_visualization(*detached_item, win_w, win_h);
+                ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+                ImGui::SetNextWindowSize(ImVec2(win_w, win_h));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
 
-                    float const vu_w = std::min(win_w * 0.65f, 460.0f);
-                    float const vu_h = 110.0f;
-                    float const vu_x = (win_w - vu_w) * 0.5f;
-                    float const vu_y = win_h - vu_h - 38.0f;
-                    ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
-                    media_player::draw_vintage_110_vu_meter(
-                        detached_item->get_vu_level_l(), detached_item->get_vu_level_r(),
-                        detached_item->get_vu_watermark_l(), detached_item->get_vu_watermark_r(),
-                        vu_w, vu_h, /*is_lit=*/true
-                    );
-                } else if (!detached_item && !is_adlib_active) {
-                    const char* idle_title = ICON_MD_DESKTOP_WINDOWS " Rouen Detached Window";
-                    const char* idle_sub = "Ready for media playback...";
-                    ImVec2 const title_sz = ImGui::CalcTextSize(idle_title);
-                    ImVec2 const sub_sz = ImGui::CalcTextSize(idle_sub);
+                ImGuiWindowFlags const detached_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                                         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+                                                         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-                    ImGui::SetCursorPos(ImVec2((win_w - title_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f));
-                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.9f, 0.8f), "%s", idle_title);
+                if (ImGui::Begin("##DetachedWindowOverlay", nullptr, detached_flags)) {
+                    if (detached_item && !detached_item->has_video.load()) {
+                        media_player::draw_full_window_audio_visualization(*detached_item, win_w, win_h);
 
-                    ImGui::SetCursorPos(ImVec2((win_w - sub_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f + title_sz.y + 8.0f));
-                    ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.6f, 0.6f), "%s", idle_sub);
-                }
+                        float const vu_w = std::min(win_w * 0.65f, 460.0f);
+                        float const vu_h = 110.0f;
+                        float const vu_x = (win_w - vu_w) * 0.5f;
+                        float const vu_y = win_h - vu_h - 38.0f;
+                        ImGui::SetCursorPos(ImVec2(vu_x, vu_y));
+                        media_player::draw_vintage_110_vu_meter(
+                            detached_item->get_vu_level_l(), detached_item->get_vu_level_r(),
+                            detached_item->get_vu_watermark_l(), detached_item->get_vu_watermark_r(),
+                            vu_w, vu_h, /*is_lit=*/true
+                        );
+                    } else if (!detached_item && !is_adlib_active) {
+                        const char* idle_title = ICON_MD_DESKTOP_WINDOWS " Rouen Detached Window";
+                        const char* idle_sub = "Ready for media playback...";
+                        ImVec2 const title_sz = ImGui::CalcTextSize(idle_title);
+                        ImVec2 const sub_sz = ImGui::CalcTextSize(idle_sub);
 
-                // Keyboard hotkeys for AdLib in detached window
-                if (is_adlib_active) {
-                    if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
-                        rouen::helpers::AdLibEngine::instance().toggle_pause();
-                    } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_N)) {
-                        rouen::helpers::AdLibEngine::instance().next_stage();
-                    } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_S)) {
-                        rouen::helpers::AdLibEngine::instance().stop();
+                        ImGui::SetCursorPos(ImVec2((win_w - title_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f));
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.9f, 0.8f), "%s", idle_title);
+
+                        ImGui::SetCursorPos(ImVec2((win_w - sub_sz.x) * 0.5f, (win_h - title_sz.y - sub_sz.y - 8.0f) * 0.5f + title_sz.y + 8.0f));
+                        ImGui::TextColored(ImVec4(0.4f, 0.4f, 0.6f, 0.6f), "%s", idle_sub);
                     }
-                }
 
-                // Allow 1-9 key overlay toggling in detached window
-                for (int k = ImGuiKey_1; k <= ImGuiKey_9; ++k) {
-                    if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
-                        toggle_overlay_by_index(k - ImGuiKey_1);
+                    // Keyboard hotkeys for AdLib in detached window
+                    if (is_adlib_active) {
+                        if (ImGui::IsKeyPressed(ImGuiKey_Space)) {
+                            rouen::helpers::AdLibEngine::instance().toggle_pause();
+                        } else if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_N)) {
+                            rouen::helpers::AdLibEngine::instance().next_stage();
+                        } else if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_S)) {
+                            rouen::helpers::AdLibEngine::instance().stop();
+                        }
                     }
-                }
 
-                bool allow_overlays = true;
-                if (is_adlib_active) {
-                    auto adlib_stage = rouen::helpers::AdLibEngine::instance().get_stage();
-                    if (adlib_stage == rouen::helpers::AdLibStage::Intro || adlib_stage == rouen::helpers::AdLibStage::Outro) {
-                        allow_overlays = false;
+                    // Allow 1-9 key overlay toggling in detached window
+                    for (int k = ImGuiKey_1; k <= ImGuiKey_9; ++k) {
+                        if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(k))) {
+                            toggle_overlay_by_index(k - ImGuiKey_1);
+                        }
                     }
-                }
 
-                if (allow_overlays) {
-                    try {
-                        auto main_deck = registrar::get<deck>("deck");
-                        if (main_deck) {
-                            for (const auto& card_ptr : main_deck->get_cards()) {
-                                if (card_ptr && card_ptr->video_overlay_visible && card_ptr->has_video_overlay()) {
-                                    card_ptr->render_video_ui();
+                    bool allow_overlays = true;
+                    if (is_adlib_active) {
+                        auto adlib_stage = rouen::helpers::AdLibEngine::instance().get_stage();
+                        if (adlib_stage == rouen::helpers::AdLibStage::Intro || adlib_stage == rouen::helpers::AdLibStage::Outro) {
+                            allow_overlays = false;
+                        }
+                    }
+
+                    if (allow_overlays) {
+                        try {
+                            auto main_deck = registrar::get<deck>("deck");
+                            if (main_deck) {
+                                for (const auto& card_ptr : main_deck->get_cards()) {
+                                    if (card_ptr && card_ptr->video_overlay_visible && card_ptr->has_video_overlay()) {
+                                        card_ptr->render_video_ui();
+                                    }
                                 }
                             }
-                        }
-                    } catch (...) {}
-                }
-
-                render_detached_toast(win_w, win_h);
-
-                // Double clicking detached window re-attaches to full-window mode
-                if (detached_item && mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                    if (io.MousePos.y < win_h - 24.0f) {
-                        media_player::set_active_fullscreen_item(detached_item);
+                        } catch (...) {}
                     }
+
+                    render_detached_toast(win_w, win_h);
+
+                    // Double clicking detached window re-attaches to full-window mode
+                    if (detached_item && mouse_focus == m_detached_window && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        if (io.MousePos.y < win_h - 24.0f) {
+                            media_player::set_active_fullscreen_item(detached_item);
+                        }
+                    }
+
+                    // Render progress line for detached window
+                    if (detached_item) {
+                        media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
+                    }
+
+                    ImGui::End();
                 }
-
-                // Render progress line for detached window
-                if (detached_item) {
-                    media_player::draw_full_window_progress_line(*detached_item, win_w, win_h);
-                }
-
-
+                ImGui::PopStyleColor();
+                ImGui::PopStyleVar(2);
 
                 ImGui::Render();
 

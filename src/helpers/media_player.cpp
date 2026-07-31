@@ -533,6 +533,10 @@ static std::shared_ptr<::helpers::ImageCache> get_media_player_image_cache() {
 }
 
 void media_player::draw_full_window_audio_visualization(media_player_item& item, float win_w, float win_h) {
+    if (item.has_video.load()) {
+        return;
+    }
+
     // 0. Resolve/load RSS cover art if applicable
     if (item.feed_id >= 0 && item.rss_image_url.empty()) {
         auto rss_host = rouen::cards::rss::getHost();
