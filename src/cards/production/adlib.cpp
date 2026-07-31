@@ -131,15 +131,16 @@ void adlib_card::save_config_to_ini() {
     std::string const cfg_file = get_adlib_config_file();
     std::ofstream ofs(cfg_file);
     if (ofs.is_open()) {
-        ofs << "{\n"
-            << "  \"intro_video_path\": \"" << intro_path_buf_ << "\",\n"
-            << "  \"background_path\": \"" << bg_path_buf_ << "\",\n"
-            << "  \"outro_video_path\": \"" << outro_path_buf_ << "\",\n"
-            << "  \"output_mp4_path\": \"" << output_path_buf_ << "\",\n"
-            << "  \"mic_device_name\": \"" << mic_name << "\",\n"
-            << "  \"mode\": \"" << std::to_string(selected_mode_) << "\",\n"
-            << "  \"stage2_transition_seconds\": \"" << std::to_string(stage2_transition_seconds_) << "\"\n"
-            << "}\n";
+        ofs << std::format(R"({{
+  "intro_video_path": "{}",
+  "background_path": "{}",
+  "outro_video_path": "{}",
+  "output_mp4_path": "{}",
+  "mic_device_name": "{}",
+  "mode": "{}",
+  "stage2_transition_seconds": "{:.1f}"
+}}
+)", intro_path_buf_, bg_path_buf_, outro_path_buf_, output_path_buf_, mic_name, selected_mode_, stage2_transition_seconds_);
     }
 }
 

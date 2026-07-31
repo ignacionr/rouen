@@ -31,57 +31,63 @@ namespace rouen::fonts {
             static font_state state;
             return state;
         }
-    }
-    // Helper function to find font file
-    std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
-        for (const auto& base_path : search_paths) {
-            std::filesystem::path const full_path = std::filesystem::path(base_path) / filename;
-            if (std::filesystem::exists(full_path)) {
-                return full_path.string();
+
+        // Helper function to find font file
+        std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
+            for (const auto& base_path : search_paths) {
+                std::filesystem::path const full_path = std::filesystem::path(base_path) / filename;
+                if (std::filesystem::exists(full_path)) {
+                    return full_path.string();
+                }
             }
+            return "";
         }
-        return "";
-    }
-    
-    // Helper to get OS-specific font paths
-    std::vector<std::string> get_system_font_paths() {
-        std::vector<std::string> paths;
         
-        #ifdef __APPLE__
-        // macOS font paths
-        paths.push_back("/System/Library/Fonts/");
-        paths.push_back("/System/Library/Fonts/Supplemental/");  // Arial, Georgia, Verdana variants
-        paths.push_back("/Library/Fonts/");
-        const char* home = std::getenv("HOME");
-        if (home) {
-            paths.push_back(std::format("{}/Library/Fonts/", home));
+        // Helper to get OS-specific font paths
+        std::vector<std::string> get_system_font_paths() {
+            std::vector<std::string> paths;
+            
+            #ifdef __APPLE__
+            // macOS font paths
+            paths.push_back("/System/Library/Fonts/");
+            paths.push_back("/System/Library/Fonts/Supplemental/");  // Arial, Georgia, Verdana variants
+            paths.push_back("/Library/Fonts/");
+            const char* home = std::getenv("HOME");
+            if (home) {
+                paths.push_back(std::string(home) + "/Library/Fonts/");
+            }
+            #elif defined(_WIN32)
+            // Windows font paths
+            char win_dir[MAX_PATH];
+            if (GetWindowsDirectoryA(win_dir, MAX_PATH)) {
+                paths.push_back(std::string(win_dir) + "\\Fonts\\");
+            } else {
+                paths.push_back("C:\\Windows\\Fonts\\");
+            }
+            #else
+            // Linux font paths
+            paths.push_back("/usr/share/fonts/");
+            paths.push_back("/usr/share/fonts/truetype/");
+            paths.push_back("/usr/share/fonts/TTF/");
+            paths.push_back("/usr/local/share/fonts/");
+            const char* home = std::getenv("HOME");
+            if (home) {
+                paths.push_back(std::string(home) + "/.fonts/");
+                paths.push_back(std::string(home) + "/.local/share/fonts/");
+            }
+            #endif
+            
+            return paths;
         }
-        paths.push_back("/opt/homebrew/share/fonts/");              // Homebrew fonts location
-        #elif defined(_WIN32)
-        // Windows font paths
-        paths.push_back("C:/Windows/Fonts/");
-        // User fonts directory
-        std::string userprofile = std::getenv("USERPROFILE") ? std::getenv("USERPROFILE") : "";
-        if (!userprofile.empty()) {
-            paths.push_back(userprofile + "/AppData/Local/Microsoft/Windows/Fonts/");
-        }
-        #else
-        // Linux font paths
-        paths.push_back("/usr/share/fonts/truetype/dejavu/");
-        paths.push_back("/usr/share/fonts/TTF/");
-        paths.push_back("/usr/local/share/fonts/");
-        #endif
         
-        return paths;
-    }
-    
-    // Helper to get application directory for relative paths
-    std::string get_application_directory() {
-        try {
-            return std::filesystem::current_path().string();
-        } catch (const std::exception& e) {
-            std::cerr << "Error getting current path: " << e.what() << '\n';
-            return ".";
+        // Helper to get application directory for relative paths
+        std::string get_application_directory() {
+            try {
+                return std::filesystem::current_path().string();
+            } catch (const std::exception& e) {
+                std::cerr << "Error getting current path: " << e.what() << '\n';
+                return ".";
+            }
         }
     }
     

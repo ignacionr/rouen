@@ -396,35 +396,25 @@ void calculator::handle_keyboard_input() {
     // Do not interfere with Ctrl/Cmd shortcuts
     if (ctrl) return;
 
-    // Numpad Keys
-    if (ImGui::IsKeyPressed(ImGuiKey_Keypad0)) { append_to_expression("0"); trigger_key_flash("0"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad1)) { append_to_expression("1"); trigger_key_flash("1"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad2)) { append_to_expression("2"); trigger_key_flash("2"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad3)) { append_to_expression("3"); trigger_key_flash("3"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad4)) { append_to_expression("4"); trigger_key_flash("4"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad5)) { append_to_expression("5"); trigger_key_flash("5"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad6)) { append_to_expression("6"); trigger_key_flash("6"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad7)) { append_to_expression("7"); trigger_key_flash("7"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad8)) { append_to_expression("8"); trigger_key_flash("8"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad9)) { append_to_expression("9"); trigger_key_flash("9"); }
+    // Digit Keys (Numpad or Main Keyboard)
+    if (ImGui::IsKeyPressed(ImGuiKey_Keypad0) || (!shift && ImGui::IsKeyPressed(ImGuiKey_0))) { append_to_expression("0"); trigger_key_flash("0"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad1) || (!shift && ImGui::IsKeyPressed(ImGuiKey_1))) { append_to_expression("1"); trigger_key_flash("1"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad2) || (!shift && ImGui::IsKeyPressed(ImGuiKey_2))) { append_to_expression("2"); trigger_key_flash("2"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad3) || (!shift && ImGui::IsKeyPressed(ImGuiKey_3))) { append_to_expression("3"); trigger_key_flash("3"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad4) || (!shift && ImGui::IsKeyPressed(ImGuiKey_4))) { append_to_expression("4"); trigger_key_flash("4"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad5) || (!shift && ImGui::IsKeyPressed(ImGuiKey_5))) { append_to_expression("5"); trigger_key_flash("5"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad6) || (!shift && ImGui::IsKeyPressed(ImGuiKey_6))) { append_to_expression("6"); trigger_key_flash("6"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad7) || (!shift && ImGui::IsKeyPressed(ImGuiKey_7))) { append_to_expression("7"); trigger_key_flash("7"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad8) || (!shift && ImGui::IsKeyPressed(ImGuiKey_8))) { append_to_expression("8"); trigger_key_flash("8"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Keypad9) || (!shift && ImGui::IsKeyPressed(ImGuiKey_9))) { append_to_expression("9"); trigger_key_flash("9"); }
+    
+    // Numpad Operators
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadAdd)) { append_to_expression(" + "); trigger_key_flash("+"); }
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract)) { append_to_expression(" - "); trigger_key_flash("-"); }
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadMultiply)) { append_to_expression(" * "); trigger_key_flash("*"); }
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadDivide)) { append_to_expression(" / "); trigger_key_flash("/"); }
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadDecimal)) { append_to_expression("."); trigger_key_flash("."); }
     else if (ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)) { evaluate_current(); trigger_key_flash("="); }
-
-    // Main Keyboard Digit Keys
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_0)) { append_to_expression("0"); trigger_key_flash("0"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_1)) { append_to_expression("1"); trigger_key_flash("1"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_2)) { append_to_expression("2"); trigger_key_flash("2"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_3)) { append_to_expression("3"); trigger_key_flash("3"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_4)) { append_to_expression("4"); trigger_key_flash("4"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_5)) { append_to_expression("5"); trigger_key_flash("5"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_6)) { append_to_expression("6"); trigger_key_flash("6"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_7)) { append_to_expression("7"); trigger_key_flash("7"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_8)) { append_to_expression("8"); trigger_key_flash("8"); }
-    else if (!shift && ImGui::IsKeyPressed(ImGuiKey_9)) { append_to_expression("9"); trigger_key_flash("9"); }
 
     // Shift combinations
     else if (shift && ImGui::IsKeyPressed(ImGuiKey_5)) { append_to_expression(" % "); trigger_key_flash("%"); }
@@ -443,8 +433,7 @@ void calculator::handle_keyboard_input() {
     // Actions & Navigation
     else if (ImGui::IsKeyPressed(ImGuiKey_Enter)) { evaluate_current(); trigger_key_flash("="); }
     else if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) { backspace_expression(); trigger_key_flash("⌫"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_Delete)) { clear_all(); trigger_key_flash("C"); }
-    else if (ImGui::IsKeyPressed(ImGuiKey_C)) { clear_all(); trigger_key_flash("C"); }
+    else if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_C)) { clear_all(); trigger_key_flash("C"); }
 
     // History navigation with Arrow keys
     else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {

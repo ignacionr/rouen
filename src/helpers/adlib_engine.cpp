@@ -215,8 +215,9 @@ void AdLibEngine::transition_to_stage(AdLibStage new_stage) {
                 if (converted) {
                     SDL_Surface* dst_surf = SDL_ScaleSurface(converted, 1280, 720, SDL_SCALEMODE_LINEAR);
                     if (dst_surf) {
-                        last_rendered_pixels_.resize(1280 * 720 * 4);
-                        std::memcpy(last_rendered_pixels_.data(), dst_surf->pixels, 1280 * 720 * 4);
+                        constexpr size_t frame_bytes = 1280 * 720 * 4;
+                        last_rendered_pixels_.resize(frame_bytes);
+                        std::memcpy(last_rendered_pixels_.data(), dst_surf->pixels, frame_bytes);
                         SDL_DestroySurface(dst_surf);
                     }
                     SDL_DestroySurface(converted);
@@ -556,12 +557,14 @@ void AdLibEngine::on_detached_frame_rendered(const uint8_t* rgba_pixels, int wid
         if (dst_surf) {
             {
                 std::lock_guard<std::mutex> const lock(frame_buffer_mutex_);
-                if (last_rendered_pixels_.size() != 1280 * 720 * 4) {
-                    last_rendered_pixels_.resize(1280 * 720 * 4);
+                constexpr size_t frame_bytes = 1280 * 720 * 4;
+                constexpr size_t frame_pixels = 1280 * 720;
+                if (last_rendered_pixels_.size() != frame_bytes) {
+                    last_rendered_pixels_.resize(frame_bytes);
                 }
                 const uint8_t* src = static_cast<const uint8_t*>(dst_surf->pixels);
                 uint8_t* dst = last_rendered_pixels_.data();
-                for (size_t i = 0; i < 1280 * 720; ++i) {
+                for (size_t i = 0; i < frame_pixels; ++i) {
                     dst[i * 4 + 0] = src[i * 4 + 2]; // R <- B
                     dst[i * 4 + 1] = src[i * 4 + 1]; // G <- G
                     dst[i * 4 + 2] = src[i * 4 + 0]; // B <- R

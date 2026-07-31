@@ -1232,7 +1232,7 @@ std::string git::get_repository_status_json(const std::string& params) const {
             }
         }
         
-        std::string result = "{\"success\":true,\"repositories\":[";
+        std::string result = R"({"success":true,"repositories":[)";
         bool first = true;
         const auto& repos = git_model->getRepos();
         
@@ -1243,12 +1243,10 @@ std::string git::get_repository_status_json(const std::string& params) const {
                 auto updated_repos = git_model->getRepos();
                 auto updated_it = updated_repos.find(requested_repo);
                 if (updated_it != updated_repos.end()) {
-                    result += "{\"path\":\"" + requested_repo + "\",";
-                    result += "\"status\":\"" + git_status_to_string(updated_it->second) + "\",";
-                    result += "\"ahead\":" + std::string(git_model->isBranchAhead(requested_repo) ? "true" : "false") + "}";
+                    result += std::format(R"({{"path":"{}","status":"{}","ahead":{}}})", requested_repo, git_status_to_string(updated_it->second), git_model->isBranchAhead(requested_repo) ? "true" : "false");
                 }
             } else {
-                return "{\"success\":false,\"error\":\"Repository not found: " + requested_repo + "\"}";
+                return std::format(R"({{"success":false,"error":"Repository not found: {}"}})", requested_repo);
             }
         } else {
             for (const auto& [path, status] : repos) {
@@ -1257,9 +1255,7 @@ std::string git::get_repository_status_json(const std::string& params) const {
             const auto& updated_repos = git_model->getRepos();
             for (const auto& [path, status] : updated_repos) {
                 if (!first) result += ",";
-                result += "{\"path\":\"" + path + "\",";
-                result += "\"status\":\"" + git_status_to_string(status) + "\",";
-                result += "\"ahead\":" + std::string(git_model->isBranchAhead(path) ? "true" : "false") + "}";
+                result += std::format(R"({{"path":"{}","status":"{}","ahead":{}}})", path, git_status_to_string(status), git_model->isBranchAhead(path) ? "true" : "false");
                 first = false;
             }
         }
@@ -1267,21 +1263,20 @@ std::string git::get_repository_status_json(const std::string& params) const {
         result += "]}";
         return result;
     } catch (const std::exception& e) {
-        return "{\"success\":false,\"error\":\"Error getting repository status: " + std::string(e.what()) + "\"}";
+        return std::format(R"({{"success":false,"error":"Error getting repository status: {}"}})", e.what());
     }
 }
 
 std::string git::get_repositories_needing_push_json() const {
     try {
-        std::string result = "{\"success\":true,\"repositories\":[";
+        std::string result = R"({"success":true,"repositories":[)";
         bool first = true;
         const auto& repos = git_model->getRepos();
         
         for (const auto& [path, status] : repos) {
             if (git_model->isBranchAhead(path)) {
                 if (!first) result += ",";
-                result += "{\"path\":\"" + path + "\",";
-                result += "\"status\":\"" + git_status_to_string(status) + "\"}";
+                result += std::format(R"({{"path":"{}","status":"{}"}})", path, git_status_to_string(status));
                 first = false;
             }
         }
@@ -1289,13 +1284,13 @@ std::string git::get_repositories_needing_push_json() const {
         result += "]}";
         return result;
     } catch (const std::exception& e) {
-        return "{\"success\":false,\"error\":\"Error getting repositories needing push: " + std::string(e.what()) + "\"}";
+        return std::format(R"({{"success":false,"error":"Error getting repositories needing push: {}"}})", e.what());
     }
 }
 
 std::string git::get_modified_repositories_json() const {
     try {
-        std::string result = "{\"success\":true,\"repositories\":[";
+        std::string result = R"({"success":true,"repositories":[)";
         bool first = true;
         const auto& repos = git_model->getRepos();
         
@@ -1303,9 +1298,7 @@ std::string git::get_modified_repositories_json() const {
             if (status != rouen::models::GitRepoStatus::Clean && 
                 status != rouen::models::GitRepoStatus::Unknown) {
                 if (!first) result += ",";
-                result += "{\"path\":\"" + path + "\",";
-                result += "\"status\":\"" + git_status_to_string(status) + "\",";
-                result += "\"ahead\":" + std::string(git_model->isBranchAhead(path) ? "true" : "false") + "}";
+                result += std::format(R"({{"path":"{}","status":"{}","ahead":{}}})", path, git_status_to_string(status), git_model->isBranchAhead(path) ? "true" : "false");
                 first = false;
             }
         }
@@ -1313,7 +1306,7 @@ std::string git::get_modified_repositories_json() const {
         result += "]}";
         return result;
     } catch (const std::exception& e) {
-        return "{\"success\":false,\"error\":\"Error getting modified repositories: " + std::string(e.what()) + "\"}";
+        return std::format(R"({{"success":false,"error":"Error getting modified repositories: {}"}})", e.what());
     }
 }
 

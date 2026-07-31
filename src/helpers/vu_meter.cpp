@@ -316,8 +316,12 @@ void draw_analog_dial(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& si
     for (const auto& tk : ticks) {
         float const a = start_angle + tk.norm_val * sweep_angle;
         float const tick_len = tk.major ? 5.0f : 3.0f;
-        ImU32 const t_col = tk.color ? *tk.color :
-                      ((tk.norm_val >= config.style.overload_threshold) ? scale_overload_col : scale_norm_col);
+        ImU32 t_col = scale_norm_col;
+        if (tk.color) {
+            t_col = *tk.color;
+        } else if (tk.norm_val >= config.style.overload_threshold) {
+            t_col = scale_overload_col;
+        }
 
         ImVec2 const p_in(cx + std::cos(a) * (r_arc - tick_len), cy + std::sin(a) * (r_arc - tick_len));
         ImVec2 const p_out(cx + std::cos(a) * (r_arc + 1.0f), cy + std::sin(a) * (r_arc + 1.0f));
@@ -430,16 +434,24 @@ void draw_bar_meter(ImDrawList* draw_list, const ImVec2& pos, const ImVec2& size
             float const fill_h = (size.y - 2.0f) * level;
             ImVec2 const f_min(ch_min.x + 1.0f, ch_max.y - 1.0f - fill_h);
             ImVec2 const f_max(ch_max.x - 1.0f, ch_max.y - 1.0f);
-            ImU32 const col = (level > config.style.overload_threshold) ? IM_COL32(231, 76, 60, 255) :
-                        (level > 0.70f) ? IM_COL32(241, 196, 15, 255) : IM_COL32(46, 204, 113, 255);
+            ImU32 col = IM_COL32(46, 204, 113, 255);
+            if (level > config.style.overload_threshold) {
+                col = IM_COL32(231, 76, 60, 255);
+            } else if (level > 0.70f) {
+                col = IM_COL32(241, 196, 15, 255);
+            }
             draw_list->AddRectFilled(f_min, f_max, col, 1.0f);
         }
 
         // Peak Watermark Line
         if (config.style.show_peak_watermark && watermark > 0.005f) {
             float const wm_y = ch_max.y - 1.0f - ((size.y - 2.0f) * watermark);
-            ImU32 const wm_col = (watermark > config.style.overload_threshold) ? IM_COL32(255, 90, 90, 255) :
-                           (watermark > 0.70f) ? IM_COL32(255, 220, 80, 255) : IM_COL32(220, 245, 220, 255);
+            ImU32 wm_col = IM_COL32(220, 245, 220, 255);
+            if (watermark > config.style.overload_threshold) {
+                wm_col = IM_COL32(255, 90, 90, 255);
+            } else if (watermark > 0.70f) {
+                wm_col = IM_COL32(255, 220, 80, 255);
+            }
             draw_list->AddLine(ImVec2(ch_min.x + 1.0f, wm_y), ImVec2(ch_max.x - 1.0f, wm_y), wm_col, 2.0f);
         }
     }

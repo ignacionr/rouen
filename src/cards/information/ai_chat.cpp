@@ -538,7 +538,9 @@ namespace rouen::cards {
                     bool const is_debug = message.first == "debug";
                     
                     // Set background color for message bubbles
-                    ImU32 const bg_color = is_user ? user_bg_color : (is_debug ? debug_bg_color : assistant_bg_color);
+                    ImU32 bg_color = assistant_bg_color;
+                    if (is_user) bg_color = user_bg_color;
+                    else if (is_debug) bg_color = debug_bg_color;
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
                     
                     // Position user messages to the right
@@ -558,7 +560,9 @@ namespace rouen::cards {
                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
                     
                     // Set text color based on sender
-                    ImU32 const txt_color = is_user ? user_text_color : (is_debug ? debug_text_color : assistant_text_color);
+                    ImU32 txt_color = assistant_text_color;
+                    if (is_user) txt_color = user_text_color;
+                    else if (is_debug) txt_color = debug_text_color;
                     ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                     
                     // Display sender name
