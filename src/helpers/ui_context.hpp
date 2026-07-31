@@ -41,6 +41,7 @@ public:
 
     // Basic Widgets
     virtual void text(const std::string& text) = 0;
+    virtual void text_view(std::string_view text) { this->text_unformatted(std::string(text)); }
     virtual void text_colored(const ImVec4& color, const std::string& text) = 0;
     virtual void text_wrapped(const std::string& text) = 0;
     virtual void text_unformatted(const std::string& text) = 0;

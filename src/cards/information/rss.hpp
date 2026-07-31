@@ -46,6 +46,7 @@ public:
     void on_close() override;
     bool render() override;
     [[nodiscard]] std::string get_uri() const override;
+    std::vector<card_performance_metric> get_performance_measurements() const override;
 
     void set_renderer(SDL_Renderer* r);
     void clear_feed_textures();
@@ -123,6 +124,10 @@ private:
     std::set<std::string> failed_downloads_;
     std::mutex downloading_mutex_;
     std::atomic<bool> image_downloaded_signal_{false};
+
+    mutable std::string cached_rpm_str_;
+    mutable std::string cached_latency_str_;
+    mutable std::string cached_feed_cnt_str_;
 };
 
 } // namespace rouen::cards

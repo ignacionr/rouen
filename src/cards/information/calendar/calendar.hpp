@@ -108,10 +108,16 @@ namespace rouen::cards
     private:
         std::shared_ptr<::calendar::calendar_fetcher> fetcher_;
         std::vector<::calendar::event> events_;
-        std::mutex events_mutex_;
+        mutable std::mutex events_mutex_;
         std::chrono::steady_clock::time_point last_refresh_ = std::chrono::steady_clock::now();
         std::chrono::seconds refresh_interval_{300}; // Refresh every 5 minutes
         std::jthread refresh_thread_;                // Thread for refreshing events in the background
+
+        std::atomic<double> last_fetch_duration_ms_{0.0};
+        std::atomic<uint64_t> total_refreshes_{0};
+        mutable std::string metric_latency_str_;
+        mutable std::string metric_events_str_;
+        mutable std::string metric_interval_str_;
         bool show_event_details_ = false;
         ::calendar::event selected_event_;
         bool use_day_view_ {true};                  // Toggle between list view and day view
@@ -717,7 +723,11 @@ namespace rouen::cards
         void refresh_events()
         {
             try {
+                auto const t0 = std::chrono::steady_clock::now();
                 auto new_events = fetcher_->fetch_events();
+                auto const t1 = std::chrono::steady_clock::now();
+                last_fetch_duration_ms_ = std::chrono::duration<double, std::milli>(t1 - t0).count();
+                total_refreshes_++;
                 
                 {
                     std::lock_guard<std::mutex> lock(events_mutex_);
@@ -728,6 +738,19 @@ namespace rouen::cards
             } catch (const std::exception&) {
                 // Error will be shown in the UI via fetcher_->has_error()
             }
+        }
+
+        std::vector<card_performance_metric> get_performance_measurements() const override {
+            std::lock_guard<std::mutex> lock(events_mutex_);
+            metric_latency_str_ = std::format("{:.2f} ms", last_fetch_duration_ms_.load());
+            metric_events_str_ = std::format("{} events", events_.size());
+            metric_interval_str_ = std::format("{} s", refresh_interval_.count());
+
+            return {
+                {"Last update latency", metric_latency_str_},
+                {"Events loaded", metric_events_str_},
+                {"Refresh interval", metric_interval_str_}
+            };
         }
         
         void start_refresh_thread()

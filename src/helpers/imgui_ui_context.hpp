@@ -47,6 +47,10 @@ public:
     void text(const std::string& text) override {
         ImGui::Text("%s", text.c_str());
     }
+
+    void text_view(std::string_view text) override {
+        ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    }
     
     void text_colored(const ImVec4& color, const std::string& text) override {
         ImGui::TextColored(color, "%s", text.c_str());

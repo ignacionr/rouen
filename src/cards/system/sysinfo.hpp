@@ -417,6 +417,62 @@ struct sysinfo_card : public card {
                 }
             }
 
+            // Gather custom performance measurements from active cards
+            ui.spacing();
+            ui.text("Active Card Custom Performance Measurements:");
+            auto get_active_cards = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+            struct ActiveCardMetrics {
+                std::string title;
+                std::vector<card_performance_metric> metrics;
+            };
+            std::vector<ActiveCardMetrics> active_custom_metrics;
+
+            if (get_active_cards) {
+                auto active_cards = (*get_active_cards)();
+                for (const auto& c : active_cards) {
+                    if (!c) continue;
+                    auto measurements = c->get_performance_measurements();
+                    if (!measurements.empty()) {
+                        std::string clean_title = c->window_title;
+                        auto hash_pos = clean_title.find("###");
+                        if (hash_pos != std::string::npos) {
+                            clean_title = clean_title.substr(0, hash_pos);
+                        }
+                        if (clean_title.empty()) {
+                            clean_title = c->get_uri();
+                        }
+                        active_custom_metrics.push_back({clean_title, std::move(measurements)});
+                    }
+                }
+            }
+
+            if (active_custom_metrics.empty()) {
+                active_custom_metrics.push_back({"System Info", get_performance_measurements()});
+            }
+
+            if (ui.begin_table("CardCustomMetricsTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                ui.table_setup_column("Card Title", ImGuiTableColumnFlags_WidthFixed, 140.0f);
+                ui.table_setup_column("Measurement", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+                ui.table_setup_column("Value", ImGuiTableColumnFlags_WidthStretch);
+                ui.table_headers_row();
+
+                for (const auto& entry : active_custom_metrics) {
+                    for (const auto& metric : entry.metrics) {
+                        ui.table_next_row();
+
+                        ui.table_set_column_index(0);
+                        ui.text(entry.title);
+
+                        ui.table_set_column_index(1);
+                        ui.text_view(metric.name);
+
+                        ui.table_set_column_index(2);
+                        ui.text_view(metric.value);
+                    }
+                }
+                ui.end_table();
+            }
+
             ui.separator();
             
             // Drive Benchmark section
@@ -521,6 +577,19 @@ struct sysinfo_card : public card {
     std::string get_uri() const override {
         return "sysinfo";
     }
+
+    std::vector<card_performance_metric> get_performance_measurements() const override {
+        auto [mem_total, mem_used, mem_free] = memory_info;
+        metric_cpu_str_ = std::format("{:.1f}%", cpu_usage);
+        metric_ram_str_ = std::format("{:.2f} / {:.2f} GB", mem_used, mem_total);
+        metric_proc_str_ = std::format("{} procs", get_process_count());
+
+        return {
+            {"CPU Load", metric_cpu_str_},
+            {"RAM Used", metric_ram_str_},
+            {"Running Processes", metric_proc_str_}
+        };
+    }
     
 private:
     std::chrono::steady_clock::time_point last_update;
@@ -533,6 +602,10 @@ private:
     float benchmark_progress{0.0F};
     std::future<std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult>> benchmark_future;
     std::vector<rouen::helpers::DriveBenchmark::BenchmarkResult> benchmark_results;
+
+    mutable std::string metric_cpu_str_;
+    mutable std::string metric_ram_str_;
+    mutable std::string metric_proc_str_;
 };
 
 } // namespace rouen::cards

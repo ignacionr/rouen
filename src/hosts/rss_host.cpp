@@ -1555,7 +1555,11 @@ media::rss::feed RSSHost::get_feed(std::string_view url) {
             h("Accept: application/rss+xml, application/xml, text/xml, */*");
         };
         
+        auto const start_time = std::chrono::steady_clock::now();
         fetch(std::string{url}, header_client, write_callback, &parser);
+        auto const end_time = std::chrono::steady_clock::now();
+        double const duration_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+        record_request(duration_ms);
         
         if (fetch.last_redirect_was_permanent()) {
             std::string final_url = fetch.last_effective_url();
@@ -1925,6 +1929,47 @@ RSSHost::RSSDiagnostics RSSHost::get_rss_diagnostics() {
     }
 
     return diag;
+}
+
+void RSSHost::record_request(double duration_ms) {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    request_timestamps_.push_back(now);
+    last_request_duration_ms_ = duration_ms;
+    total_requests_count_++;
+
+    // Prune requests older than 60 seconds
+    while (!request_timestamps_.empty()) {
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - request_timestamps_.front()).count() > 60) {
+            request_timestamps_.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+double RSSHost::requests_per_minute() const {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    // Prune requests older than 60 seconds
+    while (!request_timestamps_.empty()) {
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - request_timestamps_.front()).count() > 60) {
+            request_timestamps_.pop_front();
+        } else {
+            break;
+        }
+    }
+    return static_cast<double>(request_timestamps_.size());
+}
+
+double RSSHost::last_request_duration_ms() const {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    return last_request_duration_ms_;
+}
+
+uint64_t RSSHost::total_requests() const {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    return total_requests_count_;
 }
 
 } // namespace rouen::hosts

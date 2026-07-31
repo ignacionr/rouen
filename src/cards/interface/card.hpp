@@ -6,6 +6,7 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
@@ -58,6 +59,17 @@ struct card {
             , schema(std::move(func_schema)), handler(std::move(func_handler)) {}
     };
     
+    // Performance measurement metric struct using std::string_view for zero-copy/zero-allocation presentation
+    struct card_performance_metric {
+        std::string_view name;
+        std::string_view value;
+    };
+
+    // Virtual method for active cards to report custom performance metrics to System Info
+    virtual std::vector<card_performance_metric> get_performance_measurements() const {
+        return {};
+    }
+
     // Virtual method for cards to expose MCP functions
     virtual std::vector<mcp_function> get_mcp_functions() const {
         return {}; // Default: no functions

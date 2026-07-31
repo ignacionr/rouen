@@ -1427,6 +1427,7 @@ namespace rouen::cards {
                         search_mode_str = "on";
                     }
                     
+                    auto const t_start = std::chrono::steady_clock::now();
                     auto response = context->llm_instance_copy.sendMessage(
                         context->user_message, 
                         [fetcher = context->fetcher, log_requests = log_requests_](const std::string& url, const std::string& data, auto header_client) {
@@ -1446,6 +1447,9 @@ namespace rouen::cards {
                         context->temperature, 
                         &context->conversation_snapshot
                     );
+                    auto const t_end = std::chrono::steady_clock::now();
+                    last_response_latency_ms_ = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+                    total_queries_++;
                     
                     // Extract message content safely with bounds checking
                     std::string reply;
@@ -1698,6 +1702,19 @@ namespace rouen::cards {
             
             cache.needs_recalc = false;
         }
+    }
+
+    std::vector<card::card_performance_metric> ai_chat::get_performance_measurements() const {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(chat_history_mutex_));
+        metric_msg_count_str_ = std::format("{} messages", chat_history_.size());
+        metric_latency_str_ = last_response_latency_ms_.load() > 0.0 ? std::format("{:.1f} ms", last_response_latency_ms_.load()) : "N/A";
+        metric_queries_str_ = std::format("{}", total_queries_.load());
+
+        return {
+            {"Chat history length", metric_msg_count_str_},
+            {"Last response latency", metric_latency_str_},
+            {"Total queries", metric_queries_str_}
+        };
     }
 
 } // namespace rouen::cards

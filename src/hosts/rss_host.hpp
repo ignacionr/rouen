@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -72,6 +73,11 @@ public:
     int refresh_interval_s() const;
     
     void trigger_manual_refresh();
+
+    double requests_per_minute() const;
+    double last_request_duration_ms() const;
+    uint64_t total_requests() const;
+    void record_request(double duration_ms);
 
     int get_timeout() const;
     void set_timeout(int t);
@@ -246,6 +252,11 @@ private:
     std::chrono::system_clock::time_point last_refresh_time_ = std::chrono::system_clock::now();
     int refresh_interval_s_ = 900; // 15 minutes (900 seconds)
     std::atomic<bool> should_force_refresh_{false};
+
+    mutable std::mutex metrics_mutex_;
+    mutable std::deque<std::chrono::steady_clock::time_point> request_timestamps_;
+    double last_request_duration_ms_{0.0};
+    uint64_t total_requests_count_{0};
 
     void start_refresh_loop();
 

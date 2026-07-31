@@ -1443,4 +1443,23 @@ void rss::request_image_download(const std::string& url) {
     }).detach();
 }
 
+std::vector<card::card_performance_metric> rss::get_performance_measurements() const {
+    if (!rss_host) {
+        return {};
+    }
+    double const rpm = rss_host->requests_per_minute();
+    double const last_lat = rss_host->last_request_duration_ms();
+    size_t const feed_count = cached_all_feeds_.size();
+
+    cached_rpm_str_ = std::format("{:.1f} req/min", rpm);
+    cached_latency_str_ = std::format("{:.1f} ms", last_lat);
+    cached_feed_cnt_str_ = std::format("{} feeds", feed_count);
+
+    return {
+        {"Requests per minute", cached_rpm_str_},
+        {"Last fetch latency", cached_latency_str_},
+        {"Subscribed feeds", cached_feed_cnt_str_}
+    };
+}
+
 } // namespace rouen::cards

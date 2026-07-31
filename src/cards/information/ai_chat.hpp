@@ -22,6 +22,7 @@ namespace rouen::cards {
 
         bool render() override;
         std::string get_uri() const override;
+        std::vector<card_performance_metric> get_performance_measurements() const override;
 
         static std::string get_assistant_name();
         static void maybe_speak_reply(const std::string& text);
@@ -93,6 +94,12 @@ namespace rouen::cards {
         std::array<char, 256> persona_desc_buf_{};
         std::array<char, 4096> persona_prompt_buf_{};
         size_t last_edited_persona_index_{static_cast<size_t>(-1)};
+
+        std::atomic<double> last_response_latency_ms_{0.0};
+        std::atomic<uint64_t> total_queries_{0};
+        mutable std::string metric_msg_count_str_;
+        mutable std::string metric_latency_str_;
+        mutable std::string metric_queries_str_;
     };
 
 } // namespace rouen::cards
