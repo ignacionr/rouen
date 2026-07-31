@@ -208,7 +208,8 @@ namespace rouen::cards {
                 return 0.0;
             };
 
-            auto process_entry = [&](std::string raw_ts, std::string comment, std::vector<media_companion::fact_check_assertion> assertions) {
+            auto process_entry = [&](std::string raw_ts_in, std::string comment, const std::vector<media_companion::fact_check_assertion>& assertions) {
+                std::string raw_ts = raw_ts_in;
                 while (!raw_ts.empty() && (raw_ts.front() == '[' || raw_ts.front() == '"' || raw_ts.front() == ' ' || raw_ts.front() == '#')) {
                     raw_ts.erase(raw_ts.begin());
                 }

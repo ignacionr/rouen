@@ -292,8 +292,8 @@ namespace rouen::cards::github {
                     std::string const status = run["status"].get<std::string>();
                     int const run_number = static_cast<int>(run["run_number"].get<double>());
                     
-                    ImVec4 status_color;
-                    const char* status_icon;
+                    ImVec4 status_color = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+                    const char* status_icon = ICON_MD_HELP;
                     
                     if (status == "completed") {
                         if (run.contains("conclusion") && !run["conclusion"].is_null()) {

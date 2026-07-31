@@ -114,13 +114,12 @@ std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::stri
         if (settings.provider == Provider::GEMINI) {
             auto adapter = std::make_unique<rouen::helpers::GeminiAdapter>(settings.api_key, settings.model_name);
             return LLMInstance(std::move(adapter));
-        } else {
-            auto cppgpt = std::make_unique<ignacionr::cppgpt>(
-                settings.api_key, 
-                settings.base_url
-            );
-            return LLMInstance(std::move(cppgpt));
         }
+        auto cppgpt = std::make_unique<ignacionr::cppgpt>(
+            settings.api_key, 
+            settings.base_url
+        );
+        return LLMInstance(std::move(cppgpt));
     } catch (const std::exception& e) {
         LOG_COMPONENT("LLMConfig", LOG_LEVEL_ERROR, std::string("Failed to create LLM instance: ") + e.what());
         return std::nullopt;
@@ -138,11 +137,14 @@ LLMHost::Provider LLMHost::string_to_provider(const std::string& provider_str) {
     
     if (lower_provider == "grok" || lower_provider == "xai") {
         return Provider::GROK;
-    } else if (lower_provider == "openai") {
+    }
+    if (lower_provider == "openai") {
         return Provider::OPENAI;
-    } else if (lower_provider == "groq") {
+    }
+    if (lower_provider == "groq") {
         return Provider::GROQ;
-    } else if (lower_provider == "gemini") {
+    }
+    if (lower_provider == "gemini") {
         return Provider::GEMINI;
     } else {
         return Provider::CUSTOM;

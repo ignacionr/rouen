@@ -217,7 +217,7 @@ namespace rouen::cards {
             std::string const kill_cmd = std::format("kill -TERM -{}", process_pid_);
 #endif
             auto output_func = std::make_shared<std::function<void(std::string)>>(
-                [this](std::string output) {
+                [this](const std::string& output) {
                     this->last_output_ += "\n\n[ACTION CANCELLED BY USER]\n\n" + output;
                 }
             );

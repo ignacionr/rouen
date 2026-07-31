@@ -989,10 +989,9 @@ SDL_Texture* rss::get_feed_texture(const std::string& url, ::helpers::ImageCache
         if (texture) {
             feed_textures[cache_key] = {texture, texture_width, texture_height, TextureStatus::Loaded};
             return texture;
-        } else {
-            feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
-            return nullptr;
         }
+        feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Failed};
+        return nullptr;
     }
 
     feed_textures[cache_key] = {nullptr, 0, 0, TextureStatus::Pending};
@@ -1401,14 +1400,15 @@ std::string rss::get_freshness_text(const std::shared_ptr<media::rss::feed>& fee
     
     if (hours < 1) {
         return "Just now";
-    } else if (hours < 24) {
-        return std::format("{}h ago", hours);
-    } else if (days < 7) {
-        return std::format("{}d ago", days);
-    } else {
-        auto weeks = days / 7;
-        return std::format("{}w ago", weeks);
     }
+    if (hours < 24) {
+        return std::format("{}h ago", hours);
+    }
+    if (days < 7) {
+        return std::format("{}d ago", days);
+    }
+    auto weeks = days / 7;
+    return std::format("{}w ago", weeks);
 }
 
 void rss::request_image_download(const std::string& url) {

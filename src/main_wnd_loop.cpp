@@ -204,7 +204,8 @@ void main_wnd::run() {
                         if (tex && fs_item->has_video) {
                             float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
 
-                            float draw_w, draw_h;
+                            float draw_w = 0.0f;
+                            float draw_h = 0.0f;
                             if (win_w / win_h > aspect) {
                                 draw_h = win_h;
                                 draw_w = draw_h * aspect;
@@ -318,7 +319,8 @@ void main_wnd::run() {
                     process_deferred_operations();
                     process_detached_window();
                     continue;
-                } else if (fs_item) {
+                }
+                if (fs_item) {
                     media_player::clear_active_fullscreen_item();
                 }
 

@@ -502,7 +502,7 @@ void media_player::draw_stereo_vu_meter(float level_l, float level_r, float wate
 
 void media_player::draw_vintage_110_vu_meter(float level_l, float level_r, float watermark_l, float watermark_r, float width, float height, bool is_lit) {
     if (width <= 0.0f) width = ImGui::GetContentRegionAvail().x;
-    if (width < 60.0f) width = 60.0f;
+    width = std::max(width, 60.0f);
     if (height <= 0.0f) height = 85.0f;
 
     if (!is_lit) {
@@ -758,16 +758,15 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
 }
 
 static std::string format_time_precise(double seconds) {
-    if (seconds < 0.0) seconds = 0.0;
+    seconds = std::max(seconds, 0.0);
     auto hours = static_cast<int>(seconds) / 3600;
     int minutes = (static_cast<int>(seconds) % 3600) / 60;
     auto secs = static_cast<int>(seconds) % 60;
     int tenths = static_cast<int>(seconds * 10.0) % 10;
     if (hours > 0) {
         return std::format("{:02d}:{:02d}:{:02d}.{}", hours, minutes, secs, tenths);
-    } else {
-        return std::format("{:02d}:{:02d}.{}", minutes, secs, tenths);
     }
+    return std::format("{:02d}:{:02d}.{}", minutes, secs, tenths);
 }
 
 bool media_player::draw_seek_bar(const char* str_id, media_player_item& item, float width, float height, ImVec4 accent_color) {
