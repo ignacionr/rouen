@@ -774,7 +774,7 @@ namespace rouen::cards {
                     double d1 = std::chrono::duration<double, std::milli>(t_b - t_a).count();
                     double d2 = std::chrono::duration<double, std::milli>(t_c - t_b).count();
                     double d3 = std::chrono::duration<double, std::milli>(t_d - t_c).count();
-                    std::cerr << "[YOUTUBE BREAKDOWN] total=" << ms_total << " ms (input=" << d1 << "ms, playing=" << d2 << "ms, results_loop=" << d3 << "ms)" << std::endl;
+                    std::cerr << "[YOUTUBE BREAKDOWN] total=" << ms_total << " ms (input=" << d1 << "ms, playing=" << d2 << "ms, results_loop=" << d3 << "ms)\n";
                 }
             });
             return res;

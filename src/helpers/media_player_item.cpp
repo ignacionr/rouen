@@ -258,7 +258,7 @@ bool media_player_item::playMedia(const void* owner) {
                 sanitized_url.find("/@") != std::string::npos ||
                 sanitized_url.find("/user/") != std::string::npos ||
                 sanitized_url.find("/c/") != std::string::npos) {
-                std::cerr << "[NativePlayer] Channel URL passed to media player. Cannot play channel URL directly." << std::endl;
+                std::cerr << "[NativePlayer] Channel URL passed to media player. Cannot play channel URL directly.\n";
                 ffmpeg_running.store(false);
                 is_playing = false;
                 player_pid = 0;
@@ -361,7 +361,7 @@ bool media_player_item::playMedia(const void* owner) {
                             if (config) {
                                 config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
                             }
-                            std::cout << "[NativePlayer] Successfully resolved YouTube URL using cookies from browser: " << browser << std::endl;
+                            std::cout << "[NativePlayer] Successfully resolved YouTube URL using cookies from browser: " << browser << '\n';
                             break;
                         }
                     }
@@ -392,7 +392,7 @@ bool media_player_item::playMedia(const void* owner) {
                         err_msg = std::format("Media Player Error: yt-dlp failed to resolve YouTube URL.\nOutput: {}", clean_resolved);
                     }
 
-                    std::cerr << "[NativePlayer] " << err_msg << std::endl;
+                    std::cerr << "[NativePlayer] " << err_msg << '\n';
                     try {
                         "notify"_sfn(err_msg);
                     } catch (...) {}
@@ -666,7 +666,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
     if (find_info_err < 0) {
         std::string err_msg = get_ffmpeg_error_string(find_info_err);
         std::string const final_err = std::format("Media Player Error: Failed to find stream info: {}", err_msg);
-        std::cerr << "[NativePlayer] Failed to find stream info: " << err_msg << std::endl;
+        std::cerr << "[NativePlayer] Failed to find stream info: " << err_msg << '\n';
         try {
             "notify"_sfn(final_err);
         } catch (...) {}
@@ -1446,7 +1446,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 }
                 static int read_count = 0;
                 if (++read_count % 30 == 0 || read_res < 0) {
-                    std::cout << "[AVReadDebug] read_res=" << read_res << " stream=" << (read_res >= 0 ? packet->stream_index : -1) << " q_size=" << current_q_size << " v_idx=" << video_stream_idx << std::endl;
+                    std::cout << "[AVReadDebug] read_res=" << read_res << " stream=" << (read_res >= 0 ? packet->stream_index : -1) << " q_size=" << current_q_size << " v_idx=" << video_stream_idx << '\n';
                 }
                 if (read_res >= 0) {
                     did_work = true;
@@ -1508,7 +1508,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                             pts_time
                                         });
                                         if (decoded_video_queue.size() % 10 == 0 || decoded_video_queue.size() > 180) {
-                                            std::cout << "[DecodeLoopDebug] pushed frame pts=" << pts_time << " new_q_size=" << decoded_video_queue.size() << std::endl;
+                                            std::cout << "[DecodeLoopDebug] pushed frame pts=" << pts_time << " new_q_size=" << decoded_video_queue.size() << '\n';
                                         }
                                     }
                                     has_video.store(true);
@@ -1741,7 +1741,7 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                     size_t const idx = std::clamp<size_t>(target_idx, 0, decoded_video_queue.size() - 1);
                     static int log_counter = 0;
                     if (++log_counter % 30 == 0) {
-                        std::cout << "[AdLibTextureDebug] cur_pos=" << cur_pos << " rec_tick=" << rec_tick << " target_src_idx=" << target_src_idx << " idx=" << idx << " q_size=" << decoded_video_queue.size() << std::endl;
+                        std::cout << "[AdLibTextureDebug] cur_pos=" << cur_pos << " rec_tick=" << rec_tick << " target_src_idx=" << target_src_idx << " idx=" << idx << " q_size=" << decoded_video_queue.size() << '\n';
                     }
                     frame_to_present = decoded_video_queue[idx].pixels;
                 } else {

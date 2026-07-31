@@ -18,6 +18,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <memory>
+#include <numbers>
 #include <mutex>
 #include <algorithm>
 #include <cmath>
@@ -617,8 +618,8 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
         float const t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
         float const dist_from_center = std::abs(t - 0.5f) * 2.0f;
 
-        float const freq_val = std::sin(t * 3.14159f * 3.0f + anim_time * 4.0f) * 0.3f
-                       + std::cos(t * 3.14159f * 7.0f - anim_time * 2.5f) * 0.2f
+        float const freq_val = std::sin(t * std::numbers::pi_v<float> * 3.0f + anim_time * 4.0f) * 0.3f
+                       + std::cos(t * std::numbers::pi_v<float> * 7.0f - anim_time * 2.5f) * 0.2f
                        + 0.5f;
 
         float const ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
@@ -723,8 +724,8 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
         float const t = static_cast<float>(i) / static_cast<float>(kWavePoints - 1);
         float const wx = start_x + t * total_bars_w;
         float const wave_amp = (lvl_l * 0.5f + lvl_r * 0.5f) * 45.0f + 5.0f;
-        float const wy = base_y + std::sin(t * 3.14159f * 6.0f + anim_time * 6.0f) * wave_amp
-                          + std::cos(t * 3.14159f * 12.0f - anim_time * 8.0f) * (wave_amp * 0.3f);
+        float const wy = base_y + std::sin(t * std::numbers::pi_v<float> * 6.0f + anim_time * 6.0f) * wave_amp
+                          + std::cos(t * std::numbers::pi_v<float> * 12.0f - anim_time * 8.0f) * (wave_amp * 0.3f);
         wave_pts[i] = ImVec2(wx, wy);
     }
     draw_list->AddPolyline(wave_pts, kWavePoints, IM_COL32(255, 255, 255, 180), 0, 2.5f);

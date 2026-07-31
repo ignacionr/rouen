@@ -49,11 +49,11 @@ SDL_AudioDeviceID AudioCapture::find_device_id_by_name(const std::string& name_q
         std::string lower_dev = dev.name;
         for (auto& c : lower_dev) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (lower_dev.find(lower_query) != std::string::npos) {
-            std::cout << "[AudioCapture] Matched device '" << dev.name << "' (ID: " << dev.id << ") for query '" << name_query << "'" << std::endl;
+            std::cout << "[AudioCapture] Matched device '" << dev.name << "' (ID: " << dev.id << ") for query '" << name_query << "'\n";
             return dev.id;
         }
     }
-    std::cout << "[AudioCapture] No matching device found for query '" << name_query << "'. Using default recording device." << std::endl;
+    std::cout << "[AudioCapture] No matching device found for query '" << name_query << "'. Using default recording device.\n";
     return 0;
 }
 
@@ -79,7 +79,7 @@ bool AudioCapture::start(SDL_AudioDeviceID device_id, int sample_rate, int chann
     );
 
     if (!stream_ && target_dev != SDL_AUDIO_DEVICE_DEFAULT_RECORDING) {
-        std::cerr << "[AudioCapture] Failed to open specified device " << device_id << ", falling back to default recording device..." << std::endl;
+        std::cerr << "[AudioCapture] Failed to open specified device " << device_id << ", falling back to default recording device...\n";
         target_dev = SDL_AUDIO_DEVICE_DEFAULT_RECORDING;
         stream_ = SDL_OpenAudioDeviceStream(
             target_dev,
@@ -90,14 +90,14 @@ bool AudioCapture::start(SDL_AudioDeviceID device_id, int sample_rate, int chann
     }
 
     if (!stream_) {
-        std::cerr << "[AudioCapture] WARNING: Could not open audio input stream: " << SDL_GetError() << ". Using silent PCM fallback." << std::endl;
+        std::cerr << "[AudioCapture] WARNING: Could not open audio input stream: " << SDL_GetError() << ". Using silent PCM fallback.\n";
         recording_.store(true);
         return true;
     }
 
     recording_.store(true);
     SDL_ResumeAudioStreamDevice(stream_);
-    std::cout << "[AudioCapture] Successfully started audio capture stream on device ID " << target_dev << std::endl;
+    std::cout << "[AudioCapture] Successfully started audio capture stream on device ID " << target_dev << '\n';
     return true;
 }
 
@@ -111,7 +111,7 @@ void AudioCapture::stop() {
         }
         std::lock_guard<std::mutex> const lock(buffer_mutex_);
         pcm_buffer_.clear();
-        std::cout << "[AudioCapture] Stopped audio capture" << std::endl;
+        std::cout << "[AudioCapture] Stopped audio capture\n";
     }
 }
 

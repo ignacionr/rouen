@@ -11,6 +11,7 @@
 #include <glaze/json/read.hpp>
 #include <glaze/json/write.hpp>
 #include <imgui.h>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -202,8 +203,8 @@ struct math_parser {
         std::string name = text.substr(start, pos - start);
         std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-        if (name == "pi") return 3.14159265358979323846;
-        if (name == "e") return 2.71828182845904523536;
+        if (name == "pi") return std::numbers::pi;
+        if (name == "e") return std::numbers::e;
         if (name == "ans") return ans_val;
 
         if (peek() == '(') {

@@ -10,9 +10,9 @@ void request_mac_microphone_permission() {
     @try {
         AVAuthorizationStatus const status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio];
         if (status == AVAuthorizationStatusNotDetermined) {
-            std::cout << "[Rouen] Requesting macOS Microphone Permission..." << std::endl;
+            std::cout << "[Rouen] Requesting macOS Microphone Permission...\n";
             [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
-                std::cout << "[Rouen] Microphone permission result: granted=" << (granted ? "true" : "false") << std::endl;
+                std::cout << "[Rouen] Microphone permission result: granted=" << (granted ? "true" : "false") << '\n';
             }];
         }
     } @catch (id) {}

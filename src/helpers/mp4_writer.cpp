@@ -53,11 +53,11 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
     sample_rate_ = sample_rate;
     output_filename_ = output_filename;
 
-    std::cout << "[NativeMP4Writer] Initializing target: " << output_filename << " (" << width << "x" << height << " @ " << fps << " fps)" << std::endl;
+    std::cout << "[NativeMP4Writer] Initializing target: " << output_filename << " (" << width << "x" << height << " @ " << fps << " fps)\n";
 
     // 1. Allocate format context for MP4 output file
     if (avformat_alloc_output_context2(&fmt_ctx_, nullptr, "mp4", output_filename.c_str()) < 0) {
-        std::cerr << "[NativeMP4Writer] Failed to allocate MP4 output format context for " << output_filename << std::endl;
+        std::cerr << "[NativeMP4Writer] Failed to allocate MP4 output format context for " << output_filename << '\n';
         return false;
     }
 
@@ -69,11 +69,11 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         fallback_name = "h264_videotoolbox";
     }
     if (!video_codec) {
-        std::cerr << "[NativeMP4Writer] Video encoder not found" << std::endl;
+        std::cerr << "[NativeMP4Writer] Video encoder not found\n";
         return false;
     }
 
-    std::cout << "[NativeMP4Writer] Selected video codec: " << video_codec->name << std::endl;
+    std::cout << "[NativeMP4Writer] Selected video codec: " << video_codec->name << '\n';
 
     video_stream_ = avformat_new_stream(fmt_ctx_, nullptr);
     if (!video_stream_) return false;
@@ -123,7 +123,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
     if (open_res < 0) {
         char errbuf[256];
         av_strerror(open_res, errbuf, sizeof(errbuf));
-        std::cerr << "[NativeMP4Writer] Primary video codec " << codec_name << " failed (" << errbuf << "), trying fallback..." << std::endl;
+        std::cerr << "[NativeMP4Writer] Primary video codec " << codec_name << " failed (" << errbuf << "), trying fallback...\n";
         avcodec_free_context(&video_enc_ctx_);
 
         video_codec = (codec_name == "h264_videotoolbox") ? avcodec_find_encoder_by_name("libx264") : avcodec_find_encoder_by_name("h264_videotoolbox");
@@ -131,7 +131,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         if (!video_codec) return false;
 
         fallback_name = video_codec->name ? video_codec->name : "";
-        std::cout << "[NativeMP4Writer] Trying fallback video codec: " << fallback_name << std::endl;
+        std::cout << "[NativeMP4Writer] Trying fallback video codec: " << fallback_name << '\n';
 
         video_enc_ctx_ = avcodec_alloc_context3(video_codec);
         if (!video_enc_ctx_) return false;
@@ -170,7 +170,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         if (fb_res < 0) {
             char fbuf[256];
             av_strerror(fb_res, fbuf, sizeof(fbuf));
-            std::cerr << "[NativeMP4Writer] Fallback video codec open failed: " << fbuf << std::endl;
+            std::cerr << "[NativeMP4Writer] Fallback video codec open failed: " << fbuf << '\n';
             return false;
         }
     }
@@ -183,7 +183,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         const AVCodec* audio_codec = avcodec_find_encoder_by_name("aac");
         if (!audio_codec) audio_codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
         if (!audio_codec) {
-            std::cerr << "[NativeMP4Writer] AAC audio encoder not found" << std::endl;
+            std::cerr << "[NativeMP4Writer] AAC audio encoder not found\n";
             return false;
         }
 
@@ -213,7 +213,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
 #elif defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
-        std::cout << "[NativeMP4Writer] Selected audio sample_fmt: " << av_get_sample_fmt_name(audio_enc_ctx_->sample_fmt) << std::endl;
+        std::cout << "[NativeMP4Writer] Selected audio sample_fmt: " << av_get_sample_fmt_name(audio_enc_ctx_->sample_fmt) << '\n';
         audio_enc_ctx_->sample_rate = sample_rate;
         
         std::memset(&audio_enc_ctx_->ch_layout, 0, sizeof(audio_enc_ctx_->ch_layout));
@@ -232,10 +232,10 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         }
 
         if (avcodec_open2(audio_enc_ctx_, audio_codec, nullptr) < 0) {
-            std::cerr << "[NativeMP4Writer] Failed to open AAC audio codec" << std::endl;
+            std::cerr << "[NativeMP4Writer] Failed to open AAC audio codec\n";
             return false;
         }
-        std::cout << "[NativeMP4Writer] audio codec name: " << audio_codec->name << " ctx_codec_name: " << (audio_enc_ctx_->codec ? audio_enc_ctx_->codec->name : "null") << " frame_size=" << audio_enc_ctx_->frame_size << " caps=" << audio_codec->capabilities << std::endl;
+        std::cout << "[NativeMP4Writer] audio codec name: " << audio_codec->name << " ctx_codec_name: " << (audio_enc_ctx_->codec ? audio_enc_ctx_->codec->name : "null") << " frame_size=" << audio_enc_ctx_->frame_size << " caps=" << audio_codec->capabilities << '\n';
         avcodec_parameters_from_context(audio_stream_->codecpar, audio_enc_ctx_);
         audio_stream_->codecpar->codec_tag = 0;
         audio_stream_->time_base = audio_enc_ctx_->time_base;
@@ -248,19 +248,19 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
             std::filesystem::remove(output_filename, ec);
         }
         if (avio_open(&fmt_ctx_->pb, output_filename.c_str(), AVIO_FLAG_WRITE) < 0) {
-            std::cerr << "[NativeMP4Writer] Failed to open output MP4 file: " << output_filename << std::endl;
+            std::cerr << "[NativeMP4Writer] Failed to open output MP4 file: " << output_filename << '\n';
             return false;
         }
     }
 
     // 5. Write file header
-    std::cout << "[NativeMP4Writer] nb_streams before header: " << fmt_ctx_->nb_streams << std::endl;
+    std::cout << "[NativeMP4Writer] nb_streams before header: " << fmt_ctx_->nb_streams << '\n';
     if (avformat_write_header(fmt_ctx_, nullptr) < 0) {
-        std::cerr << "[NativeMP4Writer] Failed to write MP4 header" << std::endl;
+        std::cerr << "[NativeMP4Writer] Failed to write MP4 header\n";
         return false;
     }
 
-    std::cout << "[NativeMP4Writer] Created MP4 target with " << fmt_ctx_->nb_streams << " streams (Video stream index=" << video_stream_->index << ", Audio stream index=" << (audio_stream_ ? std::to_string(audio_stream_->index) : "none") << ")" << std::endl;
+    std::cout << "[NativeMP4Writer] Created MP4 target with " << fmt_ctx_->nb_streams << " streams (Video stream index=" << video_stream_->index << ", Audio stream index=" << (audio_stream_ ? std::to_string(audio_stream_->index) : "none") << ")\n";
 
     // 6. Setup SWS and SWR converters
     sws_ctx_ = sws_getContext(
@@ -287,7 +287,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
         av_channel_layout_uninit(&in_layout);
         av_channel_layout_uninit(&out_layout);
         if (swr_res < 0 || !swr_ctx_ || swr_init(swr_ctx_) < 0) {
-            std::cerr << "[NativeMP4Writer] Failed to initialize SWR context" << std::endl;
+            std::cerr << "[NativeMP4Writer] Failed to initialize SWR context\n";
             return false;
         }
     }
@@ -297,7 +297,7 @@ bool NativeMP4Writer::open(const std::string& output_filename, int width, int he
     audio_pkts_written_ = 0;
     is_open_.store(true);
 
-    std::cout << "[NativeMP4Writer] Successfully opened and created target MP4 file: " << output_filename << std::endl;
+    std::cout << "[NativeMP4Writer] Successfully opened and created target MP4 file: " << output_filename << '\n';
     return true;
 }
 
@@ -607,7 +607,7 @@ void NativeMP4Writer::close() {
     audio_stream_ = nullptr;
     is_open_.store(false);
 
-    std::cout << "[NativeMP4Writer] Closed and flushed MP4 file to disk: " << output_filename_ << std::endl;
+    std::cout << "[NativeMP4Writer] Closed and flushed MP4 file to disk: " << output_filename_ << '\n';
 }
 
 } // namespace rouen::helpers

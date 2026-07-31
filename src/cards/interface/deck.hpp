@@ -289,7 +289,7 @@ struct deck {
         }
 
         if (duration_ms > 100.0) {
-            std::cerr << "[DECK SLOW RENDER] Card '" << card_name << "' (" << c.get_uri() << ") took " << duration_ms << " ms to render!" << std::endl;
+            std::cerr << "[DECK SLOW RENDER] Card '" << card_name << "' (" << c.get_uri() << ") took " << duration_ms << " ms to render!\n";
         }
         rouen::helpers::CardRenderMetrics::instance().record(card_name, c.get_uri(), duration_ms, c.requested_fps);
 

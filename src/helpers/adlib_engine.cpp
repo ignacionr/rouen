@@ -89,7 +89,7 @@ bool AdLibEngine::prepare(const AdLibConfig& config) {
         media_player::clear_detached_item();
     }
 
-    std::cout << "[AdLibEngine] Prepared Ad-Lib scene in paused state. Ready for overlay testing." << std::endl;
+    std::cout << "[AdLibEngine] Prepared Ad-Lib scene in paused state. Ready for overlay testing.\n";
     return true;
 }
 
@@ -117,7 +117,7 @@ bool AdLibEngine::start() {
             }
             has_new_ui_frame_.store(false);
             recording_active_.store(true);
-            std::cout << "[AdLibEngine] MP4 recording initialized successfully on file: " << out_path << std::endl;
+            std::cout << "[AdLibEngine] MP4 recording initialized successfully on file: " << out_path << '\n';
             SDL_AudioDeviceID dev_id = config_.mic_device_id;
             if (!config_.mic_device_name.empty()) {
                 SDL_AudioDeviceID const found = audio_capture_.find_device_id_by_name(config_.mic_device_name);
@@ -125,7 +125,7 @@ bool AdLibEngine::start() {
             }
             audio_capture_.start(dev_id, 44100, 2);
         } else {
-            std::cerr << "[AdLibEngine] CRITICAL: Failed to initialize MP4 recording on file: " << out_path << std::endl;
+            std::cerr << "[AdLibEngine] CRITICAL: Failed to initialize MP4 recording on file: " << out_path << '\n';
         }
     }
 
@@ -160,7 +160,7 @@ bool AdLibEngine::start() {
             if (max_total_dur > 0.0) {
                 double const elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_tp).count();
                 if (elapsed >= max_total_dur) {
-                    std::cout << "[AdLibEngine] Total safety timeout (" << max_total_dur << "s) reached. Stopping recording." << std::endl;
+                    std::cout << "[AdLibEngine] Total safety timeout (" << max_total_dur << "s) reached. Stopping recording.\n";
                     transition_to_stage(AdLibStage::Finished);
                     break;
                 }
@@ -298,44 +298,35 @@ void AdLibEngine::update_frame_tick() {
         }
 
         std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
-        std::cout << "[AdLibEngine] tick: rec_active=" << recording_active_.load() << " writer_open=" << mp4_writer_.is_open() << " elapsed=" << get_elapsed_seconds() << "s" << std::endl;
+        std::cout << "[AdLibEngine] tick: rec_active=" << recording_active_.load() << " writer_open=" << mp4_writer_.is_open() << " elapsed=" << get_elapsed_seconds() << "s\n";
 
         auto current_stage = stage_.load();
 
-        // 1. Auto-transition from Intro to Middle (Presentation) when full Intro video frames (239 frames @ 30 FPS = 7.958s) have been written
-        if (current_stage == AdLibStage::Intro && intro_item_) {
-            double dur = intro_item_->duration.load();
-            if (dur < 7.95) dur = 7.958333;
-            int const target_intro_frames = static_cast<int>(std::round(dur * 30.0));
-            int const written_intro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
-            if (written_intro_frames >= target_intro_frames) {
-                std::cout << "[AdLibEngine] Intro video finished (written_intro_frames=" << written_intro_frames << " dur=" << dur << "s). Auto-transitioning to Presentation phase (Middle)." << std::endl;
+        if (current_stage == AdLibStage::Intro) {
+            double const dur = intro_item_ ? intro_item_->duration.load() : 0.0;
+            int64_t const written_intro_frames = mp4_writer_.get_video_pts();
+            double const written_intro_sec = (written_intro_frames > 0) ? (static_cast<double>(written_intro_frames) / 30.0) : 0.0;
+            if (written_intro_sec >= dur && dur > 0.1) {
+                std::cout << "[AdLibEngine] Intro video finished (written_intro_frames=" << written_intro_frames << " dur=" << dur << "s). Auto-transitioning to Presentation phase (Middle).\n";
                 transition_to_stage(AdLibStage::Middle);
             }
-        }
-        // 2. Auto-transition from Middle (Presentation) to Outro when presentation stage_elapsed reaches target duration (if configured)
-        else if (current_stage == AdLibStage::Middle) {
+        } else if (current_stage == AdLibStage::Middle) {
             double const target_middle_dur = auto_stop_seconds_.load();
-            if (target_middle_dur > 0.0) {
-                double const stage_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
-                if (stage_elapsed >= target_middle_dur) {
-                    std::cout << "[AdLibEngine] Presentation phase (Middle) duration (" << target_middle_dur << "s) completed. Auto-transitioning to Outro phase." << std::endl;
-                    if (outro_item_) {
-                        transition_to_stage(AdLibStage::Outro);
-                    } else {
-                        transition_to_stage(AdLibStage::Finished);
-                    }
+            double const middle_phase_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - stage_start_time_).count();
+            if (target_middle_dur > 0.0 && middle_phase_elapsed >= target_middle_dur) {
+                std::cout << "[AdLibEngine] Presentation phase (Middle) duration (" << target_middle_dur << "s) completed. Auto-transitioning to Outro phase.\n";
+                if (outro_item_) {
+                    transition_to_stage(AdLibStage::Outro);
+                } else {
+                    transition_to_stage(AdLibStage::Finished);
                 }
             }
-        }
-        // 3. Auto-transition from Outro to Finished (completes recording) when Outro video finishes playing full duration
-        else if (current_stage == AdLibStage::Outro && outro_item_) {
-            double dur = outro_item_->duration.load();
-            if (dur <= 0.0) dur = 10.005;
-            int const target_outro_frames = static_cast<int>(std::round(dur * 30.0));
-            int const written_outro_frames = static_cast<int>(mp4_writer_.get_video_pts() - stage_start_pts_);
-            if (written_outro_frames >= target_outro_frames) {
-                std::cout << "[AdLibEngine] Outro video finished (written_outro_frames=" << written_outro_frames << " dur=" << dur << "s). Auto-transitioning to Finished phase." << std::endl;
+        } else if (current_stage == AdLibStage::Outro) {
+            double const dur = outro_item_ ? outro_item_->duration.load() : 0.0;
+            int64_t const written_outro_frames = mp4_writer_.get_video_pts() - stage_start_pts_;
+            double const written_outro_sec = (written_outro_frames > 0) ? (static_cast<double>(written_outro_frames) / 30.0) : 0.0;
+            if (written_outro_sec >= dur && dur > 0.1) {
+                std::cout << "[AdLibEngine] Outro video finished (written_outro_frames=" << written_outro_frames << " dur=" << dur << "s). Auto-transitioning to Finished phase.\n";
                 transition_to_stage(AdLibStage::Finished);
             }
         }
@@ -409,9 +400,9 @@ void AdLibEngine::update_frame_tick() {
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << "[AdLibEngine] EXCEPTION in update_frame_tick: " << e.what() << std::endl;
+        std::cerr << "[AdLibEngine] EXCEPTION in update_frame_tick: " << e.what() << '\n';
     } catch (...) {
-        std::cerr << "[AdLibEngine] UNKNOWN EXCEPTION in update_frame_tick" << std::endl;
+        std::cerr << "[AdLibEngine] UNKNOWN EXCEPTION in update_frame_tick\n";
     }
 }
 
@@ -460,7 +451,7 @@ void AdLibEngine::stop() {
     {
         std::lock_guard<std::recursive_mutex> const lock(engine_mutex_);
         if (stage_.load() == AdLibStage::Idle) return;
-        std::cout << "[AdLibEngine] stop() called." << std::endl;
+        std::cout << "[AdLibEngine] stop() called.\n";
         stage_.store(AdLibStage::Finished);
         is_paused_.store(true);
         recording_active_.store(false);
@@ -497,7 +488,7 @@ void AdLibEngine::stop() {
     }
 
     stage_.store(AdLibStage::Idle);
-    std::cout << "[AdLibEngine] Ad-Lib stopped cleanly and file closed." << std::endl;
+    std::cout << "[AdLibEngine] Ad-Lib stopped cleanly and file closed.\n";
 }
 
 void AdLibEngine::reset() {
