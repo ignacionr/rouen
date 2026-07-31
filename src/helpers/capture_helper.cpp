@@ -91,15 +91,23 @@ RouenGPUTexture* capture_imgui(
     ImGui::SetCurrentContext(capture_context);
 
     ImGuiIO& io = ImGui::GetIO();
-    if (original_context) {
+    bool created_backend_data = false;
+    if (original_context && original_context->IO.BackendRendererUserData) {
         io.BackendRendererUserData = original_context->IO.BackendRendererUserData;
         io.BackendPlatformUserData = original_context->IO.BackendPlatformUserData;
+    } else if (device) {
+        ImGui_ImplSDLGPU3_InitInfo init_info = {};
+        init_info.GpuDevice = device;
+        init_info.ColorTargetFormat = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ImGui_ImplSDLGPU3_Init(&init_info);
+        created_backend_data = true;
     }
     io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
     io.DeltaTime = 1.0f / 60.0f;
 
     try {
         for (int frame = 0; frame < 2; ++frame) {
+            ImGui_ImplSDLGPU3_NewFrame();
             ImGui::NewFrame();
             
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -135,6 +143,9 @@ RouenGPUTexture* capture_imgui(
         CAPTURE_ERROR_FMT("Exception during capture: {}", e.what());
     }
 
+    if (created_backend_data) {
+        ImGui_ImplSDLGPU3_Shutdown();
+    }
     ImGui::DestroyContext(capture_context);
     if (original_context) {
         ImGui::SetCurrentContext(original_context);

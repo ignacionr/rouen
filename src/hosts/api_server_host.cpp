@@ -876,24 +876,57 @@ std::string api_server_host::handle_window_set(struct mg_connection* /*c*/, stru
 }
 
 struct screenshot_request {
-    std::string target = "editor";
+    std::string target = "deck";
     std::string filename = "/tmp/snapshot.png";
-    int width = 800;
-    int height = 600;
+    int width = 0;
+    int height = 0;
 };
 
 std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
-        std::string body(hm->body.buf, hm->body.len);
         screenshot_request req;
+        std::string body(hm->body.buf, hm->body.len);
         if (!body.empty()) {
             (void)glz::read_json(req, body);
+        }
+
+        if (hm->query.len > 0) {
+            std::string q(hm->query.buf, hm->query.len);
+            if (q.find("target=selected") != std::string::npos ||
+                q.find("target=card") != std::string::npos ||
+                q.find("target=focused") != std::string::npos ||
+                q.find("selected=true") != std::string::npos ||
+                q.find("card=true") != std::string::npos) {
+                req.target = "selected";
+            } else if (q.find("target=full") != std::string::npos ||
+                       q.find("target=deck") != std::string::npos ||
+                       q.find("target=all") != std::string::npos ||
+                       q.find("target=app") != std::string::npos) {
+                req.target = "deck";
+            } else {
+                size_t target_pos = q.find("target=");
+                if (target_pos != std::string::npos) {
+                    size_t amp_pos = q.find('&', target_pos);
+                    req.target = q.substr(target_pos + 7, (amp_pos == std::string::npos ? std::string::npos : amp_pos - (target_pos + 7)));
+                }
+            }
+
+            size_t w_pos = q.find("width=");
+            if (w_pos != std::string::npos) {
+                try { req.width = std::stoi(q.substr(w_pos + 6)); } catch (...) {}
+            }
+            size_t h_pos = q.find("height=");
+            if (h_pos != std::string::npos) {
+                try { req.height = std::stoi(q.substr(h_pos + 7)); } catch (...) {}
+            }
+        }
+
+        if (req.target.empty()) {
+            req.target = "deck";
         }
         if (req.filename.empty()) {
             req.filename = "/tmp/snapshot.png";
         }
-        if (req.width <= 0) req.width = 800;
-        if (req.height <= 0) req.height = 600;
 
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
         if (deferred_ops) {
@@ -908,7 +941,7 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
                         return;
                     }
 
-                    if (req.target == "editor" || req.target.empty()) {
+                    if (req.target == "editor") {
                         auto ed_fn = registrar::get<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
                         if (ed_fn && *ed_fn) {
                             promise->set_value((*ed_fn)(req.filename, req.width, req.height));
@@ -934,7 +967,7 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
             return (*screenshot_fn)(req.target, req.filename, req.width, req.height);
         }
 
-        if (req.target == "editor" || req.target.empty()) {
+        if (req.target == "editor") {
             auto ed_fn = registrar::get<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
             if (ed_fn && *ed_fn) {
                 return (*ed_fn)(req.filename, req.width, req.height);
@@ -1687,21 +1720,85 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     "/api/screenshot": {
       "get": {
         "tags": ["System & Health"],
-        "summary": "Get latest window screenshot/snapshot",
+        "summary": "Get Rouen UI screenshot or card snapshot",
+        "description": "Returns a screenshot of the Rouen UI. By default ('deck'/'full'), captures the entire UI including all sections (which may be wider than the screen). Set target='selected' or 'card' to capture only the selected card's boundaries.",
         "operationId": "getScreenshot",
+        "parameters": [
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Capture target ('deck'/'full' for full UI across all sections, 'selected'/'card'/'focused' for selected card boundary, or card URI/title)",
+            "required": false,
+            "schema": {"type": "string", "default": "deck"}
+          },
+          {
+            "name": "selected",
+            "in": "query",
+            "description": "Set to true to capture only the boundaries of the selected card",
+            "required": false,
+            "schema": {"type": "boolean", "default": false}
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "description": "Explicit image width (0 for automatic layout width)",
+            "required": false,
+            "schema": {"type": "integer", "default": 0}
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "description": "Explicit image height (0 for automatic layout height)",
+            "required": false,
+            "schema": {"type": "integer", "default": 0}
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "description": "Target output PNG path",
+            "required": false,
+            "schema": {"type": "string", "default": "/tmp/snapshot.png"}
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Screenshot response"
+            "description": "Screenshot response containing file path and dimensions"
           }
         }
       },
       "post": {
         "tags": ["System & Health"],
-        "summary": "Trigger a window screenshot capture",
+        "summary": "Trigger a window or card screenshot capture",
+        "description": "Triggers a screenshot capture. Accepts JSON payload or query parameters. Targets include 'deck'/'full' for entire UI across all sections, or 'selected'/'card' for selected card boundary.",
         "operationId": "postScreenshot",
+        "parameters": [
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Capture target ('deck'/'full' or 'selected'/'card')",
+            "required": false,
+            "schema": {"type": "string", "default": "deck"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": {"type": "string", "default": "deck", "description": "'deck' or 'selected'"},
+                  "filename": {"type": "string", "default": "/tmp/snapshot.png"},
+                  "width": {"type": "integer", "default": 0},
+                  "height": {"type": "integer", "default": 0}
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Screenshot captured"
+            "description": "Screenshot captured successfully"
           }
         }
       }

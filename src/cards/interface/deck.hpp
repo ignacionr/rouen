@@ -130,16 +130,164 @@ struct deck {
         registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("card_save_snapshot");
     }
 
+    struct card_layout_item {
+        std::shared_ptr<card> card_ptr;
+        float abs_x { 0.0f };
+        float scaled_width { 0.0f };
+        float override_width { -1.0f };
+    };
+
+    struct deck_layout_info {
+        std::vector<std::vector<card_layout_item>> rows;
+        float total_deck_width { 0.0f };
+    };
+
+    deck_layout_info compute_deck_layout(float viewport_width) const {
+        deck_layout_info info;
+        float const section_width = std::max(viewport_width, 1.0f);
+        float const row_max_width = std::max(get_width_factor() * section_width, section_width);
+        info.rows.emplace_back();
+
+        float current_x = 0.0f;
+        int current_sec_idx = 0;
+
+        for (size_t idx = 0; idx < cards_.size(); ) {
+            auto& c = cards_[idx];
+            float const card_w = c->width;
+            float const sec_boundary = static_cast<float>(current_sec_idx + 1) * section_width;
+
+            if (current_x + card_w <= sec_boundary + 0.01f) {
+                info.rows.back().push_back({
+                    .card_ptr = c,
+                    .abs_x = current_x,
+                    .scaled_width = card_w,
+                    .override_width = -1.0f
+                });
+                current_x += card_w;
+                
+                if (std::abs(current_x - sec_boundary) < 0.01f) {
+                    current_x = sec_boundary;
+                    current_sec_idx++;
+                    if (current_x >= row_max_width - 0.01f) {
+                        current_x = 0.0f;
+                        current_sec_idx = 0;
+                        if (idx + 1 < cards_.size()) {
+                            info.rows.emplace_back();
+                        }
+                    }
+                }
+                idx++;
+            }
+            else {
+                if (current_x > static_cast<float>(current_sec_idx) * section_width + 0.01f) {
+                    auto& last_item = info.rows.back().back();
+                    last_item.override_width = sec_boundary - last_item.abs_x;
+                    current_x = sec_boundary;
+                    current_sec_idx++;
+                    
+                    if (current_x >= row_max_width - 0.01f) {
+                        current_x = 0.0f;
+                        current_sec_idx = 0;
+                        if (idx < cards_.size()) {
+                            info.rows.emplace_back();
+                        }
+                    }
+                }
+                else {
+                    if (current_x + card_w > row_max_width + 0.01f && current_x > 0.01f) {
+                        current_x = 0.0f;
+                        current_sec_idx = 0;
+                        info.rows.emplace_back();
+                    }
+                    else {
+                        info.rows.back().push_back({
+                            .card_ptr = c,
+                            .abs_x = current_x,
+                            .scaled_width = card_w,
+                            .override_width = -1.0f
+                        });
+                        current_x += card_w;
+                        current_sec_idx = static_cast<int>(current_x / section_width);
+                        if (current_x >= row_max_width - 0.01f) {
+                            current_x = 0.0f;
+                            current_sec_idx = 0;
+                            if (idx + 1 < cards_.size()) {
+                                info.rows.emplace_back();
+                            }
+                        }
+                        idx++;
+                    }
+                }
+            }
+        }
+
+        if (!info.rows.empty() && info.rows.back().empty()) {
+            info.rows.pop_back();
+        }
+
+        for (auto& row : info.rows) {
+            if (!row.empty()) {
+                auto& last_item = row.back();
+                if (last_item.override_width < 0.0f) {
+                    int sec_idx = static_cast<int>(last_item.abs_x / section_width);
+                    float sec_boundary = static_cast<float>(sec_idx + 1) * section_width;
+                    if (sec_boundary > last_item.abs_x) {
+                        last_item.override_width = std::max(sec_boundary - last_item.abs_x, last_item.scaled_width);
+                    }
+                }
+            }
+        }
+
+        info.total_deck_width = section_width;
+        for (const auto& row : info.rows) {
+            for (const auto& item : row) {
+                float item_end_x = item.abs_x + ((item.override_width > 0.0f) ? item.override_width : item.scaled_width);
+                info.total_deck_width = std::max(info.total_deck_width, item_end_x);
+            }
+        }
+        return info;
+    }
+
     std::string take_card_snapshot(const std::string& target, const std::string& filepath, int req_width, int req_height) {
-        if (target == "deck" || target == "app" || target == "main" || target == "full") {
+        if (target == "deck" || target == "app" || target == "main" || target == "full" || target == "all" || target.empty()) {
             ImGuiIO& io = ImGui::GetIO();
-            int w = (req_width > 0) ? req_width : static_cast<int>(io.DisplaySize.x);
-            int h = (req_height > 0) ? req_height : static_cast<int>(io.DisplaySize.y);
-            if (w <= 0) w = 800;
+            float viewport_w = (io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 1280.0f;
+            float viewport_h = (io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : 600.0f;
+
+            auto layout = compute_deck_layout(viewport_w);
+            int w = (req_width > 0) ? req_width : static_cast<int>(std::ceil(layout.total_deck_width));
+            int h = (req_height > 0) ? req_height : static_cast<int>(std::ceil(viewport_h));
+            if (w <= 0) w = 1280;
             if (h <= 0) h = 600;
 
+            auto render_fn = [this, layout, w, h]() {
+                float const scaled_min_height = card::min_card_height;
+                float const num_rows = static_cast<float>(std::max<size_t>(layout.rows.size(), 1));
+                float const row_height = std::max(static_cast<float>(h) / num_rows, scaled_min_height);
+                float y = 0.0f;
+                int req_fps = 0;
+
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
+                for (const auto& row : layout.rows) {
+                    for (const auto& item : row) {
+                        auto& c = item.card_ptr;
+                        float draw_x = item.abs_x;
+                        render(*c, draw_x, row_height, req_fps, y, item.override_width);
+                    }
+                    y += row_height;
+                }
+                if (!editor_.empty()) {
+                    ImGui::SetNextWindowPos({0.0f, y}, ImGuiCond_Always);
+                    ImGui::SetNextWindowSize({static_cast<float>(w), static_cast<float>(h) - y}, ImGuiCond_Always);
+                    ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
+                    editor_.render();
+                    ImGui::PopStyleColor();
+                }
+                ImGui::PopStyleColor();
+            };
+
             RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
-                w, h, nullptr, renderer
+                w, h, render_fn, renderer
             );
             if (!snapshot_texture) {
                 return R"({"success":false,"error":"Failed to create snapshot texture"})";
@@ -165,8 +313,13 @@ struct deck {
         }
 
         auto card_it = cards_.end();
-        if (target == "card" || target == "focused") {
+        if (target == "card" || target == "focused" || target == "selected") {
             card_it = std::find_if(cards_.begin(), cards_.end(), [](const auto& c) { return c->is_focused; });
+            if (card_it == cards_.end()) {
+                if (auto last_locked = last_focused_card_.lock()) {
+                    card_it = std::find(cards_.begin(), cards_.end(), last_locked);
+                }
+            }
             if (card_it == cards_.end() && !cards_.empty()) {
                 card_it = cards_.begin();
             }
@@ -181,8 +334,9 @@ struct deck {
         }
 
         auto& c = *(*card_it);
+        ImGuiIO& io = ImGui::GetIO();
         int width = (req_width > 0) ? req_width : static_cast<int>(c.width);
-        int height = (req_height > 0) ? req_height : 450;
+        int height = (req_height > 0) ? req_height : static_cast<int>(io.DisplaySize.y > 0.0f ? io.DisplaySize.y : 450.0f);
 
         auto render_fn = [this, &c]() {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -764,13 +918,6 @@ struct deck {
          *    - This guarantees every viewport section is perfectly filled with zero straddling or clipping.
          */
         if (empty_editor) {
-            struct card_layout_item {
-                std::shared_ptr<card> card_ptr;
-                float abs_x { 0.0f };
-                float scaled_width { 0.0f };
-                float override_width { -1.0f };
-            };
-
             std::vector<std::vector<card_layout_item>> rows;
             float current_x = 0.0f;
             int current_sec_idx = 0;

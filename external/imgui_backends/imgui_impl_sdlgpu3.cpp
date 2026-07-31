@@ -142,6 +142,7 @@ void Imgui_ImplSDLGPU3_PrepareDrawData(ImDrawData* draw_data, SDL_GPUCommandBuff
         return;
 
     ImGui_ImplSDLGPU3_Data* bd = ImGui_ImplSDLGPU3_GetBackendData();
+    if (!bd) return;
     ImGui_ImplSDLGPU3_InitInfo* v = &bd->GPUInitInfo;
     ImGui_ImplSDLGPU3_FrameData* fd = &bd->MainWindowFrameData;
 
@@ -212,6 +213,7 @@ void ImGui_ImplSDLGPU3_RenderDrawData(ImDrawData* draw_data, SDL_GPUCommandBuffe
         return;
 
     ImGui_ImplSDLGPU3_Data* bd = ImGui_ImplSDLGPU3_GetBackendData();
+    if (!bd) return;
     ImGui_ImplSDLGPU3_FrameData* fd = &bd->MainWindowFrameData;
 
     if (pipeline == nullptr)
