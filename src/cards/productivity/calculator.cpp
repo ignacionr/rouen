@@ -353,7 +353,9 @@ void calculator::evaluate_current() {
         error_message_.clear();
         try {
             ans_value_ = std::stod(res);
-        } catch (...) {}
+        } catch (...) {
+            // Non-numeric result, ignore stod failure
+        }
 
         history_.push_back({display_expr_, res});
         if (history_.size() > 50) {
@@ -597,8 +599,8 @@ void calculator::render_buttons_grid() {
         // Sci Row 3 (Memory & Modulo)
         if (ImGui::Button("MC", ImVec2(btn_w, btn_h))) { memory_value_ = 0.0; } ImGui::SameLine();
         if (ImGui::Button("MR", ImVec2(btn_w, btn_h))) { append_to_expression(format_number(memory_value_)); } ImGui::SameLine();
-        if (ImGui::Button("M+", ImVec2(btn_w, btn_h))) { if (!evaluated_result_.empty()) try { memory_value_ += std::stod(evaluated_result_); } catch (...) {} } ImGui::SameLine();
-        if (ImGui::Button("M-", ImVec2(btn_w, btn_h))) { if (!evaluated_result_.empty()) try { memory_value_ -= std::stod(evaluated_result_); } catch (...) {} } ImGui::SameLine();
+        if (ImGui::Button("M+", ImVec2(btn_w, btn_h))) { if (!evaluated_result_.empty()) try { memory_value_ += std::stod(evaluated_result_); } catch (...) { /* ignore invalid number */ } } ImGui::SameLine();
+        if (ImGui::Button("M-", ImVec2(btn_w, btn_h))) { if (!evaluated_result_.empty()) try { memory_value_ -= std::stod(evaluated_result_); } catch (...) { /* ignore invalid number */ } } ImGui::SameLine();
         make_btn("%", "%", " % ", op_bg, op_text);
 
         // Sci Main Row 1
@@ -781,7 +783,9 @@ std::vector<card::mcp_function> calculator::get_mcp_functions() const {
                     response["result"] = res;
                     try {
                         response["value"] = std::stod(res);
-                    } catch (...) {}
+                    } catch (...) {
+                        // Ignore conversion if result is non-numeric (e.g. error string)
+                    }
                 }
                 std::string out;
                 std::ignore = glz::write_json(response, out);

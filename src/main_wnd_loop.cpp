@@ -82,7 +82,9 @@ static bool toggle_overlay_by_index(int target_idx) {
                 }
             }
         }
-    } catch (...) {}
+    } catch (...) {
+        // Ignore errors checking detached card overlay toggling
+    }
     return false;
 }
 
@@ -285,7 +287,9 @@ void main_wnd::run() {
                                 card_ptr->render_video_ui();
                             }
                         }
-                    } catch (...) {}
+                    } catch (...) {
+                        // Ignore video overlay render errors for detached card
+                    }
                     render_detached_toast(io.DisplaySize.x, io.DisplaySize.y);
 
                     // Restore actual scale before rendering so backends work with correct physical coordinates
@@ -373,7 +377,9 @@ void main_wnd::run() {
                             item_ptr->get_texture_id(m_device);
                         }
                     }
-                } catch (...) {}
+                } catch (...) {
+                    // Ignore texture pre-fetch errors
+                }
 
                 // Restore actual scale before rendering so backends work with correct physical coordinates
                 io.DisplayFramebufferScale = ImVec2(actual_scale_x, actual_scale_y);
@@ -430,7 +436,9 @@ void main_wnd::run() {
                         m_requested_fps = std::max(m_requested_fps, 30);
                         video_feed->render_video_frame(m_device);
                     }
-                } catch (...) {}
+                } catch (...) {
+                    // Ignore video feed render frame exceptions
+                }
             } catch (const std::exception& e) {
                 DB_ERROR_FMT("Error in main loop: {}", e.what());
             } catch (...) {
@@ -445,7 +453,9 @@ void main_wnd::run() {
             if (video_feed) {
                 video_feed->stop();
             }
-        } catch (...) {}
+        } catch (...) {
+            // Ignore cleanup errors on shutdown
+        }
         
         // Cleanup - unregister services
         try {

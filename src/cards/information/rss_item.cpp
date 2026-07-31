@@ -207,7 +207,9 @@ void rss_item::request_image_download(const std::string& url) {
     std::thread([cache, url]() {
         try {
             cache->downloadAndCache(url);
-        } catch (...) {}
+        } catch (...) {
+            // Ignore download failures, fallback image will be shown
+        }
 
         {
             std::lock_guard<std::mutex> const lock(downloading_mutex);

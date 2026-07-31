@@ -1043,7 +1043,8 @@ namespace rouen::cards {
                     }
                     function_schemas.push_back(schema);
                 }
-            } catch (const std::exception&) {
+            } catch (const std::exception& e) {
+                LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, std::format("Failed to parse tool schema: {}", e.what()));
             }
         }
 

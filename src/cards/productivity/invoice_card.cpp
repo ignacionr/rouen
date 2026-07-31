@@ -149,7 +149,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         }
 
         // Standard A4 Page (595 x 842 points)
-        PDFPage* page = new PDFPage();
+        auto* page = new PDFPage();
         page->SetMediaBox(PDFRectangle(0, 0, 595, 842));
         PageContentContext* ctx = pdfWriter.StartPageContentContext(page);
         if (!ctx) {

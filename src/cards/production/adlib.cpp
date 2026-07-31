@@ -74,11 +74,11 @@ void adlib_card::load_config_from_ini() {
         mic_name = extract_json("mic_device_name");
         std::string const mode_str = extract_json("mode");
         if (!mode_str.empty()) {
-            try { mode = std::stoi(mode_str); } catch (...) {}
+            try { mode = std::stoi(mode_str); } catch (...) { /* ignore conversion error */ }
         }
         trans_str = extract_json("stage2_transition_seconds");
         if (!trans_str.empty()) {
-            try { stage2_transition_seconds_ = std::stof(trans_str); } catch (...) {}
+            try { stage2_transition_seconds_ = std::stof(trans_str); } catch (...) { /* ignore conversion error */ }
         }
     }
 
@@ -91,7 +91,7 @@ void adlib_card::load_config_from_ini() {
     if (trans_str.empty()) {
         auto env_trans = cfg->get_env_optional("ROUEN_ADLIB_STAGE2_TRANSITION_SECONDS");
         if (env_trans.has_value()) {
-            try { stage2_transition_seconds_ = std::stof(*env_trans); } catch (...) {}
+            try { stage2_transition_seconds_ = std::stof(*env_trans); } catch (...) { /* ignore conversion error */ }
         }
     }
 

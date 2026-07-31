@@ -15,6 +15,7 @@
 #include <string_view>
 #include <vector>
 
+#include "../../../helpers/debug.hpp"
 #include "../../../../external/IconsMaterialDesign.h"
 #include "../../../models/github/host.hpp"
 #include "../../../models/github/login_host.hpp"
@@ -36,7 +37,8 @@ namespace rouen::cards {
 
         try {
             login_host_ = registrar::get<models::github::login_host>(std::string(config_name));
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
+            LOG_COMPONENT("GitHubCard", LOG_LEVEL_DEBUG, std::format("Login host registration lookup failed for {}: {}", config_name, e.what()));
             login_host_ = std::make_shared<models::github::login_host>();
             load_token_from_file();
 
@@ -74,8 +76,8 @@ namespace rouen::cards {
                 }
                 file.close();
             }
-        } catch (const std::exception&) {
-            // Log error or handle it
+        } catch (const std::exception& e) {
+            LOG_COMPONENT("GitHubCard", LOG_LEVEL_WARN, std::format("Failed to save GitHub token: {}", e.what()));
         }
     }
 
@@ -98,13 +100,13 @@ namespace rouen::cards {
                     try {
                         std::string const token = config["token"].get<std::string>();
                         login_host_->set_personal_token(token);
-                    } catch (const std::exception&) {
-                        // Handle token access error
+                    } catch (const std::exception& e) {
+                        LOG_COMPONENT("GitHubCard", LOG_LEVEL_WARN, std::format("Failed to parse token from json: {}", e.what()));
                     }
                 }
             }
-        } catch (const std::exception&) {
-            // Log error or handle it
+        } catch (const std::exception& e) {
+            LOG_COMPONENT("GitHubCard", LOG_LEVEL_WARN, std::format("Failed to load GitHub token file: {}", e.what()));
         }
     }
 

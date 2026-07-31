@@ -319,7 +319,9 @@ namespace rouen::fonts {
             if (get_window_fn && *get_window_fn) {
                 window = (*get_window_fn)();
             }
-        } catch (...) {}
+        } catch (...) {
+            // Window lookup via registrar failed; fallback to 1.0f DPI scale
+        }
         
         float dpi_scale = 1.0f;
         

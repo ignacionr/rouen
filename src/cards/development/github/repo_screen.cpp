@@ -51,7 +51,7 @@ namespace rouen::cards::github {
                 return repo_["name"].get<std::string>();
             }
         } catch (const std::exception&) {
-            // Fallback if access fails
+            // Fallback to default label if JSON key access fails
         }
         return "<invalid>";
     }
@@ -62,7 +62,7 @@ namespace rouen::cards::github {
                 return repo_["full_name"].get<std::string>();
             }
         } catch (const std::exception&) {
-            // Fallback if access fails
+            // Fallback to default label if JSON key access fails
         }
         return "<invalid>";
     }

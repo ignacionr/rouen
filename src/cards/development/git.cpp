@@ -281,7 +281,7 @@ void git::fetch_recent_commits_7d_async(const std::string& repo_path) {
             item.author_email = line.substr(p4 + 1, p5 - (p4 + 1));
             item.summary = line.substr(p5 + 1);
 
-            std::time_t const t = static_cast<std::time_t>(item.timestamp);
+            auto const t = static_cast<std::time_t>(item.timestamp);
             std::tm tm_buf{};
 #ifdef _WIN32
             localtime_s(&tm_buf, &t);
@@ -346,7 +346,7 @@ void git::fetch_commit_detail_async(const std::string& repo_path, const std::str
             detail.author_name = header_lines[3];
             detail.author_email = header_lines[4];
 
-            std::time_t const t = static_cast<std::time_t>(detail.timestamp);
+            auto const t = static_cast<std::time_t>(detail.timestamp);
             std::tm tm_buf{};
 #ifdef _WIN32
             localtime_s(&tm_buf, &t);
