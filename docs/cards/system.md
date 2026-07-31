@@ -38,11 +38,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"sysinfo"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_sysinfo.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"sysinfo","filename":"/tmp/snapshot_sysinfo.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![System Info Card snapshot running on Rouen](images/card_sysinfo.png)
 
@@ -64,11 +62,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"envvars"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_envvars.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"envvars","filename":"/tmp/snapshot_envvars.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Environment Variables Card snapshot running on Rouen](images/card_envvars.png)
 
@@ -90,11 +86,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"display"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_display.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"display","filename":"/tmp/snapshot_display.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Display Settings Card snapshot running on Rouen](images/card_display.png)
 
@@ -116,11 +110,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"settings"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_settings.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"settings","filename":"/tmp/snapshot_settings.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Settings & Preferences Card snapshot running on Rouen](images/card_settings.png)
 
@@ -142,11 +134,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"sync"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_sync.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"sync","filename":"/tmp/snapshot_sync.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Data Sync Card snapshot running on Rouen](images/card_sync.png)
 
@@ -168,11 +158,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"notifications"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_notifications.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"notifications","filename":"/tmp/snapshot_notifications.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Notifications Panel Card snapshot running on Rouen](images/card_notifications.png)
 
@@ -194,11 +182,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"terminal"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_terminal.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"terminal","filename":"/tmp/snapshot_terminal.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Terminal Card snapshot running on Rouen](images/card_terminal.png)
 
@@ -220,11 +206,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"dir"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_dir.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"dir","filename":"/tmp/snapshot_dir.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Directory Browser Card snapshot running on Rouen](images/card_dir.png)
 
@@ -246,11 +230,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"cmake"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_cmake.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"cmake","filename":"/tmp/snapshot_cmake.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![CMake Build Manager Card snapshot running on Rouen](images/card_cmake.png)
 
@@ -272,11 +254,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"dbrepair"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_dbrepair.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"dbrepair","filename":"/tmp/snapshot_dbrepair.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Database Repair Card snapshot running on Rouen](images/card_dbrepair.png)
 
@@ -298,11 +278,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"about"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_about.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"about","filename":"/tmp/snapshot_about.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![About Rouen Card snapshot running on Rouen](images/card_about.png)
 
@@ -324,11 +302,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"subnet-scanner"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_subnet-scanner.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"subnet-scanner","filename":"/tmp/snapshot_subnet-scanner.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Subnet Scanner Card snapshot running on Rouen](images/card_subnet_scanner.png)
 

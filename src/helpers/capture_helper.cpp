@@ -239,4 +239,69 @@ SDL_Surface* download_gpu_texture(
     return surface;
 }
 
+SDL_Surface* trim_surface_bottom_padding(SDL_Surface* surface) {
+    if (!surface || surface->h <= 20 || surface->w <= 0 || !surface->pixels) {
+        return surface;
+    }
+
+    int const w = surface->w;
+    int const h = surface->h;
+    uint8_t* pixels = static_cast<uint8_t*>(surface->pixels);
+    int const pitch = surface->pitch;
+
+    // Read background pixel color from the bottom-left corner (0, h-1)
+    int bg_y = h - 1;
+    uint8_t bg_r = pixels[bg_y * pitch + 0];
+    uint8_t bg_g = pixels[bg_y * pitch + 1];
+    uint8_t bg_b = pixels[bg_y * pitch + 2];
+
+    int last_content_y = 0;
+    for (int y = h - 1; y >= 0; --y) {
+        bool row_has_content = false;
+        const uint8_t* row = pixels + y * pitch;
+        for (int x = 0; x < w; ++x) {
+            uint8_t r = row[x * 4 + 0];
+            uint8_t g = row[x * 4 + 1];
+            uint8_t b = row[x * 4 + 2];
+            uint8_t a = row[x * 4 + 3];
+
+            if (a > 0) {
+                int dr = std::abs(static_cast<int>(r) - static_cast<int>(bg_r));
+                int dg = std::abs(static_cast<int>(g) - static_cast<int>(bg_g));
+                int db = std::abs(static_cast<int>(b) - static_cast<int>(bg_b));
+
+                if (dr > 4 || dg > 4 || db > 4) {
+                    row_has_content = true;
+                    break;
+                }
+            }
+        }
+        if (row_has_content) {
+            last_content_y = y;
+            break;
+        }
+    }
+
+    int cropped_h = std::min(h, std::max(last_content_y + 8, 100)); // Add 8px padding at bottom
+    if (cropped_h >= h) {
+        return surface;
+    }
+
+    SDL_Surface* cropped = SDL_CreateSurface(w, cropped_h, surface->format);
+    if (!cropped) {
+        return surface;
+    }
+
+    for (int y = 0; y < cropped_h; ++y) {
+        std::memcpy(
+            static_cast<uint8_t*>(cropped->pixels) + y * cropped->pitch,
+            static_cast<uint8_t*>(surface->pixels) + y * surface->pitch,
+            static_cast<size_t>(w * 4)
+        );
+    }
+
+    SDL_DestroySurface(surface);
+    return cropped;
+}
+
 } // namespace rouen::helpers

@@ -16,6 +16,9 @@ public:
     void queue(operation op) {
         std::lock_guard<std::mutex> lock(mutex_);
         operations_.push(std::move(op));
+        SDL_Event event = {};
+        event.type = SDL_EVENT_USER;
+        SDL_PushEvent(&event);
     }
     
     // Process all queued operations

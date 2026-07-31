@@ -9,14 +9,16 @@
 | :--- | :--- | :--- |
 | **AI Assistant Chat Card** | `uri: "ai_chat"` | Conversational AI card with LLM tool calling, memory context, and interactive card generation. |
 | **Calendar Card** | `uri: "calendar"` | Schedule viewer supporting iCal feeds, WebDAV calendar sync, and event reminders. |
-| **Weather Forecast Card** | `uri: "weather"` | Global weather forecast display with hourly temperature graphs, precipitation probability, and wind metrics. |
+| **Weather Forecast Card** | `uri: "weather:Montevideo"` | Global weather forecast display with hourly temperature graphs, precipitation probability, and wind metrics. |
 | **Wikipedia Card** | `uri: "wikipedia"` | Encyclopedia article browser featuring clean typography, table of contents, and cross-reference links. |
 | **Markdown Notes Card** | `uri: "notes"` | Rich Markdown notebook supporting live side-by-side rendering, task lists, and syntax highlighted code blocks. |
 | **Contacts Directory Card** | `uri: "contacts"` | Address book and contact management card supporting gravatar icons and search. |
 | **Adaptive Card Renderer** | `uri: "adaptive-card"` | Microsoft Adaptive Cards JSON layout engine rendering dynamic schema-driven user interface components. |
 | **Number Series Visualization Card** | `uri: "number-series"` | Data series plotter rendering bar charts, line graphs, and comparative metric visualizations. |
 | **Travel Planner Card** | `uri: "travel"` | Flight, hotel, and itinerary management card for organizing travel bookings. |
-| **RSS News Aggregator Card** | `uri: "rss"` | Newsfeed reader aggregating RSS/Atom feeds with smart filtering, grayscale media preview, and article extraction. |
+| **RSS News Reader Gallery Card** | `uri: "rss"` | Newsfeed gallery reader aggregating RSS/Atom feeds with smart filtering, media preview, and article extraction. |
+| **RSS Feed Channel Card** | `uri: "rss-feed:35547"` | Dedicated RSS channel feed reader displaying recent news headlines, publication dates, and item previews. |
+| **RSS Feed Item Reader Card** | `uri: "rss-item:35547_0"` | Detailed RSS article reader rendering extracted full-text content, header images, and metadata. |
 
 ---
 
@@ -36,11 +38,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"ai_chat"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_ai_chat.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"ai_chat","filename":"/tmp/snapshot_ai_chat.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![AI Assistant Chat Card snapshot running on Rouen](images/card_ai_chat.png)
 
@@ -62,11 +62,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"calendar"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_calendar.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"calendar","filename":"/tmp/snapshot_calendar.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Calendar Card snapshot running on Rouen](images/card_calendar.png)
 
@@ -74,7 +72,7 @@ curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/
 
 ## Weather Forecast Card
 
-- **URI Schema**: `weather`
+- **URI Schema**: `weather:Montevideo`
 - **Category**: Information & Intelligence
 
 ### Description & Features
@@ -83,16 +81,14 @@ Global weather forecast display with hourly temperature graphs, precipitation pr
 ### REST API Interaction
 ```bash
 # Create card
-curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"weather"}'
+curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"weather:Montevideo"}'
 
 # Focus card
-curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"weather"}'
+curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"weather:Montevideo"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_weather.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"weather","filename":"/tmp/snapshot_weather.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Weather Forecast Card snapshot running on Rouen](images/card_weather.png)
 
@@ -114,11 +110,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"wikipedia"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_wikipedia.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"wikipedia","filename":"/tmp/snapshot_wikipedia.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Wikipedia Card snapshot running on Rouen](images/card_wikipedia.png)
 
@@ -140,11 +134,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"notes"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_notes.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"notes","filename":"/tmp/snapshot_notes.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Markdown Notes Card snapshot running on Rouen](images/card_notes.png)
 
@@ -166,11 +158,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"contacts"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_contacts.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"contacts","filename":"/tmp/snapshot_contacts.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Contacts Directory Card snapshot running on Rouen](images/card_contacts.png)
 
@@ -192,11 +182,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"adaptive-card"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_adaptive-card.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"adaptive-card","filename":"/tmp/snapshot_adaptive-card.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Adaptive Card Renderer snapshot running on Rouen](images/card_adaptive_card.png)
 
@@ -218,11 +206,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"number-series"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_number-series.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"number-series","filename":"/tmp/snapshot_number-series.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Number Series Visualization Card snapshot running on Rouen](images/card_number_series.png)
 
@@ -244,23 +230,21 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"travel"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_travel.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"travel","filename":"/tmp/snapshot_travel.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Travel Planner Card snapshot running on Rouen](images/card_travel.png)
 
 ---
 
-## RSS News Aggregator Card
+## RSS News Reader Gallery Card
 
 - **URI Schema**: `rss`
 - **Category**: Information & Intelligence
 
 ### Description & Features
-Newsfeed reader aggregating RSS/Atom feeds with smart filtering, grayscale media preview, and article extraction.
+Newsfeed gallery reader aggregating RSS/Atom feeds with smart filtering, media preview, and article extraction.
 
 ### REST API Interaction
 ```bash
@@ -270,13 +254,59 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"rss"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_rss.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"rss","filename":"/tmp/snapshot_rss.png"}'
 ```
 
-### Live UI Snapshot (Captured via REST API)
+![RSS News Reader Gallery Card snapshot running on Rouen](images/card_rss.png)
 
-![RSS News Aggregator Card snapshot running on Rouen](images/card_rss.png)
+---
+
+## RSS Feed Channel Card
+
+- **URI Schema**: `rss-feed:35547`
+- **Category**: Information & Intelligence
+
+### Description & Features
+Dedicated RSS channel feed reader displaying recent news headlines, publication dates, and item previews.
+
+### REST API Interaction
+```bash
+# Create card
+curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"rss-feed:35547"}'
+
+# Focus card
+curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"rss-feed:35547"}'
+
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"rss-feed","filename":"/tmp/snapshot_rss-feed.png"}'
+```
+
+![RSS Feed Channel Card snapshot running on Rouen](images/card_rss_feed.png)
+
+---
+
+## RSS Feed Item Reader Card
+
+- **URI Schema**: `rss-item:35547_0`
+- **Category**: Information & Intelligence
+
+### Description & Features
+Detailed RSS article reader rendering extracted full-text content, header images, and metadata.
+
+### REST API Interaction
+```bash
+# Create card
+curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"rss-item:35547_0"}'
+
+# Focus card
+curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"rss-item:35547_0"}'
+
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"rss-item","filename":"/tmp/snapshot_rss-item.png"}'
+```
+
+![RSS Feed Item Reader Card snapshot running on Rouen](images/card_rss_item.png)
 
 ---
 

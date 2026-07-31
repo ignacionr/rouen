@@ -369,6 +369,10 @@ struct deck {
             return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
         }
 
+        surface = rouen::helpers::trim_surface_bottom_padding(surface);
+        int final_w = surface ? surface->w : width;
+        int final_h = surface ? surface->h : height;
+
         std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
         bool saved = IMG_SavePNG(surface, target_path.c_str());
         SDL_DestroySurface(surface);
@@ -376,7 +380,7 @@ struct deck {
 
         if (saved) {
             return std::format(R"({{"success":true,"message":"Card snapshot saved","file":"{}","width":{},"height":{}}})",
-                target_path, width, height);
+                target_path, final_w, final_h);
         } else {
             return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
         }

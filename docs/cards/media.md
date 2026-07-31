@@ -31,11 +31,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"radio"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_radio.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"radio","filename":"/tmp/snapshot_radio.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Radio Streamer Card snapshot running on Rouen](images/card_radio.png)
 
@@ -57,11 +55,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"youtube"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_youtube.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"youtube","filename":"/tmp/snapshot_youtube.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![YouTube Search & Player Card snapshot running on Rouen](images/card_youtube.png)
 
@@ -83,11 +79,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"camera"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_camera.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"camera","filename":"/tmp/snapshot_camera.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Camera Capture Card snapshot running on Rouen](images/card_camera.png)
 
@@ -109,11 +103,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"media-companion"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_media-companion.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"media-companion","filename":"/tmp/snapshot_media-companion.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Media Companion Card snapshot running on Rouen](images/card_media_companion.png)
 
@@ -135,11 +127,9 @@ curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json"
 # Focus card
 curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"chess"}'
 
-# Capture selected card snapshot
-curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"selected","filename":"/tmp/snapshot_chess.png"}'
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"chess","filename":"/tmp/snapshot_chess.png"}'
 ```
-
-### Live UI Snapshot (Captured via REST API)
 
 ![Chess Replay Card snapshot running on Rouen](images/card_chess.png)
 

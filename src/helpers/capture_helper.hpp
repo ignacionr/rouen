@@ -40,4 +40,6 @@ SDL_Surface* download_gpu_texture(
     SDL_GPUCommandBuffer* cmdbuf = nullptr
 );
 
+SDL_Surface* trim_surface_bottom_padding(SDL_Surface* surface);
+
 } // namespace rouen::helpers
