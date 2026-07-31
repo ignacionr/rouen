@@ -170,9 +170,47 @@ void api_server_host::event_handler(struct mg_connection* c, int ev, void* ev_da
 void api_server_host::handle_request(struct mg_connection* c, struct mg_http_message* hm) {
     std::string response;
     int status_code = 200;
-    std::string const content_type = "application/json";
+    std::string content_type = "application/json";
 
-    if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
+    if (mg_strcmp(hm->method, mg_str("OPTIONS")) == 0) {
+        mg_http_reply(c, 204,
+                      "Access-Control-Allow-Origin: *\r\n"
+                      "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
+                      "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+                      "Access-Control-Max-Age: 86400\r\n", "");
+        return;
+    }
+
+    if (mg_match(hm->uri, mg_str("/swagger"), nullptr) ||
+        mg_match(hm->uri, mg_str("/swagger/*"), nullptr) ||
+        mg_match(hm->uri, mg_str("/docs"), nullptr) ||
+        mg_match(hm->uri, mg_str("/docs/*"), nullptr) ||
+        mg_match(hm->uri, mg_str("/api/docs"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            content_type = "text/html; charset=utf-8";
+            response = handle_swagger_ui(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/openapi.json"), nullptr) ||
+               mg_match(hm->uri, mg_str("/openapi.json"), nullptr) ||
+               mg_match(hm->uri, mg_str("/swagger.json"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_openapi_spec(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            content_type = "text/html; charset=utf-8";
+            response = handle_swagger_ui(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/health"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = R"({"status":"ok","message":"API server is running"})";
         } else {
@@ -379,7 +417,12 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         response = R"({"error":"Not found"})";
     }
 
-    mg_http_reply(c, status_code, ("Content-Type: " + content_type + "\r\n").c_str(), "%s", response.c_str());
+    mg_http_reply(c, status_code,
+                  ("Content-Type: " + content_type + "\r\n"
+                   "Access-Control-Allow-Origin: *\r\n"
+                   "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
+                   "Access-Control-Allow-Headers: Content-Type, Authorization\r\n").c_str(),
+                  "%s", response.c_str());
 }
 
 std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, struct mg_http_message* hm) {
@@ -1092,6 +1135,593 @@ std::string api_server_host::handle_rss_diagnostics(struct mg_connection* /*c*/,
     std::string out;
     (void)glz::write_json(root, out);
     return out;
+}
+
+std::string api_server_host::handle_swagger_ui(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    return R"html(<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rouen API - Swagger UI</title>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <link rel="icon" type="image/png" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/favicon-32x32.png">
+  <style>
+    html { box-sizing: border-box; overflow-y: scroll; }
+    *, *:before, *:after { box-sizing: inherit; }
+    body { margin: 0; background: #0b0f19; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .swagger-ui .topbar { background-color: #0f172a; border-bottom: 1px solid #1e293b; padding: 10px 0; }
+    .swagger-ui .topbar a { display: flex; align-items: center; text-decoration: none; }
+    .swagger-ui .topbar-wrapper img { display: none; }
+    .swagger-ui .topbar-wrapper::before { content: "ROUEN API EXPLORER"; color: #38bdf8; font-weight: 700; font-size: 1.1rem; letter-spacing: 0.05em; }
+    .swagger-ui .topbar .download-url-wrapper { display: none; }
+    .swagger-ui { color: #cbd5e1; }
+    .swagger-ui .info .title { color: #f8fafc; font-weight: 700; }
+    .swagger-ui .info p, .swagger-ui .info li { color: #94a3b8; }
+    .swagger-ui .scheme-container { background: #1e293b; box-shadow: none; border-radius: 8px; margin: 10px 0; }
+    .swagger-ui .opblock .opblock-summary-method { border-radius: 4px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js" charset="UTF-8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+  <script>
+    window.onload = function() {
+      const ui = SwaggerUIBundle({
+        url: "/api/openapi.json",
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
+        layout: "StandaloneLayout"
+      });
+      window.ui = ui;
+    };
+  </script>
+</body>
+</html>)html";
+}
+
+std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    return R"json({
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Rouen REST API",
+    "description": "REST API service for controlling cards, deck view, AI assistant, screen casting, camera streams, metrics, and system diagnostics in Rouen.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8081",
+      "description": "Local Rouen API Server"
+    }
+  ],
+  "tags": [
+    {"name": "Documentation", "description": "API documentation and OpenAPI schema endpoints"},
+    {"name": "System & Health", "description": "Application health status, window settings, screenshots, and card schemas"},
+    {"name": "Cards", "description": "Card creation, focusing, and workspace lifecycle"},
+    {"name": "AI Assistant", "description": "AI prompt invocation and assistant interaction"},
+    {"name": "Casting & Media", "description": "Video feed streaming, casting control, and media playback"},
+    {"name": "Camera", "description": "Camera feed status, snapshots, and grid layout controls"},
+    {"name": "Deck Navigation", "description": "Deck view status and card stack scrolling controls"},
+    {"name": "Metrics & Diagnostics", "description": "Card render performance metrics and RSS diagnostics"},
+    {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"}
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["System & Health"],
+        "summary": "Check API server health status",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "API server is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string", "example": "ok"},
+                    "message": {"type": "string", "example": "API server is running"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "tags": ["Documentation"],
+        "summary": "Get OpenAPI 3.0 Specification JSON",
+        "operationId": "getOpenApiSpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification document",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/swagger": {
+      "get": {
+        "tags": ["Documentation"],
+        "summary": "Interactive Swagger UI documentation page",
+        "operationId": "getSwaggerUI",
+        "responses": {
+          "200": {
+            "description": "Interactive HTML interface",
+            "content": {
+              "text/html": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/schemas": {
+      "get": {
+        "tags": ["System & Health"],
+        "summary": "List all registered card schemas and URIs",
+        "operationId": "getSchemas",
+        "responses": {
+          "200": {
+            "description": "List of available card URIs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cards": {
+      "post": {
+        "tags": ["Cards"],
+        "summary": "Create a new card by URI",
+        "operationId": "createCard",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "uri": {"type": "string", "example": "menu", "description": "URI of card to create"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Card created successfully"
+          }
+        }
+      }
+    },
+    "/api/cards/focus": {
+      "post": {
+        "tags": ["Cards"],
+        "summary": "Focus card by index or card ID",
+        "operationId": "focusCard",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "index": {"type": "integer", "example": 0},
+                  "id": {"type": "string", "example": "rss_card_1"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Card focused successfully"
+          }
+        }
+      }
+    },
+    "/api/ai": {
+      "post": {
+        "tags": ["AI Assistant"],
+        "summary": "Send prompt to AI model",
+        "operationId": "aiPrompt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prompt": {"type": "string", "example": "Analyze system performance"},
+                  "model": {"type": "string", "example": "default"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI execution result"
+          }
+        }
+      }
+    },
+    "/api/cast/status": {
+      "get": {
+        "tags": ["Casting & Media"],
+        "summary": "Get screen casting and media playback diagnostics",
+        "operationId": "getCastStatus",
+        "responses": {
+          "200": {
+            "description": "Casting & playback status"
+          }
+        }
+      }
+    },
+    "/api/cast/start": {
+      "post": {
+        "tags": ["Casting & Media"],
+        "summary": "Start TCP video feed casting service",
+        "operationId": "startCast",
+        "responses": {
+          "200": {
+            "description": "Video feed service started on port 8889"
+          }
+        }
+      }
+    },
+    "/api/cast/play": {
+      "post": {
+        "tags": ["Casting & Media"],
+        "summary": "Play media from URL or URI",
+        "operationId": "playCastMedia",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {"type": "string", "example": "https://example.com/video.mp4"},
+                  "uri": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Media playback started"
+          }
+        }
+      }
+    },
+    "/api/camera/status": {
+      "get": {
+        "tags": ["Camera"],
+        "summary": "Get camera status and devices",
+        "operationId": "getCameraStatus",
+        "responses": {
+          "200": {
+            "description": "Camera status response"
+          }
+        }
+      }
+    },
+    "/api/camera/snapshot": {
+      "post": {
+        "tags": ["Camera"],
+        "summary": "Capture frame snapshot from active camera",
+        "operationId": "takeCameraSnapshot",
+        "responses": {
+          "200": {
+            "description": "Snapshot captured"
+          }
+        }
+      }
+    },
+    "/api/camera/layout": {
+      "get": {
+        "tags": ["Camera"],
+        "summary": "Get current camera grid layout",
+        "operationId": "getCameraLayout",
+        "responses": {
+          "200": {
+            "description": "Camera layout configuration"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Camera"],
+        "summary": "Set camera grid layout parameters",
+        "operationId": "setCameraLayout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rows": {"type": "integer", "example": 2},
+                  "cols": {"type": "integer", "example": 2}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Layout updated"
+          }
+        }
+      }
+    },
+    "/api/deck/scroll": {
+      "get": {
+        "tags": ["Deck Navigation"],
+        "summary": "Get deck view scroll position and state",
+        "operationId": "getDeckStatus",
+        "responses": {
+          "200": {
+            "description": "Deck status response"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Deck Navigation"],
+        "summary": "Scroll deck view",
+        "operationId": "scrollDeck",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "delta": {"type": "number", "example": 1.0},
+                  "position": {"type": "number", "example": 0.0}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deck scrolled"
+          }
+        }
+      }
+    },
+    "/api/window": {
+      "get": {
+        "tags": ["System & Health"],
+        "summary": "Get application window state and size",
+        "operationId": "getWindow",
+        "responses": {
+          "200": {
+            "description": "Window status"
+          }
+        }
+      },
+      "post": {
+        "tags": ["System & Health"],
+        "summary": "Set window resolution and display mode",
+        "operationId": "setWindow",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {"type": "string", "example": "fullscreen"},
+                  "width": {"type": "integer", "example": 1920},
+                  "height": {"type": "integer", "example": 1080}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Window updated"
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "tags": ["Metrics & Diagnostics"],
+        "summary": "Fetch card render performance metrics",
+        "operationId": "getMetrics",
+        "parameters": [
+          {
+            "name": "all",
+            "in": "query",
+            "description": "Set to true to include inactive cards",
+            "required": false,
+            "schema": {"type": "boolean", "default": false}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Render metrics list"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Metrics & Diagnostics"],
+        "summary": "Reset card rendering performance metrics",
+        "operationId": "resetMetrics",
+        "responses": {
+          "200": {
+            "description": "Metrics cleared"
+          }
+        }
+      }
+    },
+    "/api/rss/diagnostics": {
+      "get": {
+        "tags": ["Metrics & Diagnostics"],
+        "summary": "Get RSS feeds texture cache and card render diagnostics",
+        "operationId": "getRssDiagnostics",
+        "responses": {
+          "200": {
+            "description": "RSS diagnostics data"
+          }
+        }
+      }
+    },
+    "/api/screenshot": {
+      "get": {
+        "tags": ["System & Health"],
+        "summary": "Get latest window screenshot/snapshot",
+        "operationId": "getScreenshot",
+        "responses": {
+          "200": {
+            "description": "Screenshot response"
+          }
+        }
+      },
+      "post": {
+        "tags": ["System & Health"],
+        "summary": "Trigger a window screenshot capture",
+        "operationId": "postScreenshot",
+        "responses": {
+          "200": {
+            "description": "Screenshot captured"
+          }
+        }
+      }
+    },
+    "/api/adlib/status": {
+      "get": {
+        "tags": ["AdLib Engine"],
+        "summary": "Get status of AdLib engine and active session",
+        "operationId": "getAdlibStatus",
+        "responses": {
+          "200": {
+            "description": "AdLib engine status"
+          }
+        }
+      }
+    },
+    "/api/adlib/prepare": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Prepare AdLib recording/rendering session",
+        "operationId": "prepareAdlib",
+        "responses": {
+          "200": {
+            "description": "AdLib session prepared"
+          }
+        }
+      }
+    },
+    "/api/adlib/start": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Start AdLib session",
+        "operationId": "startAdlib",
+        "responses": {
+          "200": {
+            "description": "AdLib session started"
+          }
+        }
+      }
+    },
+    "/api/adlib/next_stage": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Advance AdLib session to next stage",
+        "operationId": "nextStageAdlib",
+        "responses": {
+          "200": {
+            "description": "AdLib stage advanced"
+          }
+        }
+      }
+    },
+    "/api/adlib/stop": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Stop AdLib session",
+        "operationId": "stopAdlib",
+        "responses": {
+          "200": {
+            "description": "AdLib session stopped"
+          }
+        }
+      }
+    },
+    "/api/adlib/run": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Run full automated AdLib workflow",
+        "operationId": "runAdlib",
+        "responses": {
+          "200": {
+            "description": "AdLib workflow executed"
+          }
+        }
+      }
+    },
+    "/api/adlib/test/audio": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Test audio hardware capture",
+        "operationId": "testAdlibAudio",
+        "responses": {
+          "200": {
+            "description": "Audio test finished"
+          }
+        }
+      }
+    },
+    "/api/adlib/test/video": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Test video rendering pipeline",
+        "operationId": "testAdlibVideo",
+        "responses": {
+          "200": {
+            "description": "Video test finished"
+          }
+        }
+      }
+    },
+    "/api/adlib/test/mux": {
+      "post": {
+        "tags": ["AdLib Engine"],
+        "summary": "Test A/V muxing pipeline",
+        "operationId": "testAdlibMux",
+        "responses": {
+          "200": {
+            "description": "Mux test finished"
+          }
+        }
+      }
+    }
+  }
+})json";
 }
 
 } // namespace rouen::hosts

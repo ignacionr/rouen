@@ -55,6 +55,8 @@ private:
     static std::string handle_adlib_test_audio(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_adlib_test_video(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_adlib_test_mux(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_swagger_ui(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_openapi_spec(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_rss_diagnostics(struct mg_connection* c, struct mg_http_message* hm);
 
     std::unique_ptr<struct mg_mgr> mgr_;

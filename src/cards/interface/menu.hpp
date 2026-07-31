@@ -15,6 +15,7 @@
 
 // 3. All other includes
 #include "../../helpers/media_player.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../registrar.hpp"
 #include "card.hpp"
@@ -329,6 +330,7 @@ namespace rouen::cards {
                     {"Git", []() { "create_card"_sfn("git"); }},
                     {"GitHub", []() { "create_card"_sfn("github"); }},
                     {"CMake", []() { "create_card"_sfn("cmake:" + std::filesystem::current_path().string() + "/CMakeLists.txt"); }},
+                    {"API Documentation (Swagger)", []() { rouen::platform::open_url("http://localhost:8081/swagger"); }},
                     {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
                     {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}
                 }},
@@ -388,6 +390,7 @@ namespace rouen::cards {
                         }
                     }},
                     {"Video Feed & Cast Control", []() { "create_card"_sfn("cast-control"); }},
+                    {"API Documentation (Swagger)", []() { rouen::platform::open_url("http://localhost:8081/swagger"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Notifications", []() { "create_card"_sfn("notifications"); }},
                     {"Settings", []() { "create_card"_sfn("settings"); }},
