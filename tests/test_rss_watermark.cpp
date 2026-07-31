@@ -12,7 +12,13 @@
 #include <tuple>
 #include <cstdlib>
 #include <thread>
-#include <memory>
+#include "../src/cards/information/rss.hpp"
+
+namespace rouen::cards {
+    std::shared_ptr<hosts::RSSHost> rss::getHost() {
+        return nullptr;
+    }
+}
 
 // Redirect HOME to a temp directory for database isolation before including RSS host
 class RSSWatermarkEnvironment {

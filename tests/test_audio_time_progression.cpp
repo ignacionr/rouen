@@ -7,7 +7,14 @@
 #include <vector>
 
 #include "../src/helpers/media_player_item.hpp"
+#include "../src/cards/information/rss.hpp"
 #include "../src/registrar.hpp"
+
+namespace rouen::cards {
+    std::shared_ptr<hosts::RSSHost> rss::getHost() {
+        return nullptr;
+    }
+}
 
 class AudioTimeProgressionTest : public ::testing::Test {
 protected:

@@ -183,6 +183,8 @@ target_sources(test_rss_watermark PRIVATE
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/config_service.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/helpers/vu_meter.cpp
 )
 if(APPLE)
     target_sources(test_rss_watermark PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -214,6 +216,8 @@ target_sources(test_rss_diagnostics PRIVATE
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/config_service.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/helpers/vu_meter.cpp
 )
 if(APPLE)
     target_sources(test_rss_diagnostics PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -245,6 +249,8 @@ target_sources(test_audio_time_progression PRIVATE
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/config_service.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/helpers/vu_meter.cpp
 )
 if(APPLE)
     target_sources(test_audio_time_progression PRIVATE ../src/helpers/mac_mic_permissions.mm)
