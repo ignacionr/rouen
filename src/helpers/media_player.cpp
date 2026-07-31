@@ -1163,18 +1163,15 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
 
             ImTextureID const tex = item.get_texture_id();
             bool const cast_active = media_player_item::is_cast_active.load();
-            bool const detached_active = has_detached_item();
+            bool const detached_active = has_detached_item() || is_detached_mode_active();
 
             ImVec2 const media_start_pos = ImGui::GetCursorScreenPos();
 
-            if (tex && item.has_video.load()) {
-                float thumb_w = 120.0f;
-                float thumb_h = 67.5f;
-                if (!cast_active && !detached_active) {
-                    float const avail_w = player_width;
-                    thumb_w = std::max(120.0f, avail_w - 26.0f);
-                    thumb_h = thumb_w * 9.0f / 16.0f;
-                }
+            if (tex && item.has_video.load() && !detached_active && !cast_active) {
+                float const avail_w = player_width;
+                float const thumb_w = std::max(120.0f, avail_w - 26.0f);
+                float const thumb_h = thumb_w * 9.0f / 16.0f;
+
                 ImGui::Spacing();
                 ImVec2 const img_screen_pos = ImGui::GetCursorScreenPos();
                 ImGui::Image(tex, ImVec2(thumb_w, thumb_h));
