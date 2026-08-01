@@ -107,13 +107,16 @@ struct envvars_card : public card {
                     // Filter and display variables in table rows
                     int row_idx = 0;
                     for (const auto& key : sorted_keys) {
+                        bool sensitive = is_sensitive_key(key);
+                        std::string display_value = sensitive ? "*** (hidden)" : env_vars[key];
+
                         // Apply filter if set
                         if (!filter_text.empty()) {
                             std::string lower_key = key;
                             std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(),
                                           [](unsigned char c) { return std::tolower(c); });
                             
-                            std::string lower_value = env_vars[key];
+                            std::string lower_value = display_value;
                             std::transform(lower_value.begin(), lower_value.end(), lower_value.begin(),
                                           [](unsigned char c) { return std::tolower(c); });
                             
@@ -136,10 +139,17 @@ struct envvars_card : public card {
                         
                         // Variable value (second column)
                         ImGui::TableSetColumnIndex(1);
-                        ImGui::TextColored(
-                            ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
-                            "%s", env_vars[key].c_str()
-                        );
+                        if (sensitive) {
+                            ImGui::TextColored(
+                                ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                "%s", display_value.c_str()
+                            );
+                        } else {
+                            ImGui::TextColored(
+                                ImVec4(colors[5].x, colors[5].y, colors[5].z, colors[5].w),
+                                "%s", display_value.c_str()
+                            );
+                        }
                         
                         row_idx++;
                     }
@@ -156,6 +166,17 @@ struct envvars_card : public card {
         });
     }
     
+public:
+    static bool is_sensitive_key(const std::string& key) {
+        std::string upper_key = key;
+        std::transform(upper_key.begin(), upper_key.end(), upper_key.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+        return upper_key.find("PASS") != std::string::npos ||
+               upper_key.find("PWD") != std::string::npos ||
+               upper_key.find("TOKEN") != std::string::npos ||
+               upper_key.find("KEY") != std::string::npos;
+    }
+
 private:
     std::map<std::string, std::string> env_vars;
     std::vector<std::string> sorted_keys;
