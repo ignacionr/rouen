@@ -19,6 +19,7 @@
 | **Database Repair Card** | `uri: "dbrepair"` | SQLite database diagnostics, integrity verification, and automatic schema repair card. |
 | **About Rouen Card** | `uri: "about"` | Application version information, system build metadata, active framework credits, and architecture overview. |
 | **Subnet Scanner Card** | `uri: "subnet-scanner"` | Local IP network discovery scanner mapping connected devices and open service ports. |
+| **Git Repository Card** | `uri: "git"` | Git repository manager displaying branch status, commit history, working tree diffs, and stage actions. |
 
 ---
 
@@ -307,6 +308,30 @@ curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/
 ```
 
 ![Subnet Scanner Card snapshot running on Rouen](images/card_subnet_scanner.png)
+
+---
+
+## Git Repository Card
+
+- **URI Schema**: `git`
+- **Category**: System & Developer Tools
+
+### Description & Features
+Git repository manager displaying branch status, commit history, working tree diffs, and stage actions.
+
+### REST API Interaction
+```bash
+# Create card
+curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"git"}'
+
+# Focus card
+curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"git"}'
+
+# Capture card snapshot
+curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/json" -d '{"target":"git","filename":"/tmp/snapshot_git.png"}'
+```
+
+![Git Repository Card snapshot running on Rouen](images/card_git.png)
 
 ---
 

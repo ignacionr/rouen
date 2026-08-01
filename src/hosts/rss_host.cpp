@@ -38,6 +38,7 @@
 #include "../helpers/media_player.hpp"
 #include "../helpers/string_helper.hpp"
 #include "../helpers/card_render_metrics.hpp"
+#include "../cards/interface/deck.hpp"
 
 #include "../registrar.hpp"
 #include "../helpers/fetch.hpp"
@@ -1635,6 +1636,11 @@ void RSSHost::initialize_async(std::stop_token stoken, std::vector<std::string> 
     };
 
     if (quit_job()) return;
+
+    if (deck::no_initial_cards) {
+        RSS_INFO("RSSHost: skipping initial podcast loading and background refresh due to --no-initial-cards");
+        return;
+    }
 
     // Load podcasts from podcasts.txt file if it exists
     load_podcasts_from_file();
