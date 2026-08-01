@@ -390,7 +390,6 @@ namespace rouen::cards {
                         }
                     }},
                     {"Video Feed & Cast Control", []() { "create_card"_sfn("cast-control"); }},
-                    {"API Documentation (Swagger)", []() { rouen::platform::open_url("http://localhost:8081/swagger"); }},
                     {"System Info", []() { "create_card"_sfn("sysinfo"); }},
                     {"Notifications", []() { "create_card"_sfn("notifications"); }},
                     {"Settings", []() { "create_card"_sfn("settings"); }},
