@@ -1222,9 +1222,8 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
         }
 
         if (video_stream_idx >= 0 && audio_stream_idx >= 0) {
-            bool const is_detached = (media_player::get_detached_item().get() == this);
             size_t const max_limit = is_adlib_item.load() ? 600 : 30;
-            if (is_detached || is_cast_active.load() || is_adlib_item.load()) {
+            if (is_cast_active.load() || is_adlib_item.load()) {
                 if (v_q_size >= max_limit) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(10));
                     continue;
@@ -1762,8 +1761,7 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
     }
     {
         std::vector<uint8_t> frame_to_present;
-        bool const is_detached = (media_player::get_detached_item().get() == this);
-        if (is_cast_active.load() || is_detached || is_adlib_item.load()) {
+        if (is_cast_active.load() || is_adlib_item.load()) {
             std::lock_guard<std::mutex> const q_lock(video_queue_mutex);
             if (!decoded_video_queue.empty()) {
                 double const cur_pos = get_current_position();
