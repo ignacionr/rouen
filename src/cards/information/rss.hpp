@@ -44,6 +44,7 @@ public:
     ~rss() override;
 
     void on_close() override;
+    bool supports_menu_decoration() const override { return false; }
     bool render() override;
     [[nodiscard]] std::string get_uri() const override;
     std::vector<card_performance_metric> get_performance_measurements() const override;

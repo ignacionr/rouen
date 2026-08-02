@@ -14,8 +14,14 @@ class tag_manager {
 public:
     static tag_manager& get();
 
-    // Associate a tag with a URI
-    void add_tag(const std::string& uri, const std::string& tag);
+    // Associate a tag with a URI (and optional display title)
+    void add_tag(const std::string& uri, const std::string& tag, const std::string& title = "");
+
+    // Set a friendly display title for a URI
+    void set_uri_title(const std::string& uri, const std::string& title);
+
+    // Get the display title for a URI
+    std::string get_uri_title(const std::string& uri);
 
     // Dissociate a tag from a URI
     void remove_tag(const std::string& uri, const std::string& tag);

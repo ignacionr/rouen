@@ -13,7 +13,7 @@
 #include "../../helpers/ui_context.hpp"
 #include <SDL3/SDL.h>
 
-// 3. All other includes
+#include "../../helpers/card_decorations.hpp"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
@@ -36,6 +36,7 @@ namespace rouen::cards {
             width = 320.0f; // Slightly wider for better menu display
         }
 
+        bool supports_menu_decoration() const override { return false; }
         bool has_video_overlay() const override { return false; }
         void render_video_ui() override {}
 
@@ -325,7 +326,23 @@ namespace rouen::cards {
                 }
             };
 
-            std::vector<MenuCategory> categories = {
+            std::vector<MenuCategory> categories;
+
+            // Pinned shortcuts added via .menu tag
+            auto menu_items = rouen::helpers::card_decorations::get_menu_tagged_items();
+            if (!menu_items.empty()) {
+                std::vector<std::pair<std::string, std::function<void()>>> pinned_items;
+                for (const auto& item : menu_items) {
+                    std::string item_uri = item.uri;
+                    pinned_items.push_back({
+                        ICON_MD_BOOKMARK " " + item.title,
+                        [item_uri]() { "create_card"_sfn(item_uri); }
+                    });
+                }
+                categories.push_back({ "Pinned to Menu", pinned_items });
+            }
+
+            categories.insert(categories.end(), {
                 { "Development", {
                     {"Git", []() { "create_card"_sfn("git"); }},
                     {"GitHub", []() { "create_card"_sfn("github"); }},
@@ -402,7 +419,7 @@ namespace rouen::cards {
                     {"About", []() { "create_card"_sfn("about"); }},
                     {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }}
                 }}
-            };
+            });
             return categories;
         }
     };

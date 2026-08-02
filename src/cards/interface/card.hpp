@@ -16,6 +16,7 @@
 // 3. All other includes
 #include "../../registrar.hpp"
 #include "../../helpers/ui_context.hpp"
+#include "../../helpers/card_decorations.hpp"
 #include "../../helpers/theme_manager.hpp"
 // Forward declarations to avoid circular dependencies
 namespace rouen::hosts {
@@ -98,6 +99,9 @@ struct card {
     /// Optional virtual method for cards to paint themselves onto the video feed surface
     virtual void paint_video_surface(SDL_Surface* /*surface*/, int /*surface_w*/, int /*surface_h*/) {}
 
+    /// Returns true if this card supports window decorations (such as "Add to Menu")
+    virtual bool supports_menu_decoration() const { return true; }
+
     /// Returns true if this card provides a video overlay UI
     virtual bool has_video_overlay() const { return false; }
 
@@ -148,6 +152,7 @@ struct card {
             }
             is_open &= run_focused_handlers();
             render_func();
+            rouen::helpers::card_decorations::render_decorations(this);
         }
         ImGui::End();
         return is_open;

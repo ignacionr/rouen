@@ -24,6 +24,11 @@ tag_manager::tag_manager() {
         "tag TEXT PRIMARY KEY, "
         "sort_order INTEGER DEFAULT 999");
 
+    // Table 3: uri_title - stores friendly display titles for URIs
+    db_->ensure_table("uri_title",
+        "uri TEXT PRIMARY KEY, "
+        "title TEXT NOT NULL");
+
     // Create index for performance
     db_->exec("CREATE INDEX IF NOT EXISTS idx_uri_tag_tag ON uri_tag(tag)");
     db_->exec("CREATE INDEX IF NOT EXISTS idx_uri_tag_uri ON uri_tag(uri)");
@@ -49,10 +54,32 @@ tag_manager::tag_manager() {
     );
 }
 
-void tag_manager::add_tag(const std::string& uri, const std::string& tag) {
+void tag_manager::add_tag(const std::string& uri, const std::string& tag, const std::string& title) {
     std::lock_guard<std::mutex> lock(mutex_);
     db_->exec("INSERT OR IGNORE INTO tag_definition (tag, sort_order) VALUES (?, ?)", [](sqlite3_stmt*){}, tag, 999);
     db_->exec("INSERT OR IGNORE INTO uri_tag (uri, tag) VALUES (?, ?)", [](sqlite3_stmt*){}, uri, tag);
+    if (!title.empty()) {
+        db_->exec("INSERT OR REPLACE INTO uri_title (uri, title) VALUES (?, ?)", [](sqlite3_stmt*){}, uri, title);
+    }
+}
+
+void tag_manager::set_uri_title(const std::string& uri, const std::string& title) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!title.empty()) {
+        db_->exec("INSERT OR REPLACE INTO uri_title (uri, title) VALUES (?, ?)", [](sqlite3_stmt*){}, uri, title);
+    }
+}
+
+std::string tag_manager::get_uri_title(const std::string& uri) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string title;
+    db_->exec("SELECT title FROM uri_title WHERE uri = ?", [&](sqlite3_stmt* stmt) {
+        const char* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (t) {
+            title = t;
+        }
+    }, uri);
+    return title;
 }
 
 void tag_manager::remove_tag(const std::string& uri, const std::string& tag) {
