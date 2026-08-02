@@ -1243,6 +1243,12 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
                     item.setVolume(vol);
                 }
 
+                ImGui::SameLine();
+                if (ImGui::Button(std::format(" {} ", ICON_MD_FULLSCREEN).c_str())) {
+                    set_active_fullscreen_item(item_ptr);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Full-window");
+
                 // Slick Seek Bar
                 ImGui::Spacing();
                 draw_seek_bar("##card_seek_bar", item, player_width, 18.0f, info_color);
