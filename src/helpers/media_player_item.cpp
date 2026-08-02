@@ -79,7 +79,7 @@ bool media_player_item::checkMediaStatus() {
     return is_playing;
 }
 
-void media_player_item::update_watermark() {
+void media_player_item::update_watermark(bool force_save) {
     try {
         double cur_pos = get_current_position();
         if (cur_pos > 0.0) {
@@ -89,15 +89,29 @@ void media_player_item::update_watermark() {
             } else {
                 watermark = cur_pos;
             }
-            if (feed_id != -1 && !item_link.empty() && save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, watermark.value_or(0.0));
+            
+            bool should_save = force_save;
+            auto now = std::chrono::steady_clock::now();
+            double val = watermark.value_or(0.0);
+            if (!should_save) {
+                if (std::abs(val - last_saved_watermark_pos_) >= 5.0) {
+                    should_save = true;
+                } else if (std::chrono::duration_cast<std::chrono::seconds>(now - last_watermark_save_time_).count() >= 5) {
+                    should_save = true;
+                }
+            }
+            
+            if (should_save && feed_id != -1 && !item_link.empty() && save_watermark_cb) {
+                save_watermark_cb(feed_id, item_link, item_title, val);
+                last_saved_watermark_pos_ = val;
+                last_watermark_save_time_ = now;
             }
         }
     } catch (...) {}
 }
 
 void media_player_item::stopMedia() {
-    update_watermark();
+    update_watermark(true);
 
     ffmpeg_running.store(false);
     is_playing = false;
@@ -532,7 +546,7 @@ double media_player_item::get_current_position() const {
 bool media_player_item::setPaused(bool paused) {
     if (paused && !is_paused.load()) {
         position.store(get_current_position());
-        update_watermark();
+        update_watermark(true);
     } else if (!paused && is_paused.load()) {
         double const cur_pos = std::max(start_offset.load(), position.load());
         start_offset.store(cur_pos);
@@ -1029,7 +1043,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
         if (duration.load() > 0.0) {
             position.store(duration.load());
         }
-        update_watermark();
+        update_watermark(true);
         is_playing = false;
         is_paused = false;
         player_pid = 0;

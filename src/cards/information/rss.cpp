@@ -783,22 +783,7 @@ bool rss::render() {
                                     SDL_Texture* item_tex = nullptr;
                                     int item_tex_w = 0, item_tex_h = 0;
                                     if (renderer && image_cache && !item.image_url.empty()) {
-                                        if (feed_textures.contains(item.image_url)) {
-                                            auto& lt = feed_textures[item.image_url];
-                                            item_tex = lt.texture;
-                                            item_tex_w = lt.width;
-                                            item_tex_h = lt.height;
-                                        } else {
-                                            int cached_w = 0, cached_h = 0;
-                                            if (image_cache->isCached(item.image_url, cached_w, cached_h)) {
-                                                item_tex = image_cache->getTexture(renderer, item.image_url, item_tex_w, item_tex_h);
-                                                if (item_tex) {
-                                                    feed_textures[item.image_url] = {item_tex, item_tex_w, item_tex_h};
-                                                }
-                                            } else {
-                                                request_image_download(item.image_url);
-                                            }
-                                        }
+                                        item_tex = get_feed_texture(item.image_url, ::helpers::ImageCache::Variant::Color, item_tex_w, item_tex_h);
                                     }
 
                                     bool const has_item_image = (item_tex != nullptr);
@@ -1089,13 +1074,6 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
                 img_w,
                 img_h
             );
-            if (!tex) {
-                int cached_w = 0, cached_h = 0;
-                if (image_cache->isCached(img_url, cached_w, cached_h)) {
-                } else {
-                    request_image_download(img_url);
-                }
-            }
         }
         
         if (tex) {

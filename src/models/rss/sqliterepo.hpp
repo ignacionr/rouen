@@ -636,6 +636,34 @@ namespace media::rss
             }
         }
  
+        size_t get_item_count(long long feed_id)
+        {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            size_t count = 0;
+            try {
+                db_.exec("SELECT COUNT(*) FROM item WHERE feed_id = ?", [&count](sqlite3_stmt* stmt) {
+                    count = static_cast<size_t>(sqlite3_column_int64(stmt, 0));
+                }, feed_id);
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in get_item_count: {}", e.what());
+            }
+            return count;
+        }
+
+        size_t get_total_items_count()
+        {
+            std::lock_guard<std::mutex> lock(mutex_); // Thread safety
+            size_t count = 0;
+            try {
+                db_.exec("SELECT COUNT(*) FROM item", [&count](sqlite3_stmt* stmt) {
+                    count = static_cast<size_t>(sqlite3_column_int64(stmt, 0));
+                });
+            } catch (const std::exception& e) {
+                RSS_ERROR_FMT("Error in get_total_items_count: {}", e.what());
+            }
+            return count;
+        }
+
         template <typename Sink>
         void scan_items_limit(long long feed_id, int limit, Sink sink)
         {

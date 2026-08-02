@@ -32,6 +32,10 @@ static std::map<TextureKey, RouenGPUTexture*> s_bg_texture_cache;
 static RouenGPUTexture* get_cached_faceplate_texture(VUMeterTheme theme, int w, int h) {
     if (w <= 0 || h <= 0) return nullptr;
 
+    // Round width and height to nearest multiple of 16 to avoid cache thrashing/recreation from sub-pixel jitter
+    int const rounded_w = ((w + 15) / 16) * 16;
+    int const rounded_h = ((h + 15) / 16) * 16;
+
     SDL_GPUDevice* device = TextureHelper::g_gpu_device;
     if (!device) {
         try {
@@ -42,23 +46,23 @@ static RouenGPUTexture* get_cached_faceplate_texture(VUMeterTheme theme, int w, 
     if (!device) return nullptr;
 
     std::lock_guard<std::mutex> const lock(s_bg_cache_mutex);
-    TextureKey const key{ theme, w, h };
+    TextureKey const key{ theme, rounded_w, rounded_h };
     auto it = s_bg_texture_cache.find(key);
     if (it != s_bg_texture_cache.end()) {
         return it->second;
     }
 
     // Generate procedural faceplate background surface
-    SDL_Surface* surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA32);
+    SDL_Surface* surface = SDL_CreateSurface(rounded_w, rounded_h, SDL_PIXELFORMAT_RGBA32);
     if (!surface) return nullptr;
 
     Uint32* pixels = static_cast<Uint32*>(surface->pixels);
     int const pitch_px = surface->pitch / 4;
 
-    for (int y = 0; y < h; ++y) {
-        float const ny = static_cast<float>(y) / static_cast<float>(h);
-        for (int x = 0; x < w; ++x) {
-            float const nx = static_cast<float>(x) / static_cast<float>(w);
+    for (int y = 0; y < rounded_h; ++y) {
+        float const ny = static_cast<float>(y) / static_cast<float>(rounded_h);
+        for (int x = 0; x < rounded_w; ++x) {
+            float const nx = static_cast<float>(x) / static_cast<float>(rounded_w);
 
             Uint8 r = 240, g = 230, b = 200, a = 255;
             switch (theme) {

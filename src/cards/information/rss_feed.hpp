@@ -326,6 +326,7 @@ namespace rouen::cards
                         rss_host->add_feed_tag(feed_id, t);
                     }
                     pending_ai_tags_.clear();
+                    update_cached_feed_metadata(true);
                 }
             }
             
@@ -722,7 +723,7 @@ namespace rouen::cards
                                     }
                                     
                                     try {
-                                        ImGui::BeginGroup();
+                        ImGui::BeginGroup();
                                         
                                         try {
                                             // Try to load item thumbnail
@@ -730,12 +731,6 @@ namespace rouen::cards
                                             int item_tex_w = 0, item_tex_h = 0;
                                             if (renderer && image_cache && !item.image_url.empty()) {
                                                 item_tex = get_item_texture(item.image_url, ::helpers::ImageCache::Variant::Color, item_tex_w, item_tex_h);
-                                                if (!item_tex) {
-                                                    int cached_w = 0, cached_h = 0;
-                                                    if (!image_cache->isCached(item.image_url, cached_w, cached_h)) {
-                                                        request_image_download(item.image_url);
-                                                    }
-                                                }
                                             }
 
                                             bool has_item_image = (item_tex != nullptr);
@@ -864,13 +859,13 @@ namespace rouen::cards
                                                 int display_tex_w = item_tex_w;
                                                 int display_tex_h = item_tex_h;
                                                 if (!row_hovered) {
-                                                    int grayscale_w = 0;
-                                                    int grayscale_h = 0;
-                                                    if (SDL_Texture* grayscale_tex = get_item_texture(item.image_url, ::helpers::ImageCache::Variant::Grayscale, grayscale_w, grayscale_h)) {
-                                                        display_tex = grayscale_tex;
-                                                        display_tex_w = grayscale_w;
-                                                        display_tex_h = grayscale_h;
-                                                    }
+                                                     int grayscale_w = 0;
+                                                     int grayscale_h = 0;
+                                                     if (SDL_Texture* grayscale_tex = get_item_texture(item.image_url, ::helpers::ImageCache::Variant::Grayscale, grayscale_w, grayscale_h)) {
+                                                         display_tex = grayscale_tex;
+                                                         display_tex_w = grayscale_w;
+                                                         display_tex_h = grayscale_h;
+                                                     }
                                                 }
                                                 
                                                 ImVec2 uv0, uv1;
@@ -1110,7 +1105,7 @@ namespace rouen::cards
 
         void update_cached_feed_metadata(bool force = false) {
             auto now = std::chrono::steady_clock::now();
-            if (force || cached_available_tags_.empty() || std::chrono::duration_cast<std::chrono::seconds>(now - last_metadata_cache_time_).count() >= 2) {
+            if (force || cached_available_tags_.empty()) {
                 last_metadata_cache_time_ = now;
                 if (rss_host && feed_id >= 0) {
                     cached_feed_language_ = rss_host->get_feed_language(feed_id);

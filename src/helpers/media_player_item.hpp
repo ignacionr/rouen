@@ -119,6 +119,8 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     int rss_image_width{0};
     int rss_image_height{0};
     std::optional<double> watermark;
+    double last_saved_watermark_pos_{-99.0};
+    std::chrono::steady_clock::time_point last_watermark_save_time_{};
     std::optional<window_rect> last_docked_video_rect;
     bool user_tall_layout{false};
     bool user_tall_layout_set{false};
@@ -175,7 +177,7 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     bool togglePause();
     double get_current_position() const;
     bool setPaused(bool paused);
-    void update_watermark();
+    void update_watermark(bool force_save = false);
     void update_vu_levels();
     float get_vu_level_l();
     float get_vu_level_r();

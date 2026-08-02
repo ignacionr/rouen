@@ -933,14 +933,10 @@ std::vector<RSSHost::FeedItem> RSSHost::get_feed_items(long long feed_id, int li
     repo_.scan_items_limit(feed_id, limit, [&items, feed_id](const char* link, const char* enclosure, const char* title, 
                                      const char* description, const char* pub_date, const char* image_url,
                                      std::optional<double> watermark, std::optional<double> media_duration_seconds) {
-        // Mark unused parameters to avoid warnings
-        (void)link; (void)enclosure; (void)title;
-        (void)description; (void)pub_date; (void)image_url;
-        
         auto publish_date = parse_db_date(pub_date ? pub_date : "");
         
-        // Create and store the item
-        FeedItem item{
+        // Create and store the item with raw data first
+        items.push_back(FeedItem{
             .title = title ? title : "",
             .description = description ? description : "",
             .clean_description = "",
@@ -953,9 +949,11 @@ std::vector<RSSHost::FeedItem> RSSHost::get_feed_items(long long feed_id, int li
             .media_duration_seconds = media_duration_seconds,
             .feed_id = feed_id,
             .feed_title = ""
-        };
-        
-        // Enhanced: Extract media URLs from description content
+        });
+    });
+
+    // Process media extraction and description cleaning outside of the database lock
+    for (auto& item : items) {
         if (!item.description.empty()) {
             item.extracted_media_urls = media::html::extract_media_urls(item.description);
             item.clean_description = ::helpers::StringHelper::strip_html_tags(item.description);
@@ -963,9 +961,7 @@ std::vector<RSSHost::FeedItem> RSSHost::get_feed_items(long long feed_id, int li
                 item.clean_description = item.clean_description.substr(0, 97) + "...";
             }
         }
-        
-        items.push_back(std::move(item));
-    });
+    }
     
     // Sort items by publish date (newest first)
     std::sort(items.begin(), items.end(), [](const FeedItem& a, const FeedItem& b) {
@@ -1890,6 +1886,7 @@ RSSHost::RSSDiagnostics RSSHost::get_rss_diagnostics() {
     RSSDiagnostics diag;
     auto all_feeds = feeds();
     diag.total_feeds = all_feeds.size();
+    diag.total_items = repo_.get_total_items_count();
 
     double max_slowest = 0.0;
 
@@ -1901,9 +1898,7 @@ RSSHost::RSSDiagnostics RSSHost::get_rss_diagnostics() {
         info.url = f->feed_link;
         info.language = get_feed_language(f->repo_id);
 
-        auto items = get_feed_items(f->repo_id, 1000);
-        info.item_count = items.size();
-        diag.total_items += info.item_count;
+        info.item_count = repo_.get_item_count(f->repo_id);
 
         auto tags = get_feed_tags(f->repo_id);
         info.tag_count = tags.size();
