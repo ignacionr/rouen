@@ -52,7 +52,7 @@ namespace media::html {
         std::string content_str(html_content);
         
         // Regular expressions for different media extraction patterns
-        static const std::vector<std::pair<std::regex, std::string>> patterns = {
+        const std::vector<std::pair<std::regex, std::string>> patterns = {
             // iframe src with video extensions
             {std::regex(R"(<iframe[^>]+src\s*=\s*[\"']([^\"']*\.(?:mp4|webm|avi|mov|mkv|m4v|3gp|flv)[^\"']*)[\"'][^>]*>)", 
                        std::regex_constants::icase), "video"},

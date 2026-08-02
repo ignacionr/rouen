@@ -70,7 +70,7 @@ public:
 
     static std::vector<std::string> parse_wiki_links(std::string_view content) {
         std::vector<std::string> links;
-        static const std::regex wiki_link_pattern(R"(\[\[([^\[\]]+)\]\])");
+        const std::regex wiki_link_pattern(R"(\[\[([^\[\]]+)\]\])");
 
         std::string text(content);
         for (std::sregex_iterator it{text.begin(), text.end(), wiki_link_pattern}; it != std::sregex_iterator(); ++it) {

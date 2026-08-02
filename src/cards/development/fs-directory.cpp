@@ -23,7 +23,7 @@ namespace rouen::cards {
 
     std::string resolve_env_variables(std::string_view path_with_vars) {
         std::string result(path_with_vars);
-        static const std::regex env_var_regex(R"(\$(\w+))");
+        const std::regex env_var_regex(R"(\$(\w+))");
 
         auto config_service = helpers::ConfigService::instance();
 

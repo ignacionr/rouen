@@ -95,27 +95,42 @@ static bool is_youtube_media_url(const std::string& url) {
 }
 
 static std::optional<std::string> extract_youtube_video_id(const std::string& url) {
-    std::smatch match;
-    static const std::regex watch_rx(R"raw([?&]v=([A-Za-z0-9_-]{11}))raw");
-    static const std::regex short_rx(R"raw(youtu\.be/([A-Za-z0-9_-]{11}))raw");
-    static const std::regex shorts_rx(R"raw(/shorts/([A-Za-z0-9_-]{11}))raw");
-    static const std::regex embed_rx(R"raw(/embed/([A-Za-z0-9_-]{11}))raw");
-    static const std::regex v_path_rx(R"raw(/v/([A-Za-z0-9_-]{11}))raw");
+    if (url.empty()) return std::nullopt;
 
-    if (std::regex_search(url, match, watch_rx) && match.size() > 1) {
-        return match.str(1);
-    }
-    if (std::regex_search(url, match, short_rx) && match.size() > 1) {
-        return match.str(1);
-    }
-    if (std::regex_search(url, match, shorts_rx) && match.size() > 1) {
-        return match.str(1);
-    }
-    if (std::regex_search(url, match, embed_rx) && match.size() > 1) {
-        return match.str(1);
-    }
-    if (std::regex_search(url, match, v_path_rx) && match.size() > 1) {
-        return match.str(1);
+    // Fast, thread-safe string matching for YouTube video IDs (11 chars)
+    static constexpr std::array<std::string_view, 5> prefixes = {
+        "v=",
+        "youtu.be/",
+        "/shorts/",
+        "/embed/",
+        "/v/"
+    };
+
+    for (auto prefix : prefixes) {
+        size_t pos = url.find(prefix);
+        while (pos != std::string::npos) {
+            size_t const start = pos + prefix.length();
+            if (prefix == "v=") {
+                if (pos > 0 && url[pos - 1] != '?' && url[pos - 1] != '&') {
+                    pos = url.find(prefix, pos + 1);
+                    continue;
+                }
+            }
+            if (start + 11 <= url.length()) {
+                std::string candidate = url.substr(start, 11);
+                bool valid = true;
+                for (char c : candidate) {
+                    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (valid) {
+                    return candidate;
+                }
+            }
+            pos = url.find(prefix, pos + 1);
+        }
     }
     return std::nullopt;
 }
@@ -331,6 +346,41 @@ static std::optional<double> parse_duration_seconds(std::string value) {
     return std::nullopt;
 }
 
+static std::optional<double> extract_json_numeric_field(std::string_view html, std::string_view field_name) {
+    size_t pos = html.find(field_name);
+    while (pos != std::string_view::npos) {
+        size_t idx = pos + field_name.length();
+        while (idx < html.length() && std::isspace(static_cast<unsigned char>(html[idx]))) {
+            ++idx;
+        }
+        if (idx < html.length() && html[idx] == ':') {
+            ++idx;
+            while (idx < html.length() && std::isspace(static_cast<unsigned char>(html[idx]))) {
+                ++idx;
+            }
+            if (idx < html.length() && (html[idx] == '"' || std::isdigit(static_cast<unsigned char>(html[idx])))) {
+                bool const quoted = (html[idx] == '"');
+                if (quoted) ++idx;
+                size_t const num_start = idx;
+                while (idx < html.length() && std::isdigit(static_cast<unsigned char>(html[idx]))) {
+                    ++idx;
+                }
+                if (idx > num_start) {
+                    std::string const num_str(html.substr(num_start, idx - num_start));
+                    try {
+                        double const val = std::stod(num_str);
+                        if (val > 0.0 && std::isfinite(val)) {
+                            return val;
+                        }
+                    } catch (...) {}
+                }
+            }
+        }
+        pos = html.find(field_name, pos + 1);
+    }
+    return std::nullopt;
+}
+
 static std::optional<double> probe_youtube_duration(const std::string& url) {
     auto video_id = extract_youtube_video_id(url);
     if (!video_id.has_value()) {
@@ -339,7 +389,7 @@ static std::optional<double> probe_youtube_duration(const std::string& url) {
 
     const std::string watch_url = "https://www.youtube.com/watch?v=" + *video_id;
 
-    // Fast Primary Path: Direct HTTP fetch & regex scrape lengthSeconds / approxDurationMs (~20ms)
+    // Fast Primary Path: Direct HTTP fetch & string parse lengthSeconds / approxDurationMs (~20ms)
     try {
         http::fetch client{4};
         std::vector<std::string> const headers = {
@@ -347,25 +397,11 @@ static std::optional<double> probe_youtube_duration(const std::string& url) {
         };
         std::string const html = client(watch_url, headers);
         if (!html.empty()) {
-            std::smatch match;
-            static const std::regex length_seconds_rx(R"raw("lengthSeconds"\s*:\s*"(\d+)")raw");
-            static const std::regex approx_duration_ms_rx(R"raw("approxDurationMs"\s*:\s*"(\d+)")raw");
-
-            if (std::regex_search(html, match, length_seconds_rx) && match.size() > 1) {
-                try {
-                    auto secs = std::stod(match.str(1));
-                    if (secs > 0.0 && std::isfinite(secs)) {
-                        return secs;
-                    }
-                } catch (...) {}
+            if (auto secs = extract_json_numeric_field(html, "\"lengthSeconds\"")) {
+                return secs;
             }
-            if (std::regex_search(html, match, approx_duration_ms_rx) && match.size() > 1) {
-                try {
-                    auto ms = std::stod(match.str(1));
-                    if (ms > 0.0 && std::isfinite(ms)) {
-                        return ms / 1000.0;
-                    }
-                } catch (...) {}
+            if (auto ms = extract_json_numeric_field(html, "\"approxDurationMs\"")) {
+                return *ms / 1000.0;
             }
         }
     } catch (...) {}
