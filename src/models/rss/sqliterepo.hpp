@@ -130,27 +130,57 @@ namespace media::rss
                     "last_updated TEXT"
                 );
                 
-                // Migration: check if 'item' table schema needs update
-                // If it has link as the sole primary key, we drop it and let ensure_table recreate it.
+                // Migration: check if 'item' table schema needs update (if title is part of primary key or duplicates exist)
                 try {
                     int pk_count = 0;
-                    bool link_is_pk = false;
+                    bool title_in_pk = false;
                     db_.exec("PRAGMA table_info(item)", [&](sqlite3_stmt* stmt) {
                         const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
                         int pk = sqlite3_column_int(stmt, 5);
                         if (pk > 0) {
                             pk_count++;
-                            if (name && std::string_view(name) == "link") {
-                                link_is_pk = true;
+                            if (name && std::string_view(name) == "title") {
+                                title_in_pk = true;
                             }
                         }
                     });
-                    if (pk_count == 1 && link_is_pk) {
-                        RSS_INFO("Old 'item' table schema detected. Dropping table for recreation...");
-                        db_.drop_table("item");
+
+                    if (pk_count > 0 && (title_in_pk || pk_count != 2)) {
+                        RSS_INFO("Migrating 'item' table to PRIMARY KEY(feed_id, link) & consolidating duplicate entries...");
+                        db_.exec("DROP TABLE IF EXISTS item_new");
+                        db_.exec("BEGIN TRANSACTION");
+
+                        // 1. Delete duplicate items keeping the latest entry for each (feed_id, link)
+                        db_.exec("DELETE FROM item WHERE rowid NOT IN ("
+                                 "SELECT MAX(rowid) FROM item GROUP BY feed_id, link)");
+
+                        // 2. Create new item_new table with UNIQUE (feed_id, link)
+                        db_.exec("CREATE TABLE item_new ("
+                                 "feed_id INTEGER NOT NULL, "
+                                 "link TEXT NOT NULL, "
+                                 "title TEXT NOT NULL, "
+                                 "enclosure TEXT, "
+                                 "description TEXT, "
+                                 "pub_date TEXT, "
+                                 "image_url TEXT, "
+                                 "watermark REAL, "
+                                 "media_duration_seconds REAL, "
+                                 "PRIMARY KEY(feed_id, link), "
+                                 "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE)");
+
+                        db_.exec("INSERT OR REPLACE INTO item_new (feed_id, link, title, enclosure, description, pub_date, image_url, watermark, media_duration_seconds) "
+                                 "SELECT feed_id, link, title, enclosure, description, pub_date, image_url, watermark, media_duration_seconds FROM item");
+
+                        db_.exec("DROP TABLE item");
+                        db_.exec("ALTER TABLE item_new RENAME TO item");
+                        db_.exec("COMMIT");
+                    } else if (pk_count > 0) {
+                        // Always consolidate any duplicate URLs on startup
+                        db_.exec("DELETE FROM item WHERE rowid NOT IN (SELECT MAX(rowid) FROM item GROUP BY feed_id, link)");
                     }
                 } catch (const std::exception& e) {
-                    RSS_WARN_FMT("Failed to check or drop old 'item' table: {}", e.what());
+                    try { db_.exec("ROLLBACK"); } catch (...) {}
+                    RSS_WARN_FMT("Failed to check or migrate 'item' table: {}", e.what());
                 }
 
                 RSS_DEBUG("Creating item table...");
@@ -163,7 +193,7 @@ namespace media::rss
                     "pub_date TEXT, "
                     "image_url TEXT, "
                     "watermark REAL, "
-                    "PRIMARY KEY(feed_id, link, title), "
+                    "PRIMARY KEY(feed_id, link), "
                     "FOREIGN KEY(feed_id) REFERENCES feed(id) ON DELETE CASCADE"
                 );
                 
@@ -528,8 +558,8 @@ namespace media::rss
                 for (const auto& [title, enclosure, link, description, pub_date, image_url, media_duration_seconds] : items) {
                     std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url, watermark, media_duration_seconds) "
                                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                                    "ON CONFLICT(feed_id, link, title) DO "
-                                    "UPDATE SET enclosure=excluded.enclosure, "
+                                    "ON CONFLICT(feed_id, link) DO "
+                                    "UPDATE SET title=excluded.title, enclosure=excluded.enclosure, "
                                     "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url, "
                                     "watermark=COALESCE(item.watermark, excluded.watermark), "
                                     "media_duration_seconds=COALESCE(item.media_duration_seconds, excluded.media_duration_seconds)";
@@ -561,25 +591,15 @@ namespace media::rss
             std::lock_guard<std::mutex> lock(mutex_); // Thread safety
             try {
                 std::optional<double> watermark = enclosure.empty() ? std::optional<double>{0.0} : std::nullopt;
-                db_.exec("BEGIN TRANSACTION");
-                db_.exec("DELETE FROM item WHERE feed_id = ? AND link = ?", {}, feed_id, link);
-                db_.exec(
-                    "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url, watermark, media_duration_seconds) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    {},
-                    link,
-                    enclosure,
-                    feed_id,
-                    title,
-                    description,
-                    pub_date,
-                    image_url,
-                    watermark,
-                    media_duration_seconds
-                );
-                db_.exec("COMMIT");
+                std::string sql = "INSERT INTO item (link, enclosure, feed_id, title, description, pub_date, image_url, watermark, media_duration_seconds) "
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                                "ON CONFLICT(feed_id, link) DO "
+                                "UPDATE SET title=excluded.title, enclosure=excluded.enclosure, "
+                                "description=excluded.description, pub_date=excluded.pub_date, image_url=excluded.image_url, "
+                                "watermark=COALESCE(item.watermark, excluded.watermark), "
+                                "media_duration_seconds=COALESCE(item.media_duration_seconds, excluded.media_duration_seconds)";
+                db_.exec(sql, {}, link, enclosure, feed_id, title, description, pub_date, image_url, watermark, media_duration_seconds);
             } catch (const std::exception& e) {
-                try { db_.exec("ROLLBACK"); } catch (...) {}
                 RSS_ERROR_FMT("Error in upsert_item_by_link: {}", e.what());
                 throw;
             }
