@@ -12,6 +12,7 @@
 #include <mutex>
 #include <sstream>
 #include "../../helpers/llm_config.hpp"
+#include "../../helpers/tag_manager.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/texture_utils.hpp"
@@ -318,11 +319,15 @@ namespace rouen::cards
             {
                 std::lock_guard<std::mutex> lock(ai_tags_mutex_);
                 if (!pending_ai_tags_.empty()) {
-                    auto current = rss_host->get_feed_tags(feed_id);
+                    std::string feed_uri = "rss-feed:" + std::to_string(feed_id);
+                    auto& tm = rouen::helpers::tag_manager::get();
+                    auto current = tm.get_tags(feed_uri);
                     for (const auto& t : current) {
+                        tm.remove_tag(feed_uri, t);
                         rss_host->remove_feed_tag(feed_id, t);
                     }
                     for (const auto& t : pending_ai_tags_) {
+                        tm.add_tag(feed_uri, t);
                         rss_host->add_feed_tag(feed_id, t);
                     }
                     pending_ai_tags_.clear();
@@ -510,9 +515,12 @@ namespace rouen::cards
                             
                             std::string chk_id = std::format("{}##tag_chk_{}", tag_name, tag_name);
                             if (ImGui::Checkbox(chk_id.c_str(), &has_tag)) {
+                                std::string feed_uri = "rss-feed:" + std::to_string(feed_id);
                                 if (has_tag) {
+                                    rouen::helpers::tag_manager::get().add_tag(feed_uri, tag_name);
                                     rss_host->add_feed_tag(feed_id, tag_name);
                                 } else {
+                                    rouen::helpers::tag_manager::get().remove_tag(feed_uri, tag_name);
                                     rss_host->remove_feed_tag(feed_id, tag_name);
                                 }
                                 update_cached_feed_metadata(true);
@@ -540,8 +548,11 @@ namespace rouen::cards
                                 return !std::isspace(ch);
                             }).base(), tag_to_add.end());
                             if (!tag_to_add.empty()) {
+                                std::string feed_uri = "rss-feed:" + std::to_string(feed_id);
+                                rouen::helpers::tag_manager::get().add_tag(feed_uri, tag_to_add);
                                 rss_host->add_feed_tag(feed_id, tag_to_add);
                                 new_tag_buffer[0] = '\0';
+                                update_cached_feed_metadata(true);
                             }
                         }
 
@@ -555,13 +566,11 @@ namespace rouen::cards
                         }
                         ImGui::SameLine();
                         if (ImGui::Button(ICON_MD_DELETE_SWEEP " Delete Unused Tags")) {
-                            if (rss_host) {
-                                rss_host->delete_unused_tags();
-                                update_cached_feed_metadata(true);
-                            }
+                            rouen::helpers::tag_manager::get().delete_unused_tags();
+                            update_cached_feed_metadata(true);
                         }
                         if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Delete all empty RSS tags not assigned to any feed");
+                            ImGui::SetTooltip("Delete all empty tags not assigned to any URI");
                         }
                         if (!ai_tagging_error_.empty()) {
                             ImGui::Spacing();
@@ -1109,8 +1118,8 @@ namespace rouen::cards
                 last_metadata_cache_time_ = now;
                 if (rss_host && feed_id >= 0) {
                     cached_feed_language_ = rss_host->get_feed_language(feed_id);
-                    cached_feed_tags_ = rss_host->get_feed_tags(feed_id);
-                    cached_available_tags_ = rss_host->get_available_tags();
+                    cached_feed_tags_ = rouen::helpers::tag_manager::get().get_tags("rss-feed:" + std::to_string(feed_id));
+                    cached_available_tags_ = rouen::helpers::tag_manager::get().get_available_tags();
                     std::sort(cached_available_tags_.begin(), cached_available_tags_.end());
                 }
             }
@@ -1160,7 +1169,7 @@ namespace rouen::cards
                         feed_info
                     );
                     
-                    std::vector<std::string> all_tags = rss_host->get_available_tags();
+                    std::vector<std::string> all_tags = rouen::helpers::tag_manager::get().get_available_tags();
                     for (const auto& tag : all_tags) {
                         prompt += std::format("- {}\n", tag);
                     }

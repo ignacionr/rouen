@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../helpers/tag_manager.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/fetch.hpp"
@@ -284,7 +285,7 @@ bool rss::render() {
             cached_all_feeds_ = rss_host->feeds();
             cached_smart_lists_ = rss_host->get_smart_lists();
             
-            std::vector<std::string> avail_tags = rss_host->get_available_tags();
+            std::vector<std::string> avail_tags = rouen::helpers::tag_manager::get().get_available_tags();
             std::unordered_map<std::string, int> tag_counts;
             for (const auto& feed : cached_all_feeds_) {
                 if (feed) {
@@ -670,7 +671,7 @@ bool rss::render() {
                 
                 // Calculate top 4 fresh tags (excluding "All")
                 std::vector<std::pair<std::string, std::chrono::system_clock::time_point>> tag_freshness;
-                std::vector<std::string> const all_possible_tags = rss_host->get_available_tags();
+                std::vector<std::string> const all_possible_tags = rouen::helpers::tag_manager::get().get_available_tags();
                 
                 for (const auto& tag : all_possible_tags) {
                     if (tag == "All") continue;

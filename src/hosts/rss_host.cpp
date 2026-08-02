@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "../helpers/tag_manager.hpp"
 
 #include "../helpers/html_media_extractor.hpp"
 #include "../helpers/platform_utils.hpp"
@@ -496,6 +497,17 @@ RSSHost::RSSHost()
     RSS_INFO_FMT("RSSHost loaded settings: timeout={}s, auto_timeout={}, refresh_interval={}s", 
                  timeout_s_, auto_timeout_enabled_ ? "true" : "false", refresh_interval_s_);
 
+    // One-time migration for defined tags
+    try {
+        auto old_avail_tags = repo_.get_available_tags_old();
+        auto& tm = rouen::helpers::tag_manager::get();
+        for (const auto& tag : old_avail_tags) {
+            tm.ensure_tag_defined(tag);
+        }
+    } catch (const std::exception& e) {
+        RSS_WARN_FMT("Failed to migrate old tag definitions: {}", e.what());
+    }
+
     // Load feeds from database synchronously so they are available immediately
     std::vector<std::string> urls;
     try {
@@ -542,9 +554,22 @@ RSSHost::RSSHost()
             });
             
             // Load tags from database
-            feed_ptr->tags = repo_.get_feed_tags(feed_id);
+            std::string feed_uri = "rss-feed:" + std::to_string(feed_id);
+            auto& tm = rouen::helpers::tag_manager::get();
+            feed_ptr->tags = tm.get_tags(feed_uri);
             
-            // If feed has no tags, classify dynamically and save
+            // Migration: if tag_manager has no tags for this feed, but the old repo does, migrate them!
+            if (feed_ptr->tags.empty()) {
+                auto old_tags = repo_.get_feed_tags_old(feed_id);
+                if (!old_tags.empty()) {
+                    for (const auto& tag : old_tags) {
+                        tm.add_tag(feed_uri, tag);
+                    }
+                    feed_ptr->tags = old_tags;
+                }
+            }
+            
+            // If feed STILL has no tags, classify dynamically and save
             if (feed_ptr->tags.empty()) {
                 std::vector<media::rss::feed_item> items_copy;
                 for (const auto& item : feed_ptr->items) {
@@ -552,7 +577,7 @@ RSSHost::RSSHost()
                 }
                 auto default_tags = classify_feed_dynamically(feed_ptr->source_link, items_copy);
                 for (const auto& tag : default_tags) {
-                    repo_.add_feed_tag(feed_id, tag);
+                    tm.add_tag(feed_uri, tag);
                 }
                 feed_ptr->tags = std::set<std::string>(default_tags.begin(), default_tags.end());
             }
@@ -1493,7 +1518,9 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
         }
 
         // Load tags for feed
-        feed_ptr->tags = repo_.get_feed_tags(feed_ptr->repo_id);
+        std::string feed_uri = "rss-feed:" + std::to_string(feed_ptr->repo_id);
+        auto& tm = rouen::helpers::tag_manager::get();
+        feed_ptr->tags = tm.get_tags(feed_uri);
         if (feed_ptr->tags.empty()) {
             std::vector<media::rss::feed_item> items_copy;
             for (const auto& item : feed_ptr->items) {
@@ -1501,7 +1528,7 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
             }
             auto default_tags = classify_feed_dynamically(feed_ptr->source_link, items_copy);
             for (const auto& tag : default_tags) {
-                repo_.add_feed_tag(feed_ptr->repo_id, tag);
+                tm.add_tag(feed_uri, tag);
             }
             feed_ptr->tags = std::set<std::string>(default_tags.begin(), default_tags.end());
         }

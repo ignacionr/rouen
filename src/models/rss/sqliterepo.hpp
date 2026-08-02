@@ -15,6 +15,7 @@
 #include "../../helpers/sqlite.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/tag_manager.hpp"
 #include "rss_item_repo.hpp"
 #include "smart_list_filter.hpp"
 
@@ -62,6 +63,7 @@ namespace media::rss
             if (field == "pub_date" || field == "published_date") return "item.pub_date";
             if (field == "media_duration_seconds" || field == "media_duration") return "item.media_duration_seconds";
             if (field == "feed_tag" || field == "tags") return "feed_tag.tag";
+            if (field == "feed_id") return "item.feed_id";
             return "item.title";
         }
 
@@ -294,7 +296,7 @@ namespace media::rss
             }
         }
 
-        std::set<std::string> get_feed_tags(long long feed_id)
+        std::set<std::string> get_feed_tags_old(long long feed_id)
         {
             std::lock_guard<std::mutex> lock(mutex_);
             std::set<std::string> tags;
@@ -305,13 +307,12 @@ namespace media::rss
                         tags.insert(tag);
                     }
                 }, feed_id);
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error getting feed tags: {}", e.what());
+            } catch (...) {
             }
             return tags;
         }
 
-        std::vector<std::string> get_available_tags()
+        std::vector<std::string> get_available_tags_old()
         {
             std::lock_guard<std::mutex> lock(mutex_);
             std::vector<std::string> tags;
@@ -322,46 +323,34 @@ namespace media::rss
                         tags.emplace_back(tag);
                     }
                 });
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error getting available tags: {}", e.what());
+            } catch (...) {
             }
             return tags;
         }
 
-        void add_feed_tag(long long feed_id, std::string_view tag)
+        std::set<std::string> get_feed_tags(long long feed_id)
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            try {
-                db_.exec("INSERT OR IGNORE INTO rss_tag_definition (tag, sort_order) VALUES (?, ?)", [](sqlite3_stmt*){}, tag, 999);
-                db_.exec("INSERT OR IGNORE INTO feed_tag (feed_id, tag) VALUES (?, ?)", [](sqlite3_stmt*){}, feed_id, tag);
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error adding feed tag: {}", e.what());
-            }
+            return rouen::helpers::tag_manager::get().get_tags("rss-feed:" + std::to_string(feed_id));
         }
 
+        std::vector<std::string> get_available_tags()
+        {
+            return rouen::helpers::tag_manager::get().get_available_tags();
+        }
+        
+        void add_feed_tag(long long feed_id, std::string_view tag)
+        {
+            rouen::helpers::tag_manager::get().add_tag("rss-feed:" + std::to_string(feed_id), std::string(tag));
+        }
+        
         void remove_feed_tag(long long feed_id, std::string_view tag)
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            try {
-                db_.exec("DELETE FROM feed_tag WHERE feed_id = ? AND tag = ?", [](sqlite3_stmt*){}, feed_id, tag);
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error removing feed tag: {}", e.what());
-            }
+            rouen::helpers::tag_manager::get().remove_tag("rss-feed:" + std::to_string(feed_id), std::string(tag));
         }
 
         int delete_unused_tags()
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            int deleted_count = 0;
-            try {
-                db_.exec("DELETE FROM feed_tag WHERE feed_id NOT IN (SELECT id FROM feed)", [](sqlite3_stmt*){});
-                db_.exec("DELETE FROM rss_tag_definition WHERE tag NOT IN (SELECT DISTINCT tag FROM feed_tag)", [](sqlite3_stmt*){});
-                deleted_count = db_.changes();
-                RSS_INFO_FMT("Deleted {} unused RSS tags", deleted_count);
-            } catch (const std::exception& e) {
-                RSS_ERROR_FMT("Error deleting unused tags: {}", e.what());
-            }
-            return deleted_count;
+            return rouen::helpers::tag_manager::get().delete_unused_tags();
         }
 
 
@@ -470,8 +459,7 @@ namespace media::rss
                 }, url);
 
                 if (feed_id != -1) {
-                    sql = "DELETE FROM feed_tag WHERE feed_id = ?";
-                    db_.exec(sql, {}, feed_id);
+                    rouen::helpers::tag_manager::get().remove_all_tags("rss-feed:" + std::to_string(feed_id));
 
                     sql = "DELETE FROM item WHERE feed_id = ?";
                     db_.exec(sql, {}, feed_id);
@@ -849,18 +837,81 @@ namespace media::rss
 
         template<typename Sink>
         void scan_filtered_items(const filter_group& filter, Sink sink) {
+            filter_group resolved_filter = filter;
+            for (auto& cond : resolved_filter.conditions) {
+                if (cond.field == "feed_tag" || cond.field == "tags") {
+                    std::vector<std::string> target_tags;
+                    if (cond.op == "IN" || cond.op == "NOT IN") {
+                        std::stringstream ss(cond.value);
+                        std::string tag;
+                        while (std::getline(ss, tag, ',')) {
+                            tag.erase(0, tag.find_first_not_of(" \t"));
+                            tag.erase(tag.find_last_not_of(" \t") + 1);
+                            if (!tag.empty()) {
+                                target_tags.push_back(tag);
+                            }
+                        }
+                    } else {
+                        target_tags.push_back(cond.value);
+                    }
+
+                    std::set<long long> matching_feed_ids;
+                    auto& tm = rouen::helpers::tag_manager::get();
+                    
+                    if (cond.op == "CONTAINS" || cond.op == "EXCLUDES") {
+                        for (const auto& avail_tag : tm.get_available_tags()) {
+                            if (avail_tag.find(cond.value) != std::string::npos) {
+                                for (const auto& uri : tm.get_uris_by_tag(avail_tag)) {
+                                    if (uri.starts_with("rss-feed:")) {
+                                        try {
+                                            matching_feed_ids.insert(std::stoll(uri.substr(9)));
+                                        } catch (...) {}
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        for (const auto& tag : target_tags) {
+                            for (const auto& uri : tm.get_uris_by_tag(tag)) {
+                                if (uri.starts_with("rss-feed:")) {
+                                    try {
+                                        matching_feed_ids.insert(std::stoll(uri.substr(9)));
+                                    } catch (...) {}
+                                }
+                            }
+                        }
+                    }
+
+                    cond.field = "feed_id";
+                    if (cond.op == "NOT IN" || cond.op == "EXCLUDES" || cond.op == "!=") {
+                        cond.op = "NOT IN";
+                    } else {
+                        cond.op = "IN";
+                    }
+
+                    std::string id_list;
+                    for (auto id : matching_feed_ids) {
+                        if (!id_list.empty()) id_list += ",";
+                        id_list += std::to_string(id);
+                    }
+                    if (id_list.empty()) {
+                        id_list = "-1";
+                    }
+                    cond.value = id_list;
+                }
+            }
+
             std::string sql = "SELECT DISTINCT item.feed_id, feed.title, item.link, item.enclosure, item.title, item.description, item.pub_date, item.image_url, item.watermark, item.media_duration_seconds "
                               "FROM item "
-                              "JOIN feed ON item.feed_id = feed.id "
-                              "LEFT JOIN feed_tag ON feed.id = feed_tag.feed_id";
+                              "JOIN feed ON item.feed_id = feed.id";
             
             std::vector<std::string> params;
-            if (!filter.conditions.empty()) {
+            if (!resolved_filter.conditions.empty()) {
                 sql += " WHERE ";
-                for (size_t i = 0; i < filter.conditions.size(); ++i) {
-                    const auto& cond = filter.conditions[i];
+                for (size_t i = 0; i < resolved_filter.conditions.size(); ++i) {
+                    const auto& cond = resolved_filter.conditions[i];
                     if (i > 0) {
-                        sql += " " + filter.op + " ";
+                        sql += " " + resolved_filter.op + " ";
                     }
                     
                     std::string col = filter_field_to_column(cond.field);
