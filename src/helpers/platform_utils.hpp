@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <sstream>
 #include <thread>
+#include <mutex>
+#include <unordered_map>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h> // For _NSGetExecutablePath
@@ -541,6 +543,53 @@ namespace rouen::platform
         return user_data_dir;
     }
 
+    // Helper to search /nix/store directly for an executable (e.g. *-git-*/bin/git)
+    // if not found in PATH or standard profile symlinks.
+    inline std::string find_nix_store_executable(const std::string& name) {
+        static std::mutex nix_mutex;
+        static std::unordered_map<std::string, std::string> nix_cache;
+
+        std::lock_guard<std::mutex> const lock(nix_mutex);
+        auto const it = nix_cache.find(name);
+        if (it != nix_cache.end()) {
+            return it->second;
+        }
+
+        std::filesystem::path const nix_store("/nix/store");
+        std::error_code ec;
+        if (!std::filesystem::exists(nix_store, ec)) {
+            nix_cache[name] = "";
+            return "";
+        }
+
+        std::string best_path;
+        const std::string pattern1 = "-" + name + "-";
+        const std::string pattern2 = "-" + name;
+
+        auto options = std::filesystem::directory_options::skip_permission_denied;
+        std::filesystem::directory_iterator dir_it(nix_store, options, ec);
+        std::filesystem::directory_iterator const end_it;
+
+        while (dir_it != end_it && !ec) {
+            std::error_code entry_ec;
+            const auto& entry = *dir_it;
+            if (entry.is_directory(entry_ec)) {
+                std::string const filename = entry.path().filename().string();
+                if (filename.find(pattern1) != std::string::npos || filename.ends_with(pattern2)) {
+                    std::filesystem::path const bin_path = entry.path() / "bin" / name;
+                    if (std::filesystem::exists(bin_path, entry_ec)) {
+                        best_path = bin_path.string();
+                        break;
+                    }
+                }
+            }
+            dir_it.increment(ec);
+        }
+
+        nix_cache[name] = best_path;
+        return best_path;
+    }
+
     /**
      * Finds an executable on the system by searching the PATH environment variable
      * and common installation directories for Homebrew and Nix profiles.
@@ -556,7 +605,42 @@ namespace rouen::platform
         // Define directories to search
         std::vector<std::filesystem::path> search_dirs;
         
-        // 1. Check directories in system PATH environment variable
+#ifndef _WIN32
+        // macOS / Linux common paths
+        // 1. Check NIX_PROFILES env var if present
+        std::string nix_profiles = get_env("NIX_PROFILES");
+        if (!nix_profiles.empty()) {
+            std::string profile_item;
+            std::stringstream ss_nix(nix_profiles);
+            while (ss_nix >> profile_item) {
+                if (!profile_item.empty()) {
+                    search_dirs.push_back(std::filesystem::path(profile_item) / "bin");
+                }
+            }
+        }
+
+        // 2. User local binary paths & standard Nix profile paths
+        std::string home_dir = get_env("HOME");
+        if (!home_dir.empty()) {
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
+        }
+        search_dirs.push_back("/nix/var/nix/profiles/default/bin");
+        search_dirs.push_back("/run/current-system/sw/bin");
+        
+        std::string user_env = get_env("USER");
+        if (!user_env.empty()) {
+            search_dirs.push_back(std::filesystem::path("/nix/var/nix/profiles/per-user") / user_env / "profile" / "bin");
+            search_dirs.push_back(std::filesystem::path("/etc/profiles/per-user") / user_env / "bin");
+            search_dirs.push_back(std::filesystem::path("/etc/profiles/per-user") / user_env / "profile" / "bin");
+        }
+
+        // 3. Homebrew paths
+        search_dirs.push_back("/opt/homebrew/bin");
+        search_dirs.push_back("/usr/local/bin");
+#endif
+
+        // 4. Check non-system directories in system PATH environment variable
         std::string path_env = get_env("PATH");
         if (!path_env.empty()) {
             std::string item;
@@ -568,34 +652,19 @@ namespace rouen::platform
 #endif
             while (std::getline(ss, item, delim)) {
                 if (!item.empty()) {
+#ifndef _WIN32
+                    // Exclude system default paths so Nix/Homebrew take priority over macOS stubs
+                    if (item == "/usr/bin" || item == "/bin" || item == "/usr/sbin" || item == "/sbin") {
+                        continue;
+                    }
+#endif
                     search_dirs.push_back(item);
                 }
             }
         }
-        
-        // 2. Add common search paths for Homebrew, Nix, and standard directories
-#ifdef _WIN32
-        // Windows common paths can be added here if needed
-#else
-        // macOS / Linux common paths
-        // User local binary paths first (highly likely to have modern hermetic or user-installed environments)
-        std::string home_dir = get_env("HOME");
-        if (!home_dir.empty()) {
-            search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
-            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
-        }
-        search_dirs.push_back("/nix/var/nix/profiles/default/bin");
-        
-        std::string user_env = get_env("USER");
-        if (!user_env.empty()) {
-            search_dirs.push_back(std::filesystem::path("/nix/var/nix/profiles/per-user") / user_env / "profile" / "bin");
-        }
 
-        // Homebrew paths next
-        search_dirs.push_back("/opt/homebrew/bin");
-        search_dirs.push_back("/usr/local/bin");
-
-        // Standard system paths last
+#ifndef _WIN32
+        // 5. Standard system paths last
         search_dirs.push_back("/usr/bin");
         search_dirs.push_back("/bin");
         search_dirs.push_back("/usr/sbin");
@@ -614,6 +683,13 @@ namespace rouen::platform
                 try {
                     if (std::filesystem::is_regular_file(full_path)) {
 #ifndef _WIN32
+                        // Skip /usr/bin stubs if direct Nix store binary is available
+                        if (dir == "/usr/bin" || dir == "/bin") {
+                            std::string const nix_store_bin = find_nix_store_executable(name);
+                            if (!nix_store_bin.empty()) {
+                                return nix_store_bin;
+                            }
+                        }
                         auto p = std::filesystem::status(full_path).permissions();
                         if ((p & std::filesystem::perms::owner_exec) != std::filesystem::perms::none ||
                             (p & std::filesystem::perms::group_exec) != std::filesystem::perms::none ||
@@ -628,6 +704,14 @@ namespace rouen::platform
             }
         }
         
+#ifndef _WIN32
+        // Check /nix/store directly if still not found
+        std::string const nix_store_bin = find_nix_store_executable(name);
+        if (!nix_store_bin.empty()) {
+            return nix_store_bin;
+        }
+#endif
+
         // Fall back to original name if not found
         return name;
     }

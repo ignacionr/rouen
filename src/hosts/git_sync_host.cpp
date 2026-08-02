@@ -77,8 +77,10 @@ namespace rouen::hosts {
             return false;
         }
 
+        const std::string git_path = rouen::helpers::ConfigService::instance()->get_git_path();
         const std::string command = std::format(
-            "git clone {} {}",
+            "\"{}\" clone {} {}",
+            git_path,
             shell_escape(repo_url_),
             shell_escape(cache_path_)
         );
@@ -114,15 +116,17 @@ namespace rouen::hosts {
         }
 
         GIT_SYNC_INFO("Pulling latest changes from remote Git repository...");
+        const std::string git_path = rouen::helpers::ConfigService::instance()->get_git_path();
         const std::string command = std::format(
-            "GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git -C {} -c core.editor=true pull --rebase -X ours --autostash",
+            "GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true \"{}\" -C {} -c core.editor=true pull --rebase -X ours --autostash",
+            git_path,
             shell_escape(cache_path_)
         );
 
         if (!run_shell(command)) {
             status_message_ = "Git pull failed: " + status_message_;
             GIT_SYNC_ERROR(status_message_);
-            run_shell(std::format("GIT_EDITOR=true git -C {} rebase --abort", shell_escape(cache_path_)));
+            run_shell(std::format("GIT_EDITOR=true \"{}\" -C {} rebase --abort", git_path, shell_escape(cache_path_)));
             return false;
         }
 
@@ -143,9 +147,11 @@ namespace rouen::hosts {
             return false;
         }
 
+        const std::string git_path = rouen::helpers::ConfigService::instance()->get_git_path();
         GIT_SYNC_INFO("Staging all changes in local cache...");
         const std::string add_cmd = std::format(
-            "git -C {} add -A",
+            "\"{}\" -C {} add -A",
+            git_path,
             shell_escape(cache_path_)
         );
         if (!run_shell(add_cmd)) {
@@ -156,7 +162,8 @@ namespace rouen::hosts {
 
         GIT_SYNC_INFO_FMT("Committing changes with message '{}'...", commit_message);
         const std::string commit_cmd = std::format(
-            "git -C {} commit -m {}",
+            "\"{}\" -C {} commit -m {}",
+            git_path,
             shell_escape(cache_path_),
             shell_escape(commit_message)
         );
@@ -176,7 +183,8 @@ namespace rouen::hosts {
 
         GIT_SYNC_INFO("Pushing committed changes to remote repository...");
         const std::string push_cmd = std::format(
-            "git -C {} push",
+            "\"{}\" -C {} push",
+            git_path,
             shell_escape(cache_path_)
         );
         if (!run_shell(push_cmd)) {
@@ -259,7 +267,13 @@ namespace rouen::hosts {
         const std::string pass_field = "pass" "word";
         credential_input += std::format("{}={}\n\n", pass_field, token_);
 
-        FILE* pipe = popen("git credential approve", "w");
+        const std::string git_path = rouen::helpers::ConfigService::instance()->get_git_path();
+        std::string cred_cmd = std::format("\"{}\" credential approve", git_path);
+        if constexpr (!rouen::platform::is_windows) {
+            cred_cmd = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + cred_cmd;
+        }
+
+        FILE* pipe = popen(cred_cmd.c_str(), "w");
         if (pipe == nullptr) {
             status_message_ = "Unable to launch git credential helper";
             GIT_SYNC_ERROR(status_message_);
@@ -278,14 +292,20 @@ namespace rouen::hosts {
     }
 
     bool GitSyncHost::is_remote_empty() {
+        const std::string git_path = rouen::helpers::ConfigService::instance()->get_git_path();
         const std::string cmd = std::format(
-            "git -C {} ls-remote --heads origin",
+            "\"{}\" -C {} ls-remote --heads origin",
+            git_path,
             shell_escape(cache_path_)
         );
 
         std::string output;
         std::array<char, 128> buffer{};
-        FILE* pipe = popen((cmd + " 2>&1").c_str(), "r");
+        std::string command_to_run = cmd;
+        if constexpr (!rouen::platform::is_windows) {
+            command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + cmd;
+        }
+        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r");
         if (pipe != nullptr) {
             while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
                 output += buffer.data();
@@ -304,7 +324,12 @@ namespace rouen::hosts {
         output.reserve(2048);
         std::array<char, 512> buffer{};
 
-        FILE* pipe = popen((command + " 2>&1").c_str(), "r");
+        std::string command_to_run = command;
+        if constexpr (!rouen::platform::is_windows) {
+            command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + command;
+        }
+
+        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r");
         if (pipe == nullptr) {
             status_message_ = "Failed to open command pipe";
             return false;

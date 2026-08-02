@@ -572,9 +572,24 @@ bool ConfigService::validate_executable_path(const std::string& path) {
     namespace fs = std::filesystem;
     try {
         fs::perms const p = fs::status(file_path).permissions();
-        return (p & fs::perms::owner_exec) != fs::perms::none ||
-               (p & fs::perms::group_exec) != fs::perms::none ||
-               (p & fs::perms::others_exec) != fs::perms::none;
+        bool const is_exec = (p & fs::perms::owner_exec) != fs::perms::none ||
+                             (p & fs::perms::group_exec) != fs::perms::none ||
+                             (p & fs::perms::others_exec) != fs::perms::none;
+        if (!is_exec) return false;
+
+#if defined(__APPLE__)
+        // On macOS, /usr/bin/git and /bin/git are Xcode stub wrappers.
+        // If Xcode CLI tools are not installed, running them outputs "error: tool 'git' not found".
+        // Reject stub binaries so Nix or Homebrew real git binaries are selected.
+        if (file_path == "/usr/bin/git" || file_path == "/bin/git") {
+            std::string const output = ProcessHelper::executeCommand("\"" + path + "\" --version 2>&1");
+            if (output.find("error: tool") != std::string::npos || output.find("git version") == std::string::npos) {
+                return false;
+            }
+        }
+#endif
+
+        return true;
     } catch (const std::exception&) {
         return false;
     }
@@ -587,17 +602,12 @@ bool ConfigService::validate_executable_path(const std::string& path) {
 std::string ConfigService::get_validated_executable_path(const std::string& env_name, const std::string& default_value) const {
     std::string path = get_env(env_name);
     
-    if (path.empty()) {
-        path = default_value;
-    }
-    
-    // Check if the path is valid as is
-    if (validate_executable_path(path)) {
+    if (!path.empty() && path != default_value && validate_executable_path(path)) {
         return path;
     }
     
     // Try to resolve the executable (handles Nix/Homebrew and system PATH paths)
-    std::string resolved_path = rouen::platform::find_executable(path);
+    std::string resolved_path = rouen::platform::find_executable(default_value);
     if (validate_executable_path(resolved_path)) {
         return resolved_path;
     }

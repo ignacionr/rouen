@@ -31,6 +31,7 @@ pkgs.mkShell {
     pkgs.glaze
     pkgs.imgui
     pkgs.pdfium-binaries
+    pkgs.git
     # Add macOS SDK frameworks for proper header isolation
   ] ++ (if isDarwin then [
     # Use current Darwin frameworks - these should be available in modern nixpkgs

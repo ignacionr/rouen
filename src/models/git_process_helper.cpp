@@ -1,24 +1,8 @@
 #include "git_process_helper.hpp"
-#include <cstdio>
-#include <array>
-#include <string>
-
-#ifdef _WIN32
-#define popen _popen
-#define pclose _pclose
-#endif
+#include "../helpers/process_helper.hpp"
 
 namespace rouen::models {
     std::string GitProcessHelper::executeCommandInDirectory(const std::string& dir, const std::string& command) {
-        std::string const full_cmd = "cd '" + dir + "' && " + command + " 2>&1";
-        std::array<char, 128> buffer;
-        std::string result;
-        FILE* pipe = popen(full_cmd.c_str(), "r"); // NOLINT(cert-env33-c)
-        if (!pipe) return "";
-        while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-            result += buffer.data();
-        }
-        pclose(pipe);
-        return result;
+        return ProcessHelper::executeCommandInDirectory(dir, command + " 2>&1");
     }
 }

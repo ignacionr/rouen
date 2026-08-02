@@ -166,6 +166,7 @@ add_gtest_rss_executable(test_rss_autodiscovery test_rss_autodiscovery.cpp)
 
 # RSS Tags Test
 add_gtest_rss_executable(test_rss_tags test_rss_tags.cpp)
+target_sources(test_rss_tags PRIVATE ../src/helpers/tag_manager.cpp)
 target_link_libraries(test_rss_tags PRIVATE SQLite::SQLite3)
 
 # RT Media Extraction Test - tests RT.com specific RSS media extraction patterns

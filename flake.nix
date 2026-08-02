@@ -109,6 +109,7 @@
             unstable.pkg-config 
             unstable.git 
             unstable.cacert 
+            unstable.makeWrapper
           ];
           buildInputs = [ 
             unstable.sdl3
@@ -164,6 +165,7 @@
               if [ -d "rouen.app" ]; then
                 mkdir -p $out/Applications
                 cp -R rouen.app $out/Applications/Rouen.app
+                wrapProgram $out/Applications/Rouen.app/Contents/MacOS/rouen --prefix PATH : ${unstable.lib.makeBinPath [ unstable.git ]}
                 ln -s ../Applications/Rouen.app/Contents/MacOS/rouen $out/bin/rouen
               else
                 echo "Error: Could not find rouen.app"
@@ -176,6 +178,7 @@
               # On Linux, look for the binary
               if [ -f "rouen" ]; then
                 cp rouen $out/bin/
+                wrapProgram $out/bin/rouen --prefix PATH : ${unstable.lib.makeBinPath [ unstable.git ]}
               else
                 echo "Error: Could not find rouen binary"
                 echo "Directory contents:"
