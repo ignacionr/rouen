@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <format>
 #include <cstdlib>
 #include <filesystem>
@@ -562,7 +563,7 @@ namespace rouen::platform
             return "";
         }
 
-        std::string best_path;
+        std::vector<std::string> candidates;
         const std::string pattern1 = "-" + name + "-";
         const std::string pattern2 = "-" + name;
 
@@ -578,12 +579,17 @@ namespace rouen::platform
                 if (filename.find(pattern1) != std::string::npos || filename.ends_with(pattern2)) {
                     std::filesystem::path const bin_path = entry.path() / "bin" / name;
                     if (std::filesystem::exists(bin_path, entry_ec)) {
-                        best_path = bin_path.string();
-                        break;
+                        candidates.push_back(bin_path.string());
                     }
                 }
             }
             dir_it.increment(ec);
+        }
+
+        std::string best_path;
+        if (!candidates.empty()) {
+            std::sort(candidates.begin(), candidates.end());
+            best_path = candidates.back();
         }
 
         nix_cache[name] = best_path;
@@ -607,7 +613,14 @@ namespace rouen::platform
         
 #ifndef _WIN32
         // macOS / Linux common paths
-        // 1. Check NIX_PROFILES env var if present
+        // 1. User local binary paths & standard Nix profile paths (user profile overrides devshell store)
+        std::string home_dir = get_env("HOME");
+        if (!home_dir.empty()) {
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
+        }
+
+        // 2. Check NIX_PROFILES env var if present
         std::string nix_profiles = get_env("NIX_PROFILES");
         if (!nix_profiles.empty()) {
             std::string profile_item;
@@ -617,13 +630,6 @@ namespace rouen::platform
                     search_dirs.push_back(std::filesystem::path(profile_item) / "bin");
                 }
             }
-        }
-
-        // 2. User local binary paths & standard Nix profile paths
-        std::string home_dir = get_env("HOME");
-        if (!home_dir.empty()) {
-            search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
-            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
         }
         search_dirs.push_back("/nix/var/nix/profiles/default/bin");
         search_dirs.push_back("/run/current-system/sw/bin");

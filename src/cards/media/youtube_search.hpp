@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -319,8 +320,8 @@ namespace rouen::cards {
                 auto config = rouen::helpers::ConfigService::instance();
                 std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-                auto run_yt_search = [&](const std::string& cargs) -> std::vector<youtube_result> {
-                    std::string cflags = cargs.empty() ? "" : (" " + cargs);
+                auto run_yt_search = [&ytdlp_path, &escaped_query](std::string_view cargs) -> std::vector<youtube_result> {
+                    std::string cflags = cargs.empty() ? "" : (" " + std::string(cargs));
                     std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github " : "";
                     std::string cmd = std::format("\"{}\" --no-warnings --no-call-home {}--socket-timeout 10{} --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", ytdlp_path, remote_flag, cflags, escaped_query);
                     std::string output = ProcessHelper::executeCommand(cmd);
@@ -399,23 +400,38 @@ namespace rouen::cards {
                 };
 
                 std::vector<youtube_result> temp_results = run_yt_search(cookie_args);
-                if (temp_results.empty() && !cookie_args.empty()) {
-                    temp_results = run_yt_search("");
-                }
+
                 if (temp_results.empty()) {
-                    static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
-                    std::string configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+                    if (config) {
+                        config->clear_youtube_cookies();
+                        if (config->refresh_youtube_cookies()) {
+                            std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
+                            temp_results = run_yt_search(fresh_cookie_args);
+                        }
+                    }
+                }
+
+                if (temp_results.empty()) {
+                    static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
                     for (const auto& browser : candidate_browsers) {
-                        if (browser == configured_browser) continue;
                         std::string fb_args = std::format("--cookies-from-browser {}", browser);
                         temp_results = run_yt_search(fb_args);
                         if (!temp_results.empty()) {
                             if (config) {
-                                config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
+                                config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
+                            }
+                            const char* home = getenv("HOME");
+                            if (home) {
+                                std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
+                                ProcessHelper::executeCommand(save_cmd);
                             }
                             break;
                         }
                     }
+                }
+
+                if (temp_results.empty()) {
+                    temp_results = run_yt_search("--no-cookies");
                 }
 
                 if (!temp_results.empty()) {

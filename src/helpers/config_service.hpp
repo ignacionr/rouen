@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <map>
 #include <vector>
@@ -49,10 +50,10 @@ namespace rouen::helpers {
         static std::shared_ptr<ConfigService> instance();
 
         // Core environment variable access
-        std::string get_env(const std::string& name) const;
-        std::optional<std::string> get_env_optional(const std::string& name) const;
-        bool has_env(const std::string& name) const;
-        bool set_env_value(const std::string& name, const std::string& value, bool persist_to_env_file = false);
+        std::string get_env(std::string_view name) const;
+        std::optional<std::string> get_env_optional(std::string_view name) const;
+        bool has_env(std::string_view name) const;
+        bool set_env_value(std::string_view name, std::string_view value, bool persist_to_env_file = false);
 
         // Typed getters with validation
         template<typename T>
@@ -96,6 +97,7 @@ namespace rouen::helpers {
         // yt-dlp cookie options helper
         std::string get_ytdlp_cookie_args() const;
         bool refresh_youtube_cookies() const;
+        void clear_youtube_cookies() const;
 
         // Path validation helpers
         static bool validate_executable_path(const std::string& path);

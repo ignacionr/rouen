@@ -565,9 +565,9 @@ namespace rouen::cards {
             auto config = rouen::helpers::ConfigService::instance();
             std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-            auto fetch_sub_file = [&](const std::string& cargs, const std::string& extra_ext_args = "") -> std::filesystem::path {
-                std::string extra_flags = cargs.empty() ? "" : (" " + cargs);
-                std::string ext_flags = extra_ext_args.empty() ? "" : (" " + extra_ext_args);
+            auto fetch_sub_file = [&ytdlp_path, &out_prefix, &detected_url](std::string_view cargs, std::string_view extra_ext_args = "") -> std::filesystem::path {
+                std::string extra_flags = cargs.empty() ? "" : (" " + std::string(cargs));
+                std::string ext_flags = extra_ext_args.empty() ? "" : (" " + std::string(extra_ext_args));
                 std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github" : "";
                 std::string const cmd = std::format("\"{}\" -q --no-warnings {}{}{} --skip-download --write-sub --write-auto-sub "
                                               "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
@@ -585,30 +585,48 @@ namespace rouen::cards {
             };
 
             std::filesystem::path found_file = fetch_sub_file(cookie_args);
+
             if (found_file.empty()) {
-                std::string const client_fb = "--extractor-args \"youtube:player_client=tv,mweb,android,web\"";
-                found_file = fetch_sub_file(cookie_args, client_fb);
-                if (found_file.empty() && !cookie_args.empty()) {
-                    found_file = fetch_sub_file("", client_fb);
+                if (config) {
+                    config->clear_youtube_cookies();
+                    if (config->refresh_youtube_cookies()) {
+                        std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
+                        found_file = fetch_sub_file(fresh_cookie_args);
+                    }
                 }
             }
 
             if (found_file.empty()) {
-                static const std::vector<std::string> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
-                std::string const configured_browser = config ? config->get_env("ROUEN_COOKIES_BROWSER") : "";
+                static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
                 for (const auto& browser : candidate_browsers) {
-                    if (browser == configured_browser) continue;
                     std::string const fb_args = std::format("--cookies-from-browser {}", browser);
                     found_file = fetch_sub_file(fb_args);
                     if (found_file.empty()) {
-                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web\"");
+                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"");
                     }
                     if (!found_file.empty()) {
                         if (config) {
-                            config->set_env_value("ROUEN_COOKIES_BROWSER", browser, true);
+                            config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
+                        }
+                        const char* home = getenv("HOME");
+                        if (home) {
+                            std::string const save_cmd = std::format("\"{}\" -q --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
+                            ProcessHelper::executeCommand(save_cmd);
                         }
                         break;
                     }
+                }
+            }
+
+            if (found_file.empty()) {
+                static const std::vector<std::string_view> client_specs = {
+                    "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"",
+                    "--extractor-args \"youtube:player_client=android,web,tv\"",
+                    "--extractor-args \"youtube:player_client=ios,mweb,web\""
+                };
+                for (const auto& cspec : client_specs) {
+                    found_file = fetch_sub_file("--no-cookies", cspec);
+                    if (!found_file.empty()) break;
                 }
             }
 

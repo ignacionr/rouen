@@ -16,6 +16,7 @@
 #include <ranges>
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -37,11 +38,13 @@
 namespace rouen::helpers {
 
     namespace {
-        bool set_process_environment_variable(const std::string& name, const std::string& value) {
+        bool set_process_environment_variable(std::string_view name, std::string_view value) {
+            std::string name_str(name);
+            std::string val_str(value);
 #ifdef _WIN32
-            return _putenv_s(name.c_str(), value.c_str()) == 0;
+            return _putenv_s(name_str.c_str(), val_str.c_str()) == 0;
 #else
-            return ::setenv(name.c_str(), value.c_str(), 1) == 0;
+            return ::setenv(name_str.c_str(), val_str.c_str(), 1) == 0;
 #endif
         }
     }
@@ -62,53 +65,56 @@ namespace rouen::helpers {
         return instance_;
     }
 
-    std::string ConfigService::get_env(const std::string& name) const {
+    std::string ConfigService::get_env(std::string_view name) const {
         std::lock_guard<std::mutex> const lock(mutex_);
         
+        std::string key(name);
         // Check cache first
-        auto cache_it = cache_.find(name);
+        auto cache_it = cache_.find(key);
         if (cache_it != cache_.end()) {
             return cache_it->second;
         }
         
         // Use priority-based lookup (.env file first, then environment)
-        std::string value = get_env_value_priority(name);
-        cache_[name] = value;
+        std::string value = get_env_value_priority(key);
+        cache_[key] = value;
         
         CONFIG_DEBUG_FMT("Retrieved configuration '{}': '{}'", 
-                        name, mask_sensitive_value(value, is_sensitive_config(name)));
+                        key, mask_sensitive_value(value, is_sensitive_config(key)));
         
         return value;
     }
 
-    std::optional<std::string> ConfigService::get_env_optional(const std::string& name) const {
+    std::optional<std::string> ConfigService::get_env_optional(std::string_view name) const {
         std::string value = get_env(name);
         return value.empty() ? std::nullopt : std::make_optional(value);
     }
 
-    bool ConfigService::has_env(const std::string& name) const {
+    bool ConfigService::has_env(std::string_view name) const {
         return !get_env(name).empty();
     }
 
-    bool ConfigService::set_env_value(const std::string& name, const std::string& value, bool persist_to_env_file) {
+    bool ConfigService::set_env_value(std::string_view name, std::string_view value, bool persist_to_env_file) {
         std::function<void(const std::string&, const std::string&)> callback;
+        std::string name_str(name);
+        std::string val_str(value);
 
         {
             std::lock_guard<std::mutex> const lock(mutex_);
 
             if (!set_process_environment_variable(name, value)) {
-                CONFIG_ERROR_FMT("Failed to set environment variable '{}'", name);
+                CONFIG_ERROR_FMT("Failed to set environment variable '{}'", name_str);
                 return false;
             }
 
-            cache_[name] = value;
+            cache_[name_str] = val_str;
 
-            if (auto it = registered_configs_.find(name); it != registered_configs_.end()) {
-                it->second.value = value;
+            if (auto it = registered_configs_.find(name_str); it != registered_configs_.end()) {
+                it->second.value = val_str;
             }
 
             if (env_file_loaded_ || persist_to_env_file) {
-                env_file_values_[name] = value;
+                env_file_values_[name_str] = val_str;
                 env_file_loaded_ = true;
             }
 
@@ -116,7 +122,7 @@ namespace rouen::helpers {
         }
 
         if (callback) {
-            callback(name, value);
+            callback(name_str, val_str);
         }
 
         if (persist_to_env_file) {
@@ -651,10 +657,34 @@ std::string ConfigService::get_ping_path() const {
     return get_validated_executable_path("PING_PATH", "ping");
 }
 
+void ConfigService::clear_youtube_cookies() const {
+    const char* home = getenv("HOME");
+    std::string const home_dir = home ? home : "";
+    if (home_dir.empty()) return;
+
+    std::vector<std::string> const auto_cookie_paths = {
+        home_dir + "/.config/rouen/cookies.txt",
+        home_dir + "/Library/Application Support/Rouen/cookies.txt",
+        home_dir + "/Downloads/cookies.txt",
+        home_dir + "/Desktop/cookies.txt",
+        home_dir + "/cookies.txt",
+        home_dir + "/.cookies.txt"
+    };
+
+    std::error_code ec;
+    for (const auto& path : auto_cookie_paths) {
+        if (std::filesystem::exists(path)) {
+            std::filesystem::remove(path, ec);
+        }
+    }
+}
+
 std::string ConfigService::get_ytdlp_cookie_args() const {
     std::string file = get_env("ROUEN_COOKIES_FILE");
     if (!file.empty() && std::filesystem::exists(file)) {
-        return std::format("--cookies \"{}\"", file);
+        if (std::filesystem::file_size(file) > 0) {
+            return std::format("--cookies \"{}\"", file);
+        }
     }
 
     const char* home = getenv("HOME");
@@ -670,14 +700,24 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
         };
         for (const auto& path : auto_cookie_paths) {
             if (std::filesystem::exists(path)) {
-                return std::format("--cookies \"{}\"", path);
+                if (std::filesystem::file_size(path) > 0) {
+                    return std::format("--cookies \"{}\"", path);
+                } else {
+                    std::error_code ec;
+                    std::filesystem::remove(path, ec);
+                }
             }
         }
     }
 
     std::string browser = get_env("ROUEN_COOKIES_BROWSER");
+    if constexpr (platform::is_apple) {
+        if (browser.empty()) {
+            browser = "safari";
+        }
+    }
     if (!browser.empty()) {
-        static const std::vector<std::string> valid_browsers = {
+        static const std::vector<std::string_view> valid_browsers = {
             "safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium", "whale"
         };
         bool is_valid = false;
@@ -691,6 +731,7 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
             return std::format("--cookies-from-browser {}", browser);
         }
     }
+
     return "";
 }
 
@@ -702,31 +743,43 @@ bool ConfigService::refresh_youtube_cookies() const {
     std::string const home_dir = home ? home : "";
     if (home_dir.empty()) return false;
 
+    // First purge any existing stale/broken cookies file before attempting browser export
+    clear_youtube_cookies();
+
     std::filesystem::path const target_dir = std::filesystem::path(home_dir) / ".config" / "rouen";
     std::error_code ec;
     std::filesystem::create_directories(target_dir, ec);
     std::filesystem::path const target_file = target_dir / "cookies.txt";
 
-    static const std::vector<std::string> candidate_browsers = {
+    static const std::vector<std::string_view> candidate_browsers = {
         "safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"
     };
 
     for (const auto& browser : candidate_browsers) {
-        std::string const cmd = std::format("\"{}\" --cookies-from-browser {} --cookies \"{}\" --skip-download \"https://www.youtube.com\" 2>&1",
+        // Ensure fresh file target for each browser attempt
+        if (std::filesystem::exists(target_file)) {
+            std::filesystem::remove(target_file, ec);
+        }
+
+        std::string const cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}\" --skip-download \"https://www.youtube.com\" 2>&1",
                                             ytdl_exe, browser, target_file.string());
         ProcessHelper::executeCommand(cmd);
 
-        if (std::filesystem::exists(target_file) && std::filesystem::file_size(target_file) > 0) {
-            std::string const test_cmd = std::format("\"{}\" --cookies \"{}\" --skip-download --socket-timeout 5 \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" 2>&1",
+        if (std::filesystem::exists(target_file) && std::filesystem::file_size(target_file) > 100) {
+            std::string const test_cmd = std::format("\"{}\" --no-warnings --cookies \"{}\" --skip-download --socket-timeout 10 \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" 2>&1",
                                                      ytdl_exe, target_file.string());
             std::string const test_out = ProcessHelper::executeCommand(test_cmd);
 
             if (test_out.find("cookies are no longer valid") != std::string::npos ||
-                test_out.find("Sign in to confirm you") != std::string::npos) {
+                test_out.find("Sign in to confirm") != std::string::npos ||
+                test_out.find("YouTube requires cookies") != std::string::npos ||
+                test_out.find("bot") != std::string::npos) {
                 std::filesystem::remove(target_file, ec);
                 continue;
             }
 
+            // Persist detected working browser configuration
+            const_cast<ConfigService*>(this)->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
             CONFIG_INFO_FMT("Successfully refreshed YouTube cookies from browser: {}", browser);
             return true;
         }
