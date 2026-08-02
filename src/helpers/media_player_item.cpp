@@ -319,10 +319,14 @@ bool media_player_item::playMedia(const void* owner) {
                 return true;
             };
 
+            auto config = rouen::helpers::ConfigService::instance();
+            std::string const pref_quality = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
+            std::string const cache_key = std::format("{}|{}", sanitized_url, pref_quality);
+
             bool found_cached = false;
             {
                 std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
-                auto it = s_yt_resolved_urls.find(sanitized_url);
+                auto it = s_yt_resolved_urls.find(cache_key);
                 if (it != s_yt_resolved_urls.end()) {
                     auto now = std::chrono::steady_clock::now();
                     auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
@@ -340,17 +344,15 @@ bool media_player_item::playMedia(const void* owner) {
 
             if (!found_cached) {
                 std::string ytdl_exe = rouen::platform::find_executable("yt-dlp");
-                auto config = rouen::helpers::ConfigService::instance();
                 std::string const initial_cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
-                std::string const pref_quality = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
                 std::string format_spec;
                 if (pref_quality == "1080p") {
-                    format_spec = "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+                    format_spec = "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
                 } else if (pref_quality == "4k" || pref_quality == "2160p") {
-                    format_spec = "bestvideo[height<=2160][vcodec^=avc1]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
+                    format_spec = "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
                 } else {
-                    format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+                    format_spec = "bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 }
 
                 auto run_ytdlp = [&ytdl_exe, &format_spec, &sanitized_url](std::string_view cookie_args, std::string_view extra_extractor_args = "", std::string_view custom_format = "") -> std::pair<std::vector<std::string>, std::string> {
@@ -483,7 +485,7 @@ bool media_player_item::playMedia(const void* owner) {
                 if (!urls.empty()) {
                     {
                         std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
-                        s_yt_resolved_urls[sanitized_url] = {std::chrono::steady_clock::now(), urls};
+                        s_yt_resolved_urls[cache_key] = {std::chrono::steady_clock::now(), urls};
                     }
                     assign_targets_from_urls(urls);
                 } else {
