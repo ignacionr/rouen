@@ -599,76 +599,29 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
     static float anim_time = 0.0f;
     anim_time += ImGui::GetIO().DeltaTime;
 
-    // 1. Ambient radial background glow pulse
-    ImVec2 const center(win_w * 0.5f, win_h * 0.38f);
-    float const glow_radius = std::min(win_w, win_h) * (0.35f + avg_lvl * 0.15f);
+    ImVec2 const center(win_w * 0.5f, win_h * 0.40f);
 
-    for (int ring = 5; ring >= 1; --ring) {
-        float const r = glow_radius * (static_cast<float>(ring) / 5.0f);
-        uint8_t const alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (20.0f + avg_lvl * 40.0f));
-        draw_list->AddCircleFilled(center, r, IM_COL32(40, 90, 180, alpha), 32);
-    }
+    // 1. Large Item Cover Art / Fallback Art in the Background (fixed size, no volume pulsing)
+    float const art_size = std::clamp(std::min(win_w * 0.70f, win_h * 0.68f), 140.0f, std::min(win_w * 0.88f, win_h * 0.82f));
 
-    // 2. Frequency Spectrum Bars (Centered Waveform / Bars)
-    constexpr int kBarCount = 48;
-    float const bar_gap = 4.0f;
-    float const total_bars_w = std::min(win_w * 0.85f, 900.0f);
-    float const bar_w = (total_bars_w - (static_cast<float>(kBarCount) - 1.0f) * bar_gap) / static_cast<float>(kBarCount);
-    float const start_x = (win_w - total_bars_w) * 0.5f;
-    float const base_y = win_h * 0.44f;
-    float const max_bar_h = win_h * 0.26f;
-
-    for (int i = 0; i < kBarCount; ++i) {
-        float const t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
-        float const dist_from_center = std::abs(t - 0.5f) * 2.0f;
-
-        float const freq_val = std::sin(t * std::numbers::pi_v<float> * 3.0f + anim_time * 4.0f) * 0.3f
-                       + std::cos(t * std::numbers::pi_v<float> * 7.0f - anim_time * 2.5f) * 0.2f
-                       + 0.5f;
-
-        float const ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
-        float height_factor = (0.08f + ch_lvl * 0.85f * (1.0f - dist_from_center * 0.4f)) * freq_val;
-        height_factor = std::clamp(height_factor, 0.04f, 1.0f);
-
-        float const bar_h = max_bar_h * height_factor;
-        float const bx = start_x + static_cast<float>(i) * (bar_w + bar_gap);
-        float const by_top = base_y - bar_h * 0.5f;
-        float const by_bot = base_y + bar_h * 0.5f;
-
-        ImU32 bar_col;
-        if (height_factor > 0.75f) {
-            bar_col = IM_COL32(235, 70, 70, 230);
-        } else if (height_factor > 0.45f) {
-            bar_col = IM_COL32(245, 180, 50, 220);
-        } else {
-            bar_col = IM_COL32(60, 160, 240, 200);
-        }
-
-        draw_list->AddRectFilled(ImVec2(bx, by_top), ImVec2(bx + bar_w, by_bot), bar_col, 2.0f);
-    }
-
-    // 2.5. RSS Cover Art / Fallback Art (Centered in glowing visualizer)
-    float const base_art_size = std::min(win_w, win_h) * 0.28f;
-    float art_size = base_art_size + avg_lvl * 30.0f;
-    art_size = std::clamp(art_size, 160.0f, 320.0f);
     ImVec2 const p_min(center.x - art_size * 0.5f, center.y - art_size * 0.5f);
     ImVec2 const p_max(center.x + art_size * 0.5f, center.y + art_size * 0.5f);
 
-    // Subtle drop shadow behind art
+    // Subtle drop shadow behind cover art
     for (int shadow_ring = 3; shadow_ring >= 1; --shadow_ring) {
-        float const offset = static_cast<float>(shadow_ring) * 2.0f;
+        float const offset = static_cast<float>(shadow_ring) * 3.0f;
         draw_list->AddRect(
             ImVec2(p_min.x - offset, p_min.y - offset),
             ImVec2(p_max.x + offset, p_max.y + offset),
-            IM_COL32(0, 0, 0, static_cast<uint8_t>(40 / shadow_ring)),
-            18.0f,
+            IM_COL32(0, 0, 0, static_cast<uint8_t>(50 / shadow_ring)),
+            24.0f,
             0,
-            2.0f
+            3.0f
         );
     }
 
-    // Background card (solid dark color)
-    draw_list->AddRectFilled(p_min, p_max, IM_COL32(15, 18, 24, 255), 16.0f);
+    // Background card container (solid dark color)
+    draw_list->AddRectFilled(p_min, p_max, IM_COL32(15, 18, 24, 255), 20.0f);
 
     if (item.rss_image_texture) {
         ImVec2 uv0(0.0f, 0.0f), uv1(1.0f, 1.0f);
@@ -696,10 +649,12 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
             uv0,
             uv1,
             IM_COL32(255, 255, 255, 255),
-            16.0f
+            20.0f
         );
+        // Soft dark overlay so spectrum bars and wave lines pop visually on top
+        draw_list->AddRectFilled(p_min, p_max, IM_COL32(10, 14, 22, 50), 20.0f);
     } else {
-        // Fallback: gradient background card with RSS or Music Icon
+        // Fallback: large gradient background card with RSS or Music Icon
         draw_list->AddRectFilledMultiColor(
             p_min,
             p_max,
@@ -713,15 +668,64 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
         ImVec2 const icon_size = ImGui::CalcTextSize(icon);
         draw_list->AddText(
             ImVec2(center.x - icon_size.x * 0.5f, center.y - icon_size.y * 0.5f),
-            IM_COL32(255, 255, 255, 100),
+            IM_COL32(255, 255, 255, 60),
             icon
         );
     }
 
     // Outer frame/border highlighting the cover art
-    draw_list->AddRect(p_min, p_max, IM_COL32(255, 255, 255, 45), 16.0f, 0, 2.5f);
+    draw_list->AddRect(p_min, p_max, IM_COL32(255, 255, 255, 45), 20.0f, 0, 2.5f);
 
-    // 3. Glowing Oscilloscope Wave Line
+    // 2. Concentric radial circles drawn ON TOP of cover art with noticeable opacity
+    float const glow_radius = std::min(win_w, win_h) * (0.45f + avg_lvl * 0.15f);
+
+    for (int ring = 5; ring >= 1; --ring) {
+        float const r = glow_radius * (static_cast<float>(ring) / 5.0f);
+        uint8_t const fill_alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (35.0f + avg_lvl * 55.0f));
+        uint8_t const line_alpha = static_cast<uint8_t>((1.0f - static_cast<float>(ring) / 6.0f) * (70.0f + avg_lvl * 80.0f));
+        draw_list->AddCircleFilled(center, r, IM_COL32(30, 110, 220, fill_alpha), 32);
+        draw_list->AddCircle(center, r, IM_COL32(100, 190, 255, line_alpha), 32, 2.0f);
+    }
+
+    // 3. Frequency Spectrum Bars (Centered Waveform / Bars overlaying the cover art)
+    constexpr int kBarCount = 48;
+    float const bar_gap = 4.0f;
+    float const total_bars_w = std::min(win_w * 0.85f, 900.0f);
+    float const bar_w = (total_bars_w - (static_cast<float>(kBarCount) - 1.0f) * bar_gap) / static_cast<float>(kBarCount);
+    float const start_x = (win_w - total_bars_w) * 0.5f;
+    float const base_y = win_h * 0.44f;
+    float const max_bar_h = win_h * 0.28f;
+
+    for (int i = 0; i < kBarCount; ++i) {
+        float const t = static_cast<float>(i) / static_cast<float>(kBarCount - 1);
+        float const dist_from_center = std::abs(t - 0.5f) * 2.0f;
+
+        float const freq_val = std::sin(t * std::numbers::pi_v<float> * 3.0f + anim_time * 4.0f) * 0.3f
+                       + std::cos(t * std::numbers::pi_v<float> * 7.0f - anim_time * 2.5f) * 0.2f
+                       + 0.5f;
+
+        float const ch_lvl = (i < kBarCount / 2) ? lvl_l : lvl_r;
+        float height_factor = (0.08f + ch_lvl * 0.85f * (1.0f - dist_from_center * 0.4f)) * freq_val;
+        height_factor = std::clamp(height_factor, 0.04f, 1.0f);
+
+        float const bar_h = max_bar_h * height_factor;
+        float const bx = start_x + static_cast<float>(i) * (bar_w + bar_gap);
+        float const by_top = base_y - bar_h * 0.5f;
+        float const by_bot = base_y + bar_h * 0.5f;
+
+        ImU32 bar_col;
+        if (height_factor > 0.75f) {
+            bar_col = IM_COL32(235, 70, 70, 235);
+        } else if (height_factor > 0.45f) {
+            bar_col = IM_COL32(245, 180, 50, 225);
+        } else {
+            bar_col = IM_COL32(60, 160, 240, 210);
+        }
+
+        draw_list->AddRectFilled(ImVec2(bx, by_top), ImVec2(bx + bar_w, by_bot), bar_col, 2.0f);
+    }
+
+    // 4. Glowing Oscilloscope Wave Line overlaying cover art & spectrum bars
     constexpr int kWavePoints = 80;
     ImVec2 wave_pts[kWavePoints];
     for (int i = 0; i < kWavePoints; ++i) {
@@ -732,24 +736,24 @@ void media_player::draw_full_window_audio_visualization(media_player_item& item,
                           + std::cos(t * std::numbers::pi_v<float> * 12.0f - anim_time * 8.0f) * (wave_amp * 0.3f);
         wave_pts[i] = ImVec2(wx, wy);
     }
-    draw_list->AddPolyline(wave_pts, kWavePoints, IM_COL32(255, 255, 255, 180), 0, 2.5f);
+    draw_list->AddPolyline(wave_pts, kWavePoints, IM_COL32(255, 255, 255, 200), 0, 2.5f);
 
-    // 4. Centered Media Title & Status Info (Upper Center)
+    // 5. Centered Media Title & Status Info (Upper Center)
     std::string const display_title = item.item_title.empty() ? (item.url.empty() ? "Audio Stream" : item.url) : item.item_title;
     ImVec2 const title_sz = ImGui::CalcTextSize(display_title.c_str());
     float const title_x = std::max(20.0f, (win_w - title_sz.x) * 0.5f);
-    float const title_y = win_h * 0.12f;
+    float const title_y = win_h * 0.08f;
 
     draw_list->AddRectFilled(
         ImVec2(title_x - 16.0f, title_y - 8.0f),
         ImVec2(title_x + title_sz.x + 16.0f, title_y + title_sz.y + 8.0f),
-        IM_COL32(15, 18, 24, 200),
+        IM_COL32(15, 18, 24, 210),
         8.0f
     );
     draw_list->AddRect(
         ImVec2(title_x - 16.0f, title_y - 8.0f),
         ImVec2(title_x + title_sz.x + 16.0f, title_y + title_sz.y + 8.0f),
-        IM_COL32(255, 255, 255, 30),
+        IM_COL32(255, 255, 255, 40),
         8.0f
     );
     draw_list->AddText(ImVec2(title_x, title_y), IM_COL32(240, 245, 255, 255), display_title.c_str());
