@@ -309,6 +309,16 @@ bool media_player_item::playMedia(const void* owner) {
                 }
             };
 
+            auto is_url_accessible = [](std::string_view stream_url) -> bool {
+                if (stream_url.empty()) return false;
+                std::string const probe_cmd = std::format("curl -s --max-time 3 -I -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"{}\" 2>&1", stream_url);
+                std::string const resp = ProcessHelper::executeCommand(probe_cmd);
+                if (resp.find("403 Forbidden") != std::string::npos || resp.find("HTTP/1.1 403") != std::string::npos || resp.find("HTTP/2 403") != std::string::npos) {
+                    return false;
+                }
+                return true;
+            };
+
             bool found_cached = false;
             {
                 std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
@@ -317,8 +327,13 @@ bool media_player_item::playMedia(const void* owner) {
                     auto now = std::chrono::steady_clock::now();
                     auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
                     if (age_mins < 120 && !it->second.second.empty()) {
-                        assign_targets_from_urls(it->second.second);
-                        found_cached = true;
+                        if (is_url_accessible(it->second.second[0])) {
+                            assign_targets_from_urls(it->second.second);
+                            found_cached = true;
+                        } else {
+                            std::cerr << "[NativePlayer Diagnostics] Cached YouTube URL is no longer accessible (HTTP 403). Evicting from cache.\n";
+                            s_yt_resolved_urls.erase(it);
+                        }
                     }
                 }
             }
@@ -346,7 +361,7 @@ bool media_player_item::playMedia(const void* owner) {
                     std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
                     std::string ua_flag;
                     if constexpr (rouen::platform::is_apple) {
-                        ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15\" ";
+                        ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" ";
                     }
                     cmd = std::format("\"{}\" --no-warnings {}{}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ua_flag, ext_flag, cook_flag, target_fmt, sanitized_url);
                     std::cerr << "[NativePlayer Diagnostics] Executing command: " << cmd << '\n';
@@ -368,6 +383,11 @@ bool media_player_item::playMedia(const void* owner) {
                 std::cerr << "[NativePlayer Diagnostics] Resolving URL: " << sanitized_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
                 auto [urls, resolved] = run_ytdlp(initial_cookie_args);
 
+                if (!urls.empty() && !is_url_accessible(urls[0])) {
+                    std::cerr << "[NativePlayer Diagnostics] Initial resolved URL returned HTTP 403 Forbidden. Invalidating to trigger auto-healing...\n";
+                    urls.clear();
+                }
+
                 // Check if YouTube rejected request or required cookies
                 bool is_auth_err = (resolved.find("Sign in to confirm") != std::string::npos ||
                                     resolved.find("YouTube requires cookies") != std::string::npos ||
@@ -385,7 +405,7 @@ bool media_player_item::playMedia(const void* owner) {
                             std::cerr << "[NativePlayer Diagnostics] Pass 1: Refreshed cookies args: '" << fresh_cookie_args << "'. Retrying...\n";
                             auto [ref_urls, ref_output] = run_ytdlp(fresh_cookie_args);
                             resolved = ref_output;
-                            if (!ref_urls.empty()) {
+                            if (!ref_urls.empty() && is_url_accessible(ref_urls[0])) {
                                 urls = ref_urls;
                             }
                         } else {
@@ -402,11 +422,15 @@ bool media_player_item::playMedia(const void* owner) {
                         std::cerr << "[NativePlayer Diagnostics] Pass 2: Trying browser: " << browser << '\n';
                         std::string const fallback_args = std::format("--cookies-from-browser {}", browser);
                         auto [fb_urls, fb_output] = run_ytdlp(fallback_args);
+                        if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+
                         if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"");
+                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"");
+                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"", "bestvideo+bestaudio/best");
+                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"", "bestvideo+bestaudio/best");
+                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         resolved = fb_output;
                         if (!fb_urls.empty()) {
@@ -429,19 +453,23 @@ bool media_player_item::playMedia(const void* owner) {
                 if (urls.empty()) {
                     std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying client specs without cookies...\n";
                     static const std::vector<std::string_view> client_specs = {
-                        "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"",
-                        "--extractor-args \"youtube:player_client=android,web,tv\"",
-                        "--extractor-args \"youtube:player_client=ios,mweb,web\"",
-                        "--extractor-args \"youtube:player_client=tv_embedded,web\""
+                        "--extractor-args \"youtube:player_client=android_vr,android,tv\"",
+                        "--extractor-args \"youtube:player_client=android,tv\"",
+                        "--extractor-args \"youtube:player_client=tv_embedded,android\"",
+                        "--extractor-args \"youtube:player_client=ios,android\""
                     };
                     for (const auto& cspec : client_specs) {
                         std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying cspec: " << cspec << '\n';
                         auto [fb_urls, fb_output] = run_ytdlp("--no-cookies", cspec);
+                        if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+
                         if (fb_urls.empty()) {
                             std::tie(fb_urls, fb_output) = run_ytdlp("--no-cookies", cspec, "bestvideo+bestaudio/best");
+                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         if (fb_urls.empty()) {
                             std::tie(fb_urls, fb_output) = run_ytdlp("--no-cookies", cspec, "best");
+                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         resolved = fb_output;
                         if (!fb_urls.empty()) {

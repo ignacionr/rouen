@@ -602,7 +602,7 @@ namespace rouen::cards {
                     std::string const fb_args = std::format("--cookies-from-browser {}", browser);
                     found_file = fetch_sub_file(fb_args);
                     if (found_file.empty()) {
-                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"");
+                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"");
                     }
                     if (!found_file.empty()) {
                         if (config) {
@@ -620,9 +620,9 @@ namespace rouen::cards {
 
             if (found_file.empty()) {
                 static const std::vector<std::string_view> client_specs = {
-                    "--extractor-args \"youtube:player_client=tv,mweb,android,web,ios\"",
-                    "--extractor-args \"youtube:player_client=android,web,tv\"",
-                    "--extractor-args \"youtube:player_client=ios,mweb,web\""
+                    "--extractor-args \"youtube:player_client=android_vr,android,tv\"",
+                    "--extractor-args \"youtube:player_client=android,tv\"",
+                    "--extractor-args \"youtube:player_client=tv_embedded,android\""
                 };
                 for (const auto& cspec : client_specs) {
                     found_file = fetch_sub_file("--no-cookies", cspec);
