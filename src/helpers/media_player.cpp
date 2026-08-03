@@ -60,6 +60,32 @@ void media_player::stopAll() {
     clear_detached_item();
 }
 
+void media_player::shutdown() {
+    {
+        std::lock_guard<std::recursive_mutex> const lock(items_mutex());
+        for (auto &[k,v]: items()) {
+            if (v) v->stopMedia();
+        }
+        items().clear();
+    }
+    
+    {
+        std::lock_guard<std::mutex> const lock(s_fullscreen_mutex);
+        if (s_active_fullscreen_item) {
+            s_active_fullscreen_item->stopMedia();
+            s_active_fullscreen_item = nullptr;
+        }
+    }
+    
+    {
+        std::lock_guard<std::mutex> const lock(s_detached_mutex);
+        if (s_detached_item) {
+            s_detached_item->stopMedia();
+            s_detached_item = nullptr;
+        }
+    }
+}
+
 void media_player::stopForOwner(const void* owner) {
     if (!owner) return;
     std::lock_guard<std::recursive_mutex> const lock(items_mutex());

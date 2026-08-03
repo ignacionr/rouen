@@ -229,7 +229,7 @@ int main(int argc, char* argv[]) {
     window.run();
 
     // Stop all media players and video feed host
-    media_player::stopAll();
+    media_player::shutdown();
     video_feed->stop();
 
     // Run shutdown synchronization if enabled

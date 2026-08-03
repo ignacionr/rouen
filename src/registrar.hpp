@@ -109,8 +109,8 @@ private:
     // Access the type-specific map
     template <typename T>
     static TypeMap<T>& getTypeMap() {
-        static TypeMap<T> typeMap;
-        return typeMap;
+        static TypeMap<T>* typeMap = new TypeMap<T>();
+        return *typeMap;
     }
 
     // Provides a reference to the mutex

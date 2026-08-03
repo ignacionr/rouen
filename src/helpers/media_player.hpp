@@ -24,6 +24,7 @@ struct media_player {
     static item_map & items();
 
     static void stopAll();
+    static void shutdown();
     static void stopForOwner(const void* owner);
     static bool is_any_playing_non_cast();
     static std::optional<double>& get_dummy_watermark() noexcept;
