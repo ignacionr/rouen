@@ -612,12 +612,11 @@ namespace rouen::platform
         std::vector<std::filesystem::path> search_dirs;
         
 #ifndef _WIN32
-        // macOS / Linux common paths
-        // 1. User local binary paths & standard Nix profile paths (user profile overrides devshell store)
+        // 1. User local binary paths & standard Nix profile paths (user local bin takes priority over profile, both override devshell store)
         std::string home_dir = get_env("HOME");
         if (!home_dir.empty()) {
-            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
             search_dirs.push_back(std::filesystem::path(home_dir) / ".local" / "bin");
+            search_dirs.push_back(std::filesystem::path(home_dir) / ".nix-profile" / "bin");
         }
 
         // 2. Check NIX_PROFILES env var if present

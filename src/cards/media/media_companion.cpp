@@ -610,7 +610,7 @@ namespace rouen::cards {
                         }
                         const char* home = getenv("HOME");
                         if (home) {
-                            std::string const save_cmd = std::format("\"{}\" -q --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
+                            std::string const save_cmd = std::format("\"{}\" -q --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
                             ProcessHelper::executeCommand(save_cmd);
                         }
                         break;

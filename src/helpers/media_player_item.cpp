@@ -442,7 +442,7 @@ bool media_player_item::playMedia(const void* owner) {
                             }
                             const char* home = getenv("HOME");
                             if (home) {
-                                std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download \"https://www.youtube.com\" 2>&1", ytdl_exe, browser, home);
+                                std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdl_exe, browser, home);
                                 ProcessHelper::executeCommand(save_cmd);
                             }
                             std::cerr << "[NativePlayer Diagnostics] Auto-healed: resolved YouTube URL using cookies from browser: " << browser << '\n';

@@ -761,7 +761,7 @@ bool ConfigService::refresh_youtube_cookies() const {
             std::filesystem::remove(target_file, ec);
         }
 
-        std::string const cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}\" --skip-download \"https://www.youtube.com\" 2>&1",
+        std::string const cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1",
                                             ytdl_exe, browser, target_file.string());
         ProcessHelper::executeCommand(cmd);
 
