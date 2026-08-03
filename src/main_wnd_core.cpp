@@ -49,9 +49,12 @@ main_wnd::main_wnd()
 main_wnd::~main_wnd() {
     // Destroy secondary/detached ImGui context before main ImGui shutdown
     if (m_detached_imgui_ctx) {
+        ImGuiContext* main_ctx = ImGui::GetCurrentContext();
+        if (main_ctx == m_detached_imgui_ctx) main_ctx = nullptr;
         ImGui::SetCurrentContext(m_detached_imgui_ctx);
         ImGui::DestroyContext(m_detached_imgui_ctx);
         m_detached_imgui_ctx = nullptr;
+        if (main_ctx) ImGui::SetCurrentContext(main_ctx);
     }
 
     // Cleanup ImGui main context and backends
