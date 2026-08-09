@@ -12,9 +12,10 @@
 #include <thread>
 #include <vector>
 #include <cstdlib>
-#include <csignal>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 #include <format>
 
 #include "../helpers/debug.hpp"
@@ -179,10 +180,12 @@ public:
 
         std::thread([this, pid, wav_file, on_transcribed]() {
             if (pid > 0) {
+#ifndef _WIN32
                 // Send SIGINT to gracefully close WAV header
                 kill(pid, SIGINT);
                 int status = 0;
                 waitpid(pid, &status, 0);
+#endif
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
 
@@ -210,13 +213,16 @@ public:
     }
 
 private:
-    void stop_recording_sync() {
+#ifndef _WIN32
         pid_t pid = rec_pid_.exchange(0);
         if (pid > 0) {
             kill(pid, SIGKILL);
             int status = 0;
             waitpid(pid, &status, 0);
         }
+#else
+        rec_pid_.exchange(0);
+#endif
         if (!temp_wav_path_.empty() && std::filesystem::exists(temp_wav_path_)) {
             std::error_code ec;
             std::filesystem::remove(temp_wav_path_, ec);

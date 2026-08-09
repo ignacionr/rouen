@@ -17,8 +17,9 @@
 #include <sstream>
 #include <string>
 #include <system_error>
-#include <thread>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <vector>
 
 #include "../../external/IconsMaterialDesign.h"

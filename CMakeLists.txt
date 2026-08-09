@@ -144,6 +144,14 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   find_package(tinyxml2 CONFIG REQUIRED)
   find_package(glaze CONFIG REQUIRED)
   
+  # Find FFmpeg via pkg-config (works with vcpkg and system)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+  pkg_check_modules(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
+  pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+  pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
+  pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+  
   # Set variables for compatibility
   set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)
   
@@ -608,6 +616,11 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     unofficial::sqlite3::sqlite3
     mongoose
     PDFWriter
+    PkgConfig::AVFORMAT
+    PkgConfig::AVCODEC
+    PkgConfig::AVUTIL
+    PkgConfig::SWSCALE
+    PkgConfig::SWRESAMPLE
   )
 else()
   # System dependencies with standard target names

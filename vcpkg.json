@@ -14,6 +14,7 @@
     "sqlite3",
     "sdl3",
     "sdl3-image",
+    "ffmpeg",
     "tinyxml2",
     "glaze",
     "gtest"
