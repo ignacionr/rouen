@@ -78,18 +78,13 @@ void setup_windows_debug_console() {
 #include "registrar.hpp"
 #include <curl/curl.h>
 
-// On Windows, SDL2 requires main to be renamed to SDL_main
-#ifdef _WIN32
-int SDL_main(int argc, char* argv[]) {
-    (void)argc; // Suppress unused parameter warning
-    (void)argv; // Suppress unused parameter warning
-    
-    // Initialize Windows debug console for development builds
-    setup_windows_debug_console();
-#else
 int main(int argc, char* argv[]) {
     (void)argc; // Suppress unused parameter warning
     (void)argv; // Suppress unused parameter warning
+    
+#ifdef _WIN32
+    // Initialize Windows debug console for development builds
+    setup_windows_debug_console();
 #endif
     // Initialize CURL globally on the main thread before starting any threads
     curl_global_init(CURL_GLOBAL_ALL);
@@ -251,3 +246,13 @@ int main(int argc, char* argv[]) {
     curl_global_cleanup();
     return 0;
 }
+
+#ifdef _WIN32
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    (void)hInstance;
+    (void)hPrevInstance;
+    (void)lpCmdLine;
+    (void)nCmdShow;
+    return main(__argc, __argv);
+}
+#endif
