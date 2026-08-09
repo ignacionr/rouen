@@ -122,7 +122,7 @@ struct deck {
         // Unregister the services
         registrar::remove<std::function<void(std::string const&)>>("create_card");
         registrar::remove<std::function<size_t()>>("get_card_count");
-        registrar::remove<std::function<std::vector<std::shared_ptr<card>>>>("get_active_cards");
+        registrar::remove<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
         registrar::remove<std::function<void(std::string const&)>>("focus_card");
         registrar::remove<std::function<void(size_t)>>("focus_card_index");
         registrar::remove<std::function<void(int)>>("scroll_to_section");
