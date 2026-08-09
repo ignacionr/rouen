@@ -85,19 +85,19 @@ if(WIN32)
         message(STATUS "  VCPKG_BIN_DIR: ${VCPKG_BIN_DIR}")
         message(STATUS "  CONFIG_SUFFIX: '${CONFIG_SUFFIX}'")
         
-        # Copy SDL2 DLLs
+        # Copy SDL3 DLLs
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_BIN_DIR}/SDL2${CONFIG_SUFFIX}.dll"
+            "${VCPKG_BIN_DIR}/SDL3${CONFIG_SUFFIX}.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMENT "Copying SDL2${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            COMMENT "Copying SDL3${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
         )
         
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${VCPKG_BIN_DIR}/SDL2_image${CONFIG_SUFFIX}.dll"
+            "${VCPKG_BIN_DIR}/SDL3_image${CONFIG_SUFFIX}.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
-            COMMENT "Copying SDL2_image${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
+            COMMENT "Copying SDL3_image${CONFIG_SUFFIX}.dll to $<TARGET_FILE_DIR:${PROJECT_NAME}>"
         )
         
         # Copy other required DLLs (critical for functionality)

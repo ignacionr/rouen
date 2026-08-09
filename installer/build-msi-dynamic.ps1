@@ -48,8 +48,8 @@ $ExpectedDLLs = @{
     "libcrypto-3-x64.dll" = @{ Category = "Network"; Description = "Cryptographic library"; Required = $true }
     
     # Graphics and UI libraries
-    "SDL2.dll" = @{ Category = "Graphics"; Description = "SDL2 multimedia library"; Required = $true }
-    "SDL2_image.dll" = @{ Category = "Graphics"; Description = "SDL2 image loading library"; Required = $false }
+    "SDL3.dll" = @{ Category = "Graphics"; Description = "SDL3 multimedia library"; Required = $true }
+    "SDL3_image.dll" = @{ Category = "Graphics"; Description = "SDL3 image loading library"; Required = $false }
     "libpng16.dll" = @{ Category = "Graphics"; Description = "PNG image library"; Required = $true }
     "jpeg62.dll" = @{ Category = "Graphics"; Description = "JPEG image library"; Required = $false }
     

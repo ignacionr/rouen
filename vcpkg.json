@@ -12,13 +12,8 @@
     },
     "openssl",
     "sqlite3",
-    "sdl2",
-    {
-      "name": "sdl2-image",
-      "features": [
-        "libjpeg-turbo"
-      ]
-    },
+    "sdl3",
+    "sdl3-image",
     "tinyxml2",
     "glaze",
     "gtest"
