@@ -16,6 +16,12 @@
 #ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#else
+#include <io.h>
+#ifndef X_OK
+#define X_OK 0
+#endif
+using pid_t = int;
 #endif
 #include <format>
 

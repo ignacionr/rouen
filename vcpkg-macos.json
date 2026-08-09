@@ -14,6 +14,7 @@
     "sdl3",
     "sdl3-image",
     "ffmpeg",
+    "pdfium",
     "tinyxml2",
     "glaze",
     "gtest"

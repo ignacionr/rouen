@@ -152,6 +152,12 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
   pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
   
+  # Try to find PDFium via vcpkg or cmake
+  find_package(pdfium CONFIG QUIET)
+  if(NOT pdfium_FOUND AND NOT TARGET pdfium AND NOT TARGET pdfium::pdfium)
+    find_package(PDFium QUIET)
+  endif()
+  
   # Set variables for compatibility
   set(SQLite3_LIBRARIES unofficial::sqlite3::sqlite3)
   
@@ -621,6 +627,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     PkgConfig::AVUTIL
     PkgConfig::SWSCALE
     PkgConfig::SWRESAMPLE
+    $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>
   )
 else()
   # System dependencies with standard target names
