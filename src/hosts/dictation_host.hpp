@@ -12,6 +12,7 @@
 #include <thread>
 #include <vector>
 #include <cstdlib>
+#include <csignal>
 #ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
@@ -133,6 +134,7 @@ public:
                 return;
             }
 
+#ifndef _WIN32
             pid_t pid = fork();
             if (pid == 0) {
                 // Set environment PATH to include Homebrew & Nix
@@ -160,6 +162,10 @@ public:
                 set_status("Error: failed to fork recording process");
                 state_.store(State::Error);
             }
+#else
+            set_status("Recording not supported on Windows");
+            state_.store(State::Error);
+#endif
         }).detach();
 
         return true;
@@ -213,6 +219,7 @@ public:
     }
 
 private:
+    void stop_recording_sync() {
 #ifndef _WIN32
         pid_t pid = rec_pid_.exchange(0);
         if (pid > 0) {
