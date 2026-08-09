@@ -10,7 +10,9 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#ifndef _WIN32
 #include <sys/signal.h>
+#endif
 #include <thread>
 
 // 2. Libraries used in the project, in alphabetic order
