@@ -23,6 +23,15 @@
 #include "../../hosts/weather_host.hpp"
 #include "../../registrar.hpp"
 
+inline struct tm* rouen_gmtime(const std::time_t* timep, struct tm* result) {
+#ifdef _WIN32
+    gmtime_s(result, timep);
+    return result;
+#else
+    return gmtime_r(timep, result);
+#endif
+}
+
 namespace rouen::cards {
 
 class weather : public card {
@@ -337,7 +346,7 @@ public:
                 
                 std::time_t local_tt = std::chrono::system_clock::to_time_t(local_tp);
                 std::tm tm_local;
-                gmtime_r(&local_tt, &tm_local);
+                rouen_gmtime(&local_tt, &tm_local);
                 check_time_and_toll(tm_local);
 
                 std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
@@ -537,7 +546,7 @@ private:
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(local_tp.time_since_epoch()).count() % 1000;
         std::time_t local_tt = std::chrono::system_clock::to_time_t(local_tp);
         std::tm tm_local;
-        gmtime_r(&local_tt, &tm_local);
+        rouen_gmtime(&local_tt, &tm_local);
 
         float sec_f = static_cast<float>(tm_local.tm_sec) + static_cast<float>(ms) / 1000.0f;
         float min_f = static_cast<float>(tm_local.tm_min) + sec_f / 60.0f;
@@ -633,7 +642,7 @@ private:
 
         std::time_t local_tt = std::chrono::system_clock::to_time_t(now_tp);
         std::tm tm_local;
-        gmtime_r(&local_tt, &tm_local);
+        rouen_gmtime(&local_tt, &tm_local);
         check_time_and_toll(tm_local);
 
         std::string time_str = std::format("{:02d}:{:02d}:{:02d}", tm_local.tm_hour, tm_local.tm_min, tm_local.tm_sec);
