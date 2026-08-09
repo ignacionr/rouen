@@ -10,8 +10,18 @@
 #include <string_view>
 #include <vector>
 
+#if __has_include(<fpdfview.h>)
 #include <fpdfview.h>
 #include <fpdf_doc.h>
+#define ROUEN_HAS_PDFIUM 1
+#elif __has_include(<pdfium/fpdfview.h>)
+#include <pdfium/fpdfview.h>
+#include <pdfium/fpdf_doc.h>
+#define ROUEN_HAS_PDFIUM 1
+#else
+#define ROUEN_HAS_PDFIUM 0
+using FPDF_DOCUMENT = void*;
+#endif
 
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -25,6 +35,7 @@
 namespace rouen::cards {
 
 inline void init_pdfium_library() {
+#if ROUEN_HAS_PDFIUM
     static std::once_flag init_flag;
     std::call_once(init_flag, []() {
         FPDF_LIBRARY_CONFIG config;
@@ -35,6 +46,7 @@ inline void init_pdfium_library() {
         config.m_v8EmbedderSlot = 0;
         FPDF_InitLibraryWithConfig(&config);
     });
+#endif
 }
 
 struct pdf_viewer : public card {
@@ -105,6 +117,7 @@ struct pdf_viewer : public card {
             return;
         }
 
+#if ROUEN_HAS_PDFIUM
         doc_ = FPDF_LoadDocument(filepath.c_str(), nullptr);
         if (!doc_) {
             unsigned long err = FPDF_GetLastError();
@@ -124,13 +137,19 @@ struct pdf_viewer : public card {
         is_valid_ = true;
         status_message_.clear();
         texture_needs_update_ = true;
+#else
+        status_message_ = "PDF rendering requires PDFium support.";
+        is_valid_ = false;
+#endif
     }
 
     void close_pdf() {
+#if ROUEN_HAS_PDFIUM
         if (doc_) {
             FPDF_CloseDocument(doc_);
             doc_ = nullptr;
         }
+#endif
         page_count_ = 0;
         current_page_ = 0;
         is_valid_ = false;
@@ -141,6 +160,7 @@ struct pdf_viewer : public card {
     }
 
     void render_page_texture() {
+#if ROUEN_HAS_PDFIUM
         if (!doc_ || page_count_ <= 0 || current_page_ < 0 || current_page_ >= page_count_) {
             return;
         }
@@ -206,6 +226,7 @@ struct pdf_viewer : public card {
 
         FPDF_ClosePage(page);
         texture_needs_update_ = false;
+#endif
     }
 
     bool render() override {
