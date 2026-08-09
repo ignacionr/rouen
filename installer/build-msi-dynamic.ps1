@@ -50,7 +50,7 @@ $ExpectedDLLs = @{
     # Graphics and UI libraries
     "SDL3.dll" = @{ Category = "Graphics"; Description = "SDL3 multimedia library"; Required = $true }
     "SDL3_image.dll" = @{ Category = "Graphics"; Description = "SDL3 image loading library"; Required = $false }
-    "libpng16.dll" = @{ Category = "Graphics"; Description = "PNG image library"; Required = $true }
+    "libpng16.dll" = @{ Category = "Graphics"; Description = "PNG image library"; Required = $false }
     "jpeg62.dll" = @{ Category = "Graphics"; Description = "JPEG image library"; Required = $false }
     
     # Database libraries

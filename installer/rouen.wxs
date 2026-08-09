@@ -57,11 +57,9 @@
         <File Id="LibSSL" Source="$(var.SourceDir)\libssl-3-x64.dll" />
         <File Id="LibCrypto" Source="$(var.SourceDir)\libcrypto-3-x64.dll" />
         
-        <!-- SDL2 and graphics libraries -->
-        <File Id="SDL2" Source="$(var.SourceDir)\SDL2.dll" />
-        <File Id="SDL2Image" Source="$(var.SourceDir)\SDL2_image.dll" />
-        <File Id="LibPNG16" Source="$(var.SourceDir)\libpng16.dll" />
-        <File Id="LibJPEG" Source="$(var.SourceDir)\jpeg62.dll" />
+        <!-- SDL3 multimedia libraries -->
+        <File Id="SDL3" Source="$(var.SourceDir)\SDL3.dll" />
+        <File Id="SDL3Image" Source="$(var.SourceDir)\SDL3_image.dll" />
         
         <!-- Database libraries -->
         <File Id="SQLite3" Source="$(var.SourceDir)\sqlite3.dll" />
