@@ -21,6 +21,9 @@ on:
 jobs:
   windows-build:
     runs-on: windows-latest
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
+      VCPKG_DISABLE_METRICS: "1"
     
     steps:
     - name: Checkout code
@@ -38,59 +41,54 @@ jobs:
       uses: actions/cache@v6
       with:
         path: |
-          ${{ github.workspace }}\vcpkg\installed
-          ${{ github.workspace }}\vcpkg\buildtrees
-          ${{ github.workspace }}\vcpkg\packages
-        key: ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-configuration.json') }}
+          ${{ github.workspace }}/vcpkg-binary-cache
+          ${{ github.workspace }}/vcpkg/installed
+          ${{ github.workspace }}/vcpkg/packages
+        key: ${{ runner.os }}-vcpkg-binary-${{ hashFiles('vcpkg.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-built-${{ hashFiles('vcpkg.json') }}-
-          ${{ runner.os }}-vcpkg-built-
+          ${{ runner.os }}-vcpkg-binary-
 
     - name: Setup vcpkg
       shell: cmd
       run: |
         set "workspace=${{ github.workspace }}"
         set "vcpkgDir=%workspace%\vcpkg"
+        set "binCacheDir=%workspace%\vcpkg-binary-cache"
         
         echo Setting up vcpkg...
+        if not exist "%binCacheDir%" mkdir "%binCacheDir%"
         
-        REM Always remove existing vcpkg directory to avoid corruption
-        if exist "%vcpkgDir%" (
-          echo Removing existing vcpkg directory...
-          rmdir /s /q "%vcpkgDir%"
+        if not exist "%vcpkgDir%" (
+          echo Cloning fresh vcpkg...
+          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+          if errorlevel 1 (
+            echo ERROR: Failed to clone vcpkg
+            exit /b 1
+          )
+        ) else (
+          echo Existing vcpkg directory found, reusing...
         )
         
-        echo Cloning fresh vcpkg...
-        git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
-        if errorlevel 1 (
-          echo ERROR: Failed to clone vcpkg
-          exit /b 1
-        )
-        
-        echo Bootstrapping vcpkg...
         cd /d "%vcpkgDir%"
         
-        if exist "bootstrap-vcpkg.bat" (
-          echo Found bootstrap-vcpkg.bat, executing...
+        if not exist "vcpkg.exe" (
+          echo Bootstrapping vcpkg...
           call bootstrap-vcpkg.bat
           if errorlevel 1 (
             echo ERROR: Bootstrap failed with exit code %errorlevel%
             exit /b 1
           )
         ) else (
-          echo ERROR: bootstrap-vcpkg.bat not found in %cd%
-          dir bootstrap*
-          exit /b 1
+          echo vcpkg.exe already present, skipping bootstrap.
         )
         
-        REM Verify vcpkg.exe was created
+        REM Verify vcpkg.exe is present
         if not exist "vcpkg.exe" (
           echo ERROR: vcpkg.exe not found after bootstrap
-          dir *vcpkg*
           exit /b 1
         )
         
-        echo Installing vcpkg packages (using cache if available)...
+        echo Installing vcpkg packages (using binary cache if available)...
         vcpkg.exe install --triplet x64-windows
         if errorlevel 1 (
           echo ERROR: Package installation failed
