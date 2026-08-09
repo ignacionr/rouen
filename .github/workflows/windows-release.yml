@@ -33,7 +33,10 @@ jobs:
         submodules: recursive
 
     - name: Setup PowerShell
-      uses: powershell/actions-setup-powershell@v1.4.0
+      shell: pwsh
+      run: |
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        Write-Host "PowerShell execution policy set to RemoteSigned"
 
     - name: Setup vcpkg cache
       uses: actions/cache@v6
