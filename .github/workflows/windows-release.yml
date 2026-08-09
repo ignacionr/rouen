@@ -1,8 +1,22 @@
 name: Windows Build & Test
 
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g., v1.0.0)'
+        required: false
+        type: string
   workflow_call:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g., v1.0.0)'
+        required: false
+        type: string
 
 jobs:
   windows-build:
@@ -1085,3 +1099,20 @@ jobs:
         path: |
           rouen-windows-x64.zip
           Rouen-*.msi
+
+    - name: Upload Windows Release Assets
+      if: github.event_name == 'release' || (inputs.tag_name != null && inputs.tag_name != '')
+      shell: pwsh
+      run: |
+        $tag = "${{ inputs.tag_name }}"
+        if (-not $tag) { $tag = "${{ github.ref_name }}" }
+        Write-Host "Uploading Windows release assets for tag: $tag"
+        if (Test-Path "rouen-windows-x64.zip") {
+          gh release upload $tag rouen-windows-x64.zip --clobber
+        }
+        $msiFiles = Get-ChildItem -Filter "*.msi" -ErrorAction SilentlyContinue
+        foreach ($msi in $msiFiles) {
+          gh release upload $tag $msi.FullName --clobber
+        }
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

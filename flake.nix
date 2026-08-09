@@ -82,6 +82,20 @@
           '';
         };
 
+        devShells.mingw = unstable.pkgsCross.mingwW64.mkShell {
+          buildInputs = [
+            unstable.pkgsCross.mingwW64.buildPackages.cmake
+            unstable.pkgsCross.mingwW64.buildPackages.ninja
+            unstable.pkgsCross.mingwW64.buildPackages.pkg-config
+          ];
+          shellHook = ''
+            echo "[Nix Flake] Entering MinGW-w64 Windows cross-compilation environment..."
+            export CC=x86_64-w64-mingw32-gcc
+            export CXX=x86_64-w64-mingw32-g++
+            echo "Cross compiler: $(x86_64-w64-mingw32-gcc --version | head -n 1)"
+          '';
+        };
+
         packages.default = stdenv.mkDerivation {
           pname = "rouen";
           version = "0.1.0";

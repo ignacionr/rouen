@@ -10,6 +10,7 @@
         "ssl"
       ]
     },
+    "openssl",
     "sqlite3",
     "sdl2",
     {
@@ -21,11 +22,5 @@
     "tinyxml2",
     "glaze",
     "gtest"
-  ],
-  "overrides": [
-    {
-      "name": "openssl",
-      "version": "system"
-    }
   ]
 }
