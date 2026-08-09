@@ -53,6 +53,8 @@ jobs:
       run: |
         set "vcpkgDir=%GITHUB_WORKSPACE%\vcpkg"
         set "VCPKG_ROOT=%vcpkgDir%"
+        set "binCacheDir=%GITHUB_WORKSPACE%\vcpkg-binary-cache"
+        if not exist "%binCacheDir%" mkdir "%binCacheDir%"
         echo vcpkg target directory: %vcpkgDir%
         
         if not exist "%vcpkgDir%" (
