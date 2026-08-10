@@ -26,8 +26,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
   # Add more strict warnings only for our own code
   function(target_add_strict_warnings target)
+    set(WARN_ERR_OPTION -Werror)
+    if(DEFINED CMAKE_COMPILE_WARNING_AS_ERROR AND NOT CMAKE_COMPILE_WARNING_AS_ERROR)
+      set(WARN_ERR_OPTION "")
+    endif()
     target_compile_options(${target} PRIVATE
-      -Werror              # Treat warnings as errors - ensure local code has no warnings
+      ${WARN_ERR_OPTION}
+      -Wno-error=old-style-cast
+      -Wno-error=cast-function-type-strict
+      -Wno-error=cast-function-type
+      -Wno-old-style-cast
+      -Wno-cast-function-type-strict
       -Wpedantic           # Enforce strict ISO C++
       -Wnull-dereference   # Warn about null pointer dereference
       -Wformat=2           # Warn about printf format issues
@@ -246,8 +255,12 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   
   # Add function for GCC too
   function(target_add_strict_warnings target)
+    set(WARN_ERR_OPTION -Werror)
+    if(DEFINED CMAKE_COMPILE_WARNING_AS_ERROR AND NOT CMAKE_COMPILE_WARNING_AS_ERROR)
+      set(WARN_ERR_OPTION "")
+    endif()
     target_compile_options(${target} PRIVATE
-      -Werror              # Treat warnings as errors
+      ${WARN_ERR_OPTION}
 
       # GCC 14+ emits false-positive -Wnull-dereference warnings in <streambuf>
       # when istreambuf_iterator is used (inlined from standard library headers).

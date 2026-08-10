@@ -607,7 +607,7 @@ bool rss::render() {
         auto available_size = ImGui::GetContentRegionAvail();
         ImVec2 const scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
         if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, false, ImGuiWindowFlags_NavFlattened)) {
-            const auto& all_feeds = cached_all_feeds_;
+            const auto all_feeds = cached_all_feeds_;
             
             // Check if we need to re-filter and re-sort feeds
             bool needs_update = false;
@@ -618,6 +618,7 @@ bool rss::render() {
                 needs_update = true;
             } else {
                 for (const auto& f : all_feeds) {
+                    if (!f) continue;
                     auto item_count = f->items.size();
                     auto latest_time = f->items.empty() ? std::chrono::system_clock::time_point::min() : f->items.front().updated;
                     
@@ -640,7 +641,7 @@ bool rss::render() {
                     cached_feeds_ = all_feeds;
                 } else {
                     for (const auto& feed : all_feeds) {
-                        if (feed->tags.contains(selected_tag_)) {
+                        if (feed && feed->tags.contains(selected_tag_)) {
                             cached_feeds_.push_back(feed);
                         }
                     }
@@ -648,7 +649,7 @@ bool rss::render() {
                 
                 std::sort(cached_feeds_.begin(), cached_feeds_.end(), [](const auto& a, const auto& b) {
                     auto get_freshness = [](const auto& f) {
-                        if (f->items.empty()) {
+                        if (!f || f->items.empty()) {
                             return std::chrono::system_clock::time_point::min();
                         }
                         auto newest = f->items.front().updated;
@@ -664,8 +665,8 @@ bool rss::render() {
                     if (freshness_a != freshness_b) {
                         return freshness_a > freshness_b;
                     }
-                    std::string const title_a = a->feed_title.empty() ? a->source_link : a->feed_title;
-                    std::string const title_b = b->feed_title.empty() ? b->source_link : b->feed_title;
+                    std::string const title_a = (!a || a->feed_title.empty()) ? (a ? a->source_link : "") : a->feed_title;
+                    std::string const title_b = (!b || b->feed_title.empty()) ? (b ? b->source_link : "") : b->feed_title;
                     return title_a < title_b;
                 });
                 
@@ -678,7 +679,7 @@ bool rss::render() {
                     
                     auto tag_newest = std::chrono::system_clock::time_point::min();
                     for (const auto& feed : all_feeds) {
-                        if (feed->tags.contains(tag)) {
+                        if (feed && feed->tags.contains(tag)) {
                             for (const auto& item : feed->items) {
                                 if (item.updated > tag_newest) {
                                     tag_newest = item.updated;
