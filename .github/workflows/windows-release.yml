@@ -134,7 +134,7 @@ jobs:
       shell: pwsh
       run: |
         $workspace = "${{ github.workspace }}"
-        $vcpkgDir = "$workspace\vcpkg"
+        $vcpkgDir = if ($env:VCPKG_ROOT) { $env:VCPKG_ROOT } else { "$workspace\vcpkg" }
         $binPath = "$vcpkgDir\installed\x64-windows\bin"
         
         Write-Host "=== COMPREHENSIVE VCPKG VERIFICATION ==="
@@ -212,17 +212,17 @@ jobs:
       shell: cmd
       run: |
         set "workspace=${{ github.workspace }}"
+        if "%VCPKG_ROOT%"=="" set "VCPKG_ROOT=%workspace%\vcpkg"
         cmake -B build -S . ^
-          -DCMAKE_TOOLCHAIN_FILE="%workspace%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
+          -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
-          -DVCPKG_INSTALLED_DIR="%workspace%\vcpkg\installed" ^
+          -DVCPKG_INSTALLED_DIR="%VCPKG_ROOT%\installed" ^
           -DCMAKE_BUILD_TYPE=Release ^
           -G "Visual Studio 18 2026" -A x64
         
         echo.
         echo === CMAKE CONFIGURATION VERIFICATION ===
         echo VCPKG_TARGET_TRIPLET=x64-windows
-        echo VCPKG_INSTALLED_DIR=%workspace%\vcpkg\installed
         echo CMAKE_TOOLCHAIN_FILE=%workspace%\vcpkg\scripts\buildsystems\vcpkg.cmake
 
     - name: Build with CMake
