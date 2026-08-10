@@ -82,14 +82,17 @@ jobs:
           )
         )
         
-        REM Verify vcpkg.exe is present
-        if not exist "vcpkg.exe" (
-          echo ERROR: vcpkg.exe not found after bootstrap
-          exit /b 1
+        REM Verify vcpkg.exe is accessible
+        if exist "C:\vcpkg\vcpkg.exe" (
+          set "VCPKG_EXEC=C:\vcpkg\vcpkg.exe"
+        ) else (
+          set "VCPKG_EXEC=%vcpkgDir%\vcpkg.exe"
         )
         
+        cd /d "%GITHUB_WORKSPACE%"
+        
         echo Installing vcpkg packages (using binary cache if available)...
-        vcpkg.exe install --triplet x64-windows
+        "%VCPKG_EXEC%" install --triplet x64-windows --vcpkg-root="%VCPKG_ROOT%"
         if errorlevel 1 (
           echo ERROR: Package installation failed
           exit /b 1
@@ -97,19 +100,19 @@ jobs:
         
         echo.
         echo Forcing curl installation specifically...
-        vcpkg.exe install curl[ssl]:x64-windows
+        "%VCPKG_EXEC%" install curl[ssl]:x64-windows --vcpkg-root="%VCPKG_ROOT%"
         if errorlevel 1 (
           echo WARNING: Explicit curl installation failed
         )
         
         echo Integrating vcpkg...
-        vcpkg.exe integrate install
+        "%VCPKG_EXEC%" integrate install --vcpkg-root="%VCPKG_ROOT%"
         
         echo Listing installed packages...
-        vcpkg.exe list
+        "%VCPKG_EXEC%" list --vcpkg-root="%VCPKG_ROOT%"
         
         echo Verifying curl installation...
-        vcpkg.exe list curl
+        "%VCPKG_EXEC%" list curl --vcpkg-root="%VCPKG_ROOT%"
         if not errorlevel 0 (
           echo WARNING: curl package may not be properly installed
         )
