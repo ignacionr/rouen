@@ -58,11 +58,11 @@ jobs:
         if exist "C:\vcpkg\vcpkg.exe" (
           echo Using pre-installed system vcpkg from C:\vcpkg...
           set "VCPKG_ROOT=C:\vcpkg"
-          echo VCPKG_ROOT=C:\vcpkg >> %GITHUB_ENV%
+          >>"%GITHUB_ENV%" echo VCPKG_ROOT=C:\vcpkg
           cd /d "C:\vcpkg"
         ) else (
           set "VCPKG_ROOT=%vcpkgDir%"
-          echo VCPKG_ROOT=%vcpkgDir% >> %GITHUB_ENV%
+          >>"%GITHUB_ENV%" echo VCPKG_ROOT=%vcpkgDir%
           if not exist "%vcpkgDir%\triplets" (
             echo Cloning fresh vcpkg repository...
             git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
