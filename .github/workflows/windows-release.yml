@@ -52,29 +52,27 @@ jobs:
       shell: cmd
       run: |
         set "vcpkgDir=%GITHUB_WORKSPACE%\vcpkg"
-        set "VCPKG_ROOT=%vcpkgDir%"
         set "binCacheDir=%GITHUB_WORKSPACE%\vcpkg-binary-cache"
         if not exist "%binCacheDir%" mkdir "%binCacheDir%"
-        echo vcpkg target directory: %vcpkgDir%
         
-        if not exist "%vcpkgDir%" (
-          echo Cloning fresh vcpkg...
-          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
-          if errorlevel 1 (
-            echo ERROR: Failed to clone vcpkg
-            exit /b 1
-          )
+        if exist "C:\vcpkg\vcpkg.exe" (
+          echo Using pre-installed system vcpkg from C:\vcpkg...
+          set "VCPKG_ROOT=C:\vcpkg"
+          echo VCPKG_ROOT=C:\vcpkg >> %GITHUB_ENV%
+          cd /d "C:\vcpkg"
         ) else (
-          echo Existing vcpkg directory found, reusing...
-        )
-        
-        cd /d "%vcpkgDir%"
-        
-        if not exist "vcpkg.exe" (
-          if exist "C:\vcpkg\vcpkg.exe" (
-            echo Copying preinstalled vcpkg.exe from C:\vcpkg...
-            copy /y "C:\vcpkg\vcpkg.exe" "%vcpkgDir%\vcpkg.exe"
-          ) else (
+          set "VCPKG_ROOT=%vcpkgDir%"
+          echo VCPKG_ROOT=%vcpkgDir% >> %GITHUB_ENV%
+          if not exist "%vcpkgDir%\triplets" (
+            echo Cloning fresh vcpkg repository...
+            git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+            if errorlevel 1 (
+              echo ERROR: Failed to clone vcpkg
+              exit /b 1
+            )
+          )
+          cd /d "%vcpkgDir%"
+          if not exist "vcpkg.exe" (
             echo Bootstrapping vcpkg...
             call bootstrap-vcpkg.bat -disableMetrics
             if errorlevel 1 (
@@ -82,12 +80,6 @@ jobs:
               exit /b 1
             )
           )
-          if not exist "vcpkg.exe" if exist "C:\vcpkg\vcpkg.exe" (
-            echo Copying bootstrapped vcpkg.exe from C:\vcpkg...
-            copy /y "C:\vcpkg\vcpkg.exe" "%vcpkgDir%\vcpkg.exe"
-          )
-        ) else (
-          echo vcpkg.exe already present, skipping bootstrap.
         )
         
         REM Verify vcpkg.exe is present
