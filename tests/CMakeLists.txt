@@ -186,6 +186,7 @@ target_sources(test_rss_watermark PRIVATE
     ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
+    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_rss_watermark PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -219,6 +220,7 @@ target_sources(test_rss_diagnostics PRIVATE
     ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
+    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_rss_diagnostics PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -252,6 +254,7 @@ target_sources(test_audio_time_progression PRIVATE
     ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
+    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_audio_time_progression PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -357,6 +360,7 @@ add_executable(test_mcp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/vu_meter.cpp
     ../src/helpers/image_cache.cpp
+    ../src/helpers/tag_manager.cpp
     ../src/cards/interface/card.cpp
     ../src/cards/information/rss.cpp
     ../src/helpers/theme_manager.cpp
