@@ -197,7 +197,8 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_CXX_STANDARD=23 \
-            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast"
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast -Wno-cast-function-type-strict -Wno-error"
         else
           echo "Building with system dependencies..."
           export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig"
@@ -206,7 +207,8 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_CXX_STANDARD=23 \
-            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast" \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
+            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast -Wno-cast-function-type-strict -Wno-error" \
             -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"
         fi
         

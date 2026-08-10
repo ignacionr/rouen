@@ -190,6 +190,7 @@ public:
             case Piece::BlackQueen: return "Black Queen";
             case Piece::BlackKing: return "Black King";
         }
+        return "Unknown";
     }
     
     // Get the Unicode character for a piece
