@@ -361,6 +361,7 @@ add_executable(test_mcp
     ../src/helpers/vu_meter.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/tag_manager.cpp
+    ../src/helpers/card_decorations.cpp
     ../src/cards/interface/card.cpp
     ../src/cards/information/rss.cpp
     ../src/helpers/theme_manager.cpp
