@@ -45,7 +45,7 @@ void setup_windows_debug_console() {
         freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
         
         // Set the console title
-        SetConsoleTitle(L"Rouen Debug Console");
+        SetConsoleTitleW(L"Rouen Debug Console");
         
         // Make cout, wcout, cin, wcin, wcerr, cerr, wclog and clog
         // point to console as well
