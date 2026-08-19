@@ -457,8 +457,8 @@ include(cmake/warnings.cmake)
 
 set(MAC_SOURCES)
 if(APPLE)
-  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm)
-  set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm src/helpers/app_icon.mm)
+  set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm src/helpers/app_icon.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
 # Add the executable
@@ -478,6 +478,7 @@ add_executable(${PROJECT_NAME}
   src/hosts/api_server_host.cpp
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
+  src/hosts/process_host.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp

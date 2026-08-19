@@ -416,6 +416,7 @@ namespace rouen::cards {
                     {"Terminal", []() { "create_card"_sfn("terminal"); }},
                     {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                     {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},
+                    {"Process Orchestration", []() { "create_card"_sfn("process-panel"); }},
                     {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
                     {"About", []() { "create_card"_sfn("about"); }},
                     {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }}

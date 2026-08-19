@@ -70,6 +70,8 @@
 #include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/terminal.hpp"
+#include "../system/process_panel.hpp"
+#include "../system/process_run.hpp"
 
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
@@ -266,6 +268,14 @@ namespace rouen::cards {
                 // Register the new terminal card
                 instance.emplace("terminal", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<terminal>(uri);
+                });
+
+                instance.emplace("process-panel", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<process_panel>();
+                });
+
+                instance.emplace("process-run", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<process_run>(locator);
                 });
                 
                 instance.emplace("rss", [](std::string_view, SDL_Renderer* renderer) {
