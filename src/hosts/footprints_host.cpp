@@ -36,7 +36,8 @@ namespace {
     std::string url_encode(const std::string& value) {
         std::ostringstream out;
         out.fill('0');
-        for (unsigned char c : value) {
+        for (char raw_c : value) {
+            auto c{static_cast<unsigned char>(raw_c)};
             if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
                 out << static_cast<char>(c);
             } else {
