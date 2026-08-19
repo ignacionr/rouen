@@ -51,6 +51,7 @@
 #include "../productivity/calculator.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
+#include "../productivity/footprints_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/objectives_card.hpp"
 #include "../productivity/trello_card.hpp"
@@ -415,7 +416,12 @@ namespace rouen::cards {
                 instance.emplace("trello-board", [](std::string_view board_id, SDL_Renderer*) {
                     return std::make_shared<trello_card>(std::string(board_id));
                 });
-                
+
+                // Register the FootPrints card
+                instance.emplace("footprints", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<footprints_card>();
+                });
+
                 // Register the chess replay card
                 instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
                     return std::make_shared<chess_replay>(pgn_path);

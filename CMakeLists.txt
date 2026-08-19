@@ -513,6 +513,7 @@ add_executable(${PROJECT_NAME}
   src/models/jira_model_api.cpp
   src/models/trello_model.cpp
   src/hosts/trello_host.cpp
+  src/hosts/footprints_host.cpp
   src/hosts/rss_host.cpp
   src/cards/productivity/trello_card_core.cpp
   src/cards/productivity/trello_card_connection.cpp
