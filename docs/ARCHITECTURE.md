@@ -76,6 +76,7 @@ Helpers provide pure, stateless utility functions, text/data transformations, fo
 * **Chess API & PGN Utilities** ([chess_com_api.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/chess_com_api.hpp), [chess_game_analyzer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/chess_game_analyzer.hpp)): Pure JSON parsing and PGN string sanitization helpers.
 * **Email & HTML Metadata Extractors** ([email_metadata_analyzer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/email_metadata_analyzer.hpp), [html_media_extractor.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/html_media_extractor.hpp)): Stateless string/MIME extractors for headers and embedded media URLs.
 * **Platform & OS Utilities** ([platform_utils.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/platform_utils.hpp), [string_helper.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/string_helper.hpp), [md5.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/md5.hpp)): Cross-platform paths, process execution helpers, and hashing algorithms.
+* **Directory Change Watcher** ([directory_watch.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/directory_watch.hpp)): Recursive directory watcher backed by the OS's native change-notification API (`ReadDirectoryChangesW`, `FSEvents`, `inotify`) behind a single platform boundary; powers the Process Orchestration monitor's file-change tracking.
 * **UI Widgets & Rendering Contexts** ([imgui_helper.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/imgui_helper.hpp), [flag_renderer.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/flag_renderer.hpp), [date_picker.hpp](file:///Users/ignaciorodriguez/src/rouen/src/helpers/date_picker.hpp)): Immediate-mode UI layout helpers and drawing primitives.
 
 #### B. Stateful Hosts (`src/hosts/`)
@@ -88,6 +89,7 @@ Hosts encapsulate long-lived, stateful services, authenticated external API clie
 * **Travel & Transit Host** ([travel_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/travel_host.hpp)): Manages flight/transit provider authorization headers, live location polling, and schedule state.
 * **Dictation & Speech-to-Text Host** ([dictation_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/dictation_host.hpp)): Manages Whisper server subprocess lifecycle, recording audio stream buffers, and local transcription state.
 * **Video Feed & Broadcast Host** ([video_feed_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/video_feed_host.hpp)): Offscreen 1080p ImGui rendering engine, multi-camera context manager, and TCP streaming broadcast server (`tcp://127.0.0.1:8889`).
+* **Process Orchestration Host** ([process_host.hpp](file:///Users/ignaciorodriguez/src/rouen/src/hosts/process_host.hpp)): Owns every spawned OS process for the app's lifetime — process handles, stderr capture threads, resource/TCP stat sampling threads, and run-id/definition tracking — independent of any monitor card's lifecycle.
 
 ---
 

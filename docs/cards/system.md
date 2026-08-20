@@ -20,6 +20,7 @@
 | **About Rouen Card** | `uri: "about"` | Application version information, system build metadata, active framework credits, and architecture overview. |
 | **Subnet Scanner Card** | `uri: "subnet-scanner"` | Local IP network discovery scanner mapping connected devices and open service ports. |
 | **Git Repository Card** | `uri: "git"` | Git repository manager displaying branch status, commit history, working tree diffs, and stage actions. |
+| **Process Orchestration Card** | `uri: "process-panel"` | Launches and manages OS processes from configurable start directories; each run opens a live monitor with resource meters, TCP connections, stderr output, and recursive file-change tracking. |
 
 ---
 
@@ -332,6 +333,29 @@ curl -X POST http://127.0.0.1:8081/api/screenshot -H "Content-Type: application/
 ```
 
 ![Git Repository Card snapshot running on Rouen](images/card_git.png)
+
+---
+
+## Process Orchestration Card
+
+- **URI Schema**: `process-panel`
+- **Category**: System & Developer Tools
+
+### Description & Features
+Define reusable process launch configurations (executable path, arguments, working directory, icon) and spawn them on demand. Each run opens a **Process Run Monitor** card (`process-run:<definition_id>:<run_id>`) showing live thread/subprocess/handle/memory meters, active TCP connections, and captured stderr output. Closing a monitor card never stops the underlying process — only its **Kill** button does.
+
+The monitor card also has a **Track File Changes** checkbox that watches the process's working directory, recursively, using the OS's native file-change notification API — `ReadDirectoryChangesW` on Windows, `FSEvents` on macOS, `inotify` on Linux — and lists touched files with an **Open** button. Because it relies on native OS notifications instead of polling, it stays cheap even in directories with many files or deep subtrees.
+
+### REST API Interaction
+```bash
+# Create the Process Orchestration panel
+curl -X POST http://127.0.0.1:8081/api/cards -H "Content-Type: application/json" -d '{"uri":"process-panel"}'
+
+# Focus the panel
+curl -X POST http://127.0.0.1:8081/api/cards/focus -H "Content-Type: application/json" -d '{"uri":"process-panel"}'
+```
+
+> Process Run Monitor cards are spawned per launch (`process-run:<definition_id>:<run_id>`), not created directly via this URI — start or reveal a run from the Process Orchestration panel's **Run**/**Show** buttons instead.
 
 ---
 
