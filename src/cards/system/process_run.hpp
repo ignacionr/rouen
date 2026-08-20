@@ -8,14 +8,21 @@
 #include <cmath>
 #include <format>
 #include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <memory>
 
 #include "../../helpers/imgui_include.hpp"
 #include "../interface/card.hpp"
 #include "../../helpers/app_icon.hpp"
 #include "../../helpers/texture_utils.hpp"
 #include "../../helpers/vu_meter.hpp"
+#include "../../helpers/platform_utils.hpp"
+#include "../../helpers/directory_watch.hpp"
 #include "../../models/productivity/process_definition.hpp"
 #include "../../hosts/process_host.hpp"
+#include "../development/fs-directory.hpp"
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -71,6 +78,9 @@ namespace rouen::cards {
                     render_tcp_connections(*snap);
                     ImGui::Separator();
                 }
+
+                render_file_changes();
+                ImGui::Separator();
 
                 render_stderr();
             });
@@ -271,6 +281,7 @@ namespace rouen::cards {
                 if (!def->working_directory.empty()) {
                     ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "in %s", def->working_directory.c_str());
                 }
+                working_directory_ = resolve_env_variables(def->working_directory);
             } else {
                 ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.4f, 1.0f), "Process definition no longer exists.");
                 return;
@@ -316,6 +327,74 @@ namespace rouen::cards {
             }
         }
 
+        static std::string current_time_label() {
+            auto now = std::chrono::system_clock::now();
+            std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
+            std::tm now_tm{};
+#if defined(_WIN32)
+            localtime_s(&now_tm, &now_time_t);
+#else
+            localtime_r(&now_time_t, &now_tm);
+#endif
+            char buf[16];
+            std::strftime(buf, sizeof(buf), "%H:%M:%S", &now_tm);
+            return buf;
+        }
+
+        void record_file_change(const std::string& path) {
+            std::erase_if(changed_files_, [&](const auto& e) { return e.path == path; });
+            changed_files_.insert(changed_files_.begin(), {path, current_time_label()});
+            if (changed_files_.size() > 300) changed_files_.resize(300);
+        }
+
+        void render_file_changes() {
+            if (ImGui::Checkbox("Track File Changes", &track_file_changes_)) {
+                if (track_file_changes_ && !working_directory_.empty()) {
+                    watcher_ = std::make_unique<rouen::helpers::directory_watch>(working_directory_);
+                } else {
+                    watcher_.reset();
+                }
+            }
+
+            if (!track_file_changes_) return;
+            if (!watcher_ && !working_directory_.empty()) {
+                watcher_ = std::make_unique<rouen::helpers::directory_watch>(working_directory_);
+            }
+
+            if (watcher_ && !watcher_->active()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f),
+                                   "Could not watch \"%s\" (missing, inaccessible, or bad path)",
+                                   working_directory_.c_str());
+                return;
+            }
+
+            if (watcher_) {
+                for (const auto& path : watcher_->drain_changes()) {
+                    std::error_code ec;
+                    if (std::filesystem::is_regular_file(path, ec)) record_file_change(path);
+                }
+            }
+
+            ImGui::BeginChild("FileChangesRegion", ImVec2(0, 100.0f), true);
+            if (changed_files_.empty()) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No file changes detected yet");
+            } else {
+                for (size_t i = 0; i < changed_files_.size(); ++i) {
+                    const auto& entry = changed_files_[i];
+                    ImGui::PushID(static_cast<int>(i));
+                    if (ImGui::SmallButton("Open")) {
+                        rouen::platform::open_url(entry.path);
+                    }
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", entry.changed_at.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextUnformatted(entry.path.c_str());
+                    ImGui::PopID();
+                }
+            }
+            ImGui::EndChild();
+        }
+
         void render_stderr() {
             ImGui::TextUnformatted("stderr:");
             ImGui::BeginChild("StderrRegion", ImVec2(0, -1), true);
@@ -344,6 +423,16 @@ namespace rouen::cards {
         auto_scale_meter subprocess_meter_;
         auto_scale_meter handle_meter_;
         auto_scale_meter memory_meter_;
+
+        std::string working_directory_;
+        bool track_file_changes_{false};
+        std::unique_ptr<rouen::helpers::directory_watch> watcher_;
+
+        struct changed_file_entry {
+            std::string path;
+            std::string changed_at;
+        };
+        std::vector<changed_file_entry> changed_files_;
     };
 
 } // namespace rouen::cards
