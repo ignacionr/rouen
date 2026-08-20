@@ -122,7 +122,10 @@ Every commit pushed or pull request opened triggers GitHub Actions:
 3. **Commit & Pull Request**: Ensure your code is warning-free, formatted, and passes all test suites before submitting a PR.
 
 > Building a card outside this repository instead - as a dynamically
-> loaded plugin - is also supported; see [docs/PLUGINS.md](PLUGINS.md).
+> loaded plugin - is also supported; see [docs/PLUGINS.md](PLUGINS.md). For
+> a card backed by a script or executable in any language, with no
+> compiling against Rouen at all, see
+> [docs/ADAPTIVE_PROCESS_CARDS.md](ADAPTIVE_PROCESS_CARDS.md).
 
 ---
 

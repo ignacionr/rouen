@@ -24,6 +24,7 @@
 #include "../development/github.hpp"
 #include "../information/calendar/calendar.hpp"
 #include "../information/adaptive_card.hpp"
+#include "../information/adaptive_process_card.hpp"
 #include "../information/ai_chat.hpp"
 #include "../information/directory_card.hpp"
 #include "../information/contact_card.hpp"
@@ -338,6 +339,10 @@ namespace rouen::cards {
 
                 instance.emplace("adaptive-card", [](std::string_view locator, SDL_Renderer*) {
                     return std::make_shared<adaptive_card>(locator);
+                });
+
+                instance.emplace("adaptive-process", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<adaptive_process_card>(locator);
                 });
 
                 instance.emplace("directory", [](std::string_view locator, SDL_Renderer* renderer) {

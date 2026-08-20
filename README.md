@@ -28,6 +28,7 @@ To make the codebase easy to navigate, the documentation has been split into mod
 * 📰 **[RSS Reader Guide](docs/RSS.md)**: Consolidated documentation for the RSS reader subsystem, including media extraction pipelines and detailed UI card specifications.
 * 📇 **[Adaptive Cards Integration Plan](docs/adaptive_cards_plan.md)**: Step-by-step architectural design and execution plan to bring Adaptive Cards and Templating to Rouen.
 * 🧩 **[Plugin Guide](docs/PLUGINS.md)**: Adding new card types and URI registrations from dynamically loaded libraries - either ImGui-drawn or declared as Adaptive Card JSON - with a buildable sample plugin under `plugins/sample-card-plugin/`.
+* ⚙️ **[Adaptive Process Cards](docs/ADAPTIVE_PROCESS_CARDS.md)**: Turning any executable, in any language, into a live card via `adaptive-process:<command line>` - no compiling against Rouen required.
 * 🃏 **Card Catalog & Live UI References**:
   * 🧮 **[Productivity & Utilities Cards](docs/cards/productivity.md)**: Calculator, Unit Converter, Pomodoro, Alarm, Objectives, KPIs, Invoice, Trello, Jira, and Theme Customizer.
   * 🛠️ **[System & Developer Tools Cards](docs/cards/system.md)**: System Info, Environment Variables, Display Settings, Settings, Sync, Notifications, Terminal, Directory Browser, CMake Manager, DB Repair, About Rouen, Subnet Scanner, Git Repository, and Process Orchestration.

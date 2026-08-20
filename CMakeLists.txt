@@ -482,6 +482,7 @@ add_executable(${PROJECT_NAME}
   src/hosts/process_host.cpp
   src/hosts/plugin_host.cpp
   src/helpers/dynamic_library.cpp
+  src/helpers/piped_process.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp

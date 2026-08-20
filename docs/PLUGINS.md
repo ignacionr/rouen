@@ -18,6 +18,12 @@ single library.
 This guide covers how loading works, the constraints that come with it, and
 how to build your own plugin from the sample in `plugins/sample-card-plugin/`.
 
+If a C++/DLL toolchain is more than you need - your "plugin" is really
+just a script that computes some data - see
+[docs/ADAPTIVE_PROCESS_CARDS.md](ADAPTIVE_PROCESS_CARDS.md) for a third,
+no-compile option: an executable in any language that speaks Adaptive
+Card JSON over stdin/stdout.
+
 ---
 
 ## Quick start
