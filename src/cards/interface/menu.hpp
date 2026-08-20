@@ -185,6 +185,14 @@ namespace rouen::cards {
                                 should_close_ = true;
                             }
                         }
+                        // Nothing in the menu matches - treat the typed text as a
+                        // card URI directly (e.g. "dir:C:\"), so a card doesn't
+                        // need its own menu entry to be reachable this way.
+                        else if (enter_pressed && filtered_items.empty()) {
+                            "create_card"_sfn(search_text);
+                            search_buffer[0] = '\0';
+                            should_close_ = true;
+                        }
                     }
                     
                     // Display search results
@@ -193,7 +201,8 @@ namespace rouen::cards {
                     // If no items match the filter, show a message
                     if (filtered_items.empty()) {
                         ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
-                    } 
+                        ui.text_colored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Press Enter to open it as a card URI (e.g. dir:C:\\)");
+                    }
                     else {
                         // Render filtered items
                         for (size_t i = 0; i < filtered_items.size(); i++) {
