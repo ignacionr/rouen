@@ -76,18 +76,31 @@ public:
         return urls;
     }
 
+    // Per the Adaptive Cards spec, a submitted/executed action's data is a
+    // flat object of every input's current value keyed by its id - not
+    // grouped by input type.
     [[nodiscard]] static std::string build_submit_payload(const input_state& state) {
-        glz::json_t payload = glz::json_t::object_t{};
-        payload["text"] = glz::json_t::object_t{};
-        payload["toggle"] = glz::json_t::object_t{};
-
-        for (const auto& [key, value] : state.text_values) {
-            payload["text"][key] = value;
+        if (const auto encoded = glz::write_json(collect_input_values(state)); encoded.has_value()) {
+            return encoded.value();
         }
-        for (const auto& [key, value] : state.toggle_values) {
-            payload["toggle"][key] = value;
-        }
+        return "{}";
+    }
 
+    // Same flat, id-keyed object as build_submit_payload(), merged with
+    // the triggering action's own optional "data" property. The spec
+    // describes this merge identically for Action.Submit and
+    // Action.Execute ("gathers input fields, merges with optional data
+    // field"), so both call this. Only an object-valued action_data has
+    // keys to merge in as siblings; a string/number/null data value is
+    // left out of this flat object (Action.Execute still carries it
+    // separately - see render_actions()).
+    [[nodiscard]] static std::string build_action_data_payload(const input_state& state, const glz::json_t& action_data) {
+        glz::json_t payload = collect_input_values(state);
+        if (action_data.is_object()) {
+            for (const auto& [key, value] : action_data.get_object()) {
+                payload[key] = value;
+            }
+        }
         if (const auto encoded = glz::write_json(payload); encoded.has_value()) {
             return encoded.value();
         }
@@ -95,6 +108,17 @@ public:
     }
 
 private:
+    [[nodiscard]] static glz::json_t collect_input_values(const input_state& state) {
+        glz::json_t values = glz::json_t::object_t{};
+        for (const auto& [key, value] : state.text_values) {
+            values[key] = value;
+        }
+        for (const auto& [key, value] : state.toggle_values) {
+            values[key] = value;
+        }
+        return values;
+    }
+
     static void render_input_choice_set(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
         auto [it, inserted] = state.text_values.try_emplace(key, node.value);
@@ -607,15 +631,11 @@ private:
                 if (card_action.type == "Action.OpenUrl" && !card_action.url.empty()) {
                     callbacks.open_url(card_action.url);
                 } else if (card_action.type == "Action.Submit") {
-                    callbacks.on_submit(build_submit_payload(state));
+                    callbacks.on_submit(build_action_data_payload(state, card_action.data));
                 } else if (card_action.type == "Action.Execute") {
-                    std::string data_json = "{}";
-                    if (!card_action.data.is_null()) {
-                        if (auto const encoded = glz::write_json(card_action.data); encoded.has_value()) {
-                            data_json = encoded.value();
-                        }
-                    }
-                    callbacks.on_submit(std::format("{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb, data_json));
+                    callbacks.on_submit(std::format(
+                        "{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb,
+                        build_action_data_payload(state, card_action.data)));
                 } else if (card_action.type == "Action.ToggleVisibility") {
                     for (const auto& target_id : card_action.targetElements) {
                         state.toggle_values[target_id] = !state.toggle_values[target_id];

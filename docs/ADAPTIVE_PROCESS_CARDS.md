@@ -37,11 +37,14 @@ Rouen:
    first card immediately after starting.
 2. **stdin, one line at a time**: when the user activates `Action.Submit`
    or `Action.Execute` on the currently shown card, Rouen writes the
-   resulting JSON payload to the process's stdin as one line -
-   `{"text":{...},"toggle":{...}}` for `Action.Submit`, or
-   `{"verb":...,"data":...}` for `Action.Execute` (the same shapes
-   `helpers::adaptive_cards::renderer` already produces for the built-in
-   `adaptive-card` schema). Read a line, compute, print a new card.
+   resulting JSON payload to the process's stdin as one line, matching
+   the Adaptive Cards spec: a flat object of every input's current value
+   keyed by its `id`, merged with the action's own `data` property if it
+   is an object (e.g. an `Action.Submit` with `"data":{"action":"guess"}`
+   and an `Input.Number` `id="guess"` set to 40 sends
+   `{"action":"guess","guess":"40"}`). `Action.Execute` wraps that same
+   merged object under `data`, alongside `verb`:
+   `{"verb":"...","data":{...}}`. Read a line, compute, print a new card.
 3. **`Action.OpenUrl`** is handled by Rouen only (opened with the OS's
    default handler) and is never sent to the process.
 4. **stderr** is captured and shown in a collapsible "Process stderr"

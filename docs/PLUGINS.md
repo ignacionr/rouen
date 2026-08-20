@@ -316,8 +316,11 @@ public:
     std::string uri() const override { return "my-adaptive-schema"; }
 
     void on_submit(std::string const& payload_json) override {
-        // payload_json is {"text":{...},"toggle":{...}} for Action.Submit,
-        // or {"verb":...,"data":...} for Action.Execute.
+        // Per the Adaptive Cards spec: for Action.Submit, payload_json is
+        // a flat object of every input's value keyed by its id, merged
+        // with the action's own "data" property if it is an object. For
+        // Action.Execute, that same merged object is wrapped as
+        // {"verb":"...","data":{...}}.
     }
 };
 ```
