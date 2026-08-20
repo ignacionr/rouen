@@ -1,5 +1,6 @@
 #include <rouen_plugin_api.hpp>
 
+#include "hello_adaptive_card.hpp"
 #include "hello_card.hpp"
 
 #include <memory>
@@ -36,6 +37,17 @@ ROUEN_PLUGIN_EXPORT bool rouen_plugin_init(rouen::plugin::host_services const* s
         },
         "Hello Plugin");
 
-    services->log("initialized (schema: hello)");
+    // The declarative counterpart to the ImGui-drawn card above: a
+    // plugin card defined entirely as an Adaptive Card JSON template.
+    // This style never touches ImGui, so sync_imgui_state() above is
+    // not required for it to work.
+    services->register_adaptive_card(
+        "hello-adaptive",
+        [](std::string_view locator) -> std::unique_ptr<rouen::plugin::adaptive_card_plugin> {
+            return std::make_unique<sample_plugin::hello_adaptive_card>(locator);
+        },
+        "Hello Adaptive Card");
+
+    services->log("initialized (schemas: hello, hello-adaptive)");
     return true;
 }

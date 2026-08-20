@@ -1,7 +1,12 @@
-# Standalone build for the sample "hello" card plugin. This is deliberately
-# NOT added as a subdirectory of the main Rouen build: a real plugin lives
+# Standalone build for the sample card plugin. This is deliberately NOT
+# added as a subdirectory of the main Rouen build: a real plugin lives
 # outside the Rouen source tree, built and versioned on its own. See
 # docs/PLUGINS.md for the full walkthrough this project accompanies.
+#
+# Demonstrates both plugin styles from a single library:
+#   - "hello": an ImGui-drawn plugin_card (src/hello_card.hpp)
+#   - "hello-adaptive": a declarative adaptive_card_plugin, defined by a
+#     JSON template with no ImGui code at all (src/hello_adaptive_card.hpp)
 #
 # Build (from this directory):
 #   cmake -B build -G "Visual Studio 17 2022" -A x64
@@ -10,8 +15,9 @@
 # Then copy build/bin/Release/hello_card_plugin.dll into either:
 #   - <rouen.exe directory>/plugins/, or
 #   - %APPDATA%/Rouen/plugins/
-# and start Rouen. Open the card with the "Hello Plugin" entry in the
-# application menu, or the "hello:<name>" URI via the REST API.
+# and start Rouen. Open either card from the "Plugins" entry in the
+# application menu, or via "hello:<name>" / "hello-adaptive" URIs
+# through the REST API.
 
 cmake_minimum_required(VERSION 3.30)
 project(rouen_sample_card_plugin LANGUAGES CXX)

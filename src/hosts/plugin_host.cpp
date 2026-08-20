@@ -12,6 +12,7 @@
 #include "../helpers/imgui_include.hpp"
 
 // 3. All other includes
+#include "../cards/interface/adaptive_card_plugin_adapter.hpp"
 #include "../cards/interface/factory.hpp"
 #include "../cards/interface/plugin_card_adapter.hpp"
 #include "../helpers/dynamic_library.hpp"
@@ -86,6 +87,20 @@ namespace rouen::hosts {
                         return nullptr;
                     }
                     return std::make_shared<rouen::cards::plugin_card_adapter>(std::move(impl));
+                },
+                display_name);
+        };
+
+        services.register_adaptive_card = [](std::string const& schema, rouen::plugin::adaptive_card_factory_fn factory,
+                                               std::string const& display_name) {
+            rouen::cards::factory::register_card(
+                schema,
+                [factory](std::string_view locator, SDL_Renderer*) -> card::ptr {
+                    auto impl = factory(locator);
+                    if (!impl) {
+                        return nullptr;
+                    }
+                    return std::make_shared<rouen::cards::adaptive_card_plugin_adapter>(std::move(impl));
                 },
                 display_name);
         };

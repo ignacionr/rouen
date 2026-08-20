@@ -35,9 +35,11 @@
 
 namespace rouen::plugin {
 
-    // Bump when host_services or plugin_card change in a way that is not
-    // source/binary compatible with older plugins.
-    inline constexpr std::uint32_t abi_version{1};
+    // Bump when host_services, plugin_card, or adaptive_card_plugin
+    // change in a way that is not source/binary compatible with older
+    // plugins. v2 added adaptive_card_plugin and
+    // host_services::register_adaptive_card.
+    inline constexpr std::uint32_t abi_version{2};
 
     // Base class for a plugin-provided card. The host wraps every
     // instance in an adapter that behaves like any built-in card (drag,
@@ -86,9 +88,59 @@ namespace rouen::plugin {
     // nullptr fails the creation request.
     using card_factory_fn = std::function<std::unique_ptr<plugin_card>(std::string_view locator)>;
 
+    // Base class for a plugin-provided card defined declaratively as an
+    // Adaptive Card, rather than drawn imperatively like plugin_card
+    // above. Rouen already has a full Adaptive Card parser, data-binding
+    // templater, and ImGui renderer (src/helpers/adaptive_cards/); the
+    // host wraps every instance of this class in an adapter that owns
+    // all three and does all ImGui interaction itself. A plugin of this
+    // style therefore never touches ImGui, and the context-sharing rule
+    // that applies to plugin_card::render() does not apply here at all -
+    // this is the simpler of the two plugin styles to write.
+    class adaptive_card_plugin {
+    public:
+        virtual ~adaptive_card_plugin() = default;
+
+        // The Adaptive Card JSON template. Parsed and bound once, at
+        // card creation and again whenever handle_uri() is called.
+        [[nodiscard]] virtual std::string card_json() const = 0;
+
+        // Optional data-binding context for the template's "${...}"
+        // expressions, as JSON. Empty means no binding data (the
+        // template is rendered as-is).
+        [[nodiscard]] virtual std::string context_json() const { return {}; }
+
+        // Window title shown in the card's title bar.
+        [[nodiscard]] virtual std::string title() const = 0;
+
+        // Canonical URI for this card instance, used for
+        // workspace-layout persistence and the REST API.
+        [[nodiscard]] virtual std::string uri() const = 0;
+
+        // Optional: react to a new locator without recreating the card.
+        // The host re-parses card_json()/context_json() afterward.
+        virtual void handle_uri(std::string_view /*locator*/) {}
+
+        // Optional: called once when the card is closed.
+        virtual void on_close() {}
+
+        // Called with the JSON payload when the user activates
+        // Action.Submit ({"text":{...},"toggle":{...}}) or
+        // Action.Execute ({"verb":...,"data":...}).
+        virtual void on_submit(std::string const& /*payload_json*/) {}
+
+        // Called when the user activates Action.OpenUrl, after the host
+        // has already opened it with the OS's default handler.
+        virtual void on_open_url(std::string const& /*url*/) {}
+    };
+
+    using adaptive_card_factory_fn = std::function<std::unique_ptr<adaptive_card_plugin>(std::string_view locator)>;
+
     // Services the host hands a plugin at load time. A plugin must
     // synchronize its own ImGui module state from the imgui_* fields
-    // (see docs/PLUGINS.md) before making any ImGui:: call.
+    // (see docs/PLUGINS.md) before making any ImGui:: call - this only
+    // matters for the plugin_card style; a plugin that only registers
+    // adaptive_card_plugin cards can ignore the imgui_* fields entirely.
     struct host_services {
         std::uint32_t abi_version{0};
 
@@ -103,6 +155,9 @@ namespace rouen::plugin {
         // for schemas the plugin only wants reachable by URI (e.g.
         // sub-views of another plugin card).
         std::function<void(std::string const& schema, card_factory_fn factory, std::string const& display_name)> register_card;
+
+        // Same as register_card, for the declarative Adaptive Card style.
+        std::function<void(std::string const& schema, adaptive_card_factory_fn factory, std::string const& display_name)> register_adaptive_card;
 
         // Logs a line prefixed with the plugin's file name in the host's
         // console/log output.
