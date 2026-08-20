@@ -73,6 +73,7 @@ void setup_windows_debug_console() {
 #include "helpers/debug.hpp"
 #include "helpers/notify_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
+#include "hosts/plugin_host.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
@@ -221,7 +222,13 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     std::cout << "Main window initialized successfully, starting main loop..." << '\n';
-    
+
+    // Load plugins now that the ImGui context exists, but before the
+    // deck (created at the top of window.run()) recreates any cards
+    // persisted from a previous session - a persisted plugin card's
+    // schema must already be registered by then.
+    rouen::hosts::plugin_host::instance().load_all_plugins();
+
     // Run the main loop
     window.run();
 

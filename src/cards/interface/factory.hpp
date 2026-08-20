@@ -12,6 +12,7 @@
 // 3. All other includes
 #include "card.hpp"
 #include "menu.hpp"
+#include "plugin_registry.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player_alarm.hpp"
@@ -102,6 +103,22 @@ namespace rouen::cards {
                 throw std::runtime_error("Failed to create card: " + std::string(schema));
             }
             return card_ptr;
+        }
+
+        // Registers a card schema at runtime, e.g. from a dynamically
+        // loaded plugin (see src/hosts/plugin_host.hpp). display_name,
+        // when non-empty, also adds the schema to the deck's "Plugins"
+        // launcher menu (see menu.hpp).
+        static void register_card(std::string schema, factory_t fn, std::string display_name = {}) {
+            // Force the lazily-initialized built-in dictionary to exist
+            // before mutating it, otherwise a later first-call to
+            // dictionary() would reset it back to just the built-ins.
+            dictionary();
+            auto& dict = const_cast<std::unordered_map<std::string, factory_t>&>(dictionary());
+            dict[schema] = std::move(fn);
+            if (!display_name.empty()) {
+                plugin_menu_entries().push_back({std::move(schema), std::move(display_name)});
+            }
         }
 
         static std::unordered_map<std::string, factory_t> const& dictionary() {

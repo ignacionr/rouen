@@ -19,6 +19,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../registrar.hpp"
 #include "card.hpp"
+#include "plugin_registry.hpp"
 
 namespace rouen::cards {
     struct menu: public card {
@@ -422,6 +423,17 @@ namespace rouen::cards {
                     {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }}
                 }}
             });
+
+            auto const& plugin_entries = plugin_menu_entries();
+            if (!plugin_entries.empty()) {
+                std::vector<std::pair<std::string, std::function<void()>>> plugin_items;
+                for (auto const& entry : plugin_entries) {
+                    std::string uri = entry.schema;
+                    plugin_items.push_back({entry.display_name, [uri]() { "create_card"_sfn(uri); }});
+                }
+                categories.push_back({"Plugins", plugin_items});
+            }
+
             return categories;
         }
     };

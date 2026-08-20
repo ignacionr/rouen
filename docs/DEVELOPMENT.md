@@ -121,6 +121,9 @@ Every commit pushed or pull request opened triggers GitHub Actions:
    ```
 3. **Commit & Pull Request**: Ensure your code is warning-free, formatted, and passes all test suites before submitting a PR.
 
+> Building a card outside this repository instead - as a dynamically
+> loaded plugin - is also supported; see [docs/PLUGINS.md](PLUGINS.md).
+
 ---
 
 ### Designing Integrations & Services: Helpers vs. Hosts

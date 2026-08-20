@@ -480,6 +480,8 @@ add_executable(${PROJECT_NAME}
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
   src/hosts/process_host.cpp
+  src/hosts/plugin_host.cpp
+  src/helpers/dynamic_library.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp
@@ -557,6 +559,7 @@ target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/helpers
   ${CMAKE_SOURCE_DIR}/src/hosts
+  ${CMAKE_SOURCE_DIR}/plugin-sdk
 )
 
 # Add ImGui include directories based on which target is available
