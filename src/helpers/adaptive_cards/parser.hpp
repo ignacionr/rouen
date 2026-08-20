@@ -60,7 +60,10 @@ struct action {
     std::string title;
     std::string url;
     std::string verb;
-    std::string data;
+    // The Adaptive Cards spec allows this to be any JSON value (almost
+    // always an object) merged into the Action.Execute payload; glz::json_t
+    // accepts whatever shape shows up instead of requiring a JSON string.
+    glz::json_t data{};
     std::vector<std::string> targetElements;
     show_card card;
 };

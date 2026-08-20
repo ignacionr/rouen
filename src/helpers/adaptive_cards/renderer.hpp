@@ -609,7 +609,13 @@ private:
                 } else if (card_action.type == "Action.Submit") {
                     callbacks.on_submit(build_submit_payload(state));
                 } else if (card_action.type == "Action.Execute") {
-                    callbacks.on_submit(std::format("{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb, card_action.data.empty() ? "{}" : card_action.data));
+                    std::string data_json = "{}";
+                    if (!card_action.data.is_null()) {
+                        if (auto const encoded = glz::write_json(card_action.data); encoded.has_value()) {
+                            data_json = encoded.value();
+                        }
+                    }
+                    callbacks.on_submit(std::format("{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb, data_json));
                 } else if (card_action.type == "Action.ToggleVisibility") {
                     for (const auto& target_id : card_action.targetElements) {
                         state.toggle_values[target_id] = !state.toggle_values[target_id];
