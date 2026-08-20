@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdio>
 #include <functional>
 #include <format>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../texture_utils.hpp"
@@ -40,6 +42,11 @@ public:
         std::unordered_map<std::string, std::string> text_values{};
         std::unordered_map<std::string, bool> toggle_values{};
         std::unordered_map<std::size_t, bool> show_card_expanded{};
+        // ids of text_values entries that came from an Input.Number, so
+        // collect_input_values() can emit them as JSON numbers - Input.Text
+        // and Input.Date/Time share the same text_values map but are
+        // genuinely strings per the spec.
+        std::unordered_set<std::string> numeric_ids{};
     };
 
     void render(const card_document& card) const override {
@@ -111,6 +118,17 @@ private:
     [[nodiscard]] static glz::json_t collect_input_values(const input_state& state) {
         glz::json_t values = glz::json_t::object_t{};
         for (const auto& [key, value] : state.text_values) {
+            if (state.numeric_ids.contains(key)) {
+                double parsed = 0.0;
+                auto const [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+                if (ec == std::errc{} && ptr == value.data() + value.size()) {
+                    values[key] = parsed;
+                    continue;
+                }
+                // Not a complete, valid number yet (e.g. still empty or
+                // being typed) - fall through and send it as a string
+                // rather than dropping the key entirely.
+            }
             values[key] = value;
         }
         for (const auto& [key, value] : state.toggle_values) {
@@ -166,6 +184,7 @@ private:
     static void render_input_number(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
         auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        state.numeric_ids.insert(key);
         const std::string label = node.title.empty() ? key : node.title;
         std::array<char, 256> buffer{};
         std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
