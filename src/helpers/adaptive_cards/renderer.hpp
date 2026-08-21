@@ -301,23 +301,41 @@ private:
         float weight_or_width{1.0f};
     };
 
+    [[nodiscard]] static std::string to_lower_trimmed(std::string_view str) {
+        std::size_t start = 0;
+        while (start < str.size() && (str[start] == ' ' || str[start] == '\t' || str[start] == '\r' || str[start] == '\n')) {
+            ++start;
+        }
+        std::size_t end = str.size();
+        while (end > start && (str[end - 1] == ' ' || str[end - 1] == '\t' || str[end - 1] == '\r' || str[end - 1] == '\n')) {
+            --end;
+        }
+        std::string res;
+        res.reserve(end - start);
+        for (std::size_t i = start; i < end; ++i) {
+            res += static_cast<char>(std::tolower(static_cast<unsigned char>(str[i])));
+        }
+        return res;
+    }
+
     [[nodiscard]] static column_width_spec parse_column_width(std::string_view width_str) {
-        if (width_str.empty() || width_str == "stretch" || width_str == "Stretch") {
+        const std::string lower = to_lower_trimmed(width_str);
+        if (lower.empty() || lower == "stretch") {
             return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
         }
-        if (width_str == "auto" || width_str == "Auto") {
+        if (lower == "auto") {
             return {ImGuiTableColumnFlags_WidthFixed, 0.0f};
         }
-        if (width_str.ends_with("px") || width_str.ends_with("PX")) {
+        if (lower.ends_with("px")) {
             try {
-                float px = std::stof(std::string(width_str.substr(0, width_str.size() - 2)));
+                float px = std::stof(lower.substr(0, lower.size() - 2));
                 return {ImGuiTableColumnFlags_WidthFixed, std::max(0.0f, px)};
             } catch (...) {
                 return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
             }
         }
         try {
-            float val = std::stof(std::string(width_str));
+            float val = std::stof(lower);
             return {ImGuiTableColumnFlags_WidthStretch, std::max(0.1f, val)};
         } catch (...) {
             return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
@@ -458,12 +476,19 @@ private:
         if (node.columns.empty()) {
             return;
         }
-        ImGui::Columns(static_cast<int>(node.columns.size()), nullptr, false);
-        for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
-            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config, texture_provider);
-            ImGui::NextColumn();
+        const int num_cols = static_cast<int>(node.columns.size());
+        if (ImGui::BeginTable(scope.c_str(), num_cols, ImGuiTableFlags_SizingStretchProp)) {
+            for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
+                const auto spec = parse_column_width(node.columns[idx].width);
+                ImGui::TableSetupColumn(nullptr, spec.flags, spec.weight_or_width);
+            }
+            ImGui::TableNextRow();
+            for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
+                ImGui::TableSetColumnIndex(static_cast<int>(idx));
+                render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config, texture_provider);
+            }
+            ImGui::EndTable();
         }
-        ImGui::Columns(1);
     }
 
     static void align_cursor(float item_width, std::string_view alignment) {
