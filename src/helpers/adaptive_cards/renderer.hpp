@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <format>
@@ -47,6 +48,9 @@ public:
         // and Input.Date/Time share the same text_values map but are
         // genuinely strings per the spec.
         std::unordered_set<std::string> numeric_ids{};
+        // whether a FactSet value that overflows the collapsed line limit
+        // has been expanded to show its full text, keyed by scope+index.
+        std::unordered_map<std::string, bool> fact_expanded{};
     };
 
     void render(const card_document& card) const override {
@@ -371,7 +375,7 @@ private:
             } else if (node.type == "Column") {
                 render_elements(node.items, id, state, callbacks, config, texture_provider);
             } else if (node.type == "FactSet") {
-                render_fact_set(node, id);
+                render_fact_set(node, id, state);
             } else if (node.type == "Input.Text") {
                 render_input_text(node, id, state);
             } else if (node.type == "Input.Toggle") {
@@ -481,17 +485,70 @@ private:
         }
     }
 
-    static void render_fact_set(const element& node, const std::string& scope) {
+    // Facts with values that wrap past this many lines get truncated, with
+    // the would-be next line replaced by a toggle button so long values
+    // don't dominate an otherwise simple card.
+    static constexpr int kFactValueCollapsedLines = 3;
+
+    [[nodiscard]] static int wrapped_line_count(const std::string& text, float wrap_width) {
+        const float line_height = ImGui::GetTextLineHeight();
+        if (text.empty() || line_height <= 0.0f) {
+            return text.empty() ? 0 : 1;
+        }
+        const ImVec2 size = ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap_width);
+        return std::max(1, static_cast<int>(std::round(size.y / line_height)));
+    }
+
+    // Returns the prefix of text that wraps to at most max_lines lines at
+    // wrap_width, so a truncated preview can be rendered with TextWrapped.
+    [[nodiscard]] static std::string wrapped_line_prefix(const std::string& text, float wrap_width, int max_lines) {
+        ImFont* font = ImGui::GetFont();
+        const float font_size = ImGui::GetFontSize();
+        const char* begin = text.c_str();
+        const char* end = begin + text.size();
+        const char* cursor = begin;
+        for (int line = 0; line < max_lines && cursor < end; ++line) {
+            const char* wrap_pos = font->CalcWordWrapPositionA(font_size, cursor, end, wrap_width);
+            if (wrap_pos <= cursor) {
+                wrap_pos = cursor + 1;
+            }
+            cursor = wrap_pos;
+        }
+        return std::string(begin, cursor);
+    }
+
+    static void render_fact_set(const element& node, const std::string& scope, input_state& state) {
         if (node.facts.empty()) {
             return;
         }
         if (ImGui::BeginTable(scope.c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
-            for (const auto& pair : node.facts) {
+            for (std::size_t idx = 0; idx < node.facts.size(); ++idx) {
+                const auto& pair = node.facts[idx];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextUnformatted(pair.title.c_str());
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(pair.value.c_str());
+
+                const float wrap_width = ImGui::GetContentRegionAvail().x;
+                if (wrapped_line_count(pair.value, wrap_width) <= kFactValueCollapsedLines) {
+                    ImGui::TextWrapped("%s", pair.value.c_str());
+                    continue;
+                }
+
+                const std::string fact_key = std::format("{}-fact-{}", scope, idx);
+                auto [it, _] = state.fact_expanded.try_emplace(fact_key, false);
+                if (it->second) {
+                    ImGui::TextWrapped("%s", pair.value.c_str());
+                    if (ImGui::SmallButton(std::format("Show less##{}", fact_key).c_str())) {
+                        it->second = false;
+                    }
+                } else {
+                    const std::string preview = wrapped_line_prefix(pair.value, wrap_width, kFactValueCollapsedLines);
+                    ImGui::TextWrapped("%s", preview.c_str());
+                    if (ImGui::SmallButton(std::format("...##{}", fact_key).c_str())) {
+                        it->second = true;
+                    }
+                }
             }
             ImGui::EndTable();
         }
