@@ -58,13 +58,10 @@ public:
         colors[0] = ImVec4{0.2f, 0.6f, 0.9f, 1.0f}; // Primary accent
         colors[1] = ImVec4{0.4f, 0.7f, 1.0f, 0.8f}; // Secondary text/accent
 
-        // Register services if not registered yet
-        try {
-            registrar::add<std::function<float()>>("get_width_factor", 
-                std::make_shared<std::function<float()>>([]() { return s_width_factor; }));
-            registrar::add<std::function<void(float)>>("set_width_factor", 
-                std::make_shared<std::function<void(float)>>([](float factor) { set_width_factor(factor); }));
-        } catch (...) {}
+        registrar::add<std::function<float()>>("get_width_factor",
+            std::make_shared<std::function<float()>>([]() { return s_width_factor; }));
+        registrar::add<std::function<void(float)>>("set_width_factor",
+            std::make_shared<std::function<void(float)>>([](float factor) { set_width_factor(factor); }));
     }
 
     std::string get_uri() const override {

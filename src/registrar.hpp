@@ -38,6 +38,21 @@ public:
         return it->second;
     }
 
+    // Retrieves a service of a specific type and key, or nullptr if not registered.
+    // Unlike get(), never throws — safe for use in hot loops where the service
+    // may not be registered yet (e.g. it is only provided once a particular card is instantiated).
+    template <typename T>
+    static std::shared_ptr<T> try_get(const std::string& key) noexcept {
+        std::lock_guard<std::mutex> lock(getMutex());
+
+        auto& typeMap = getTypeMap<T>();
+        auto it = typeMap.find(key);
+        if (it == typeMap.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
     // Retrieves all keys for a given type
     template <typename T>
     static void keys(std::function<void(std::string const&)> sink) {

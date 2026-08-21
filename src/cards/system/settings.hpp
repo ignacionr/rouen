@@ -10,6 +10,7 @@
 #include <thread>
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/config_service.hpp"
+#include "../../helpers/filetype_handler.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/glaze_include.hpp"
 #include "../../helpers/fetch.hpp"
@@ -156,6 +157,14 @@ private:
     char llm_model_buf_[256] = "";
     int selected_prov_idx_ = 0;
 
+    // File type association editor state
+    int filetype_edit_index_ = -1; // -1 = not editing an existing rule
+    bool filetype_adding_new_ = false;
+    char filetype_match_buf_[256] = "";
+    char filetype_uri_buf_[128] = "";
+    bool filetype_requires_ctrl_ = false;
+    std::string filetype_error_;
+
     struct AsyncState {
         std::mutex mutex;
         
@@ -270,7 +279,10 @@ private:
             render_missing_required_section();
             ImGui::Separator();
         }
-        
+
+        render_filetype_handler_section();
+        ImGui::Separator();
+
         // Configuration categories
         render_configuration_categories();
     }
@@ -324,7 +336,144 @@ private:
             ImGui::BulletText("%s", missing.c_str());
         }
     }
-    
+
+    void render_filetype_handler_section() {
+        ImGui::PushStyleColor(ImGuiCol_Text, get_color(2)); // Bright green for category headers
+        bool const open = ImGui::CollapsingHeader("File Type Associations");
+        ImGui::PopStyleColor();
+        if (!open) return;
+
+        auto& handler = helpers::FiletypeHandler::instance();
+        const auto& rules = handler.get_rules();
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+        ImGui::TextWrapped("Rules control which card type opens a file from the directory browser. They are "
+                            "tried in order and the first match wins. Match patterns are comma-separated: an "
+                            "entry starting with '.' matches the file extension, anything else matches the "
+                            "exact file name. \"Requires Ctrl+Click\" limits the rule to Ctrl-clicks, otherwise "
+                            "it applies to a plain click.");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        if (ImGui::BeginTable("filetype_rules", 4,
+                             ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+            ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, get_color(3));
+            ImGui::TableSetupColumn("Match Patterns", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("URI Format", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+            ImGui::TableSetupColumn("Ctrl?", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 230.0f);
+            ImGui::TableHeadersRow();
+            ImGui::PopStyleColor();
+
+            for (size_t i = 0; i < rules.size(); ++i) {
+                const auto& rule = rules[i];
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextWrapped("%s", rule.match.c_str());
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("%s", rule.uri_format.c_str());
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%s", rule.requires_ctrl ? "Yes" : "No");
+
+                ImGui::TableSetColumnIndex(3);
+                if (ImGui::SmallButton("Edit")) {
+                    filetype_edit_index_ = static_cast<int>(i);
+                    filetype_adding_new_ = false;
+                    strncpy(filetype_match_buf_, rule.match.c_str(), sizeof(filetype_match_buf_) - 1);
+                    filetype_match_buf_[sizeof(filetype_match_buf_) - 1] = '\0';
+                    strncpy(filetype_uri_buf_, rule.uri_format.c_str(), sizeof(filetype_uri_buf_) - 1);
+                    filetype_uri_buf_[sizeof(filetype_uri_buf_) - 1] = '\0';
+                    filetype_requires_ctrl_ = rule.requires_ctrl;
+                    filetype_error_.clear();
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Up")) {
+                    handler.move_rule(i, -1);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Down")) {
+                    handler.move_rule(i, 1);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete")) {
+                    handler.delete_rule(i);
+                    if (filetype_edit_index_ == static_cast<int>(i)) {
+                        filetype_edit_index_ = -1;
+                        filetype_adding_new_ = false;
+                    }
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+
+        ImGui::Spacing();
+
+        if (!filetype_adding_new_ && filetype_edit_index_ < 0) {
+            if (ImGui::Button("Add Rule")) {
+                filetype_adding_new_ = true;
+                filetype_match_buf_[0] = '\0';
+                strncpy(filetype_uri_buf_, "card:{}", sizeof(filetype_uri_buf_) - 1);
+                filetype_uri_buf_[sizeof(filetype_uri_buf_) - 1] = '\0';
+                filetype_requires_ctrl_ = false;
+                filetype_error_.clear();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Reset to Defaults")) {
+                handler.reset_to_defaults();
+            }
+        } else {
+            ImGui::Text("%s", filetype_adding_new_ ? "New Rule" : "Edit Rule");
+
+            ImGui::Text("Match Patterns:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(350);
+            ImGui::InputText("##filetype_match_input", filetype_match_buf_, sizeof(filetype_match_buf_));
+
+            ImGui::Text("URI Format:  ");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(200);
+            ImGui::InputText("##filetype_uri_input", filetype_uri_buf_, sizeof(filetype_uri_buf_));
+
+            ImGui::Checkbox("Requires Ctrl+Click", &filetype_requires_ctrl_);
+
+            if (!filetype_error_.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, get_color(6)); // Red for errors
+                ImGui::TextWrapped("%s", filetype_error_.c_str());
+                ImGui::PopStyleColor();
+            }
+
+            if (ImGui::Button("Save")) {
+                if (std::string(filetype_match_buf_).empty()) {
+                    filetype_error_ = "Match patterns cannot be empty.";
+                } else if (!helpers::FiletypeHandler::validate_uri_format(filetype_uri_buf_)) {
+                    filetype_error_ = "URI format must contain exactly one \"{}\" placeholder.";
+                } else {
+                    helpers::FiletypeRule const rule{filetype_match_buf_, filetype_uri_buf_, filetype_requires_ctrl_};
+                    if (filetype_adding_new_) {
+                        handler.add_rule(rule);
+                    } else {
+                        handler.update_rule(static_cast<size_t>(filetype_edit_index_), rule);
+                    }
+                    filetype_adding_new_ = false;
+                    filetype_edit_index_ = -1;
+                    filetype_error_.clear();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                filetype_adding_new_ = false;
+                filetype_edit_index_ = -1;
+                filetype_error_.clear();
+            }
+        }
+    }
+
     void render_configuration_categories() {
         // Convert selected category index to enum
         std::optional<helpers::ConfigService::Category> filter_category;

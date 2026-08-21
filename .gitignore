@@ -61,3 +61,5 @@ vcpkg-manifest-install.log
 .env.production
 .env.staging
 .secrets
+/.claude
+/.vs

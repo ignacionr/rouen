@@ -472,6 +472,7 @@ add_executable(${PROJECT_NAME}
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
+  src/helpers/filetype_handler.cpp
   src/helpers/image_cache.cpp
   src/helpers/directory_watch.cpp
   src/hosts/llm_host.cpp
