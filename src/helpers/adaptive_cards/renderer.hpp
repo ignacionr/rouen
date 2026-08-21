@@ -42,7 +42,7 @@ public:
     struct input_state {
         std::unordered_map<std::string, std::string> text_values{};
         std::unordered_map<std::string, bool> toggle_values{};
-        std::unordered_map<std::size_t, bool> show_card_expanded{};
+        std::unordered_map<std::string, bool> show_card_expanded{};
         // ids of text_values entries that came from an Input.Number, so
         // collect_input_values() can emit them as JSON numbers - Input.Text
         // and Input.Date/Time share the same text_values map but are
@@ -67,7 +67,7 @@ public:
         texture_provider_t texture_provider = {}
     ) const {
         render_elements(card.body, "adaptive", state, callbacks, config, texture_provider);
-        render_actions(card.actions, state, callbacks, config);
+        render_actions(card.actions, "card-actions", state, callbacks, config, texture_provider, /*show_separator=*/true);
     }
 
     [[nodiscard]] static std::vector<std::string> collect_lines(const card_document& card) {
@@ -78,10 +78,13 @@ public:
 
     [[nodiscard]] static std::vector<std::string> collect_action_urls(const card_document& card) {
         std::vector<std::string> urls;
-        urls.reserve(card.actions.size());
+        collect_action_urls_recursive(card.body, urls);
         for (const auto& action : card.actions) {
             if (!action.url.empty()) {
                 urls.push_back(action.url);
+            }
+            if (action.type == "Action.ShowCard" && !action.card.body.empty()) {
+                collect_action_urls_recursive(action.card.body, urls);
             }
         }
         return urls;
@@ -394,6 +397,8 @@ private:
                 render_rich_text_block(node, callbacks, config);
             } else if (node.type == "Table") {
                 render_table(node, id, state, callbacks, config, texture_provider);
+            } else if (node.type == "ActionSet") {
+                render_actions(node.actions, id, state, callbacks, config, texture_provider, /*show_separator=*/false);
             }
         }
     }
@@ -640,22 +645,14 @@ private:
             ImGui::PushFont(config.font_bold);
         }
 
-        const auto spans = parse_inline_markdown(node.text);
-        const bool is_plain = spans.size() == 1 && spans[0].kind == span_kind::normal;
-
         if (!node.horizontalAlignment.empty() && node.horizontalAlignment != "Left" && node.horizontalAlignment != "left") {
-            float text_width = ImGui::CalcTextSize(node.text.c_str()).x * font_scale;
+            const std::string plain_text = strip_markdown(node.text);
+            float text_width = ImGui::CalcTextSize(plain_text.c_str()).x * font_scale;
             align_cursor(text_width, node.horizontalAlignment);
         }
 
-        if (is_plain) {
-            ImGui::PushStyleColor(ImGuiCol_Text, color);
-            ImGui::TextWrapped("%s", node.text.c_str());
-            ImGui::PopStyleColor();
-        } else {
-            // Delegate to the shared inline markdown renderer.
-            rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
-        }
+        // Delegate to the shared inline markdown renderer.
+        rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
 
         if (is_bold && config.font_bold) {
             ImGui::PopFont();
@@ -684,25 +681,68 @@ private:
             if (!node.columns.empty()) {
                 collect_lines_recursive(node.columns, lines);
             }
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    collect_lines_recursive(cell.items, lines);
+                }
+            }
+            for (const auto& act : node.actions) {
+                if (act.type == "Action.ShowCard" && !act.card.body.empty()) {
+                    collect_lines_recursive(act.card.body, lines);
+                }
+            }
+        }
+    }
+
+    static void collect_action_urls_recursive(const std::vector<element>& nodes, std::vector<std::string>& urls) {
+        for (const auto& node : nodes) {
+            if (!node.selectAction.url.empty()) {
+                urls.push_back(node.selectAction.url);
+            }
+            for (const auto& act : node.actions) {
+                if (!act.url.empty()) {
+                    urls.push_back(act.url);
+                }
+                if (act.type == "Action.ShowCard" && !act.card.body.empty()) {
+                    collect_action_urls_recursive(act.card.body, urls);
+                }
+            }
+            if (!node.items.empty()) {
+                collect_action_urls_recursive(node.items, urls);
+            }
+            if (!node.columns.empty()) {
+                collect_action_urls_recursive(node.columns, urls);
+            }
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    collect_action_urls_recursive(cell.items, urls);
+                }
+            }
         }
     }
 
     static void render_actions(
         const std::vector<action>& actions,
+        const std::string& scope,
         input_state& state,
         const action_callbacks& callbacks,
-        const render_config& config
+        const render_config& config,
+        const texture_provider_t& texture_provider = {},
+        bool show_separator = true
     ) {
         if (actions.empty()) {
             return;
         }
 
-        ImGui::Separator();
+        if (show_separator) {
+            ImGui::Separator();
+        }
         for (std::size_t idx = 0; idx < actions.size(); ++idx) {
             const auto& card_action = actions[idx];
+            const std::string action_id = std::format("{}-act-{}", scope, idx);
             const std::string label = card_action.title.empty()
-                ? std::format("{}##{}", card_action.type, idx)
-                : std::format("{}##{}", card_action.title, idx);
+                ? std::format("{}##{}", card_action.type, action_id)
+                : std::format("{}##{}", card_action.title, action_id);
             if (ImGui::Button(label.c_str())) {
                 if (card_action.type == "Action.OpenUrl" && !card_action.url.empty()) {
                     callbacks.open_url(card_action.url);
@@ -717,16 +757,16 @@ private:
                         state.toggle_values[target_id] = !state.toggle_values[target_id];
                     }
                 } else if (card_action.type == "Action.ShowCard") {
-                    state.show_card_expanded[idx] = !state.show_card_expanded[idx];
+                    state.show_card_expanded[action_id] = !state.show_card_expanded[action_id];
                 }
             }
             if (idx + 1 < actions.size()) {
                 ImGui::SameLine();
             }
 
-            if (card_action.type == "Action.ShowCard" && state.show_card_expanded[idx]) {
+            if (card_action.type == "Action.ShowCard" && state.show_card_expanded[action_id]) {
                 ImGui::Indent();
-                render_elements(card_action.card.body, std::format("showcard-{}", idx), state, callbacks, config);
+                render_elements(card_action.card.body, std::format("{}-showcard-{}", scope, idx), state, callbacks, config, texture_provider);
                 ImGui::Unindent();
             }
         }

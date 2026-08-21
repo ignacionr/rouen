@@ -487,3 +487,50 @@ The new `test_markdown_renderer.cpp` covers:
    - Bullet points for list items
    - Clickable blue links for `[text](url)`
 
+---
+
+## ✅ ActionSet Support (Implemented)
+
+Full support for the Adaptive Cards `ActionSet` element has been implemented across the parser, templater, and renderer subsystems.
+
+### Capabilities
+
+- **Parser (`parser.hpp`)**:
+  - `ActionSet` element type recognized in schema validator.
+  - `actions` array deserialized into nested `std::vector<action>`.
+  - Validation runs recursively for all contained actions (`Action.OpenUrl`, `Action.Submit`, `Action.Execute`, `Action.ToggleVisibility`, `Action.ShowCard`).
+- **Templater (`templater.hpp`)**:
+  - Templating expressions (`${...}`) are bound inside action `title`, `url`, and sub-card bodies (`ShowCard`).
+  - Compatible with `$data` loops to generate dynamic repeating action sets across array collections.
+- **Renderer (`renderer.hpp`)**:
+  - Renders action buttons horizontally inline without top-level card separators.
+  - Uniquely scoped IDs (`<scope>-act-<idx>`) ensuring distinct state keys for nested and inline `ShowCard` actions.
+  - Supports `Action.OpenUrl` URL extraction in `collect_action_urls()` and text extraction in `collect_lines()`.
+
+### Example Card JSON
+
+```json
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "Inline Actions Example" },
+    {
+      "type": "ActionSet",
+      "actions": [
+        { "type": "Action.OpenUrl", "title": "Visit Docs", "url": "https://adaptivecards.io" },
+        { "type": "Action.Submit", "title": "Submit Response", "data": { "key": "val" } },
+        {
+          "type": "Action.ShowCard",
+          "title": "More Info",
+          "card": {
+            "type": "AdaptiveCard",
+            "body": [
+              { "type": "TextBlock", "text": "Sub-card content rendered inline" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```

@@ -99,6 +99,7 @@ struct element {
     std::vector<text_run> inlines;
     std::vector<table_row> rows;
     action selectAction;
+    std::vector<action> actions;
 };
 
 struct card_document {
@@ -153,10 +154,10 @@ private:
     }
 
     [[nodiscard]] static bool is_supported_type(const std::string& type) {
-        static constexpr std::array<std::string_view, 16> supported{
+        static constexpr std::array<std::string_view, 17> supported{
             "TextBlock", "Container", "ColumnSet", "Column", "FactSet", "Input.Text", "Input.Toggle",
             "Image", "Input.ChoiceSet", "Input.Number", "Input.Date", "Input.Time",
-            "Media", "ImageSet", "RichTextBlock", "Table"
+            "Media", "ImageSet", "RichTextBlock", "Table", "ActionSet"
         };
         return std::ranges::find(supported, type) != supported.end();
     }
@@ -181,6 +182,8 @@ private:
                         validate_elements(cell.items);
                     }
                 }
+            } else if (node.type == "ActionSet") {
+                validate_actions(node.actions);
             }
         }
     }
@@ -321,7 +324,8 @@ struct glz::meta<rouen::helpers::adaptive_cards::element> {
         "images", &T::images,
         "inlines", &T::inlines,
         "rows", &T::rows,
-        "selectAction", &T::selectAction
+        "selectAction", &T::selectAction,
+        "actions", &T::actions
     );
     static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
 };
