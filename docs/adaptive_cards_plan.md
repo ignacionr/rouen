@@ -534,3 +534,47 @@ Full support for the Adaptive Cards `ActionSet` element has been implemented acr
   ]
 }
 ```
+
+---
+
+## 📊 Table Column Width & Stretch Support (Implemented)
+
+Adaptive Cards `Table` elements support explicit column configurations via the `columns` array (`TableColumnDefinition`):
+
+- **Supported Column Width Values**:
+  - `"stretch"` (or `"Stretch"`): Column expands to fill available width with standard stretch weight (`1.0`).
+  - Proportional Numbers (e.g. `1`, `2`, `3` or `"1"`, `"2"`): Stretch columns with proportional weighting (e.g. column with `2` is allocated twice the remaining width of column with `1`).
+  - `"auto"` (or `"Auto"`): Sized according to cell contents.
+  - Pixel Widths (e.g. `"100px"`, `"50px"`): Fixed pixel-width columns.
+- **Templating**: Column width values dynamically support binding expressions (e.g. `"width": "${col.width}"`).
+- **Rendering**: ImGui Table column setup (`ImGui::TableSetupColumn`) configures `ImGuiTableColumnFlags_WidthStretch` with appropriate weight or `ImGuiTableColumnFlags_WidthFixed` for pixel/auto columns under `ImGuiTableFlags_SizingStretchProp`.
+
+### Example Card JSON
+
+```json
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "type": "TableColumnDefinition", "width": "stretch" },
+        { "type": "TableColumnDefinition", "width": 2 },
+        { "type": "TableColumnDefinition", "width": "auto" },
+        { "type": "TableColumnDefinition", "width": "120px" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Stretch (1x)" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Proportional Stretch (2x)" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Auto" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "120px Fixed" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```

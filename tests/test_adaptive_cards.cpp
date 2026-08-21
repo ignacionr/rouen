@@ -832,9 +832,105 @@ TEST(AdaptiveCardsNewFeatures, ParsesTableStructure) {
 
     ASSERT_EQ(parsed.body.size(), 1U);
     EXPECT_EQ(parsed.body[0].type, "Table");
-    EXPECT_EQ(parsed.body[0].columns.size(), 2U);
+    ASSERT_EQ(parsed.body[0].columns.size(), 2U);
+    EXPECT_EQ(parsed.body[0].columns[0].width, "1");
+    EXPECT_EQ(parsed.body[0].columns[1].width, "2");
     ASSERT_EQ(parsed.body[0].rows.size(), 1U);
     EXPECT_EQ(parsed.body[0].rows[0].cells.size(), 2U);
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesTableWithStretchAndCustomColumnWidths) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "type": "TableColumnDefinition", "width": "stretch" },
+        { "type": "TableColumnDefinition", "width": "auto" },
+        { "type": "TableColumnDefinition", "width": "120px" },
+        { "width": "stretch" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Stretch Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Auto Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Fixed Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Default Stretch" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Table");
+    ASSERT_EQ(parsed.body[0].columns.size(), 4U);
+    EXPECT_EQ(parsed.body[0].columns[0].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[0].width, "stretch");
+    EXPECT_EQ(parsed.body[0].columns[1].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[1].width, "auto");
+    EXPECT_EQ(parsed.body[0].columns[2].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[2].width, "120px");
+    EXPECT_EQ(parsed.body[0].columns[3].width, "stretch");
+}
+
+TEST(AdaptiveCardsNewFeatures, BindsTableColumnWidthsAndCells) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "width": "${col1_width}" },
+        { "width": "${col2_width}" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "${row1_val}" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON(
+{
+  "col1_width": "stretch",
+  "col2_width": "auto",
+  "row1_val": "Cell Value"
+}
+)JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto parse_err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(parse_err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 1U);
+    ASSERT_EQ(bound.body[0].columns.size(), 2U);
+    EXPECT_EQ(bound.body[0].columns[0].width, "stretch");
+    EXPECT_EQ(bound.body[0].columns[1].width, "auto");
+    ASSERT_EQ(bound.body[0].rows.size(), 1U);
+    ASSERT_EQ(bound.body[0].rows[0].cells.size(), 1U);
+    ASSERT_EQ(bound.body[0].rows[0].cells[0].items.size(), 1U);
+    EXPECT_EQ(bound.body[0].rows[0].cells[0].items[0].text, "Cell Value");
 }
 
 TEST(AdaptiveCardsNewFeatures, ParsesActionToggleVisibilityAndExecute) {

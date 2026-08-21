@@ -86,6 +86,7 @@ struct element {
     std::string imageSize;
     std::string poster;
     std::string spacing;
+    std::string width;
     bool separator{false};
     bool isMultiSelect{false};
     double min{0.0};
@@ -150,14 +151,38 @@ private:
             output.replace(pos, 9, "\"schema\"");
             pos += 8;
         }
+
+        // Normalize unquoted numeric "width": 1 -> "width": "1"
+        pos = 0;
+        while ((pos = output.find("\"width\"", pos)) != std::string::npos) {
+            std::size_t colon = output.find(':', pos + 7);
+            if (colon == std::string::npos) break;
+            std::size_t val_start = colon + 1;
+            while (val_start < output.size() && (output[val_start] == ' ' || output[val_start] == '\t' || output[val_start] == '\r' || output[val_start] == '\n')) {
+                ++val_start;
+            }
+            if (val_start < output.size() && (std::isdigit(static_cast<unsigned char>(output[val_start])) || output[val_start] == '.' || output[val_start] == '-')) {
+                std::size_t val_end = val_start;
+                while (val_end < output.size() && (std::isdigit(static_cast<unsigned char>(output[val_end])) || output[val_end] == '.' || output[val_end] == '-')) {
+                    ++val_end;
+                }
+                std::string num_str = output.substr(val_start, val_end - val_start);
+                std::string quoted = "\"" + num_str + "\"";
+                output.replace(val_start, val_end - val_start, quoted);
+                pos = val_start + quoted.size();
+            } else {
+                pos = colon + 1;
+            }
+        }
+
         return output;
     }
 
     [[nodiscard]] static bool is_supported_type(const std::string& type) {
-        static constexpr std::array<std::string_view, 17> supported{
+        static constexpr std::array<std::string_view, 18> supported{
             "TextBlock", "Container", "ColumnSet", "Column", "FactSet", "Input.Text", "Input.Toggle",
             "Image", "Input.ChoiceSet", "Input.Number", "Input.Date", "Input.Time",
-            "Media", "ImageSet", "RichTextBlock", "Table", "ActionSet"
+            "Media", "ImageSet", "RichTextBlock", "Table", "ActionSet", "TableColumnDefinition"
         };
         return std::ranges::find(supported, type) != supported.end();
     }
@@ -177,6 +202,7 @@ private:
             } else if (node.type == "ImageSet") {
                 validate_elements(node.images);
             } else if (node.type == "Table") {
+                validate_elements(node.columns);
                 for (const auto& row : node.rows) {
                     for (const auto& cell : row.cells) {
                         validate_elements(cell.items);
@@ -325,7 +351,8 @@ struct glz::meta<rouen::helpers::adaptive_cards::element> {
         "inlines", &T::inlines,
         "rows", &T::rows,
         "selectAction", &T::selectAction,
-        "actions", &T::actions
+        "actions", &T::actions,
+        "width", &T::width
     );
     static constexpr auto options = glz::opts{.error_on_unknown_keys = false};
 };

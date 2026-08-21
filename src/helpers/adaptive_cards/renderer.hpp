@@ -296,6 +296,34 @@ private:
         }
     }
 
+    struct column_width_spec {
+        ImGuiTableColumnFlags flags{ImGuiTableColumnFlags_WidthStretch};
+        float weight_or_width{1.0f};
+    };
+
+    [[nodiscard]] static column_width_spec parse_column_width(std::string_view width_str) {
+        if (width_str.empty() || width_str == "stretch" || width_str == "Stretch") {
+            return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+        }
+        if (width_str == "auto" || width_str == "Auto") {
+            return {ImGuiTableColumnFlags_WidthFixed, 0.0f};
+        }
+        if (width_str.ends_with("px") || width_str.ends_with("PX")) {
+            try {
+                float px = std::stof(std::string(width_str.substr(0, width_str.size() - 2)));
+                return {ImGuiTableColumnFlags_WidthFixed, std::max(0.0f, px)};
+            } catch (...) {
+                return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+            }
+        }
+        try {
+            float val = std::stof(std::string(width_str));
+            return {ImGuiTableColumnFlags_WidthStretch, std::max(0.1f, val)};
+        } catch (...) {
+            return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+        }
+    }
+
     static void render_table(
         const element& node,
         const std::string& scope,
@@ -310,7 +338,23 @@ private:
         }
         if (num_cols == 0) return;
 
-        if (ImGui::BeginTable(scope.c_str(), static_cast<int>(num_cols), ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_BordersInnerV)) {
+        ImGuiTableFlags table_flags = ImGuiTableFlags_RowBg
+                                    | ImGuiTableFlags_BordersInnerH
+                                    | ImGuiTableFlags_BordersInnerV
+                                    | ImGuiTableFlags_BordersOuter
+                                    | ImGuiTableFlags_Resizable
+                                    | ImGuiTableFlags_SizingStretchProp;
+
+        if (ImGui::BeginTable(scope.c_str(), static_cast<int>(num_cols), table_flags)) {
+            for (std::size_t c_idx = 0; c_idx < num_cols; ++c_idx) {
+                std::string col_width;
+                if (c_idx < node.columns.size()) {
+                    col_width = node.columns[c_idx].width;
+                }
+                const auto spec = parse_column_width(col_width);
+                ImGui::TableSetupColumn(nullptr, spec.flags, spec.weight_or_width);
+            }
+
             for (std::size_t r_idx = 0; r_idx < node.rows.size(); ++r_idx) {
                 ImGui::TableNextRow();
                 const auto& row = node.rows[r_idx];

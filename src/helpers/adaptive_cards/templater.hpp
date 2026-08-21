@@ -81,6 +81,7 @@ private:
         node.title = expand(node.title, root, local);
         node.value = expand(node.value, root, local);
         node.placeholder = expand(node.placeholder, root, local);
+        node.width = expand(node.width, root, local);
         for (auto& pair : node.facts) {
             pair.title = expand(pair.title, root, local);
             pair.value = expand(pair.value, root, local);
