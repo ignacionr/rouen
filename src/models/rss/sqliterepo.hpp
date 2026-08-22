@@ -935,13 +935,6 @@ namespace media::rss
                     }
                     
                     std::string col = filter_field_to_column(cond.field);
-                    // Treat missing media duration as 0 so short-duration filters include fresh
-                    // items whose duration metadata has not been extracted yet.
-                    if ((cond.field == "media_duration_seconds" || cond.field == "media_duration") &&
-                        cond.op != "IN" && cond.op != "NOT IN" &&
-                        cond.op != "CONTAINS" && cond.op != "EXCLUDES" && cond.op != "MATCHES") {
-                        col = "COALESCE(item.media_duration_seconds, 0)";
-                    }
                     std::string op_sql = filter_op_to_sql(cond.op);
                     
                     if (cond.op == "CONTAINS" || cond.op == "EXCLUDES") {
@@ -976,7 +969,11 @@ namespace media::rss
                             if (auto pos = numeric_op_sql.rfind('?'); pos != std::string::npos) {
                                 numeric_op_sql.replace(pos, 1, "CAST(? AS REAL)");
                             }
-                            sql += col + numeric_op_sql;
+                            if (cond.op == "<=" || cond.op == "<") {
+                                sql += "(" + col + " > 0 AND " + col + numeric_op_sql + ")";
+                            } else {
+                                sql += col + numeric_op_sql;
+                            }
                         } else {
                             sql += col + op_sql;
                         }

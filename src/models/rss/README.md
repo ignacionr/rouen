@@ -40,7 +40,7 @@ Durations are persisted in `item.media_duration_seconds`.
 
 Date filters support relative values (e.g. `Today`, `Last 24h`, `Last 7 days`).
 
-For numeric duration comparisons, `NULL` duration values are treated as `0` (`COALESCE`) so newly ingested items without resolved duration are not accidentally excluded from short-duration Smart Lists.
+For numeric duration comparisons, items with missing (`NULL`) or non-positive (`<= 0`) duration values are excluded from upper-bounded duration Smart Lists (e.g., `<= 300` seconds) to prevent unprobed or long-duration media items from improperly matching short-duration filters.
 
 ## Persistence and sync
 
