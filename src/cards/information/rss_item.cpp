@@ -144,7 +144,7 @@ rss_item::rss_item(const std::string& item_info) {
 }
 
 rss_item::~rss_item() {
-    on_close();
+    rss_item::on_close();
     clear_item_textures();
 }
 
@@ -207,7 +207,7 @@ void rss_item::request_image_download(const std::string& url) {
     std::thread([cache, url]() {
         try {
             cache->downloadAndCache(url);
-        } catch (...) {
+        } catch (...) { // NOLINT(bugprone-empty-catch)
             // Ignore download failures, fallback image will be shown
         }
 
@@ -278,8 +278,7 @@ bool rss_item::render() {
                 ImGui::TextColored(colors[1], "Source: ");
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Open in Browser")) {
-                    const auto command = rouen::platform::open_file(item_link, true);
-                    [[maybe_unused]] int const system_result = std::system(command.c_str());
+                    rouen::platform::open_url(item_link);
                 }
                 if (feed_id >= 0) {
                     ImGui::SameLine();
@@ -290,9 +289,11 @@ bool rss_item::render() {
 
                 // Date and time
                 const auto time = std::chrono::system_clock::to_time_t(item.publish_date);
-                const std::tm* tm = std::localtime(&time);
-                char date_str[64];
-                std::strftime(date_str, sizeof(date_str), "%A, %d %B %Y %H:%M", tm);
+                const std::tm* tm = std::localtime(&time); // NOLINT(concurrency-mt-unsafe)
+                char date_str[64]{};
+                if (tm) {
+                    (void)std::strftime(date_str, sizeof(date_str), "%A, %d %B %Y %H:%M", tm);
+                }
                 ImGui::TextColored(colors[1], "Published: %s", date_str);
 
                 // Media enclosure playback controls
@@ -316,10 +317,15 @@ bool rss_item::render() {
                     const size_t num_media = item.extracted_media_urls.size();
                     for (size_t i = 0; i < num_media; ++i) {
                         const auto& extracted_media = item.extracted_media_urls[i];
+                        std::string media_type_label = "Media";
+                        if (extracted_media.type == "video") {
+                            media_type_label = "Video";
+                        } else if (extracted_media.type == "audio") {
+                            media_type_label = "Audio";
+                        }
 
                         const std::string media_title = std::format("Play {} ({})",
-                            extracted_media.type == "video" ? "Video" :
-                            extracted_media.type == "audio" ? "Audio" : "Media",
+                            media_type_label,
                             extracted_media.format);
 
                         try {

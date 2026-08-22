@@ -1,5 +1,9 @@
 #include "dynamic_library.hpp"
 
+#include <filesystem>
+#include <string>
+#include <string_view>
+
 #if defined(_WIN32)
 #include <windows.h>
 #else
@@ -46,7 +50,7 @@ namespace rouen::helpers::dynamic_library {
         }
         return message;
 #else
-        char const* message = dlerror();
+        char const* message = dlerror(); // NOLINT(concurrency-mt-unsafe)
         return message ? std::string{message} : std::string{};
 #endif
     }

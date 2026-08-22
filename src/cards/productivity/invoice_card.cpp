@@ -41,10 +41,12 @@
 
 namespace rouen::cards {
 
-static const char* k_months[] = {
+namespace {
+constexpr const char* const k_months[] = {
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 };
+} // namespace
 
 invoice_card::invoice_card() {
     colors[0] = {0.18f, 0.52f, 0.88f, 1.0f}; // Sapphire blue accent
@@ -52,8 +54,8 @@ invoice_card::invoice_card() {
     name("Invoice Generator");
     width = 640.0f;
 
-    const char* home = std::getenv("HOME");
-    if (home) {
+    std::string const home = rouen::platform::get_env("HOME");
+    if (!home.empty()) {
         pdf_output_path = (std::filesystem::path(home) / "Desktop" / "Invoice_INV-2026-001.pdf").string();
     } else {
         pdf_output_path = "Invoice_INV-2026-001.pdf";
@@ -149,10 +151,11 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         }
 
         // Standard A4 Page (595 x 842 points)
-        auto* page = new PDFPage();
+        auto* page = new PDFPage(); // NOLINT(cppcoreguidelines-owning-memory)
         page->SetMediaBox(PDFRectangle(0, 0, 595, 842));
         PageContentContext* ctx = pdfWriter.StartPageContentContext(page);
         if (!ctx) {
+            delete page;
             error_msg = "Failed to start page content context in PDFHummus.";
             return false;
         }
@@ -296,7 +299,7 @@ bool invoice_card::generate_pdf(const std::string& output_path, std::string& err
         write_text("Bank Name: " + bank_name, 50, bank_y, 9, 0.2, 0.2, 0.2);
         write_text(swift_bic_label + ": " + swift_code, 300, bank_y, 9, 0.2, 0.2, 0.2); bank_y -= 14.0;
         write_text("Account Holder: " + account_holder, 50, bank_y, 9, 0.2, 0.2, 0.2);
-        write_text("IBAN / Account: " + iban_account, 300, bank_y, 9, 0.2, 0.2, 0.2); bank_y -= 14.0;
+        write_text("IBAN / Account: " + iban_account, 300, bank_y, 9, 0.2, 0.2, 0.2);
 
         y -= 105.0;
 

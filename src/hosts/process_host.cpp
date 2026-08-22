@@ -14,7 +14,6 @@
 #include <unordered_set>
 
 #define PROCHOST_ERROR(message) LOG_COMPONENT("PROCHOST", LOG_LEVEL_ERROR, message)
-#define PROCHOST_WARN(message) LOG_COMPONENT("PROCHOST", LOG_LEVEL_WARN, message)
 #define PROCHOST_INFO(message) LOG_COMPONENT("PROCHOST", LOG_LEVEL_INFO, message)
 #define PROCHOST_ERROR_FMT(fmt, ...) PROCHOST_ERROR(debug::format_log(fmt, __VA_ARGS__))
 #define PROCHOST_INFO_FMT(fmt, ...) PROCHOST_INFO(debug::format_log(fmt, __VA_ARGS__))

@@ -36,7 +36,7 @@ namespace rouen::hosts {
     std::filesystem::path GitSyncHost::get_cache_path() {
         std::lock_guard<std::mutex> const lock(mutex_);
         load_settings();
-        return std::filesystem::path(cache_path_);
+        return cache_path_;
     }
 
     std::string GitSyncHost::get_status_message() {
@@ -273,7 +273,7 @@ namespace rouen::hosts {
             cred_cmd = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + cred_cmd;
         }
 
-        FILE* pipe = popen(cred_cmd.c_str(), "w");
+        FILE* pipe = popen(cred_cmd.c_str(), "w"); // NOLINT(cert-env33-c, misc-include-cleaner)
         if (pipe == nullptr) {
             status_message_ = "Unable to launch git credential helper";
             GIT_SYNC_ERROR(status_message_);
@@ -281,7 +281,7 @@ namespace rouen::hosts {
         }
 
         const size_t written = fwrite(credential_input.data(), 1, credential_input.size(), pipe);
-        const int rc = pclose(pipe);
+        const int rc = pclose(pipe); // NOLINT(misc-include-cleaner)
         if (written != credential_input.size() || rc != 0) {
             status_message_ = "Failed to configure Git token credentials";
             GIT_SYNC_ERROR(status_message_);
@@ -305,12 +305,12 @@ namespace rouen::hosts {
         if constexpr (!rouen::platform::is_windows) {
             command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + cmd;
         }
-        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r");
+        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r"); // NOLINT(cert-env33-c, misc-include-cleaner)
         if (pipe != nullptr) {
-            while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+            while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) { // NOLINT(clang-analyzer-unix.BlockInCriticalSection)
                 output += buffer.data();
             }
-            pclose(pipe);
+            pclose(pipe); // NOLINT(misc-include-cleaner)
         }
 
         output.erase(std::remove_if(output.begin(), output.end(), [](unsigned char c) {
@@ -329,7 +329,7 @@ namespace rouen::hosts {
             command_to_run = std::string(R"(export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/opt/homebrew/bin:/usr/local/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" && )") + command;
         }
 
-        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r");
+        FILE* pipe = popen((command_to_run + " 2>&1").c_str(), "r"); // NOLINT(cert-env33-c, misc-include-cleaner)
         if (pipe == nullptr) {
             status_message_ = "Failed to open command pipe";
             return false;
@@ -339,7 +339,7 @@ namespace rouen::hosts {
             output += buffer.data();
         }
 
-        const int rc = pclose(pipe);
+        const int rc = pclose(pipe); // NOLINT(misc-include-cleaner)
 
         if (!output.empty() && output.back() == '\n') {
             output.pop_back();

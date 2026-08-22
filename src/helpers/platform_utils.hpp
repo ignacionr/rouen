@@ -291,7 +291,7 @@ namespace rouen::platform
      */
     inline std::string get_env(const std::string& name)
     {
-        const char* value = std::getenv(name.c_str());
+        const char* value = std::getenv(name.c_str()); // NOLINT(concurrency-mt-unsafe)
         return value ? std::string(value) : std::string();
     }
 

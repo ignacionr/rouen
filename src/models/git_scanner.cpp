@@ -13,9 +13,9 @@ namespace rouen::models {
         std::vector<std::filesystem::path> scan_roots;
         
         // 1. Check if GIT_SCAN_ROOT or DEVELOPMENT_SRC_DIR is set in the environment
-        const char* env_root = std::getenv("GIT_SCAN_ROOT");
+        const char* env_root = std::getenv("GIT_SCAN_ROOT"); // NOLINT(concurrency-mt-unsafe)
         if (!env_root) {
-            env_root = std::getenv("DEVELOPMENT_SRC_DIR");
+            env_root = std::getenv("DEVELOPMENT_SRC_DIR"); // NOLINT(concurrency-mt-unsafe)
         }
         if (env_root && *env_root) {
             std::filesystem::path const p(env_root);
@@ -25,7 +25,7 @@ namespace rouen::models {
         }
         
         // 2. Add common user development directories
-        const char* home_env = std::getenv("HOME");
+        const char* home_env = std::getenv("HOME"); // NOLINT(concurrency-mt-unsafe)
         if (home_env && *home_env) {
             std::filesystem::path const home(home_env);
             std::vector<std::filesystem::path> const common_dirs = {
@@ -64,38 +64,43 @@ namespace rouen::models {
             }
         }
         
-        // Helper lambda for bounded recursive scanning
-        auto scan_dir = [&](auto& self, const std::filesystem::path& dir, int depth) -> void {
-            if (depth > 2) return; // Limit depth to 2 (e.g. root/group/repo)
-            
-            try {
-                // If this directory is a git repository, add it and stop searching deeper
-                if (std::filesystem::exists(dir / ".git")) {
-                    repos[dir.string()] = GitRepoStatus::Unknown;
-                    return;
-                }
-                
-                // Otherwise search subdirectories
-                for (const auto& entry : std::filesystem::directory_iterator(
-                         dir, 
-                         std::filesystem::directory_options::skip_permission_denied)) {
-                    if (entry.is_directory()) {
-                        // Skip hidden directories (like .git, .vscode, etc.) to optimize search
-                        std::string name = entry.path().filename().string();
-                        if (name.empty() || name[0] == '.') {
-                            continue;
-                        }
-                        self(self, entry.path(), depth + 1);
-                    }
-                }
-            } catch (...) { // NOLINT(bugprone-empty-catch)
-                // Ignore permission or other access errors
-            }
-        };
-        
-        // Run the scan on all collected roots
+        // Bounded iterative directory scanning (no recursion)
         for (const auto& root : unique_roots) {
-            scan_dir(scan_dir, root, 0);
+            std::vector<std::pair<std::filesystem::path, int>> stack;
+            stack.emplace_back(root, 0);
+
+            while (!stack.empty()) {
+                auto [dir, depth] = stack.back();
+                stack.pop_back();
+
+                if (depth > 2) {
+                    continue; // Limit depth to 2 (e.g. root/group/repo)
+                }
+
+                try {
+                    // If this directory is a git repository, add it and stop searching deeper
+                    if (std::filesystem::exists(dir / ".git")) {
+                        repos[dir.string()] = GitRepoStatus::Unknown;
+                        continue;
+                    }
+
+                    // Otherwise search subdirectories
+                    for (const auto& entry : std::filesystem::directory_iterator(
+                             dir, 
+                             std::filesystem::directory_options::skip_permission_denied)) {
+                        if (entry.is_directory()) {
+                            // Skip hidden directories (like .git, .vscode, etc.) to optimize search
+                            std::string name = entry.path().filename().string();
+                            if (name.empty() || name[0] == '.') {
+                                continue;
+                            }
+                            stack.emplace_back(entry.path(), depth + 1);
+                        }
+                    }
+                } catch (...) { // NOLINT(bugprone-empty-catch)
+                    // Ignore permission or other access errors
+                }
+            }
         }
         
         // Create a sorted list of keys for display

@@ -20,7 +20,6 @@
 
 #define FP_HOST_ERROR(message) LOG_COMPONENT("FOOTPRINTS_HOST", LOG_LEVEL_ERROR, message)
 #define FP_HOST_INFO(message) LOG_COMPONENT("FOOTPRINTS_HOST", LOG_LEVEL_INFO, message)
-#define FP_HOST_ERROR_FMT(fmt, ...) FP_HOST_ERROR(debug::format_log(fmt, __VA_ARGS__))
 
 namespace rouen::hosts {
 
