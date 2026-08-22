@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -40,7 +41,7 @@ namespace rouen::cards {
         static std::string to_lower(std::string_view s);
         void refresh_cache();
         void perform_search(std::string_view query);
-        void render_entry(const std::filesystem::directory_entry& entry, const std::string& display_label);
+        std::optional<std::filesystem::path> render_entry(const std::filesystem::directory_entry& entry, const std::string& display_label);
     };
 
 } // namespace rouen::cards

@@ -126,9 +126,9 @@ private:
         glz::json_t values = glz::json_t::object_t{};
         for (const auto& [key, value] : state.text_values) {
             if (state.numeric_ids.contains(key)) {
-                double parsed = 0.0;
-                auto const [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
-                if (ec == std::errc{} && ptr == value.data() + value.size()) {
+                char* end_ptr = nullptr;
+                double const parsed = std::strtod(value.c_str(), &end_ptr);
+                if (end_ptr != nullptr && end_ptr == value.data() + value.size() && end_ptr != value.data()) {
                     values[key] = parsed;
                     continue;
                 }

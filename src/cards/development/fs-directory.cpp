@@ -145,7 +145,9 @@ namespace rouen::cards {
         });
     }
 
-    void fs_directory::render_entry(const std::filesystem::directory_entry& entry, const std::string& display_label) {
+    std::optional<std::filesystem::path> fs_directory::render_entry(const std::filesystem::directory_entry& entry, const std::string& display_label) {
+        std::optional<std::filesystem::path> nav_target;
+
         if (entry.is_directory()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
         } else if (entry.is_regular_file()) {
@@ -180,12 +182,7 @@ namespace rouen::cards {
                         "create_card"_sfn(std::format("dir:{}", entry.path().string()));
                     }
                 } else {
-                    path_ = entry.path();
-                    name(path_.string());
-                    filter_.clear();
-                    search_active_ = false;
-                    search_results_.clear();
-                    refresh_cache();
+                    nav_target = entry.path();
                 }
             } else {
                 auto uri = helpers::FiletypeHandler::instance().resolve(entry.path(), ImGui::GetIO().KeyCtrl);
@@ -197,6 +194,7 @@ namespace rouen::cards {
             }
         }
         ImGui::PopStyleColor();
+        return nav_target;
     }
 
     void fs_directory::receive_keystrokes() {
@@ -312,34 +310,53 @@ namespace rouen::cards {
                 ImGui::Separator();
             }
 
+            std::optional<std::filesystem::path> pending_nav;
+
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
             if (ImGui::Selectable(ICON_MD_ARROW_UPWARD " ..")) {
                 auto entry = path_.parent_path();
                 if (ImGui::GetIO().KeyCtrl) {
                     "create_card"_sfn(std::format("dir:{}", entry.string()));
                 } else {
-                    path_ = entry;
-                    name(path_.string());
-                    refresh_cache();
+                    pending_nav = entry;
                 }
             }
             ImGui::PopStyleColor();
 
-            if (search_active_ && !last_searched_query_.empty()) {
-                for (const auto& entry : search_results_) {
-                    std::error_code rel_ec;
-                    auto rel_path = std::filesystem::relative(entry.path(), path_, rel_ec);
-                    std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
-                    std::string const display_label = prefix + (rel_ec ? entry.path().filename().string() : rel_path.string());
-                    render_entry(entry, display_label);
-                }
-            } else {
-                for (const auto entry : cached_entries_) {
-                    if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
+            if (!pending_nav.has_value()) {
+                if (search_active_ && !last_searched_query_.empty()) {
+                    for (const auto& entry : search_results_) {
+                        std::error_code rel_ec;
+                        auto rel_path = std::filesystem::relative(entry.path(), path_, rel_ec);
                         std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
-                        render_entry(entry, prefix + entry.path().filename().string());
+                        std::string const display_label = prefix + (rel_ec ? entry.path().filename().string() : rel_path.string());
+                        auto nav = render_entry(entry, display_label);
+                        if (nav.has_value()) {
+                            pending_nav = nav;
+                            break;
+                        }
+                    }
+                } else {
+                    for (const auto& entry : cached_entries_) {
+                        if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
+                            std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
+                            auto nav = render_entry(entry, prefix + entry.path().filename().string());
+                            if (nav.has_value()) {
+                                pending_nav = nav;
+                                break;
+                            }
+                        }
                     }
                 }
+            }
+
+            if (pending_nav.has_value()) {
+                path_ = pending_nav.value();
+                name(path_.string());
+                filter_.clear();
+                search_active_ = false;
+                search_results_.clear();
+                refresh_cache();
             }
         });
     }
