@@ -1601,6 +1601,7 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         }
       }
     },
+)json" R"json(
     "/api/deck/scroll": {
       "get": {
         "tags": ["Deck Navigation"],

@@ -12,6 +12,7 @@
 // 3. All other includes
 #include "card.hpp"
 #include "menu.hpp"
+#include "plugin_registry.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/media_player_alarm.hpp"
@@ -23,6 +24,7 @@
 #include "../development/github.hpp"
 #include "../information/calendar/calendar.hpp"
 #include "../information/adaptive_card.hpp"
+#include "../information/adaptive_process_card.hpp"
 #include "../information/ai_chat.hpp"
 #include "../information/directory_card.hpp"
 #include "../information/contact_card.hpp"
@@ -52,6 +54,7 @@
 #include "../productivity/calculator.hpp"
 #include "../productivity/converter.hpp"
 #include "../productivity/jira_card.hpp"
+#include "../productivity/footprints_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/objectives_card.hpp"
 #include "../productivity/trello_card.hpp"
@@ -70,6 +73,8 @@
 #include "../system/subnet_scanner.hpp"
 #include "../system/sysinfo.hpp"
 #include "../system/terminal.hpp"
+#include "../system/process_panel.hpp"
+#include "../system/process_run.hpp"
 
 // Forward declare GitHub card to avoid circular dependency
 namespace rouen::cards {
@@ -100,6 +105,22 @@ namespace rouen::cards {
                 throw std::runtime_error("Failed to create card: " + std::string(schema));
             }
             return card_ptr;
+        }
+
+        // Registers a card schema at runtime, e.g. from a dynamically
+        // loaded plugin (see src/hosts/plugin_host.hpp). display_name,
+        // when non-empty, also adds the schema to the deck's "Plugins"
+        // launcher menu (see menu.hpp).
+        static void register_card(std::string schema, factory_t fn, std::string display_name = {}) {
+            // Force the lazily-initialized built-in dictionary to exist
+            // before mutating it, otherwise a later first-call to
+            // dictionary() would reset it back to just the built-ins.
+            dictionary();
+            auto& dict = const_cast<std::unordered_map<std::string, factory_t>&>(dictionary());
+            dict[schema] = std::move(fn);
+            if (!display_name.empty()) {
+                plugin_menu_entries().push_back({std::move(schema), std::move(display_name)});
+            }
         }
 
         static std::unordered_map<std::string, factory_t> const& dictionary() {
@@ -267,6 +288,14 @@ namespace rouen::cards {
                 instance.emplace("terminal", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<terminal>(uri);
                 });
+
+                instance.emplace("process-panel", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<process_panel>();
+                });
+
+                instance.emplace("process-run", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<process_run>(locator);
+                });
                 
                 instance.emplace("rss", [](std::string_view, SDL_Renderer* renderer) {
                     auto card = std::make_shared<rss>();
@@ -311,6 +340,10 @@ namespace rouen::cards {
 
                 instance.emplace("adaptive-card", [](std::string_view locator, SDL_Renderer*) {
                     return std::make_shared<adaptive_card>(locator);
+                });
+
+                instance.emplace("adaptive-process", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<adaptive_process_card>(locator);
                 });
 
                 instance.emplace("directory", [](std::string_view locator, SDL_Renderer* renderer) {
@@ -428,7 +461,12 @@ namespace rouen::cards {
                 instance.emplace("trello-board", [](std::string_view board_id, SDL_Renderer*) {
                     return std::make_shared<trello_card>(std::string(board_id));
                 });
-                
+
+                // Register the FootPrints card
+                instance.emplace("footprints", [](std::string_view, SDL_Renderer*) {
+                    return std::make_shared<footprints_card>();
+                });
+
                 // Register the chess replay card
                 instance.emplace("chess", [](std::string_view pgn_path, SDL_Renderer*) {
                     return std::make_shared<chess_replay>(pgn_path);

@@ -304,10 +304,10 @@ TEST(AdaptiveCardsRound4, BuildsSubmitPayloadFromInputState) {
     glz::json_t parsed{};
     auto err = glz::read_json(parsed, payload);
     ASSERT_FALSE(err);
-    ASSERT_TRUE(parsed.contains("text"));
-    ASSERT_TRUE(parsed.contains("toggle"));
-    EXPECT_EQ(parsed["text"]["comment"].get<std::string>(), "Looks good");
-    EXPECT_TRUE(parsed["toggle"]["acknowledged"].get<bool>());
+    ASSERT_TRUE(parsed.contains("comment"));
+    ASSERT_TRUE(parsed.contains("acknowledged"));
+    EXPECT_EQ(parsed["comment"].get<std::string>(), "Looks good");
+    EXPECT_TRUE(parsed["acknowledged"].get<bool>());
 }
 
 TEST(AdaptiveCardsRound4, RejectsUnsupportedActionType) {
@@ -489,6 +489,41 @@ TEST(AdaptiveCardsRound5, EscapedCharacterIsLiteral) {
     ASSERT_EQ(spans.size(), 1U);
     EXPECT_EQ(spans[0].kind, span_kind::normal);
     EXPECT_EQ(spans[0].text, "Hello *world*");
+}
+
+TEST(AdaptiveCardsRound5, EscapedUnderscoreInPlainTextAndFormatting) {
+    // Escaped underscore in plain text
+    {
+        const auto spans = parse_inline_markdown("foo\\_bar");
+        ASSERT_EQ(spans.size(), 1U);
+        EXPECT_EQ(spans[0].kind, span_kind::normal);
+        EXPECT_EQ(spans[0].text, "foo_bar");
+    }
+
+    // Escaped underscore inside italic underscore span
+    {
+        const auto spans = parse_inline_markdown("_italic\\_text_");
+        ASSERT_EQ(spans.size(), 1U);
+        EXPECT_EQ(spans[0].kind, span_kind::italic);
+        EXPECT_EQ(spans[0].text, "italic_text");
+    }
+
+    // Escaped asterisk inside bold span
+    {
+        const auto spans = parse_inline_markdown("**bold\\*\\*text**");
+        ASSERT_EQ(spans.size(), 1U);
+        EXPECT_EQ(spans[0].kind, span_kind::bold);
+        EXPECT_EQ(spans[0].text, "bold**text");
+    }
+
+    // Escaped brackets and parens in links
+    {
+        const auto spans = parse_inline_markdown("[link\\]label](https://example.com/path\\)url)");
+        ASSERT_EQ(spans.size(), 1U);
+        EXPECT_EQ(spans[0].kind, span_kind::link);
+        EXPECT_EQ(spans[0].text, "link]label");
+        EXPECT_EQ(spans[0].url, "https://example.com/path)url");
+    }
 }
 
 TEST(AdaptiveCardsRound5, UnterminatedMarkerIsLiteral) {
@@ -797,9 +832,105 @@ TEST(AdaptiveCardsNewFeatures, ParsesTableStructure) {
 
     ASSERT_EQ(parsed.body.size(), 1U);
     EXPECT_EQ(parsed.body[0].type, "Table");
-    EXPECT_EQ(parsed.body[0].columns.size(), 2U);
+    ASSERT_EQ(parsed.body[0].columns.size(), 2U);
+    EXPECT_EQ(parsed.body[0].columns[0].width, "1");
+    EXPECT_EQ(parsed.body[0].columns[1].width, "2");
     ASSERT_EQ(parsed.body[0].rows.size(), 1U);
     EXPECT_EQ(parsed.body[0].rows[0].cells.size(), 2U);
+}
+
+TEST(AdaptiveCardsNewFeatures, ParsesTableWithStretchAndCustomColumnWidths) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "type": "TableColumnDefinition", "width": "stretch" },
+        { "type": "TableColumnDefinition", "width": "auto" },
+        { "type": "TableColumnDefinition", "width": "120px" },
+        { "width": "stretch" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Stretch Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Auto Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Fixed Col" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Default Stretch" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Table");
+    ASSERT_EQ(parsed.body[0].columns.size(), 4U);
+    EXPECT_EQ(parsed.body[0].columns[0].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[0].width, "stretch");
+    EXPECT_EQ(parsed.body[0].columns[1].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[1].width, "auto");
+    EXPECT_EQ(parsed.body[0].columns[2].type, "TableColumnDefinition");
+    EXPECT_EQ(parsed.body[0].columns[2].width, "120px");
+    EXPECT_EQ(parsed.body[0].columns[3].width, "stretch");
+}
+
+TEST(AdaptiveCardsNewFeatures, BindsTableColumnWidthsAndCells) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "width": "${col1_width}" },
+        { "width": "${col2_width}" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "${row1_val}" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON(
+{
+  "col1_width": "stretch",
+  "col2_width": "auto",
+  "row1_val": "Cell Value"
+}
+)JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto parse_err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(parse_err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 1U);
+    ASSERT_EQ(bound.body[0].columns.size(), 2U);
+    EXPECT_EQ(bound.body[0].columns[0].width, "stretch");
+    EXPECT_EQ(bound.body[0].columns[1].width, "auto");
+    ASSERT_EQ(bound.body[0].rows.size(), 1U);
+    ASSERT_EQ(bound.body[0].rows[0].cells.size(), 1U);
+    ASSERT_EQ(bound.body[0].rows[0].cells[0].items.size(), 1U);
+    EXPECT_EQ(bound.body[0].rows[0].cells[0].items[0].text, "Cell Value");
 }
 
 TEST(AdaptiveCardsNewFeatures, ParsesActionToggleVisibilityAndExecute) {
@@ -888,3 +1019,280 @@ TEST(AdaptiveCardsNewFeatures, ParsesLowercaseColorNames) {
     EXPECT_EQ(parsed.body[2].color, "good");
     EXPECT_EQ(parsed.body[3].color, "accent");
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ActionSet Support Tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+TEST(AdaptiveCardsActionSet, ParsesActionSetWithMultipleActions) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "Inline actions below:"
+    },
+    {
+      "type": "ActionSet",
+      "id": "mainActionSet",
+      "actions": [
+        {
+          "type": "Action.OpenUrl",
+          "title": "Visit Website",
+          "url": "https://adaptivecards.io"
+        },
+        {
+          "type": "Action.Submit",
+          "title": "Submit Response",
+          "data": { "actionKey": "submit123" }
+        },
+        {
+          "type": "Action.Execute",
+          "title": "Execute Verb",
+          "verb": "doProcess"
+        },
+        {
+          "type": "Action.ToggleVisibility",
+          "title": "Toggle Details",
+          "targetElements": ["detailsPanel"]
+        },
+        {
+          "type": "Action.ShowCard",
+          "title": "More Options",
+          "card": {
+            "type": "AdaptiveCard",
+            "body": [
+              { "type": "TextBlock", "text": "Expanded options panel" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 2U);
+    EXPECT_EQ(parsed.body[0].type, "TextBlock");
+    EXPECT_EQ(parsed.body[1].type, "ActionSet");
+    EXPECT_EQ(parsed.body[1].id, "mainActionSet");
+    ASSERT_EQ(parsed.body[1].actions.size(), 5U);
+
+    EXPECT_EQ(parsed.body[1].actions[0].type, "Action.OpenUrl");
+    EXPECT_EQ(parsed.body[1].actions[0].title, "Visit Website");
+    EXPECT_EQ(parsed.body[1].actions[0].url, "https://adaptivecards.io");
+
+    EXPECT_EQ(parsed.body[1].actions[1].type, "Action.Submit");
+    EXPECT_EQ(parsed.body[1].actions[1].title, "Submit Response");
+    ASSERT_TRUE(parsed.body[1].actions[1].data.is_object());
+    EXPECT_EQ(parsed.body[1].actions[1].data["actionKey"].get<std::string>(), "submit123");
+
+    EXPECT_EQ(parsed.body[1].actions[2].type, "Action.Execute");
+    EXPECT_EQ(parsed.body[1].actions[2].verb, "doProcess");
+
+    EXPECT_EQ(parsed.body[1].actions[3].type, "Action.ToggleVisibility");
+    ASSERT_EQ(parsed.body[1].actions[3].targetElements.size(), 1U);
+    EXPECT_EQ(parsed.body[1].actions[3].targetElements[0], "detailsPanel");
+
+    EXPECT_EQ(parsed.body[1].actions[4].type, "Action.ShowCard");
+    ASSERT_EQ(parsed.body[1].actions[4].card.body.size(), 1U);
+    EXPECT_EQ(parsed.body[1].actions[4].card.body[0].text, "Expanded options panel");
+}
+
+TEST(AdaptiveCardsActionSet, ParsesActionSetInsideContainerAndColumns) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Container",
+      "items": [
+        {
+          "type": "ColumnSet",
+          "columns": [
+            {
+              "type": "Column",
+              "items": [
+                {
+                  "type": "ActionSet",
+                  "actions": [
+                    { "type": "Action.OpenUrl", "title": "Col 1 Action", "url": "https://col1.com" }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "Column",
+              "items": [
+                {
+                  "type": "ActionSet",
+                  "actions": [
+                    { "type": "Action.Submit", "title": "Col 2 Action" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    const auto parsed = card_parser.parse(card_json);
+
+    ASSERT_EQ(parsed.body.size(), 1U);
+    EXPECT_EQ(parsed.body[0].type, "Container");
+    ASSERT_EQ(parsed.body[0].items.size(), 1U);
+    EXPECT_EQ(parsed.body[0].items[0].type, "ColumnSet");
+    ASSERT_EQ(parsed.body[0].items[0].columns.size(), 2U);
+    ASSERT_EQ(parsed.body[0].items[0].columns[0].items.size(), 1U);
+    EXPECT_EQ(parsed.body[0].items[0].columns[0].items[0].type, "ActionSet");
+    EXPECT_EQ(parsed.body[0].items[0].columns[0].items[0].actions[0].url, "https://col1.com");
+    EXPECT_EQ(parsed.body[0].items[0].columns[1].items[0].actions[0].type, "Action.Submit");
+}
+
+TEST(AdaptiveCardsActionSet, RejectsInvalidActionInsideActionSet) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "ActionSet",
+      "actions": [
+        { "type": "Action.InvalidActionName", "title": "Oops" }
+      ]
+    }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    EXPECT_THROW(
+        {
+            static_cast<void>(card_parser.parse(card_json));
+        },
+        std::runtime_error
+    );
+}
+
+TEST(AdaptiveCardsActionSet, BindsActionSetVariables) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "ActionSet",
+      "actions": [
+        {
+          "type": "Action.OpenUrl",
+          "title": "Open ${user.name}",
+          "url": "https://github.com/${user.username}"
+        },
+        {
+          "type": "Action.ShowCard",
+          "title": "Show ${user.role}",
+          "card": {
+            "type": "AdaptiveCard",
+            "body": [
+              { "type": "TextBlock", "text": "Role: ${user.role}" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON(
+{
+  "user": {
+    "name": "Ignacio",
+    "username": "ignacionr",
+    "role": "Maintainer"
+  }
+}
+)JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto parse_err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(parse_err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 1U);
+    EXPECT_EQ(bound.body[0].type, "ActionSet");
+    ASSERT_EQ(bound.body[0].actions.size(), 2U);
+    EXPECT_EQ(bound.body[0].actions[0].title, "Open Ignacio");
+    EXPECT_EQ(bound.body[0].actions[0].url, "https://github.com/ignacionr");
+    EXPECT_EQ(bound.body[0].actions[1].title, "Show Maintainer");
+    ASSERT_EQ(bound.body[0].actions[1].card.body.size(), 1U);
+    EXPECT_EQ(bound.body[0].actions[1].card.body[0].text, "Role: Maintainer");
+
+    const auto urls = renderer::collect_action_urls(bound);
+    ASSERT_EQ(urls.size(), 1U);
+    EXPECT_EQ(urls[0], "https://github.com/ignacionr");
+
+    const auto lines = renderer::collect_lines(bound);
+    ASSERT_EQ(lines.size(), 1U);
+    EXPECT_EQ(lines[0], "Role: Maintainer");
+}
+
+TEST(AdaptiveCardsActionSet, ExpandsRepeatingActionSetOverArray) {
+    const std::string card_json = R"JSON(
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "ActionSet",
+      "$data": "${links}",
+      "actions": [
+        {
+          "type": "Action.OpenUrl",
+          "title": "${label}",
+          "url": "${href}"
+        }
+      ]
+    }
+  ]
+}
+)JSON";
+    const std::string ctx_json = R"JSON(
+{
+  "links": [
+    { "label": "Docs", "href": "https://adaptivecards.io/docs" },
+    { "label": "Designer", "href": "https://adaptivecards.io/designer" }
+  ]
+}
+)JSON";
+
+    parser card_parser{};
+    templater binder{};
+    context values{};
+    auto parse_err = glz::read_json(values, ctx_json);
+    ASSERT_FALSE(parse_err);
+
+    const auto parsed = card_parser.parse(card_json);
+    const auto bound = binder.bind(parsed, values);
+
+    ASSERT_EQ(bound.body.size(), 2U);
+    EXPECT_EQ(bound.body[0].actions[0].title, "Docs");
+    EXPECT_EQ(bound.body[0].actions[0].url, "https://adaptivecards.io/docs");
+    EXPECT_EQ(bound.body[1].actions[0].title, "Designer");
+    EXPECT_EQ(bound.body[1].actions[0].url, "https://adaptivecards.io/designer");
+
+    const auto urls = renderer::collect_action_urls(bound);
+    ASSERT_EQ(urls.size(), 2U);
+    EXPECT_EQ(urls[0], "https://adaptivecards.io/docs");
+    EXPECT_EQ(urls[1], "https://adaptivecards.io/designer");
+}
+

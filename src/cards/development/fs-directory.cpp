@@ -14,6 +14,7 @@
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
+#include "../../helpers/filetype_handler.hpp"
 
 #include "../information/image_viewer.hpp"
 #include "../media/media_card.hpp"
@@ -187,14 +188,9 @@ namespace rouen::cards {
                     refresh_cache();
                 }
             } else {
-                if (ImGui::GetIO().KeyCtrl && entry.path().filename() == "CMakeLists.txt") {
-                    "create_card"_sfn(std::format("cmake:{}", entry.path().string()));
-                } else if (entry.path().extension() == ".pdf" || entry.path().extension() == ".PDF") {
-                    "create_card"_sfn(std::format("pdf:{}", entry.path().string()));
-                } else if (is_supported_image_extension(entry.path().extension().string())) {
-                    "create_card"_sfn(std::format("image:{}", entry.path().string()));
-                } else if (is_supported_media_extension(entry.path().extension().string())) {
-                    "create_card"_sfn(std::format("media:{}", entry.path().string()));
+                auto uri = helpers::FiletypeHandler::instance().resolve(entry.path(), ImGui::GetIO().KeyCtrl);
+                if (uri.has_value()) {
+                    "create_card"_sfn(uri.value());
                 } else {
                     "edit"_sfn(entry.path().string());
                 }
@@ -338,7 +334,7 @@ namespace rouen::cards {
                     render_entry(entry, display_label);
                 }
             } else {
-                for (const auto& entry : cached_entries_) {
+                for (const auto entry : cached_entries_) {
                     if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
                         std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
                         render_entry(entry, prefix + entry.path().filename().string());

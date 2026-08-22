@@ -520,12 +520,16 @@ struct deck {
     };
 
     float get_width_factor() const {
-        try {
-            auto get_wf = registrar::get<std::function<float()>>("get_width_factor");
-            if (get_wf) {
-                return (*get_wf)();
-            }
-        } catch (...) {}
+        // The Display card only registers this service once it is instantiated, so it may be
+        // absent for a while (or forever, if the user never opens the card). Cache the resolved
+        // service once found — it is never unregistered — so the render loop pays the
+        // registrar lookup cost at most once instead of every frame, and never risks an exception.
+        if (!width_factor_fn_) {
+            width_factor_fn_ = registrar::try_get<std::function<float()>>("get_width_factor");
+        }
+        if (width_factor_fn_) {
+            return (*width_factor_fn_)();
+        }
         return 4.0f;
     }
 
@@ -1339,6 +1343,7 @@ private:
     bool is_scrolling_manually {false};
     rouen::ui::imgui_ui_context_impl ui_context_;
     std::weak_ptr<card> last_focused_card_;
+    mutable std::shared_ptr<std::function<float()>> width_factor_fn_ {};
 public:
     static inline bool no_initial_cards{false};
 };

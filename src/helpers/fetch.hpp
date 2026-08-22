@@ -90,8 +90,9 @@ static size_t write_callback(char* contents, size_t size, size_t nmemb, void* us
 
 // Helper used as userdata for header callback
 struct HeaderCollector {
-    bool* redirect_flag = nullptr;
-    std::unordered_map<std::string, std::string>* headers = nullptr;
+    bool* redirect_flag{nullptr};
+    std::unordered_map<std::string, std::string>* headers{nullptr};
+    std::vector<std::string>* set_cookies{nullptr}; // Raw "Set-Cookie" values; a single response may send several
 };
 
 // Thread-local flag updated by header callback so higher-level logic can use it after curl_easy_perform
@@ -142,6 +143,9 @@ static size_t header_collect_callback(char* buffer, size_t size, size_t nitems, 
         for (auto &c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
         (*collector->headers)[name] = value;
+        if (name == "set-cookie" && collector->set_cookies) {
+            collector->set_cookies->push_back(value);
+        }
     }
 
     return total_size;
@@ -281,7 +285,12 @@ public:
         if (auto it = last_response_headers_.find(lower); it != last_response_headers_.end()) return it->second;
         return std::nullopt;
     }
-    
+    // All "Set-Cookie" values from the last response (a response may set more than one cookie)
+    std::vector<std::string> last_set_cookies() const {
+        std::lock_guard<std::mutex> lock(request_mutex_);
+        return last_set_cookies_;
+    }
+
     // Basic GET request with vector of headers
     std::string operator()(
         const std::string& url, 
@@ -325,10 +334,12 @@ public:
             HeaderCollector hc;
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
+            hc.set_cookies = &last_set_cookies_;
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
             last_response_headers_.clear();
+            last_set_cookies_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
@@ -428,10 +439,12 @@ public:
             HeaderCollector hc;
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
+            hc.set_cookies = &last_set_cookies_;
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
             last_response_headers_.clear();
+            last_set_cookies_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
@@ -540,10 +553,12 @@ public:
             HeaderCollector hc;
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
+            hc.set_cookies = &last_set_cookies_;
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
             last_response_headers_.clear();
+            last_set_cookies_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
@@ -649,10 +664,12 @@ public:
             HeaderCollector hc;
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
+            hc.set_cookies = &last_set_cookies_;
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
             last_response_headers_.clear();
+            last_set_cookies_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
@@ -771,10 +788,12 @@ public:
             HeaderCollector hc;
             hc.redirect_flag = &last_redirect_was_permanent_;
             hc.headers = &last_response_headers_;
+            hc.set_cookies = &last_set_cookies_;
             last_redirect_was_permanent_ = false;
             header_redirect_flag = false;
             redirect_was_permanent = false;
             last_response_headers_.clear();
+            last_set_cookies_.clear();
             curl_easy_setopt(handle.get(), CURLOPT_HEADERFUNCTION, header_collect_callback);
             curl_easy_setopt(handle.get(), CURLOPT_HEADERDATA, &hc);
             
@@ -841,6 +860,7 @@ private:
     std::string last_effective_url_;
     long last_http_code_ = 0;
     std::unordered_map<std::string, std::string> last_response_headers_;
+    std::vector<std::string> last_set_cookies_;
     mutable std::mutex request_mutex_;
 
     template<typename Func>

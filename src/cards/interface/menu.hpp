@@ -19,6 +19,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../registrar.hpp"
 #include "card.hpp"
+#include "plugin_registry.hpp"
 
 namespace rouen::cards {
     struct menu: public card {
@@ -184,6 +185,14 @@ namespace rouen::cards {
                                 should_close_ = true;
                             }
                         }
+                        // Nothing in the menu matches - treat the typed text as a
+                        // card URI directly (e.g. "dir:C:\"), so a card doesn't
+                        // need its own menu entry to be reachable this way.
+                        else if (enter_pressed && filtered_items.empty()) {
+                            "create_card"_sfn(search_text);
+                            search_buffer[0] = '\0';
+                            should_close_ = true;
+                        }
                     }
                     
                     // Display search results
@@ -192,7 +201,8 @@ namespace rouen::cards {
                     // If no items match the filter, show a message
                     if (filtered_items.empty()) {
                         ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
-                    } 
+                        ui.text_colored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Press Enter to open it as a card URI (e.g. dir:C:\\)");
+                    }
                     else {
                         // Render filtered items
                         for (size_t i = 0; i < filtered_items.size(); i++) {
@@ -362,6 +372,7 @@ namespace rouen::cards {
                     {"Jira Projects", []() { "create_card"_sfn("jira-projects"); }},
                     {"Jira Search", []() { "create_card"_sfn("jira-search"); }},
                     {"Trello", []() { "create_card"_sfn("trello"); }},
+                    {"FootPrints", []() { "create_card"_sfn("footprints"); }},
                     {"Invoice Card", []() { "create_card"_sfn("invoice"); }},
                     {"Contacts Directory", []() { "create_card"_sfn("directory"); }},
                 }},
@@ -416,11 +427,23 @@ namespace rouen::cards {
                     {"Terminal", []() { "create_card"_sfn("terminal"); }},
                     {"Environment Variables", []() { "create_card"_sfn("envvars"); }},
                     {"Subnet Scanner", []() { "create_card"_sfn("subnet-scanner"); }},
+                    {"Process Orchestration", []() { "create_card"_sfn("process-panel"); }},
                     {"Database Repair", []() { "create_card"_sfn("dbrepair"); }},
                     {"About", []() { "create_card"_sfn("about"); }},
                     {"Exit Application", []() { [[maybe_unused]] bool was_exiting = "exit"_fnb(); }}
                 }}
             });
+
+            auto const& plugin_entries = plugin_menu_entries();
+            if (!plugin_entries.empty()) {
+                std::vector<std::pair<std::string, std::function<void()>>> plugin_items;
+                for (auto const& entry : plugin_entries) {
+                    std::string uri = entry.schema;
+                    plugin_items.push_back({entry.display_name, [uri]() { "create_card"_sfn(uri); }});
+                }
+                categories.push_back({"Plugins", plugin_items});
+            }
+
             return categories;
         }
     };

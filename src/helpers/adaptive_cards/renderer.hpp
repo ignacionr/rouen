@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <format>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../texture_utils.hpp"
@@ -39,7 +42,15 @@ public:
     struct input_state {
         std::unordered_map<std::string, std::string> text_values{};
         std::unordered_map<std::string, bool> toggle_values{};
-        std::unordered_map<std::size_t, bool> show_card_expanded{};
+        std::unordered_map<std::string, bool> show_card_expanded{};
+        // ids of text_values entries that came from an Input.Number, so
+        // collect_input_values() can emit them as JSON numbers - Input.Text
+        // and Input.Date/Time share the same text_values map but are
+        // genuinely strings per the spec.
+        std::unordered_set<std::string> numeric_ids{};
+        // whether a FactSet value that overflows the collapsed line limit
+        // has been expanded to show its full text, keyed by scope+index.
+        std::unordered_map<std::string, bool> fact_expanded{};
     };
 
     void render(const card_document& card) const override {
@@ -56,7 +67,7 @@ public:
         texture_provider_t texture_provider = {}
     ) const {
         render_elements(card.body, "adaptive", state, callbacks, config, texture_provider);
-        render_actions(card.actions, state, callbacks, config);
+        render_actions(card.actions, "card-actions", state, callbacks, config, texture_provider, /*show_separator=*/true);
     }
 
     [[nodiscard]] static std::vector<std::string> collect_lines(const card_document& card) {
@@ -67,27 +78,43 @@ public:
 
     [[nodiscard]] static std::vector<std::string> collect_action_urls(const card_document& card) {
         std::vector<std::string> urls;
-        urls.reserve(card.actions.size());
+        collect_action_urls_recursive(card.body, urls);
         for (const auto& action : card.actions) {
             if (!action.url.empty()) {
                 urls.push_back(action.url);
+            }
+            if (action.type == "Action.ShowCard" && !action.card.body.empty()) {
+                collect_action_urls_recursive(action.card.body, urls);
             }
         }
         return urls;
     }
 
+    // Per the Adaptive Cards spec, a submitted/executed action's data is a
+    // flat object of every input's current value keyed by its id - not
+    // grouped by input type.
     [[nodiscard]] static std::string build_submit_payload(const input_state& state) {
-        glz::json_t payload = glz::json_t::object_t{};
-        payload["text"] = glz::json_t::object_t{};
-        payload["toggle"] = glz::json_t::object_t{};
-
-        for (const auto& [key, value] : state.text_values) {
-            payload["text"][key] = value;
+        if (const auto encoded = glz::write_json(collect_input_values(state)); encoded.has_value()) {
+            return encoded.value();
         }
-        for (const auto& [key, value] : state.toggle_values) {
-            payload["toggle"][key] = value;
-        }
+        return "{}";
+    }
 
+    // Same flat, id-keyed object as build_submit_payload(), merged with
+    // the triggering action's own optional "data" property. The spec
+    // describes this merge identically for Action.Submit and
+    // Action.Execute ("gathers input fields, merges with optional data
+    // field"), so both call this. Only an object-valued action_data has
+    // keys to merge in as siblings; a string/number/null data value is
+    // left out of this flat object (Action.Execute still carries it
+    // separately - see render_actions()).
+    [[nodiscard]] static std::string build_action_data_payload(const input_state& state, const glz::json_t& action_data) {
+        glz::json_t payload = collect_input_values(state);
+        if (action_data.is_object()) {
+            for (const auto& [key, value] : action_data.get_object()) {
+                payload[key] = value;
+            }
+        }
         if (const auto encoded = glz::write_json(payload); encoded.has_value()) {
             return encoded.value();
         }
@@ -95,6 +122,28 @@ public:
     }
 
 private:
+    [[nodiscard]] static glz::json_t collect_input_values(const input_state& state) {
+        glz::json_t values = glz::json_t::object_t{};
+        for (const auto& [key, value] : state.text_values) {
+            if (state.numeric_ids.contains(key)) {
+                double parsed = 0.0;
+                auto const [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), parsed);
+                if (ec == std::errc{} && ptr == value.data() + value.size()) {
+                    values[key] = parsed;
+                    continue;
+                }
+                // Not a complete, valid number yet (e.g. still empty or
+                // being typed) - fall through and send it as a string
+                // rather than dropping the key entirely.
+            }
+            values[key] = value;
+        }
+        for (const auto& [key, value] : state.toggle_values) {
+            values[key] = value;
+        }
+        return values;
+    }
+
     static void render_input_choice_set(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
         auto [it, inserted] = state.text_values.try_emplace(key, node.value);
@@ -142,6 +191,7 @@ private:
     static void render_input_number(const element& node, const std::string& scope, input_state& state) {
         const std::string key = node.id.empty() ? scope : node.id;
         auto [it, inserted] = state.text_values.try_emplace(key, node.value);
+        state.numeric_ids.insert(key);
         const std::string label = node.title.empty() ? key : node.title;
         std::array<char, 256> buffer{};
         std::snprintf(buffer.data(), buffer.size(), "%s", it->second.c_str());
@@ -246,6 +296,52 @@ private:
         }
     }
 
+    struct column_width_spec {
+        ImGuiTableColumnFlags flags{ImGuiTableColumnFlags_WidthStretch};
+        float weight_or_width{1.0f};
+    };
+
+    [[nodiscard]] static std::string to_lower_trimmed(std::string_view str) {
+        std::size_t start = 0;
+        while (start < str.size() && (str[start] == ' ' || str[start] == '\t' || str[start] == '\r' || str[start] == '\n')) {
+            ++start;
+        }
+        std::size_t end = str.size();
+        while (end > start && (str[end - 1] == ' ' || str[end - 1] == '\t' || str[end - 1] == '\r' || str[end - 1] == '\n')) {
+            --end;
+        }
+        std::string res;
+        res.reserve(end - start);
+        for (std::size_t i = start; i < end; ++i) {
+            res += static_cast<char>(std::tolower(static_cast<unsigned char>(str[i])));
+        }
+        return res;
+    }
+
+    [[nodiscard]] static column_width_spec parse_column_width(std::string_view width_str) {
+        const std::string lower = to_lower_trimmed(width_str);
+        if (lower.empty() || lower == "stretch") {
+            return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+        }
+        if (lower == "auto") {
+            return {ImGuiTableColumnFlags_WidthFixed, 0.0f};
+        }
+        if (lower.ends_with("px")) {
+            try {
+                float px = std::stof(lower.substr(0, lower.size() - 2));
+                return {ImGuiTableColumnFlags_WidthFixed, std::max(0.0f, px)};
+            } catch (...) {
+                return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+            }
+        }
+        try {
+            float val = std::stof(lower);
+            return {ImGuiTableColumnFlags_WidthStretch, std::max(0.1f, val)};
+        } catch (...) {
+            return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
+        }
+    }
+
     static void render_table(
         const element& node,
         const std::string& scope,
@@ -260,7 +356,23 @@ private:
         }
         if (num_cols == 0) return;
 
-        if (ImGui::BeginTable(scope.c_str(), static_cast<int>(num_cols), ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_BordersInnerV)) {
+        ImGuiTableFlags table_flags = ImGuiTableFlags_RowBg
+                                    | ImGuiTableFlags_BordersInnerH
+                                    | ImGuiTableFlags_BordersInnerV
+                                    | ImGuiTableFlags_BordersOuter
+                                    | ImGuiTableFlags_Resizable
+                                    | ImGuiTableFlags_SizingStretchProp;
+
+        if (ImGui::BeginTable(scope.c_str(), static_cast<int>(num_cols), table_flags)) {
+            for (std::size_t c_idx = 0; c_idx < num_cols; ++c_idx) {
+                std::string col_width;
+                if (c_idx < node.columns.size()) {
+                    col_width = node.columns[c_idx].width;
+                }
+                const auto spec = parse_column_width(col_width);
+                ImGui::TableSetupColumn(nullptr, spec.flags, spec.weight_or_width);
+            }
+
             for (std::size_t r_idx = 0; r_idx < node.rows.size(); ++r_idx) {
                 ImGui::TableNextRow();
                 const auto& row = node.rows[r_idx];
@@ -328,7 +440,7 @@ private:
             } else if (node.type == "Column") {
                 render_elements(node.items, id, state, callbacks, config, texture_provider);
             } else if (node.type == "FactSet") {
-                render_fact_set(node, id);
+                render_fact_set(node, id, state);
             } else if (node.type == "Input.Text") {
                 render_input_text(node, id, state);
             } else if (node.type == "Input.Toggle") {
@@ -347,6 +459,8 @@ private:
                 render_rich_text_block(node, callbacks, config);
             } else if (node.type == "Table") {
                 render_table(node, id, state, callbacks, config, texture_provider);
+            } else if (node.type == "ActionSet") {
+                render_actions(node.actions, id, state, callbacks, config, texture_provider, /*show_separator=*/false);
             }
         }
     }
@@ -362,12 +476,19 @@ private:
         if (node.columns.empty()) {
             return;
         }
-        ImGui::Columns(static_cast<int>(node.columns.size()), nullptr, false);
-        for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
-            render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config, texture_provider);
-            ImGui::NextColumn();
+        const int num_cols = static_cast<int>(node.columns.size());
+        if (ImGui::BeginTable(scope.c_str(), num_cols, ImGuiTableFlags_SizingStretchProp)) {
+            for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
+                const auto spec = parse_column_width(node.columns[idx].width);
+                ImGui::TableSetupColumn(nullptr, spec.flags, spec.weight_or_width);
+            }
+            ImGui::TableNextRow();
+            for (std::size_t idx = 0; idx < node.columns.size(); ++idx) {
+                ImGui::TableSetColumnIndex(static_cast<int>(idx));
+                render_elements(node.columns[idx].items, std::format("{}-column-{}", scope, idx), state, callbacks, config, texture_provider);
+            }
+            ImGui::EndTable();
         }
-        ImGui::Columns(1);
     }
 
     static void align_cursor(float item_width, std::string_view alignment) {
@@ -438,17 +559,70 @@ private:
         }
     }
 
-    static void render_fact_set(const element& node, const std::string& scope) {
+    // Facts with values that wrap past this many lines get truncated, with
+    // the would-be next line replaced by a toggle button so long values
+    // don't dominate an otherwise simple card.
+    static constexpr int kFactValueCollapsedLines = 3;
+
+    [[nodiscard]] static int wrapped_line_count(const std::string& text, float wrap_width) {
+        const float line_height = ImGui::GetTextLineHeight();
+        if (text.empty() || line_height <= 0.0f) {
+            return text.empty() ? 0 : 1;
+        }
+        const ImVec2 size = ImGui::CalcTextSize(text.c_str(), nullptr, false, wrap_width);
+        return std::max(1, static_cast<int>(std::round(size.y / line_height)));
+    }
+
+    // Returns the prefix of text that wraps to at most max_lines lines at
+    // wrap_width, so a truncated preview can be rendered with TextWrapped.
+    [[nodiscard]] static std::string wrapped_line_prefix(const std::string& text, float wrap_width, int max_lines) {
+        ImFont* font = ImGui::GetFont();
+        const float font_size = ImGui::GetFontSize();
+        const char* begin = text.c_str();
+        const char* end = begin + text.size();
+        const char* cursor = begin;
+        for (int line = 0; line < max_lines && cursor < end; ++line) {
+            const char* wrap_pos = font->CalcWordWrapPositionA(font_size, cursor, end, wrap_width);
+            if (wrap_pos <= cursor) {
+                wrap_pos = cursor + 1;
+            }
+            cursor = wrap_pos;
+        }
+        return std::string(begin, cursor);
+    }
+
+    static void render_fact_set(const element& node, const std::string& scope, input_state& state) {
         if (node.facts.empty()) {
             return;
         }
         if (ImGui::BeginTable(scope.c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
-            for (const auto& pair : node.facts) {
+            for (std::size_t idx = 0; idx < node.facts.size(); ++idx) {
+                const auto& pair = node.facts[idx];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
                 ImGui::TextUnformatted(pair.title.c_str());
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(pair.value.c_str());
+
+                const float wrap_width = ImGui::GetContentRegionAvail().x;
+                if (wrapped_line_count(pair.value, wrap_width) <= kFactValueCollapsedLines) {
+                    ImGui::TextWrapped("%s", pair.value.c_str());
+                    continue;
+                }
+
+                const std::string fact_key = std::format("{}-fact-{}", scope, idx);
+                auto [it, _] = state.fact_expanded.try_emplace(fact_key, false);
+                if (it->second) {
+                    ImGui::TextWrapped("%s", pair.value.c_str());
+                    if (ImGui::SmallButton(std::format("Show less##{}", fact_key).c_str())) {
+                        it->second = false;
+                    }
+                } else {
+                    const std::string preview = wrapped_line_prefix(pair.value, wrap_width, kFactValueCollapsedLines);
+                    ImGui::TextWrapped("%s", preview.c_str());
+                    if (ImGui::SmallButton(std::format("...##{}", fact_key).c_str())) {
+                        it->second = true;
+                    }
+                }
             }
             ImGui::EndTable();
         }
@@ -540,22 +714,14 @@ private:
             ImGui::PushFont(config.font_bold);
         }
 
-        const auto spans = parse_inline_markdown(node.text);
-        const bool is_plain = spans.size() == 1 && spans[0].kind == span_kind::normal;
-
         if (!node.horizontalAlignment.empty() && node.horizontalAlignment != "Left" && node.horizontalAlignment != "left") {
-            float text_width = ImGui::CalcTextSize(node.text.c_str()).x * font_scale;
+            const std::string plain_text = strip_markdown(node.text);
+            float text_width = ImGui::CalcTextSize(plain_text.c_str()).x * font_scale;
             align_cursor(text_width, node.horizontalAlignment);
         }
 
-        if (is_plain) {
-            ImGui::PushStyleColor(ImGuiCol_Text, color);
-            ImGui::TextWrapped("%s", node.text.c_str());
-            ImGui::PopStyleColor();
-        } else {
-            // Delegate to the shared inline markdown renderer.
-            rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
-        }
+        // Delegate to the shared inline markdown renderer.
+        rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
 
         if (is_bold && config.font_bold) {
             ImGui::PopFont();
@@ -584,47 +750,92 @@ private:
             if (!node.columns.empty()) {
                 collect_lines_recursive(node.columns, lines);
             }
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    collect_lines_recursive(cell.items, lines);
+                }
+            }
+            for (const auto& act : node.actions) {
+                if (act.type == "Action.ShowCard" && !act.card.body.empty()) {
+                    collect_lines_recursive(act.card.body, lines);
+                }
+            }
+        }
+    }
+
+    static void collect_action_urls_recursive(const std::vector<element>& nodes, std::vector<std::string>& urls) {
+        for (const auto& node : nodes) {
+            if (!node.selectAction.url.empty()) {
+                urls.push_back(node.selectAction.url);
+            }
+            for (const auto& act : node.actions) {
+                if (!act.url.empty()) {
+                    urls.push_back(act.url);
+                }
+                if (act.type == "Action.ShowCard" && !act.card.body.empty()) {
+                    collect_action_urls_recursive(act.card.body, urls);
+                }
+            }
+            if (!node.items.empty()) {
+                collect_action_urls_recursive(node.items, urls);
+            }
+            if (!node.columns.empty()) {
+                collect_action_urls_recursive(node.columns, urls);
+            }
+            for (const auto& row : node.rows) {
+                for (const auto& cell : row.cells) {
+                    collect_action_urls_recursive(cell.items, urls);
+                }
+            }
         }
     }
 
     static void render_actions(
         const std::vector<action>& actions,
+        const std::string& scope,
         input_state& state,
         const action_callbacks& callbacks,
-        const render_config& config
+        const render_config& config,
+        const texture_provider_t& texture_provider = {},
+        bool show_separator = true
     ) {
         if (actions.empty()) {
             return;
         }
 
-        ImGui::Separator();
+        if (show_separator) {
+            ImGui::Separator();
+        }
         for (std::size_t idx = 0; idx < actions.size(); ++idx) {
             const auto& card_action = actions[idx];
+            const std::string action_id = std::format("{}-act-{}", scope, idx);
             const std::string label = card_action.title.empty()
-                ? std::format("{}##{}", card_action.type, idx)
-                : std::format("{}##{}", card_action.title, idx);
+                ? std::format("{}##{}", card_action.type, action_id)
+                : std::format("{}##{}", card_action.title, action_id);
             if (ImGui::Button(label.c_str())) {
                 if (card_action.type == "Action.OpenUrl" && !card_action.url.empty()) {
                     callbacks.open_url(card_action.url);
                 } else if (card_action.type == "Action.Submit") {
-                    callbacks.on_submit(build_submit_payload(state));
+                    callbacks.on_submit(build_action_data_payload(state, card_action.data));
                 } else if (card_action.type == "Action.Execute") {
-                    callbacks.on_submit(std::format("{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb, card_action.data.empty() ? "{}" : card_action.data));
+                    callbacks.on_submit(std::format(
+                        "{{\"verb\":\"{}\",\"data\":{}}}", card_action.verb,
+                        build_action_data_payload(state, card_action.data)));
                 } else if (card_action.type == "Action.ToggleVisibility") {
                     for (const auto& target_id : card_action.targetElements) {
                         state.toggle_values[target_id] = !state.toggle_values[target_id];
                     }
                 } else if (card_action.type == "Action.ShowCard") {
-                    state.show_card_expanded[idx] = !state.show_card_expanded[idx];
+                    state.show_card_expanded[action_id] = !state.show_card_expanded[action_id];
                 }
             }
             if (idx + 1 < actions.size()) {
                 ImGui::SameLine();
             }
 
-            if (card_action.type == "Action.ShowCard" && state.show_card_expanded[idx]) {
+            if (card_action.type == "Action.ShowCard" && state.show_card_expanded[action_id]) {
                 ImGui::Indent();
-                render_elements(card_action.card.body, std::format("showcard-{}", idx), state, callbacks, config);
+                render_elements(card_action.card.body, std::format("{}-showcard-{}", scope, idx), state, callbacks, config, texture_provider);
                 ImGui::Unindent();
             }
         }

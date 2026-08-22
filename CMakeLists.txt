@@ -457,8 +457,8 @@ include(cmake/warnings.cmake)
 
 set(MAC_SOURCES)
 if(APPLE)
-  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm)
-  set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+  list(APPEND MAC_SOURCES src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm src/helpers/app_icon.mm)
+  set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm src/helpers/app_icon.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
 # Add the executable
@@ -472,12 +472,18 @@ add_executable(${PROJECT_NAME}
   src/fonts.cpp
   src/helpers/capture_helper.cpp
   src/helpers/config_service.cpp
+  src/helpers/filetype_handler.cpp
   src/helpers/image_cache.cpp
+  src/helpers/directory_watch.cpp
   src/hosts/llm_host.cpp
   src/hosts/mcp_host.cpp
   src/hosts/api_server_host.cpp
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
+  src/hosts/process_host.cpp
+  src/hosts/plugin_host.cpp
+  src/helpers/dynamic_library.cpp
+  src/helpers/piped_process.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/theme_manager.cpp
@@ -513,6 +519,7 @@ add_executable(${PROJECT_NAME}
   src/models/jira_model_api.cpp
   src/models/trello_model.cpp
   src/hosts/trello_host.cpp
+  src/hosts/footprints_host.cpp
   src/hosts/rss_host.cpp
   src/cards/productivity/trello_card_core.cpp
   src/cards/productivity/trello_card_connection.cpp
@@ -554,6 +561,7 @@ target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/helpers
   ${CMAKE_SOURCE_DIR}/src/hosts
+  ${CMAKE_SOURCE_DIR}/plugin-sdk
 )
 
 # Add ImGui include directories based on which target is available

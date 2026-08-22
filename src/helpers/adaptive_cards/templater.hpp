@@ -81,9 +81,24 @@ private:
         node.title = expand(node.title, root, local);
         node.value = expand(node.value, root, local);
         node.placeholder = expand(node.placeholder, root, local);
+        node.width = expand(node.width, root, local);
         for (auto& pair : node.facts) {
             pair.title = expand(pair.title, root, local);
             pair.value = expand(pair.value, root, local);
+        }
+        for (auto& act : node.actions) {
+            act.title = expand(act.title, root, local);
+            act.url = expand(act.url, root, local);
+            if (!act.card.body.empty()) {
+                bind_elements(act.card.body, root, local);
+            }
+        }
+        if (!node.selectAction.type.empty()) {
+            node.selectAction.title = expand(node.selectAction.title, root, local);
+            node.selectAction.url = expand(node.selectAction.url, root, local);
+            if (!node.selectAction.card.body.empty()) {
+                bind_elements(node.selectAction.card.body, root, local);
+            }
         }
 
         if (!node.items.empty()) {
@@ -91,6 +106,11 @@ private:
         }
         if (!node.columns.empty()) {
             bind_elements(node.columns, root, local);
+        }
+        for (auto& row : node.rows) {
+            for (auto& cell : row.cells) {
+                bind_elements(cell.items, root, local);
+            }
         }
     }
 

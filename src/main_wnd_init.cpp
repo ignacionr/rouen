@@ -74,8 +74,16 @@ bool main_wnd::initialize() {
 #endif
 
         // Create GPU device
+        // The backend validation/debug layer (D3D12 debug layer, Vulkan validation, etc.)
+        // adds real per-draw-call overhead, which shows up in an immediate-mode GUI that
+        // issues many draw calls per frame - only worth paying for in debug builds.
+#ifdef NDEBUG
+        constexpr bool gpu_debug_mode{false};
+#else
+        constexpr bool gpu_debug_mode{true};
+#endif
         std::cout << "DEBUG: Creating SDL GPU device..." << '\n';
-        m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, true, nullptr);
+        m_device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL, gpu_debug_mode, nullptr);
         if (!m_device) {
             DB_ERROR_FMT("Error creating GPU device: {}", SDL_GetError());
             SDL_DestroyWindow(m_window);

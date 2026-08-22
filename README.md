@@ -27,9 +27,11 @@ To make the codebase easy to navigate, the documentation has been split into mod
 * 🔄 **[Git Synchronization Guide](docs/GIT_SYNC.md)**: Native Git-based synchronization setup for multi-device syncing of notes, travel plans, RSS subscriptions, objectives, and layouts.
 * 📰 **[RSS Reader Guide](docs/RSS.md)**: Consolidated documentation for the RSS reader subsystem, including media extraction pipelines and detailed UI card specifications.
 * 📇 **[Adaptive Cards Integration Plan](docs/adaptive_cards_plan.md)**: Step-by-step architectural design and execution plan to bring Adaptive Cards and Templating to Rouen.
+* 🧩 **[Plugin Guide](docs/PLUGINS.md)**: Adding new card types and URI registrations from dynamically loaded libraries - either ImGui-drawn or declared as Adaptive Card JSON - with a buildable sample plugin under `plugins/sample-card-plugin/`.
+* ⚙️ **[Adaptive Process Cards](docs/ADAPTIVE_PROCESS_CARDS.md)**: Turning any executable, in any language, into a live card via `adaptive-process:<command line>` - no compiling against Rouen required.
 * 🃏 **Card Catalog & Live UI References**:
   * 🧮 **[Productivity & Utilities Cards](docs/cards/productivity.md)**: Calculator, Unit Converter, Pomodoro, Alarm, Objectives, KPIs, Invoice, Trello, Jira, and Theme Customizer.
-  * 🛠️ **[System & Developer Tools Cards](docs/cards/system.md)**: System Info, Environment Variables, Display Settings, Settings, Sync, Notifications, Terminal, Directory Browser, CMake Manager, DB Repair, About Rouen, and Subnet Scanner.
+  * 🛠️ **[System & Developer Tools Cards](docs/cards/system.md)**: System Info, Environment Variables, Display Settings, Settings, Sync, Notifications, Terminal, Directory Browser, CMake Manager, DB Repair, About Rouen, Subnet Scanner, Git Repository, and Process Orchestration.
   * 🧠 **[Information & Intelligence Cards](docs/cards/information.md)**: AI Chat, Calendar, Weather, Wikipedia, Notes, Contacts, Adaptive Cards, Number Series, Travel Planner, and RSS Reader.
   * 🎵 **[Media & Entertainment Cards](docs/cards/media.md)**: Radio Streamer, YouTube Player, Camera Feed, Media Companion, and Chess Replay.
 
@@ -37,7 +39,7 @@ To make the codebase easy to navigate, the documentation has been split into mod
 
 ## Key Features
 
-* **Development Tools**: Visual Git repository browser, GitHub workflow/CI monitoring, interactive directory explorer, syntax-highlighted code editor, CMake build integration, environment variable manager, and Jira/Trello boards.
+* **Development Tools**: Visual Git repository browser, GitHub workflow/CI monitoring, interactive directory explorer, syntax-highlighted code editor, CMake build integration, environment variable manager, Jira/Trello boards, and process orchestration with live resource monitoring and recursive file-change tracking.
 * **Productivity & Planning**: Pomodoro timer, configurable Alarms with video overlays, Trello columns integration, travel planner, Google Calendar sync, Notifications center with spoken/silent control, and personal Markdown notes with wiki-style linking.
 * **Information & Media**: Live USB/iPhone camera capture with 7 layout presets (PiP, Avatar Circle, Side Bar), Number Series data charts with continuous live broadcast animation, IMAP/SMTP email client, local weather tracking, RSS reader with media extraction and AI feed discovery, AI chat assistant (Grok, OpenAI, Groq, Gemini, custom), and internet radio player with native FFmpeg decoding.
 * **Financial & Data Analytics**: Bybit trading account assets viewer, number series trend charts, and type conversion calculators.

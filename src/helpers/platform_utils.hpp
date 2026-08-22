@@ -21,9 +21,11 @@
 #elif defined(_WIN32)
 #include <windows.h>     // For GetModuleFileName
 #include <shellapi.h>    // For ShellExecuteA
+#include <commdlg.h>     // For GetOpenFileNameA
 #include <io.h>          // For _popen/_pclose
 #define popen _popen
 #define pclose _pclose
+#pragma comment(lib, "Comdlg32.lib")
 #endif
 
 namespace rouen::platform
@@ -61,6 +63,32 @@ namespace rouen::platform
             return result;
         }
         pclose(pipe);
+#elif defined(_WIN32)
+        char filename[MAX_PATH] = {0};
+
+        std::string filter;
+        if (!extension.empty()) {
+            filter = extension + " Files";
+            filter += '\0';
+            filter += "*." + extension;
+            filter += '\0';
+        }
+        filter += "All Files";
+        filter += '\0';
+        filter += "*.*";
+        filter += '\0';
+
+        OPENFILENAMEA ofn{};
+        ofn.lStructSize = sizeof(ofn);
+        ofn.lpstrFilter = filter.c_str();
+        ofn.lpstrFile = filename;
+        ofn.nMaxFile = sizeof(filename);
+        ofn.lpstrTitle = prompt.empty() ? nullptr : prompt.c_str();
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+        if (GetOpenFileNameA(&ofn)) {
+            return std::string(filename);
+        }
 #endif
         return "";
     }

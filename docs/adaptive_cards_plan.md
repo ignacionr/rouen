@@ -487,3 +487,94 @@ The new `test_markdown_renderer.cpp` covers:
    - Bullet points for list items
    - Clickable blue links for `[text](url)`
 
+---
+
+## ✅ ActionSet Support (Implemented)
+
+Full support for the Adaptive Cards `ActionSet` element has been implemented across the parser, templater, and renderer subsystems.
+
+### Capabilities
+
+- **Parser (`parser.hpp`)**:
+  - `ActionSet` element type recognized in schema validator.
+  - `actions` array deserialized into nested `std::vector<action>`.
+  - Validation runs recursively for all contained actions (`Action.OpenUrl`, `Action.Submit`, `Action.Execute`, `Action.ToggleVisibility`, `Action.ShowCard`).
+- **Templater (`templater.hpp`)**:
+  - Templating expressions (`${...}`) are bound inside action `title`, `url`, and sub-card bodies (`ShowCard`).
+  - Compatible with `$data` loops to generate dynamic repeating action sets across array collections.
+- **Renderer (`renderer.hpp`)**:
+  - Renders action buttons horizontally inline without top-level card separators.
+  - Uniquely scoped IDs (`<scope>-act-<idx>`) ensuring distinct state keys for nested and inline `ShowCard` actions.
+  - Supports `Action.OpenUrl` URL extraction in `collect_action_urls()` and text extraction in `collect_lines()`.
+
+### Example Card JSON
+
+```json
+{
+  "type": "AdaptiveCard",
+  "body": [
+    { "type": "TextBlock", "text": "Inline Actions Example" },
+    {
+      "type": "ActionSet",
+      "actions": [
+        { "type": "Action.OpenUrl", "title": "Visit Docs", "url": "https://adaptivecards.io" },
+        { "type": "Action.Submit", "title": "Submit Response", "data": { "key": "val" } },
+        {
+          "type": "Action.ShowCard",
+          "title": "More Info",
+          "card": {
+            "type": "AdaptiveCard",
+            "body": [
+              { "type": "TextBlock", "text": "Sub-card content rendered inline" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## 📊 Table Column Width & Stretch Support (Implemented)
+
+Adaptive Cards `Table` elements support explicit column configurations via the `columns` array (`TableColumnDefinition`):
+
+- **Supported Column Width Values**:
+  - `"stretch"` (or `"Stretch"`): Column expands to fill available width with standard stretch weight (`1.0`).
+  - Proportional Numbers (e.g. `1`, `2`, `3` or `"1"`, `"2"`): Stretch columns with proportional weighting (e.g. column with `2` is allocated twice the remaining width of column with `1`).
+  - `"auto"` (or `"Auto"`): Sized according to cell contents.
+  - Pixel Widths (e.g. `"100px"`, `"50px"`): Fixed pixel-width columns.
+- **Templating**: Column width values dynamically support binding expressions (e.g. `"width": "${col.width}"`).
+- **Rendering**: ImGui Table column setup (`ImGui::TableSetupColumn`) configures `ImGuiTableColumnFlags_WidthStretch` with appropriate weight or `ImGuiTableColumnFlags_WidthFixed` for pixel/auto columns under `ImGuiTableFlags_SizingStretchProp`.
+
+### Example Card JSON
+
+```json
+{
+  "type": "AdaptiveCard",
+  "body": [
+    {
+      "type": "Table",
+      "columns": [
+        { "type": "TableColumnDefinition", "width": "stretch" },
+        { "type": "TableColumnDefinition", "width": 2 },
+        { "type": "TableColumnDefinition", "width": "auto" },
+        { "type": "TableColumnDefinition", "width": "120px" }
+      ],
+      "rows": [
+        {
+          "type": "TableRow",
+          "cells": [
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Stretch (1x)" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Proportional Stretch (2x)" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "Auto" } ] },
+            { "type": "TableCell", "items": [ { "type": "TextBlock", "text": "120px Fixed" } ] }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```

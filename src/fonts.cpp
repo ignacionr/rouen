@@ -143,6 +143,11 @@ namespace rouen::fonts {
             if (default_font_path.empty()) {
                 default_font_path = find_font_path("SFNSText-Regular.ttf", font_paths);  // Modern macOS
             }
+            #elif defined(_WIN32)
+            default_font_path = find_font_path("segoeui.ttf", font_paths);
+            if (default_font_path.empty()) {
+                default_font_path = find_font_path("arial.ttf", font_paths);
+            }
             #else
             // Additional Linux fallbacks if needed
             default_font_path = find_font_path("FreeSans.ttf", font_paths);
@@ -165,6 +170,11 @@ namespace rouen::fonts {
             if (mono_font_path.empty()) {
                 mono_font_path = find_font_path("SFNSMono.ttf", font_paths);
             }
+            #elif defined(_WIN32)
+            mono_font_path = find_font_path("consola.ttf", font_paths);
+            if (mono_font_path.empty()) {
+                mono_font_path = find_font_path("cour.ttf", font_paths);
+            }
             #else
             // Additional Linux fallbacks if needed
             mono_font_path = find_font_path("FreeMono.ttf", font_paths);
@@ -181,6 +191,11 @@ namespace rouen::fonts {
             }
             if (bold_font_path.empty()) {
                 bold_font_path = find_font_path("Georgia Bold.ttf", font_paths);
+            }
+            #elif defined(_WIN32)
+            bold_font_path = find_font_path("segoeuib.ttf", font_paths);
+            if (bold_font_path.empty()) {
+                bold_font_path = find_font_path("arialbd.ttf", font_paths);
             }
             #else
             bold_font_path = find_font_path("FreeSansBold.ttf", font_paths);
@@ -201,6 +216,11 @@ namespace rouen::fonts {
             }
             if (italic_font_path.empty()) {
                 italic_font_path = find_font_path("ArialI.ttf", font_paths);
+            }
+            #elif defined(_WIN32)
+            italic_font_path = find_font_path("segoeuii.ttf", font_paths);
+            if (italic_font_path.empty()) {
+                italic_font_path = find_font_path("ariali.ttf", font_paths);
             }
             #else
             italic_font_path = find_font_path("FreeSansOblique.ttf", font_paths);

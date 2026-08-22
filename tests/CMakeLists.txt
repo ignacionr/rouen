@@ -27,8 +27,15 @@ pkg_check_modules(SWSCALE REQUIRED libswscale)
 pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
 
 # Find TinyXML2 for RSS parsing tests
-find_package(tinyxml2 CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
+if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET tinyxml2)
+    find_package(tinyxml2 CONFIG REQUIRED)
+endif()
+if(NOT TARGET imgui AND NOT TARGET imgui::imgui)
+    find_package(imgui CONFIG REQUIRED)
+endif()
+if(TARGET imgui AND NOT TARGET imgui::imgui)
+    add_library(imgui::imgui ALIAS imgui)
+endif()
 
 # Include parent directories for access to source files
 include_directories(..)
@@ -41,6 +48,12 @@ include_directories(../external)
 include_directories(../external/imguicolortextedit)
 include_directories(${SDL3_INCLUDE_DIRS})
 include_directories(${SDL3_IMAGE_INCLUDE_DIRS})
+if(imgui_SOURCE_DIR)
+    include_directories(${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+endif()
+if(IMGUI_INCLUDE_DIR)
+    include_directories(${IMGUI_INCLUDE_DIR})
+endif()
 
 if(NOT COMMAND target_add_strict_warnings)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)
@@ -55,6 +68,7 @@ function(add_gtest_executable test_name source_file)
         GTest::gtest_main
         GTest::gmock
         GTest::gmock_main
+        imgui::imgui
     )
     # Add test to CTest
     add_test(NAME ${test_name} COMMAND ${test_name})
@@ -148,13 +162,17 @@ add_gtest_http_executable(test_ssl_modes_simple test_ssl_modes_simple.cpp)
 add_gtest_executable(test_math_operations test_math_operations.cpp)
 add_gtest_executable(test_weather_glaze test_weather_glaze.cpp)
 add_gtest_executable(test_adaptive_cards test_adaptive_cards.cpp)
-target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+if(NOT MSVC)
+    target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
 add_gtest_executable(test_adaptive_cards_repository test_adaptive_cards_repository.cpp)
 target_link_libraries(test_adaptive_cards_repository PRIVATE SQLite::SQLite3)
 add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)
 target_sources(test_adaptive_card_image PRIVATE ../src/helpers/image_cache.cpp)
 target_link_libraries(test_adaptive_card_image PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES})
-target_compile_options(test_adaptive_card_image PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+if(NOT MSVC)
+    target_compile_options(test_adaptive_card_image PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
 add_gtest_executable(test_markdown_renderer test_markdown_renderer.cpp)
 add_gtest_http_executable(test_contact_gravatar test_contact_gravatar.cpp)
 

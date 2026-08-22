@@ -66,6 +66,9 @@ Rouen allows creating cards dynamically using URI-like strings in the Command Pa
   - `trello:` opens Trello board search and card listings.
   - `trello-board:<board-id>` directly opens a dedicated column board viewer.
 * **Adaptive Cards**: `adaptive-card` opens built-in renderer tests.
+* **Adaptive Process Cards**: `adaptive-process:<command line>` launches an external executable and renders whatever Adaptive Card JSON it prints to stdout, posting form submissions back to its stdin - see [docs/ADAPTIVE_PROCESS_CARDS.md](ADAPTIVE_PROCESS_CARDS.md).
+* **Process Orchestration**: `process-panel` opens the panel for defining and launching process configurations (executable, arguments, working directory).
+  - Each **Run** opens a dedicated monitor card with live resource meters, TCP connections, stderr output, and an optional **Track File Changes** toggle that recursively watches the working directory via the OS's native file-change notification API.
 * **Display Settings & Section Multipliers**: `display` opens the Display Settings card.
   - Controls global deck width factor multipliers (`1x`, `2x`, `3x`, `4x`, or custom slider).
   - Multiplies total row capacity by `size.x` (OS window viewport width).
