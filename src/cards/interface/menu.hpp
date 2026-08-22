@@ -375,6 +375,7 @@ namespace rouen::cards {
                     {"PDF Viewer", []() { "create_card"_sfn("pdf"); }},
                     {"Image Viewer", []() { "create_card"_sfn("image"); }},
                     {"Weather & Time", []() { "create_card"_sfn("weather"); }},
+                    {"Solar System", []() { "create_card"_sfn("solar-system"); }},
                     {"Wikipedia", []() { "create_card"_sfn("wikipedia"); }},
                     {"Email", []() { "create_card"_sfn("mail"); }},
                     {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},

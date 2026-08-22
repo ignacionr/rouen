@@ -112,6 +112,7 @@ namespace rouen::fonts {
             0xA640, 0xA69F, // Cyrillic Extended-B
             0x25A0, 0x25FF, // Geometric Shapes (includes triangles)
             0x2000, 0x206F, // General Punctuation (includes special quotes and apostrophes)
+            0x2600, 0x27BF, // Miscellaneous Symbols (Sun, Planets, Zodiac, Comets) & Dingbats
             0x2B00, 0x2BFF, // Miscellaneous Symbols and Arrows
              0,
         };
@@ -261,6 +262,26 @@ namespace rouen::fonts {
                 std::cout << "Successfully merged Material Icons with default font" << '\n';
             } else {
                 std::cerr << "WARNING: Could not find Material Icons font!" << '\n';
+            }
+
+            // Merge Noto Sans Symbols if available for astronomical/zodiac glyphs
+            std::filesystem::path noto_symbols_path = platform::get_resource_path("NotoSansSymbols-Regular.ttf", "");
+            if (!std::filesystem::exists(noto_symbols_path)) {
+                std::vector<std::string> const symbol_search_paths = {
+                    app_path, app_path + "/resources", app_path + "/../resources", std::string(app_path + "/../../resources")
+                };
+                std::string const fallback_sym = find_font_path("NotoSansSymbols-Regular.ttf", symbol_search_paths);
+                if (!fallback_sym.empty()) noto_symbols_path = fallback_sym;
+            }
+            if (std::filesystem::exists(noto_symbols_path)) {
+                ImFontConfig sym_cfg;
+                sym_cfg.MergeMode = true;
+                sym_cfg.PixelSnapH = true;
+                sym_cfg.RasterizerDensity = dpi_scale;
+                strcpy(sym_cfg.Name, "Noto Symbols");
+                static const ImWchar sym_ranges[] = { 0x2000, 0x2BFF, 0 };
+                io.Fonts->AddFontFromFileTTF(noto_symbols_path.string().c_str(), base_size, &sym_cfg, sym_ranges);
+                std::cout << "Successfully merged Noto Sans Symbols font" << '\n';
             }
         }
         

@@ -37,6 +37,7 @@
 #include "../information/travel.hpp"
 #include "../information/travel_plan.hpp"
 #include "../information/weather.hpp"
+#include "../information/solar_system.hpp"
 #include "../information/whatsapp.hpp"
 #include "../information/wikipedia.hpp"
 #include "../information/number_series.hpp"
@@ -374,6 +375,18 @@ namespace rouen::cards {
                 
                 instance.emplace("weather", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<weather>(uri);
+                });
+
+                instance.emplace("solar-system", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<solar_system>(locator);
+                });
+
+                instance.emplace("solar_system", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<solar_system>(locator);
+                });
+
+                instance.emplace("solarsystem", [](std::string_view locator, SDL_Renderer*) {
+                    return std::make_shared<solar_system>(locator);
                 });
 
                 instance.emplace("whatsapp", [](std::string_view uri, SDL_Renderer*) {
