@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -116,14 +118,21 @@ public:
             std::string current_q = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
             if (current_q.empty()) current_q = "360p";
 
-            const char* qualities[] = { "360p", "1080p", "4k" };
-            for (int i = 0; i < 3; ++i) {
+            auto iequals = [](std::string_view a, std::string_view b) -> bool {
+                if (a.size() != b.size()) return false;
+                return std::equal(a.begin(), a.end(), b.begin(), b.end(), [](char ca, char cb) {
+                    return std::tolower(static_cast<unsigned char>(ca)) == std::tolower(static_cast<unsigned char>(cb));
+                });
+            };
+
+            const char* qualities[] = { "360p", "720p", "1080p", "1440p", "4K" };
+            for (int i = 0; i < 5; ++i) {
                 if (i > 0) ImGui::SameLine();
-                bool is_sel = (current_q == qualities[i]);
+                bool is_sel = iequals(current_q, qualities[i]);
                 if (is_sel) {
                     ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
                 }
-                if (ImGui::Button(qualities[i], ImVec2(76, 0))) {
+                if (ImGui::Button(qualities[i], ImVec2(58, 0))) {
                     if (config) {
                         config->set_env_value("ROUEN_YOUTUBE_PREFERRED_QUALITY", qualities[i], true);
                     }

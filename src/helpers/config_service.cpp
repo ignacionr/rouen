@@ -351,7 +351,7 @@ namespace rouen::helpers {
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
                        "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)", "safari");
         register_config("ROUEN_YOUTUBE_PREFERRED_QUALITY", Category::GENERAL, false, false,
-                       "Preferred YouTube video quality format (360p, 1080p, 4k)", "360p");
+                       "Preferred YouTube video quality format (360p, 720p, 1080p, 1440p, 4K)", "360p");
         register_config("ROUEN_COOKIES_FILE", Category::GENERAL, false, false,
                        "Path to cookies.txt file for yt-dlp authentication");
         register_config("ROUEN_SYNC_GIT_URL", Category::GENERAL, false, false,

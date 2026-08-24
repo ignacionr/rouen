@@ -50,6 +50,11 @@
 #include <utility>
 #include <vector>
 
+namespace {
+static std::mutex s_yt_resolved_url_mutex;
+static std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<std::string>>> s_yt_resolved_urls;
+}
+
 double media_player_item::get_speaker_audio_pts() const {
     if (!is_playing || is_paused.load()) return position.load();
     if (!audio_clock_initialized.load()) {
@@ -280,8 +285,6 @@ bool media_player_item::playMedia(const void* owner) {
                 return;
             }
 
-            static std::mutex s_yt_resolved_url_mutex;
-            static std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<std::string>>> s_yt_resolved_urls;
 
             auto assign_targets_from_urls = [&video_target, &audio_target](const std::vector<std::string>& urls_vec) {
                 std::string v_url;
@@ -311,16 +314,24 @@ bool media_player_item::playMedia(const void* owner) {
 
             auto is_url_accessible = [](std::string_view stream_url) -> bool {
                 if (stream_url.empty()) return false;
-                std::string const probe_cmd = std::format("curl -s --max-time 3 -I -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"{}\" 2>&1", stream_url);
-                std::string const resp = ProcessHelper::executeCommand(probe_cmd);
-                if (resp.find("403 Forbidden") != std::string::npos || resp.find("HTTP/1.1 403") != std::string::npos || resp.find("HTTP/2 403") != std::string::npos) {
+                std::string const probe_cmd = "curl -s --max-time 3 -r 0-100 -o /dev/null -w \"%{http_code}\" -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"" + std::string(stream_url) + "\" 2>&1";
+                std::string const status = ProcessHelper::executeCommand(probe_cmd);
+                if (status.find("403") != std::string::npos || status.find("401") != std::string::npos || status.find("429") != std::string::npos) {
                     return false;
                 }
-                return true;
+                if (status.find("200") != std::string::npos || status.find("206") != std::string::npos) {
+                    return true;
+                }
+                return !status.empty() && status.find("40") == std::string::npos && status.find("50") == std::string::npos;
             };
 
             auto config = rouen::helpers::ConfigService::instance();
-            std::string const pref_quality = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
+            std::string const raw_pref_quality = config ? config->get_env("ROUEN_YOUTUBE_PREFERRED_QUALITY") : "360p";
+            std::string pref_quality = raw_pref_quality.empty() ? "360p" : raw_pref_quality;
+            std::transform(pref_quality.begin(), pref_quality.end(), pref_quality.begin(), [](unsigned char c) {
+                return std::tolower(c);
+            });
+
             std::string const cache_key = std::format("{}|{}", sanitized_url, pref_quality);
 
             bool found_cached = false;
@@ -330,7 +341,7 @@ bool media_player_item::playMedia(const void* owner) {
                 if (it != s_yt_resolved_urls.end()) {
                     auto now = std::chrono::steady_clock::now();
                     auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
-                    if (age_mins < 120 && !it->second.second.empty()) {
+                    if (age_mins < 15 && !it->second.second.empty()) {
                         if (is_url_accessible(it->second.second[0])) {
                             assign_targets_from_urls(it->second.second);
                             found_cached = true;
@@ -347,19 +358,23 @@ bool media_player_item::playMedia(const void* owner) {
                 std::string const initial_cookie_args = config ? config->get_ytdlp_cookie_args() : "";
 
                 std::string format_spec;
-                if (pref_quality == "1080p") {
-                    format_spec = "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
-                } else if (pref_quality == "4k" || pref_quality == "2160p") {
-                    format_spec = "bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
+                if (pref_quality == "4k" || pref_quality == "2160p") {
+                    format_spec = "bestvideo[height<=2160][vcodec^=avc1]+bestaudio/bestvideo[height<=2160][vcodec^=vp9]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
+                } else if (pref_quality == "1440p") {
+                    format_spec = "bestvideo[height<=1440][vcodec^=avc1]+bestaudio/bestvideo[height<=1440][vcodec^=vp9]+bestaudio/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best[protocol*=m3u8]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best";
+                } else if (pref_quality == "1080p") {
+                    format_spec = "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/bestvideo[height<=1080][vcodec^=vp9]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
+                } else if (pref_quality == "720p") {
+                    format_spec = "bestvideo[height<=720][vcodec^=avc1]+bestaudio/bestvideo[height<=720][vcodec^=vp9]+bestaudio/bestvideo[height<=720]+bestaudio/best[height<=720]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 } else {
-                    format_spec = "bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+                    format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360][vcodec^=vp9]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 }
 
                 auto run_ytdlp = [&ytdl_exe, &format_spec, &sanitized_url](std::string_view cookie_args, std::string_view extra_extractor_args = "", std::string_view custom_format = "") -> std::pair<std::vector<std::string>, std::string> {
                     std::string_view const target_fmt = custom_format.empty() ? std::string_view(format_spec) : custom_format;
                     std::string cmd;
                     std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdl_exe) ? "--remote-components ejs:github " : "";
-                    std::string ext_flag = extra_extractor_args.empty() ? "" : (std::string(extra_extractor_args) + " ");
+                    std::string ext_flag = extra_extractor_args.empty() ? "--extractor-args \"youtube:player_client=mweb,web,ios,android\" " : (std::string(extra_extractor_args) + " ");
                     std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
                     std::string ua_flag;
                     if constexpr (rouen::platform::is_apple) {
@@ -769,6 +784,10 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
     int const err = avformat_open_input(&video_format_ctx, video_target.c_str(), v_fmt, &v_opts);
     if (err < 0) {
         if (v_opts) av_dict_free(&v_opts);
+        {
+            std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
+            s_yt_resolved_urls.clear();
+        }
         std::string err_msg = get_ffmpeg_error_string(err);
         std::string final_err;
         if (video_target.find("force_finished") != std::string::npos ||
@@ -1909,9 +1928,10 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
             if (!decoded_video_queue.empty()) {
                 // Keep video synchronized with speaker audio:
                 // Advance video queue until the front frame's display interval covers speaker_pts.
+                constexpr double kSyncTolerance = 0.150; // 150ms A/V sync window
                 while (decoded_video_queue.size() > 1 && audio_clock_initialized.load()) {
                     double const next_pts = decoded_video_queue[1].pts;
-                    if (next_pts >= 0.0 && speaker_pts >= next_pts) {
+                    if (next_pts >= 0.0 && speaker_pts >= (next_pts + kSyncTolerance)) {
                         decoded_video_queue.pop_front();
                     } else {
                         break;
@@ -1924,7 +1944,7 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
 
                 last_av_sync_delta_ms.store(delta * 1000.0);
 
-                if (audio_clock_initialized.load() && speaker_pts >= video_pts) {
+                if (audio_clock_initialized.load() && (speaker_pts + kSyncTolerance) >= video_pts) {
                     last_presented_pts.store(front.pts);
                     frames_presented.fetch_add(1, std::memory_order_relaxed);
                     frame_to_present = std::move(decoded_video_queue.front().pixels);
