@@ -500,8 +500,6 @@ add_executable(${PROJECT_NAME}
   src/cards/development/github/github_card.cpp
   src/cards/development/github/login_screen.cpp
   src/cards/development/github/repo_screen.cpp
-  src/cards/productivity/jira_registrar.cpp
-  src/cards/productivity/trello_registrar.cpp
   src/cards/productivity/converter.cpp
   src/cards/productivity/calculator.cpp
   src/cards/productivity/invoice_card.cpp
@@ -511,22 +509,8 @@ add_executable(${PROJECT_NAME}
   src/cards/information/ai_chat.cpp
   src/cards/information/rss.cpp
   src/cards/information/rss_item.cpp
-  src/models/jira_model_core.cpp
-  src/models/jira_model_connection.cpp
-  src/models/jira_model_profiles.cpp
-  src/models/jira_model_projects.cpp
-  src/models/jira_model_issues.cpp
-  src/models/jira_model_api.cpp
-  src/models/trello_model.cpp
-  src/hosts/trello_host.cpp
   src/hosts/footprints_host.cpp
   src/hosts/rss_host.cpp
-  src/cards/productivity/trello_card_core.cpp
-  src/cards/productivity/trello_card_connection.cpp
-  src/cards/productivity/trello_card_boards.cpp
-  src/cards/productivity/trello_card_cards.cpp
-  src/cards/productivity/trello_card_ui.cpp
-  src/cards/productivity/trello_card_async.cpp
   src/cards/media/chess_com_integration.cpp
   src/cards/media/media_companion.cpp
   src/helpers/adlib_engine.cpp
@@ -720,6 +704,9 @@ elseif(UNIX AND NOT APPLE)
 elseif(WIN32)
   include(cmake/windows.cmake)
 endif()
+
+add_subdirectory(plugins/jira_card_plugin)
+add_subdirectory(plugins/trello_card_plugin)
 
 # Enable CTest only if tests are requested
 option(BUILD_TESTS "Build tests" OFF)

@@ -173,40 +173,66 @@ namespace rouen::cards {
             
             state = std::make_shared<shared_state>();
             
+            state = std::make_shared<shared_state>();
+            
             if (!initial_query.empty()) {
-                if (initial_query.starts_with("play:")) {
-                    std::string params = std::string(initial_query.substr(5));
-                    size_t separator = params.find('|');
-                    if (separator != std::string::npos) {
-                        std::string encoded_url = params.substr(0, separator);
-                        std::string encoded_title = params.substr(separator + 1);
-                        
-                        play_url_trigger = ::helpers::StringHelper::url_decode(encoded_url);
-                        play_title_trigger = ::helpers::StringHelper::url_decode(encoded_title);
-                    }
-                } else if (initial_query.starts_with("youtube:play:")) {
-                    std::string params = std::string(initial_query.substr(13));
-                    size_t separator = params.find('|');
-                    if (separator != std::string::npos) {
-                        std::string encoded_url = params.substr(0, separator);
-                        std::string encoded_title = params.substr(separator + 1);
-                        
-                        play_url_trigger = ::helpers::StringHelper::url_decode(encoded_url);
-                        play_title_trigger = ::helpers::StringHelper::url_decode(encoded_title);
-                    }
+                parse_and_apply_uri(initial_query);
+            }
+        }
+
+        void parse_and_apply_uri(std::string_view uri) {
+            if (uri.empty()) return;
+            std::string str(uri);
+
+            auto extract_play_info = [this](const std::string& params) {
+                size_t separator = params.find('|');
+                if (separator != std::string::npos) {
+                    play_url_trigger = ::helpers::StringHelper::url_decode(params.substr(0, separator));
+                    play_title_trigger = ::helpers::StringHelper::url_decode(params.substr(separator + 1));
                 } else {
-                    std::string raw = std::string(initial_query);
-                    if (raw.starts_with("youtube:")) {
-                        raw = raw.substr(8);
-                    } else if (raw == "youtube") {
-                        raw = "";
+                    std::string decoded = ::helpers::StringHelper::url_decode(params);
+                    if (decoded.find("youtube.com") != std::string::npos || decoded.find("youtu.be") != std::string::npos || decoded.starts_with("http://") || decoded.starts_with("https://")) {
+                        play_url_trigger = decoded;
+                    } else if (decoded.starts_with("v=")) {
+                        play_url_trigger = "https://www.youtube.com/watch?" + decoded;
+                    } else if (decoded.length() == 11 && decoded.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos) {
+                        play_url_trigger = "https://www.youtube.com/watch?v=" + decoded;
+                    } else {
+                        play_url_trigger = decoded;
                     }
-                    if (!raw.empty()) {
-                        std::string decoded_query = ::helpers::StringHelper::url_decode(raw);
-                        strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
-                        pending_query = decoded_query;
-                        current_query = decoded_query;
-                        trigger_search(decoded_query);
+                    play_title_trigger = "YouTube Video";
+                }
+            };
+
+            if (str.starts_with("youtube:play:")) {
+                extract_play_info(str.substr(13));
+            } else if (str.starts_with("play:")) {
+                extract_play_info(str.substr(5));
+            } else {
+                std::string raw = str;
+                if (raw.starts_with("youtube:")) {
+                    raw = raw.substr(8);
+                } else if (raw == "youtube") {
+                    raw = "";
+                }
+
+                if (!raw.empty()) {
+                    std::string decoded = ::helpers::StringHelper::url_decode(raw);
+                    if (decoded.find("youtube.com") != std::string::npos || decoded.find("youtu.be") != std::string::npos || decoded.starts_with("http://") || decoded.starts_with("https://")) {
+                        play_url_trigger = decoded;
+                        play_title_trigger = "YouTube Video";
+                    } else if (decoded.starts_with("v=")) {
+                        play_url_trigger = "https://www.youtube.com/watch?" + decoded;
+                        play_title_trigger = "YouTube Video";
+                    } else if (decoded.length() == 11 && decoded.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos) {
+                        play_url_trigger = "https://www.youtube.com/watch?v=" + decoded;
+                        play_title_trigger = "YouTube Video";
+                    } else {
+                        memset(search_buffer, 0, sizeof(search_buffer));
+                        strncpy(search_buffer, decoded.c_str(), sizeof(search_buffer) - 1);
+                        pending_query = decoded;
+                        current_query = decoded;
+                        trigger_search(decoded);
                     }
                 }
             }
@@ -232,31 +258,11 @@ namespace rouen::cards {
         }
 
         bool matches_uri(std::string_view uri) const override {
-            return uri == "youtube" || uri.starts_with("youtube:");
+            return uri == "youtube" || uri.starts_with("youtube:") || uri.find("youtube.com") != std::string_view::npos || uri.find("youtu.be") != std::string_view::npos;
         }
 
         void handle_uri(std::string_view uri) override {
-            if (uri.starts_with("youtube:play:")) {
-                std::string params = std::string(uri.substr(13));
-                size_t separator = params.find('|');
-                if (separator != std::string::npos) {
-                    std::string encoded_url = params.substr(0, separator);
-                    std::string encoded_title = params.substr(separator + 1);
-                    
-                    play_url_trigger = ::helpers::StringHelper::url_decode(encoded_url);
-                    play_title_trigger = ::helpers::StringHelper::url_decode(encoded_title);
-                }
-            } else if (uri.starts_with("youtube:")) {
-                std::string query = std::string(uri.substr(8));
-                if (!query.empty()) {
-                    std::string decoded_query = ::helpers::StringHelper::url_decode(query);
-                    strncpy(search_buffer, decoded_query.c_str(), sizeof(search_buffer) - 1);
-                    pending_query = decoded_query;
-                    current_query = decoded_query;
-                    input_changed = false;
-                    trigger_search(decoded_query);
-                }
-            }
+            parse_and_apply_uri(uri);
         }
 
         static std::set<std::string>& failed_queries() {
@@ -267,6 +273,16 @@ namespace rouen::cards {
         void trigger_search(const std::string& query, bool force_refresh = false) {
             std::string norm_query = normalize_youtube_query(query);
             if (norm_query.empty()) return;
+
+            if (norm_query.find("youtube.com") != std::string::npos || norm_query.find("youtu.be") != std::string::npos || norm_query.starts_with("http://") || norm_query.starts_with("https://")) {
+                play_url_trigger = norm_query;
+                play_title_trigger = "YouTube Video";
+                return;
+            } else if (norm_query.starts_with("v=")) {
+                play_url_trigger = "https://www.youtube.com/watch?" + norm_query;
+                play_title_trigger = "YouTube Video";
+                return;
+            }
 
             load_youtube_cache_from_disk();
 

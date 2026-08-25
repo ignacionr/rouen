@@ -1,6 +1,5 @@
 #include "trello_host.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <exception>
 #include <format>
 #include <future>
@@ -8,19 +7,13 @@
 #include <mutex>
 #include <vector>
 
-// 2. Libraries used in the project, in alphabetic order
-// None
+#include "helpers/debug.hpp"
+#include "trello_model.hpp"
 
-// 3. All other includes
-#include "../helpers/debug.hpp"
-#include "models/trello_model.hpp"
-
-// Trello Host Debug Macros - only define the ones actually used
 #define TRELLO_HOST_ERROR(message) LOG_COMPONENT("TRELLO_HOST", LOG_LEVEL_ERROR, message)
 #define TRELLO_HOST_INFO(message) LOG_COMPONENT("TRELLO_HOST", LOG_LEVEL_INFO, message)
 #define TRELLO_HOST_DEBUG(message) LOG_COMPONENT("TRELLO_HOST", LOG_LEVEL_DEBUG, message)
 
-// Formatted macros for convenience - only the ones actually used
 #define TRELLO_HOST_ERROR_FMT(fmt, ...) TRELLO_HOST_ERROR(debug::format_log(fmt, __VA_ARGS__))
 
 namespace rouen::hosts {
@@ -39,7 +32,6 @@ std::shared_ptr<trello_host> get_trello_host() {
 trello_host::trello_host() : model_(models::trello::get_trello_model()) {
     TRELLO_HOST_INFO("Trello host initialized");
     
-    // Try to connect automatically from environment
     if (connect_from_environment()) {
         TRELLO_HOST_INFO("Successfully connected using environment variables");
     } else {
@@ -120,7 +112,6 @@ std::string trello_host::get_current_profile_name() const {
     return "";
 }
 
-// Board operations
 std::future<std::vector<models::trello::trello_board>> trello_host::get_user_boards() {
     clear_error();
     if (!is_connected()) {
@@ -171,7 +162,6 @@ std::future<bool> trello_host::delete_board(const std::string& board_id) {
     return model_->delete_board(board_id);
 }
 
-// List operations
 std::future<std::vector<models::trello::trello_list>> trello_host::get_board_lists(const std::string& board_id) {
     clear_error();
     if (!is_connected()) {
@@ -212,7 +202,6 @@ std::future<bool> trello_host::archive_list(const std::string& list_id) {
     return model_->archive_list(list_id);
 }
 
-// Card operations
 std::future<std::vector<models::trello::trello_card>> trello_host::get_board_cards(const std::string& board_id) {
     clear_error();
     if (!is_connected()) {
@@ -283,7 +272,6 @@ std::future<bool> trello_host::delete_card(const std::string& card_id) {
     return model_->delete_card(card_id);
 }
 
-// Search and query operations
 std::future<std::vector<models::trello::trello_card>> trello_host::search_cards(const std::string& query, const std::string& board_id) {
     clear_error();
     if (!is_connected()) {
@@ -294,7 +282,6 @@ std::future<std::vector<models::trello::trello_card>> trello_host::search_cards(
     return model_->search_cards(query, board_id);
 }
 
-// Utility methods
 std::string trello_host::get_board_url(const std::string& board_id) {
     return std::format("https://trello.com/b/{}", board_id);
 }
@@ -303,7 +290,6 @@ std::string trello_host::get_card_url(const std::string& card_id) {
     return std::format("https://trello.com/c/{}", card_id);
 }
 
-// Error handling
 void trello_host::set_error(const std::string& error) {
     last_error_ = error;
     TRELLO_HOST_ERROR_FMT("Error: {}", error);

@@ -1,17 +1,11 @@
-#include "IconsMaterialDesign.h"
-#include "models/trello_model.hpp"
 #include "trello_card.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <cstring>
 #include <exception>
 #include <format>
-#include <imgui.h>
-
-// 2. Libraries used in the project, in alphabetic order
-// None
-
-// 3. All other includes
+#include "helpers/imgui_include.hpp"
+#include "IconsMaterialDesign.h"
+#include "trello_model.hpp"
 
 namespace rouen::cards {
 
@@ -20,15 +14,28 @@ void trello_card::render_connection_screen() {
     ImGui::Separator();
     
     if (!connection_error_.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, colors[2]); // Error color
+        ImGui::PushStyleColor(ImGuiCol_Text, colors[2]);
         ImGui::TextWrapped("%s", connection_error_.c_str());
         ImGui::PopStyleColor();
         ImGui::Separator();
     }
     
-    // Try environment connection first
+    auto try_env = [this]() {
+        try {
+            bool const success = trello_host_->connect_from_environment();
+            if (success) {
+                clear_error();
+                reset_ui_state();
+            } else {
+                show_error("Environment variables not found or invalid");
+            }
+        } catch (const std::exception& e) {
+            show_error(std::format("Environment connection error: {}", e.what()));
+        }
+    };
+
     if (ImGui::Button("Connect from Environment", ImVec2(200, 0))) {
-        try_environment_connection();
+        try_env();
     }
     ImGui::SameLine();
     ImGui::TextColored(colors[5], "Uses TRELLO_API_KEY and TRELLO_TOKEN");
@@ -53,14 +60,44 @@ void trello_card::render_connection_form() {
     ImGui::InputText("##token", token_buffer_, sizeof(token_buffer_), ImGuiInputTextFlags_Password);
     
     ImGui::Separator();
+
+    auto validate_form = [this]() -> bool {
+        if (strlen(api_key_buffer_) == 0) {
+            show_error("API Key is required");
+            return false;
+        }
+        if (strlen(token_buffer_) == 0) {
+            show_error("Token is required");
+            return false;
+        }
+        return true;
+    };
+
+    auto attempt = [this, validate_form]() {
+        if (!validate_form()) return;
+        
+        try {
+            std::string const profile_name = strlen(profile_name_buffer_) > 0 ? profile_name_buffer_ : "Manual Connection";
+            bool const success = trello_host_->connect_with_credentials(api_key_buffer_, token_buffer_, profile_name);
+            
+            if (success) {
+                clear_error();
+                reset_ui_state();
+            } else {
+                show_error("Failed to connect with provided credentials");
+            }
+        } catch (const std::exception& e) {
+            show_error(std::format("Connection error: {}", e.what()));
+        }
+    };
     
     if (ImGui::Button("Connect", ImVec2(100, 0))) {
-        attempt_connection();
+        attempt();
     }
     
     ImGui::SameLine();
     if (ImGui::Button("Save Profile", ImVec2(100, 0))) {
-        if (validate_connection_form()) {
+        if (validate_form()) {
             models::trello::trello_connection_profile profile;
             profile.name = strlen(profile_name_buffer_) > 0 ? profile_name_buffer_ : "Manual Connection";
             profile.api_key = api_key_buffer_;
@@ -101,50 +138,6 @@ void trello_card::render_saved_profiles() {
         
         ImGui::PopID();
     }
-}
-
-void trello_card::attempt_connection() {
-    if (!validate_connection_form()) return;
-    
-    try {
-        std::string const profile_name = strlen(profile_name_buffer_) > 0 ? profile_name_buffer_ : "Manual Connection";
-        bool const success = trello_host_->connect_with_credentials(api_key_buffer_, token_buffer_, profile_name);
-        
-        if (success) {
-            clear_error();
-            reset_ui_state();
-        } else {
-            show_error("Failed to connect with provided credentials");
-        }
-    } catch (const std::exception& e) {
-        show_error(std::format("Connection error: {}", e.what()));
-    }
-}
-
-void trello_card::try_environment_connection() {
-    try {
-        bool const success = trello_host_->connect_from_environment();
-        if (success) {
-            clear_error();
-            reset_ui_state();
-        } else {
-            show_error("Environment variables not found or invalid");
-        }
-    } catch (const std::exception& e) {
-        show_error(std::format("Environment connection error: {}", e.what()));
-    }
-}
-
-bool trello_card::validate_connection_form() {
-    if (strlen(api_key_buffer_) == 0) {
-        show_error("API Key is required");
-        return false;
-    }
-    if (strlen(token_buffer_) == 0) {
-        show_error("Token is required");
-        return false;
-    }
-    return true;
 }
 
 } // namespace rouen::cards

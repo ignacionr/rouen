@@ -8,10 +8,12 @@
 #include <unordered_map>
 #include <filesystem>
 #include <fstream>
-#include "../helpers/debug.hpp"
-#include "../helpers/fetch.hpp"
-#include "../helpers/platform_utils.hpp"
-#include "../helpers/glaze_include.hpp"
+#include <mutex>
+
+#include "helpers/debug.hpp"
+#include "helpers/fetch.hpp"
+#include "helpers/platform_utils.hpp"
+#include "helpers/glaze_include.hpp"
 
 // Define JIRA-specific logging macros
 #define JIRA_ERROR(message) LOG_COMPONENT("JIRA", LOG_LEVEL_ERROR, message)
@@ -353,23 +355,23 @@ public:
     // Connection profile management
     static std::vector<jira_connection_profile> load_profiles();
     static void save_profile(const jira_connection_profile& profile);
-    static void save_profiles(const std::vector<jira_connection_profile>& profiles);  // Add missing method
+    static void save_profiles(const std::vector<jira_connection_profile>& profiles);
     static void delete_profile(const std::string& profile_name);
     static std::vector<jira_connection_profile> detect_environment_profiles();
-    static std::vector<jira_connection_profile> get_env_profiles();  // Add missing method
+    static std::vector<jira_connection_profile> get_env_profiles();
     
     // Issue comment methods
-    std::future<bool> add_comment(const std::string& issue_key, const std::string& comment_text);  // Add missing method
+    std::future<bool> add_comment(const std::string& issue_key, const std::string& comment_text);
     
     // Profile management
-    jira_connection_profile get_current_profile() const;  // Add missing method
+    jira_connection_profile get_current_profile() const;
     
-    // Helper method to get the profiles file path (public to allow external utilities to work with it)
+    // Helper method to get the profiles file path
     static std::filesystem::path get_profiles_file_path() {
         return get_profiles_path();
     }
     
-    // Global profile state encapsulation to avoid non-const global variables
+    // Global profile state encapsulation
     static std::mutex& get_profiles_mutex();
     static bool& get_profiles_modified();
     static std::vector<jira_connection_profile>& get_environment_profiles_ref();

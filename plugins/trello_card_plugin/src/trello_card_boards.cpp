@@ -1,18 +1,29 @@
 #include "IconsMaterialDesign.h"
-#include "models/trello_model.hpp"
+#include "trello_model.hpp"
 #include "trello_card.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <format>
-#include <imgui.h>
-
-// 2. Libraries used in the project, in alphabetic order
-// None
-
-// 3. All other includes
-#include "../../registrar.hpp"
+#include <thread>
+#include "helpers/imgui_include.hpp"
+#include "helpers/fetch.hpp"
+#include "registrar.hpp"
 
 namespace rouen::cards {
+
+inline void create_card_uri_local(const std::string& uri) {
+    auto svc = registrar::try_get<std::function<void(std::string const&)>>("create_card");
+    if (svc) {
+        (*svc)(uri);
+    } else {
+        std::thread([uri]() {
+            try {
+                http::fetch client;
+                std::string payload = std::format(R"({{"uri":"{}"}})", uri);
+                client.post("http://127.0.0.1:8081/api/cards", payload, {"Content-Type: application/json"});
+            } catch (...) {}
+        }).detach();
+    }
+}
 
 void trello_card::render_boards_list() {
     if (boards_.empty()) {
@@ -28,19 +39,14 @@ void trello_card::render_boards_list() {
         ImGui::TableHeadersRow();
         
         for (const auto& board : boards_) {
-            // Skip closed boards
             if (board.closed) continue;
             
             ImGui::TableNextRow();
-            
-            // Name column
             ImGui::TableNextColumn();
             
-            // Make board name clickable to open in new card
             ImGui::PushID(board.id.c_str());
             if (ImGui::Selectable(std::format("{} ({} - {})", board.name, board.lists.size(), board.cards.size()).c_str(), false, ImGuiSelectableFlags_DontClosePopups)) {
-                // Create new Trello card with this board ID
-                "create_card"_sfn("trello-board:" + board.id);
+                create_card_uri_local("trello-board:" + board.id);
             }
             ImGui::PopID();
             
@@ -48,12 +54,11 @@ void trello_card::render_boards_list() {
                 ImGui::TextColored(colors[5], "%s", board.desc.c_str());
             }
                         
-            // Actions
             ImGui::TableNextColumn();
             ImGui::PushID(board.id.c_str());
             if (ImGui::Button("View", ImVec2(45, 0))) {
                 select_board(board.id, board.name);
-                active_tab_ = 1; // Switch to Cards tab
+                active_tab_ = 1;
             }
             ImGui::SameLine();
             if (ImGui::Button("Open", ImVec2(45, 0))) {
@@ -70,7 +75,6 @@ void trello_card::render_board_selector() {
     ImGui::Text("Board:");
     if (ImGui::BeginCombo("##board_selector", selected_board_name_.empty() ? "Select a board..." : selected_board_name_.c_str())) {
         for (const auto& board : boards_) {
-            // Skip closed boards
             if (board.closed) continue;
             
             bool const is_selected = (selected_board_id_ == board.id);
@@ -91,7 +95,6 @@ void trello_card::render_board_overview() {
         ImGui::TextWrapped("%s", current_board_.desc.c_str());
     }
     
-    // Quick stats
     ImGui::Text("Lists: %zu | Cards: %zu | Members: %zu", 
                 current_board_.lists.size(), 
                 current_board_.cards.size(),
@@ -121,31 +124,27 @@ void trello_card::render_lists_and_cards() {
                 }
             }
         }
-        ImGui::PopStyleColor(3);  // Pop colors for header
+        ImGui::PopStyleColor(3);
     }
 }
 
 void trello_card::render_card_item(const models::trello::trello_card& trello_card_item, const models::trello::trello_list* /* list */) {
     ImGui::PushID(trello_card_item.id.c_str());
     
-    // Card name with clickable link
     if (ImGui::Selectable(trello_card_item.name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
         if (ImGui::IsMouseDoubleClicked(0)) {
             open_in_browser(trello_card_item.url);
         } else {
-            // Single click - open card in new UI card
             create_card_tab(trello_card_item.id);
         }
     }
     
-    // Show card details on hover
     if (ImGui::IsItemHovered() && !trello_card_item.desc.empty()) {
         ImGui::BeginTooltip();
         ImGui::TextWrapped("%s", trello_card_item.desc.c_str());
         ImGui::EndTooltip();
     }
     
-    // Card badges and info
     if (trello_card_item.badges_comments() > 0 || trello_card_item.badges_attachments() > 0 || (trello_card_item.due.has_value() && !trello_card_item.due->empty())) {
         ImGui::SameLine();
         ImGui::Text("(");
@@ -178,7 +177,6 @@ void trello_card::render_card_item(const models::trello::trello_card& trello_car
     ImGui::PopID();
 }
 
-// Board management implementation methods
 void trello_card::fetch_boards() {
     loading_boards_ = true;
     boards_future_ = trello_host_->get_user_boards();

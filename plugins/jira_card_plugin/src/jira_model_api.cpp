@@ -1,5 +1,5 @@
-#include "debug.hpp"
-#include "fetch.hpp"
+#include "helpers/debug.hpp"
+#include "helpers/fetch.hpp"
 #include "jira_model.hpp"
 #include <exception>
 #include <future>
@@ -14,11 +14,9 @@
 
 namespace rouen::models {
 
-// External declarations from core
 std::string strip_trailing_slash(const std::string& url);
 std::string base64_encode(const std::string& input);
 
-// Internal method to make JIRA API requests
 std::string jira_model::make_request(const std::string& endpoint, 
                                    const std::string& method, 
                                    const std::string& payload) const {
@@ -26,27 +24,20 @@ std::string jira_model::make_request(const std::string& endpoint,
         throw std::runtime_error("Not connected to JIRA");
     }
     
-    // Don't append /rest/api/X since it's already in the base URL from environment variables
     std::string url = strip_trailing_slash(current_profile_.server_url) + "/" + endpoint;
-    
-    // Log the URL being requested (for debugging)
     DB_INFO_FMT("JIRA API Request: {} {}", method.empty() ? "GET" : method, url);
     
-    // Create authentication string for Basic Auth
     std::string const auth_string = current_profile_.username + ":" + current_profile_.api_token;
     std::string const base64_auth = base64_encode(auth_string);
     
-    // Create HTTP client
     http::fetch fetcher;
     
-    // Set up headers and authentication
     auto headers = [base64_auth](auto set_header) {
         set_header("Authorization: Basic " + base64_auth);
         set_header("Content-Type: application/json");
         set_header("Accept: application/json");
     };
     
-    // Make the request
     std::string response;
     try {
         if (method == "POST") {
@@ -58,25 +49,22 @@ std::string jira_model::make_request(const std::string& endpoint,
     } catch (const std::exception& e) {
         JIRA_ERROR_FMT("JIRA API {} request to '{}' failed: {}", 
                       method.empty() ? "GET" : method, url, e.what());
-        throw; // Re-throw to allow the caller to handle it
+        throw;
     }
     
     return response;
 }
 
-// Search for issues using JQL
 std::future<jira_search_result> jira_model::search_issues(const std::string& jql, int start_at, int max_results) {
-    return std::async(std::launch::async, [this, jql, start_at, max_results]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, jql, start_at, max_results]() {
         jira_search_result result;
         
         try {
-            // Construct request payload
             glz::json_t payload;
             payload["jql"] = jql;
             payload["startAt"] = start_at;
             payload["maxResults"] = max_results;
             
-            // Create array of fields
             glz::json_t::array_t fields_array;
             fields_array.push_back("summary");
             fields_array.push_back("description");
@@ -96,10 +84,7 @@ std::future<jira_search_result> jira_model::search_issues(const std::string& jql
                 throw std::runtime_error("Failed to serialize search payload");
             }
             
-            // Make API request
             std::string response = make_request("search", "POST", json_payload);
-            
-            // Parse JSON response
             auto result_error = glz::read<glz::opts{.error_on_unknown_keys = false}>(result, response);
 
             if (result_error) {

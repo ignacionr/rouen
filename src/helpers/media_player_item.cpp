@@ -219,8 +219,16 @@ bool media_player_item::isUrlEncoded(const std::string& input_str) {
 
 std::string media_player_item::sanitizeURL(const std::string& input_url) {
     std::string sanitized_url = input_url;
-    if (isUrlEncoded(input_url)) {
-        sanitized_url = urlDecode(input_url);
+    size_t first = sanitized_url.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    size_t last = sanitized_url.find_last_not_of(" \t\r\n");
+    sanitized_url = sanitized_url.substr(first, (last - first + 1));
+
+    if (sanitized_url.starts_with("http://") || sanitized_url.starts_with("https://")) {
+        return sanitized_url;
+    }
+    if (isUrlEncoded(sanitized_url)) {
+        sanitized_url = urlDecode(sanitized_url);
     }
     return sanitized_url;
 }
@@ -286,6 +294,27 @@ bool media_player_item::playMedia(const void* owner) {
             }
 
 
+            std::string norm_url = sanitized_url;
+            if (norm_url.find("/v/") != std::string::npos) {
+                size_t pos = norm_url.find("/v/");
+                std::string id = norm_url.substr(pos + 3);
+                size_t q = id.find_first_of("?&/#");
+                if (q != std::string::npos) id = id.substr(0, q);
+                if (!id.empty()) norm_url = "https://www.youtube.com/watch?v=" + id;
+            } else if (norm_url.find("/embed/") != std::string::npos) {
+                size_t pos = norm_url.find("/embed/");
+                std::string id = norm_url.substr(pos + 7);
+                size_t q = id.find_first_of("?&/#");
+                if (q != std::string::npos) id = id.substr(0, q);
+                if (!id.empty()) norm_url = "https://www.youtube.com/watch?v=" + id;
+            } else if (norm_url.find("youtu.be/") != std::string::npos) {
+                size_t pos = norm_url.find("youtu.be/");
+                std::string id = norm_url.substr(pos + 9);
+                size_t q = id.find_first_of("?&/#");
+                if (q != std::string::npos) id = id.substr(0, q);
+                if (!id.empty()) norm_url = "https://www.youtube.com/watch?v=" + id;
+            }
+
             auto assign_targets_from_urls = [&video_target, &audio_target](const std::vector<std::string>& urls_vec) {
                 std::string v_url;
                 std::string a_url;
@@ -332,7 +361,7 @@ bool media_player_item::playMedia(const void* owner) {
                 return std::tolower(c);
             });
 
-            std::string const cache_key = std::format("{}|{}", sanitized_url, pref_quality);
+            std::string const cache_key = std::format("{}|{}", norm_url, pref_quality);
 
             bool found_cached = false;
             {
@@ -370,17 +399,17 @@ bool media_player_item::playMedia(const void* owner) {
                     format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360][vcodec^=vp9]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
                 }
 
-                auto run_ytdlp = [&ytdl_exe, &format_spec, &sanitized_url](std::string_view cookie_args, std::string_view extra_extractor_args = "", std::string_view custom_format = "") -> std::pair<std::vector<std::string>, std::string> {
+                auto run_ytdlp = [&ytdl_exe, &format_spec, &norm_url](std::string_view cookie_args, std::string_view extra_extractor_args = "", std::string_view custom_format = "") -> std::pair<std::vector<std::string>, std::string> {
                     std::string_view const target_fmt = custom_format.empty() ? std::string_view(format_spec) : custom_format;
                     std::string cmd;
                     std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdl_exe) ? "--remote-components ejs:github " : "";
-                    std::string ext_flag = extra_extractor_args.empty() ? "--extractor-args \"youtube:player_client=mweb,web,ios,android\" " : (std::string(extra_extractor_args) + " ");
+                    std::string ext_flag = extra_extractor_args.empty() ? "--extractor-args \"youtube:player_client=web_embedded,android\" " : (std::string(extra_extractor_args) + " ");
                     std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
                     std::string ua_flag;
                     if constexpr (rouen::platform::is_apple) {
                         ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" ";
                     }
-                    cmd = std::format("\"{}\" --no-warnings {}{}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ua_flag, ext_flag, cook_flag, target_fmt, sanitized_url);
+                    cmd = std::format("\"{}\" --no-warnings {}{}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ua_flag, ext_flag, cook_flag, target_fmt, norm_url);
                     std::cerr << "[NativePlayer Diagnostics] Executing command: " << cmd << '\n';
                     std::string const output = ProcessHelper::executeCommand(cmd);
                     std::stringstream ss(output);
@@ -397,8 +426,13 @@ bool media_player_item::playMedia(const void* owner) {
                     return {parsed_urls, output};
                 };
 
-                std::cerr << "[NativePlayer Diagnostics] Resolving URL: " << sanitized_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
-                auto [urls, resolved] = run_ytdlp(initial_cookie_args);
+                std::cerr << "[NativePlayer Diagnostics] Resolving URL: " << norm_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
+                // First try un-cookied android_vr resolution to prevent web browser cookies from conflicting with android client API
+                auto [urls, resolved] = run_ytdlp("");
+                if (urls.empty() && !initial_cookie_args.empty()) {
+                    std::cerr << "[NativePlayer Diagnostics] Un-cookied attempt returned no URLs. Trying with configured cookie args...\n";
+                    std::tie(urls, resolved) = run_ytdlp(initial_cookie_args);
+                }
 
                 if (!urls.empty() && !is_url_accessible(urls[0])) {
                     std::cerr << "[NativePlayer Diagnostics] Initial resolved URL returned HTTP 403 Forbidden. Invalidating to trigger auto-healing...\n";
@@ -442,11 +476,11 @@ bool media_player_item::playMedia(const void* owner) {
                         if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
 
                         if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"");
+                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"");
                             if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"", "bestvideo+bestaudio/best");
+                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"", "bestvideo+bestaudio/best");
                             if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
                         }
                         resolved = fb_output;
@@ -470,10 +504,10 @@ bool media_player_item::playMedia(const void* owner) {
                 if (urls.empty()) {
                     std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying client specs without cookies...\n";
                     static const std::vector<std::string_view> client_specs = {
-                        "--extractor-args \"youtube:player_client=android_vr,android,tv\"",
-                        "--extractor-args \"youtube:player_client=android,tv\"",
-                        "--extractor-args \"youtube:player_client=tv_embedded,android\"",
-                        "--extractor-args \"youtube:player_client=ios,android\""
+                        "--extractor-args \"youtube:player_client=web_embedded,android\"",
+                        "--extractor-args \"youtube:player_client=android_testsuite,android\"",
+                        "--extractor-args \"youtube:player_client=android_music,android\"",
+                        "--extractor-args \"youtube:player_client=android\""
                     };
                     for (const auto& cspec : client_specs) {
                         std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying cspec: " << cspec << '\n';

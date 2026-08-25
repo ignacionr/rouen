@@ -53,11 +53,9 @@
 #include "../productivity/alarm.hpp"
 #include "../productivity/calculator.hpp"
 #include "../productivity/converter.hpp"
-#include "../productivity/jira_card.hpp"
 #include "../productivity/footprints_card.hpp"
 #include "../productivity/pomodoro.hpp"
 #include "../productivity/objectives_card.hpp"
-#include "../productivity/trello_card.hpp"
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
 #include "../productivity/invoice_card.hpp"
@@ -438,30 +436,6 @@ namespace rouen::cards {
                     return std::make_shared<markdown_notes>(locator);
                 });
                 
-                // Explicitly register Jira cards here rather than relying solely on the registrar
-                instance.emplace("jira", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<jira_card>();
-                });
-
-                instance.emplace("jira-projects", [](std::string_view, SDL_Renderer*) {
-                    auto card = std::make_shared<jira_card>();
-                    return card;
-                });
-
-                instance.emplace("jira-search", [](std::string_view, SDL_Renderer*) {
-                    auto card = std::make_shared<jira_card>();
-                    return card;
-                });
-                
-                // Register Trello cards
-                instance.emplace("trello", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<trello_card>();
-                });
-                
-                instance.emplace("trello-board", [](std::string_view board_id, SDL_Renderer*) {
-                    return std::make_shared<trello_card>(std::string(board_id));
-                });
-
                 // Register the FootPrints card
                 instance.emplace("footprints", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<footprints_card>();
@@ -506,6 +480,22 @@ namespace rouen::cards {
                 // Register the Media player card
                 instance.emplace("media", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<media_card>(uri);
+                });
+
+                instance.emplace("http", [](std::string_view uri, SDL_Renderer*) -> card::ptr {
+                    std::string full_url = "http:" + std::string(uri);
+                    if (full_url.find("youtube.com") != std::string::npos || full_url.find("youtu.be") != std::string::npos) {
+                        return std::make_shared<youtube_search>("youtube:play:" + full_url);
+                    }
+                    return std::make_shared<media_card>(full_url);
+                });
+
+                instance.emplace("https", [](std::string_view uri, SDL_Renderer*) -> card::ptr {
+                    std::string full_url = "https:" + std::string(uri);
+                    if (full_url.find("youtube.com") != std::string::npos || full_url.find("youtu.be") != std::string::npos) {
+                        return std::make_shared<youtube_search>("youtube:play:" + full_url);
+                    }
+                    return std::make_shared<media_card>(full_url);
                 });
 
                 // Register the Invoice card

@@ -1,19 +1,12 @@
 #include "IconsMaterialDesign.h"
 #include "trello_card.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <cstring>
 #include <format>
-#include <imgui.h>
-
-// 2. Libraries used in the project, in alphabetic order
-// None
-
-// 3. All other includes
+#include "helpers/imgui_include.hpp"
 
 namespace rouen::cards {
 
-// Card-specific interface methods (for trello-card: context)
 void trello_card::render_card_interface() {
     if (!initialized_) {
         if (!initial_card_id_.empty()) {
@@ -88,7 +81,6 @@ void trello_card::render_card_activity_tab() {
     ImGui::TextColored(colors[0], "Card Activity");
     ImGui::Separator();
     
-    // Placeholder for activity/comments
     ImGui::TextColored(colors[5], "Activity history will be displayed here");
     ImGui::Text("• Comments");
     ImGui::Text("• Card movements");
@@ -97,20 +89,17 @@ void trello_card::render_card_activity_tab() {
 }
 
 void trello_card::render_card_overview() {
-    // Description (now prominently displayed where card name was)
     if (!current_card_.desc.empty()) {
         ImGui::TextColored(colors[0], "%s", current_card_.desc.c_str());
     } else {
         ImGui::TextColored(colors[5], "(No description)");
     }
     
-    // Breadcrumb navigation
     if (!parent_board_.name.empty() && !parent_list_.name.empty()) {
         ImGui::TextColored(colors[5], "Board: %s > List: %s", 
                           parent_board_.name.c_str(), parent_list_.name.c_str());
     }
     
-    // Due date
     if (current_card_.due.has_value() && !current_card_.due->empty()) {
         ImGui::Spacing();
         ImVec4 const due_color = current_card_.dueComplete ? colors[3] : colors[2];
@@ -122,7 +111,6 @@ void trello_card::render_card_overview() {
         }
     }
     
-    // Badges
     if (current_card_.badges_comments() > 0 || current_card_.badges_attachments() > 0) {
         ImGui::Spacing();
         if (current_card_.badges_comments() > 0) {
@@ -141,19 +129,15 @@ void trello_card::render_card_edit_form() {
         editing_card_ = true;
     }
     
-    // Card name
     ImGui::Text("Card Name:");
     ImGui::InputText("##edit_card_name", edit_card_name_, sizeof(edit_card_name_));
     
-    // Card description
     ImGui::Text("Description:");
     ImGui::InputTextMultiline("##edit_card_desc", edit_card_desc_, sizeof(edit_card_desc_), ImVec2(-1, 150));
     
-    // Move to different list
     if (!parent_board_.lists.empty()) {
         ImGui::Text("Move to List:");
         
-        // Find current list name for display
         std::string current_list_name = "Unknown List";
         std::string combo_preview = "Select list...";
         
@@ -200,7 +184,6 @@ void trello_card::render_card_edit_form() {
     
     ImGui::Separator();
     
-    // Action buttons
     bool const can_update = strlen(edit_card_name_) > 0 && !updating_card_;
     
     if (!can_update) {
@@ -249,11 +232,9 @@ void trello_card::render_card_actions() {
         ImGui::SetClipboardText(current_card_.url.c_str());
     }
     
-    // Quick move section
     if (!parent_board_.lists.empty()) {
         ImGui::Spacing();
         
-        // Find current list name
         std::string current_list_name = "Unknown List";
         for (const auto& list : parent_board_.lists) {
             if (list.id == current_card_.idList) {
@@ -264,13 +245,10 @@ void trello_card::render_card_actions() {
         
         ImGui::Text("Current list: %s", current_list_name.c_str());
         
-        // Show quick move buttons for other lists
         int button_count = 0;
         for (const auto& list : parent_board_.lists) {
             if (!list.closed && list.id != current_card_.idList) {
-                if (button_count > 0 && button_count % 2 == 0) {
-                    // Start new row after every 2 buttons
-                } else if (button_count > 0) {
+                if (button_count > 0 && button_count % 2 != 0) {
                     ImGui::SameLine();
                 }
                 
@@ -280,7 +258,7 @@ void trello_card::render_card_actions() {
                 }
                 button_count++;
                 
-                if (button_count >= 4) break; // Limit to 4 quick move buttons
+                if (button_count >= 4) break;
             }
         }
         
@@ -318,7 +296,6 @@ void trello_card::render_card_metadata() const {
     }
 }
 
-// Card-specific management methods
 void trello_card::fetch_card_details() {
     if (initial_card_id_.empty()) return;
     
@@ -341,13 +318,10 @@ void trello_card::move_card_to_list() {
 }
 
 void trello_card::archive_card() {
-    // Implementation for archiving - Trello uses "closed" field
-    // This would require an API method to set closed=true
     ImGui::OpenPopup("Archive Card?");
 }
 
 void trello_card::delete_card() {
-    // Implementation for deletion
     ImGui::OpenPopup("Delete Card?");
 }
 
@@ -360,7 +334,7 @@ void trello_card::populate_edit_form() {
     std::strncpy(edit_card_desc_, current_card_.desc.c_str(), sizeof(edit_card_desc_) - 1);
     edit_card_desc_[sizeof(edit_card_desc_) - 1] = '\0';
     
-    target_list_id_ = current_card_.idList;  // Default to current list
+    target_list_id_ = current_card_.idList;
 }
 
 void trello_card::reset_edit_form() {

@@ -301,7 +301,8 @@ bool rss_item::render() {
                     ImGui::Separator();
 
                     try {
-                        media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, true, 0.0f, this);
+                        std::string const enc_title = is_video_link(item.enclosure) ? "Play Video" : "Play Audio";
+                        media_player::player(item.enclosure, colors[0], enc_title, item.feed_id, item.link, item.title, item.watermark, true, 0.0f, this);
                     } catch (const std::exception& e) {
                         RSS_ERROR_FMT("Exception in media player: {}", e.what());
                     }

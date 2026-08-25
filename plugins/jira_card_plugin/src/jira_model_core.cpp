@@ -1,10 +1,10 @@
 #include "jira_model.hpp"
+#include "helpers/platform_utils.hpp"
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 #include <mutex>
-#include "../helpers/config_service.hpp"
 
 namespace fs = std::filesystem;
 
@@ -25,7 +25,7 @@ struct jira_priority {
     std::string icon_url;
 };
 
-// Implementations of the profile state getters (encapsulating what were global variables)
+// Implementations of the profile state getters
 std::mutex& jira_model::get_profiles_mutex() {
     static std::mutex mutex;
     return mutex;
@@ -98,43 +98,8 @@ std::string base64_encode(const std::string& input) {
     return result;
 }
 
-// Implementation of the get_profiles_path method defined in the header
 std::filesystem::path jira_model::get_profiles_path() {
-    // Get app data directory using centralized configuration service
-    auto config_service = rouen::helpers::ConfigService::instance();
-    fs::path app_data_dir;
-    
-    #ifdef _WIN32
-    std::string appdata = config_service->get_env("APPDATA");
-    if (!appdata.empty()) {
-        app_data_dir = appdata;
-        app_data_dir /= "Rouen";
-    } else {
-        // Fallback to USERPROFILE
-        std::string userprofile = config_service->get_env("USERPROFILE");
-        if (!userprofile.empty()) {
-            app_data_dir = std::filesystem::path(userprofile) / "AppData" / "Roaming" / "Rouen";
-        } else {
-            app_data_dir = std::filesystem::path(".") / ".rouen";
-        }
-    }
-    #elif defined(__APPLE__)
-    std::string const home_dir = config_service->get_env("HOME");
-    if (!home_dir.empty()) {
-        app_data_dir = std::filesystem::path(home_dir) / "Library" / "Application Support" / "Rouen";
-    } else {
-        app_data_dir = std::filesystem::path(".") / ".rouen";
-    }
-    #else
-    std::string home_dir = config_service->get_env("HOME");
-    if (!home_dir.empty()) {
-        app_data_dir = std::filesystem::path(home_dir) / ".config" / "rouen";
-    } else {
-        app_data_dir = std::filesystem::path(".") / ".rouen";
-    }
-    #endif
-    
-    return app_data_dir / "jira_profiles.json";
+    return rouen::platform::get_user_data_path("jira_profiles.json", true);
 }
 
 jira_model::jira_model() = default;
@@ -146,22 +111,18 @@ jira_model::~jira_model() {
     }
 }
 
-// Check if currently connected
 bool jira_model::is_connected() const {
     return connected_;
 }
 
-// Get the current server URL
 std::string jira_model::get_server_url() const {
     return connected_ ? current_profile_.server_url : "";
 }
 
-// Get the current profile name
 std::string jira_model::get_current_profile_name() const {
     return connected_ ? current_profile_.name : "";
 }
 
-// Get current profile
 jira_connection_profile jira_model::get_current_profile() const {
     return current_profile_;
 }

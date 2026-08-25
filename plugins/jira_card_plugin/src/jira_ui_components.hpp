@@ -10,33 +10,79 @@
 #include <future>
 #include <optional>
 
-#include "../../helpers/imgui_include.hpp"
-#include "../../models/jira_model.hpp"
-#include "../../helpers/debug.hpp"
+#include "helpers/imgui_include.hpp"
+#include "jira_model.hpp"
+#include "helpers/debug.hpp"
+#include "helpers/fetch.hpp"
+#include "registrar.hpp"
+#include <thread>
+#include <mutex>
+
+namespace rouen::cards {
+
+inline void create_card_uri(const std::string& uri) {
+    auto svc = registrar::try_get<std::function<void(std::string const&)>>("create_card");
+    if (svc) {
+        (*svc)(uri);
+    } else {
+        std::thread([uri]() {
+            try {
+                http::fetch client;
+                std::string payload = std::format(R"({{"uri":"{}"}})", uri);
+                client.post("http://127.0.0.1:8081/api/cards", payload, {"Content-Type: application/json"});
+            } catch (...) {}
+        }).detach();
+    }
+}
+
+} // namespace rouen::cards
 
 namespace rouen::cards::jira_ui {
 
-// Concept for any type that has a key and summary field
+inline std::mutex& get_task_queue_mutex() {
+    static std::mutex mtx;
+    return mtx;
+}
+
+inline std::vector<std::function<void()>>& get_pending_task_queue() {
+    static std::vector<std::function<void()>> queue;
+    return queue;
+}
+
+inline void post_main_thread_task(std::function<void()> task) {
+    std::lock_guard<std::mutex> lock(get_task_queue_mutex());
+    get_pending_task_queue().push_back(std::move(task));
+}
+
+inline void poll_async_tasks() {
+    std::vector<std::function<void()>> tasks;
+    {
+        std::lock_guard<std::mutex> lock(get_task_queue_mutex());
+        tasks.swap(get_pending_task_queue());
+    }
+    for (auto const& task : tasks) {
+        if (task) {
+            task();
+        }
+    }
+}
+
 template <typename T>
-concept HasKeyAndSummary = requires(T t) {
+concept HasKey = requires(T t) {
     { t.key } -> std::convertible_to<std::string_view>;
-    { t.summary } -> std::convertible_to<std::string_view>;
 };
 
-// Concept for any type that has a status field
 template <typename T>
 concept HasStatus = requires(T t) {
     { t.status.category } -> std::convertible_to<std::string_view>;
     { t.status.name } -> std::convertible_to<std::string_view>;
 };
 
-// Helper function to transform string to lowercase
 inline std::string to_lower(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), ::tolower);
     return text;
 }
 
-// Function to render a labeled input field
 template <size_t N>
 bool render_input_field(const char* label, char (&buffer)[N], ImGuiInputTextFlags flags = 0) {
     ImGui::Text("%s", label);
@@ -45,31 +91,28 @@ bool render_input_field(const char* label, char (&buffer)[N], ImGuiInputTextFlag
     return ImGui::InputText(std::format("##{}",label).c_str(), buffer, N, flags);
 }
 
-// Function to render a color-coded status text
 template <typename ColorArray>
 inline void render_status_text(const std::string& category, const std::string& name, const ColorArray& colors) {
-    ImVec4 status_color = colors[5]; // Default gray
+    ImVec4 status_color = colors[5];
     
-    // Map status category to color
     if (category == "To Do") {
-        status_color = colors[5]; // Gray
+        status_color = colors[5];
     } else if (category == "In Progress") {
-        status_color = colors[8]; // Yellow
+        status_color = colors[8];
     } else if (category == "Done") {
-        status_color = colors[9]; // Green
+        status_color = colors[9];
     }
     
     ImGui::TextColored(status_color, "%s", name.c_str());
 }
 
-// Function to render a filterable table of items
 template <
     typename T,
     typename ColorArray,
     typename OnClickFunc,
     typename RenderExtraFunc
 >
-requires HasKeyAndSummary<T>
+requires HasKey<T>
 void render_filterable_table(
     const std::vector<T>& items,
     const char* filter_buffer,
@@ -77,15 +120,18 @@ void render_filterable_table(
     OnClickFunc on_item_click,
     RenderExtraFunc render_extra_columns
 ) {
-    // Apply filter
     std::string filter = filter_buffer;
     std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
     
-    // Render each row that passes the filter
     for (const auto& item : items) {
-        // Apply filter
-        std::string summary_lower = item.summary;
-        std::string key_lower = item.key;
+        std::string title_text;
+        if constexpr (requires { item.summary; }) {
+            title_text = item.summary;
+        } else if constexpr (requires { item.name; }) {
+            title_text = item.name;
+        }
+        std::string summary_lower = title_text;
+        std::string key_lower = std::string(item.key);
         std::transform(summary_lower.begin(), summary_lower.end(), summary_lower.begin(), ::tolower);
         std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
         
@@ -95,21 +141,16 @@ void render_filterable_table(
             continue;
         }
         
-        // Item row
         ImGui::TableNextRow();
         
-        // Key column
         ImGui::TableNextColumn();
-        ImGui::TextColored(colors[0], "%s", item.key.c_str());
+        ImGui::TextColored(colors[0], "%s", std::string(item.key).c_str());
         
-        // Summary column
         ImGui::TableNextColumn();
-        ImGui::Text("%s", item.summary.c_str());
+        ImGui::Text("%s", title_text.c_str());
         
-        // Let caller render any additional columns
         render_extra_columns(item);
         
-        // Actions column
         ImGui::TableNextColumn();
         std::string view_btn_id = "View##" + std::string(item.key);
         if (ImGui::Button(view_btn_id.c_str())) {
@@ -118,25 +159,22 @@ void render_filterable_table(
     }
 }
 
-// Overload with no extra columns renderer
 template <
     typename T,
     typename ColorArray,
     typename OnClickFunc
 >
-requires HasKeyAndSummary<T>
+requires HasKey<T>
 void render_filterable_table(
     const std::vector<T>& items,
     const char* filter_buffer,
     const ColorArray& colors,
     OnClickFunc on_item_click
 ) {
-    // Using a no-op lambda for the extra columns
     render_filterable_table(items, filter_buffer, colors, on_item_click, 
                            [](const T&){});
 }
 
-// Generic async operation handler
 template <typename T>
 using AsyncResult = std::expected<T, std::string>;
 
@@ -153,31 +191,54 @@ void execute_async(
 ) {
     std::thread([
         future_obj = std::move(future),
-        on_success,
-        on_error,
-        on_complete,
+        on_success = std::move(on_success),
+        on_error = std::move(on_error),
+        on_complete = std::move(on_complete),
         is_loading_flag
     ]() mutable {
         try {
             auto result = future_obj.get();
-            on_success(result);
+            post_main_thread_task([on_success, result = std::move(result), on_complete, is_loading_flag]() {
+                if (on_success) {
+                    on_success(result);
+                }
+                if (is_loading_flag) {
+                    *is_loading_flag = false;
+                }
+                if (on_complete) {
+                    on_complete();
+                }
+            });
         } catch (const std::exception& e) {
-            on_error(e.what());
-        }
-        
-        if (is_loading_flag) {
-            *is_loading_flag = false;
-        }
-        
-        if (on_complete) {
-            on_complete();
+            std::string err = e.what();
+            post_main_thread_task([on_error, err = std::move(err), on_complete, is_loading_flag]() {
+                if (on_error) {
+                    on_error(err);
+                }
+                if (is_loading_flag) {
+                    *is_loading_flag = false;
+                }
+                if (on_complete) {
+                    on_complete();
+                }
+            });
+        } catch (...) {
+            post_main_thread_task([on_error, on_complete, is_loading_flag]() {
+                if (on_error) {
+                    on_error("Unknown error in async operation");
+                }
+                if (is_loading_flag) {
+                    *is_loading_flag = false;
+                }
+                if (on_complete) {
+                    on_complete();
+                }
+            });
         }
     }).detach();
 }
 
-// Common rendering functions for tables
 struct TableRenderers {
-    // Standard issue table headers setup
     static void setup_issue_table_headers(const char* first_col_title = "Key") {
         ImGui::TableSetupColumn(first_col_title, ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
@@ -186,7 +247,6 @@ struct TableRenderers {
         ImGui::TableHeadersRow();
     }
     
-    // Setup for project table headers
     static void setup_project_table_headers() {
         ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 80.0f);
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
@@ -194,17 +254,14 @@ struct TableRenderers {
         ImGui::TableHeadersRow();
     }
     
-    // Status column rendering
     template <typename ColorArray>
     static void render_status_column(const models::jira_issue& issue, const ColorArray& colors) {
         ImGui::TableNextColumn();
         render_status_text(issue.status.category, issue.status.name, colors);
     }
     
-    // Project column rendering (extracts project key from issue key)
     static void render_project_column(const models::jira_issue& issue) {
         ImGui::TableNextColumn();
-        // Extract project key from issue key (e.g., "PROJ-123" -> "PROJ")
         std::string project_key = issue.key.substr(0, issue.key.find('-'));
         ImGui::Text("%s", project_key.c_str());
     }

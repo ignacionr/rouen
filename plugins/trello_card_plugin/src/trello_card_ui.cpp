@@ -1,30 +1,21 @@
 #include "IconsMaterialDesign.h"
 #include "trello_card.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <cstring>
 #include <format>
-#include <imgui.h>
-
-// 2. Libraries used in the project, in alphabetic order
-// None
-
-// 3. All other includes
+#include "helpers/imgui_include.hpp"
 
 namespace rouen::cards {
 
 void trello_card::render_main_interface() {
-    // Handle different contexts
     if (context_ == card_context::card_specific) {
         render_card_interface();
         return;
     }
     
-    // Board specific context - show cards for this board
     if (context_ == card_context::board_specific) {
-        // Initialize board data if needed
         if (!initialized_) {
-            fetch_boards();  // Need this for board names
+            fetch_boards();
             if (!initial_board_id_.empty()) {
                 fetch_board_details();
             }
@@ -34,17 +25,12 @@ void trello_card::render_main_interface() {
         return;
     }
     
-    // General context - show full interface with tabs
     bool const is_board_selected = !selected_board_id_.empty();
     if (!initialized_) {
-        fetch_boards();  // Need this for the board selector to work
+        fetch_boards();
         if (is_board_selected) {
-            // If we have a specific board ID, fetch both boards list and board details
             fetch_board_details();
-            // use the board as a name
-            name(std::format("Trello - Board: {}", current_board_.name));
         } else if (context_ == card_context::card_specific && !initial_card_id_.empty()) {
-            // If we have a specific card ID, fetch card details
             fetch_card_details();
         }
         initialized_ = true;
@@ -78,7 +64,6 @@ void trello_card::render_main_interface() {
         ImGui::EndTabBar();
     }
     
-    // Logout button
     ImGui::Separator();
     ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x - 100);
     if (ImGui::Button("Logout", ImVec2(100, 0))) {
@@ -88,7 +73,6 @@ void trello_card::render_main_interface() {
 }
 
 void trello_card::render_boards_tab() {
-    // Refresh button
     if (ImGui::Button("Refresh Boards", ImVec2(120, 0))) {
         fetch_boards();
     }
@@ -99,12 +83,10 @@ void trello_card::render_boards_tab() {
     }
     
     ImGui::Separator();
-    
     render_boards_list();
 }
 
 void trello_card::render_cards_tab() {
-    // For board-specific context, skip the board selector
     if (context_ != card_context::board_specific) {
         render_board_selector();
     }
@@ -144,7 +126,6 @@ void trello_card::render_create_tab() {
     if (!selected_board_id_.empty() && !current_board_.lists.empty()) {
         ImGui::Separator();
         
-        // List selection
         ImGui::Text("Select List:");
         if (ImGui::BeginCombo("##list_selector", selected_list_id_.empty() ? "Choose a list..." : "Selected")) {
             for (const auto& list : current_board_.lists) {
@@ -161,7 +142,6 @@ void trello_card::render_create_tab() {
             ImGui::EndCombo();
         }
         
-        // Card details
         ImGui::Separator();
         ImGui::Text("Card Name:");
         ImGui::InputText("##card_name", new_card_name_, sizeof(new_card_name_));
@@ -169,7 +149,6 @@ void trello_card::render_create_tab() {
         ImGui::Text("Description (optional):");
         ImGui::InputTextMultiline("##card_desc", new_card_desc_, sizeof(new_card_desc_), ImVec2(-1, 100));
         
-        // Create button
         ImGui::Separator();
         bool const can_create = !selected_list_id_.empty() && strlen(new_card_name_) > 0 && !creating_card_;
         
@@ -199,24 +178,19 @@ void trello_card::render_settings_tab() {
     ImGui::TextColored(colors[0], "Trello Settings");
     ImGui::Separator();
     
-    // Current connection info
     ImGui::Text("Current Profile: %s", trello_host_->get_current_profile_name().c_str());
     
     ImGui::Separator();
-    
-    // Search functionality
     render_search_section();
     
     ImGui::Separator();
     
-    // Connection management
     if (ImGui::Button("Manage Profiles", ImVec2(150, 0))) {
-        // Could open a profile management dialog in the future
     }
     
     ImGui::SameLine();
     if (ImGui::Button("Test Connection", ImVec2(150, 0))) {
-        fetch_boards(); // Simple connection test
+        fetch_boards();
     }
 }
 
@@ -263,7 +237,6 @@ void trello_card::render_search_results() {
         for (const auto& search_result : search_results_) {
             ImGui::TableNextRow();
             
-            // Card name
             ImGui::TableNextColumn();
             ImGui::Text("%s", search_result.name.c_str());
             if (!search_result.desc.empty()) {
@@ -271,11 +244,9 @@ void trello_card::render_search_results() {
                                  search_result.desc.length() > 50 ? "..." : "");
             }
             
-            // Board (we'd need to resolve this from board_id)
             ImGui::TableNextColumn();
             ImGui::TextColored(colors[3], "ID: %s", search_result.idBoard.c_str());
             
-            // Actions
             ImGui::TableNextColumn();
             ImGui::PushID(search_result.id.c_str());
             if (ImGui::Button("Open", ImVec2(70, 0))) {

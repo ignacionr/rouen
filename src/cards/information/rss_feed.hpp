@@ -775,7 +775,10 @@ namespace rouen::cards
  
                                             // if there's a playable enclosure, offer media controls
                                             if (!item.enclosure.empty()) {
-                                                media_player::player(item.enclosure, colors[0], "Play Audio", item.feed_id, item.link, item.title, item.watermark, false, left_width, this);
+                                                bool const is_vid = item.enclosure.find("youtube.com") != std::string::npos ||
+                                                                    item.enclosure.find("youtu.be") != std::string::npos ||
+                                                                    item.enclosure.find("vimeo.com") != std::string::npos;
+                                                media_player::player(item.enclosure, colors[0], is_vid ? "Play Video" : "Play Audio", item.feed_id, item.link, item.title, item.watermark, false, left_width, this);
                                             }
                                             // Enhanced: Check for extracted media URLs if no direct enclosure
                                             else if (!item.extracted_media_urls.empty()) {

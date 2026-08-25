@@ -1,4 +1,4 @@
-#include "debug.hpp"
+#include "helpers/debug.hpp"
 #include "jira_model.hpp"
 #include <exception>
 #include <format>
@@ -12,19 +12,14 @@
 
 namespace rouen::models {
 
-// Get issues from a project
 std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& project_key, int max_results) {
-    return std::async(std::launch::async, [this, project_key, max_results]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, project_key, max_results]() {
         std::vector<jira_issue> issues;
         
         try {
-            // Construct JQL query that includes all issues including backlog items
             std::string jql = std::format("project = {} ORDER BY updated DESC", project_key);
-            
-            // Use search API with JQL
             auto search_result = search_issues(jql, 0, max_results).get();
             
-            // If no issues found, try with a more explicit query that includes all statuses
             if (search_result.issues.empty()) {
                 JIRA_INFO_FMT("No issues found with basic query, trying with expanded query for project {}", project_key);
                 jql = std::format(R"(project = {} AND status in (Open, "In Progress", Reopened, "To Do", Backlog, "Selected for Development", New, "In Review", Done, Closed) ORDER BY updated DESC)", project_key);
@@ -43,44 +38,34 @@ std::future<std::vector<jira_issue>> jira_model::get_issues(const std::string& p
     });
 }
 
-// Get details for a specific issue
 std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
-    return std::async(std::launch::async, [this, issue_key]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, issue_key]() {
         jira_issue issue;
         
         try {
-            // Make API request
             std::string response = make_request(std::format("issue/{}", issue_key));
             
-            // Parse JSON response
             auto json_result = glz::read_json<glz::json_t>(response);
             if (json_result.has_value()) {
                 glz::json_t& json = json_result.value();
                 
-                // Extract issue details
                 issue.id = json["id"].get<std::string>();
                 issue.key = json["key"].get<std::string>();
                 
                 auto& fields = json["fields"];
-                
-                // Extract basic fields
                 issue.summary = fields["summary"].get<std::string>();
                 
-                // Description might be null
                 if (fields.contains("description")) {
                     try {
                         issue.description = fields["description"].get<std::string>();
                     } catch (const std::exception&) {
-                        // Handle Atlassian Document Format or other formats
                         issue.description = "ADF document - view in browser";
                     }
                 }
                 
-                // Created and updated dates
                 issue.created = fields["created"].get<std::string>();
                 issue.updated = fields["updated"].get<std::string>();
                 
-                // Status
                 auto& status = fields["status"];
                 issue.status.id = status["id"].get<std::string>();
                 issue.status.name = status["name"].get<std::string>();
@@ -89,7 +74,6 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                     issue.status.color = status["statusCategory"]["colorName"].get<std::string>();
                 }
                 
-                // Issue type
                 auto& issue_type = fields["issuetype"];
                 issue.issue_type.id = issue_type["id"].get<std::string>();
                 issue.issue_type.name = issue_type["name"].get<std::string>();
@@ -103,12 +87,10 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                     try {
                         issue.issue_type.description = issue_type["description"].get<std::string>();
                     } catch (const std::exception& e) {
-                        // Handle null or invalid description
                         (void)e;
                     }
                 }
                 
-                // Assignee (might be null)
                 if (fields.contains("assignee")) {
                     try {
                         auto& assignee = fields["assignee"];
@@ -122,12 +104,10 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                             issue.assignee.avatar_url = assignee["avatarUrls"]["48x48"].get<std::string>();
                         }
                     } catch (const std::exception& e) {
-                        // Handle null or invalid assignee
                         (void)e;
                     }
                 }
                 
-                // Reporter (might be null)
                 if (fields.contains("reporter")) {
                     try {
                         auto& reporter = fields["reporter"];
@@ -141,19 +121,16 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
                             issue.reporter.avatar_url = reporter["avatarUrls"]["48x48"].get<std::string>();
                         }
                     } catch (const std::exception& e) {
-                        // Handle null or invalid reporter
                         (void)e;
                     }
                 }
                 
-                // Labels
                 if (fields.contains("labels")) {
                     try {
                         for (const auto& label : fields["labels"].get<std::vector<glz::json_t>>()) {
                             issue.labels.push_back(label.get<std::string>());
                         }
                     } catch (const std::exception& e) {
-                        // Handle null or invalid labels
                         (void)e;
                     }
                 }
@@ -168,17 +145,14 @@ std::future<jira_issue> jira_model::get_issue(const std::string& issue_key) {
     });
 }
 
-// Create a new JIRA issue
 std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_data) {
-    return std::async(std::launch::async, [this, issue_data]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, issue_data]() {
         jira_issue created_issue;
         
         try {
-            // Construct request payload
             glz::json_t payload;
             glz::json_t fields;
             
-            // Set up fields using proper JSON object construction
             glz::json_t project_obj;
             project_obj["key"] = issue_data.project_key;
             fields["project"] = project_obj;
@@ -190,14 +164,12 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
             issuetype_obj["name"] = issue_data.issue_type;
             fields["issuetype"] = issuetype_obj;
             
-            // Set assignee if provided
             if (!issue_data.assignee_account_id.empty()) {
                 glz::json_t assignee_obj;
                 assignee_obj["accountId"] = issue_data.assignee_account_id;
                 fields["assignee"] = assignee_obj;
             }
             
-            // Set priority if provided
             if (!issue_data.priority_id.empty()) {
                 glz::json_t priority_obj;
                 priority_obj["id"] = issue_data.priority_id;
@@ -212,19 +184,15 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
                 throw std::runtime_error("Failed to serialize issue creation payload");
             }
             
-            // Make API request
             std::string response = make_request("issue", "POST", json_payload);
             
-            // Parse JSON response
             auto json_result = glz::read_json<glz::json_t>(response);
             if (json_result.has_value()) {
                 glz::json_t& json = json_result.value();
                 
-                // Extract the created issue key
                 created_issue.id = json["id"].get<std::string>();
                 created_issue.key = json["key"].get<std::string>();
                 
-                // Get full issue details
                 if (!created_issue.key.empty()) {
                     created_issue = get_issue(created_issue.key).get();
                 }
@@ -239,27 +207,22 @@ std::future<jira_issue> jira_model::create_issue(const jira_issue_create& issue_
     });
 }
 
-// Get available transitions for an issue
 std::future<std::vector<jira_transition>> jira_model::get_transitions(const std::string& issue_key) {
-    return std::async(std::launch::async, [this, issue_key]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, issue_key]() {
         std::vector<jira_transition> transitions;
         
         try {
-            // Make API request
             std::string response = make_request(std::format("issue/{}/transitions", issue_key));
             
-            // Parse JSON response
             auto json_result = glz::read_json<glz::json_t>(response);
             if (json_result.has_value()) {
                 glz::json_t& json = json_result.value();
                 
-                // Extract transitions
                 for (const auto& transition_json : json["transitions"].get<std::vector<glz::json_t>>()) {
                     jira_transition transition;
                     transition.id = transition_json["id"].get<std::string>();
                     transition.name = transition_json["name"].get<std::string>();
                     
-                    // Extract to status
                     const auto& to = transition_json["to"];
                     transition.to_status.id = to["id"].get<std::string>();
                     transition.to_status.name = to["name"].get<std::string>();
@@ -283,10 +246,8 @@ std::future<std::vector<jira_transition>> jira_model::get_transitions(const std:
     });
 }
 
-// Transition an issue to a new status
 bool jira_model::transition_issue(const std::string& issue_key, const std::string& transition_id) {
     try {
-        // Construct request payload
         glz::json_t payload;
         glz::json_t transition_obj;
         transition_obj["id"] = transition_id;
@@ -298,7 +259,6 @@ bool jira_model::transition_issue(const std::string& issue_key, const std::strin
             throw std::runtime_error("Failed to serialize transition payload");
         }
         
-        // Make API request
         make_request(std::format("issue/{}/transitions", issue_key), "POST", json_payload);
         
         return true;
@@ -308,11 +268,9 @@ bool jira_model::transition_issue(const std::string& issue_key, const std::strin
     }
 }
 
-// Add comment to an issue
 std::future<bool> jira_model::add_comment(const std::string& issue_key, const std::string& comment_text) {
-    return std::async(std::launch::async, [this, issue_key, comment_text]() { // NOLINT(bugprone-exception-escape)
+    return std::async(std::launch::async, [this, issue_key, comment_text]() {
         try {
-            // Construct request payload
             glz::json_t payload;
             payload["body"] = comment_text;
             
@@ -322,7 +280,6 @@ std::future<bool> jira_model::add_comment(const std::string& issue_key, const st
                 throw std::runtime_error("Failed to serialize comment payload");
             }
             
-            // Make API request
             make_request(std::format("issue/{}/comment", issue_key), "POST", json_payload);
             
             return true;

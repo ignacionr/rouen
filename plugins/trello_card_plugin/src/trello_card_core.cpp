@@ -1,27 +1,36 @@
 #include "trello_card.hpp"
 
-// 1. Standard includes in alphabetic order
 #include <cstring>
 #include <format>
 #include <string>
+#include <thread>
 
-// 2. Libraries used in the project, in alphabetic order
-// None
-
-// 3. All other includes
-#include "../../helpers/api_keys.hpp"
-#include "../../helpers/platform_utils.hpp"
-#include "../../registrar.hpp"
+#include "helpers/api_keys.hpp"
+#include "helpers/platform_utils.hpp"
+#include "helpers/fetch.hpp"
+#include "registrar.hpp"
 #include "trello_host.hpp"
 
 namespace rouen::cards {
 
+inline void create_card_uri(const std::string& uri) {
+    auto svc = registrar::try_get<std::function<void(std::string const&)>>("create_card");
+    if (svc) {
+        (*svc)(uri);
+    } else {
+        std::thread([uri]() {
+            try {
+                http::fetch client;
+                std::string payload = std::format(R"({{"uri":"{}"}})", uri);
+                client.post("http://127.0.0.1:8081/api/cards", payload, {"Content-Type: application/json"});
+            } catch (...) {}
+        }).detach();
+    }
+}
+
 trello_card::trello_card() : trello_host_(hosts::get_trello_host()) {
-    name("Trello");
-    
-    // Try to load existing credentials into form
-    auto api_key = helpers::ApiKeys::get_trello_api_key();
-    auto token = helpers::ApiKeys::get_trello_token();
+    auto api_key = rouen::platform::get_env("TRELLO_API_KEY");
+    auto token = rouen::platform::get_env("TRELLO_TOKEN");
     
     if (!api_key.empty() && api_key.length() < sizeof(api_key_buffer_)) {
         std::strncpy(api_key_buffer_, api_key.c_str(), sizeof(api_key_buffer_) - 1);
@@ -36,23 +45,19 @@ trello_card::trello_card() : trello_host_(hosts::get_trello_host()) {
 trello_card::trello_card(const std::string& board_id) : trello_card() {
     context_ = card_context::board_specific;
     initial_board_id_ = board_id;
-    selected_board_id_ = board_id;  // Pre-select the board
-    name("Trello - Board");
+    selected_board_id_ = board_id;
 
-    colors[0] = ImVec4(0.0f, 0.5f, 1.0f, 1.0f); // Primary color
-    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f); // Secondary color
-    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
-    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
-    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
+    colors[0] = ImVec4(0.0f, 0.5f, 1.0f, 1.0f);
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f);
+    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
 }
 
 trello_card::trello_card(const std::string& entity_id, card_context context) 
-    :  trello_host_(hosts::get_trello_host()), context_(context) {
-    name("Trello");
-    
-    // Try to load existing credentials into form
-    auto api_key = helpers::ApiKeys::get_trello_api_key();
-    auto token = helpers::ApiKeys::get_trello_token();
+    : trello_host_(hosts::get_trello_host()), context_(context) {
+    auto api_key = rouen::platform::get_env("TRELLO_API_KEY");
+    auto token = rouen::platform::get_env("TRELLO_TOKEN");
     
     if (!api_key.empty() && api_key.length() < sizeof(api_key_buffer_)) {
         std::strncpy(api_key_buffer_, api_key.c_str(), sizeof(api_key_buffer_) - 1);
@@ -65,26 +70,47 @@ trello_card::trello_card(const std::string& entity_id, card_context context)
     
     switch (context) {
         case card_context::general:
-            // Standard trello: behavior
             break;
         case card_context::board_specific:
             initial_board_id_ = entity_id;
-            selected_board_id_ = entity_id;  // Pre-select the board
-            name("Trello - Board");
+            selected_board_id_ = entity_id;
             break;
         case card_context::card_specific:
             initial_card_id_ = entity_id;
-            name(std::format("Trello - Card: {}", entity_id));
             break;
     }
-    colors[0] = ImVec4(0.0f, 0.7f, 1.0f, 1.0f); // Blue primary color
-    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f); // Secondary color
-    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f); // Error color
-    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f); // Success color
-    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f); // Warning color
+    colors[0] = ImVec4(0.0f, 0.7f, 1.0f, 1.0f);
+    colors[1] = ImVec4(0.8f, 0.8f, 0.8f, 0.3f);
+    colors[2] = ImVec4(1.0f, 0.2f, 0.2f, 1.0f);
+    colors[3] = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+    colors[4] = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
 }
 
-std::string trello_card::get_uri() const {
+void trello_card::draw() {
+    if (!trello_host_->is_connected()) {
+        render_connection_screen();
+    } else if (context_ == card_context::card_specific) {
+        render_card_interface();
+    } else {
+        render_main_interface();
+    }
+    
+    check_async_operations();
+}
+
+std::string trello_card::title() const {
+    switch (context_) {
+        case card_context::general:
+            return "Trello";
+        case card_context::board_specific:
+            return "Trello - Board";
+        case card_context::card_specific:
+            return "Trello - Card";
+    }
+    return "Trello";
+}
+
+std::string trello_card::uri() const {
     switch (context_) {
         case card_context::general:
             return "trello";
@@ -93,26 +119,26 @@ std::string trello_card::get_uri() const {
         case card_context::card_specific:
             return "trello-card:" + initial_card_id_;
     }
-    // This should never be reached, but required for some compilers
     return "trello";
 }
 
-bool trello_card::render() {
-    return render_window([this]() {
-        if (!trello_host_->is_connected()) {
-            render_connection_screen();
-        } else {
-            render_main_interface();
-        }
-        
-        // Check for completed async operations
-        check_async_operations();
-    });
+void trello_card::handle_uri(std::string_view locator) {
+    std::string loc(locator);
+    if (loc.starts_with("trello-board:")) {
+        context_ = card_context::board_specific;
+        initial_board_id_ = loc.substr(13);
+        selected_board_id_ = initial_board_id_;
+    } else if (loc.starts_with("trello-card:")) {
+        context_ = card_context::card_specific;
+        initial_card_id_ = loc.substr(12);
+    } else if (!loc.empty() && loc != "trello") {
+        context_ = card_context::board_specific;
+        initial_board_id_ = loc;
+        selected_board_id_ = loc;
+    }
 }
 
-// Utility methods
 ImVec4 trello_card::get_label_color(const std::string& color_name) {
-    // Trello label colors
     if (color_name == "green") return {0.0f, 0.7f, 0.2f, 1.0f};
     if (color_name == "yellow") return {0.9f, 0.8f, 0.0f, 1.0f};
     if (color_name == "orange") return {1.0f, 0.5f, 0.0f, 1.0f};
@@ -123,12 +149,11 @@ ImVec4 trello_card::get_label_color(const std::string& color_name) {
     if (color_name == "lime") return {0.5f, 1.0f, 0.0f, 1.0f};
     if (color_name == "pink") return {1.0f, 0.4f, 0.7f, 1.0f};
     if (color_name == "black") return {0.2f, 0.2f, 0.2f, 1.0f};
-    return {0.5f, 0.5f, 0.5f, 1.0f}; // Default gray
+    return {0.5f, 0.5f, 0.5f, 1.0f};
 }
 
 std::string trello_card::format_due_date(const std::string& due_date) {
-    // Simple date formatting - could be enhanced with proper date parsing
-    return due_date.substr(0, 10); // Just return YYYY-MM-DD part
+    return due_date.substr(0, 10);
 }
 
 void trello_card::open_in_browser(const std::string& url) {
@@ -145,9 +170,7 @@ void trello_card::clear_error() {
 
 void trello_card::create_card_tab(const std::string& card_id) {
     if (card_id.empty()) return;
-    
-    // Create a new Trello card for this specific card
-    "create_card"_sfn("trello-card:" + card_id);
+    create_card_uri("trello-card:" + card_id);
 }
 
 } // namespace rouen::cards
