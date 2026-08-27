@@ -486,6 +486,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/piped_process.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
+  src/helpers/ytdlp_service.cpp
   src/helpers/theme_manager.cpp
   src/helpers/tag_manager.cpp
   src/helpers/card_decorations.cpp

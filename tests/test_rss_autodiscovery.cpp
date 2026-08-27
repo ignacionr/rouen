@@ -44,3 +44,14 @@ TEST(RSSAutodiscoveryTest, ResolveFeedUrlFrequentMilerLive) {
     std::string resolved = rouen::hosts::resolve_feed_url("https://frequentmiler.com");
     EXPECT_EQ(resolved, "https://frequentmiler.com/feed/");
 }
+
+TEST(RSSAutodiscoveryTest, ResolveNytModernLovePodcastUrl) {
+    std::string user_url = "https://www.nytimes.com/svc/collections/v1/publish/https://www.nytimes.com/column/modern-love-podcast/rss.xml";
+    std::string resolved = rouen::hosts::resolve_feed_url(user_url);
+    EXPECT_EQ(resolved, "https://feeds.simplecast.com/0N8Hs1MH");
+
+    std::string web_url = "https://www.nytimes.com/column/modern-love-podcast";
+    std::string resolved_web = rouen::hosts::resolve_feed_url(web_url);
+    EXPECT_EQ(resolved_web, "https://feeds.simplecast.com/0N8Hs1MH");
+}
+

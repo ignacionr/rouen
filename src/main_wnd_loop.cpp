@@ -203,7 +203,8 @@ void main_wnd::run() {
                         if (fs_item->has_video.load()) {
                             ImTextureID const tex = fs_item->get_texture_id(m_device);
                             if (tex) {
-                                float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+                                float aspect = fs_item->video_aspect_ratio.load();
+                                if (aspect <= 0.0f) aspect = 16.0f / 9.0f;
 
                                 float draw_w = 0.0f;
                                 float draw_h = 0.0f;
@@ -849,7 +850,13 @@ void main_wnd::process_detached_window() {
         }
 
         if (rtex && rtex->binding.texture) {
-            float const aspect = static_cast<float>(media_player_item::kWidth) / static_cast<float>(media_player_item::kHeight);
+            float aspect = 16.0f / 9.0f;
+            if (detached_item) {
+                float const item_aspect = detached_item->video_aspect_ratio.load();
+                if (item_aspect > 0.0f) aspect = item_aspect;
+            } else if (rtex->width > 0 && rtex->height > 0) {
+                aspect = static_cast<float>(rtex->width) / static_cast<float>(rtex->height);
+            }
             float draw_w, draw_h;
             if (win_w / win_h > aspect) {
                 draw_h = win_h;

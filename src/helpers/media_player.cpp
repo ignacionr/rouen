@@ -1199,19 +1199,34 @@ void media_player::player(std::string_view url, ImVec4 info_color, std::string_v
 
             if (tex && item.has_video.load() && !detached_active && !cast_active) {
                 float const avail_w = player_width;
-                float const thumb_w = std::max(120.0f, avail_w - 26.0f);
-                float const thumb_h = thumb_w * 9.0f / 16.0f;
+                float const max_w = std::max(120.0f, avail_w - 26.0f);
+                float const aspect = item.video_aspect_ratio.load() > 0.0f ? item.video_aspect_ratio.load() : (16.0f / 9.0f);
+
+                float render_w = max_w;
+                float render_h = max_w * 9.0f / 16.0f;
+
+                if (aspect < 1.0f) {
+                    render_h = std::min(240.0f, max_w / aspect);
+                    render_w = render_h * aspect;
+                } else if (aspect > 0.0f) {
+                    render_h = render_w / aspect;
+                }
+
+                float const offset_x = (max_w - render_w) * 0.5f;
 
                 ImGui::Spacing();
+                if (offset_x > 0.0f) {
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset_x);
+                }
                 ImVec2 const img_screen_pos = ImGui::GetCursorScreenPos();
-                ImGui::Image(tex, ImVec2(thumb_w, thumb_h));
+                ImGui::Image(tex, ImVec2(render_w, render_h));
                 ImGui::SetCursorScreenPos(img_screen_pos);
-                ImGui::InvisibleButton("##video_fullscreen_surface", ImVec2(thumb_w, thumb_h));
+                ImGui::InvisibleButton("##video_fullscreen_surface", ImVec2(render_w, render_h));
                 if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     set_active_fullscreen_item(item_ptr);
                 }
                 ImGui::SameLine();
-                draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, thumb_h);
+                draw_stereo_vu_meter(item.get_vu_level_l(), item.get_vu_level_r(), item.get_vu_watermark_l(), item.get_vu_watermark_r(), 18.0f, render_h);
             } else {
                 ImGui::Spacing();
                 ImVec2 const vu_screen_pos = ImGui::GetCursorScreenPos();

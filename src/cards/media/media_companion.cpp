@@ -1,4 +1,5 @@
 #include "media_companion.hpp"
+#include "../../helpers/ytdlp_service.hpp"
 
 #include <SDL3/SDL_surface.h>
 #include <algorithm>
@@ -562,74 +563,7 @@ namespace rouen::cards {
                 std::chrono::system_clock::now().time_since_epoch().count());
             std::string out_prefix = std::format("/tmp/rouen_trans_{}_{}", pid, timestamp);
 
-            std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
-            auto config = rouen::helpers::ConfigService::instance();
-            std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
-
-            auto fetch_sub_file = [&ytdlp_path, &out_prefix, &detected_url](std::string_view cargs, std::string_view extra_ext_args = "") -> std::filesystem::path {
-                std::string extra_flags = cargs.empty() ? "" : (" " + std::string(cargs));
-                std::string ext_flags = extra_ext_args.empty() ? "" : (" " + std::string(extra_ext_args));
-                std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github" : "";
-                std::string const cmd = std::format("\"{}\" -q --no-warnings {}{}{} --skip-download --write-sub --write-auto-sub "
-                                              "--sub-lang \"en,es,en-US,en-GB,es-419,es-ES,.*\" --sub-format srt -o \"{}.%(ext)s\" \"{}\"",
-                                              ytdlp_path, remote_flag, extra_flags, ext_flags, out_prefix, detected_url);
-                ProcessHelper::executeCommand(cmd);
-                try {
-                    for (const auto& entry : std::filesystem::directory_iterator("/tmp")) {
-                        std::string const fname = entry.path().string();
-                        if (fname.starts_with(out_prefix)) {
-                            return entry.path();
-                        }
-                    }
-                } catch (...) {}
-                return {};
-            };
-
-            std::filesystem::path found_file = fetch_sub_file(cookie_args);
-
-            if (found_file.empty()) {
-                if (config) {
-                    config->clear_youtube_cookies();
-                    if (config->refresh_youtube_cookies()) {
-                        std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
-                        found_file = fetch_sub_file(fresh_cookie_args);
-                    }
-                }
-            }
-
-            if (found_file.empty()) {
-                static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
-                for (const auto& browser : candidate_browsers) {
-                    std::string const fb_args = std::format("--cookies-from-browser {}", browser);
-                    found_file = fetch_sub_file(fb_args);
-                    if (found_file.empty()) {
-                        found_file = fetch_sub_file(fb_args, "--extractor-args \"youtube:player_client=android_vr,android,tv\"");
-                    }
-                    if (!found_file.empty()) {
-                        if (config) {
-                            config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
-                        }
-                        const char* home = getenv("HOME");
-                        if (home) {
-                            std::string const save_cmd = std::format("\"{}\" -q --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
-                            ProcessHelper::executeCommand(save_cmd);
-                        }
-                        break;
-                    }
-                }
-            }
-
-            if (found_file.empty()) {
-                static const std::vector<std::string_view> client_specs = {
-                    "--extractor-args \"youtube:player_client=android_vr,android,tv\"",
-                    "--extractor-args \"youtube:player_client=android,tv\"",
-                    "--extractor-args \"youtube:player_client=tv_embedded,android\""
-                };
-                for (const auto& cspec : client_specs) {
-                    found_file = fetch_sub_file("--no-cookies", cspec);
-                    if (!found_file.empty()) break;
-                }
-            }
+            std::filesystem::path found_file = rouen::helpers::ytdlp_service::fetch_subtitles(detected_url, out_prefix);
 
             std::string raw_content;
             if (!found_file.empty() && std::filesystem::exists(found_file)) {

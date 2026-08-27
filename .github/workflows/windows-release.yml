@@ -102,12 +102,6 @@ jobs:
           exit /b 1
         )
         
-        echo.
-        echo Forcing curl installation specifically...
-        "%VCPKG_EXEC%" install curl[ssl]:x64-windows --vcpkg-root="%VCPKG_ROOT%"
-        if errorlevel 1 (
-          echo WARNING: Explicit curl installation failed
-        )
         
         echo Integrating vcpkg...
         "%VCPKG_EXEC%" integrate install --vcpkg-root="%VCPKG_ROOT%"

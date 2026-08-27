@@ -29,13 +29,29 @@ target_compile_definitions(${PLUGIN_TARGET_NAME} PRIVATE
     DEBUG_ROUEN=1
 )
 
-find_package(glaze REQUIRED)
-target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE glaze::glaze)
+find_package(glaze CONFIG QUIET)
+if(NOT glaze_FOUND AND NOT TARGET glaze AND NOT TARGET glaze::glaze)
+  find_package(Glaze REQUIRED)
+endif()
+
+if(TARGET glaze::glaze)
+  target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE glaze::glaze)
+elseif(TARGET glaze)
+  target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE glaze)
+endif()
 
 find_package(CURL REQUIRED)
 target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE CURL::libcurl)
 
-target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE imgui_backends)
+if(TARGET imgui)
+    target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE imgui)
+elseif(TARGET imgui::imgui)
+    target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE imgui::imgui)
+endif()
+
+if(TARGET imgui_backends)
+    target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE imgui_backends)
+endif()
 
 if(APPLE)
     target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE
@@ -45,7 +61,30 @@ if(APPLE)
 endif()
 
 set_target_properties(${PLUGIN_TARGET_NAME} PROPERTIES
-    PREFIX "lib"
-    SUFFIX ".dylib"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin"
 )
+
+if(WIN32)
+    set_target_properties(${PLUGIN_TARGET_NAME} PROPERTIES
+        PREFIX ""
+        SUFFIX ".dll"
+    )
+    if(MSVC)
+        set_property(TARGET ${PLUGIN_TARGET_NAME} PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+        )
+        target_compile_options(${PLUGIN_TARGET_NAME} PRIVATE /utf-8)
+    endif()
+elseif(APPLE)
+    set_target_properties(${PLUGIN_TARGET_NAME} PROPERTIES
+        PREFIX "lib"
+        SUFFIX ".dylib"
+    )
+else()
+    set_target_properties(${PLUGIN_TARGET_NAME} PROPERTIES
+        PREFIX "lib"
+        SUFFIX ".so"
+    )
+endif()
+

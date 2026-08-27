@@ -10,6 +10,7 @@
 #include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/media_player_item.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
@@ -136,6 +137,7 @@ public:
                     if (config) {
                         config->set_env_value("ROUEN_YOUTUBE_PREFERRED_QUALITY", qualities[i], true);
                     }
+                    media_player_item::clear_youtube_cache();
                 }
                 if (is_sel) {
                     ImGui::PopStyleColor();

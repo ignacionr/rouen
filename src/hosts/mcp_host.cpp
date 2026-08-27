@@ -18,6 +18,7 @@
 
 // 2. Libraries used in the project, in alphabetic order
 #include "config_service.hpp"
+#include "ytdlp_service.hpp"
 
 // 3. All other includes
 #include "debug.hpp"
@@ -713,57 +714,16 @@ mcp_host::mcp_host() {
                 return R"({"status":"error","message":"Invalid params. Expected 'query' field."})";
             }
             
-            std::string escaped_query;
-            for (char const c : request.query) {
-                if (c == '"' || c == '\\' || c == '$' || c == '`') {
-                    escaped_query += '\\';
-                }
-                escaped_query += c;
-            }
-            
-            std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
-            auto config = helpers::ConfigService::instance();
-            std::string const cookie_args = config ? config->get_ytdlp_cookie_args() : "";
-            std::string extra_cflags = cookie_args.empty() ? "" : (" " + cookie_args);
-            std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github " : "";
-            std::string const cmd = std::format("\"{}\" {}--flat-playlist{} --dump-json \"ytsearch10:{}\"", ytdlp_path, remote_flag, extra_cflags, escaped_query);
-            std::string const output = ProcessHelper::executeCommand(cmd);
-            
-            std::stringstream ss(output);
-            std::string line;
+            auto raw_results = helpers::ytdlp_service::search(request.query, 10);
             std::vector<mcp_youtube_video> results;
-            
-            while (std::getline(ss, line)) {
-                if (line.empty()) continue;
-                try {
-                    glz::json_t resp;
-                    auto ec = glz::read_json(resp, line);
-                    if (!ec) {
-                        mcp_youtube_video video;
-                        if (resp.contains("id") && resp["id"].is_string()) {
-                            video.id = resp["id"].get<std::string>();
-                        }
-                        if (resp.contains("title") && resp["title"].is_string()) {
-                            video.title = resp["title"].get<std::string>();
-                        }
-                        if (resp.contains("url") && resp["url"].is_string()) {
-                            video.url = resp["url"].get<std::string>();
-                        } else if (!video.id.empty()) {
-                            video.url = "https://www.youtube.com/watch?v=" + video.id;
-                        }
-                        if (resp.contains("duration_string") && resp["duration_string"].is_string()) {
-                            video.duration = resp["duration_string"].get<std::string>();
-                        }
-                        if (resp.contains("channel") && resp["channel"].is_string()) {
-                            video.channel = resp["channel"].get<std::string>();
-                        } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
-                            video.channel = resp["uploader"].get<std::string>();
-                        }
-                        results.push_back(std::move(video));
-                    }
-                } catch (...) {
-                    (void)0;
-                }
+            for (const auto& item : raw_results) {
+                mcp_youtube_video video;
+                video.id = item.id;
+                video.title = item.title;
+                video.url = item.url;
+                video.duration = item.duration_string;
+                video.channel = item.channel;
+                results.push_back(std::move(video));
             }
             
             std::string response_str;

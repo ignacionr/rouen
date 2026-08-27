@@ -1426,6 +1426,11 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
             repo_.update_feed_url(resolved_url, feed_ptr->source_link);
         }
 
+        if (resolved_url != url) {
+            RSS_INFO_FMT("Resolved feed URL alias: {} -> {}. Updating database.", url, resolved_url);
+            repo_.update_feed_url(url, resolved_url);
+        }
+
         // Resolve missing duration metadata before taking the feeds mutex to avoid
         // blocking UI reads while running network/process probes.
         constexpr size_t k_max_duration_probe_attempts_per_feed = 12;
@@ -1487,8 +1492,8 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
         
         // Check if the feed already exists
         auto pos = std::find_if(feeds.begin(), feeds.end(),
-                              [oursrc = feed_ptr->source_link, original_url = resolved_url](auto const& f) {
-                                  return f->source_link == oursrc || f->source_link == original_url;
+                              [oursrc = feed_ptr->source_link, original_url = resolved_url, input_url = std::string(url)](auto const& f) {
+                                  return f->source_link == oursrc || f->source_link == original_url || f->source_link == input_url;
                               });
                               
         // Add or merge with existing feed
@@ -1505,14 +1510,33 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                 (*pos)->set_image(feed_ptr->image_url());
             }
             
-            // Merge new items, avoiding duplicates (matching by both link and title to support podcasts/Megaphone)
-            for (auto const& item : feed_ptr->items) {
-                auto item_pos = std::find_if((*pos)->items.begin(), (*pos)->items.end(),
-                                          [ourlink = item.link, ourtitle = item.title](auto const& i) {
-                                              return i.link == ourlink && i.title == ourtitle;
-                                           });
-                if (item_pos == (*pos)->items.end()) {
-                    (*pos)->items.emplace_back(item);
+            bool const old_had_no_enclosures = !(*pos)->items.empty() && std::all_of((*pos)->items.begin(), (*pos)->items.end(),
+                [](auto const& i) { return i.enclosure.empty(); });
+            bool const new_has_enclosures = std::any_of(feed_ptr->items.begin(), feed_ptr->items.end(),
+                [](auto const& i) { return !i.enclosure.empty(); });
+
+            if (old_had_no_enclosures && new_has_enclosures) {
+                (*pos)->items = feed_ptr->items;
+            } else {
+                // Merge new items, avoiding duplicates (matching by both link and title to support podcasts/Megaphone)
+                for (auto const& item : feed_ptr->items) {
+                    auto item_pos = std::find_if((*pos)->items.begin(), (*pos)->items.end(),
+                                              [ourlink = item.link, ourtitle = item.title](auto const& i) {
+                                                  return i.link == ourlink || i.title == ourtitle;
+                                               });
+                    if (item_pos == (*pos)->items.end()) {
+                        (*pos)->items.emplace_back(item);
+                    } else {
+                        if (item_pos->enclosure.empty() && !item.enclosure.empty()) {
+                            item_pos->enclosure = item.enclosure;
+                        }
+                        if (item_pos->image_url.empty() && !item.image_url.empty()) {
+                            item_pos->image_url = item.image_url;
+                        }
+                        if (!item_pos->media_duration_seconds && item.media_duration_seconds) {
+                            item_pos->media_duration_seconds = item.media_duration_seconds;
+                        }
+                    }
                 }
             }
             feed_ptr = *pos;

@@ -23,6 +23,7 @@
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/glaze_include.hpp"
+#include "../../helpers/ytdlp_service.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../fonts.hpp"
@@ -324,130 +325,19 @@ namespace rouen::cards {
             }
 
             std::thread([shared_state_ptr = this->state, query, norm_query]() {
-                std::string escaped_query;
-                for (char c : query) {
-                    if (c == '"' || c == '\\' || c == '$' || c == '`') {
-                        escaped_query += '\\';
-                    }
-                    escaped_query += c;
-                }
-
-                std::string ytdlp_path = rouen::platform::find_executable("yt-dlp");
-                auto config = rouen::helpers::ConfigService::instance();
-                std::string cookie_args = config ? config->get_ytdlp_cookie_args() : "";
-
-                auto run_yt_search = [&ytdlp_path, &escaped_query](std::string_view cargs) -> std::vector<youtube_result> {
-                    std::string cflags = cargs.empty() ? "" : (" " + std::string(cargs));
-                    std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdlp_path) ? "--remote-components ejs:github " : "";
-                    std::string cmd = std::format("\"{}\" --no-warnings --no-call-home {}--socket-timeout 10{} --flat-playlist --extractor-args \"youtubetab:approximate_date\" --dump-json \"ytsearch15:{}\"", ytdlp_path, remote_flag, cflags, escaped_query);
-                    std::string output = ProcessHelper::executeCommand(cmd);
-
-                    std::stringstream ss(output);
-                    std::string line;
-                    std::vector<youtube_result> temp;
-
-                    while (std::getline(ss, line)) {
-                        if (line.empty()) continue;
-                        try {
-                            glz::json_t resp;
-                            auto ec = glz::read_json(resp, line);
-                            if (!ec) {
-                                youtube_result res;
-                                if (resp.contains("id") && resp["id"].is_string()) {
-                                    res.id = resp["id"].get<std::string>();
-                                }
-                                if (resp.contains("title") && resp["title"].is_string()) {
-                                    res.title = resp["title"].get<std::string>();
-                                }
-                                if (!res.id.empty() && res.id.length() == 11 && !res.id.starts_with("UC")) {
-                                    res.url = "https://www.youtube.com/watch?v=" + res.id;
-                                } else if (resp.contains("url") && resp["url"].is_string()) {
-                                    res.url = resp["url"].get<std::string>();
-                                } else if (!res.id.empty()) {
-                                    res.url = "https://www.youtube.com/watch?v=" + res.id;
-                                }
-                                if (resp.contains("duration") && resp["duration"].is_number()) {
-                                    res.duration = resp["duration"].get<double>();
-                                }
-                                if (resp.contains("duration_string") && resp["duration_string"].is_string()) {
-                                    res.duration_string = resp["duration_string"].get<std::string>();
-                                }
-                                if (resp.contains("channel") && resp["channel"].is_string()) {
-                                    res.channel = resp["channel"].get<std::string>();
-                                } else if (resp.contains("uploader") && resp["uploader"].is_string()) {
-                                    res.channel = resp["uploader"].get<std::string>();
-                                }
-                                if (resp.contains("channel_id") && resp["channel_id"].is_string()) {
-                                    res.channel_id = resp["channel_id"].get<std::string>();
-                                }
-                                if (resp.contains("channel_url") && resp["channel_url"].is_string()) {
-                                    res.channel_url = resp["channel_url"].get<std::string>();
-                                }
-                                if (resp.contains("uploader_url") && resp["uploader_url"].is_string()) {
-                                    res.uploader_url = resp["uploader_url"].get<std::string>();
-                                }
-                                if (resp.contains("description") && resp["description"].is_string()) {
-                                    res.description = resp["description"].get<std::string>();
-                                }
-                                if (resp.contains("timestamp") && resp["timestamp"].is_number()) {
-                                    double ts = resp["timestamp"].get<double>();
-                                    res.published_time = format_relative_time(ts);
-                                } else if (resp.contains("upload_date") && resp["upload_date"].is_string()) {
-                                    std::string date_str = resp["upload_date"].get<std::string>();
-                                    if (date_str.length() == 8) {
-                                        try {
-                                            std::tm tm = {};
-                                            tm.tm_year = std::stoi(date_str.substr(0, 4)) - 1900;
-                                            tm.tm_mon = std::stoi(date_str.substr(4, 2)) - 1;
-                                            tm.tm_mday = std::stoi(date_str.substr(6, 2));
-                                            tm.tm_isdst = -1;
-                                            time_t t = std::mktime(&tm);
-                                            if (t != -1) {
-                                                res.published_time = format_relative_time(static_cast<double>(t));
-                                            }
-                                        } catch (...) {}
-                                    }
-                                }
-                                temp.push_back(std::move(res));
-                            }
-                        } catch (...) {}
-                    }
-                    return temp;
-                };
-
-                std::vector<youtube_result> temp_results = run_yt_search(cookie_args);
-
-                if (temp_results.empty()) {
-                    if (config) {
-                        config->clear_youtube_cookies();
-                        if (config->refresh_youtube_cookies()) {
-                            std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
-                            temp_results = run_yt_search(fresh_cookie_args);
-                        }
-                    }
-                }
-
-                if (temp_results.empty()) {
-                    static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
-                    for (const auto& browser : candidate_browsers) {
-                        std::string fb_args = std::format("--cookies-from-browser {}", browser);
-                        temp_results = run_yt_search(fb_args);
-                        if (!temp_results.empty()) {
-                            if (config) {
-                                config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
-                            }
-                            const char* home = getenv("HOME");
-                            if (home) {
-                                std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdlp_path, browser, home);
-                                ProcessHelper::executeCommand(save_cmd);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                if (temp_results.empty()) {
-                    temp_results = run_yt_search("--no-cookies");
+                auto raw_results = rouen::helpers::ytdlp_service::search(query, 15);
+                std::vector<youtube_result> temp_results;
+                for (const auto& item : raw_results) {
+                    youtube_result res;
+                    res.id = item.id;
+                    res.title = item.title;
+                    res.url = item.url;
+                    res.duration = item.duration;
+                    res.duration_string = item.duration_string;
+                    res.channel = item.channel;
+                    res.channel_id = item.channel_id;
+                    res.published_time = item.upload_date;
+                    temp_results.push_back(std::move(res));
                 }
 
                 if (!temp_results.empty()) {

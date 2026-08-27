@@ -76,6 +76,8 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     std::mutex audio_peak_mutex;
     std::deque<audio_peak_sample> audio_peak_queue;
     std::atomic<float> video_aspect_ratio{16.0f / 9.0f};
+    std::atomic<int> video_width{1280};
+    std::atomic<int> video_height{720};
     std::atomic<bool> has_video{false};
     std::atomic<bool> has_audio{false};
     std::atomic<float> current_luminance{0.0f};
@@ -151,6 +153,8 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     struct decoded_video_frame {
         std::vector<uint8_t> pixels;
         double pts;
+        int width{0};
+        int height{0};
     };
     std::mutex video_queue_mutex;
     std::deque<decoded_video_frame> decoded_video_queue;
@@ -184,6 +188,7 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     float get_vu_watermark_l();
     float get_vu_watermark_r();
     static int decode_interrupt_cb(void* ctx);
+    static void clear_youtube_cache();
 
     void decode_loop(std::string video_target, std::string audio_target, double start_offset);
 

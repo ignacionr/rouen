@@ -170,6 +170,27 @@ namespace media::rss {
                         if (link && link->GetText()) {
                             new_item.link = link->GetText();
                         }
+                        auto guid = xml_item->FirstChildElement("guid");
+                        std::string guid_text;
+                        if (guid && guid->GetText()) {
+                            guid_text = guid->GetText();
+                        }
+
+                        if (new_item.link.empty()) {
+                            if (!guid_text.empty()) {
+                                new_item.link = guid_text;
+                            }
+                        } else if (new_item.link == feed_link) {
+                            if (!guid_text.empty()) {
+                                if (guid_text.starts_with("http://") || guid_text.starts_with("https://")) {
+                                    new_item.link = guid_text;
+                                } else {
+                                    new_item.link = feed_link + "#" + guid_text;
+                                }
+                            } else if (title && title->GetText()) {
+                                new_item.link = feed_link + "#" + std::string(title->GetText());
+                            }
+                        }
                         description = xml_item->FirstChildElement("description");
                         if (description && !description->NoChildren() && description->GetText()) {
                             new_item.description = description->GetText();
@@ -297,6 +318,27 @@ namespace media::rss {
                     link = xml_item->FirstChildElement("link");
                     if (link && link->Attribute("href")) {
                         new_item.link = link->Attribute("href");
+                    }
+                    auto id_el = xml_item->FirstChildElement("id");
+                    std::string id_text;
+                    if (id_el && id_el->GetText()) {
+                        id_text = id_el->GetText();
+                    }
+
+                    if (new_item.link.empty()) {
+                        if (!id_text.empty()) {
+                            new_item.link = id_text;
+                        }
+                    } else if (new_item.link == feed_link) {
+                        if (!id_text.empty()) {
+                            if (id_text.starts_with("http://") || id_text.starts_with("https://")) {
+                                new_item.link = id_text;
+                            } else {
+                                new_item.link = feed_link + "#" + id_text;
+                            }
+                        } else if (title && title->GetText()) {
+                            new_item.link = feed_link + "#" + std::string(title->GetText());
+                        }
                     }
                     description = xml_item->FirstChildElement("summary");
                     if (description && description->GetText()) {

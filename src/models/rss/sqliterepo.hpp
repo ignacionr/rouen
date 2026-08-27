@@ -453,17 +453,24 @@ namespace media::rss
                     
                     if (old_id != -1 && old_id != existing_id) {
                         db_.exec("BEGIN TRANSACTION");
-                        // Re-associate items of the old feed to the existing feed
-                        db_.exec("UPDATE OR IGNORE item SET feed_id = ? WHERE feed_id = ?", {}, existing_id, old_id);
-                        // Delete any remaining items for old feed that couldn't be updated due to duplicates
                         db_.exec("DELETE FROM item WHERE feed_id = ?", {}, old_id);
-                        // Delete the old feed
                         db_.exec("DELETE FROM feed WHERE id = ?", {}, old_id);
                         db_.exec("COMMIT");
                     }
                 } else {
+                    long long feed_id = -1;
+                    std::string get_id_sql = "SELECT id FROM feed WHERE url = ?";
+                    db_.exec(get_id_sql, [&feed_id](sqlite3_stmt *stmt) {
+                        feed_id = sqlite3_column_int64(stmt, 0);
+                    }, old_url);
+
+                    db_.exec("BEGIN TRANSACTION");
+                    if (feed_id != -1) {
+                        db_.exec("DELETE FROM item WHERE feed_id = ?", {}, feed_id);
+                    }
                     std::string sql = "UPDATE feed SET url = ?, last_updated = datetime('now') WHERE url = ?";
                     db_.exec(sql, {}, new_url, old_url);
+                    db_.exec("COMMIT");
                 }
                 RSS_DEBUG("update_feed_url complete");
             } catch (const std::exception& e) {

@@ -8,6 +8,7 @@
 #include "registrar.hpp"
 #include "texture_helper.hpp"
 #include "texture_utils.hpp"
+#include "ytdlp_service.hpp"
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_stdinc.h>
@@ -53,6 +54,11 @@
 namespace {
 static std::mutex s_yt_resolved_url_mutex;
 static std::unordered_map<std::string, std::pair<std::chrono::steady_clock::time_point, std::vector<std::string>>> s_yt_resolved_urls;
+}
+
+void media_player_item::clear_youtube_cache() {
+    std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
+    s_yt_resolved_urls.clear();
 }
 
 double media_player_item::get_speaker_audio_pts() const {
@@ -383,153 +389,9 @@ bool media_player_item::playMedia(const void* owner) {
             }
 
             if (!found_cached) {
-                std::string ytdl_exe = rouen::platform::find_executable("yt-dlp");
-                std::string const initial_cookie_args = config ? config->get_ytdlp_cookie_args() : "";
-
-                std::string format_spec;
-                if (pref_quality == "4k" || pref_quality == "2160p") {
-                    format_spec = "bestvideo[height<=2160][vcodec^=avc1]+bestaudio/bestvideo[height<=2160][vcodec^=vp9]+bestaudio/bestvideo[height<=2160]+bestaudio/best[height<=2160]/best[protocol*=m3u8]/bestvideo+bestaudio/best";
-                } else if (pref_quality == "1440p") {
-                    format_spec = "bestvideo[height<=1440][vcodec^=avc1]+bestaudio/bestvideo[height<=1440][vcodec^=vp9]+bestaudio/bestvideo[height<=1440]+bestaudio/best[height<=1440]/best[protocol*=m3u8]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best";
-                } else if (pref_quality == "1080p") {
-                    format_spec = "bestvideo[height<=1080][vcodec^=avc1]+bestaudio/bestvideo[height<=1080][vcodec^=vp9]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best[protocol*=m3u8]/bestvideo[height<=720]+bestaudio/best[height<=720]/best";
-                } else if (pref_quality == "720p") {
-                    format_spec = "bestvideo[height<=720][vcodec^=avc1]+bestaudio/bestvideo[height<=720][vcodec^=vp9]+bestaudio/bestvideo[height<=720]+bestaudio/best[height<=720]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
-                } else {
-                    format_spec = "bestvideo[height<=360][vcodec^=avc1]+bestaudio/bestvideo[height<=360][vcodec^=vp9]+bestaudio/bestvideo[height<=360]+bestaudio/best[height<=360]/best[protocol*=m3u8]/bestvideo[height<=480]+bestaudio/best[height<=480]/best";
-                }
-
-                auto run_ytdlp = [&ytdl_exe, &format_spec, &norm_url](std::string_view cookie_args, std::string_view extra_extractor_args = "", std::string_view custom_format = "") -> std::pair<std::vector<std::string>, std::string> {
-                    std::string_view const target_fmt = custom_format.empty() ? std::string_view(format_spec) : custom_format;
-                    std::string cmd;
-                    std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdl_exe) ? "--remote-components ejs:github " : "";
-                    std::string ext_flag = extra_extractor_args.empty() ? "--extractor-args \"youtube:player_client=web_embedded,android\" " : (std::string(extra_extractor_args) + " ");
-                    std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
-                    std::string ua_flag;
-                    if constexpr (rouen::platform::is_apple) {
-                        ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" ";
-                    }
-                    cmd = std::format("\"{}\" --no-warnings {}{}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ua_flag, ext_flag, cook_flag, target_fmt, norm_url);
-                    std::cerr << "[NativePlayer Diagnostics] Executing command: " << cmd << '\n';
-                    std::string const output = ProcessHelper::executeCommand(cmd);
-                    std::stringstream ss(output);
-                    std::string line;
-                    std::vector<std::string> parsed_urls;
-                    while (std::getline(ss, line)) {
-                        line.erase(line.find_last_not_of(" \r\n\t") + 1);
-                        if (line.starts_with("http://") || line.starts_with("https://")) {
-                            parsed_urls.push_back(line);
-                        }
-                    }
-                    std::cerr << "[NativePlayer Diagnostics] Command returned " << parsed_urls.size() << " URLs. Output snippet: " 
-                              << (output.length() > 300 ? output.substr(0, 300) + "..." : output) << '\n';
-                    return {parsed_urls, output};
-                };
-
-                std::cerr << "[NativePlayer Diagnostics] Resolving URL: " << norm_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
-                // First try un-cookied android_vr resolution to prevent web browser cookies from conflicting with android client API
-                auto [urls, resolved] = run_ytdlp("");
-                if (urls.empty() && !initial_cookie_args.empty()) {
-                    std::cerr << "[NativePlayer Diagnostics] Un-cookied attempt returned no URLs. Trying with configured cookie args...\n";
-                    std::tie(urls, resolved) = run_ytdlp(initial_cookie_args);
-                }
-
-                if (!urls.empty() && !is_url_accessible(urls[0])) {
-                    std::cerr << "[NativePlayer Diagnostics] Initial resolved URL returned HTTP 403 Forbidden. Invalidating to trigger auto-healing...\n";
-                    urls.clear();
-                }
-
-                // Check if YouTube rejected request or required cookies
-                bool is_auth_err = (resolved.find("Sign in to confirm") != std::string::npos ||
-                                    resolved.find("YouTube requires cookies") != std::string::npos ||
-                                    resolved.find("cookies are no longer valid") != std::string::npos ||
-                                    resolved.find("bot") != std::string::npos ||
-                                    resolved.find("HTTP Error 429") != std::string::npos);
-
-                // Auto-healing Pass 1: Clear stale cookies and attempt fresh browser cookie refresh
-                if (urls.empty() || is_auth_err) {
-                    std::cerr << "[NativePlayer Diagnostics] Pass 1: Initial attempt failed or auth error detected (is_auth_err=" << is_auth_err << "). Triggering cookie refresh...\n";
-                    if (config) {
-                        config->clear_youtube_cookies();
-                        if (config->refresh_youtube_cookies()) {
-                            std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
-                            std::cerr << "[NativePlayer Diagnostics] Pass 1: Refreshed cookies args: '" << fresh_cookie_args << "'. Retrying...\n";
-                            auto [ref_urls, ref_output] = run_ytdlp(fresh_cookie_args);
-                            resolved = ref_output;
-                            if (!ref_urls.empty() && is_url_accessible(ref_urls[0])) {
-                                urls = ref_urls;
-                            }
-                        } else {
-                            std::cerr << "[NativePlayer Diagnostics] Pass 1: refresh_youtube_cookies() returned false.\n";
-                        }
-                    }
-                }
-
-                // Auto-healing Pass 2: Direct browser cookies extraction across all installed browsers
-                if (urls.empty()) {
-                    std::cerr << "[NativePlayer Diagnostics] Pass 2: Trying direct extraction across installed browsers...\n";
-                    static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
-                    for (const auto& browser : candidate_browsers) {
-                        std::cerr << "[NativePlayer Diagnostics] Pass 2: Trying browser: " << browser << '\n';
-                        std::string const fallback_args = std::format("--cookies-from-browser {}", browser);
-                        auto [fb_urls, fb_output] = run_ytdlp(fallback_args);
-                        if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-
-                        if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"");
-                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-                        }
-                        if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"", "bestvideo+bestaudio/best");
-                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-                        }
-                        resolved = fb_output;
-                        if (!fb_urls.empty()) {
-                            urls = fb_urls;
-                            if (config) {
-                                config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
-                            }
-                            const char* home = getenv("HOME");
-                            if (home) {
-                                std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdl_exe, browser, home);
-                                ProcessHelper::executeCommand(save_cmd);
-                            }
-                            std::cerr << "[NativePlayer Diagnostics] Auto-healed: resolved YouTube URL using cookies from browser: " << browser << '\n';
-                            break;
-                        }
-                    }
-                }
-
-                // Auto-healing Pass 3: Multi-client fallback without cookies & relaxed formats
-                if (urls.empty()) {
-                    std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying client specs without cookies...\n";
-                    static const std::vector<std::string_view> client_specs = {
-                        "--extractor-args \"youtube:player_client=web_embedded,android\"",
-                        "--extractor-args \"youtube:player_client=android_testsuite,android\"",
-                        "--extractor-args \"youtube:player_client=android_music,android\"",
-                        "--extractor-args \"youtube:player_client=android\""
-                    };
-                    for (const auto& cspec : client_specs) {
-                        std::cerr << "[NativePlayer Diagnostics] Pass 3: Trying cspec: " << cspec << '\n';
-                        auto [fb_urls, fb_output] = run_ytdlp("--no-cookies", cspec);
-                        if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-
-                        if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp("--no-cookies", cspec, "bestvideo+bestaudio/best");
-                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-                        }
-                        if (fb_urls.empty()) {
-                            std::tie(fb_urls, fb_output) = run_ytdlp("--no-cookies", cspec, "best");
-                            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
-                        }
-                        resolved = fb_output;
-                        if (!fb_urls.empty()) {
-                            urls = fb_urls;
-                            std::cerr << "[NativePlayer Diagnostics] Auto-healed: resolved YouTube URL using client spec: " << cspec << '\n';
-                            break;
-                        }
-                    }
-                }
+                auto res = rouen::helpers::ytdlp_service::resolve_stream_urls(norm_url, pref_quality);
+                std::vector<std::string> urls = res.urls;
+                std::string resolved = res.raw_output;
 
                 if (!urls.empty()) {
                     {
@@ -918,8 +780,6 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
 
     int dst_w = kWidth;
     int dst_h = kHeight;
-    int offset_x = 0;
-    int offset_y = 0;
     int last_src_w = 0;
     int last_src_h = 0;
 
@@ -935,21 +795,14 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 if (video_codec_ctx->width > 0 && video_codec_ctx->height > 0) {
                     last_src_w = video_codec_ctx->width;
                     last_src_h = video_codec_ctx->height;
-                    double const aspect_ratio = static_cast<double>(last_src_w) / static_cast<double>(last_src_h);
+                    dst_w = (last_src_w / 2) * 2;
+                    dst_h = (last_src_h / 2) * 2;
+                    video_width.store(dst_w);
+                    video_height.store(dst_h);
+                    double const aspect_ratio = static_cast<double>(dst_w) / static_cast<double>(dst_h);
                     if (aspect_ratio > 0.0) {
                         video_aspect_ratio.store(static_cast<float>(aspect_ratio));
                     }
-                    if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
-                        dst_w = kWidth;
-                        dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
-                    } else {
-                        dst_h = kHeight;
-                        dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
-                    }
-                    dst_w = (dst_w / 2) * 2;
-                    dst_h = (dst_h / 2) * 2;
-                    offset_x = (kWidth - dst_w) / 2;
-                    offset_y = (kHeight - dst_h) / 2;
 
                     sws_ctx = sws_getContext(
                         last_src_w, last_src_h, video_codec_ctx->pix_fmt,
@@ -1014,11 +867,11 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
     AVFrame* frame = av_frame_alloc();
     AVFrame* rgba_frame = av_frame_alloc();
 
-    int size = kWidth * kHeight * 4;
-    uint8_t* rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(size)));
-    std::memset(rgba_buffer, 0, static_cast<size_t>(size));
+    int alloc_size = dst_w * dst_h * 4;
+    uint8_t* rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(alloc_size)));
+    std::memset(rgba_buffer, 0, static_cast<size_t>(alloc_size));
 
-    rgba_frame->linesize[0] = kWidth * 4;
+    rgba_frame->linesize[0] = dst_w * 4;
 
     if (offset > 0.05) {
         int const seek_stream = video_stream_idx >= 0 ? video_stream_idx : audio_stream_idx;
@@ -1062,14 +915,16 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 } else {
                     pts_time = position.load() + (1.0 / kFps);
                 }
-                std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
+                rgba_frame->data[0] = rgba_buffer;
                 sws_scale(sws_ctx, frame->data, frame->linesize, 0, video_codec_ctx->height, rgba_frame->data, rgba_frame->linesize);
                 {
                     std::lock_guard<std::mutex> const lock(video_queue_mutex);
                     decoded_video_queue.push_back({
-                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                        pts_time
+                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + (dst_w * dst_h * 4)),
+                        pts_time,
+                        dst_w,
+                        dst_h
                     });
                 }
             }
@@ -1419,14 +1274,16 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 } else {
                                     pts_time = static_cast<double>(frames_presented.load()) / kFps;
                                 }
-                                std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                                rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                                std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
+                                rgba_frame->data[0] = rgba_buffer;
                                 sws_scale(sws_ctx, frame->data, frame->linesize, 0, src_h, rgba_frame->data, rgba_frame->linesize);
                                 {
                                     std::lock_guard<std::mutex> const lock(video_queue_mutex);
                                     decoded_video_queue.push_back({
-                                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                                        pts_time
+                                        std::vector<uint8_t>(rgba_buffer, rgba_buffer + (dst_w * dst_h * 4)),
+                                        pts_time,
+                                        dst_w,
+                                        dst_h
                                     });
                                 }
                                 has_video.store(true);
@@ -1447,26 +1304,19 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
             if (packet->stream_index == video_stream_idx && video_codec_ctx) {
                 if (avcodec_send_packet(video_codec_ctx, packet) >= 0) {
                     while (avcodec_receive_frame(video_codec_ctx, frame) >= 0) {
-                        int const src_w = frame->width;
-                        int const src_h = frame->height;
+                        int const src_w = frame->width > 0 ? frame->width : video_codec_ctx->width;
+                        int const src_h = frame->height > 0 ? frame->height : video_codec_ctx->height;
                         if (src_w > 0 && src_h > 0) {
                             if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
                                 if (sws_ctx) sws_freeContext(sws_ctx);
-                                double const aspect_ratio = static_cast<double>(src_w) / static_cast<double>(src_h);
+                                dst_w = (src_w / 2) * 2;
+                                dst_h = (src_h / 2) * 2;
+                                video_width.store(dst_w);
+                                video_height.store(dst_h);
+                                double const aspect_ratio = static_cast<double>(dst_w) / static_cast<double>(dst_h);
                                 if (aspect_ratio > 0.0) {
                                     video_aspect_ratio.store(static_cast<float>(aspect_ratio));
                                 }
-                                if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
-                                    dst_w = kWidth;
-                                    dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
-                                } else {
-                                    dst_h = kHeight;
-                                    dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
-                                }
-                                dst_w = (dst_w / 2) * 2;
-                                dst_h = (dst_h / 2) * 2;
-                                offset_x = (kWidth - dst_w) / 2;
-                                offset_y = (kHeight - dst_h) / 2;
 
                                 sws_ctx = sws_getContext(
                                     src_w, src_h, static_cast<AVPixelFormat>(frame->format),
@@ -1475,6 +1325,14 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 );
                                 last_src_w = src_w;
                                 last_src_h = src_h;
+
+                                int const needed_size = dst_w * dst_h * 4;
+                                if (needed_size > alloc_size) {
+                                    av_free(rgba_buffer);
+                                    alloc_size = needed_size;
+                                    rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(alloc_size)));
+                                }
+                                rgba_frame->linesize[0] = dst_w * 4;
                             }
                         }
 
@@ -1492,15 +1350,17 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 first_video_pts.store(pts_time);
                             }
 
-                            std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                            rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                            std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
+                            rgba_frame->data[0] = rgba_buffer;
                             sws_scale(sws_ctx, frame->data, frame->linesize, 0, src_h, rgba_frame->data, rgba_frame->linesize);
 
                             {
                                 std::lock_guard<std::mutex> const lock(video_queue_mutex);
                                 decoded_video_queue.push_back({
-                                    std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                                    pts_time
+                                    std::vector<uint8_t>(rgba_buffer, rgba_buffer + (dst_w * dst_h * 4)),
+                                    pts_time,
+                                    dst_w,
+                                    dst_h
                                 });
                             }
                             has_video.store(true);
@@ -1633,26 +1493,19 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                     if (packet->stream_index == video_stream_idx && video_codec_ctx) {
                         if (avcodec_send_packet(video_codec_ctx, packet) >= 0) {
                             while (avcodec_receive_frame(video_codec_ctx, frame) >= 0) {
-                                int const src_w = frame->width;
-                                int const src_h = frame->height;
+                                int const src_w = frame->width > 0 ? frame->width : video_codec_ctx->width;
+                                int const src_h = frame->height > 0 ? frame->height : video_codec_ctx->height;
                                 if (src_w > 0 && src_h > 0) {
                                     if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
                                         if (sws_ctx) sws_freeContext(sws_ctx);
-                                        double const aspect_ratio = static_cast<double>(src_w) / static_cast<double>(src_h);
+                                        dst_w = (src_w / 2) * 2;
+                                        dst_h = (src_h / 2) * 2;
+                                        video_width.store(dst_w);
+                                        video_height.store(dst_h);
+                                        double const aspect_ratio = static_cast<double>(dst_w) / static_cast<double>(dst_h);
                                         if (aspect_ratio > 0.0) {
                                             video_aspect_ratio.store(static_cast<float>(aspect_ratio));
                                         }
-                                        if (aspect_ratio > static_cast<double>(kWidth) / static_cast<double>(kHeight)) {
-                                            dst_w = kWidth;
-                                            dst_h = static_cast<int>(static_cast<double>(kWidth) / aspect_ratio);
-                                        } else {
-                                            dst_h = kHeight;
-                                            dst_w = static_cast<int>(static_cast<double>(kHeight) * aspect_ratio);
-                                        }
-                                        dst_w = std::max(64, (dst_w / 2) * 2);
-                                        dst_h = std::max(64, (dst_h / 2) * 2);
-                                        offset_x = (kWidth - dst_w) / 2;
-                                        offset_y = (kHeight - dst_h) / 2;
 
                                         sws_ctx = sws_getContext(
                                             src_w, src_h, static_cast<AVPixelFormat>(frame->format),
@@ -1661,6 +1514,14 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         );
                                         last_src_w = src_w;
                                         last_src_h = src_h;
+
+                                        int const needed_size = dst_w * dst_h * 4;
+                                        if (needed_size > alloc_size) {
+                                            av_free(rgba_buffer);
+                                            alloc_size = needed_size;
+                                            rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(alloc_size)));
+                                        }
+                                        rgba_frame->linesize[0] = dst_w * 4;
                                     }
                                 }
 
@@ -1677,15 +1538,17 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         first_video_pts.store(pts_time);
                                     }
 
-                                    std::memset(rgba_buffer, 0, static_cast<size_t>(size));
-                                    rgba_frame->data[0] = rgba_buffer + (offset_y * kWidth * 4) + (offset_x * 4);
+                                    std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
+                                    rgba_frame->data[0] = rgba_buffer;
                                     sws_scale(sws_ctx, frame->data, frame->linesize, 0, src_h, rgba_frame->data, rgba_frame->linesize);
 
                                     {
                                         std::lock_guard<std::mutex> const lock(video_queue_mutex);
                                         decoded_video_queue.push_back({
-                                            std::vector<uint8_t>(rgba_buffer, rgba_buffer + size),
-                                            pts_time
+                                            std::vector<uint8_t>(rgba_buffer, rgba_buffer + (dst_w * dst_h * 4)),
+                                            pts_time,
+                                            dst_w,
+                                            dst_h
                                         });
                                         if (decoded_video_queue.size() % 10 == 0 || decoded_video_queue.size() > 180) {
                                             std::cout << "[DecodeLoopDebug] pushed frame pts=" << pts_time << " new_q_size=" << decoded_video_queue.size() << '\n';
@@ -1763,31 +1626,26 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 } else {
                                     pts_time = last_presented_pts.load() >= 0.0 ? last_presented_pts.load() + (1.0 / 24.0) : 0.0;
                                 }
-                                uint8_t* flush_buffer = static_cast<uint8_t*>(malloc(static_cast<size_t>(kWidth * kHeight * 4)));
-                                if (flush_buffer) {
-                                    int f_off_x = 0, f_off_y = 0;
-                                    int const flush_w = video_codec_ctx->width;
-                                    int const flush_h = video_codec_ctx->height;
-                                    if (flush_w > 0 && flush_h > 0) {
-                                        float const scale_w = static_cast<float>(kWidth) / static_cast<float>(flush_w);
-                                        float const scale_h = static_cast<float>(kHeight) / static_cast<float>(flush_h);
-                                        float const scale = std::min(scale_w, scale_h);
-                                        int const target_w = static_cast<int>(static_cast<float>(flush_w) * scale);
-                                        int const target_h = static_cast<int>(static_cast<float>(flush_h) * scale);
-                                        f_off_x = (kWidth - target_w) / 2;
-                                        f_off_y = (kHeight - target_h) / 2;
+                                int const flush_w = (video_codec_ctx->width / 2) * 2;
+                                int const flush_h = (video_codec_ctx->height / 2) * 2;
+                                if (flush_w > 0 && flush_h > 0) {
+                                    uint8_t* flush_buffer = static_cast<uint8_t*>(malloc(static_cast<size_t>(flush_w * flush_h * 4)));
+                                    if (flush_buffer) {
+                                        std::memset(flush_buffer, 0, static_cast<size_t>(flush_w * flush_h * 4));
+                                        rgba_frame->linesize[0] = flush_w * 4;
+                                        rgba_frame->data[0] = flush_buffer;
+                                        sws_scale(sws_ctx, frame->data, frame->linesize, 0, flush_h, rgba_frame->data, rgba_frame->linesize);
+                                        {
+                                            std::lock_guard<std::mutex> const lock(video_queue_mutex);
+                                            decoded_video_queue.push_back({
+                                                std::vector<uint8_t>(flush_buffer, flush_buffer + (flush_w * flush_h * 4)),
+                                                pts_time,
+                                                flush_w,
+                                                flush_h
+                                            });
+                                        }
+                                        free(flush_buffer);
                                     }
-                                    std::memset(flush_buffer, 0, static_cast<size_t>(kWidth * kHeight * 4));
-                                    rgba_frame->data[0] = flush_buffer + (f_off_y * kWidth * 4) + (f_off_x * 4);
-                                    sws_scale(sws_ctx, frame->data, frame->linesize, 0, flush_h, rgba_frame->data, rgba_frame->linesize);
-                                    {
-                                        std::lock_guard<std::mutex> const lock(video_queue_mutex);
-                                        decoded_video_queue.push_back({
-                                            std::vector<uint8_t>(flush_buffer, flush_buffer + (kWidth * kHeight * 4)),
-                                            pts_time
-                                        });
-                                    }
-                                    free(flush_buffer);
                                 }
                             }
                         }
@@ -1855,13 +1713,29 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
     if (!device) return ImTextureID{};
 
     std::lock_guard<std::mutex> const lock(texture_mutex);
+    int const cur_w = std::max(64, video_width.load());
+    int const cur_h = std::max(64, video_height.load());
+
+    if (video_texture && (video_texture->width != cur_w || video_texture->height != cur_h)) {
+        if (upload_buffer) {
+            SDL_ReleaseGPUTransferBuffer(device, upload_buffer);
+            upload_buffer = nullptr;
+        }
+        if (video_texture->binding.texture) {
+            SDL_ReleaseGPUTexture(device, video_texture->binding.texture);
+            video_texture->binding.texture = nullptr;
+        }
+        delete video_texture;
+        video_texture = nullptr;
+    }
+
     if (!video_texture) {
         SDL_GPUTextureCreateInfo texture_info = {};
         texture_info.type = SDL_GPU_TEXTURETYPE_2D;
         texture_info.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
         texture_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        texture_info.width = kWidth;
-        texture_info.height = kHeight;
+        texture_info.width = static_cast<Uint32>(cur_w);
+        texture_info.height = static_cast<Uint32>(cur_h);
         texture_info.layer_count_or_depth = 1;
         texture_info.num_levels = 1;
         SDL_GPUTexture* raw_texture = SDL_CreateGPUTexture(device, &texture_info);
@@ -1869,19 +1743,19 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
             video_texture = new RouenGPUTexture();
             video_texture->binding.texture = raw_texture;
             video_texture->binding.sampler = TextureHelper::getDefaultSampler(device);
-            video_texture->width = kWidth;
-            video_texture->height = kHeight;
+            video_texture->width = cur_w;
+            video_texture->height = cur_h;
         }
 
         SDL_GPUTransferBufferCreateInfo transfer_info = {};
         transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        transfer_info.size = kHeight * kWidth * 4;
+        transfer_info.size = static_cast<Uint32>(cur_h * cur_w * 4);
         upload_buffer = SDL_CreateGPUTransferBuffer(device, &transfer_info);
 
         if (upload_buffer && video_texture && video_texture->binding.texture) {
             Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, upload_buffer, false));
             if (map) {
-                std::memset(map, 0, kHeight * kWidth * 4);
+                std::memset(map, 0, static_cast<size_t>(cur_h * cur_w * 4));
                 SDL_UnmapGPUTransferBuffer(device, upload_buffer);
                 SDL_GPUCommandBuffer* cmd_buf = existing_cmdbuf ? existing_cmdbuf : SDL_AcquireGPUCommandBuffer(device);
                 if (cmd_buf) {
@@ -1890,12 +1764,12 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                         SDL_GPUTextureTransferInfo transfer_info_gpu = {};
                         transfer_info_gpu.transfer_buffer = upload_buffer;
                         transfer_info_gpu.offset = 0;
-                        transfer_info_gpu.pixels_per_row = kWidth;
-                        transfer_info_gpu.rows_per_layer = kHeight;
+                        transfer_info_gpu.pixels_per_row = static_cast<Uint32>(cur_w);
+                        transfer_info_gpu.rows_per_layer = static_cast<Uint32>(cur_h);
                         SDL_GPUTextureRegion region = {};
                         region.texture = video_texture->binding.texture;
-                        region.w = kWidth;
-                        region.h = kHeight;
+                        region.w = static_cast<Uint32>(cur_w);
+                        region.h = static_cast<Uint32>(cur_h);
                         region.d = 1;
                         SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
                         SDL_EndGPUCopyPass(copy_pass);
@@ -2028,7 +1902,8 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
             }
             Uint8* map = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, upload_buffer, false));
             if (map) {
-                std::memcpy(map, local_pixels.data(), kWidth * kHeight * 4);
+                size_t const copy_bytes = std::min(local_pixels.size(), static_cast<size_t>(cur_w * cur_h * 4));
+                std::memcpy(map, local_pixels.data(), copy_bytes);
                 SDL_UnmapGPUTransferBuffer(device, upload_buffer);
                 SDL_GPUCommandBuffer* cmd_buf = existing_cmdbuf;
                 bool custom_buf = false;
@@ -2048,12 +1923,12 @@ ImTextureID media_player_item::get_texture_id(SDL_GPUDevice* device, SDL_GPUComm
                         SDL_GPUTextureTransferInfo transfer_info_gpu = {};
                         transfer_info_gpu.transfer_buffer = upload_buffer;
                         transfer_info_gpu.offset = 0;
-                        transfer_info_gpu.pixels_per_row = kWidth;
-                        transfer_info_gpu.rows_per_layer = kHeight;
+                        transfer_info_gpu.pixels_per_row = static_cast<Uint32>(cur_w);
+                        transfer_info_gpu.rows_per_layer = static_cast<Uint32>(cur_h);
                         SDL_GPUTextureRegion region = {};
                         region.texture = video_texture->binding.texture;
-                        region.w = kWidth;
-                        region.h = kHeight;
+                        region.w = static_cast<Uint32>(cur_w);
+                        region.h = static_cast<Uint32>(cur_h);
                         region.d = 1;
                         SDL_UploadToGPUTexture(copy_pass, &transfer_info_gpu, &region, false);
                         SDL_EndGPUCopyPass(copy_pass);

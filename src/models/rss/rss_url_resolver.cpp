@@ -95,6 +95,43 @@ std::string resolve_youtube_url(const std::string& input_url) {
     return input_url;
 }
 
+std::string resolve_nyt_podcast_url(const std::string& input_url) {
+    std::string const url = trim_copy(input_url);
+    if (url.empty()) return url;
+
+    std::string const lower = ::helpers::StringHelper::to_lower(url);
+    if (lower.find("nytimes.com") == std::string::npos) {
+        return input_url;
+    }
+
+    struct NytPodcastMap {
+        std::string slug;
+        std::string feed_url;
+    };
+
+    static const std::vector<NytPodcastMap> mappings = {
+        {"modern-love-podcast", "https://feeds.simplecast.com/0N8Hs1MH"},
+        {"modern-love", "https://feeds.simplecast.com/0N8Hs1MH"},
+        {"the-daily", "https://feeds.simplecast.com/54nAGcIl"},
+        {"serial", "https://feeds.simplecast.com/w1704nrm"},
+        {"hard-fork", "https://feeds.simplecast.com/l2i9YnTd"},
+        {"ezra-klein-podcast", "https://feeds.simplecast.com/82FI35Px"},
+        {"ezra-klein-show", "https://feeds.simplecast.com/82FI35Px"},
+        {"ezra-klein", "https://feeds.simplecast.com/82FI35Px"},
+        {"matter-of-opinion", "https://feeds.simplecast.com/39l2Lz_d"},
+        {"the-interview", "https://feeds.simplecast.com/ksGYZ_Z3"},
+        {"first-person", "https://feeds.simplecast.com/7650O5jY"}
+    };
+
+    for (const auto& m : mappings) {
+        if (lower.find(m.slug) != std::string::npos) {
+            return m.feed_url;
+        }
+    }
+
+    return input_url;
+}
+
 std::string resolve_relative_url(std::string_view href, std::string_view base_url) {
     std::string h = trim_copy(std::string(href));
     if (h.empty()) return "";
@@ -220,6 +257,12 @@ std::string resolve_feed_url(const std::string& input_url) {
     std::string yt_resolved = resolve_youtube_url(url);
     if (yt_resolved != url && yt_resolved.find("youtube.com/feeds/videos.xml") != std::string::npos) {
         return yt_resolved;
+    }
+
+    std::string nyt_resolved = resolve_nyt_podcast_url(url);
+    if (nyt_resolved != url) {
+        RSS_INFO_FMT("Resolved NYT podcast collection feed URL {} -> {}", url, nyt_resolved);
+        return nyt_resolved;
     }
 
     try {
