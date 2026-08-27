@@ -165,6 +165,18 @@ add_gtest_executable(test_adaptive_cards test_adaptive_cards.cpp)
 if(NOT MSVC)
     target_compile_options(test_adaptive_cards PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
+add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
+target_sources(test_adaptive_process_card PRIVATE
+    ../src/helpers/piped_process.cpp
+    ../src/helpers/theme_manager.cpp
+    ../src/helpers/card_decorations.cpp
+    ../src/helpers/tag_manager.cpp
+    ../src/fonts.cpp
+)
+target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES})
+if(NOT MSVC)
+    target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
 add_gtest_executable(test_adaptive_cards_repository test_adaptive_cards_repository.cpp)
 target_link_libraries(test_adaptive_cards_repository PRIVATE SQLite::SQLite3)
 add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)

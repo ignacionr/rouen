@@ -113,6 +113,34 @@ namespace rouen::cards {
             });
         }
 
+        // Main-thread only: pulls the latest state written by the
+        // background threads above and applies it to the ImGui-facing
+        // members (bound_, error_, ...).
+        void apply_pending_update() {
+            std::string card_json;
+            bool has_update = false;
+            {
+                std::lock_guard<std::mutex> const lock(mutex_);
+                has_update = has_pending_update_;
+                if (has_update) {
+                    card_json = pending_card_json_;
+                    has_pending_update_ = false;
+                }
+            }
+            if (has_update) {
+                rebuild_from_json(card_json);
+            }
+        }
+
+        [[nodiscard]] helpers::adaptive_cards::card_document const& bound_document() const {
+            return bound_;
+        }
+
+        [[nodiscard]] bool has_pending_update() const {
+            std::lock_guard<std::mutex> const lock(mutex_);
+            return has_pending_update_;
+        }
+
     private:
         void apply_title() {
             name(command_line_.empty() ? "Adaptive Process" : command_line_);
@@ -179,24 +207,6 @@ namespace rouen::cards {
             exit_code_ = code;
         }
 
-        // Main-thread only: pulls the latest state written by the
-        // background threads above and applies it to the ImGui-facing
-        // members (bound_, error_, ...).
-        void apply_pending_update() {
-            std::string card_json;
-            bool has_update = false;
-            {
-                std::lock_guard<std::mutex> const lock(mutex_);
-                has_update = has_pending_update_;
-                if (has_update) {
-                    card_json = pending_card_json_;
-                    has_pending_update_ = false;
-                }
-            }
-            if (has_update) {
-                rebuild_from_json(card_json);
-            }
-        }
 
         void rebuild_from_json(std::string const& card_json) {
             try {
@@ -256,7 +266,7 @@ namespace rouen::cards {
         std::string command_line_;
         std::unique_ptr<helpers::piped_process> process_;
 
-        std::mutex mutex_;
+        mutable std::mutex mutex_;
         std::string pending_card_json_;
         bool has_pending_update_{false};
         std::deque<std::string> stderr_lines_;
