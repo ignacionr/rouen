@@ -35,7 +35,6 @@ inline void render_win_titlebar(SDL_Window* window) {
                                   ImGuiWindowFlags_NoScrollbar |
                                   ImGuiWindowFlags_MenuBar |
                                   ImGuiWindowFlags_NoCollapse |
-                                  ImGuiWindowFlags_NoDocking |
                                   ImGuiWindowFlags_NoBringToFrontOnFocus;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -108,7 +107,7 @@ inline void render_win_titlebar(SDL_Window* window) {
             // Tools Menu
             if (ImGui::BeginMenu("Tools")) {
                 try {
-                    const auto categories = rouen::menu::get_categories();
+                    const auto categories = rouen::cards::menu::get_categories();
                     for (const auto& cat : categories) {
                         if (ImGui::BeginMenu(cat.name.c_str())) {
                             for (const auto& item : cat.items) {
