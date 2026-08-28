@@ -26,6 +26,7 @@
 #include "factory.hpp"
 #include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/card_render_metrics.hpp"
+#include "../../helpers/win_titlebar_helper.hpp"
 
 struct deck {
     deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer) {
@@ -869,9 +870,10 @@ struct deck {
         cards_to_cleanup_.clear();
         TextureHelper::cleanupFrame();
         // Dynamic window title merging: when there's only 1 card, merge its name with the OS frame window
+        SDL_Window* window = nullptr;
         auto get_window_service = registrar::get<std::function<SDL_Window*()>>("get_window");
         if (get_window_service) {
-            SDL_Window* window = (*get_window_service)();
+            window = (*get_window_service)();
             if (window) {
                 if (cards_.size() == 1 && cards_[0]) {
                     std::string title = cards_[0]->window_title;
@@ -887,9 +889,19 @@ struct deck {
             }
         }
 
+#if defined(_WIN32)
+        if (window) {
+            rouen::platform::render_win_titlebar(window);
+        }
+        float const title_bar_h = rouen::platform::get_win_titlebar_height();
+#else
+        float const title_bar_h = 0.0f;
+#endif
+
         render_status result;
         handle_shortcuts();
         auto const size {ImGui::GetMainViewport()->Size};
+        float const workspace_h = std::max(size.y - title_bar_h, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_TitleBg, background_color);
         ImGui::PushStyleColor(ImGuiCol_Text, text_color);
@@ -1173,8 +1185,8 @@ struct deck {
             }
 
             float const scaled_min_height = card::min_card_height;
-            float const row_height { std::max(size.y / static_cast<float>(std::max<size_t>(rows.size(), 1)), scaled_min_height) };
-            float y = 0.0f;
+            float const row_height { std::max(workspace_h / static_cast<float>(std::max<size_t>(rows.size(), 1)), scaled_min_height) };
+            float y = title_bar_h;
             std::set<card::ptr> cards_to_remove;
 
             for (auto& row : rows) {
@@ -1240,7 +1252,7 @@ struct deck {
             }
             start_x = std::max(start_x, left_corner);
             auto x{start_x};
-            auto y = (empty_editor ? 450.0f : 250.0f);
+            auto y = title_bar_h + (empty_editor ? 450.0f : 250.0f);
             std::set<card::ptr> cards_to_remove;
             for (auto const& c : cards_) {
                 float override_width = -1.0f;
@@ -1250,7 +1262,7 @@ struct deck {
                         override_width = row_max_width - x;
                     }
                 }
-                bool draw_ok = render(*c, x, y, result.requested_fps, 0.0f, override_width);
+                bool draw_ok = render(*c, x, y, result.requested_fps, title_bar_h, override_width);
                 if (c->is_focused) {
                     last_focused_card_ = c;
                 }

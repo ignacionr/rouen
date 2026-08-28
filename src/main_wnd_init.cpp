@@ -53,7 +53,10 @@ bool main_wnd::initialize() {
 
         // Create window with SDL - properly configure for high DPI
         std::cout << "DEBUG: Creating SDL window..." << '\n';
-        const Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        Uint32 window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#ifdef _WIN32
+        window_flags |= SDL_WINDOW_BORDERLESS;
+#endif
         
         m_window = SDL_CreateWindow(
             "Rouen",
@@ -65,6 +68,28 @@ bool main_wnd::initialize() {
             SDL_Quit();
             return false;
         }
+#ifdef _WIN32
+        SDL_SetWindowHitTest(m_window, [](SDL_Window* win, const SDL_Point* pt, void*) -> SDL_HitTestResult {
+            int w = 0, h = 0;
+            SDL_GetWindowSize(win, &w, &h);
+            constexpr int border = 8;
+
+            if (pt->y < border) {
+                if (pt->x < border) return SDL_HITTEST_RESIZE_TOPLEFT;
+                if (pt->x > w - border) return SDL_HITTEST_RESIZE_TOPRIGHT;
+                return SDL_HITTEST_RESIZE_TOP;
+            }
+            if (pt->y > h - border) {
+                if (pt->x < border) return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+                if (pt->x > w - border) return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+                return SDL_HITTEST_RESIZE_BOTTOM;
+            }
+            if (pt->x < border) return SDL_HITTEST_RESIZE_LEFT;
+            if (pt->x > w - border) return SDL_HITTEST_RESIZE_RIGHT;
+
+            return SDL_HITTEST_NORMAL;
+        }, nullptr);
+#endif
         std::cout << "DEBUG: SDL window created successfully" << '\n';
         SDL_StartTextInput(m_window);
 
