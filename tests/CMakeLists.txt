@@ -210,6 +210,7 @@ target_sources(test_rss_watermark PRIVATE
     ../src/models/rss/rss_item_repo.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
@@ -244,6 +245,7 @@ target_sources(test_rss_diagnostics PRIVATE
     ../src/models/rss/rss_item_repo.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
@@ -278,6 +280,7 @@ target_sources(test_audio_time_progression PRIVATE
     ../src/models/rss/rss_item_repo.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
@@ -385,6 +388,7 @@ add_executable(test_mcp
     ../src/helpers/config_service.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
