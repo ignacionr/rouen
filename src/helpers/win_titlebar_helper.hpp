@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include <atomic>
 #include "../cards/interface/menu.hpp"
 #include "../helpers/media_player.hpp"
 #include "../helpers/platform_utils.hpp"
@@ -17,8 +18,12 @@
 
 namespace rouen::platform {
 
+inline std::atomic<float> g_win_titlebar_height{36.0f};
+inline std::atomic<float> g_win_titlebar_menu_end_x{280.0f};
+inline std::atomic<float> g_win_titlebar_caption_start_x{138.0f};
+
 inline float get_win_titlebar_height() {
-    return 36.0f;
+    return g_win_titlebar_height.load();
 }
 
 inline void render_win_titlebar(SDL_Window* window = nullptr) {
@@ -112,16 +117,14 @@ inline void render_win_titlebar(SDL_Window* window = nullptr) {
                 ImGui::EndMenu();
             }
 
-            // Title text centered in remaining title bar space
-            std::string window_title = "Rouen";
-            auto get_deck_status_func = registrar::get<std::function<std::string()>>("get_deck_status");
-            if (get_deck_status_func) {
-                // Keep minimal title
-            }
+            // Record where menus end (for native hit testing)
+            float const menu_end_x = ImGui::GetCursorPosX();
+            g_win_titlebar_menu_end_x.store(menu_end_x);
 
             // Caption Control Buttons (Minimize, Maximize/Restore, Close)
             float const btn_w = 46.0f;
             float const caption_area_w = btn_w * 3.0f;
+            g_win_titlebar_caption_start_x.store(caption_area_w);
             float const avail_x = ImGui::GetContentRegionAvail().x;
             if (avail_x > caption_area_w) {
                 ImGui::Dummy(ImVec2(avail_x - caption_area_w, 0.0f));

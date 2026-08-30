@@ -32,6 +32,10 @@
 #include "helpers/mac_menu_helper.hpp"
 #endif
 
+#ifdef _WIN32
+#include "helpers/win_titlebar_helper.hpp"
+#endif
+
 bool main_wnd::initialize() {
     try {
         std::cout << "DEBUG: Starting main_wnd::initialize()" << '\n';
@@ -72,8 +76,9 @@ bool main_wnd::initialize() {
         SDL_SetWindowHitTest(m_window, [](SDL_Window* win, const SDL_Point* pt, void*) -> SDL_HitTestResult {
             int w = 0, h = 0;
             SDL_GetWindowSize(win, &w, &h);
-            constexpr int border = 8;
+            constexpr int border = 6;
 
+            // Check resizable outer edges first
             if (pt->y < border) {
                 if (pt->x < border) return SDL_HITTEST_RESIZE_TOPLEFT;
                 if (pt->x > w - border) return SDL_HITTEST_RESIZE_TOPRIGHT;
@@ -86,6 +91,19 @@ bool main_wnd::initialize() {
             }
             if (pt->x < border) return SDL_HITTEST_RESIZE_LEFT;
             if (pt->x > w - border) return SDL_HITTEST_RESIZE_RIGHT;
+
+            // Title bar region: area between menu end and caption buttons start is draggable
+            float const titlebar_h = rouen::platform::g_win_titlebar_height.load();
+            if (pt->y < static_cast<int>(titlebar_h)) {
+                float const menu_end = rouen::platform::g_win_titlebar_menu_end_x.load();
+                float const caption_w = rouen::platform::g_win_titlebar_caption_start_x.load();
+                float const caption_start = static_cast<float>(w) - caption_w;
+
+                // When cursor is between the menus and the caption buttons, drag the window
+                if (static_cast<float>(pt->x) >= menu_end && static_cast<float>(pt->x) < caption_start) {
+                    return SDL_HITTEST_DRAGGABLE;
+                }
+            }
 
             return SDL_HITTEST_NORMAL;
         }, nullptr);
