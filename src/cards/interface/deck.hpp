@@ -29,6 +29,23 @@
 #include "../../helpers/win_titlebar_helper.hpp"
 
 struct deck {
+private:
+    friend class DeckScrollingTest;
+    SDL_Renderer* renderer;
+    std::vector<std::shared_ptr<card>> cards_;
+    std::vector<std::shared_ptr<card>> cards_to_cleanup_;
+    ImVec4 background_color;
+    ImVec4 editor_background_color;
+    ImVec4 text_color;
+    editor editor_;
+    float start_x {2.0f};
+    float current_scroll_x {0.0f};
+    float target_scroll_x {0.0f};
+    bool is_scrolling_manually {false};
+    rouen::ui::imgui_ui_context_impl ui_context_;
+    std::weak_ptr<card> last_focused_card_;
+    mutable std::shared_ptr<std::function<float()>> width_factor_fn_ {};
+public:
     deck(SDL_Renderer* sdl_renderer): renderer(sdl_renderer) {
         // Initialize colors
         background_color = {0.0, 0.0f, 0.0f, 0.70f};
@@ -111,6 +128,13 @@ struct deck {
                 }
             )
         );
+
+        registrar::add<std::function<bool()>>(
+            "close_focused_card",
+            std::make_shared<std::function<bool()>>(
+                [this]() { return close_focused_card(); }
+            )
+        );
         
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
@@ -129,6 +153,7 @@ struct deck {
         registrar::remove<std::function<void(int)>>("scroll_to_section");
         registrar::remove<std::function<std::string()>>("get_deck_status");
         registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("card_save_snapshot");
+        registrar::remove<std::function<bool()>>("close_focused_card");
     }
 
     struct card_layout_item {
@@ -249,6 +274,55 @@ struct deck {
         return info;
     }
 
+    struct color_setup {
+        color_setup(ImVec4 first_color, ImVec4 second_color) {
+            for (const auto& col : first_color_elements) {
+                ImGui::PushStyleColor(col, first_color);
+            }
+            for (const auto& col : second_color_elements) {
+                ImGui::PushStyleColor(col, second_color);
+            }
+        }
+        ~color_setup() {
+            const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
+            for (int i = 0; i < total_style_pushes; ++i) {
+                ImGui::PopStyleColor();
+            }
+        }
+        static constexpr ImGuiCol_ first_color_elements[] = {
+            ImGuiCol_TitleBgActive,
+            ImGuiCol_Border,
+            ImGuiCol_BorderShadow,
+            ImGuiCol_ButtonHovered,
+            ImGuiCol_CheckMark,
+        };
+        static constexpr ImGuiCol_ second_color_elements[] = {
+            ImGuiCol_TitleBgCollapsed,
+            ImGuiCol_Button,
+            ImGuiCol_ButtonActive,
+            ImGuiCol_FrameBg,
+            ImGuiCol_FrameBgHovered,
+            ImGuiCol_FrameBgActive,
+            ImGuiCol_ResizeGrip,
+            ImGuiCol_ResizeGripHovered,
+            ImGuiCol_ResizeGripActive,
+            ImGuiCol_SliderGrab,
+            ImGuiCol_SliderGrabActive,
+            ImGuiCol_Separator,
+            ImGuiCol_SeparatorHovered,
+            ImGuiCol_SeparatorActive,
+            ImGuiCol_Tab,
+            ImGuiCol_TabHovered,
+            ImGuiCol_TabActive,
+            ImGuiCol_TabUnfocused,
+            ImGuiCol_TabUnfocusedActive,
+            ImGuiCol_MenuBarBg,
+            ImGuiCol_PopupBg,
+            ImGuiCol_HeaderHovered,
+            ImGuiCol_HeaderActive
+        };
+    };
+
     std::string take_card_snapshot(const std::string& target, const std::string& filepath, int req_width, int req_height) {
         if (target == "deck" || target == "app" || target == "main" || target == "full" || target == "all" || target.empty()) {
             ImGuiIO& io = ImGui::GetIO();
@@ -262,10 +336,17 @@ struct deck {
             if (h <= 0) h = 600;
 
             auto render_fn = [this, layout, w, h]() {
+#if defined(_WIN32)
+                rouen::platform::render_win_titlebar(nullptr);
+                float const title_bar_h = rouen::platform::get_win_titlebar_height();
+#else
+                float const title_bar_h = 0.0f;
+#endif
                 float const scaled_min_height = card::min_card_height;
                 float const num_rows = static_cast<float>(std::max<size_t>(layout.rows.size(), 1));
-                float const row_height = std::max(static_cast<float>(h) / num_rows, scaled_min_height);
-                float y = 0.0f;
+                float const available_h = std::max(static_cast<float>(h) - title_bar_h, scaled_min_height);
+                float const row_height = std::max(available_h / num_rows, scaled_min_height);
+                float y = title_bar_h;
                 int req_fps = 0;
 
                 ImGui::PushStyleColor(ImGuiCol_WindowBg, background_color);
@@ -300,16 +381,43 @@ struct deck {
                 TextureHelper::destroyTexture(snapshot_texture);
                 return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
             }
-            std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
-            bool saved = IMG_SavePNG(surface, target_path.c_str());
+            std::string target_path = filepath;
+            if (target_path.empty()) {
+                std::error_code ec;
+                auto temp_dir = std::filesystem::temp_directory_path(ec);
+                target_path = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
+            }
+            target_path = std::filesystem::path(target_path).make_preferred().string();
+            bool saved = false;
+            if (target_path.ends_with(".bmp")) {
+                saved = SDL_SaveBMP(surface, target_path.c_str());
+            } else {
+                saved = IMG_SavePNG(surface, target_path.c_str());
+                if (!saved) {
+                    // Fallback to BMP
+                    std::string bmp_path = target_path;
+                    if (bmp_path.ends_with(".png")) {
+                        bmp_path = bmp_path.substr(0, bmp_path.length() - 4) + ".bmp";
+                    } else {
+                        bmp_path += ".bmp";
+                    }
+                    if (SDL_SaveBMP(surface, bmp_path.c_str())) {
+                        saved = true;
+                        target_path = bmp_path;
+                    }
+                }
+            }
+            const char* err_str = SDL_GetError();
+            int surf_w = surface ? surface->w : 0;
+            int surf_h = surface ? surface->h : 0;
             SDL_DestroySurface(surface);
             TextureHelper::destroyTexture(snapshot_texture);
 
             if (saved) {
-                return std::format(R"({{"success":true,"message":"Deck snapshot saved","file":"{}","width":{},"height":{}}})",
+                return std::format("{{\"success\":true,\"message\":\"Deck snapshot saved\",\"file\":\"{}\",\"width\":{},\"height\":{}}}",
                     target_path, w, h);
             } else {
-                return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+                return std::format("{{\"success\":false,\"error\":\"Failed to save image: {} (surf: {}x{})\"}}", (err_str ? err_str : "unknown"), surf_w, surf_h);
             }
         }
 
@@ -374,16 +482,41 @@ struct deck {
         int final_w = surface ? surface->w : width;
         int final_h = surface ? surface->h : height;
 
-        std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
-        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        std::string target_path = filepath;
+        if (target_path.empty()) {
+            std::error_code ec;
+            auto temp_dir = std::filesystem::temp_directory_path(ec);
+            target_path = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
+        }
+        target_path = std::filesystem::path(target_path).make_preferred().string();
+        bool saved = false;
+        if (target_path.ends_with(".bmp")) {
+            saved = SDL_SaveBMP(surface, target_path.c_str());
+        } else {
+            saved = IMG_SavePNG(surface, target_path.c_str());
+            if (!saved) {
+                // Fallback to BMP
+                std::string bmp_path = target_path;
+                if (bmp_path.ends_with(".png")) {
+                    bmp_path = bmp_path.substr(0, bmp_path.length() - 4) + ".bmp";
+                } else {
+                    bmp_path += ".bmp";
+                }
+                if (SDL_SaveBMP(surface, bmp_path.c_str())) {
+                    saved = true;
+                    target_path = bmp_path;
+                }
+            }
+        }
+        const char* err_str = SDL_GetError();
         SDL_DestroySurface(surface);
         TextureHelper::destroyTexture(snapshot_texture);
 
         if (saved) {
-            return std::format(R"({{"success":true,"message":"Card snapshot saved","file":"{}","width":{},"height":{}}})",
+            return std::format("{{\"success\":true,\"message\":\"Card snapshot saved\",\"file\":\"{}\",\"width\":{},\"height\":{}}}",
                 target_path, final_w, final_h);
         } else {
-            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+            return std::format("{{\"success\":false,\"error\":\"Failed to save image: {} (surf: {}x{})\"}}", (err_str ? err_str : "unknown"), final_w, final_h);
         }
     }
 
@@ -464,61 +597,6 @@ struct deck {
             }
         }
     }
-
-    struct color_setup {
-        color_setup(ImVec4 first_color, ImVec4 second_color) {
-            // Push first color elements
-            for (const auto& col : first_color_elements) {
-                ImGui::PushStyleColor(col, first_color);
-            }
-            
-            // Push second color elements
-            for (const auto& col : second_color_elements) {
-                ImGui::PushStyleColor(col, second_color);
-            }
-    
-        }
-        ~color_setup() {
-            // Pop all style colors (2 initial + size of both arrays)
-            const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
-            for (int i = 0; i < total_style_pushes; ++i) {
-                ImGui::PopStyleColor();
-            }
-        }
-        static constexpr ImGuiCol_ first_color_elements[] = {
-            ImGuiCol_TitleBgActive,
-            ImGuiCol_Border,
-            ImGuiCol_BorderShadow,
-            ImGuiCol_ButtonHovered,
-            ImGuiCol_CheckMark,
-        };
-        
-        static constexpr ImGuiCol_ second_color_elements[] = {
-            ImGuiCol_TitleBgCollapsed,
-            ImGuiCol_Button,
-            ImGuiCol_ButtonActive,
-            ImGuiCol_FrameBg,
-            ImGuiCol_FrameBgHovered,
-            ImGuiCol_FrameBgActive,
-            ImGuiCol_ResizeGrip,
-            ImGuiCol_ResizeGripHovered,
-            ImGuiCol_ResizeGripActive,
-            ImGuiCol_SliderGrab,
-            ImGuiCol_SliderGrabActive,
-            ImGuiCol_Separator,
-            ImGuiCol_SeparatorHovered,
-            ImGuiCol_SeparatorActive,
-            ImGuiCol_Tab,
-            ImGuiCol_TabHovered,
-            ImGuiCol_TabActive,
-            ImGuiCol_TabUnfocused,
-            ImGuiCol_TabUnfocusedActive,
-            ImGuiCol_MenuBarBg,
-            ImGuiCol_PopupBg,
-            ImGuiCol_HeaderHovered,
-            ImGuiCol_HeaderActive
-        };
-    };
 
     float get_width_factor() const {
         // The Display card only registers this service once it is instantiated, so it may be
@@ -1250,9 +1328,9 @@ struct deck {
             if (start_x > right_corner_offset || (start_x - row_max_width) > right_corner_offset) {
                 start_x = right_corner_offset;
             }
-            start_x = std::max(start_x, left_corner);
             auto x{start_x};
-            auto y = title_bar_h + (empty_editor ? 450.0f : 250.0f);
+            float const cards_row_height = empty_editor ? workspace_h : std::min(250.0f, workspace_h * 0.5f);
+            float const card_y = title_bar_h;
             std::set<card::ptr> cards_to_remove;
             for (auto const& c : cards_) {
                 float override_width = -1.0f;
@@ -1262,7 +1340,7 @@ struct deck {
                         override_width = row_max_width - x;
                     }
                 }
-                bool draw_ok = render(*c, x, y, result.requested_fps, title_bar_h, override_width);
+                bool draw_ok = render(*c, x, cards_row_height, result.requested_fps, card_y, override_width);
                 if (c->is_focused) {
                     last_focused_card_ = c;
                 }
@@ -1290,8 +1368,10 @@ struct deck {
             cards_.erase(cards_to_remove_main, cards_.end());
 
             // Render the editor window
-            ImGui::SetNextWindowPos({0.0f, 2.0f + y}, ImGuiCond_Always);
-            ImGui::SetNextWindowSize({size.x, size.y - y}, ImGuiCond_Always);
+            float const editor_y = card_y + cards_row_height + 2.0f;
+            float const editor_h = std::max(1.0f, size.y - editor_y);
+            ImGui::SetNextWindowPos({0.0f, editor_y}, ImGuiCond_Always);
+            ImGui::SetNextWindowSize({size.x, editor_h}, ImGuiCond_Always);
             ImGui::PushStyleColor(ImGuiCol_WindowBg, editor_background_color);
             editor_.render();
             ImGui::PopStyleColor();
@@ -1340,22 +1420,6 @@ struct deck {
     std::vector<std::shared_ptr<card>>& get_cards() { return cards_; }
     [[nodiscard]] float get_target_scroll_x() const { return target_scroll_x; }
 
-private:
-    friend class DeckScrollingTest;
-    SDL_Renderer* renderer;
-    std::vector<std::shared_ptr<card>> cards_;
-    std::vector<std::shared_ptr<card>> cards_to_cleanup_;
-    ImVec4 background_color;
-    ImVec4 editor_background_color;
-    ImVec4 text_color;
-    editor editor_;
-    float start_x {2.0f};
-    float current_scroll_x {0.0f};
-    float target_scroll_x {0.0f};
-    bool is_scrolling_manually {false};
-    rouen::ui::imgui_ui_context_impl ui_context_;
-    std::weak_ptr<card> last_focused_card_;
-    mutable std::shared_ptr<std::function<float()>> width_factor_fn_ {};
 public:
     static inline bool no_initial_cards{false};
 };

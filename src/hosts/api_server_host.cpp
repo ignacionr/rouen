@@ -1,3 +1,12 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#endif
+
 #include "api_server_host.hpp"
 #include "audio_capture.hpp"
 #include "mp4_writer.hpp"
@@ -83,35 +92,69 @@ api_server_host::~api_server_host() {
     stop();
 }
 
+#include <fstream>
+
 bool api_server_host::initialize() {
+    std::ofstream log("api_server.log", std::ios::app);
+    log << "[API_HOST] initialize() called" << std::endl;
     if (initialized_) {
+        log << "[API_HOST] Already initialized" << std::endl;
         return true;
     }
+
+#ifdef _WIN32
+    WSADATA wsa_data{};
+    int wsa_res = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+    log << "[API_HOST] WSAStartup result: " << wsa_res << std::endl;
+#endif
 
     try {
         mgr_ = std::make_unique<mg_mgr>();
     } catch (const std::exception& e) {
-        std::cerr << "Failed to allocate mongoose manager: " << e.what() << '\n';
+        log << "[API_HOST] Failed to allocate mongoose manager: " << e.what() << std::endl;
         return false;
     }
 
     mg_mgr_init(mgr_.get());
     initialized_ = true;
+    log << "[API_HOST] initialize() complete, mgr_ initialized" << std::endl;
     return true;
 }
 
 bool api_server_host::start(const std::string& address) {
+    std::ofstream log("api_server.log", std::ios::app);
+    log << "[API_HOST] start() called with address: " << address << std::endl;
     if (!initialized_ && !initialize()) {
+        log << "[API_HOST] initialize() failed inside start()" << std::endl;
         return false;
     }
 
     if (running_) {
-        return true; // Already running
+        log << "[API_HOST] Already running" << std::endl;
+        return true;
     }
 
-    conn_ = mg_http_listen(mgr_.get(), address.c_str(), event_handler, this);
+    for (int retry = 0; retry < 5; ++retry) {
+        conn_ = mg_http_listen(mgr_.get(), address.c_str(), event_handler, this);
+        if (conn_) {
+            log << "[API_HOST] mg_http_listen succeeded on primary address: " << address << std::endl;
+            break;
+        }
+        if (address.find("127.0.0.1") != std::string::npos) {
+            std::string fallback = address;
+            fallback.replace(fallback.find("127.0.0.1"), 9, "0.0.0.0");
+            conn_ = mg_http_listen(mgr_.get(), fallback.c_str(), event_handler, this);
+            if (conn_) {
+                log << "[API_HOST] mg_http_listen succeeded on fallback address: " << fallback << std::endl;
+                break;
+            }
+        }
+        log << "[API_HOST] mg_http_listen retry " << retry + 1 << "..." << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    }
+
     if (!conn_) {
-        std::cerr << "Failed to start HTTP server on " << address << '\n';
+        log << "[API_HOST] Failed to start HTTP server on " << address << std::endl;
         return false;
     }
 
@@ -119,15 +162,16 @@ bool api_server_host::start(const std::string& address) {
     running_ = true;
     try {
         server_thread_ = std::make_unique<std::thread>(&api_server_host::server_loop, this);
+        log << "[API_HOST] Server thread created and running" << std::endl;
     } catch (const std::exception& e) {
-        std::cerr << "Failed to start server thread: " << e.what() << '\n';
+        log << "[API_HOST] Failed to start server thread: " << e.what() << std::endl;
         mg_http_listen(mgr_.get(), nullptr, nullptr, nullptr); // Cancel listening
         conn_ = nullptr;
         running_ = false;
         return false;
     }
 
-    std::cout << "API server started on " << address << '\n';
+    log << "[API_HOST] Server fully started and listening on " << address << std::endl;
     return true;
 }
 
@@ -911,13 +955,22 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
                 }
             }
 
-            size_t w_pos = q.find("width=");
-            if (w_pos != std::string::npos) {
-                try { req.width = std::stoi(q.substr(w_pos + 6)); } catch (...) {}
-            }
-            size_t h_pos = q.find("height=");
-            if (h_pos != std::string::npos) {
-                try { req.height = std::stoi(q.substr(h_pos + 7)); } catch (...) {}
+            size_t fn_pos = q.find("filename=");
+            if (fn_pos != std::string::npos) {
+                size_t amp_pos = q.find('&', fn_pos);
+                req.filename = q.substr(fn_pos + 9, (amp_pos == std::string::npos ? std::string::npos : amp_pos - (fn_pos + 9)));
+            } else {
+                size_t file_pos = q.find("file=");
+                if (file_pos != std::string::npos) {
+                    size_t amp_pos = q.find('&', file_pos);
+                    req.filename = q.substr(file_pos + 5, (amp_pos == std::string::npos ? std::string::npos : amp_pos - (file_pos + 5)));
+                } else {
+                    size_t path_pos = q.find("path=");
+                    if (path_pos != std::string::npos) {
+                        size_t amp_pos = q.find('&', path_pos);
+                        req.filename = q.substr(path_pos + 5, (amp_pos == std::string::npos ? std::string::npos : amp_pos - (path_pos + 5)));
+                    }
+                }
             }
         }
 
@@ -925,7 +978,9 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
             req.target = "deck";
         }
         if (req.filename.empty()) {
-            req.filename = "/tmp/snapshot.png";
+            std::error_code ec;
+            auto temp_dir = std::filesystem::temp_directory_path(ec);
+            req.filename = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
         }
 
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");

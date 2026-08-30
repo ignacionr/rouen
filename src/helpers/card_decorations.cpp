@@ -19,20 +19,20 @@ void card_decorations::render_decorations(card* c) {
 
     bool is_in_menu = is_added_to_menu(uri);
 
-    ImVec2 win_pos = ImGui::GetWindowPos();
-    ImVec2 win_size = ImGui::GetWindowSize();
-    ImVec2 content_min = ImGui::GetWindowContentRegionMin(); // Content top-left relative to window
+    ImVec2 const win_pos = ImGui::GetWindowPos();
+    ImVec2 const win_size = ImGui::GetWindowSize();
+    ImVec2 const content_min = ImGui::GetWindowContentRegionMin(); // Content top-left relative to window
 
-    float font_size = ImGui::GetFontSize();
-    float button_w = font_size + 8.0f;
-    float button_h = font_size + 4.0f;
+    float const font_size = ImGui::GetFontSize();
+    float const button_w = font_size + 8.0f;
+    float const button_h = font_size + 4.0f;
 
     float btn_x = 0.0f;
     float btn_y = 0.0f;
 
     // If content_min.y > 10.0f, a window title bar is visible above content
     if (content_min.y > 10.0f) {
-        float title_bar_h = content_min.y;
+        float const title_bar_h = content_min.y;
         btn_x = win_pos.x + win_size.x - title_bar_h - button_w - 6.0f;
         btn_y = win_pos.y + (title_bar_h - button_h) * 0.5f;
     } else {
@@ -41,40 +41,54 @@ void card_decorations::render_decorations(card* c) {
         btn_y = win_pos.y + 6.0f;
     }
 
-    // Set absolute screen position so button renders on top of card content
-    ImGui::SetCursorScreenPos(ImVec2(btn_x, btn_y));
+    ImVec2 const p_min(btn_x, btn_y);
+    ImVec2 const p_max(btn_x + button_w, btn_y + button_h);
 
-    // Button style
-    if (is_in_menu) {
-        // Active gold/yellow pin badge
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.65f, 0.1f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.55f, 0.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
-    } else {
-        // Subtle, crisp semi-transparent badge
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.2f, 0.65f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.55f, 0.85f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.25f, 0.45f, 0.75f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.85f, 0.95f, 0.9f));
+    bool const hovered = ImGui::IsMouseHoveringRect(p_min, p_max);
+    bool const clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+
+    if (clicked) {
+        toggle_menu_tag(c);
+        is_in_menu = !is_in_menu;
     }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3.0f, 1.0f));
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImU32 bg_col;
+    ImU32 text_col;
+
+    if (is_in_menu) {
+        if (hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            bg_col = ImGui::GetColorU32(ImVec4(0.8f, 0.55f, 0.0f, 1.0f));
+        } else if (hovered) {
+            bg_col = ImGui::GetColorU32(ImVec4(1.0f, 0.75f, 0.2f, 1.0f));
+        } else {
+            bg_col = ImGui::GetColorU32(ImVec4(0.9f, 0.65f, 0.1f, 0.85f));
+        }
+        text_col = ImGui::GetColorU32(ImVec4(0.05f, 0.05f, 0.05f, 1.0f));
+    } else {
+        if (hovered && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            bg_col = ImGui::GetColorU32(ImVec4(0.25f, 0.45f, 0.75f, 1.0f));
+        } else if (hovered) {
+            bg_col = ImGui::GetColorU32(ImVec4(0.35f, 0.55f, 0.85f, 0.85f));
+        } else {
+            bg_col = ImGui::GetColorU32(ImVec4(0.15f, 0.15f, 0.2f, 0.65f));
+        }
+        text_col = ImGui::GetColorU32(ImVec4(0.85f, 0.85f, 0.95f, 0.9f));
+    }
+
+    draw_list->AddRectFilled(p_min, p_max, bg_col, 3.0f);
 
     const char* icon = is_in_menu ? ICON_MD_BOOKMARK : ICON_MD_BOOKMARK_BORDER;
-    std::string btn_id = std::format("{}##menu_dec_{}", icon, static_cast<const void*>(c));
+    ImVec2 const icon_size = ImGui::CalcTextSize(icon);
+    ImVec2 const text_pos(
+        btn_x + (button_w - icon_size.x) * 0.5f,
+        btn_y + (button_h - icon_size.y) * 0.5f
+    );
+    draw_list->AddText(text_pos, text_col, icon);
 
-    if (ImGui::Button(btn_id.c_str(), ImVec2(button_w, button_h))) {
-        toggle_menu_tag(c);
-    }
-
-    if (ImGui::IsItemHovered()) {
+    if (hovered) {
         ImGui::SetTooltip("%s", is_in_menu ? "Remove from Application Menu (.menu tag)" : "Add to Application Menu (.menu tag)");
     }
-
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(4);
 }
 
 bool card_decorations::is_added_to_menu(const std::string& uri) {

@@ -120,7 +120,12 @@ public:
             return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
         }
 
-        std::string target_path = filepath.empty() ? "/tmp/snapshot.png" : filepath;
+        std::string target_path = filepath;
+        if (target_path.empty()) {
+            std::error_code ec;
+            auto temp_dir = std::filesystem::temp_directory_path(ec);
+            target_path = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
+        }
         bool saved = IMG_SavePNG(surface, target_path.c_str());
         SDL_DestroySurface(surface);
         TextureHelper::destroyTexture(snapshot_texture);
@@ -165,7 +170,12 @@ public:
             return R"({"success":false,"error":"Failed to download GPU texture to surface"})";
         }
 
-        std::string target_path = filepath.empty() ? "/tmp/editor_snapshot.png" : filepath;
+        std::string target_path = filepath;
+        if (target_path.empty()) {
+            std::error_code ec;
+            auto temp_dir = std::filesystem::temp_directory_path(ec);
+            target_path = (ec ? std::filesystem::path("editor_snapshot.png") : (temp_dir / "editor_snapshot.png")).string();
+        }
         bool saved = IMG_SavePNG(surface, target_path.c_str());
         SDL_DestroySurface(surface);
         TextureHelper::destroyTexture(snapshot_texture);

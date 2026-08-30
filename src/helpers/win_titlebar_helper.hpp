@@ -13,17 +13,16 @@
 #include "../helpers/media_player.hpp"
 #include "../helpers/platform_utils.hpp"
 #include "../registrar.hpp"
+#include "../../external/IconsMaterialDesign.h"
 
 namespace rouen::platform {
 
 inline float get_win_titlebar_height() {
-    return 40.0f;
+    return 36.0f;
 }
 
-inline void render_win_titlebar(SDL_Window* window) {
-    if (!window) return;
-
-    constexpr float height = 40.0f;
+inline void render_win_titlebar(SDL_Window* window = nullptr) {
+    float const height = get_win_titlebar_height();
     ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(viewport->Pos);
@@ -39,7 +38,7 @@ inline void render_win_titlebar(SDL_Window* window) {
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, (height - ImGui::GetFontSize()) * 0.5f));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 0.0f));
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.09f, 0.09f, 0.11f, 1.0f));
@@ -48,10 +47,8 @@ inline void render_win_titlebar(SDL_Window* window) {
     if (ImGui::Begin("##CustomTitleBar", nullptr, flags)) {
         if (ImGui::BeginMenuBar()) {
             // App Logo / Name
-            ImGui::SetCursorPosY((height - ImGui::GetTextLineHeight()) * 0.5f);
             ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "  ROUEN");
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(6.0f, 0.0f));
+            ImGui::Dummy(ImVec2(4.0f, 0.0f));
             ImGui::SameLine();
 
             // File Menu
@@ -84,48 +81,30 @@ inline void render_win_titlebar(SDL_Window* window) {
 
             // View Menu
             if (ImGui::BeginMenu("View")) {
-                if (ImGui::MenuItem("Display Settings")) {
-                    "create_card"_sfn("display");
+                if (ImGui::MenuItem("Scroll Left", "Alt+Left")) {
+                    // Handled in deck
                 }
-                if (ImGui::MenuItem("Theme Settings")) {
-                    "create_card"_sfn("theme");
-                }
-                if (ImGui::MenuItem("Video Feed & Cast Control")) {
-                    "create_card"_sfn("cast-control");
-                }
-                if (ImGui::MenuItem("Detach Currently Playing Media")) {
-                    auto item = media_player::get_currently_playing_item();
-                    if (item) {
-                        media_player::set_detached_item(item);
-                    } else {
-                        media_player::set_detached_mode_active(true);
-                    }
+                if (ImGui::MenuItem("Scroll Right", "Alt+Right")) {
+                    // Handled in deck
                 }
                 ImGui::EndMenu();
             }
 
-            // Tools Menu
-            if (ImGui::BeginMenu("Tools")) {
-                try {
-                    const auto categories = rouen::cards::menu::get_categories();
-                    for (const auto& cat : categories) {
-                        if (ImGui::BeginMenu(cat.name.c_str())) {
-                            for (const auto& item : cat.items) {
-                                if (ImGui::MenuItem(item.first.c_str())) {
-                                    item.second();
-                                }
-                            }
-                            ImGui::EndMenu();
-                        }
+            // Cards Menu
+            if (ImGui::BeginMenu("Cards")) {
+                if (ImGui::MenuItem("Close Card", "Ctrl+W")) {
+                    auto close_fn = registrar::try_get<std::function<bool()>>("close_focused_card");
+                    if (close_fn) {
+                        (*close_fn)();
                     }
-                } catch (...) {}
+                }
                 ImGui::EndMenu();
             }
 
             // Help Menu
             if (ImGui::BeginMenu("Help")) {
-                if (ImGui::MenuItem("API Documentation (Swagger)")) {
-                    rouen::platform::open_url("http://localhost:8081/swagger");
+                if (ImGui::MenuItem("Objectives")) {
+                    "create_card"_sfn("objectives");
                 }
                 if (ImGui::MenuItem("About Rouen")) {
                     "create_card"_sfn("about");
@@ -133,14 +112,25 @@ inline void render_win_titlebar(SDL_Window* window) {
                 ImGui::EndMenu();
             }
 
-            // Caption Buttons (Right Aligned)
-            constexpr float btn_w = 46.0f;
-            float const avail_w = ImGui::GetWindowWidth();
-            ImGui::SetCursorPosX(avail_w - (3.0f * btn_w));
-            ImGui::SetCursorPosY(0.0f);
+            // Title text centered in remaining title bar space
+            std::string window_title = "Rouen";
+            auto get_deck_status_func = registrar::get<std::function<std::string()>>("get_deck_status");
+            if (get_deck_status_func) {
+                // Keep minimal title
+            }
+
+            // Caption Control Buttons (Minimize, Maximize/Restore, Close)
+            float const btn_w = 46.0f;
+            float const caption_area_w = btn_w * 3.0f;
+            float const avail_x = ImGui::GetContentRegionAvail().x;
+            if (avail_x > caption_area_w) {
+                ImGui::Dummy(ImVec2(avail_x - caption_area_w, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+            }
 
             ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
 
             // Transparent background for caption buttons
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -148,20 +138,22 @@ inline void render_win_titlebar(SDL_Window* window) {
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.22f));
 
             // Minimize
-            if (ImGui::Button("-##win_min", ImVec2(btn_w, height))) {
-                SDL_MinimizeWindow(window);
+            if (ImGui::Button(ICON_MD_REMOVE "##win_min", ImVec2(btn_w, height))) {
+                if (window) SDL_MinimizeWindow(window);
             }
             ImGui::SameLine(0.0f, 0.0f);
 
             // Maximize / Restore
-            Uint32 const win_flags = SDL_GetWindowFlags(window);
+            Uint32 const win_flags = window ? SDL_GetWindowFlags(window) : 0;
             bool const is_maximized = (win_flags & SDL_WINDOW_MAXIMIZED) != 0;
-            const char* max_icon = is_maximized ? "\xE2\x9D\xB2" : "\xE2\x96\xA1";
+            const char* max_icon = is_maximized ? ICON_MD_FILTER_NONE : ICON_MD_CROP_SQUARE;
             if (ImGui::Button(std::format("{}##win_max", max_icon).c_str(), ImVec2(btn_w, height))) {
-                if (is_maximized) {
-                    SDL_RestoreWindow(window);
-                } else {
-                    SDL_MaximizeWindow(window);
+                if (window) {
+                    if (is_maximized) {
+                        SDL_RestoreWindow(window);
+                    } else {
+                        SDL_MaximizeWindow(window);
+                    }
                 }
             }
             ImGui::SameLine(0.0f, 0.0f);
@@ -172,21 +164,21 @@ inline void render_win_titlebar(SDL_Window* window) {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.15f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.70f, 0.08f, 0.10f, 1.0f));
 
-            if (ImGui::Button("\xE2\x9C\x95##win_close", ImVec2(btn_w, height))) {
+            if (ImGui::Button(ICON_MD_CLOSE "##win_close", ImVec2(btn_w, height))) {
                 SDL_Event ev{};
                 ev.type = SDL_EVENT_QUIT;
                 SDL_PushEvent(&ev);
             }
 
             ImGui::PopStyleColor(3); // Pop Button, Close ButtonHovered, Close ButtonActive
-            ImGui::PopStyleVar(2);   // Pop FrameBorderSize, FrameRounding
+            ImGui::PopStyleVar(3);   // Pop FrameBorderSize, FrameRounding, FramePadding
 
             ImGui::EndMenuBar();
         }
 
         // Window Dragging Logic:
         // If the custom title bar window is hovered and a left-click drag occurs—and no individual menu item or button is actively focused (!ImGui::IsAnyItemActive())—extract mouse delta and update window pos.
-        if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && !ImGui::IsAnyItemActive()) {
+        if (window && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && !ImGui::IsAnyItemActive()) {
             if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
                 ImVec2 const delta = ImGui::GetIO().MouseDelta;
                 if (delta.x != 0.0f || delta.y != 0.0f) {

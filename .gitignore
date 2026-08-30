@@ -7,6 +7,7 @@ rss_images.db*
 /cache
 rouen.ini
 /card_*.png
+screenshot.*
 !docs/cards/images/*
 **/.DS_Store
 vcpkg_installed
