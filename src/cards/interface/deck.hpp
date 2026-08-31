@@ -1311,12 +1311,10 @@ public:
         }
         else {
             auto right_corner_offset {row_max_width};
-            float left_corner {0.0f};
             for (auto& c : cards_) {
                 float const scaled_card_width = c->width;
                 right_corner_offset -= scaled_card_width + 2.0f;
                 if (c->is_focused) {
-                    left_corner = right_corner_offset + scaled_card_width - row_max_width + 2.0f;
                     break;
                 }
             }

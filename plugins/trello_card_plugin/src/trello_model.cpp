@@ -35,13 +35,6 @@ std::shared_ptr<trello_model> get_trello_model() {
     return g_trello_model;
 }
 
-static std::string strip_trailing_slash(const std::string& url) {
-    if (!url.empty() && url.back() == '/') {
-        return url.substr(0, url.length() - 1);
-    }
-    return url;
-}
-
 trello_model::trello_model() {
     load_saved_profiles();
     TRELLO_INFO("Trello model initialized");
