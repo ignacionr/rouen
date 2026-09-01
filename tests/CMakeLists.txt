@@ -170,6 +170,8 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/interface/card.cpp
     ../src/hosts/mcp_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/hosts/git_sync_host.cpp
+    ../src/helpers/config_service.cpp
     ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/theme_manager.cpp
