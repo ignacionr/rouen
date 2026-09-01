@@ -386,6 +386,7 @@ bool media_player_item::playMedia(const void* owner) {
             std::string const cache_key = std::format("{}|{}", norm_url, pref_quality);
 
             bool found_cached = false;
+            std::vector<std::string> cached_urls_to_test;
             {
                 std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
                 auto it = s_yt_resolved_urls.find(cache_key);
@@ -393,14 +394,19 @@ bool media_player_item::playMedia(const void* owner) {
                     auto now = std::chrono::steady_clock::now();
                     auto age_mins = std::chrono::duration_cast<std::chrono::minutes>(now - it->second.first).count();
                     if (age_mins < 15 && !it->second.second.empty()) {
-                        if (is_url_accessible(it->second.second[0])) {
-                            assign_targets_from_urls(it->second.second);
-                            found_cached = true;
-                        } else {
-                            std::cerr << "[NativePlayer Diagnostics] Cached YouTube URL is no longer accessible (HTTP 403). Evicting from cache.\n";
-                            s_yt_resolved_urls.erase(it);
-                        }
+                        cached_urls_to_test = it->second.second;
                     }
+                }
+            }
+
+            if (!cached_urls_to_test.empty()) {
+                if (is_url_accessible(cached_urls_to_test[0])) {
+                    assign_targets_from_urls(cached_urls_to_test);
+                    found_cached = true;
+                } else {
+                    std::cerr << "[NativePlayer Diagnostics] Cached YouTube URL is no longer accessible (HTTP 403). Evicting from cache.\n";
+                    std::lock_guard<std::mutex> const lock(s_yt_resolved_url_mutex);
+                    s_yt_resolved_urls.erase(cache_key);
                 }
             }
 
