@@ -167,6 +167,7 @@ if(NOT MSVC)
 endif()
 add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
 target_sources(test_adaptive_process_card PRIVATE
+    ../src/cards/interface/card.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/theme_manager.cpp
     ../src/helpers/card_decorations.cpp
