@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Wrapper for clang-scan-deps under Nix to supply Nix include paths ($NIX_CFLAGS_COMPILE) to clang-scan-deps.
+
+SCAN_DEPS_BIN="${CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS_REAL:-}"
+
+if [ -z "$SCAN_DEPS_BIN" ]; then
+    SCAN_DEPS_BIN=$(command -v clang-scan-deps 2>/dev/null)
+fi
+
+if [ -z "$SCAN_DEPS_BIN" ]; then
+    SCAN_DEPS_BIN="/nix/store/68hv0pcwbpg3fvz7pzw4bpm0j3qmwwbw-clang-20.1.6/bin/clang-scan-deps"
+fi
+
+# Find libcxx v1 include directory if available
+LIBCXX_V1=""
+for dir in /nix/store/*-libcxx-*-dev/include/c++/v1; do
+    if [ -d "$dir" ]; then
+        LIBCXX_V1="$dir"
+        break
+    fi
+done
+
+IS_OBJCXX=0
+for arg in "$@"; do
+    if [[ "$arg" == *.mm ]]; then
+        IS_OBJCXX=1
+        break
+    fi
+done
+
+ARGS=()
+HAS_DASH_DASH=0
+PREV_ARG=""
+HAS_STD=0
+for arg in "$@"; do
+    if [[ "$arg" == -std=* ]]; then
+        HAS_STD=1
+    fi
+    if [ "$IS_OBJCXX" -eq 1 ] && [ "$PREV_ARG" = "-x" ] && [ "$arg" = "c++" ]; then
+        ARGS+=("objective-c++")
+    else
+        ARGS+=("$arg")
+    fi
+    PREV_ARG="$arg"
+    if [ "$arg" = "--" ]; then
+        HAS_DASH_DASH=1
+    fi
+done
+
+if [ "$HAS_DASH_DASH" -eq 1 ]; then
+    if [ "$IS_OBJCXX" -eq 1 ] && [ "$HAS_STD" -eq 0 ]; then
+        ARGS+=("-std=gnu++23")
+    fi
+    if [ -n "$NIX_CFLAGS_COMPILE" ]; then
+        eval "nix_flags=($NIX_CFLAGS_COMPILE)"
+        ARGS+=("${nix_flags[@]}")
+    fi
+    if [ -n "$LIBCXX_V1" ]; then
+        ARGS+=("-isystem" "$LIBCXX_V1")
+    fi
+fi
+
+exec "$SCAN_DEPS_BIN" "${ARGS[@]}"

@@ -1,6 +1,7 @@
 #include "config_service.hpp"
 #include "platform_utils.hpp"
 #include "process_helper.hpp"
+#include "debug.hpp"
 #include <exception>
 #include <format>
 #include <functional>
@@ -21,19 +22,26 @@
 #include <vector>
 
 #if defined(__APPLE__)
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
 #elif defined(__linux__)
 #include <unistd.h>
 #include <climits>
+extern "C" char **environ;
 #elif defined(_WIN32)
 #include <windows.h>
+#include <stdlib.h>
 #endif
 
-#ifdef _WIN32
-    #include <stdlib.h>
-#else
-    #include <cstdlib>
-    extern char **environ; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-#endif
+#define CONFIG_ERROR(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_ERROR, message)
+#define CONFIG_WARN(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_WARN, message)
+#define CONFIG_INFO(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_INFO, message)
+#define CONFIG_DEBUG(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_DEBUG, message)
+
+#define CONFIG_ERROR_FMT(fmt, ...) CONFIG_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_WARN_FMT(fmt, ...) CONFIG_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_INFO_FMT(fmt, ...) CONFIG_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_DEBUG_FMT(fmt, ...) CONFIG_DEBUG(debug::format_log(fmt, __VA_ARGS__))
 
 namespace rouen::helpers {
 

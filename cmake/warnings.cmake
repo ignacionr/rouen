@@ -37,6 +37,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       -Wno-error=cast-function-type
       -Wno-old-style-cast
       -Wno-cast-function-type-strict
+      -Wno-decls-in-multiple-modules
+      -Wno-error=decls-in-multiple-modules
       -Wpedantic           # Enforce strict ISO C++
       -Wnull-dereference   # Warn about null pointer dereference
       -Wformat=2           # Warn about printf format issues

@@ -1,111 +1,47 @@
+module;
+
 #include <SDL3/SDL_video.h>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <functional>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <vector>  // Added missing header for std::vector
-#include <format>  // C++23 std::format
+#include <vector>
+#include <format>
+#include <algorithm>
 
-#include "fonts.hpp"
 #include "IconsMaterialDesign.h"
-#include "helpers/debug.hpp"  // For logging
-#include "helpers/platform_utils.hpp"  // For resource path utilities
-#include "registrar.hpp"  // For accessing registered services
+#include "helpers/debug.hpp"
+#include "helpers/platform_utils.hpp"
+#include "registrar.hpp"
+
+module rouen.fonts;
 
 namespace rouen::fonts {
     namespace {
         struct font_state {
             float last_dpi_scale = 1.0f;
-            bool fonts_need_rebuild = false;
-            ImFont* s_default_font = nullptr;
-            ImFont* s_mono_font = nullptr;
-            ImFont* s_bold_font = nullptr;
-            ImFont* s_italic_font = nullptr;
+            bool rebuild_requested = false;
         };
 
-        font_state& get_state() noexcept {
-            static font_state state;
-            return state;
-        }
+        static font_state g_font_state;
 
-        // Helper function to find font file
-        std::string find_font_path(const std::string& filename, const std::vector<std::string>& search_paths) {
-            for (const auto& base_path : search_paths) {
-                std::filesystem::path const full_path = std::filesystem::path(base_path) / filename;
-                if (std::filesystem::exists(full_path)) {
-                    return full_path.string();
-                }
-            }
-            return "";
-        }
-        
-        // Helper to get OS-specific font paths
-        std::vector<std::string> get_system_font_paths() {
-            std::vector<std::string> paths;
-            
-            #ifdef __APPLE__
-            // macOS font paths
-            paths.push_back("/System/Library/Fonts/");
-            paths.push_back("/System/Library/Fonts/Supplemental/");  // Arial, Georgia, Verdana variants
-            paths.push_back("/Library/Fonts/");
-            const char* home = std::getenv("HOME");
-            if (home) {
-                paths.push_back(std::string(home) + "/Library/Fonts/");
-            }
-            #elif defined(_WIN32)
-            // Windows font paths
-            char win_dir[MAX_PATH];
-            if (GetWindowsDirectoryA(win_dir, MAX_PATH)) {
-                paths.push_back(std::string(win_dir) + "\\Fonts\\");
-            } else {
-                paths.push_back("C:\\Windows\\Fonts\\");
-            }
-            #else
-            // Linux font paths
-            paths.push_back("/usr/share/fonts/");
-            paths.push_back("/usr/share/fonts/truetype/");
-            paths.push_back("/usr/share/fonts/TTF/");
-            paths.push_back("/usr/local/share/fonts/");
-            const char* home = std::getenv("HOME");
-            if (home) {
-                paths.push_back(std::string(home) + "/.fonts/");
-                paths.push_back(std::string(home) + "/.local/share/fonts/");
-            }
-            #endif
-            
-            return paths;
-        }
-        
-        // Helper to get application directory for relative paths
-        std::string get_application_directory() {
-            try {
-                return std::filesystem::current_path().string();
-            } catch (const std::exception& e) {
-                std::cerr << "Error getting current path: " << e.what() << '\n';
-                return ".";
-            }
-        }
-    }
-    
-    // Setup fonts
-    void setup() {
-        auto & io = ImGui::GetIO();
-        
-        // Get DPI scale from ImGui's already configured display scale
-        float const dpi_scale = io.DisplayFramebufferScale.x;
-        
-        std::cout << "Font setup using DPI scale: " << dpi_scale << '\n';
-        
-        // Store the current DPI scale for change detection
-        get_state().last_dpi_scale = dpi_scale;
-        
-        // Load font with Cyrillic support and symbols
-        // Add default font with Cyrillic character range and geometric symbols
-        static const ImWchar ranges[] = {
+        struct FontPointers {
+            ImFont* default_font = nullptr;
+            ImFont* mono_font = nullptr;
+            ImFont* bold_font = nullptr;
+            ImFont* italic_font = nullptr;
+        };
+
+        FontPointers g_fonts;
+
+        // Comprehensive glyph ranges including Basic Latin, Latin Supplement, Cyrillic (and extensions),
+        // Geometric Shapes, General Punctuation, Misc Symbols & Dingbats, and Arrows.
+        static const ImWchar full_glyph_ranges[] = {
             0x0020, 0x00FF, // Basic Latin + Latin Supplement
             0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
             0x2DE0, 0x2DFF, // Cyrillic Extended-A
@@ -114,405 +50,294 @@ namespace rouen::fonts {
             0x2000, 0x206F, // General Punctuation (includes special quotes and apostrophes)
             0x2600, 0x27BF, // Miscellaneous Symbols (Sun, Planets, Zodiac, Comets) & Dingbats
             0x2B00, 0x2BFF, // Miscellaneous Symbols and Arrows
-             0,
+            0,
         };
-        
-        // Setup Material Design Icons font
-        // Use a smaller range that fits within ImWchar limits (unsigned short)
-        static const ImWchar icon_ranges[] = { 
-            ICON_MIN_MD, 
-            static_cast<ImWchar>(0xFFFF), // Limit to what ImWchar can hold
-            0 
+
+        // Material Design Icons glyph ranges
+        static const ImWchar icon_glyph_ranges[] = {
+            ICON_MIN_MD,
+            static_cast<ImWchar>(0xFFFF), // Full range up to 0xFFFF
+            0
         };
-        
-        // Get font search paths based on the operating system
-        auto font_paths = get_system_font_paths();
-        auto app_path = get_application_directory();
-        
-        // Find default font on the system
-        // First try DejaVu Sans, which might be installed on macOS via Homebrew
-        std::string default_font_path = find_font_path("DejaVuSans.ttf", font_paths);
-        
-        // Fallback to system fonts if DejaVu is not found
-        if (default_font_path.empty()) {
-            #ifdef __APPLE__
-            default_font_path = find_font_path("Arial.ttf", font_paths);
-            if (default_font_path.empty()) {
-                default_font_path = find_font_path("Helvetica.ttc", font_paths);
-            }
-            if (default_font_path.empty()) {
-                default_font_path = find_font_path("SFNSText-Regular.ttf", font_paths);  // Modern macOS
-            }
-            #elif defined(_WIN32)
-            default_font_path = find_font_path("segoeui.ttf", font_paths);
-            if (default_font_path.empty()) {
-                default_font_path = find_font_path("arial.ttf", font_paths);
-            }
-            #else
-            // Additional Linux fallbacks if needed
-            default_font_path = find_font_path("FreeSans.ttf", font_paths);
-            #endif
-        }
-        
-        // Find monospace font
-        std::string mono_font_path = find_font_path("DejaVuSansMono.ttf", font_paths);
-        
-        // Fallback for monospace font
-        if (mono_font_path.empty()) {
-            #ifdef __APPLE__
-            mono_font_path = find_font_path("Menlo.ttc", font_paths);
-            if (mono_font_path.empty()) {
-                mono_font_path = find_font_path("Courier.ttc", font_paths);
-            }
-            if (mono_font_path.empty()) {
-                mono_font_path = find_font_path("SFMono-Regular.otf", font_paths);  // Modern macOS
-            }
-            if (mono_font_path.empty()) {
-                mono_font_path = find_font_path("SFNSMono.ttf", font_paths);
-            }
-            #elif defined(_WIN32)
-            mono_font_path = find_font_path("consola.ttf", font_paths);
-            if (mono_font_path.empty()) {
-                mono_font_path = find_font_path("cour.ttf", font_paths);
-            }
-            #else
-            // Additional Linux fallbacks if needed
-            mono_font_path = find_font_path("FreeMono.ttf", font_paths);
-            #endif
-        }
 
-        // Find bold font
-        std::string bold_font_path = find_font_path("DejaVuSans-Bold.ttf", font_paths);
-        if (bold_font_path.empty()) {
-            #ifdef __APPLE__
-            bold_font_path = find_font_path("Arial Bold.ttf", font_paths);
-            if (bold_font_path.empty()) {
-                bold_font_path = find_font_path("ArialBD.ttf", font_paths);
-            }
-            if (bold_font_path.empty()) {
-                bold_font_path = find_font_path("Georgia Bold.ttf", font_paths);
-            }
-            #elif defined(_WIN32)
-            bold_font_path = find_font_path("segoeuib.ttf", font_paths);
-            if (bold_font_path.empty()) {
-                bold_font_path = find_font_path("arialbd.ttf", font_paths);
-            }
-            #else
-            bold_font_path = find_font_path("FreeSansBold.ttf", font_paths);
-            if (bold_font_path.empty()) {
-                bold_font_path = find_font_path("LiberationSans-Bold.ttf", font_paths);
-            }
-            #endif
-        }
-
-        // Find italic font
-        std::string italic_font_path = find_font_path("DejaVuSans-Oblique.ttf", font_paths);
-        if (italic_font_path.empty()) {
-            #ifdef __APPLE__
-            // SF NS Italic is available on all modern macOS versions.
-            italic_font_path = find_font_path("SFNSItalic.ttf", font_paths);
-            if (italic_font_path.empty()) {
-                italic_font_path = find_font_path("Arial Italic.ttf", font_paths);
-            }
-            if (italic_font_path.empty()) {
-                italic_font_path = find_font_path("ArialI.ttf", font_paths);
-            }
-            #elif defined(_WIN32)
-            italic_font_path = find_font_path("segoeuii.ttf", font_paths);
-            if (italic_font_path.empty()) {
-                italic_font_path = find_font_path("ariali.ttf", font_paths);
-            }
-            #else
-            italic_font_path = find_font_path("FreeSansOblique.ttf", font_paths);
-            if (italic_font_path.empty()) {
-                italic_font_path = find_font_path("LiberationSans-Italic.ttf", font_paths);
-            }
-            #endif
-        }
-        
-        // Get path to Material Icons font using the resource path utility
-        std::filesystem::path material_icons_path = platform::get_resource_path("MaterialIcons-Regular.ttf", "");
-        
-        // Fallback to old method if not found
-        if (!std::filesystem::exists(material_icons_path)) {
-            std::vector<std::string> const icon_search_paths = {
-                app_path,                              // Current working directory
-                app_path + "/external",                // /external subdirectory 
-                app_path + "/../external",             // One level up, for running from build dir
-                std::string(app_path + "/../../external") // Two levels up, alternative build layout
-            };
-            
-            std::string const fallback_path = find_font_path("MaterialIcons-Regular.ttf", icon_search_paths);
-            if (!fallback_path.empty()) {
-                material_icons_path = fallback_path;
-            }
-        }
-        
-        // Log found font paths
-        std::cout << "Default font path: " << default_font_path << '\n';
-        std::cout << "Monospace font path: " << mono_font_path << '\n';
-        std::cout << "Bold font path: " << bold_font_path << '\n';
-        std::cout << "Italic font path: " << italic_font_path << '\n';
-        std::cout << "Material icons font path: " << material_icons_path << '\n';
-        
-        // Check if we found the fonts
-        if (default_font_path.empty()) {
-            std::cerr << "ERROR: Could not find a suitable default font!" << '\n';
-            // Use a fallback to ImGui's default embedded font
-            // This will prevent the assertion failure but won't have all the glyphs
-        } else {
-            // Load the default font first
-            ImFontConfig default_cfg;
-            default_cfg.RasterizerDensity = dpi_scale;
-            get_state().s_default_font = io.Fonts->AddFontFromFileTTF(default_font_path.c_str(), base_size, &default_cfg, ranges);
-            
-            // Then merge Material Design Icons with the default font
-            if (!material_icons_path.empty()) {
-                ImFontConfig icons_config;
-                icons_config.MergeMode = true;  // Make sure merge mode is true
-                icons_config.PixelSnapH = true;
-                // Add vertical offset for better alignment with text
-                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
-                icons_config.OversampleH = 3;
-                icons_config.OversampleV = 3;
-                icons_config.RasterizerDensity = dpi_scale;
-                strcpy(icons_config.Name, "Material Icons");
-                
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
-                std::cout << "Successfully merged Material Icons with default font" << '\n';
-            } else {
-                std::cerr << "WARNING: Could not find Material Icons font!" << '\n';
-            }
-
-            // Merge Noto Sans Symbols if available for astronomical/zodiac glyphs
-            std::filesystem::path noto_symbols_path = platform::get_resource_path("NotoSansSymbols-Regular.ttf", "");
-            if (!std::filesystem::exists(noto_symbols_path)) {
-                std::vector<std::string> const symbol_search_paths = {
-                    app_path, app_path + "/resources", app_path + "/../resources", std::string(app_path + "/../../resources")
-                };
-                std::string const fallback_sym = find_font_path("NotoSansSymbols-Regular.ttf", symbol_search_paths);
-                if (!fallback_sym.empty()) noto_symbols_path = fallback_sym;
-            }
-            if (std::filesystem::exists(noto_symbols_path)) {
-                ImFontConfig sym_cfg;
-                sym_cfg.MergeMode = true;
-                sym_cfg.PixelSnapH = true;
-                sym_cfg.RasterizerDensity = dpi_scale;
-                strcpy(sym_cfg.Name, "Noto Symbols");
-                static const ImWchar sym_ranges[] = { 0x2000, 0x2BFF, 0 };
-                io.Fonts->AddFontFromFileTTF(noto_symbols_path.string().c_str(), base_size, &sym_cfg, sym_ranges);
-                std::cout << "Successfully merged Noto Sans Symbols font" << '\n';
-            }
-        }
-        
-        // Add monospace font if found
-        if (!mono_font_path.empty()) {
-            ImFontConfig mono_cfg;
-            mono_cfg.RasterizerDensity = dpi_scale;
-            get_state().s_mono_font = io.Fonts->AddFontFromFileTTF(mono_font_path.c_str(), base_size, &mono_cfg, ranges);
-            
-            // Also merge Material Design Icons with the monospace font if found
-            if (!material_icons_path.empty()) {
-                ImFontConfig icons_config;
-                icons_config.MergeMode = true;
-                icons_config.PixelSnapH = true;
-                icons_config.GlyphOffset = ImVec2(0, 2.5f * dpi_scale);
-                icons_config.OversampleH = 3;
-                icons_config.OversampleV = 3;
-                icons_config.RasterizerDensity = dpi_scale;
-                strcpy(icons_config.Name, "Material Icons (Mono)");
-                
-                io.Fonts->AddFontFromFileTTF(material_icons_path.string().c_str(), base_size, &icons_config, icon_ranges);
-                std::cout << "Successfully merged Material Icons with monospace font" << '\n';
-            }
-        } else {
-            std::cerr << "WARNING: Could not find a suitable monospace font!" << '\n';
-        }
-
-        // Add bold font if found; null s_bold_font means callers fall back to default.
-        if (!bold_font_path.empty()) {
-            ImFontConfig bold_cfg;
-            bold_cfg.RasterizerDensity = dpi_scale;
-            get_state().s_bold_font = io.Fonts->AddFontFromFileTTF(bold_font_path.c_str(), base_size, &bold_cfg, ranges);
-            std::cout << "Loaded bold font: " << bold_font_path << '\n';
-        } else {
-            std::cerr << "WARNING: Could not find a suitable bold font — markdown bold will use the default font.\n";
-        }
-
-        // Add italic font if found; null s_italic_font means callers fall back to default.
-        if (!italic_font_path.empty()) {
-            ImFontConfig italic_cfg;
-            italic_cfg.RasterizerDensity = dpi_scale;
-            get_state().s_italic_font = io.Fonts->AddFontFromFileTTF(italic_font_path.c_str(), base_size, &italic_cfg, ranges);
-            std::cout << "Loaded italic font: " << italic_font_path << '\n';
-        } else {
-            std::cerr << "WARNING: Could not find a suitable italic font — markdown italic will use the default font.\n";
-        }
-        
-        // Build the font atlas after loading all fonts
-        io.Fonts->Build();
-        
-        // Clear any pending rebuild flag since we just rebuilt
-        clear_font_rebuild_flag();
-    }
-
-    // Refresh DPI settings (useful when display configuration changes)
-    void refresh_dpi() {
-        auto & io = ImGui::GetIO();
-        
-        SDL_Window* window = nullptr;
-        try {
-            auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
-            if (get_window_fn && *get_window_fn) {
-                window = (*get_window_fn)();
-            }
-        } catch (...) {
-            // Window lookup via registrar failed; fallback to 1.0f DPI scale
-        }
-        
-        float dpi_scale = 1.0f;
-        
-        if (window) {
-            // Get the window size in points (logical size)
-            int window_w = 0, window_h = 0;
-            SDL_GetWindowSize(window, &window_w, &window_h);
-            
-            // Get the drawable size in pixels (actual framebuffer size)
-            int drawable_w = 0, drawable_h = 0;
-            SDL_GetWindowSizeInPixels(window, &drawable_w, &drawable_h);
-            
-            // Calculate the actual DPI scale factor
-            if (window_w > 0 && drawable_w > 0) {
-                dpi_scale = static_cast<float>(drawable_w) / static_cast<float>(window_w);
-                
-                // Update ImGui's display scale
-                io.DisplayFramebufferScale = ImVec2(dpi_scale, dpi_scale);
-                
-                std::cout << "Refreshed DPI scale: " << dpi_scale << 
-                             " (window: " << window_w << "x" << window_h << 
-                             ", drawable: " << drawable_w << "x" << drawable_h << ")" << '\n';
-                    
-                    // Check if DPI scale has changed significantly
-                    if (std::abs(dpi_scale - get_state().last_dpi_scale) > 0.1f) {
-                        get_state().fonts_need_rebuild = true;
-                        std::cout << "DPI scale changed from " << get_state().last_dpi_scale << " to " << dpi_scale << 
-                                     ", fonts need rebuild" << '\n';
+        float get_dpi_scale() {
+            auto get_window = registrar::get<std::function<SDL_Window*()>>("get_window");
+            if (get_window) {
+                SDL_Window* window = (*get_window)();
+                if (window) {
+                    float content_scale = SDL_GetWindowDisplayScale(window);
+                    if (content_scale > 0.0f) {
+                        return std::max(1.0f, content_scale);
                     }
                 }
             }
+            return 1.0f;
         }
 
-    // Check if fonts need to be rebuilt due to DPI changes
-    bool needs_font_rebuild() {
-        return get_state().fonts_need_rebuild;
-    }
+        std::filesystem::path find_font_file(const std::vector<std::string>& possible_names) {
+            std::vector<std::filesystem::path> search_paths;
+            
+            auto exec_dir = rouen::platform::get_executable_directory();
+            auto cwd = std::filesystem::current_path();
 
-    // Clear the font rebuild flag (called after fonts are rebuilt)
-    void clear_font_rebuild_flag() {
-        get_state().fonts_need_rebuild = false;
-    }
+            search_paths.push_back(exec_dir / "Resources");
+            search_paths.push_back(exec_dir / "assets" / "fonts");
+            search_paths.push_back(exec_dir / "fonts");
+            search_paths.push_back(exec_dir / "external");
+            search_paths.push_back(exec_dir / "external" / "fonts");
+            search_paths.push_back(exec_dir / ".." / "Resources");
+            search_paths.push_back(exec_dir / ".." / "external");
+            search_paths.push_back(exec_dir / ".." / "external" / "fonts");
+            search_paths.push_back(exec_dir / ".." / ".." / "external");
 
-    ImFont* get_font(FontType type) {
-        auto & io = ImGui::GetIO();
-        
-        if (io.Fonts->Fonts.empty()) {
+            search_paths.push_back(cwd / "external");
+            search_paths.push_back(cwd / "external" / "fonts");
+            search_paths.push_back(cwd / "assets" / "fonts");
+            search_paths.push_back(cwd / "fonts");
+            search_paths.push_back(cwd / "Resources");
+
+#if defined(__APPLE__)
+            search_paths.push_back("/System/Library/Fonts");
+            search_paths.push_back("/Library/Fonts");
+            search_paths.push_back(std::filesystem::path(getenv("HOME") ? getenv("HOME") : "") / "Library/Fonts");
+            search_paths.push_back("/System/Library/Fonts/Supplemental");
+#elif defined(_WIN32)
+            char win_dir[MAX_PATH];
+            if (GetWindowsDirectoryA(win_dir, MAX_PATH)) {
+                search_paths.push_back(std::filesystem::path(win_dir) / "Fonts");
+            }
+#else
+            search_paths.push_back("/usr/share/fonts");
+            search_paths.push_back("/usr/local/share/fonts");
+            search_paths.push_back(std::filesystem::path(getenv("HOME") ? getenv("HOME") : "") / ".fonts");
+            search_paths.push_back(std::filesystem::path(getenv("HOME") ? getenv("HOME") : "") / ".local/share/fonts");
+#endif
+
+            for (const auto& name : possible_names) {
+                for (const auto& base_path : search_paths) {
+                    if (!std::filesystem::exists(base_path)) continue;
+                    try {
+                        for (const auto& entry : std::filesystem::recursive_directory_iterator(base_path, std::filesystem::directory_options::skip_permission_denied)) {
+                            if (entry.is_regular_file()) {
+                                std::string filename = entry.path().filename().string();
+                                std::string target_name = name;
+                                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+                                std::transform(target_name.begin(), target_name.end(), target_name.begin(), ::tolower);
+
+                                if (filename == target_name) {
+                                    return entry.path();
+                                }
+                            }
+                        }
+                    } catch (const std::exception& e) {
+                        DEBUG_WARN(std::format("Error searching for font in path {}: {}", base_path.string(), e.what()));
+                    }
+                }
+            }
+            return "";
+        }
+
+        ImFont* load_font_with_fallback(ImFontAtlas* io_fonts, const std::vector<std::string>& font_names, float size, const ImFontConfig* config = nullptr, const ImWchar* ranges = full_glyph_ranges) {
+            std::filesystem::path font_path = find_font_file(font_names);
+            if (!font_path.empty()) {
+                DEBUG_INFO(std::format("Loading font from: {}", font_path.string()));
+                ImFont* font = io_fonts->AddFontFromFileTTF(font_path.string().c_str(), size, config, ranges);
+                if (font) return font;
+            }
+            DEBUG_WARN(std::format("Failed to load font from list, using default font. Size: {}", size));
             return nullptr;
         }
 
-        auto is_valid_font = [&](ImFont* f) -> bool {
-            if (!f) return false;
-            for (ImFont* font : io.Fonts->Fonts) {
-                if (font == f) return true;
+        void load_icon_font_ranges(ImFontAtlas* io_fonts, ImFont* main_font, float icon_size) {
+            if (!main_font) return;
+
+            ImFontConfig icon_config;
+            icon_config.MergeMode = true;
+            icon_config.PixelSnapH = true;
+            icon_config.GlyphMinAdvanceX = icon_size;
+
+            std::vector<std::string> icon_font_names = {
+                "MaterialIcons-Regular.ttf",
+                "MaterialIcons-Regular.otf",
+                "MaterialIconsOutlined-Regular.otf",
+                "MaterialIconsRound-Regular.otf",
+                "MaterialIconsSharp-Regular.otf",
+                "MaterialIconsTwoTone-Regular.otf"
+            };
+
+            std::filesystem::path icon_font_path = find_font_file(icon_font_names);
+            if (!icon_font_path.empty()) {
+                DEBUG_INFO(std::format("Loading Material Icons font from: {}", icon_font_path.string()));
+                io_fonts->AddFontFromFileTTF(icon_font_path.string().c_str(), icon_size, &icon_config, icon_glyph_ranges);
+            } else {
+                DEBUG_WARN("Failed to load Material Icons font file. Icons may not render correctly.");
             }
-            return false;
+
+            // Merge NotoSansSymbols-Regular.ttf if available
+            std::vector<std::string> symbol_font_names = {
+                "NotoSansSymbols-Regular.ttf",
+                "NotoSansSymbols-Regular.otf"
+            };
+            std::filesystem::path symbol_font_path = find_font_file(symbol_font_names);
+            if (!symbol_font_path.empty()) {
+                ImFontConfig sym_config;
+                sym_config.MergeMode = true;
+                sym_config.PixelSnapH = true;
+                static const ImWchar sym_ranges[] = { 0x2000, 0x2BFF, 0 };
+                DEBUG_INFO(std::format("Loading Noto Sans Symbols font from: {}", symbol_font_path.string()));
+                io_fonts->AddFontFromFileTTF(symbol_font_path.string().c_str(), icon_size, &sym_config, sym_ranges);
+            }
+        }
+    }
+
+    void setup() {
+        DEBUG_INFO("Initializing fonts setup with DPI awareness, Cyrillic glyphs, and Material Icons...");
+
+        ImGuiIO& io = ImGui::GetIO();
+        ImFontAtlas* io_fonts = io.Fonts;
+
+        io_fonts->Clear();
+
+        float dpi_scale = get_dpi_scale();
+        g_font_state.last_dpi_scale = dpi_scale;
+        DEBUG_INFO(std::format("Current DPI scale: {}", dpi_scale));
+
+        float font_size = base_size * dpi_scale;
+        float icon_size = font_size * 0.9f;
+
+        DEBUG_INFO(std::format("Base font size: {}, Scaled size: {}", base_size, font_size));
+
+        ImFontConfig font_config;
+        font_config.OversampleH = 3;
+        font_config.OversampleV = 2;
+        font_config.PixelSnapH = false;
+
+        std::vector<std::string> default_font_names = {
+            "Inter-Regular.ttf", "Inter-Regular.otf",
+            "Roboto-Regular.ttf", "Roboto-Regular.otf",
+            "SF-Pro-Text-Regular.otf", "SFProText-Regular.otf",
+            "SegoeUI.ttf", "segoeui.ttf",
+            "DejaVuSans.ttf", "LiberationSans-Regular.ttf",
+            "Arial.ttf", "arial.ttf"
         };
 
-        // Helper: return the font pointer if valid in current context, else default, else Fonts[0].
-        auto fallback = [&](ImFont* f) -> ImFont* {
-            if (is_valid_font(f)) return f;
-            if (is_valid_font(get_state().s_default_font)) return get_state().s_default_font;
-            return io.Fonts->Fonts[0];
+        g_fonts.default_font = load_font_with_fallback(io_fonts, default_font_names, font_size, &font_config, full_glyph_ranges);
+
+        if (!g_fonts.default_font) {
+            DEBUG_INFO("Loading default ImGui font");
+            ImFontConfig default_config;
+            default_config.SizePixels = font_size;
+            g_fonts.default_font = io_fonts->AddFontDefault(&default_config);
+        }
+
+        load_icon_font_ranges(io_fonts, g_fonts.default_font, icon_size);
+
+        std::vector<std::string> mono_font_names = {
+            "FiraCode-Regular.ttf", "FiraCode-Regular.otf",
+            "JetBrainsMono-Regular.ttf", "JetBrainsMono-Regular.otf",
+            "RobotoMono-Regular.ttf", "RobotoMono-Regular.otf",
+            "SF-Mono-Regular.otf", "SFMono-Regular.otf",
+            "CascadiaCode.ttf", "cascadiacode.ttf",
+            "Consolas.ttf", "consolas.ttf",
+            "DejaVuSansMono.ttf", "LiberationMono-Regular.ttf",
+            "Courier New.ttf", "cour.ttf"
         };
-        
+
+        g_fonts.mono_font = load_font_with_fallback(io_fonts, mono_font_names, font_size, &font_config, full_glyph_ranges);
+        if (g_fonts.mono_font) {
+            load_icon_font_ranges(io_fonts, g_fonts.mono_font, icon_size);
+        } else {
+            g_fonts.mono_font = g_fonts.default_font;
+        }
+
+        std::vector<std::string> bold_font_names = {
+            "Inter-Bold.ttf", "Inter-Bold.otf",
+            "Roboto-Bold.ttf", "Roboto-Bold.otf",
+            "SF-Pro-Text-Bold.otf", "SFProText-Bold.otf",
+            "SegoeUI-Bold.ttf", "segoeuib.ttf",
+            "DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf",
+            "Arial-Bold.ttf", "arialbd.ttf"
+        };
+
+        g_fonts.bold_font = load_font_with_fallback(io_fonts, bold_font_names, font_size, &font_config, full_glyph_ranges);
+        if (g_fonts.bold_font) {
+            load_icon_font_ranges(io_fonts, g_fonts.bold_font, icon_size);
+        } else {
+            g_fonts.bold_font = g_fonts.default_font;
+        }
+
+        std::vector<std::string> italic_font_names = {
+            "Inter-Italic.ttf", "Inter-Italic.otf",
+            "Roboto-Italic.ttf", "Roboto-Italic.otf",
+            "SF-Pro-Text-Italic.otf", "SFProText-Italic.otf",
+            "SegoeUI-Italic.ttf", "segoeuii.ttf",
+            "DejaVuSans-Oblique.ttf", "LiberationSans-Italic.ttf",
+            "Arial-Italic.ttf", "ariali.ttf"
+        };
+
+        g_fonts.italic_font = load_font_with_fallback(io_fonts, italic_font_names, font_size, &font_config, full_glyph_ranges);
+        if (g_fonts.italic_font) {
+            load_icon_font_ranges(io_fonts, g_fonts.italic_font, icon_size);
+        } else {
+            g_fonts.italic_font = g_fonts.default_font;
+        }
+
+        io_fonts->Build();
+
+        if (g_fonts.default_font) {
+            io.FontDefault = g_fonts.default_font;
+        }
+
+        g_font_state.rebuild_requested = false;
+        DEBUG_INFO("Font initialization complete");
+    }
+
+    void refresh_dpi() {
+        float current_dpi_scale = get_dpi_scale();
+        if (std::abs(current_dpi_scale - g_font_state.last_dpi_scale) > 0.05f) {
+            DEBUG_INFO(std::format("DPI scale changed from {} to {}. Flagging for rebuild...", g_font_state.last_dpi_scale, current_dpi_scale));
+            g_font_state.rebuild_requested = true;
+        }
+    }
+
+    bool needs_font_rebuild() {
+        return g_font_state.rebuild_requested;
+    }
+
+    void clear_font_rebuild_flag() {
+        g_font_state.rebuild_requested = false;
+    }
+
+    ImFont* get_font(FontType type) {
         switch (type) {
-            case FontType::Default: return fallback(get_state().s_default_font);
-            case FontType::Mono:    return fallback(get_state().s_mono_font);
-            case FontType::Bold:    return fallback(get_state().s_bold_font);
-            case FontType::Italic:  return fallback(get_state().s_italic_font);
-            default:                return fallback(get_state().s_default_font);
+            case FontType::Default: return g_fonts.default_font;
+            case FontType::Mono:    return g_fonts.mono_font ? g_fonts.mono_font : g_fonts.default_font;
+            case FontType::Bold:    return g_fonts.bold_font ? g_fonts.bold_font : g_fonts.default_font;
+            case FontType::Italic:  return g_fonts.italic_font ? g_fonts.italic_font : g_fonts.default_font;
+            default:                return g_fonts.default_font;
         }
     }
 
     bool is_glyph_available(ImWchar c, FontType type) {
         ImFont* font = get_font(type);
-        if (!font) {
-            return false;
-        }
-        
-        // Check in the requested font
+        if (!font) return false;
         return font->FindGlyphNoFallback(c) != nullptr;
     }
-    
-    // Helper function to convert UTF-8 string to Unicode codepoint
-    char32_t utf8_to_codepoint(const char* utf8_char) {
-        if (!utf8_char || *utf8_char == '\0') {
-            return 0;
-        }
-        
-        const auto* s = reinterpret_cast<const unsigned char*>(utf8_char);
-        char32_t codepoint = 0;
-        
-        if ((*s & 0x80) == 0) {
-            // 1-byte character
-            codepoint = static_cast<char32_t>(*s);
-        } else if ((*s & 0xE0) == 0xC0 && *(s + 1) != 0) {
-            // 2-byte character
-            codepoint = ((static_cast<char32_t>(*s & 0x1F)) << 6) | 
-                      (static_cast<char32_t>(*(s + 1) & 0x3F));
-        } else if ((*s & 0xF0) == 0xE0 && *(s + 1) != 0 && *(s + 2) != 0) {
-            // 3-byte character
-            codepoint = ((static_cast<char32_t>(*s & 0x0F)) << 12) | 
-                      ((static_cast<char32_t>(*(s + 1) & 0x3F)) << 6) | 
-                      (static_cast<char32_t>(*(s + 2) & 0x3F));
-        } else if ((*s & 0xF8) == 0xF0 && *(s + 1) != 0 && *(s + 2) != 0 && *(s + 3) != 0) {
-            // 4-byte character
-            codepoint = ((static_cast<char32_t>(*s & 0x07)) << 18) | 
-                      ((static_cast<char32_t>(*(s + 1) & 0x3F)) << 12) |
-                      ((static_cast<char32_t>(*(s + 2) & 0x3F)) << 6) | 
-                      (static_cast<char32_t>(*(s + 3) & 0x3F));
-        }
-        
-        return codepoint;
-    }
-    
+
     bool is_character_available(const char* utf8_char, FontType type) {
-        // Return early if null or empty
-        if (!utf8_char || *utf8_char == '\0') {
-            return false;
-        }
-        
-        // Use C++23 std::format for more concise debug logging
-        SYS_DEBUG_FMT("Checking availability for UTF-8 character: {}", utf8_char);
-        
-        // Convert the UTF-8 string to a Unicode codepoint
-        char32_t codepoint = utf8_to_codepoint(utf8_char);
-        
-        if (codepoint == 0) {
-            SYS_WARN("Invalid or empty UTF-8 sequence");
-            return false;
-        }
-        
-        // For standard codepoints, check in the requested font
+        if (!utf8_char || !*utf8_char) return false;
+        unsigned int codepoint = 0;
+        int bytes = ImTextCharFromUtf8(&codepoint, utf8_char, nullptr);
+        if (bytes <= 0 || codepoint == 0) return false;
         if (codepoint <= 0xFFFF) {
             bool const available = is_glyph_available(static_cast<ImWchar>(codepoint), type);
-            SYS_DEBUG_FMT("Codepoint U+{:04X} available in requested font: {}", 
-                    static_cast<unsigned int>(codepoint), available ? "yes" : "no");
+            if (!available) {
+                DEBUG_WARN(std::format("Glyph U+{:04X} ({}) NOT available in font type {}", codepoint, std::string(utf8_char, static_cast<size_t>(bytes)), static_cast<int>(type)));
+            }
             return available;
-        }             // For code points beyond Basic Multilingual Plane (BMP)
-            SYS_INFO_FMT("Codepoint U+{:X} is beyond BMP, not supported by ImGui", 
-                    static_cast<unsigned int>(codepoint));
-            return false;
-       
+        }
+        DEBUG_WARN(std::format("Codepoint U+{:06X} outside 16-bit BMP range", codepoint));
+        return false;
     }
 
     with_font::with_font(FontType type) {

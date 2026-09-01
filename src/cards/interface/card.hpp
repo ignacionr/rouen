@@ -17,7 +17,9 @@
 #include "../../registrar.hpp"
 #include "../../helpers/ui_context.hpp"
 #include "../../helpers/card_decorations.hpp"
-#include "../../helpers/theme_manager.hpp"
+namespace rouen::theme {
+    class theme_manager;
+}
 // Forward declarations to avoid circular dependencies
 namespace rouen::hosts {
     class mcp_host;
@@ -82,6 +84,8 @@ struct card {
     // Unregister this card's MCP functions (called automatically by deck)  
     void unregister_mcp_functions();
 
+    void apply_theme();
+
     virtual bool render() { return false; }
     virtual bool render(rouen::ui::ui_context& /*ui*/) { return render(); }
     virtual void on_close() {}
@@ -142,7 +146,7 @@ struct card {
         }
 
         // Apply active theme to the card's color array
-        rouen::theme::theme_manager::get().apply_theme_to_card(this);
+        apply_theme();
 
         if (ImGui::Begin(window_title.c_str(), &is_open, flags)) {
             is_focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);

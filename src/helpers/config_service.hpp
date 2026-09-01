@@ -14,11 +14,6 @@
 
 namespace rouen::helpers {
 
-    /**
-     * Centralized environment variable configuration service
-     * Provides unified access to environment variables with validation, caching, and error handling
-     * Following C++23 standards and DRY principles to reduce code duplication
-     */
     class ConfigService {
     public:
         // Configuration categories for better organization
@@ -159,21 +154,30 @@ namespace rouen::helpers {
     template<>
     std::optional<double> ConfigService::get_typed<double>(const std::string& name) const;
 
-    // Convenience macros for configuration access
-    #define CONFIG_SERVICE() rouen::helpers::ConfigService::instance()
-    #define GET_CONFIG(name) CONFIG_SERVICE()->get_env(name)
-    #define GET_CONFIG_OPT(name) CONFIG_SERVICE()->get_env_optional(name)
-    #define HAS_CONFIG(name) CONFIG_SERVICE()->has_env(name)
-
-    // Logging macros for configuration service
-    #define CONFIG_ERROR(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_ERROR, message)
-    #define CONFIG_WARN(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_WARN, message)
-    #define CONFIG_INFO(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_INFO, message)
-    #define CONFIG_DEBUG(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_DEBUG, message)
-
-    #define CONFIG_ERROR_FMT(fmt, ...) CONFIG_ERROR(debug::format_log(fmt, __VA_ARGS__))
-    #define CONFIG_WARN_FMT(fmt, ...) CONFIG_WARN(debug::format_log(fmt, __VA_ARGS__))
-    #define CONFIG_INFO_FMT(fmt, ...) CONFIG_INFO(debug::format_log(fmt, __VA_ARGS__))
-    #define CONFIG_DEBUG_FMT(fmt, ...) CONFIG_DEBUG(debug::format_log(fmt, __VA_ARGS__))
-
 } // namespace rouen::helpers
+
+// Convenience macros for configuration access
+#define CONFIG_SERVICE() rouen::helpers::ConfigService::instance()
+#define GET_CONFIG(name) CONFIG_SERVICE()->get_env(name)
+#define GET_CONFIG_OPTIONAL(name) CONFIG_SERVICE()->get_env_optional(name)
+#define GET_CONFIG_OPT(name) GET_CONFIG_OPTIONAL(name)
+#define HAS_CONFIG(name) CONFIG_SERVICE()->has_env(name)
+
+// Macro for registering configurations easily
+#define REGISTER_CONFIG(name, category, required, sensitive, desc, default_val) \
+    CONFIG_SERVICE()->register_config(name, category, required, sensitive, desc, default_val)
+
+// Macros for specific configuration categories
+#define GET_API_KEY(service) CONFIG_SERVICE()->get_api_key(service)
+#define GET_JIRA_CONFIG(profile, key) CONFIG_SERVICE()->get_jira_config(profile, key)
+
+// Macros for logging with configuration service
+#define CONFIG_ERROR(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_ERROR, message)
+#define CONFIG_WARN(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_WARN, message)
+#define CONFIG_INFO(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_INFO, message)
+#define CONFIG_DEBUG(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_DEBUG, message)
+
+#define CONFIG_ERROR_FMT(fmt, ...) CONFIG_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_WARN_FMT(fmt, ...) CONFIG_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_INFO_FMT(fmt, ...) CONFIG_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_DEBUG_FMT(fmt, ...) CONFIG_DEBUG(debug::format_log(fmt, __VA_ARGS__))

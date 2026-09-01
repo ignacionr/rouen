@@ -8,9 +8,14 @@
 #include "card.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/debug.hpp"
+#include "../../helpers/theme_manager.hpp"
 #include "hosts/mcp_host.hpp"
 #include <exception>
 #include <string>
+
+void card::apply_theme() {
+    rouen::theme::theme_manager::get().apply_theme_to_card(this);
+}
 
 void card::register_mcp_functions() {
     try {

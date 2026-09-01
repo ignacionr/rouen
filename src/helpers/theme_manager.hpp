@@ -7,7 +7,6 @@
 #include "imgui_include.hpp"
 #include "glaze_include.hpp"
 
-// Forward declaration of card to avoid circular dependency
 struct card;
 
 namespace rouen::theme {
