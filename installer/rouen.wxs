@@ -61,6 +61,13 @@
         <File Id="SDL3" Source="$(var.SourceDir)\SDL3.dll" />
         <File Id="SDL3Image" Source="$(var.SourceDir)\SDL3_image.dll" />
         
+        <!-- FFmpeg multimedia libraries -->
+        <File Id="AVCodec" Source="$(var.SourceDir)\avcodec-61.dll" />
+        <File Id="AVFormat" Source="$(var.SourceDir)\avformat-61.dll" />
+        <File Id="AVUtil" Source="$(var.SourceDir)\avutil-59.dll" />
+        <File Id="SWScale" Source="$(var.SourceDir)\swscale-8.dll" />
+        <File Id="SWResample" Source="$(var.SourceDir)\swresample-5.dll" />
+        
         <!-- Database libraries -->
         <File Id="SQLite3" Source="$(var.SourceDir)\sqlite3.dll" />
         

@@ -465,6 +465,19 @@ jobs:
           }
         }
 
+        # Comprehensive search for any FFmpeg DLLs (avformat, avcodec, avutil, swscale, swresample) in vcpkg
+        Write-Host "`n=== Checking FFmpeg DLLs ==="
+        $ffmpegDlls = Get-ChildItem -Recurse "$workspace" -Include "avformat*.dll","avcodec*.dll","avutil*.dll","swscale*.dll","swresample*.dll" -ErrorAction SilentlyContinue
+        foreach ($ff in $ffmpegDlls) {
+          $dest = "$distDir\$($ff.Name)"
+          if (-not (Test-Path $dest)) {
+            Copy-Item $ff.FullName $dest -ErrorAction SilentlyContinue
+            Write-Host "  🎬 Copied FFmpeg DLL: $($ff.Name)"
+          } else {
+            Write-Host "  ✅ FFmpeg DLL present: $($ff.Name)"
+          }
+        }
+
     - name: Copy Visual C++ Runtime DLLs
       shell: pwsh
       run: |
@@ -1000,6 +1013,26 @@ jobs:
           Remove-Item $msiFile -Force
         }
         
+        # Dynamically inject any missing DLLs from distDir into rouen.wxs Component Id="Dependencies"
+        $wxsRaw = Get-Content $wxsFile -Raw
+        $distDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        $injectedCount = 0
+        $injectedXml = ""
+        foreach ($dll in $distDlls) {
+          $dllName = $dll.Name
+          if ($wxsRaw -notlike "*$dllName*") {
+            $fileId = "DynFile_" + ($dllName -replace '[^a-zA-Z0-9_]', '_')
+            $injectedXml += "`r`n        <File Id=`"$fileId`" Source=`"`$(var.SourceDir)\$dllName`" />"
+            $injectedCount++
+            Write-Host "  ➕ Dynamically adding DLL to MSI manifest: $dllName"
+          }
+        }
+        if ($injectedCount -gt 0) {
+          $wxsRaw = $wxsRaw -replace '</Component>', "$injectedXml`r`n      </Component>", 1
+          Set-Content -Path $wxsFile -Value $wxsRaw -Encoding UTF8
+          Write-Host "✅ Injected $injectedCount missing DLLs into rouen.wxs"
+        }
+
         # Compile WiX source
         Write-Host "`n=== Compiling WiX Source ==="
         $candleArgs = @(
