@@ -11,6 +11,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set_property(GLOBAL PROPERTY JOB_POOLS compile_job_pool=2 link_job_pool=1)
 set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
 set(CMAKE_JOB_POOL_LINK link_job_pool)
+set(DISABLE_PCH ON CACHE BOOL "Disable Precompiled Headers for C++20 Module Compatibility" FORCE)
 set(CMAKE_DISABLE_PRECOMPILED_HEADERS ON)
 
 if(NOT CMAKE_BUILD_TYPE)
