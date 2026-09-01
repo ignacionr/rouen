@@ -545,40 +545,6 @@ add_executable(${PROJECT_NAME}
 
 set(ROUEN_MODULE_SOURCES
   src/fonts.cppm
-  src/helpers/config_service.cppm
-  src/helpers/theme_manager.cppm
-  src/helpers/tag_manager.cppm
-  src/helpers/image_cache.cppm
-  src/helpers/vu_meter.cppm
-  src/helpers/card_decorations.cppm
-  src/helpers/directory_watch.cppm
-  src/helpers/dynamic_library.cppm
-  src/helpers/piped_process.cppm
-  src/helpers/filetype_handler.cppm
-  src/helpers/media_player.cppm
-  src/helpers/media_player_item.cppm
-  src/helpers/ytdlp_service.cppm
-  src/helpers/adlib_engine.cppm
-  src/helpers/mp4_writer.cppm
-  src/helpers/audio_capture.cppm
-  src/helpers/capture_helper.cppm
-  src/models/rss/feed_item.cppm
-  src/models/rss/rss_date_parser.cppm
-  src/models/rss/feed_xml_parser.cppm
-  src/models/rss/rss_item_repo.cppm
-  src/models/rss/rss_url_resolver.cppm
-  src/models/mail/metadata_serialization.cppm
-  src/models/git_process_helper.cppm
-  src/models/git_scanner.cppm
-  src/cards/interface/card.cppm
-  src/editor/editor.cppm
-  src/cards/development/development_cards.cppm
-  src/cards/productivity/productivity_cards.cppm
-  src/cards/information/information_cards.cppm
-  src/cards/media/media_cards.cppm
-  src/cards/system/system_cards.cppm
-  src/cards/production/production_cards.cppm
-  src/main_wnd.cppm
 )
 
 target_sources(${PROJECT_NAME} PRIVATE FILE_SET CXX_MODULES FILES ${ROUEN_MODULE_SOURCES})
