@@ -96,6 +96,7 @@
       <Component Id="Assets" Guid="12345678-1234-1234-1234-123456789015">
         <!-- Use registry key as KeyPath for user-mode installation -->
         <RegistryValue Root="HKCU" Key="Software\Rouen\Assets" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+        <File Id="MaterialIconsFont" Source="$(var.SourceDir)\MaterialIcons-Regular.ttf" />
         <File Id="DependenciesManifest" Source="$(var.SourceDir)\DEPENDENCIES.txt" />
         <File Id="License" Source="$(var.SourceDir)\LICENSE" />
         <File Id="ReadMe" Source="$(var.SourceDir)\README.md" />

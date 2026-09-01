@@ -1013,18 +1013,18 @@ jobs:
           Remove-Item $msiFile -Force
         }
         
-        # Dynamically inject any missing DLLs from distDir into rouen.wxs Component Id="Dependencies"
+        # Dynamically inject any missing DLLs and fonts (.ttf, .otf) from distDir into rouen.wxs Component Id="Dependencies"
         $wxsRaw = Get-Content $wxsFile -Raw
-        $distDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
+        $distAssets = Get-ChildItem "$distDir\*" -Include "*.dll","*.ttf","*.otf" -ErrorAction SilentlyContinue
         $injectedCount = 0
         $injectedXml = ""
-        foreach ($dll in $distDlls) {
-          $dllName = $dll.Name
-          if ($wxsRaw -notlike "*$dllName*") {
-            $fileId = "DynFile_" + ($dllName -replace '[^a-zA-Z0-9_]', '_')
-            $injectedXml += "`r`n        <File Id=`"$fileId`" Source=`"`$(var.SourceDir)\$dllName`" />"
+        foreach ($asset in $distAssets) {
+          $assetName = $asset.Name
+          if ($wxsRaw -notlike "*$assetName*") {
+            $fileId = "DynFile_" + ($assetName -replace '[^a-zA-Z0-9_]', '_')
+            $injectedXml += "`r`n        <File Id=`"$fileId`" Source=`"`$(var.SourceDir)\$assetName`" />"
             $injectedCount++
-            Write-Host "  ➕ Dynamically adding DLL to MSI manifest: $dllName"
+            Write-Host "  ➕ Dynamically adding asset to MSI manifest: $assetName"
           }
         }
         if ($injectedCount -gt 0) {
@@ -1034,7 +1034,7 @@ jobs:
             $wxsRaw = $wxsRaw.Substring(0, $idx) + $injectedXml + "`r`n      " + $wxsRaw.Substring($idx)
           }
           Set-Content -Path $wxsFile -Value $wxsRaw -Encoding UTF8
-          Write-Host "✅ Injected $injectedCount missing DLLs into rouen.wxs"
+          Write-Host "✅ Injected $injectedCount missing assets into rouen.wxs"
         }
 
         # Compile WiX source

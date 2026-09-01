@@ -77,6 +77,7 @@ namespace rouen::fonts {
             auto exec_dir = rouen::platform::get_executable_directory();
             auto cwd = std::filesystem::current_path();
 
+            search_paths.push_back(exec_dir);
             search_paths.push_back(exec_dir / "Resources");
             search_paths.push_back(exec_dir / "assets" / "fonts");
             search_paths.push_back(exec_dir / "fonts");
@@ -87,6 +88,7 @@ namespace rouen::fonts {
             search_paths.push_back(exec_dir / ".." / "external" / "fonts");
             search_paths.push_back(exec_dir / ".." / ".." / "external");
 
+            search_paths.push_back(cwd);
             search_paths.push_back(cwd / "external");
             search_paths.push_back(cwd / "external" / "fonts");
             search_paths.push_back(cwd / "assets" / "fonts");
@@ -113,21 +115,29 @@ namespace rouen::fonts {
             for (const auto& name : possible_names) {
                 for (const auto& base_path : search_paths) {
                     if (!std::filesystem::exists(base_path)) continue;
-                    try {
-                        for (const auto& entry : std::filesystem::recursive_directory_iterator(base_path, std::filesystem::directory_options::skip_permission_denied)) {
-                            if (entry.is_regular_file()) {
-                                std::string filename = entry.path().filename().string();
-                                std::string target_name = name;
-                                std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
-                                std::transform(target_name.begin(), target_name.end(), target_name.begin(), ::tolower);
 
-                                if (filename == target_name) {
-                                    return entry.path();
+                    std::filesystem::path direct_file = base_path / name;
+                    if (std::filesystem::exists(direct_file) && std::filesystem::is_regular_file(direct_file)) {
+                        return direct_file;
+                    }
+
+                    if (std::filesystem::is_directory(base_path)) {
+                        try {
+                            for (const auto& entry : std::filesystem::recursive_directory_iterator(base_path, std::filesystem::directory_options::skip_permission_denied)) {
+                                if (entry.is_regular_file()) {
+                                    std::string filename = entry.path().filename().string();
+                                    std::string target_name = name;
+                                    std::transform(filename.begin(), filename.end(), filename.begin(), ::tolower);
+                                    std::transform(target_name.begin(), target_name.end(), target_name.begin(), ::tolower);
+
+                                    if (filename == target_name) {
+                                        return entry.path();
+                                    }
                                 }
                             }
+                        } catch (const std::exception& e) {
+                            DEBUG_WARN(std::format("Error searching for font in path {}: {}", base_path.string(), e.what()));
                         }
-                    } catch (const std::exception& e) {
-                        DEBUG_WARN(std::format("Error searching for font in path {}: {}", base_path.string(), e.what()));
                     }
                 }
             }
