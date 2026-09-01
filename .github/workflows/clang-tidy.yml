@@ -1,0 +1,43 @@
+# Manual Clang-Tidy Static Analysis Workflow
+
+name: Clang-Tidy Static Analysis
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up Nix
+        uses: cachix/install-nix-action@v31.10.6
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Configure Nix binary cache
+        uses: DeterminateSystems/magic-nix-cache-action@v14
+
+      - name: Cache ccache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Run Clang-Tidy static analysis
+        run: |
+          nix develop --command bash -c "cmake -G Ninja -B build-tidy -S . -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+          nix develop --command bash -c "run-clang-tidy -clang-tidy-binary ./scripts/run-clang-tidy.sh -p build-tidy -header-filter='src/(?!.*[/\\]external[/\\]).*' '^(?!.*external).*'" || true
