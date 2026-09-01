@@ -151,6 +151,7 @@
               unstable.xorg.libXdmcp
             ]);
           cmakeFlags = [ 
+            "-G" "Ninja"
             "-DCMAKE_BUILD_TYPE=Release" 
             "-DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake"
             "-DFETCHCONTENT_FULLY_DISCONNECTED=ON"
