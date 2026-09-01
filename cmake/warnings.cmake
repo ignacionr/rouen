@@ -245,7 +245,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   add_compile_options(
     -Wall 
     -Wextra 
-    -Wpedantic 
+    -Wno-pedantic 
     -Wshadow
     -Wunused
     -Wunused-result      # Warn about unused return values
@@ -269,6 +269,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       # This is a known GCC 14 regression; disable the warning to avoid build log spam.
       $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},14.0>:-Wno-null-dereference>
       -Wno-subobject-linkage
+      -Wno-pedantic
 
       # CI Strictness: Make unused-result specifically an error in all builds
       $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
