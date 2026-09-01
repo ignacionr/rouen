@@ -47,25 +47,25 @@ jobs:
       - name: Build
         run: |
           nix develop --command bash -c "
-            cmake -B build \
+            cmake -G Ninja -B build \
               -DCMAKE_BUILD_TYPE=Release \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-            cmake --build build --parallel \$(nproc)
+            cmake --build build --parallel 2
           "
 
       - name: Run Clang-Tidy static analysis
         run: |
-          nix develop --command bash -c "cmake -B build-tidy -S . -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
+          nix develop --command bash -c "cmake -G Ninja -B build-tidy -S . -DCMAKE_TOOLCHAIN_FILE=cmake/nix-toolchain.cmake -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON"
           nix develop --command bash -c "run-clang-tidy -clang-tidy-binary ./scripts/run-clang-tidy.sh -p build-tidy -header-filter='src/(?!.*[/\\]external[/\\]).*' '^(?!.*external).*'"
 
       - name: Run tests
         run: |
           nix develop --command bash -c "
-            cmake -B build-tests -S tests \
+            cmake -G Ninja -B build-tests -S tests \
               -DCMAKE_BUILD_TYPE=Debug \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
-            cmake --build build-tests --parallel \$(nproc) && \
+            cmake --build build-tests --parallel 2 && \
             cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl
           "

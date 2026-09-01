@@ -212,6 +212,7 @@
           src = ./.;
           nativeBuildInputs = [ 
             unstable.cmake 
+            unstable.ninja
             unstable.pkg-config 
             unstable.git 
             unstable.cacert 
@@ -252,7 +253,7 @@
             runHook preConfigure
             mkdir -p build-tests
             cd build-tests
-            cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCOMPILE_GIT_HASH=${self.rev or "unknown"}
+            cmake -G Ninja ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake -DCMAKE_BUILD_TYPE=Debug -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCOMPILE_GIT_HASH=${self.rev or "unknown"}
             runHook postConfigure
           '';
           buildPhase = ''

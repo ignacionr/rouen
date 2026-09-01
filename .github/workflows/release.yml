@@ -125,7 +125,7 @@ jobs:
     - name: Run Tests
       run: |
         echo "Running tests with proven CI approach..."
-        nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
+        nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake -G Ninja ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
         nix develop --command bash -c "cd build-tests && cmake --build . --parallel 2"
         nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
 
@@ -194,7 +194,7 @@ jobs:
         
         if [ -f "${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" ]; then
           echo "Building with vcpkg..."
-          cmake -B build-release -S . \
+          cmake -G Ninja -B build-release -S . \
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_TARGET_TRIPLET=arm64-osx \
             -DCMAKE_BUILD_TYPE=Release \
@@ -206,7 +206,7 @@ jobs:
         else
           echo "Building with system dependencies..."
           export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig"
-          cmake -B build-release -S . \
+          cmake -G Ninja -B build-release -S . \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
