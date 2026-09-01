@@ -520,11 +520,12 @@ public:
         }
     }
 
-    void create_card(std::string_view uri, bool move_first = false) {
+    void create_card(std::string_view uri, bool move_first = false, bool insert_before = false) {
+        bool const shift_pressed = insert_before || ImGui::GetIO().KeyShift;
         // this needs to be deferred
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        deferred_ops->queue([this, uri_str = std::string{uri}, move_first] {
-            create_card_impl(uri_str, move_first);
+        deferred_ops->queue([this, uri_str = std::string{uri}, move_first, shift_pressed] {
+            create_card_impl(uri_str, move_first, shift_pressed);
         });
     }
 
@@ -554,7 +555,7 @@ public:
         }
     }
 
-    void create_card_impl(std::string_view uri, bool move_first = false) {
+    void create_card_impl(std::string_view uri, bool move_first = false, bool insert_before = false) {
         auto existing_card = std::find_if(cards_.begin(), cards_.end(),
             [&uri](const auto& card) { return card->matches_uri(uri); });
         if (existing_card != cards_.end()) {
@@ -586,11 +587,21 @@ public:
                             [](const auto& card) { return card->is_focused; });
                     }
 
+                    bool const should_insert_before = insert_before || ImGui::GetIO().KeyShift;
+
                     if (target_it != cards_.end()) {
-                        cards_.insert(target_it + 1, card_ptr);
+                        if (should_insert_before) {
+                            cards_.insert(target_it, card_ptr);
+                        } else {
+                            cards_.insert(target_it + 1, card_ptr);
+                        }
                     } else {
                         // Add the card to the end of the vector if no card is currently focused
-                        cards_.push_back(card_ptr);
+                        if (should_insert_before) {
+                            cards_.insert(cards_.begin(), card_ptr);
+                        } else {
+                            cards_.push_back(card_ptr);
+                        }
                     }
                 }
                 last_focused_card_ = card_ptr;
