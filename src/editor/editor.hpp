@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 #include "../helpers/imgui_include.hpp"
 #include "../helpers/sdl_compat.hpp"
