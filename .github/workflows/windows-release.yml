@@ -1028,7 +1028,11 @@ jobs:
           }
         }
         if ($injectedCount -gt 0) {
-          $wxsRaw = $wxsRaw -replace '</Component>', "$injectedXml`r`n      </Component>", 1
+          $tag = '</Component>'
+          $idx = $wxsRaw.IndexOf($tag)
+          if ($idx -ge 0) {
+            $wxsRaw = $wxsRaw.Substring(0, $idx) + $injectedXml + "`r`n      " + $wxsRaw.Substring($idx)
+          }
           Set-Content -Path $wxsFile -Value $wxsRaw -Encoding UTF8
           Write-Host "✅ Injected $injectedCount missing DLLs into rouen.wxs"
         }
