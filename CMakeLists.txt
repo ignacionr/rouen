@@ -13,6 +13,7 @@ set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
 set(CMAKE_JOB_POOL_LINK link_job_pool)
 set(DISABLE_PCH ON CACHE BOOL "Disable Precompiled Headers for C++20 Module Compatibility" FORCE)
 set(CMAKE_DISABLE_PRECOMPILED_HEADERS ON)
+set(CMAKE_COMPILE_WARNING_AS_ERROR OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)

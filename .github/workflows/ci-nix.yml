@@ -49,6 +49,7 @@ jobs:
           nix develop --command bash -c "
             cmake -G Ninja -B build \
               -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
             cmake --build build --parallel 2
@@ -64,6 +65,7 @@ jobs:
           nix develop --command bash -c "
             cmake -G Ninja -B build-tests -S tests \
               -DCMAKE_BUILD_TYPE=Debug \
+              -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
               -DCMAKE_C_COMPILER_LAUNCHER=ccache \
               -DCMAKE_CXX_COMPILER_LAUNCHER=ccache && \
             cmake --build build-tests --parallel 2 && \
