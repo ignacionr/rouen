@@ -253,6 +253,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wnull-dereference 
     -Wformat=2 
     -Wimplicit-fallthrough
+    -fpermissive
   )
   
   # Add function for GCC too
@@ -271,6 +272,7 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-template-names-tu-local>
       -Wno-subobject-linkage
       -Wno-pedantic
+      -fpermissive
 
       # CI Strictness: Make unused-result specifically an error in all builds
       $<$<BOOL:${ENABLE_CI_STRICTNESS}>:-Werror=unused-result>
