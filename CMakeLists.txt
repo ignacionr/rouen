@@ -570,15 +570,6 @@ set(ROUEN_MODULE_SOURCES
   src/models/mail/metadata_serialization.cppm
   src/models/git_process_helper.cppm
   src/models/git_scanner.cppm
-  src/hosts/llm_host.cppm
-  src/hosts/mcp_host.cppm
-  src/hosts/api_server_host.cppm
-  src/hosts/git_sync_host.cppm
-  src/hosts/universal_sync_host.cppm
-  src/hosts/process_host.cppm
-  src/hosts/plugin_host.cppm
-  src/hosts/footprints_host.cppm
-  src/hosts/rss_host.cppm
   src/cards/interface/card.cppm
   src/editor/editor.cppm
   src/cards/development/development_cards.cppm
