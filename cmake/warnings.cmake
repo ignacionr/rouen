@@ -254,6 +254,8 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wformat=2 
     -Wimplicit-fallthrough
     -fpermissive
+    -Wno-subobject-linkage
+    $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-template-names-tu-local>
   )
   
   # Add function for GCC too
