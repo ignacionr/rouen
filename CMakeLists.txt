@@ -541,7 +541,7 @@ add_executable(${PROJECT_NAME}
   src/cards/system/terminal_commands.cpp
 )
 
-target_sources(${PROJECT_NAME} PRIVATE FILE_SET CXX_MODULES FILES
+set(ROUEN_MODULE_SOURCES
   src/fonts.cppm
   src/helpers/config_service.cppm
   src/helpers/theme_manager.cppm
@@ -587,6 +587,9 @@ target_sources(${PROJECT_NAME} PRIVATE FILE_SET CXX_MODULES FILES
   src/cards/production/production_cards.cppm
   src/main_wnd.cppm
 )
+
+target_sources(${PROJECT_NAME} PRIVATE FILE_SET CXX_MODULES FILES ${ROUEN_MODULE_SOURCES})
+set_source_files_properties(${ROUEN_MODULE_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 set_source_files_properties(src/helpers/mp4_writer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
