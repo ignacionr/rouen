@@ -543,12 +543,7 @@ add_executable(${PROJECT_NAME}
   src/cards/system/terminal_commands.cpp
 )
 
-set(ROUEN_MODULE_SOURCES
-  src/fonts.cppm
-)
 
-target_sources(${PROJECT_NAME} PRIVATE FILE_SET CXX_MODULES FILES ${ROUEN_MODULE_SOURCES})
-set_source_files_properties(${ROUEN_MODULE_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 set_source_files_properties(src/helpers/mp4_writer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 

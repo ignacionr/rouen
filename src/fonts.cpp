@@ -1,5 +1,3 @@
-module;
-
 #include <SDL3/SDL_video.h>
 #include <cstdlib>
 #include <cstring>
@@ -14,12 +12,11 @@ module;
 #include <format>
 #include <algorithm>
 
+#include "fonts.hpp"
 #include "IconsMaterialDesign.h"
 #include "helpers/debug.hpp"
 #include "helpers/platform_utils.hpp"
 #include "registrar.hpp"
-
-module rouen.fonts;
 
 namespace rouen::fonts {
     namespace {
