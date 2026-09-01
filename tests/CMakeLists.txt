@@ -169,13 +169,15 @@ add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
 target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/interface/card.cpp
     ../src/hosts/mcp_host.cpp
+    ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/theme_manager.cpp
     ../src/helpers/card_decorations.cpp
     ../src/helpers/tag_manager.cpp
     ../src/fonts.cpp
 )
-target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES})
+target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} CURL::libcurl)
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
