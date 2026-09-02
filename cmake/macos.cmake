@@ -59,6 +59,7 @@ find_library(METAL_LIBRARY Metal REQUIRED)
 find_library(FORCEFEEDBACK_LIBRARY ForceFeedback REQUIRED)
 find_library(CARBON_LIBRARY Carbon REQUIRED)
 find_library(CORESERVICES_LIBRARY CoreServices REQUIRED) # FSEvents (directory_watch.hpp)
+find_library(APPLICATIONSERVICES_LIBRARY ApplicationServices REQUIRED)
 
 # Add GL library path directly for macOS
 find_library(OPENGL_LIBRARY OpenGL REQUIRED)
@@ -76,6 +77,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${FORCEFEEDBACK_LIBRARY}
   ${CARBON_LIBRARY}
   ${CORESERVICES_LIBRARY}
+  ${APPLICATIONSERVICES_LIBRARY}
   "-framework OpenGL"
   ${OPENGL_LIBRARY}
 )

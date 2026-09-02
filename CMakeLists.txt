@@ -498,6 +498,7 @@ add_executable(${PROJECT_NAME}
   src/helpers/tag_manager.cpp
   src/helpers/card_decorations.cpp
   src/helpers/vu_meter.cpp
+  src/helpers/ui_automation_explorer.cpp
   src/cards/interface/card.cpp
   src/cards/development/cmake.cpp
   src/cards/development/fs-directory.cpp

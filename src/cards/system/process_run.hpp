@@ -22,6 +22,7 @@
 #include "../../helpers/directory_watch.hpp"
 #include "../../models/productivity/process_definition.hpp"
 #include "../../hosts/process_host.hpp"
+#include "../../helpers/ui_automation_explorer.hpp"
 #include "../development/fs-directory.hpp"
 
 #if defined(_WIN32)
@@ -60,10 +61,196 @@ namespace rouen::cards {
             requested_fps = 5;
         }
 
-        ~process_run() override {
-            if (icon_texture_) TextureHelper::destroyTexture(icon_texture_);
+        private:
+        static bool node_matches_query(const rouen::helpers::ui_element_node& node, const std::string& query) {
+            if (query.empty()) return true;
+            auto matches_ic = [](std::string_view haystack, std::string_view needle) {
+                auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+                return it != haystack.end();
+            };
+            return matches_ic(node.name, query) || matches_ic(node.role, query) ||
+                   matches_ic(node.subrole, query) || matches_ic(node.id, query) ||
+                   matches_ic(node.value, query) || matches_ic(node.description, query);
         }
 
+        static bool subtree_matches_query(const rouen::helpers::ui_element_node& node, const std::string& query) {
+            if (node_matches_query(node, query)) return true;
+            for (const auto& child : node.children) {
+                if (subtree_matches_query(child, query)) return true;
+            }
+            return false;
+        }
+
+        void render_ui_node_tree(const rouen::helpers::ui_element_node& node, const std::string& query, int depth) {
+            if (!query.empty() && !subtree_matches_query(node, query)) {
+                return;
+            }
+
+            ImGui::PushID(&node);
+
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+            if (node.children.empty()) {
+                flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+            }
+            if (selected_ui_node_ == &node) {
+                flags |= ImGuiTreeNodeFlags_Selected;
+            }
+            if (!query.empty() && subtree_matches_query(node, query)) {
+                flags |= ImGuiTreeNodeFlags_DefaultOpen;
+            } else if (depth == 0) {
+                flags |= ImGuiTreeNodeFlags_DefaultOpen;
+            }
+
+            std::string label = std::format("[{}] {}", node.role.empty() ? "Element" : node.role,
+                                            node.name.empty() ? "(unnamed)" : node.name);
+
+            bool is_open = ImGui::TreeNodeEx("##node", flags, "%s", label.c_str());
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                selected_ui_node_ = &node;
+            }
+
+            if (is_open && !node.children.empty()) {
+                for (const auto& child : node.children) {
+                    render_ui_node_tree(child, query, depth + 1);
+                }
+                ImGui::TreePop();
+            }
+
+            ImGui::PopID();
+        }
+
+        void render_selected_ui_node_details() {
+            if (!selected_ui_node_) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Select an element from the tree to view properties.");
+                return;
+            }
+
+            const auto& node = *selected_ui_node_;
+            ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "%s", node.role.c_str());
+            if (!node.subrole.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", node.subrole.c_str());
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::BeginTable("selected_prop_table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                auto draw_prop = [](const char* name, const std::string& val) {
+                    if (val.empty()) return;
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(name);
+                    ImGui::TableNextColumn();
+                    ImGui::TextWrapped("%s", val.c_str());
+                };
+
+                draw_prop("Name", node.name);
+                draw_prop("Role", node.role);
+                draw_prop("Subrole", node.subrole);
+                draw_prop("Value", node.value);
+                draw_prop("ID", node.id);
+                draw_prop("Description", node.description);
+
+                if (node.width > 0.0f || node.height > 0.0f) {
+                    draw_prop("Bounds", std::format("X:{:.0f} Y:{:.0f} W:{:.0f} H:{:.0f}",
+                                                    node.x, node.y, node.width, node.height));
+                }
+
+                draw_prop("Enabled", node.enabled ? "true" : "false");
+                draw_prop("Focused", node.focused ? "true" : "false");
+                draw_prop("Children", std::to_string(node.children.size()));
+
+                for (const auto& attr : node.attributes) {
+                    draw_prop(attr.name.c_str(), attr.value);
+                }
+
+                ImGui::EndTable();
+            }
+        }
+
+        void render_ui_automation(const rouen::hosts::process_run_snapshot& snap) {
+            ImGui::TextUnformatted("UI Automation Explorer (AXUIElement / IUIAutomation):");
+
+            bool trusted = rouen::helpers::ui_automation_explorer::check_accessibility_permissions(false);
+
+            if (ImGui::Button("Inspect UI Tree")) {
+                ui_tree_result_ = rouen::helpers::ui_automation_explorer::inspect_process(snap.pid, ui_max_depth_);
+                selected_ui_node_ = nullptr;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear Tree")) {
+                ui_tree_result_.reset();
+                selected_ui_node_ = nullptr;
+            }
+
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::InputInt("Max Depth", &ui_max_depth_)) {
+                ui_max_depth_ = std::clamp(ui_max_depth_, 1, 15);
+            }
+
+            if (!trusted) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[Permission Warning]");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("macOS Accessibility permission is required for AXUIElement tree inspection.");
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Request Access")) {
+                    rouen::helpers::ui_automation_explorer::check_accessibility_permissions(true);
+                }
+            }
+
+            if (!ui_tree_result_) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                   "Click 'Inspect UI Tree' to scan the application's UI hierarchy.");
+                return;
+            }
+
+            const auto& res = *ui_tree_result_;
+            if (res.permission_denied) {
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "%s", res.error_message.c_str());
+                return;
+            }
+
+            if (!res.success) {
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Error: %s", res.error_message.c_str());
+                return;
+            }
+
+            ImGui::SetNextItemWidth(260.0f);
+            ImGui::InputTextWithHint("##ui_search", "Filter elements by name, role, ID...", ui_search_buf_, sizeof(ui_search_buf_));
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Total Nodes: %zu", res.total_node_count);
+
+            std::string query(ui_search_buf_);
+
+            if (ImGui::BeginTable("ui_explorer_table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("UI Element Tree", ImGuiTableColumnFlags_WidthStretch, 0.6f);
+                ImGui::TableSetupColumn("Element Properties", ImGuiTableColumnFlags_WidthStretch, 0.4f);
+                ImGui::TableHeadersRow();
+
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+
+                ImGui::BeginChild("UITreeScroll", ImVec2(0, 220.0f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                render_ui_node_tree(res.root, query, 0);
+                ImGui::EndChild();
+
+                ImGui::TableNextColumn();
+                ImGui::BeginChild("UINodeDetailsScroll", ImVec2(0, 220.0f), false);
+                render_selected_ui_node_details();
+                ImGui::EndChild();
+
+                ImGui::EndTable();
+            }
+        }
+
+    public:
         bool render() override {
             return render_window([this]() {
                 render_header();
@@ -77,6 +264,10 @@ namespace rouen::cards {
                     ImGui::Separator();
                     render_tcp_connections(*snap);
                     ImGui::Separator();
+                    if (snap->state == rouen::hosts::process_run_state::running) {
+                        render_ui_automation(*snap);
+                        ImGui::Separator();
+                    }
                 }
 
                 render_file_changes();
@@ -433,6 +624,11 @@ namespace rouen::cards {
             std::string changed_at;
         };
         std::vector<changed_file_entry> changed_files_;
+
+        std::optional<rouen::helpers::ui_automation_result> ui_tree_result_;
+        const rouen::helpers::ui_element_node* selected_ui_node_{nullptr};
+        char ui_search_buf_[128]{};
+        int ui_max_depth_{6};
     };
 
 } // namespace rouen::cards

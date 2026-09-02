@@ -56,6 +56,7 @@ if(WIN32)
         setupapi
         psapi       # For memory and process information
         kernel32    # For system time and process APIs
+        uiautomationcore
     )
     
     # Handle DLL copying for vcpkg dependencies
