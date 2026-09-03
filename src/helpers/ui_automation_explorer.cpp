@@ -10,6 +10,9 @@
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
 #elif defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <uiautomation.h>
 #endif
@@ -209,7 +212,7 @@ static void populate_ax_element(AXUIElementRef element, ui_element_node& node, i
             if (CFGetTypeID(children_type_ref) == CFArrayGetTypeID()) {
                 CFArrayRef children_ref = static_cast<CFArrayRef>(children_type_ref);
                 CFIndex child_count = CFArrayGetCount(children_ref);
-                CFIndex limit = std::min(child_count, static_cast<CFIndex>(max_children));
+                CFIndex limit = (std::min)(child_count, static_cast<CFIndex>(max_children));
                 for (CFIndex i = 0; i < limit; ++i) {
                     AXUIElementRef child_elem = static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(children_ref, i)));
                     ui_element_node child_node;
@@ -333,27 +336,27 @@ static void populate_uia_element(IUIAutomationElement* element, IUIAutomationTre
         node.focused = (focused != FALSE);
     }
 
-    // 1. Try IValueProvider for Edit controls, Text fields, ComboBoxes, etc.
-    IValueProvider* value_provider = nullptr;
-    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId, IID_IValueProvider, reinterpret_cast<void**>(&value_provider))) && value_provider) {
+    // 1. Try IUIAutomationValuePattern for Edit controls, Text fields, ComboBoxes, etc.
+    IUIAutomationValuePattern* value_pattern = nullptr;
+    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, reinterpret_cast<void**>(&value_pattern))) && value_pattern) {
         BSTR val_bstr = nullptr;
-        if (SUCCEEDED(value_provider->get_CurrentValue(&val_bstr)) && val_bstr) {
+        if (SUCCEEDED(value_pattern->get_CurrentValue(&val_bstr)) && val_bstr) {
             node.value = bstr_to_string(val_bstr);
             SysFreeString(val_bstr);
         }
         BOOL is_readonly = FALSE;
-        if (SUCCEEDED(value_provider->get_CurrentIsReadOnly(&is_readonly))) {
+        if (SUCCEEDED(value_pattern->get_CurrentIsReadOnly(&is_readonly))) {
             node.attributes.push_back({"IsReadOnly", is_readonly ? "true" : "false"});
         }
-        value_provider->Release();
+        value_pattern->Release();
     }
 
-    // 2. If node.value is still empty, try ITextProvider for RichEdit, Document controls, multi-line edit fields
+    // 2. If node.value is still empty, try IUIAutomationTextPattern for RichEdit, Document controls, multi-line edit fields
     if (node.value.empty()) {
-        ITextProvider* text_provider = nullptr;
-        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_ITextProvider, reinterpret_cast<void**>(&text_provider))) && text_provider) {
-            ITextRange* doc_range = nullptr;
-            if (SUCCEEDED(text_provider->get_DocumentRange(&doc_range)) && doc_range) {
+        IUIAutomationTextPattern* text_pattern = nullptr;
+        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_IUIAutomationTextPattern, reinterpret_cast<void**>(&text_pattern))) && text_pattern) {
+            IUIAutomationTextRange* doc_range = nullptr;
+            if (SUCCEEDED(text_pattern->get_DocumentRange(&doc_range)) && doc_range) {
                 BSTR text_bstr = nullptr;
                 if (SUCCEEDED(doc_range->GetText(-1, &text_bstr)) && text_bstr) {
                     node.value = bstr_to_string(text_bstr);
@@ -361,23 +364,23 @@ static void populate_uia_element(IUIAutomationElement* element, IUIAutomationTre
                 }
                 doc_range->Release();
             }
-            text_provider->Release();
+            text_pattern->Release();
         }
     }
 
-    // 3. If node.value is still empty, try IRangeValueProvider for Sliders, Spinners, ScrollBars
+    // 3. If node.value is still empty, try IUIAutomationRangeValuePattern for Sliders, Spinners, ScrollBars
     if (node.value.empty()) {
-        IRangeValueProvider* range_provider = nullptr;
-        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_RangeValuePatternId, IID_IRangeValueProvider, reinterpret_cast<void**>(&range_provider))) && range_provider) {
+        IUIAutomationRangeValuePattern* range_pattern = nullptr;
+        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_RangeValuePatternId, IID_IUIAutomationRangeValuePattern, reinterpret_cast<void**>(&range_pattern))) && range_pattern) {
             double double_val = 0.0;
-            if (SUCCEEDED(range_provider->get_CurrentValue(&double_val))) {
+            if (SUCCEEDED(range_pattern->get_CurrentValue(&double_val))) {
                 if (std::floor(double_val) == double_val) {
                     node.value = std::to_string(static_cast<long long>(double_val));
                 } else {
                     node.value = std::format("{:.2f}", double_val);
                 }
             }
-            range_provider->Release();
+            range_pattern->Release();
         }
     }
 
@@ -520,7 +523,7 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
         if (SUCCEEDED(root_elem->FindAll(TreeScope_Children, cond, &element_array)) && element_array) {
             int length = 0;
             element_array->get_Length(&length);
-            for (int i = 0; i < std::min(length, max_children_per_node); ++i) {
+            for (int i = 0; i < (std::min)(length, max_children_per_node); ++i) {
                 IUIAutomationElement* child_elem = nullptr;
                 if (SUCCEEDED(element_array->GetElement(i, &child_elem)) && child_elem) {
                     ui_element_node child_node;
