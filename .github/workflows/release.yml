@@ -3,6 +3,9 @@ name: Multi-Platform Release
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -21,7 +24,7 @@ concurrency:
 
 jobs:
   create-release:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -31,10 +34,10 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.inputs.tag_name }}
-          name: Rouen ${{ github.event.inputs.tag_name }}
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: Rouen ${{ github.event.inputs.tag_name || github.ref_name }}
           body: |
-            # Rouen Cross-Platform Release ${{ github.event.inputs.tag_name }}
+            # Rouen Cross-Platform Release ${{ github.event.inputs.tag_name || github.ref_name }}
             
             This release includes builds for all supported platforms:
             - **Windows** (x64) - MSI installer with automatic dependency management
