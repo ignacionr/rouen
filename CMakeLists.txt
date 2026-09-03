@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.30)
+# Define project version
+set(ROUEN_VERSION_MAJOR 1)
+set(ROUEN_VERSION_MINOR 3)
+set(ROUEN_VERSION_PATCH 5)
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
 
 if(APPLE AND UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clang-scan-deps-nix")
