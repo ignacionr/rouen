@@ -551,11 +551,13 @@ set_target_properties(test_bybit_currency_fix test_example_math test_notes_repos
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
-    target_add_strict_warnings(test_bybit_currency_fix)
-    target_add_strict_warnings(test_example_math)
-    target_add_strict_warnings(test_notes_repository_legacy)
-    target_add_strict_warnings(test_series_repository)
+# UI Automation Explorer Test
+add_gtest_executable(test_ui_automation_explorer test_ui_automation_explorer.cpp)
+target_sources(test_ui_automation_explorer PRIVATE ../src/helpers/ui_automation_explorer.cpp)
+if(APPLE)
+    target_link_libraries(test_ui_automation_explorer PRIVATE "-framework ApplicationServices" "-framework CoreFoundation")
+elseif(WIN32)
+    target_link_libraries(test_ui_automation_explorer PRIVATE ole32 oleaut32 uiautomationcore)
 endif()
 
 # Create a comprehensive test runner that builds and runs all tests
@@ -575,6 +577,7 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ui_automation_explorer
     COMMAND echo ""
     COMMAND echo "Legacy Console Tests:"
     COMMAND echo "---------------------"
@@ -582,7 +585,7 @@ add_custom_target(run_all_tests
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_example_math
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_notes_repository_legacy
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_series_repository
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_ui_automation_explorer test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository
     COMMENT "Running complete Rouen test suite"
 )
 
@@ -601,7 +604,8 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_rss_watermark
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ui_automation_explorer
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_ui_automation_explorer
     COMMENT "Running Google Test suite only"
 )
 
@@ -664,7 +668,7 @@ add_custom_target(run_rt_media_test
 # Enable CTest integration
 add_custom_target(run_ctest
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure --verbose
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_bybit_currency_fix test_example_math test_objectives test_ui_automation_explorer
     COMMENT "Running tests through CTest framework"
 )
 

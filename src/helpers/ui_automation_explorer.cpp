@@ -112,12 +112,22 @@ static void populate_ax_element(AXUIElementRef element, ui_element_node& node, i
         node.description = cftype_to_string(desc_ref);
         CFRelease(desc_ref);
     }
+    if (node.description.empty()) {
+        CFTypeRef help_ref = nullptr;
+        if (AXUIElementCopyAttributeValue(element, kAXHelpAttribute, &help_ref) == kAXErrorSuccess && help_ref) {
+            node.description = cftype_to_string(help_ref);
+            CFRelease(help_ref);
+        }
+    }
 
     // Value
     CFTypeRef val_ref = nullptr;
     if (AXUIElementCopyAttributeValue(element, kAXValueAttribute, &val_ref) == kAXErrorSuccess && val_ref) {
         node.value = cftype_to_string(val_ref);
         CFRelease(val_ref);
+    }
+    if (!node.value.empty()) {
+        node.attributes.push_back({"Value", node.value});
     }
 
     // Identifier
@@ -299,6 +309,12 @@ static void populate_uia_element(IUIAutomationElement* element, IUIAutomationTre
         SysFreeString(auto_id);
     }
 
+    BSTR help_bstr = nullptr;
+    if (SUCCEEDED(element->get_CurrentHelpText(&help_bstr)) && help_bstr) {
+        node.description = bstr_to_string(help_bstr);
+        SysFreeString(help_bstr);
+    }
+
     RECT rect{};
     if (SUCCEEDED(element->get_CurrentBoundingRectangle(&rect))) {
         node.x = static_cast<float>(rect.left);
@@ -317,8 +333,92 @@ static void populate_uia_element(IUIAutomationElement* element, IUIAutomationTre
         node.focused = (focused != FALSE);
     }
 
+    // 1. Try IValueProvider for Edit controls, Text fields, ComboBoxes, etc.
+    IValueProvider* value_provider = nullptr;
+    if (SUCCEEDED(element->GetCurrentPatternAs(UIA_ValuePatternId, IID_IValueProvider, reinterpret_cast<void**>(&value_provider))) && value_provider) {
+        BSTR val_bstr = nullptr;
+        if (SUCCEEDED(value_provider->get_CurrentValue(&val_bstr)) && val_bstr) {
+            node.value = bstr_to_string(val_bstr);
+            SysFreeString(val_bstr);
+        }
+        BOOL is_readonly = FALSE;
+        if (SUCCEEDED(value_provider->get_CurrentIsReadOnly(&is_readonly))) {
+            node.attributes.push_back({"IsReadOnly", is_readonly ? "true" : "false"});
+        }
+        value_provider->Release();
+    }
+
+    // 2. If node.value is still empty, try ITextProvider for RichEdit, Document controls, multi-line edit fields
+    if (node.value.empty()) {
+        ITextProvider* text_provider = nullptr;
+        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_TextPatternId, IID_ITextProvider, reinterpret_cast<void**>(&text_provider))) && text_provider) {
+            ITextRange* doc_range = nullptr;
+            if (SUCCEEDED(text_provider->get_DocumentRange(&doc_range)) && doc_range) {
+                BSTR text_bstr = nullptr;
+                if (SUCCEEDED(doc_range->GetText(-1, &text_bstr)) && text_bstr) {
+                    node.value = bstr_to_string(text_bstr);
+                    SysFreeString(text_bstr);
+                }
+                doc_range->Release();
+            }
+            text_provider->Release();
+        }
+    }
+
+    // 3. If node.value is still empty, try IRangeValueProvider for Sliders, Spinners, ScrollBars
+    if (node.value.empty()) {
+        IRangeValueProvider* range_provider = nullptr;
+        if (SUCCEEDED(element->GetCurrentPatternAs(UIA_RangeValuePatternId, IID_IRangeValueProvider, reinterpret_cast<void**>(&range_provider))) && range_provider) {
+            double double_val = 0.0;
+            if (SUCCEEDED(range_provider->get_CurrentValue(&double_val))) {
+                if (std::floor(double_val) == double_val) {
+                    node.value = std::to_string(static_cast<long long>(double_val));
+                } else {
+                    node.value = std::format("{:.2f}", double_val);
+                }
+            }
+            range_provider->Release();
+        }
+    }
+
+    // 4. Fallback property lookup via UIA_ValueValuePropertyId
+    if (node.value.empty()) {
+        VARIANT var_val;
+        VariantInit(&var_val);
+        if (SUCCEEDED(element->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &var_val))) {
+            if (var_val.vt == VT_BSTR && var_val.bstrVal) {
+                node.value = bstr_to_string(var_val.bstrVal);
+            }
+            VariantClear(&var_val);
+        }
+    }
+
+    // Additional UIA attributes
+    BSTR status_bstr = nullptr;
+    if (SUCCEEDED(element->get_CurrentItemStatus(&status_bstr)) && status_bstr) {
+        std::string s = bstr_to_string(status_bstr);
+        if (!s.empty()) node.attributes.push_back({"ItemStatus", s});
+        SysFreeString(status_bstr);
+    }
+
+    BSTR type_bstr = nullptr;
+    if (SUCCEEDED(element->get_CurrentItemType(&type_bstr)) && type_bstr) {
+        std::string t = bstr_to_string(type_bstr);
+        if (!t.empty()) node.attributes.push_back({"ItemType", t});
+        SysFreeString(type_bstr);
+    }
+
+    BSTR loc_bstr = nullptr;
+    if (SUCCEEDED(element->get_CurrentLocalizedControlType(&loc_bstr)) && loc_bstr) {
+        std::string l = bstr_to_string(loc_bstr);
+        if (!l.empty()) node.attributes.push_back({"LocalizedControlType", l});
+        SysFreeString(loc_bstr);
+    }
+
     if (!node.id.empty()) node.attributes.push_back({"AutomationId", node.id});
     if (!node.subrole.empty()) node.attributes.push_back({"ClassName", node.subrole});
+    if (!node.value.empty()) node.attributes.push_back({"Value", node.value});
+    if (!node.description.empty()) node.attributes.push_back({"HelpText", node.description});
 
     if (depth < max_depth && walker) {
         IUIAutomationElement* child = nullptr;
@@ -452,6 +552,97 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
 #endif
 
     return result;
+}
+
+static bool is_edit_or_value_node(const ui_element_node& node, bool edit_boxes_only) {
+    if (!node.value.empty()) return true;
+    
+    std::string role_lower = node.role;
+    std::transform(role_lower.begin(), role_lower.end(), role_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    std::string subrole_lower = node.subrole;
+    std::transform(subrole_lower.begin(), subrole_lower.end(), subrole_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    
+    if (role_lower == "edit" || role_lower == "text" || role_lower == "document" || 
+        role_lower == "combobox" || role_lower == "spinner" || role_lower == "slider" ||
+        role_lower == "textfield" || role_lower == "textarea") {
+        return true;
+    }
+    
+    if (subrole_lower.find("edit") != std::string::npos || 
+        subrole_lower.find("text") != std::string::npos ||
+        subrole_lower.find("field") != std::string::npos) {
+        return true;
+    }
+    
+    if (!edit_boxes_only) {
+        return !node.name.empty() || !node.description.empty() || !node.id.empty();
+    }
+    
+    return false;
+}
+
+static void collect_values_recursive(const ui_element_node& node, std::vector<ui_element_value_info>& list, bool edit_boxes_only) {
+    if (is_edit_or_value_node(node, edit_boxes_only)) {
+        list.push_back(ui_element_value_info{
+            .id = node.id,
+            .name = node.name,
+            .role = node.role,
+            .subrole = node.subrole,
+            .value = node.value,
+            .description = node.description
+        });
+    }
+    for (const auto& child : node.children) {
+        collect_values_recursive(child, list, edit_boxes_only);
+    }
+}
+
+std::vector<ui_element_value_info> ui_automation_result::extract_values(bool edit_boxes_only) const {
+    std::vector<ui_element_value_info> list;
+    collect_values_recursive(root, list, edit_boxes_only);
+    return list;
+}
+
+std::vector<ui_element_value_info> ui_automation_explorer::extract_process_values(int64_t pid, bool edit_boxes_only, int max_depth) {
+    auto res = inspect_process(pid, max_depth);
+    if (!res.success) return {};
+    return res.extract_values(edit_boxes_only);
+}
+
+static const ui_element_node* find_node_by_id_or_name(const ui_element_node& node, std::string_view query) {
+    auto matches_ic = [](std::string_view haystack, std::string_view needle) {
+        if (needle.empty() || haystack.empty()) return false;
+        auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+            [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+        return it != haystack.end();
+    };
+
+    if ((!node.id.empty() && node.id == query) ||
+        (!node.name.empty() && matches_ic(node.name, query))) {
+        return &node;
+    }
+
+    for (const auto& child : node.children) {
+        if (auto found = find_node_by_id_or_name(child, query)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+std::optional<std::string> ui_automation_explorer::request_control_value(int64_t pid, std::string_view identifier_or_name) {
+    if (identifier_or_name.empty()) return std::nullopt;
+    auto res = inspect_process(pid, 8);
+    if (!res.success) return std::nullopt;
+
+    const ui_element_node* node = find_node_by_id_or_name(res.root, identifier_or_name);
+    if (node) {
+        if (!node->value.empty()) return node->value;
+        if (!node->name.empty()) return node->name;
+        if (!node->description.empty()) return node->description;
+    }
+    return std::nullopt;
 }
 
 } // namespace rouen::helpers
