@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "../src/helpers/ui_automation_explorer.hpp"
-#include <unistd.h>
 
 TEST(UIAutomationExplorerTest, ResultExtractsValuesFromTree) {
     rouen::helpers::ui_automation_result res;
