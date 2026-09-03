@@ -14,6 +14,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <ole2.h>
 #include <uiautomation.h>
 #endif
 
