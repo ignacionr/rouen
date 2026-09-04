@@ -110,6 +110,38 @@ namespace rouen::cards {
                 selected_ui_node_ = &node;
             }
 
+            if (ImGui::BeginPopupContextItem()) {
+                selected_ui_node_ = &node;
+                std::vector<const rouen::helpers::ui_element_node*> path;
+                if (ui_tree_result_) {
+                    path = rouen::helpers::ui_automation_explorer::find_path_to_node(ui_tree_result_->root, &node);
+                }
+
+                if (ImGui::MenuItem("Copy Tree Path")) {
+                    std::string p = rouen::helpers::ui_automation_explorer::format_tree_path(path);
+                    ImGui::SetClipboardText(p.c_str());
+                }
+                if (ImGui::MenuItem("Copy Full Properties")) {
+                    std::string fp = rouen::helpers::ui_automation_explorer::format_element_properties(node);
+                    ImGui::SetClipboardText(fp.c_str());
+                }
+                if (ImGui::MenuItem("Copy Path & Properties")) {
+                    std::string fi = rouen::helpers::ui_automation_explorer::format_full_element_info(node, path);
+                    ImGui::SetClipboardText(fi.c_str());
+                }
+                ImGui::Separator();
+                if (!node.value.empty() && ImGui::MenuItem("Copy Value")) {
+                    ImGui::SetClipboardText(node.value.c_str());
+                }
+                if (!node.name.empty() && ImGui::MenuItem("Copy Name")) {
+                    ImGui::SetClipboardText(node.name.c_str());
+                }
+                if (!node.id.empty() && ImGui::MenuItem("Copy ID")) {
+                    ImGui::SetClipboardText(node.id.c_str());
+                }
+                ImGui::EndPopup();
+            }
+
             if (is_open && !node.children.empty()) {
                 for (const auto& child : node.children) {
                     render_ui_node_tree(child, query, depth + 1);
@@ -127,10 +159,40 @@ namespace rouen::cards {
             }
 
             const auto& node = *selected_ui_node_;
+            std::vector<const rouen::helpers::ui_element_node*> path;
+            if (ui_tree_result_) {
+                path = rouen::helpers::ui_automation_explorer::find_path_to_node(ui_tree_result_->root, &node);
+            }
+            std::string single_line_path = rouen::helpers::ui_automation_explorer::format_tree_path(path);
+            std::string full_props = rouen::helpers::ui_automation_explorer::format_element_properties(node);
+            std::string full_info = rouen::helpers::ui_automation_explorer::format_full_element_info(node, path);
+
             ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "%s", node.role.c_str());
             if (!node.subrole.empty()) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("(%s)", node.subrole.c_str());
+            }
+
+            // Top action buttons for quick clipboard copy
+            if (ImGui::SmallButton("Copy Path")) {
+                ImGui::SetClipboardText(single_line_path.c_str());
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy full tree path from root element to clipboard");
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy Props")) {
+                ImGui::SetClipboardText(full_props.c_str());
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy all element properties and attributes to clipboard");
+
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy All")) {
+                ImGui::SetClipboardText(full_info.c_str());
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy both full tree path and properties to clipboard");
+
+            if (!single_line_path.empty()) {
+                ImGui::TextWrapped("Path: %s", single_line_path.c_str());
             }
 
             ImGui::Separator();
@@ -305,7 +367,7 @@ namespace rouen::cards {
                     std::erase_if(extracted, [&](const auto& item) {
                         return !matches_ic(item.name, query) && !matches_ic(item.role, query) &&
                                !matches_ic(item.id, query) && !matches_ic(item.value, query) &&
-                               !matches_ic(item.description, query);
+                               !matches_ic(item.description, query) && !matches_ic(item.path, query);
                     });
                 }
 
@@ -317,14 +379,24 @@ namespace rouen::cards {
                     ImGui::SetClipboardText(copy_buf.c_str());
                 }
                 ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Found %zu edit/value controls", extracted.size());
+                if (ImGui::Button("Copy All (Paths & Values)")) {
+                    std::string copy_buf;
+                    for (const auto& item : extracted) {
+                        copy_buf += std::format("Path: {}\nRole: {} | Name: {}\nValue: {}\nID: {}\n---\n",
+                                                item.path, item.role, item.name, item.value, item.id);
+                    }
+                    ImGui::SetClipboardText(copy_buf.c_str());
+                }
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Found %zu controls", extracted.size());
 
-                if (ImGui::BeginTable("extracted_values_table", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
-                    ImGui::TableSetupColumn("Role", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-                    ImGui::TableSetupColumn("Name / Label", ImGuiTableColumnFlags_WidthStretch, 0.3f);
-                    ImGui::TableSetupColumn("Text / Value", ImGuiTableColumnFlags_WidthStretch, 0.4f);
-                    ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-                    ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+                if (ImGui::BeginTable("extracted_values_table", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                    ImGui::TableSetupColumn("Role", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+                    ImGui::TableSetupColumn("Name / Label", ImGuiTableColumnFlags_WidthStretch, 0.25f);
+                    ImGui::TableSetupColumn("Text / Value", ImGuiTableColumnFlags_WidthStretch, 0.30f);
+                    ImGui::TableSetupColumn("Tree Path", ImGuiTableColumnFlags_WidthStretch, 0.30f);
+                    ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 65.0f);
+                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
                     ImGui::TableHeadersRow();
 
                     ImGui::BeginChild("ExtractedScroll", ImVec2(0, 200.0f), false);
@@ -343,11 +415,39 @@ namespace rouen::cards {
                         ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.5f, 1.0f), "%s", item.value.empty() ? "(empty)" : item.value.c_str());
 
                         ImGui::TableNextColumn();
+                        ImGui::TextDisabled("%s", item.path.c_str());
+                        if (ImGui::IsItemHovered() && !item.path.empty()) {
+                            ImGui::SetTooltip("%s", item.path.c_str());
+                        }
+
+                        ImGui::TableNextColumn();
                         ImGui::TextDisabled("%s", item.id.c_str());
 
                         ImGui::TableNextColumn();
-                        if (ImGui::SmallButton("Copy")) {
+                        if (ImGui::SmallButton("Val")) {
                             ImGui::SetClipboardText(item.value.c_str());
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy Value");
+
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Path")) {
+                            ImGui::SetClipboardText(item.path.c_str());
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy Tree Path");
+
+                        if (ImGui::BeginPopupContextItem("item_ctx")) {
+                            if (ImGui::MenuItem("Copy Text / Value")) {
+                                ImGui::SetClipboardText(item.value.c_str());
+                            }
+                            if (ImGui::MenuItem("Copy Tree Path")) {
+                                ImGui::SetClipboardText(item.path.c_str());
+                            }
+                            if (ImGui::MenuItem("Copy Full Item Details")) {
+                                std::string info = std::format("Tree Path: {}\nRole: {}\nSubrole: {}\nName: {}\nValue: {}\nID: {}\nDescription: {}\n",
+                                                               item.path, item.role, item.subrole, item.name, item.value, item.id, item.description);
+                                ImGui::SetClipboardText(info.c_str());
+                            }
+                            ImGui::EndPopup();
                         }
 
                         ImGui::PopID();

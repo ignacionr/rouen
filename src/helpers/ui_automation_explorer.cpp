@@ -586,7 +586,8 @@ static bool is_edit_or_value_node(const ui_element_node& node, bool edit_boxes_o
     return false;
 }
 
-static void collect_values_recursive(const ui_element_node& node, std::vector<ui_element_value_info>& list, bool edit_boxes_only) {
+static void collect_values_recursive(const ui_element_node& node, std::vector<const ui_element_node*>& current_path, std::vector<ui_element_value_info>& list, bool edit_boxes_only) {
+    current_path.push_back(&node);
     if (is_edit_or_value_node(node, edit_boxes_only)) {
         list.push_back(ui_element_value_info{
             .id = node.id,
@@ -594,17 +595,20 @@ static void collect_values_recursive(const ui_element_node& node, std::vector<ui
             .role = node.role,
             .subrole = node.subrole,
             .value = node.value,
-            .description = node.description
+            .description = node.description,
+            .path = ui_automation_explorer::format_tree_path(current_path)
         });
     }
     for (const auto& child : node.children) {
-        collect_values_recursive(child, list, edit_boxes_only);
+        collect_values_recursive(child, current_path, list, edit_boxes_only);
     }
+    current_path.pop_back();
 }
 
 std::vector<ui_element_value_info> ui_automation_result::extract_values(bool edit_boxes_only) const {
     std::vector<ui_element_value_info> list;
-    collect_values_recursive(root, list, edit_boxes_only);
+    std::vector<const ui_element_node*> current_path;
+    collect_values_recursive(root, current_path, list, edit_boxes_only);
     return list;
 }
 
@@ -647,6 +651,95 @@ std::optional<std::string> ui_automation_explorer::request_control_value(int64_t
         if (!node->description.empty()) return node->description;
     }
     return std::nullopt;
+}
+
+static bool search_path_recursive(const ui_element_node& current, const ui_element_node* target, std::vector<const ui_element_node*>& path) {
+    path.push_back(&current);
+    if (&current == target) {
+        return true;
+    }
+    for (const auto& child : current.children) {
+        if (search_path_recursive(child, target, path)) {
+            return true;
+        }
+    }
+    path.pop_back();
+    return false;
+}
+
+std::vector<const ui_element_node*> ui_automation_explorer::find_path_to_node(const ui_element_node& root, const ui_element_node* target) {
+    std::vector<const ui_element_node*> path;
+    if (!target) return path;
+    search_path_recursive(root, target, path);
+    return path;
+}
+
+std::string ui_automation_explorer::format_tree_path(const std::vector<const ui_element_node*>& path, std::string_view separator) {
+    if (path.empty()) return "";
+    std::string result;
+    for (size_t i = 0; i < path.size(); ++i) {
+        if (i > 0) result += separator;
+        const auto* n = path[i];
+        std::string role = n->role.empty() ? "Element" : n->role;
+        std::string label = std::format("[{}]", role);
+        if (!n->name.empty()) {
+            label += std::format(" \"{}\"", n->name);
+        } else if (!n->id.empty()) {
+            label += std::format(" (#{})", n->id);
+        }
+        result += label;
+    }
+    return result;
+}
+
+std::string ui_automation_explorer::format_tree_path_hierarchy(const std::vector<const ui_element_node*>& path) {
+    if (path.empty()) return "";
+    std::string result = "Tree Path:\n";
+    for (size_t i = 0; i < path.size(); ++i) {
+        const auto* n = path[i];
+        std::string indent(i * 2, ' ');
+        std::string role = n->role.empty() ? "Element" : n->role;
+        std::string line = std::format("{}{}[{}]", indent, (i == 0 ? "" : "└─ "), role);
+        if (!n->name.empty()) line += std::format(" \"{}\"", n->name);
+        if (!n->subrole.empty()) line += std::format(" ({})", n->subrole);
+        if (!n->id.empty()) line += std::format(" [ID: {}]", n->id);
+        result += line + "\n";
+    }
+    return result;
+}
+
+std::string ui_automation_explorer::format_element_properties(const ui_element_node& node) {
+    std::string out = "UI Element Properties:\n";
+    out += std::format("  Role: {}\n", node.role.empty() ? "(none)" : node.role);
+    if (!node.subrole.empty()) out += std::format("  Subrole: {}\n", node.subrole);
+    if (!node.name.empty()) out += std::format("  Name: {}\n", node.name);
+    if (!node.value.empty()) out += std::format("  Value: {}\n", node.value);
+    if (!node.id.empty()) out += std::format("  ID: {}\n", node.id);
+    if (!node.description.empty()) out += std::format("  Description: {}\n", node.description);
+    if (node.width > 0.0f || node.height > 0.0f) {
+        out += std::format("  Bounds: X:{:.1f}, Y:{:.1f}, W:{:.1f}, H:{:.1f}\n", node.x, node.y, node.width, node.height);
+    }
+    out += std::format("  Enabled: {}\n", node.enabled ? "true" : "false");
+    out += std::format("  Focused: {}\n", node.focused ? "true" : "false");
+    out += std::format("  Child Count: {}\n", node.children.size());
+
+    if (!node.attributes.empty()) {
+        out += "  Attributes:\n";
+        for (const auto& attr : node.attributes) {
+            out += std::format("    {}: {}\n", attr.name, attr.value);
+        }
+    }
+    return out;
+}
+
+std::string ui_automation_explorer::format_full_element_info(const ui_element_node& node, const std::vector<const ui_element_node*>& path) {
+    std::string out = "=== UI Element Info ===\n\n";
+    if (!path.empty()) {
+        out += format_tree_path_hierarchy(path) + "\n";
+        out += std::format("Single-Line Path: {}\n\n", format_tree_path(path));
+    }
+    out += format_element_properties(node);
+    return out;
 }
 
 } // namespace rouen::helpers

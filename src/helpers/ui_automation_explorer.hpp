@@ -41,6 +41,7 @@ namespace rouen::helpers {
         std::string subrole;
         std::string value;
         std::string description;
+        std::string path;
     };
 
     struct ui_automation_result {
@@ -67,6 +68,21 @@ namespace rouen::helpers {
 
         // Checks if accessibility permissions are granted (macOS specific, returns true on Windows)
         static bool check_accessibility_permissions(bool prompt_if_missing = false);
+
+        // Finds vector of node pointers from root to target element in the UI hierarchy tree
+        static std::vector<const ui_element_node*> find_path_to_node(const ui_element_node& root, const ui_element_node* target);
+
+        // Formats a path vector into a single-line string (e.g. "[Window] Main > [Group] Panel > [Button] Submit")
+        static std::string format_tree_path(const std::vector<const ui_element_node*>& path, std::string_view separator = " > ");
+
+        // Formats a path vector into a multi-line tree hierarchy string
+        static std::string format_tree_path_hierarchy(const std::vector<const ui_element_node*>& path);
+
+        // Formats all properties of a UI element (Role, Subrole, Name, Text/Value, ID, Description, Bounds, Flags, Attributes)
+        static std::string format_element_properties(const ui_element_node& node);
+
+        // Combines Full Tree Path and Full Properties into a single comprehensive string for clipboard / export
+        static std::string format_full_element_info(const ui_element_node& node, const std::vector<const ui_element_node*>& path);
     };
 
 } // namespace rouen::helpers
