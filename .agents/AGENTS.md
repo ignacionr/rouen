@@ -17,8 +17,9 @@
 ## Deployment
 - The app is locally deployed to `$HOME/Applications/Rouen.app`. After a successful build, copy the compiled binary to `$HOME/Applications/Rouen.app/Contents/MacOS/rouen`.
 - **Preserve the existing `.env` file** in `$HOME/Applications/Rouen.app/Contents/MacOS/.env` — do NOT overwrite it, as it contains user configuration.
-- **Mac ARM64 Code Signing Requirement**: After copying the binary, you must ad-hoc sign it using `codesign` so macOS does not terminate it on startup. Since `.env` is inside the `MacOS` directory, temporarily move it out before signing to prevent subcomponent structure errors, then restore it:
-  `mv $HOME/Applications/Rouen.app/Contents/MacOS/.env /tmp/rouen_temp_env && codesign --force --sign - $HOME/Applications/Rouen.app/Contents/MacOS/rouen && mv /tmp/rouen_temp_env $HOME/Applications/Rouen.app/Contents/MacOS/.env`
+- **Mac ARM64 Code Signing Requirement**: After copying the binary, you must ad-hoc sign it using `codesign` with explicit bundle identifier requirement so macOS TCC Accessibility permissions persist across recompiles. Since `.env` is inside the `MacOS` directory, temporarily move it out before signing to prevent subcomponent structure errors, then restore it:
+  `mv $HOME/Applications/Rouen.app/Contents/MacOS/.env /tmp/rouen_temp_env && codesign --force --sign - --requirements '=designated => identifier "com.rouen.app"' $HOME/Applications/Rouen.app/Contents/MacOS/rouen && mv /tmp/rouen_temp_env $HOME/Applications/Rouen.app/Contents/MacOS/.env`
+
 ## Windows Environment & Dev Tools
 - On this computer (Windows), developer tools are located in the Visual Studio 2022 installation directory (`C:\Program Files\Microsoft Visual Studio\2022\Professional\`):
   - **Git**: `C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd\git.exe`
