@@ -1440,11 +1440,76 @@ std::string api_server_host::handle_processes_list(struct mg_connection* /*c*/, 
     return out;
 }
 
+static std::string get_query_param(const struct mg_str* query, const char* var_name) {
+    if (!query || query->len == 0 || !var_name) return "";
+    char buf[512];
+    int len = mg_http_get_var(query, var_name, buf, sizeof(buf));
+    if (len > 0) return std::string(buf, static_cast<size_t>(len));
+    return "";
+}
+
+static void populate_process_ui_request(process_ui_request& req, struct mg_http_message* hm) {
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+    if (hm->query.len > 0) {
+        std::string val;
+        val = get_query_param(&hm->query, "run_id");
+        if (!val.empty()) req.run_id = val;
+
+        val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { req.definition_id = std::stoll(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "pid");
+        if (!val.empty()) {
+            try { req.pid = std::stoll(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "max_depth");
+        if (!val.empty()) {
+            try { req.max_depth = std::stoi(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "edit_boxes_only");
+        if (!val.empty()) req.edit_boxes_only = (val == "true" || val == "1");
+
+        val = get_query_param(&hm->query, "target");
+        if (!val.empty()) req.target = val;
+
+        val = get_query_param(&hm->query, "action");
+        if (!val.empty()) req.action = val;
+
+        val = get_query_param(&hm->query, "value");
+        if (!val.empty()) req.value = val;
+
+        val = get_query_param(&hm->query, "x");
+        if (!val.empty()) {
+            try { req.x = std::stof(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "y");
+        if (!val.empty()) {
+            try { req.y = std::stof(val); } catch (...) {}
+        }
+    }
+}
+
 std::string api_server_host::handle_process_start(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_start_request req;
     if (hm->body.len > 0) {
         std::string body(hm->body.buf, hm->body.len);
         (void)glz::read_json(req, body);
+    }
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { req.definition_id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "definition_name");
+        if (!val.empty()) req.definition_name = val;
     }
 
     rouen::models::productivity::process_definition_repository repo;
@@ -1492,6 +1557,10 @@ std::string api_server_host::handle_process_kill(struct mg_connection* /*c*/, st
         std::string body(hm->body.buf, hm->body.len);
         (void)glz::read_json(req, body);
     }
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "run_id");
+        if (!val.empty()) req.run_id = val;
+    }
 
     if (req.run_id.empty()) {
         error_response resp{"run_id parameter is required"};
@@ -1518,10 +1587,10 @@ static glz::json_t serialize_ui_node(const rouen::helpers::ui_element_node& node
     if (!node.subrole.empty()) obj["subrole"] = node.subrole;
     if (!node.description.empty()) obj["description"] = node.description;
     if (!node.value.empty()) obj["value"] = node.value;
-    obj["x"] = node.x;
-    obj["y"] = node.y;
-    obj["width"] = node.width;
-    obj["height"] = node.height;
+    obj["x"] = static_cast<double>(node.x);
+    obj["y"] = static_cast<double>(node.y);
+    obj["width"] = static_cast<double>(node.width);
+    obj["height"] = static_cast<double>(node.height);
     obj["enabled"] = node.enabled;
     obj["focused"] = node.focused;
 
@@ -1546,10 +1615,7 @@ static glz::json_t serialize_ui_node(const rouen::helpers::ui_element_node& node
 
 std::string api_server_host::handle_process_ui_tree(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
 
     int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
     if (pid <= 0) {
@@ -1578,10 +1644,7 @@ std::string api_server_host::handle_process_ui_tree(struct mg_connection* /*c*/,
 
 std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
 
     int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
     if (pid <= 0) {
@@ -1616,10 +1679,7 @@ std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*
 
 std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
 
     int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
     if (pid <= 0) {
@@ -1652,30 +1712,21 @@ std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*
 
 std::string api_server_host::handle_process_ui_click(struct mg_connection* c, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
     req.action = "click";
     return handle_process_ui_action(c, hm);
 }
 
 std::string api_server_host::handle_process_ui_set_value(struct mg_connection* c, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
     req.action = "set_value";
     return handle_process_ui_action(c, hm);
 }
 
 std::string api_server_host::handle_process_ui_focus(struct mg_connection* c, struct mg_http_message* hm) {
     process_ui_request req;
-    if (hm->body.len > 0) {
-        std::string body(hm->body.buf, hm->body.len);
-        (void)glz::read_json(req, body);
-    }
+    populate_process_ui_request(req, hm);
     req.action = "focus";
     return handle_process_ui_action(c, hm);
 }
@@ -2372,6 +2423,39 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Start an orchestrated process by definition ID or name",
         "operationId": "startProcess",
+        "parameters": [
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "definition_name",
+            "in": "query",
+            "description": "Process definition name",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "definition_name": {"type": "string", "description": "Process definition name"}
+                }
+              },
+              "example": {
+                "definition_id": 1
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Process run started"
@@ -2384,6 +2468,31 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Kill an active process run by run_id",
         "operationId": "killProcess",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Process run terminated"
@@ -2392,10 +2501,100 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
       }
     },
     "/api/process/ui/tree": {
+      "get": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Inspect UI element tree hierarchy for a running process (GET)",
+        "operationId": "getProcessUITreeGET",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "description": "Maximum tree depth (default 6)",
+            "required": false,
+            "schema": {"type": "integer", "default": 6}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "UI element tree structure"
+          }
+        }
+      },
       "post": {
         "tags": ["Process Orchestration & UI Automation"],
-        "summary": "Inspect UI element tree hierarchy for a running process",
+        "summary": "Inspect UI element tree hierarchy for a running process (POST)",
         "operationId": "getProcessUITree",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "description": "Maximum tree depth (default 6)",
+            "required": false,
+            "schema": {"type": "integer", "default": 6}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier (e.g. run_1725537599_12345)"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "max_depth": {"type": "integer", "default": 6, "description": "Maximum tree depth (default 6)"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "max_depth": 6
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "UI element tree structure"
@@ -2404,10 +2603,115 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
       }
     },
     "/api/process/ui/values": {
+      "get": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Extract text fields and control values from a running process (GET)",
+        "operationId": "getProcessUIValuesGET",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "description": "Maximum tree depth (default 8)",
+            "required": false,
+            "schema": {"type": "integer", "default": 8}
+          },
+          {
+            "name": "edit_boxes_only",
+            "in": "query",
+            "description": "Filter to edit boxes only (default true)",
+            "required": false,
+            "schema": {"type": "boolean", "default": true}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of UI control text and value items"
+          }
+        }
+      },
       "post": {
         "tags": ["Process Orchestration & UI Automation"],
-        "summary": "Extract text fields and control values from a running process",
+        "summary": "Extract text fields and control values from a running process (POST)",
         "operationId": "getProcessUIValues",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "max_depth",
+            "in": "query",
+            "description": "Maximum tree depth (default 8)",
+            "required": false,
+            "schema": {"type": "integer", "default": 8}
+          },
+          {
+            "name": "edit_boxes_only",
+            "in": "query",
+            "description": "Filter to edit boxes only (default true)",
+            "required": false,
+            "schema": {"type": "boolean", "default": true}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "max_depth": {"type": "integer", "default": 8},
+                  "edit_boxes_only": {"type": "boolean", "default": true}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "edit_boxes_only": true
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Array of UI control text and value items"
@@ -2420,6 +2724,75 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Perform a UI manipulation action (click, set_value, focus, press) on a control",
         "operationId": "performProcessUIAction",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Target control identifier, name, or path",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Action ('click', 'set_value', 'focus')",
+            "required": false,
+            "schema": {"type": "string", "default": "click"}
+          },
+          {
+            "name": "value",
+            "in": "query",
+            "description": "Value to set if action is set_value",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "target": {"type": "string", "description": "Target control Automation ID, name, or path"},
+                  "action": {"type": "string", "default": "click", "description": "Action ('click', 'set_value', 'focus')"},
+                  "value": {"type": "string", "description": "Value to set"},
+                  "x": {"type": "number", "description": "Click X coordinate"},
+                  "y": {"type": "number", "description": "Click Y coordinate"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "target": "SubmitButton",
+                "action": "click"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "UI manipulation result"
@@ -2432,6 +2805,58 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Click / trigger press action on a target control in a process",
         "operationId": "clickProcessUIControl",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Target control identifier or name",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "target": {"type": "string", "description": "Target control Automation ID, name, or path"},
+                  "x": {"type": "number", "description": "Click X coordinate"},
+                  "y": {"type": "number", "description": "Click Y coordinate"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "target": "SubmitButton"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Click action result"
@@ -2444,6 +2869,65 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Set text or control value on a target element in a process",
         "operationId": "setProcessUIControlValue",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Target control identifier or name",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "value",
+            "in": "query",
+            "description": "New text value to set",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "target": {"type": "string", "description": "Target control Automation ID, name, or path"},
+                  "value": {"type": "string", "description": "New text value to set"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "target": "SearchInput",
+                "value": "Hello World"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Set value result"
@@ -2456,6 +2940,56 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["Process Orchestration & UI Automation"],
         "summary": "Set keyboard focus to a target control in a process",
         "operationId": "focusProcessUIControl",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition numeric ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Process OS PID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "description": "Target control identifier or name",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string", "description": "Process run identifier"},
+                  "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
+                  "pid": {"type": "integer", "description": "Process OS PID"},
+                  "target": {"type": "string", "description": "Target control Automation ID, name, or path"}
+                }
+              },
+              "example": {
+                "run_id": "run_1725537599_12345",
+                "target": "SearchInput"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Focus result"
