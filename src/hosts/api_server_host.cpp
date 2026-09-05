@@ -58,6 +58,9 @@
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
 #include "../cards/information/rss.hpp"
+#include "../models/productivity/process_definition.hpp"
+#include "../hosts/process_host.hpp"
+#include "../helpers/ui_automation_explorer.hpp"
 
 // JSON structures for API requests
 struct card_creation_request {
@@ -76,6 +79,28 @@ struct cast_play_request {
 
 struct error_response {
     std::string error;
+};
+
+struct process_start_request {
+    int64_t definition_id{0};
+    std::string definition_name;
+};
+
+struct process_kill_request {
+    std::string run_id;
+};
+
+struct process_ui_request {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    int max_depth{6};
+    bool edit_boxes_only{true};
+    std::string target;
+    std::string action = "click";
+    std::string value;
+    float x{0.0f};
+    float y{0.0f};
 };
 
 namespace rouen::hosts {
@@ -332,6 +357,69 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/cards/focus"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_card_focus(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/processes"), nullptr) || mg_match(hm->uri, mg_str("/api/process/list"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_processes_list(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/start"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_start(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/kill"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_kill(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/tree"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_tree(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/values"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_values(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/action"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_action(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/click"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_click(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/set-value"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_set_value(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/focus"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_ui_focus(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -1293,6 +1381,305 @@ std::string api_server_host::handle_rss_diagnostics(struct mg_connection* /*c*/,
     return out;
 }
 
+static int64_t resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid) {
+    if (pid > 0) return pid;
+    if (!run_id.empty()) {
+        auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+        if (snap && snap->state == rouen::hosts::process_run_state::running) {
+            return snap->pid;
+        }
+    }
+    if (definition_id > 0) {
+        auto latest = rouen::hosts::process_host::instance().latest_run_id(definition_id);
+        if (latest) {
+            auto snap = rouen::hosts::process_host::instance().snapshot(*latest);
+            if (snap && snap->state == rouen::hosts::process_run_state::running) {
+                return snap->pid;
+            }
+        }
+    }
+    return 0;
+}
+
+std::string api_server_host::handle_processes_list(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    rouen::models::productivity::process_definition_repository repo;
+    auto defs = repo.get_all();
+
+    glz::json_t root;
+    std::vector<glz::json_t> defs_arr;
+
+    for (const auto& def : defs) {
+        glz::json_t item;
+        item["id"] = def.id;
+        item["name"] = def.name;
+        item["executable_path"] = def.executable_path;
+        item["arguments"] = def.arguments;
+        item["working_directory"] = def.working_directory;
+        item["has_active_run"] = rouen::hosts::process_host::instance().has_active_run(def.id);
+
+        auto latest_run_id = rouen::hosts::process_host::instance().latest_run_id(def.id);
+        if (latest_run_id) {
+            item["latest_run_id"] = *latest_run_id;
+            auto snap = rouen::hosts::process_host::instance().snapshot(*latest_run_id);
+            if (snap) {
+                item["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" :
+                                ((snap->state == rouen::hosts::process_run_state::exited) ? "exited" : "failed_to_start");
+                item["pid"] = snap->pid;
+                if (snap->exit_code) item["exit_code"] = *snap->exit_code;
+            }
+        } else {
+            item["state"] = "stopped";
+        }
+
+        defs_arr.push_back(std::move(item));
+    }
+    root["processes"] = std::move(defs_arr);
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_start(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_start_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+
+    rouen::models::productivity::process_definition_repository repo;
+    std::optional<rouen::models::productivity::process_definition> def;
+
+    if (req.definition_id > 0) {
+        def = repo.get_by_id(req.definition_id);
+    } else if (!req.definition_name.empty()) {
+        auto all = repo.get_all();
+        for (const auto& d : all) {
+            if (d.name == req.definition_name) {
+                def = d;
+                break;
+            }
+        }
+    }
+
+    if (!def) {
+        error_response resp{"Process definition not found"};
+        return glz::write_json(resp).value_or(R"({"error":"Process definition not found"})");
+    }
+
+    std::string run_id = rouen::hosts::process_host::instance().start(*def);
+    auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+
+    glz::json_t resp;
+    resp["success"] = true;
+    resp["run_id"] = run_id;
+    resp["definition_id"] = def->id;
+    resp["definition_name"] = def->name;
+    if (snap) {
+        resp["pid"] = snap->pid;
+        resp["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" : "failed_to_start";
+        if (!snap->start_error.empty()) resp["start_error"] = snap->start_error;
+    }
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_kill(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_kill_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+
+    if (req.run_id.empty()) {
+        error_response resp{"run_id parameter is required"};
+        return glz::write_json(resp).value_or(R"({"error":"run_id parameter is required"})");
+    }
+
+    rouen::hosts::process_host::instance().kill(req.run_id);
+
+    glz::json_t resp;
+    resp["success"] = true;
+    resp["run_id"] = req.run_id;
+    resp["message"] = std::format("Kill command sent for process run '{}'", req.run_id);
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
+static glz::json_t serialize_ui_node(const rouen::helpers::ui_element_node& node) {
+    glz::json_t obj;
+    if (!node.id.empty()) obj["id"] = node.id;
+    if (!node.name.empty()) obj["name"] = node.name;
+    if (!node.role.empty()) obj["role"] = node.role;
+    if (!node.subrole.empty()) obj["subrole"] = node.subrole;
+    if (!node.description.empty()) obj["description"] = node.description;
+    if (!node.value.empty()) obj["value"] = node.value;
+    obj["x"] = node.x;
+    obj["y"] = node.y;
+    obj["width"] = node.width;
+    obj["height"] = node.height;
+    obj["enabled"] = node.enabled;
+    obj["focused"] = node.focused;
+
+    if (!node.attributes.empty()) {
+        glz::json_t attrs;
+        for (const auto& a : node.attributes) {
+            attrs[a.name] = a.value;
+        }
+        obj["attributes"] = std::move(attrs);
+    }
+
+    if (!node.children.empty()) {
+        std::vector<glz::json_t> children_arr;
+        for (const auto& child : node.children) {
+            children_arr.push_back(serialize_ui_node(child));
+        }
+        obj["children"] = std::move(children_arr);
+    }
+
+    return obj;
+}
+
+std::string api_server_host::handle_process_ui_tree(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
+    if (pid <= 0) {
+        error_response resp{"Valid running process identifier (run_id, definition_id, or pid) is required"};
+        return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
+    }
+
+    int max_depth = req.max_depth > 0 ? req.max_depth : 6;
+    auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth);
+
+    glz::json_t root;
+    root["success"] = res.success;
+    root["pid"] = pid;
+    root["total_node_count"] = res.total_node_count;
+    if (res.permission_denied) root["permission_denied"] = true;
+    if (!res.error_message.empty()) root["error_message"] = res.error_message;
+
+    if (res.success) {
+        root["root"] = serialize_ui_node(res.root);
+    }
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
+    if (pid <= 0) {
+        error_response resp{"Valid running process identifier required"};
+        return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
+    }
+
+    auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8);
+
+    glz::json_t root;
+    root["success"] = true;
+    root["pid"] = pid;
+
+    std::vector<glz::json_t> vals_arr;
+    for (const auto& item : extracted) {
+        glz::json_t val_obj;
+        val_obj["id"] = item.id;
+        val_obj["name"] = item.name;
+        val_obj["role"] = item.role;
+        val_obj["subrole"] = item.subrole;
+        val_obj["value"] = item.value;
+        val_obj["description"] = item.description;
+        val_obj["path"] = item.path;
+        vals_arr.push_back(std::move(val_obj));
+    }
+    root["values"] = std::move(vals_arr);
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
+    if (pid <= 0) {
+        error_response resp{"Valid running process identifier required"};
+        return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
+    }
+
+    rouen::helpers::ui_manipulation_result res;
+    if (req.target.empty() && (req.x > 0.0f || req.y > 0.0f)) {
+        res = rouen::helpers::ui_automation_explorer::click_at_coordinates(pid, req.x, req.y);
+    } else {
+        std::string action = req.action.empty() ? "click" : req.action;
+        res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value);
+    }
+
+    glz::json_t root;
+    root["success"] = res.success;
+    root["pid"] = pid;
+    if (res.permission_denied) root["permission_denied"] = true;
+    if (!res.error_message.empty()) root["error_message"] = res.error_message;
+    if (!res.matched_element_id.empty()) root["matched_element_id"] = res.matched_element_id;
+    if (!res.matched_element_name.empty()) root["matched_element_name"] = res.matched_element_name;
+    if (!res.matched_element_role.empty()) root["matched_element_role"] = res.matched_element_role;
+    if (!res.action_performed.empty()) root["action_performed"] = res.action_performed;
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_ui_click(struct mg_connection* c, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+    req.action = "click";
+    return handle_process_ui_action(c, hm);
+}
+
+std::string api_server_host::handle_process_ui_set_value(struct mg_connection* c, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+    req.action = "set_value";
+    return handle_process_ui_action(c, hm);
+}
+
+std::string api_server_host::handle_process_ui_focus(struct mg_connection* c, struct mg_http_message* hm) {
+    process_ui_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+    req.action = "focus";
+    return handle_process_ui_action(c, hm);
+}
+
 std::string api_server_host::handle_swagger_ui(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     return R"html(<!DOCTYPE html>
 <html lang="en">
@@ -1367,7 +1754,8 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     {"name": "Camera", "description": "Camera feed status, snapshots, and grid layout controls"},
     {"name": "Deck Navigation", "description": "Deck view status and card stack scrolling controls"},
     {"name": "Metrics & Diagnostics", "description": "Card render performance metrics and RSS diagnostics"},
-    {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"}
+    {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"},
+    {"name": "Process Orchestration & UI Automation", "description": "Process definitions, process lifecycle management, UI element inspection, and UI control manipulation for orchestrated applications"}
   ],
   "paths": {
     "/api/health": {
@@ -1963,6 +2351,114 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "responses": {
           "200": {
             "description": "Mux test finished"
+          }
+        }
+      }
+    },
+    "/api/processes": {
+      "get": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "List all configured process definitions and active process runs",
+        "operationId": "getProcesses",
+        "responses": {
+          "200": {
+            "description": "List of processes with state, pid, and run IDs"
+          }
+        }
+      }
+    },
+    "/api/process/start": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Start an orchestrated process by definition ID or name",
+        "operationId": "startProcess",
+        "responses": {
+          "200": {
+            "description": "Process run started"
+          }
+        }
+      }
+    },
+    "/api/process/kill": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Kill an active process run by run_id",
+        "operationId": "killProcess",
+        "responses": {
+          "200": {
+            "description": "Process run terminated"
+          }
+        }
+      }
+    },
+    "/api/process/ui/tree": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Inspect UI element tree hierarchy for a running process",
+        "operationId": "getProcessUITree",
+        "responses": {
+          "200": {
+            "description": "UI element tree structure"
+          }
+        }
+      }
+    },
+    "/api/process/ui/values": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Extract text fields and control values from a running process",
+        "operationId": "getProcessUIValues",
+        "responses": {
+          "200": {
+            "description": "Array of UI control text and value items"
+          }
+        }
+      }
+    },
+    "/api/process/ui/action": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Perform a UI manipulation action (click, set_value, focus, press) on a control",
+        "operationId": "performProcessUIAction",
+        "responses": {
+          "200": {
+            "description": "UI manipulation result"
+          }
+        }
+      }
+    },
+    "/api/process/ui/click": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Click / trigger press action on a target control in a process",
+        "operationId": "clickProcessUIControl",
+        "responses": {
+          "200": {
+            "description": "Click action result"
+          }
+        }
+      }
+    },
+    "/api/process/ui/set-value": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Set text or control value on a target element in a process",
+        "operationId": "setProcessUIControlValue",
+        "responses": {
+          "200": {
+            "description": "Set value result"
+          }
+        }
+      }
+    },
+    "/api/process/ui/focus": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Set keyboard focus to a target control in a process",
+        "operationId": "focusProcessUIControl",
+        "responses": {
+          "200": {
+            "description": "Focus result"
           }
         }
       }

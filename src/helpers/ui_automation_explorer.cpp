@@ -742,4 +742,407 @@ std::string ui_automation_explorer::format_full_element_info(const ui_element_no
     return out;
 }
 
+#if defined(__APPLE__)
+
+static bool match_ax_element(AXUIElementRef elem, std::string_view query, std::string& out_id, std::string& out_name, std::string& out_role) {
+    if (!elem) return false;
+
+    CFTypeRef title_ref = nullptr;
+    if (AXUIElementCopyAttributeValue(elem, kAXTitleAttribute, &title_ref) == kAXErrorSuccess && title_ref) {
+        out_name = cfstring_to_utf8(static_cast<CFStringRef>(title_ref));
+        CFRelease(title_ref);
+    }
+
+    CFTypeRef id_ref = nullptr;
+    if (AXUIElementCopyAttributeValue(elem, kAXIdentifierAttribute, &id_ref) == kAXErrorSuccess && id_ref) {
+        out_id = cfstring_to_utf8(static_cast<CFStringRef>(id_ref));
+        CFRelease(id_ref);
+    }
+
+    CFTypeRef role_ref = nullptr;
+    if (AXUIElementCopyAttributeValue(elem, kAXRoleAttribute, &role_ref) == kAXErrorSuccess && role_ref) {
+        out_role = cfstring_to_utf8(static_cast<CFStringRef>(role_ref));
+        if (out_role.starts_with("AX")) out_role = out_role.substr(2);
+        CFRelease(role_ref);
+    }
+
+    auto matches_ic = [](std::string_view haystack, std::string_view needle) {
+        if (needle.empty() || haystack.empty()) return false;
+        auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+            [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+        return it != haystack.end();
+    };
+
+    if (!out_id.empty() && (out_id == query || matches_ic(out_id, query))) return true;
+    if (!out_name.empty() && (out_name == query || matches_ic(out_name, query))) return true;
+
+    return false;
+}
+
+static AXUIElementRef find_ax_element_recursive(AXUIElementRef parent, std::string_view query, int depth, int max_depth, std::string& out_id, std::string& out_name, std::string& out_role) {
+    if (!parent || depth > max_depth) return nullptr;
+
+    if (depth > 0 && match_ax_element(parent, query, out_id, out_name, out_role)) {
+        CFRetain(parent);
+        return parent;
+    }
+
+    CFTypeRef children_ref = nullptr;
+    if (AXUIElementCopyAttributeValue(parent, kAXChildrenAttribute, &children_ref) == kAXErrorSuccess && children_ref) {
+        if (CFGetTypeID(children_ref) == CFArrayGetTypeID()) {
+            CFArrayRef arr = static_cast<CFArrayRef>(children_ref);
+            CFIndex count = CFArrayGetCount(arr);
+            for (CFIndex i = 0; i < count; ++i) {
+                AXUIElementRef child = static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i)));
+                AXUIElementRef found = find_ax_element_recursive(child, query, depth + 1, max_depth, out_id, out_name, out_role);
+                if (found) {
+                    CFRelease(children_ref);
+                    return found;
+                }
+            }
+        }
+        CFRelease(children_ref);
+    }
+
+    return nullptr;
+}
+
+#endif
+
+ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pid, std::string_view identifier_name_or_path, std::string_view action, std::string_view value) {
+    ui_manipulation_result result;
+    if (pid <= 0) {
+        result.error_message = "Invalid process PID";
+        return result;
+    }
+    if (identifier_name_or_path.empty()) {
+        result.error_message = "Target element identifier/name is required";
+        return result;
+    }
+
+#if defined(__APPLE__)
+    if (!check_accessibility_permissions(false)) {
+        result.permission_denied = true;
+        result.error_message = "Accessibility permission is required for UI manipulation on macOS.";
+        return result;
+    }
+
+    AXUIElementRef app_ref = AXUIElementCreateApplication(static_cast<pid_t>(pid));
+    if (!app_ref) {
+        result.error_message = std::format("Failed to create AXUIElement for PID {}", pid);
+        return result;
+    }
+
+    std::string matched_id, matched_name, matched_role;
+    AXUIElementRef target_elem = find_ax_element_recursive(app_ref, identifier_name_or_path, 0, 8, matched_id, matched_name, matched_role);
+    CFRelease(app_ref);
+
+    if (!target_elem) {
+        result.error_message = std::format("No UI element matching '{}' found in PID {}", identifier_name_or_path, pid);
+        return result;
+    }
+
+    result.matched_element_id = matched_id;
+    result.matched_element_name = matched_name;
+    result.matched_element_role = matched_role;
+
+    std::string act_lower(action);
+    std::transform(act_lower.begin(), act_lower.end(), act_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (act_lower == "click" || act_lower == "press") {
+        AXError err = AXUIElementPerformAction(target_elem, kAXPressAction);
+        if (err == kAXErrorSuccess) {
+            result.success = true;
+            result.action_performed = "press";
+        } else {
+            CGPoint pt{0, 0};
+            CGSize sz{0, 0};
+            CFTypeRef pos_ref = nullptr;
+            if (AXUIElementCopyAttributeValue(target_elem, kAXPositionAttribute, &pos_ref) == kAXErrorSuccess && pos_ref) {
+                if (CFGetTypeID(pos_ref) == AXValueGetTypeID()) {
+                    AXValueGetValue(static_cast<AXValueRef>(const_cast<void*>(pos_ref)), kAXValueTypeCGPoint, &pt);
+                }
+                CFRelease(pos_ref);
+            }
+            CFTypeRef sz_ref = nullptr;
+            if (AXUIElementCopyAttributeValue(target_elem, kAXSizeAttribute, &sz_ref) == kAXErrorSuccess && sz_ref) {
+                if (CFGetTypeID(sz_ref) == AXValueGetTypeID()) {
+                    AXValueGetValue(static_cast<AXValueRef>(const_cast<void*>(sz_ref)), kAXValueTypeCGSize, &sz);
+                }
+                CFRelease(sz_ref);
+            }
+            float cx = static_cast<float>(pt.x) + (static_cast<float>(sz.width) * 0.5f);
+            float cy = static_cast<float>(pt.y) + (static_cast<float>(sz.height) * 0.5f);
+            if (cx > 0 && cy > 0) {
+                CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(cx, cy), kCGMouseButtonLeft);
+                CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(cx, cy), kCGMouseButtonLeft);
+                if (d && u) {
+                    CGEventPost(kCGHIDEventTap, d);
+                    CGEventPost(kCGHIDEventTap, u);
+                    CFRelease(d);
+                    CFRelease(u);
+                    result.success = true;
+                    result.action_performed = "click_at_bounds";
+                }
+            } else {
+                result.error_message = std::format("AXPerformAction press failed (code {}) and element bounds unavailable", static_cast<int>(err));
+            }
+        }
+    } else if (act_lower == "set_value" || act_lower == "value") {
+        CFStringRef cfval = CFStringCreateWithCString(kCFAllocatorDefault, std::string(value).c_str(), kCFStringEncodingUTF8);
+        AXError err = AXUIElementSetAttributeValue(target_elem, kAXValueAttribute, cfval);
+        if (cfval) CFRelease(cfval);
+
+        AXUIElementSetAttributeValue(target_elem, kAXFocusedAttribute, kCFBooleanTrue);
+        if (err == kAXErrorSuccess || err == kAXErrorCannotComplete) {
+            result.success = true;
+            result.action_performed = "set_value";
+        } else {
+            result.error_message = std::format("Failed to set AXValue attribute (code {})", static_cast<int>(err));
+        }
+    } else if (act_lower == "focus") {
+        AXError err = AXUIElementSetAttributeValue(target_elem, kAXFocusedAttribute, kCFBooleanTrue);
+        if (err == kAXErrorSuccess) {
+            result.success = true;
+            result.action_performed = "focus";
+        } else {
+            result.error_message = std::format("Failed to set AXFocused attribute (code {})", static_cast<int>(err));
+        }
+    } else {
+        std::string custom_act = std::string(action);
+        if (!custom_act.starts_with("AX") && !custom_act.empty()) {
+            custom_act[0] = static_cast<char>(std::toupper(custom_act[0]));
+            custom_act = "AX" + custom_act;
+        }
+        CFStringRef act_ref = CFStringCreateWithCString(NULL, custom_act.c_str(), kCFStringEncodingUTF8);
+        AXError err = AXUIElementPerformAction(target_elem, act_ref);
+        if (act_ref) CFRelease(act_ref);
+        if (err == kAXErrorSuccess) {
+            result.success = true;
+            result.action_performed = custom_act;
+        } else {
+            result.error_message = std::format("AXUIElementPerformAction('{}') failed (code {})", custom_act, static_cast<int>(err));
+        }
+    }
+
+    CFRelease(target_elem);
+    return result;
+
+#elif defined(_WIN32)
+    HRESULT hr_co = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+
+    IUIAutomation* automation = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_CUIAutomation, NULL, CLSCTX_INPROC_SERVER, IID_IUIAutomation, (void**)&automation);
+    if (FAILED(hr) || !automation) {
+        result.error_message = "Failed to initialize Windows UI Automation COM interface";
+        if (SUCCEEDED(hr_co)) CoUninitialize();
+        return result;
+    }
+
+    VARIANT var;
+    var.vt = VT_I4;
+    var.lVal = static_cast<LONG>(pid);
+
+    IUIAutomationCondition* cond = nullptr;
+    automation->CreatePropertyCondition(UIA_ProcessIdPropertyId, var, &cond);
+
+    IUIAutomationElement* root_elem = nullptr;
+    automation->GetRootElement(&root_elem);
+
+    IUIAutomationElement* target_elem = nullptr;
+    if (root_elem && cond) {
+        std::wstring wquery(identifier_name_or_path.begin(), identifier_name_or_path.end());
+        BSTR bstr_query = SysAllocString(wquery.c_str());
+
+        IUIAutomationCondition *cond_id = nullptr, *cond_name = nullptr, *cond_or = nullptr, *cond_match = nullptr;
+        automation->CreatePropertyCondition(UIA_AutomationIdPropertyId, VARIANT{ .vt = VT_BSTR, .bstrVal = bstr_query }, &cond_id);
+        automation->CreatePropertyCondition(UIA_NamePropertyId, VARIANT{ .vt = VT_BSTR, .bstrVal = bstr_query }, &cond_name);
+        if (cond_id && cond_name) {
+            automation->CreateOrCondition(cond_id, cond_name, &cond_or);
+        }
+        if (cond_or) {
+            automation->CreateAndCondition(cond, cond_or, &cond_match);
+        }
+
+        if (cond_match) {
+            root_elem->FindFirst(TreeScope_Subtree, cond_match, &target_elem);
+        }
+
+        if (cond_id) cond_id->Release();
+        if (cond_name) cond_name->Release();
+        if (cond_or) cond_or->Release();
+        if (cond_match) cond_match->Release();
+
+        if (!target_elem) {
+            IUIAutomationElementArray* element_array = nullptr;
+            if (SUCCEEDED(root_elem->FindAll(TreeScope_Subtree, cond, &element_array)) && element_array) {
+                int len = 0;
+                element_array->get_Length(&len);
+                for (int i = 0; i < len; ++i) {
+                    IUIAutomationElement* elem = nullptr;
+                    if (SUCCEEDED(element_array->GetElement(i, &elem)) && elem) {
+                        BSTR name_bstr = nullptr, id_bstr = nullptr;
+                        std::string name_str, id_str;
+                        if (SUCCEEDED(elem->get_CurrentName(&name_bstr)) && name_bstr) {
+                            name_str = bstr_to_string(name_bstr);
+                            SysFreeString(name_bstr);
+                        }
+                        if (SUCCEEDED(elem->get_CurrentAutomationId(&id_bstr)) && id_bstr) {
+                            id_str = bstr_to_string(id_bstr);
+                            SysFreeString(id_bstr);
+                        }
+
+                        auto matches_ic = [](std::string_view haystack, std::string_view needle) {
+                            if (needle.empty() || haystack.empty()) return false;
+                            auto it = std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end(),
+                                [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+                            return it != haystack.end();
+                        };
+
+                        if (matches_ic(id_str, identifier_name_or_path) || matches_ic(name_str, identifier_name_or_path)) {
+                            target_elem = elem;
+                            break;
+                        }
+                        elem->Release();
+                    }
+                }
+                element_array->Release();
+            }
+        }
+        SysFreeString(bstr_query);
+    }
+
+    if (!target_elem) {
+        if (root_elem) root_elem->Release();
+        if (cond) cond->Release();
+        automation->Release();
+        if (SUCCEEDED(hr_co)) CoUninitialize();
+        result.error_message = std::format("No UI element matching '{}' found in PID {}", identifier_name_or_path, pid);
+        return result;
+    }
+
+    BSTR tid_bstr = nullptr, tname_bstr = nullptr;
+    if (SUCCEEDED(target_elem->get_CurrentAutomationId(&tid_bstr)) && tid_bstr) {
+        result.matched_element_id = bstr_to_string(tid_bstr);
+        SysFreeString(tid_bstr);
+    }
+    if (SUCCEEDED(target_elem->get_CurrentName(&tname_bstr)) && tname_bstr) {
+        result.matched_element_name = bstr_to_string(tname_bstr);
+        SysFreeString(tname_bstr);
+    }
+
+    std::string act_lower(action);
+    std::transform(act_lower.begin(), act_lower.end(), act_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (act_lower == "click" || act_lower == "press") {
+        IUIAutomationInvokePattern* inv = nullptr;
+        if (SUCCEEDED(target_elem->GetCurrentPatternAs(UIA_InvokePatternId, IID_IUIAutomationInvokePattern, (void**)&inv)) && inv) {
+            if (SUCCEEDED(inv->Invoke())) {
+                result.success = true;
+                result.action_performed = "invoke";
+            }
+            inv->Release();
+        }
+        if (!result.success) {
+            IUIAutomationTogglePattern* tog = nullptr;
+            if (SUCCEEDED(target_elem->GetCurrentPatternAs(UIA_TogglePatternId, IID_IUIAutomationTogglePattern, (void**)&tog)) && tog) {
+                if (SUCCEEDED(tog->Toggle())) {
+                    result.success = true;
+                    result.action_performed = "toggle";
+                }
+                tog->Release();
+            }
+        }
+        if (!result.success) {
+            RECT rect{};
+            if (SUCCEEDED(target_elem->get_CurrentBoundingRectangle(&rect))) {
+                int cx = (rect.left + rect.right) / 2;
+                int cy = (rect.top + rect.bottom) / 2;
+                SetCursorPos(cx, cy);
+                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                result.success = true;
+                result.action_performed = "click_at_bounds";
+            }
+        }
+    } else if (act_lower == "set_value" || act_lower == "value") {
+        IUIAutomationValuePattern* val_pat = nullptr;
+        if (SUCCEEDED(target_elem->GetCurrentPatternAs(UIA_ValuePatternId, IID_IUIAutomationValuePattern, (void**)&val_pat)) && val_pat) {
+            std::wstring wval(value.begin(), value.end());
+            BSTR bval = SysAllocString(wval.c_str());
+            if (SUCCEEDED(val_pat->SetValue(bval))) {
+                result.success = true;
+                result.action_performed = "set_value";
+            }
+            SysFreeString(bval);
+            val_pat->Release();
+        }
+        target_elem->SetFocus();
+    } else if (act_lower == "focus") {
+        if (SUCCEEDED(target_elem->SetFocus())) {
+            result.success = true;
+            result.action_performed = "focus";
+        }
+    }
+
+    target_elem->Release();
+    if (root_elem) root_elem->Release();
+    if (cond) cond->Release();
+    automation->Release();
+    if (SUCCEEDED(hr_co)) CoUninitialize();
+    return result;
+#else
+    result.error_message = "UI Automation manipulation is not supported on this platform";
+    return result;
+#endif
+}
+
+ui_manipulation_result ui_automation_explorer::click_control(int64_t pid, std::string_view identifier_name_or_path) {
+    return perform_control_action(pid, identifier_name_or_path, "click");
+}
+
+ui_manipulation_result ui_automation_explorer::set_control_value(int64_t pid, std::string_view identifier_name_or_path, std::string_view value) {
+    return perform_control_action(pid, identifier_name_or_path, "set_value", value);
+}
+
+ui_manipulation_result ui_automation_explorer::focus_control(int64_t pid, std::string_view identifier_name_or_path) {
+    return perform_control_action(pid, identifier_name_or_path, "focus");
+}
+
+ui_manipulation_result ui_automation_explorer::click_at_coordinates(int64_t pid, float x, float y) {
+    ui_manipulation_result result;
+    if (pid <= 0) {
+        result.error_message = "Invalid process PID";
+        return result;
+    }
+#if defined(__APPLE__)
+    if (!check_accessibility_permissions(false)) {
+        result.permission_denied = true;
+        result.error_message = "Accessibility permission required";
+        return result;
+    }
+    CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(x, y), kCGMouseButtonLeft);
+    CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(x, y), kCGMouseButtonLeft);
+    if (d && u) {
+        CGEventPost(kCGHIDEventTap, d);
+        CGEventPost(kCGHIDEventTap, u);
+        CFRelease(d);
+        CFRelease(u);
+        result.success = true;
+        result.action_performed = "click_at_coordinates";
+    } else {
+        result.error_message = "Failed to create mouse CGEvent";
+    }
+#elif defined(_WIN32)
+    SetCursorPos(static_cast<int>(x), static_cast<int>(y));
+    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+    result.success = true;
+    result.action_performed = "click_at_coordinates";
+#else
+    result.error_message = "Not supported on this platform";
+#endif
+    return result;
+}
+
 } // namespace rouen::helpers

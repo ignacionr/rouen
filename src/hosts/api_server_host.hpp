@@ -59,6 +59,15 @@ private:
     static std::string handle_swagger_ui(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_openapi_spec(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_rss_diagnostics(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_processes_list(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_start(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_kill(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_tree(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_values(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_action(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_click(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_set_value(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_ui_focus(struct mg_connection* c, struct mg_http_message* hm);
 
     std::unique_ptr<struct mg_mgr> mgr_;
     struct mg_connection* conn_;

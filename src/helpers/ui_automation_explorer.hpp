@@ -55,6 +55,16 @@ namespace rouen::helpers {
         std::vector<ui_element_value_info> extract_values(bool edit_boxes_only = false) const;
     };
 
+    struct ui_manipulation_result {
+        bool success{false};
+        bool permission_denied{false}; // e.g. macOS Accessibility permission missing
+        std::string error_message;
+        std::string matched_element_id;
+        std::string matched_element_name;
+        std::string matched_element_role;
+        std::string action_performed;
+    };
+
     class ui_automation_explorer {
     public:
         // Captures/inspects the Accessibility / UI Automation tree for a given process PID
@@ -65,6 +75,15 @@ namespace rouen::helpers {
 
         // Requests the text/value of a specific control in a process by ID or Name
         static std::optional<std::string> request_control_value(int64_t pid, std::string_view identifier_or_name);
+
+        // Performs a UI manipulation action ("click", "press", "set_value", "focus", "toggle", "expand", "collapse", etc.) on a control matching identifier_name_or_path
+        static ui_manipulation_result perform_control_action(int64_t pid, std::string_view identifier_name_or_path, std::string_view action = "click", std::string_view value = "");
+
+        // Convenience shortcuts for UI manipulation
+        static ui_manipulation_result click_control(int64_t pid, std::string_view identifier_name_or_path);
+        static ui_manipulation_result set_control_value(int64_t pid, std::string_view identifier_name_or_path, std::string_view value);
+        static ui_manipulation_result focus_control(int64_t pid, std::string_view identifier_name_or_path);
+        static ui_manipulation_result click_at_coordinates(int64_t pid, float x, float y);
 
         // Checks if accessibility permissions are granted (macOS specific, returns true on Windows)
         static bool check_accessibility_permissions(bool prompt_if_missing = false);

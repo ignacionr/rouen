@@ -152,7 +152,7 @@ namespace rouen::cards {
             ImGui::PopID();
         }
 
-        void render_selected_ui_node_details() {
+        void render_selected_ui_node_details(int64_t pid) {
             if (!selected_ui_node_) {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Select an element from the tree to view properties.");
                 return;
@@ -196,6 +196,42 @@ namespace rouen::cards {
             }
 
             ImGui::Separator();
+
+            // UI Manipulation actions for selected node
+            if (pid > 0) {
+                ImGui::TextColored(ImVec4(0.9f, 0.75f, 0.3f, 1.0f), "UI Manipulation Actions:");
+                std::string target_id_or_name = !node.id.empty() ? node.id : (!node.name.empty() ? node.name : single_line_path);
+                
+                if (ImGui::Button("Click / Press")) {
+                    ui_manip_result_ = rouen::helpers::ui_automation_explorer::click_control(pid, target_id_or_name);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click or trigger press action on this UI element");
+
+                ImGui::SameLine();
+                if (ImGui::Button("Focus")) {
+                    ui_manip_result_ = rouen::helpers::ui_automation_explorer::focus_control(pid, target_id_or_name);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set keyboard focus to this element");
+
+                ImGui::SetNextItemWidth(140.0f);
+                ImGui::InputTextWithHint("##set_val_node", "New value...", ui_manip_val_buf_, sizeof(ui_manip_val_buf_));
+                ImGui::SameLine();
+                if (ImGui::Button("Set Value")) {
+                    ui_manip_result_ = rouen::helpers::ui_automation_explorer::set_control_value(pid, target_id_or_name, ui_manip_val_buf_);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set text / control value on this element");
+
+                if (ui_manip_result_) {
+                    if (ui_manip_result_->success) {
+                        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.4f, 1.0f), "Action '%s' succeeded on '%s'.",
+                                           ui_manip_result_->action_performed.c_str(),
+                                           ui_manip_result_->matched_element_name.empty() ? target_id_or_name.c_str() : ui_manip_result_->matched_element_name.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Error: %s", ui_manip_result_->error_message.c_str());
+                    }
+                }
+                ImGui::Separator();
+            }
 
             if (ImGui::BeginTable("selected_prop_table", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
                 ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 90.0f);
@@ -350,7 +386,7 @@ namespace rouen::cards {
 
                     ImGui::TableNextColumn();
                     ImGui::BeginChild("UINodeDetailsScroll", ImVec2(0, 220.0f), false);
-                    render_selected_ui_node_details();
+                    render_selected_ui_node_details(snap.pid);
                     ImGui::EndChild();
 
                     ImGui::EndTable();
@@ -396,7 +432,7 @@ namespace rouen::cards {
                     ImGui::TableSetupColumn("Text / Value", ImGuiTableColumnFlags_WidthStretch, 0.30f);
                     ImGui::TableSetupColumn("Tree Path", ImGuiTableColumnFlags_WidthStretch, 0.30f);
                     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 65.0f);
-                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 150.0f);
                     ImGui::TableHeadersRow();
 
                     ImGui::BeginChild("ExtractedScroll", ImVec2(0, 200.0f), false);
@@ -424,6 +460,20 @@ namespace rouen::cards {
                         ImGui::TextDisabled("%s", item.id.c_str());
 
                         ImGui::TableNextColumn();
+                        if (ImGui::SmallButton("Click")) {
+                            std::string target = !item.id.empty() ? item.id : (!item.name.empty() ? item.name : item.path);
+                            ui_manip_result_ = rouen::helpers::ui_automation_explorer::click_control(snap.pid, target);
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click / Trigger Press action on control");
+
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Focus")) {
+                            std::string target = !item.id.empty() ? item.id : (!item.name.empty() ? item.name : item.path);
+                            ui_manip_result_ = rouen::helpers::ui_automation_explorer::focus_control(snap.pid, target);
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set focus to control");
+
+                        ImGui::SameLine();
                         if (ImGui::SmallButton("Val")) {
                             ImGui::SetClipboardText(item.value.c_str());
                         }
@@ -842,6 +892,8 @@ namespace rouen::cards {
         char ui_request_query_buf_[128]{};
         std::optional<std::string> requested_control_value_;
         bool value_request_attempted_{false};
+        char ui_manip_val_buf_[256]{};
+        std::optional<rouen::helpers::ui_manipulation_result> ui_manip_result_;
     };
 
 } // namespace rouen::cards
