@@ -1044,6 +1044,15 @@ bool ConfigService::refresh_youtube_cookies() const {
             return exec_env;
         }
         
+        // 2b. App Bundle Resources directory (macOS standard)
+        std::string res_env = get_executable_directory() + "/../Resources/.env";
+        CONFIG_DEBUG_FMT("ConfigService: Checking Resources dir: {}", res_env);
+        if (std::filesystem::exists(res_env)) {
+            CONFIG_DEBUG("ConfigService: Found .env at Resources directory");
+            return res_env;
+        }
+
+        
         // 3. Parent directories up to 3 levels (for build directories)
         std::filesystem::path current = std::filesystem::current_path();
         for (int i = 0; i < 3; ++i) {
