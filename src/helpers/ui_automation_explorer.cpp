@@ -871,11 +871,11 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
                 }
                 CFRelease(sz_ref);
             }
-            float cx = static_cast<float>(pt.x) + (static_cast<float>(sz.width) * 0.5f);
-            float cy = static_cast<float>(pt.y) + (static_cast<float>(sz.height) * 0.5f);
+            double cx = static_cast<double>(pt.x) + (static_cast<double>(sz.width) * 0.5);
+            double cy = static_cast<double>(pt.y) + (static_cast<double>(sz.height) * 0.5);
             if (cx > 0 && cy > 0) {
-                CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(cx, cy), kCGMouseButtonLeft);
-                CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(cx, cy), kCGMouseButtonLeft);
+                CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(static_cast<CGFloat>(cx), static_cast<CGFloat>(cy)), kCGMouseButtonLeft);
+                CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(static_cast<CGFloat>(cx), static_cast<CGFloat>(cy)), kCGMouseButtonLeft);
                 if (d && u) {
                     CGEventPost(kCGHIDEventTap, d);
                     CGEventPost(kCGHIDEventTap, u);
@@ -1121,8 +1121,8 @@ ui_manipulation_result ui_automation_explorer::click_at_coordinates(int64_t pid,
         result.error_message = "Accessibility permission required";
         return result;
     }
-    CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(x, y), kCGMouseButtonLeft);
-    CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(x, y), kCGMouseButtonLeft);
+    CGEventRef d = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, CGPointMake(static_cast<CGFloat>(x), static_cast<CGFloat>(y)), kCGMouseButtonLeft);
+    CGEventRef u = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, CGPointMake(static_cast<CGFloat>(x), static_cast<CGFloat>(y)), kCGMouseButtonLeft);
     if (d && u) {
         CGEventPost(kCGHIDEventTap, d);
         CGEventPost(kCGHIDEventTap, u);
