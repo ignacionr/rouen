@@ -204,7 +204,7 @@ jobs:
         }
 
     - name: Setup MSVC
-      uses: microsoft/setup-msbuild@v3
+      uses: ilammy/msvc-dev-cmd@v1
 
     - name: Configure CMake
       shell: cmd
@@ -216,7 +216,7 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
           -DVCPKG_INSTALLED_DIR="%VCPKG_ROOT%\installed" ^
           -DCMAKE_BUILD_TYPE=Release ^
-          -G "Visual Studio 17 2022" -A x64
+          -G Ninja
         
         echo.
         echo === CMAKE CONFIGURATION VERIFICATION ===
@@ -503,6 +503,8 @@ jobs:
         
         # Search paths for VC++ runtime
         $searchPaths = @(
+          "${env:ProgramFiles}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT",
+          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT",
           "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
           "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
           "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
