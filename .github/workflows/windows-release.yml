@@ -192,25 +192,34 @@ jobs:
           }
         }
 
+    - name: Locate Ninja and add to PATH
+      shell: pwsh
+      run: |
+        $ninjaFile = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio" -Recurse -Filter "ninja.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($ninjaFile) {
+          $ninjaDir = $ninjaFile.DirectoryName
+          Write-Host "Found ninja at: $ninjaDir"
+          $ninjaDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        }
+
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Add Visual Studio Ninja to PATH
+    - name: Force Workspace VCPKG_ROOT
       shell: cmd
       run: |
-        if exist "%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" (
-          echo %VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja>>"%GITHUB_PATH%"
-        )
+        echo VCPKG_ROOT=%GITHUB_WORKSPACE%\vcpkg>>"%GITHUB_ENV%"
+        set "VCPKG_ROOT=%GITHUB_WORKSPACE%\vcpkg"
 
     - name: Configure CMake
       shell: cmd
       run: |
         set "workspace=${{ github.workspace }}"
-        if "%VCPKG_ROOT%"=="" set "VCPKG_ROOT=%workspace%\vcpkg"
+        set "VCPKG_ROOT=%workspace%\vcpkg"
         cmake -B build -S . ^
-          -DCMAKE_TOOLCHAIN_FILE="%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+          -DCMAKE_TOOLCHAIN_FILE="%workspace%\vcpkg\scripts\buildsystems\vcpkg.cmake" ^
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
-          -DVCPKG_INSTALLED_DIR="%VCPKG_ROOT%\installed" ^
+          -DVCPKG_INSTALLED_DIR="%workspace%\vcpkg\installed" ^
           -DCMAKE_BUILD_TYPE=Release ^
           -G Ninja
         
