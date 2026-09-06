@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   windows-build:
-    runs-on: windows-2022
+    runs-on: windows-latest
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
       VCPKG_DISABLE_METRICS: "1"
@@ -62,11 +62,13 @@ jobs:
         set "VCPKG_ROOT=%vcpkgDir%"
         >>"%GITHUB_ENV%" echo VCPKG_ROOT=%vcpkgDir%
         if not exist "%vcpkgDir%\triplets" (
-          echo Cloning fresh vcpkg repository...
-          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
-          if errorlevel 1 (
-            echo ERROR: Failed to clone vcpkg
-            exit /b 1
+          if not exist "%vcpkgDir%\.git" (
+            echo Cloning fresh vcpkg repository...
+            git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+            if errorlevel 1 (
+              echo ERROR: Failed to clone vcpkg
+              exit /b 1
+            )
           )
         )
         cd /d "%vcpkgDir%"
@@ -194,6 +196,13 @@ jobs:
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Add Visual Studio Ninja to PATH
+      shell: cmd
+      run: |
+        if exist "%VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" (
+          echo %VSINSTALLDIR%Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja>>"%GITHUB_PATH%"
+        )
+
     - name: Configure CMake
       shell: cmd
       run: |
@@ -204,7 +213,7 @@ jobs:
           -DVCPKG_TARGET_TRIPLET=x64-windows ^
           -DVCPKG_INSTALLED_DIR="%VCPKG_ROOT%\installed" ^
           -DCMAKE_BUILD_TYPE=Release ^
-          -G "Visual Studio 17 2022" -A x64
+          -G Ninja
         
         echo.
         echo === CMAKE CONFIGURATION VERIFICATION ===
