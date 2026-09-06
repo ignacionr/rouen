@@ -61,14 +61,13 @@ jobs:
         
         set "VCPKG_ROOT=%vcpkgDir%"
         >>"%GITHUB_ENV%" echo VCPKG_ROOT=%vcpkgDir%
-        if not exist "%vcpkgDir%\triplets" (
-          if not exist "%vcpkgDir%\.git" (
-            echo Cloning fresh vcpkg repository...
-            git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
-            if errorlevel 1 (
-              echo ERROR: Failed to clone vcpkg
-              exit /b 1
-            )
+        if not exist "%vcpkgDir%\vcpkg.exe" (
+          echo Cloning fresh vcpkg repository...
+          if exist "%vcpkgDir%" rmdir /s /q "%vcpkgDir%"
+          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+          if errorlevel 1 (
+            echo ERROR: Failed to clone vcpkg
+            exit /b 1
           )
         )
         cd /d "%vcpkgDir%"
