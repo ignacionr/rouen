@@ -19,6 +19,29 @@ set(DISABLE_PCH ON CACHE BOOL "Disable Precompiled Headers for C++20 Module Comp
 set(CMAKE_DISABLE_PRECOMPILED_HEADERS ON)
 set(CMAKE_COMPILE_WARNING_AS_ERROR OFF)
 
+# Set compiler before project() call on Linux for better C++23 support.
+# When CC/CXX are already set in the environment (e.g. Nix devShell, Docker),
+# respect them so the environment-provided compiler and its include paths are used.
+if(UNIX AND NOT APPLE)
+  if("$ENV{CC}" STREQUAL "" AND "$ENV{CXX}" STREQUAL "")
+    find_program(CLANG_EXECUTABLE clang)
+    find_program(CLANGPP_EXECUTABLE clang++)
+
+    if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
+      set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
+      set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
+      message(STATUS "Using Clang/Clang++ for Linux build")
+    else()
+      message(STATUS "Clang not found, using default system compiler")
+    endif()
+  else()
+    message(STATUS "Using compiler from environment: $ENV{CXX}")
+  endif()
+endif()
+
+# Project name and version
+project(rouen VERSION 1.0 LANGUAGES C CXX)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
 endif()
@@ -55,39 +78,19 @@ else()
   message(STATUS "Release build enabled with optimizations")
 endif()
 
-# Set compiler before project() call on Linux for better C++23 support.
-# When CC/CXX are already set in the environment (e.g. Nix devShell, Docker),
-# respect them so the environment-provided compiler and its include paths are used.
-if(UNIX AND NOT APPLE)
-  if("$ENV{CC}" STREQUAL "" AND "$ENV{CXX}" STREQUAL "")
-    find_program(CLANG_EXECUTABLE clang)
-    find_program(CLANGPP_EXECUTABLE clang++)
-
-    if(CLANG_EXECUTABLE AND CLANGPP_EXECUTABLE)
-      set(CMAKE_C_COMPILER "${CLANG_EXECUTABLE}")
-      set(CMAKE_CXX_COMPILER "${CLANGPP_EXECUTABLE}")
-      message(STATUS "Using Clang/Clang++ for Linux build")
-    else()
-      message(STATUS "Clang not found, using default system compiler")
-    endif()
-  else()
-    message(STATUS "Using compiler from environment: $ENV{CXX}")
-  endif()
-endif()
-
 # For MSVC, ensure no GCC/Clang flags leak in
 if(MSVC)
   # Remove any GCC/Clang-specific flags that might be set by dependencies
   string(REPLACE "-O3" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
   string(REPLACE "-O3" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  string(REPLACE "-O0" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  string(REPLACE "-O0" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+  string(REPLACE "-O0" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
   string(REPLACE "-g" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   string(REPLACE "-g" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
   string(REPLACE "-g" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
-
-# Project name and version
-project(rouen VERSION 1.0 LANGUAGES C CXX)
 
 # Retrieve the current git commit hash if not already provided (e.g. by Nix)
 if(NOT COMPILE_GIT_HASH)
