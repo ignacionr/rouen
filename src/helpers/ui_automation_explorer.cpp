@@ -194,6 +194,15 @@ static void populate_ax_element(AXUIElementRef element, ui_element_node& node, i
         for (CFIndex i = 0; i < count; ++i) {
             CFStringRef attr_name = static_cast<CFStringRef>(CFArrayGetValueAtIndex(attr_names, i));
             std::string name_str = cfstring_to_utf8(attr_name);
+            
+            // Skip structural and circular references that trigger heavy IPC/recursion
+            if (name_str == "AXChildren" || name_str == "AXParent" || 
+                name_str == "AXTopLevelUIElement" || name_str == "AXWindow" ||
+                name_str == "AXServesAsTitleForUIElements" || name_str == "AXLinkedUIElements" ||
+                name_str == "AXSharedFocusElements" || name_str == "AXVisibleChildren") {
+                continue;
+            }
+
             CFTypeRef attr_val = nullptr;
             if (AXUIElementCopyAttributeValue(element, attr_name, &attr_val) == kAXErrorSuccess && attr_val) {
                 std::string val_str = cftype_to_string(attr_val);

@@ -127,12 +127,79 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     bool user_tall_layout{false};
     bool user_tall_layout_set{false};
     const void* owner_card{nullptr};
+    static inline std::mutex s_callback_mutex;
     static inline std::atomic<bool> is_cast_active{false};
     static inline std::function<void(long long, const std::string&, const std::string&, double)> save_watermark_cb;
     static inline std::function<void(const uint8_t*, size_t)> push_audio_cb;
     static inline std::function<void()> reset_sync_cb;
     static inline std::function<size_t()> get_cast_queue_size_cb;
     static inline std::function<bool()> is_offscreen_ctx_cb;
+
+    static void set_save_watermark_cb(std::function<void(long long, const std::string&, const std::string&, double)> cb) {
+        std::lock_guard<std::mutex> lock(s_callback_mutex);
+        save_watermark_cb = std::move(cb);
+    }
+    static void invoke_save_watermark_cb(long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {
+        std::function<void(long long, const std::string&, const std::string&, double)> cb;
+        {
+            std::lock_guard<std::mutex> lock(s_callback_mutex);
+            cb = save_watermark_cb;
+        }
+        if (cb) cb(feed_id, item_link, item_title, watermark);
+    }
+
+    static void set_push_audio_cb(std::function<void(const uint8_t*, size_t)> cb) {
+        std::lock_guard<std::mutex> lock(s_callback_mutex);
+        push_audio_cb = std::move(cb);
+    }
+    static void invoke_push_audio_cb(const uint8_t* data, size_t size) {
+        std::function<void(const uint8_t*, size_t)> cb;
+        {
+            std::lock_guard<std::mutex> lock(s_callback_mutex);
+            cb = push_audio_cb;
+        }
+        if (cb) cb(data, size);
+    }
+
+    static void set_reset_sync_cb(std::function<void()> cb) {
+        std::lock_guard<std::mutex> lock(s_callback_mutex);
+        reset_sync_cb = std::move(cb);
+    }
+    static void invoke_reset_sync_cb() {
+        std::function<void()> cb;
+        {
+            std::lock_guard<std::mutex> lock(s_callback_mutex);
+            cb = reset_sync_cb;
+        }
+        if (cb) cb();
+    }
+
+    static void set_get_cast_queue_size_cb(std::function<size_t()> cb) {
+        std::lock_guard<std::mutex> lock(s_callback_mutex);
+        get_cast_queue_size_cb = std::move(cb);
+    }
+    static size_t invoke_get_cast_queue_size_cb() {
+        std::function<size_t()> cb;
+        {
+            std::lock_guard<std::mutex> lock(s_callback_mutex);
+            cb = get_cast_queue_size_cb;
+        }
+        return cb ? cb() : 0;
+    }
+
+    static void set_is_offscreen_ctx_cb(std::function<bool()> cb) {
+        std::lock_guard<std::mutex> lock(s_callback_mutex);
+        is_offscreen_ctx_cb = std::move(cb);
+    }
+    static bool invoke_is_offscreen_ctx_cb() {
+        std::function<bool()> cb;
+        {
+            std::lock_guard<std::mutex> lock(s_callback_mutex);
+            cb = is_offscreen_ctx_cb;
+        }
+        return cb ? cb() : false;
+    }
+
     std::function<void(const uint8_t* pcm_s16_data, size_t size_in_bytes)> on_audio_pcm_cb;
 
     // FFmpeg Engine Members

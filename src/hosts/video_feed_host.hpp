@@ -98,22 +98,22 @@ public:
             try {
                 registrar::add("video_feed_host", instance);
             } catch (...) {}
-            media_player_item::push_audio_cb = [](const uint8_t* data, size_t size) {
+            media_player_item::set_push_audio_cb([](const uint8_t* data, size_t size) {
                 auto h = get_host();
                 if (h) h->push_audio_pcm(data, size);
-            };
-            media_player_item::reset_sync_cb = []() {
+            });
+            media_player_item::set_reset_sync_cb([]() {
                 auto h = get_host();
                 if (h) h->reset_sync_queues();
-            };
-            media_player_item::get_cast_queue_size_cb = []() -> size_t {
+            });
+            media_player_item::set_get_cast_queue_size_cb([]() -> size_t {
                 auto h = get_host();
                 return h ? h->get_cast_queued_bytes() : 0;
-            };
-            media_player_item::is_offscreen_ctx_cb = []() -> bool {
+            });
+            media_player_item::set_is_offscreen_ctx_cb([]() -> bool {
                 auto h = get_host();
                 return h ? (ImGui::GetCurrentContext() == h->video_imgui_ctx_) : false;
-            };
+            });
         }
         return instance;
     }

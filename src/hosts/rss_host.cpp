@@ -648,9 +648,9 @@ RSSHost::RSSHost()
     RSS_INFO("RSSHost constructor completed (initialization deferred to background)");
     
     // Register the watermark callback so the player can update our database
-    media_player_item::save_watermark_cb = [this](long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {
+    media_player_item::set_save_watermark_cb([this](long long feed_id, const std::string& item_link, const std::string& item_title, double watermark) {
         this->update_watermark(feed_id, item_link, item_title, watermark);
-    };
+    });
 }
 
 RSSHost::~RSSHost() {
@@ -663,7 +663,7 @@ RSSHost::~RSSHost() {
     }
     
     // 2. Clear the callback so no late background notifications try to invoke it
-    media_player_item::save_watermark_cb = nullptr;
+    media_player_item::set_save_watermark_cb(nullptr);
     
     init_thread_.request_stop();
     if (init_thread_.joinable()) {
@@ -919,11 +919,13 @@ std::vector<std::string> RSSHost::get_available_tags() {
 void RSSHost::add_feed_tag(long long feed_id, std::string_view tag) {
     repo_.add_feed_tag(feed_id, tag);
     
-    // Also update memory representation
+    // Copy-on-write update for memory representation to prevent data races with UI thread
     std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
-            feed->tags.insert(std::string(tag));
+            auto updated_feed = std::make_shared<media::rss::feed>(*feed);
+            updated_feed->tags.insert(std::string(tag));
+            feed = updated_feed;
             break;
         }
     }
@@ -932,11 +934,13 @@ void RSSHost::add_feed_tag(long long feed_id, std::string_view tag) {
 void RSSHost::remove_feed_tag(long long feed_id, std::string_view tag) {
     repo_.remove_feed_tag(feed_id, tag);
     
-    // Also update memory representation
+    // Copy-on-write update for memory representation to prevent data races with UI thread
     std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
-            feed->tags.erase(std::string(tag));
+            auto updated_feed = std::make_shared<media::rss::feed>(*feed);
+            updated_feed->tags.erase(std::string(tag));
+            feed = updated_feed;
             break;
         }
     }
@@ -960,11 +964,13 @@ std::string RSSHost::get_feed_language(long long feed_id) {
 void RSSHost::set_feed_language(long long feed_id, std::string_view language) {
     repo_.update_feed_language(feed_id, language);
     
-    // Also update memory representation
+    // Copy-on-write update for memory representation to prevent data races with UI thread
     std::lock_guard<std::mutex> const feeds_lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
-            feed->language = std::string(language);
+            auto updated_feed = std::make_shared<media::rss::feed>(*feed);
+            updated_feed->language = std::string(language);
+            feed = updated_feed;
             break;
         }
     }
@@ -1061,13 +1067,14 @@ bool RSSHost::add_feed_item(long long feed_id, std::string_view item_link, std::
             continue;
         }
 
-        auto item_pos = std::find_if(feed->items.begin(), feed->items.end(), [&](const auto& item) {
+        auto updated_feed = std::make_shared<media::rss::feed>(*feed);
+        auto item_pos = std::find_if(updated_feed->items.begin(), updated_feed->items.end(), [&](const auto& item) {
             return item.link == link;
         });
 
-        if (item_pos == feed->items.end()) {
+        if (item_pos == updated_feed->items.end()) {
             media::rss::feed_item new_item(title, link, metadata.description, "", metadata.image_url, now);
-            feed->items.push_back(std::move(new_item));
+            updated_feed->items.push_back(std::move(new_item));
         } else {
             item_pos->title = title;
             item_pos->updated = now;
@@ -1076,9 +1083,10 @@ bool RSSHost::add_feed_item(long long feed_id, std::string_view item_link, std::
             item_pos->image_url = metadata.image_url;
         }
 
-        std::sort(feed->items.begin(), feed->items.end(), [](const media::rss::feed_item& a, const media::rss::feed_item& b) {
+        std::sort(updated_feed->items.begin(), updated_feed->items.end(), [](const media::rss::feed_item& a, const media::rss::feed_item& b) {
             return a.updated > b.updated;
         });
+        feed = updated_feed;
         return true;
     }
 
@@ -1132,13 +1140,15 @@ void RSSHost::update_watermark(long long feed_id, const std::string& item_link, 
     // Update database
     repo_.update_watermark(feed_id, item_link, item_title, watermark);
     
-    // Update in-memory cache
+    // Update in-memory cache using Copy-On-Write for thread safety
     std::lock_guard<std::mutex> const lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
-            for (auto& item : feed->items) {
+            auto updated_feed = std::make_shared<media::rss::feed>(*feed);
+            for (auto& item : updated_feed->items) {
                 if (item.link == item_link && item.title == item_title) {
                     item.watermark = watermark;
+                    feed = updated_feed;
                     RSS_DEBUG_FMT("Updated in-memory watermark for feed_id={}, title='{}' to {}", feed_id, item_title, watermark ? *watermark : 0.0);
                     return;
                 }
@@ -1498,34 +1508,35 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                               
         // Add or merge with existing feed
         if (pos != feeds.end()) {
-            // Update the existing feed
-            feed_ptr->repo_id = (*pos)->repo_id;
+            // Create a copy-on-write clone of existing feed to update safely without mutating shared UI state
+            auto merged_feed = std::make_shared<media::rss::feed>(**pos);
+            feed_ptr->repo_id = merged_feed->repo_id;
             
             // Only update metadata if the fetched feed is NOT a placeholder
             if (!feed_ptr->is_placeholder) {
-                (*pos)->feed_title = feed_ptr->feed_title;
-                (*pos)->feed_description = feed_ptr->feed_description;
-                (*pos)->feed_link = feed_ptr->feed_link;
-                (*pos)->source_link = feed_ptr->source_link; // Keep updated to final URL
-                (*pos)->set_image(feed_ptr->image_url());
+                merged_feed->feed_title = feed_ptr->feed_title;
+                merged_feed->feed_description = feed_ptr->feed_description;
+                merged_feed->feed_link = feed_ptr->feed_link;
+                merged_feed->source_link = feed_ptr->source_link; // Keep updated to final URL
+                merged_feed->set_image(feed_ptr->image_url());
             }
             
-            bool const old_had_no_enclosures = !(*pos)->items.empty() && std::all_of((*pos)->items.begin(), (*pos)->items.end(),
+            bool const old_had_no_enclosures = !merged_feed->items.empty() && std::all_of(merged_feed->items.begin(), merged_feed->items.end(),
                 [](auto const& i) { return i.enclosure.empty(); });
             bool const new_has_enclosures = std::any_of(feed_ptr->items.begin(), feed_ptr->items.end(),
                 [](auto const& i) { return !i.enclosure.empty(); });
 
             if (old_had_no_enclosures && new_has_enclosures) {
-                (*pos)->items = feed_ptr->items;
+                merged_feed->items = feed_ptr->items;
             } else {
                 // Merge new items, avoiding duplicates (matching by both link and title to support podcasts/Megaphone)
                 for (auto const& item : feed_ptr->items) {
-                    auto item_pos = std::find_if((*pos)->items.begin(), (*pos)->items.end(),
+                    auto item_pos = std::find_if(merged_feed->items.begin(), merged_feed->items.end(),
                                               [ourlink = item.link, ourtitle = item.title](auto const& i) {
                                                   return i.link == ourlink || i.title == ourtitle;
                                                });
-                    if (item_pos == (*pos)->items.end()) {
-                        (*pos)->items.emplace_back(item);
+                    if (item_pos == merged_feed->items.end()) {
+                        merged_feed->items.emplace_back(item);
                     } else {
                         if (item_pos->enclosure.empty() && !item.enclosure.empty()) {
                             item_pos->enclosure = item.enclosure;
@@ -1539,7 +1550,8 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
                     }
                 }
             }
-            feed_ptr = *pos;
+            feed_ptr = merged_feed;
+            *pos = merged_feed;
         } else {
             feeds.emplace_back(feed_ptr);
         }

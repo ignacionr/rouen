@@ -129,8 +129,8 @@ void media_player_item::update_watermark(bool force_save) {
                 }
             }
             
-            if (should_save && feed_id != -1 && !item_link.empty() && save_watermark_cb) {
-                save_watermark_cb(feed_id, item_link, item_title, val);
+            if (should_save && feed_id != -1 && !item_link.empty()) {
+                invoke_save_watermark_cb(feed_id, item_link, item_title, val);
                 last_saved_watermark_pos_ = val;
                 last_watermark_save_time_ = now;
             }
@@ -166,9 +166,7 @@ void media_player_item::stopMedia() {
         decoded_video_queue.clear();
     }
 
-    if (reset_sync_cb) {
-        reset_sync_cb();
-    }
+    invoke_reset_sync_cb();
 
     {
         std::lock_guard<std::mutex> const lock(texture_mutex);
@@ -292,9 +290,7 @@ bool media_player_item::playMedia(const void* owner) {
     first_audio_pts.store(-1.0);
     audio_clock_initialized.store(false);
     player_pid = 1;
-    if (reset_sync_cb) {
-        reset_sync_cb();
-    }
+    invoke_reset_sync_cb();
 
     ffmpeg_thread = std::thread([this, sanitized_url, offset]() {
         std::string video_target = sanitized_url;
@@ -574,9 +570,7 @@ bool media_player_item::setPaused(bool paused) {
             SDL_ResumeAudioStreamDevice(local_audio_stream);
         }
     }
-    if (reset_sync_cb) {
-        reset_sync_cb();
-    }
+    invoke_reset_sync_cb();
     return true;
 }
 
@@ -1239,9 +1233,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
 
         int queued_audio = 0;
         if (is_cast_active.load()) {
-            if (get_cast_queue_size_cb) {
-                queued_audio = static_cast<int>(get_cast_queue_size_cb());
-            }
+            queued_audio = static_cast<int>(invoke_get_cast_queue_size_cb());
         } else if (local_audio_stream) {
             queued_audio = SDL_GetAudioStreamQueued(local_audio_stream);
         }
@@ -1430,7 +1422,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
 
                             if (is_cast_active.load()) {
                                 if (local_audio_stream) { SDL_DestroyAudioStream(local_audio_stream); local_audio_stream = nullptr; }
-                                if (push_audio_cb) push_audio_cb(pcm_chunk.data(), pcm_chunk.size());
+                                invoke_push_audio_cb(pcm_chunk.data(), pcm_chunk.size());
                             } else {
                                 if (!local_audio_stream) {
                                     SDL_AudioSpec const spec{SDL_AUDIO_S16LE, 2, target_rate};
