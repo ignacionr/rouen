@@ -461,6 +461,24 @@ target_include_directories(mongoose PUBLIC ${CMAKE_SOURCE_DIR}/external/mongoose
 # Force C compilation for mongoose
 set_source_files_properties(${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c PROPERTIES LANGUAGE C)
 
+# Add QuickJS as a static library (compiled as C)
+set(QUICKJS_SOURCES
+  ${CMAKE_SOURCE_DIR}/external/quickjs/quickjs.c
+  ${CMAKE_SOURCE_DIR}/external/quickjs/dtoa.c
+  ${CMAKE_SOURCE_DIR}/external/quickjs/libunicode.c
+  ${CMAKE_SOURCE_DIR}/external/quickjs/cutils.c
+  ${CMAKE_SOURCE_DIR}/external/quickjs/libregexp.c
+  ${CMAKE_SOURCE_DIR}/external/quickjs/quickjs-libc.c
+)
+add_library(quickjs STATIC ${QUICKJS_SOURCES})
+set_target_properties(quickjs PROPERTIES LINKER_LANGUAGE C)
+target_include_directories(quickjs PUBLIC ${CMAKE_SOURCE_DIR}/external/quickjs)
+target_compile_definitions(quickjs PRIVATE _GNU_SOURCE CONFIG_VERSION="2024-01-13")
+set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES LANGUAGE C)
+if(NOT MSVC)
+  set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough")
+endif()
+
 # Add PDFHummus (PDFWriter)
 set(USE_BUNDLED OFF CACHE BOOL "" FORCE)
 set(USE_UNBUNDLED_FALLBACK_BUNDLED ON CACHE BOOL "" FORCE)
@@ -498,6 +516,17 @@ add_executable(${PROJECT_NAME}
   src/hosts/universal_sync_host.cpp
   src/hosts/process_host.cpp
   src/hosts/plugin_host.cpp
+  src/hosts/quickjs_host.cpp
+)
+
+target_sources(${PROJECT_NAME}
+  PUBLIC
+  FILE_SET CXX_MODULES FILES
+    src/hosts/quickjs_host.cppm
+)
+
+target_sources(${PROJECT_NAME}
+  PRIVATE
   src/helpers/dynamic_library.cpp
   src/helpers/piped_process.cpp
   src/helpers/media_player.cpp
@@ -556,12 +585,16 @@ add_executable(${PROJECT_NAME}
 
 
 set_source_files_properties(src/helpers/mp4_writer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+if(NOT MSVC)
+  set_source_files_properties(src/hosts/quickjs_host.cpp PROPERTIES COMPILE_FLAGS "-Wno-error -Wno-c99-extensions -Wno-old-style-cast -Wno-sign-conversion -Wno-unused-parameter -Wno-shorten-64-to-32 -Wno-implicit-int-float-conversion")
+endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM BEFORE PRIVATE "${AVCODEC_INCLUDEDIR}")
 target_include_directories(${PROJECT_NAME} BEFORE PRIVATE
   ${CMAKE_SOURCE_DIR}/external
   ${CMAKE_SOURCE_DIR}/external/imguicolortextedit
   ${CMAKE_SOURCE_DIR}/external/mongoose-7.15
+  ${CMAKE_SOURCE_DIR}/external/quickjs
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/src/helpers
   ${CMAKE_SOURCE_DIR}/src/hosts
@@ -633,6 +666,7 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     tinyxml2::tinyxml2
     unofficial::sqlite3::sqlite3
     mongoose
+    quickjs
     PDFWriter
     PkgConfig::AVFORMAT
     PkgConfig::AVCODEC
@@ -661,6 +695,7 @@ else()
     SDL3::SDL3
     SDL3_image::SDL3_image
     mongoose
+    quickjs
     PDFWriter
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}

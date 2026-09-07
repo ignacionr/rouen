@@ -59,6 +59,7 @@
 #include "../productivity/kpi_card.hpp"
 #include "../productivity/theme_card.hpp"
 #include "../productivity/invoice_card.hpp"
+#include "../productivity/js_card.hpp"
 #include "../production/adlib.hpp"
 #include "../system/about.hpp"
 #include "../system/cast_control.hpp"
@@ -157,6 +158,10 @@ namespace rouen::cards {
                 instance.emplace("pomodoro", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<pomodoro>();
                 });
+
+                instance.emplace("js", factory_t([](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<js_card>(uri);
+                }));
                 
                 instance.emplace("objectives", [](std::string_view, SDL_Renderer*) {
                     return std::make_shared<objectives_card>();

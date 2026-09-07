@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Project declaration
-project(RouenTests LANGUAGES CXX)
+project(RouenTests LANGUAGES C CXX)
 
 # Set C++23 standard for tests
 set(CMAKE_CXX_STANDARD 23)
@@ -45,10 +45,13 @@ include_directories(../src/hosts)
 include_directories(../src/models)
 include_directories(../src/cards)
 include_directories(../external)
+include_directories(../external/quickjs)
 include_directories(../external/imguicolortextedit)
 include_directories(../external/imgui)
 include_directories(../external/imgui/backends)
 include_directories(../plugin-sdk)
+include_directories(../external/PDFWriter/PDFWriter)
+include_directories(../external/PDFWriter/FreeType/include)
 include_directories(${SDL3_INCLUDE_DIRS})
 include_directories(${SDL3_IMAGE_INCLUDE_DIRS})
 if(imgui_SOURCE_DIR)
@@ -346,6 +349,7 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/plugin_host.cpp
+    ../src/hosts/quickjs_host.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
     ../src/helpers/ytdlp_service.cpp
@@ -402,7 +406,7 @@ if(APPLE)
     target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
     target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
 endif()
-target_link_libraries(test_deck_scrolling PRIVATE pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
 add_test(NAME DeckScrollingTest COMMAND test_deck_scrolling)
 
 # Camera Device List Test
@@ -611,7 +615,7 @@ add_test(NAME ExampleMathTest COMMAND test_example_math)
 # Event Bus infrastructure unit test
 add_executable(test_event_bus
     test_event_bus.cpp
-    ${CMAKE_SOURCE_DIR}/src/hosts/event_bus_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/event_bus_host.cpp
 )
 add_test(NAME EventBusTest COMMAND test_event_bus)
 
@@ -639,6 +643,128 @@ if(APPLE)
     target_link_libraries(test_ui_automation_explorer PRIVATE "-framework ApplicationServices" "-framework CoreFoundation")
 elseif(WIN32)
     target_link_libraries(test_ui_automation_explorer PRIVATE ole32 oleaut32 uiautomationcore)
+endif()
+
+# Add QuickJS static library for tests if not already defined by main CMakeLists
+if(NOT TARGET quickjs)
+    set(QUICKJS_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/dtoa.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libunicode.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/cutils.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/libregexp.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs/quickjs-libc.c
+    )
+    add_library(quickjs STATIC ${QUICKJS_SOURCES})
+    set_target_properties(quickjs PROPERTIES LINKER_LANGUAGE C)
+    target_include_directories(quickjs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs)
+    target_compile_definitions(quickjs PRIVATE _GNU_SOURCE CONFIG_VERSION="2024-01-13")
+    set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES LANGUAGE C)
+    if(NOT MSVC)
+        set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough")
+    endif()
+endif()
+
+# QuickJS Unit Test
+add_gtest_executable(test_quickjs test_quickjs.cpp)
+target_sources(test_quickjs PRIVATE
+    ../src/hosts/quickjs_host.cpp
+    ../src/hosts/event_bus_host.cpp
+    ../src/cards/interface/card.cpp
+    ../src/helpers/config_service.cpp
+    ../src/helpers/theme_manager.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/hosts/process_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/git_sync_host.cpp
+    ../src/hosts/universal_sync_host.cpp
+    ../src/hosts/plugin_host.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/tag_manager.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/piped_process.cpp
+    ../src/helpers/dynamic_library.cpp
+    ../src/models/git_scanner.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/mail/metadata_serialization.cpp
+    ../src/models/rss/feed_item.cpp
+    ../src/models/rss/rss_date_parser.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/models/rss/rss_url_resolver.cpp
+    ../src/fonts.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/development/github_registrar.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/information/bybit_registrar.cpp
+    ../src/cards/information/movies_registrar.cpp
+    ../src/cards/information/worldcup_registrar.cpp
+    ../src/cards/media/chess_com_registrar.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_commands.cpp
+    ../src/hosts/mcp_host.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/card_decorations.cpp
+    ../src/helpers/capture_helper.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
+)
+if(APPLE)
+    target_sources(test_quickjs PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
+    target_link_libraries(test_quickjs PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
+endif()
+target_include_directories(test_quickjs PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/quickjs
+    ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
+)
+target_link_libraries(test_quickjs PRIVATE 
+    quickjs
+    pdfium
+    PDFWriter
+    tinyxml2::tinyxml2
+    SQLite::SQLite3 
+    CURL::libcurl 
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+    imgui::imgui
+    imgui_backends
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+)
+if(NOT MSVC)
+    target_compile_options(test_quickjs PRIVATE -Wno-error -Wno-c99-extensions -Wno-old-style-cast -Wno-sign-conversion -Wno-unused-parameter -Wno-shorten-64-to-32 -Wno-implicit-int-float-conversion)
 endif()
 
 # Create a comprehensive test runner that builds and runs all tests
@@ -686,7 +812,8 @@ add_custom_target(run_gtest_only
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_gemini_adapter
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_mcp
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_ui_automation_explorer
-    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_ui_automation_explorer
+    COMMAND ${CMAKE_CURRENT_BINARY_DIR}/test_quickjs
+    DEPENDS test_fetch_ssl test_ssl_ui test_math_operations test_weather_glaze test_adaptive_cards test_markdown_renderer test_rss_media_extraction test_rt_media test_rss_watermark test_gemini_adapter test_mcp test_ui_automation_explorer test_quickjs
     COMMENT "Running Google Test suite only"
 )
 
