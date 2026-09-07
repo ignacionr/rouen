@@ -1,4 +1,5 @@
 #include "rss_host.hpp"
+#include "event_bus_host.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -1140,15 +1141,13 @@ void RSSHost::update_watermark(long long feed_id, const std::string& item_link, 
     // Update database
     repo_.update_watermark(feed_id, item_link, item_title, watermark);
     
-    // Update in-memory cache using Copy-On-Write for thread safety
+    // Update in-memory cache for thread-safe access
     std::lock_guard<std::mutex> const lock(feeds_mutex_);
     for (auto& feed : feeds_) {
         if (feed->repo_id == feed_id) {
-            auto updated_feed = std::make_shared<media::rss::feed>(*feed);
-            for (auto& item : updated_feed->items) {
+            for (auto& item : feed->items) {
                 if (item.link == item_link && item.title == item_title) {
                     item.watermark = watermark;
-                    feed = updated_feed;
                     RSS_DEBUG_FMT("Updated in-memory watermark for feed_id={}, title='{}' to {}", feed_id, item_title, watermark ? *watermark : 0.0);
                     return;
                 }
@@ -1289,6 +1288,14 @@ bool RSSHost::refresh_feed(long long feed_id) {
                 std::lock_guard<std::mutex> const lock(last_refresh_mutex_);
                 feed_last_refresh_times_[*feed_url] = std::chrono::system_clock::now();
             }
+            rouen::hosts::event_bus_host::instance().publish({
+                .topic = "host:rss:feed_updated",
+                .source_id = "host:rss",
+                .payload = glz::json_t{
+                    {"feed_id", feed_id},
+                    {"feed_url", *feed_url}
+                }
+            });
             return true;
         } else {
             RSS_ERROR_FMT("Failed to refresh feed ID: {}", feed_id);
@@ -1563,6 +1570,16 @@ std::shared_ptr<media::rss::feed> RSSHost::add_feed_sync(std::string_view url, c
             std::lock_guard<std::mutex> const lock(last_refresh_mutex_);
             feed_last_refresh_times_[feed_ptr->source_link] = std::chrono::system_clock::now();
         }
+        
+        rouen::hosts::event_bus_host::instance().publish({
+            .topic = "host:rss:feed_updated",
+            .source_id = "host:rss",
+            .payload = glz::json_t{
+                {"feed_id", feed_ptr->repo_id},
+                {"feed_url", feed_ptr->source_link},
+                {"feed_title", feed_ptr->feed_title}
+            }
+        });
         
         // Prepare items for batch insert
         std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string, std::string, std::optional<double>>> items_batch;

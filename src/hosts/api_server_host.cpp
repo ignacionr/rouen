@@ -57,10 +57,41 @@
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
-#include "../cards/information/rss.hpp"
-#include "../models/productivity/process_definition.hpp"
 #include "../hosts/process_host.hpp"
+#include "../hosts/event_bus_host.hpp"
 #include "../helpers/ui_automation_explorer.hpp"
+
+namespace {
+    std::mutex s_sse_mutex;
+    std::vector<struct mg_connection*> s_sse_connections;
+    rouen::hosts::subscription_id s_sse_sub_id{0};
+
+    void ensure_sse_event_bus_subscription() {
+        if (s_sse_sub_id == 0) {
+            s_sse_sub_id = rouen::hosts::event_bus_host::instance().subscribe(
+                "*",
+                [](const rouen::events::rouen_event& evt) {
+                    glz::json_t evt_json{};
+                    evt_json["topic"] = evt.topic;
+                    evt_json["source_id"] = evt.source_id;
+                    evt_json["payload"] = evt.payload;
+                    auto time_c = std::chrono::system_clock::to_time_t(evt.timestamp);
+                    std::stringstream ss;
+                    ss << std::put_time(std::gmtime(&time_c), "%Y-%m-%dT%H:%M:%SZ");
+                    evt_json["timestamp"] = ss.str();
+
+                    std::string json_str;
+                    (void)glz::write_json(evt_json, json_str);
+
+                    std::lock_guard<std::mutex> lock(s_sse_mutex);
+                    for (auto* c : s_sse_connections) {
+                        mg_printf(c, "data: %s\n\n", json_str.c_str());
+                    }
+                }
+            );
+        }
+    }
+}
 
 // JSON structures for API requests
 struct card_creation_request {
@@ -84,6 +115,11 @@ struct error_response {
 struct process_start_request {
     int64_t definition_id{0};
     std::string definition_name;
+};
+
+struct process_attach_request {
+    int64_t pid{0};
+    std::string name;
 };
 
 struct process_kill_request {
@@ -229,9 +265,37 @@ void api_server_host::stop() {
     initialized_ = false;
 }
 
+void api_server_host::add_sse_connection(struct mg_connection* c) {
+    ensure_sse_event_bus_subscription();
+    std::lock_guard<std::mutex> const lock(s_sse_mutex);
+    if (std::find(s_sse_connections.begin(), s_sse_connections.end(), c) == s_sse_connections.end()) {
+        s_sse_connections.push_back(c);
+    }
+}
+
+void api_server_host::remove_sse_connection(struct mg_connection* c) {
+    std::lock_guard<std::mutex> const lock(s_sse_mutex);
+    std::erase(s_sse_connections, c);
+}
+
 void api_server_host::event_handler(struct mg_connection* c, int ev, void* ev_data) {
+    if (ev == MG_EV_CLOSE) {
+        remove_sse_connection(c);
+        return;
+    }
     if (ev == MG_EV_HTTP_MSG) {
         auto* hm = static_cast<struct mg_http_message*>(ev_data);
+        if (mg_match(hm->uri, mg_str("/api/events/stream"), nullptr)) {
+            if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+                mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                             "Content-Type: text/event-stream\r\n"
+                             "Cache-Control: no-cache\r\n"
+                             "Connection: keep-alive\r\n"
+                             "Access-Control-Allow-Origin: *\r\n\r\n");
+                add_sse_connection(c);
+                return;
+            }
+        }
         std::cout << "[APIServer] Received HTTP request: " << std::string(hm->method.buf, hm->method.len) << " " << std::string(hm->uri.buf, hm->uri.len) << std::endl;
         api_server_host::handle_request(c, hm);
     }
@@ -371,6 +435,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/process/start"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_process_start(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/attach"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_process_attach(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -1545,6 +1616,43 @@ std::string api_server_host::handle_process_start(struct mg_connection* /*c*/, s
         resp["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" : "failed_to_start";
         if (!snap->start_error.empty()) resp["start_error"] = snap->start_error;
     }
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_attach(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_attach_request req;
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        (void)glz::read_json(req, body);
+    }
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "pid");
+        if (!val.empty()) {
+            try { req.pid = std::stoll(val); } catch (...) {}
+        }
+    }
+
+    if (req.pid <= 0) {
+        error_response resp{"Valid process PID is required"};
+        return glz::write_json(resp).value_or(R"({"error":"Valid process PID is required"})");
+    }
+
+    std::string run_id = rouen::hosts::process_host::instance().attach(req.pid, req.name);
+    auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+    if (!snap) {
+        error_response resp{"Failed to attach to PID " + std::to_string(req.pid)};
+        return glz::write_json(resp).value_or(R"({"error":"Failed to attach"})");
+    }
+
+    std::unordered_map<std::string, glz::raw_json> resp;
+    resp["success"] = glz::raw_json{"true"};
+    resp["run_id"] = glz::raw_json{R"(")" + snap->run_id + R"(")"};
+    resp["definition_name"] = glz::raw_json{R"(")" + snap->definition_name + R"(")"};
+    resp["state"] = glz::raw_json{R"(")" + std::string((snap->state == rouen::hosts::process_run_state::running) ? "running" : "failed_to_start") + R"(")"};
+    resp["pid"] = glz::raw_json{std::to_string(snap->pid)};
 
     std::string out;
     (void)glz::write_json(resp, out);

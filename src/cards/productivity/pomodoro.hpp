@@ -17,6 +17,7 @@
 #include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/media_player.hpp"
 #include "../../helpers/media_player_alarm.hpp"
+#include "../../hosts/event_bus_host.hpp"
 
 #include "../interface/card.hpp"
 
@@ -57,6 +58,14 @@ namespace rouen::cards {
             } else {
                 if (!end_command_executed) {
                     end_command_executed = true;
+                    rouen::hosts::event_bus_host::instance().publish({
+                        .topic = "card:pomodoro:finished",
+                        .source_id = get_uri(),
+                        .payload = glz::json_t{
+                            {"session_type", "work_interval"},
+                            {"duration_minutes", 25}
+                        }
+                    });
                     if (!end_command.empty()) {
                         std::thread([cmd = end_command]() {
                             ProcessHelper::executeCommand(cmd);

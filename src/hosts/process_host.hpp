@@ -45,6 +45,7 @@ namespace rouen::hosts {
         std::string definition_name;
         process_run_state state{process_run_state::failed_to_start};
         long pid{0};
+        bool is_attached{false};
         process_stats stats;
         std::optional<int> exit_code;
         std::vector<std::string> stderr_lines;
@@ -67,6 +68,9 @@ namespace rouen::hosts {
 
         // Always spawns a brand-new run (never reuses/matches an existing one), returning its run_id.
         std::string start(const rouen::models::productivity::process_definition& def);
+
+        // Attaches to an already running external process PID.
+        std::string attach(long pid, std::string_view name = "");
 
         // Most recently started run_id for a definition, if the host has one on record.
         std::optional<std::string> latest_run_id(int64_t definition_id) const;

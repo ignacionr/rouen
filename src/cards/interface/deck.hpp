@@ -27,6 +27,7 @@
 #include "../../helpers/imgui_ui_context.hpp"
 #include "../../helpers/card_render_metrics.hpp"
 #include "../../helpers/win_titlebar_helper.hpp"
+#include "../../hosts/event_bus_host.hpp"
 
 struct deck {
 private:
@@ -572,6 +573,15 @@ public:
                 card_ptr->register_mcp_functions();
                 card_ptr->grab_focus = true;
                 
+                rouen::hosts::event_bus_host::instance().publish({
+                    .topic = "system:card_opened",
+                    .source_id = "deck",
+                    .payload = glz::json_t{
+                        {"uri", std::string(uri)},
+                        {"title", card_ptr->window_title}
+                    }
+                });
+                
                 if (move_first) {
                     // Move the card to the front of the vector
                     cards_.insert(cards_.begin(), card_ptr);
@@ -956,6 +966,7 @@ public:
     };
 
     [[nodiscard]] render_status render() {
+        rouen::hosts::event_bus_host::instance().dispatch_pending_events();
         cards_to_cleanup_.clear();
         TextureHelper::cleanupFrame();
         // Dynamic window title merging: when there's only 1 card, merge its name with the OS frame window
@@ -1295,6 +1306,14 @@ public:
                     if (!render_result) {
                         // Unregister MCP functions and trigger close hook immediately when card fails to render
                         try {
+                            rouen::hosts::event_bus_host::instance().publish({
+                                .topic = "system:card_closed",
+                                .source_id = "deck",
+                                .payload = glz::json_t{
+                                    {"uri", c->get_uri()},
+                                    {"title", c->window_title}
+                                }
+                            });
                             c->unregister_mcp_functions();
                             c->on_close();
                         } catch (...) {
@@ -1355,6 +1374,14 @@ public:
                 }
                 if (!draw_ok) {
                     try {
+                        rouen::hosts::event_bus_host::instance().publish({
+                            .topic = "system:card_closed",
+                            .source_id = "deck",
+                            .payload = glz::json_t{
+                                {"uri", c->get_uri()},
+                                {"title", c->window_title}
+                            }
+                        });
                         c->unregister_mcp_functions();
                         c->on_close();
                     } catch (...) {

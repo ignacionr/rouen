@@ -746,6 +746,13 @@ namespace rouen::cards {
                 if (ImGui::Button("Start")) {
                     run_id_ = rouen::hosts::process_host::instance().start(*def);
                 }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(100);
+                ImGui::InputInt("##AttachPID", &attach_pid_input_, 0, 0);
+                ImGui::SameLine();
+                if (ImGui::Button("Attach to PID") && attach_pid_input_ > 0) {
+                    run_id_ = rouen::hosts::process_host::instance().attach(attach_pid_input_, def->name);
+                }
                 return;
             }
 
@@ -894,6 +901,7 @@ namespace rouen::cards {
         bool value_request_attempted_{false};
         char ui_manip_val_buf_[256]{};
         std::optional<rouen::helpers::ui_manipulation_result> ui_manip_result_;
+        int attach_pid_input_{0};
     };
 
 } // namespace rouen::cards

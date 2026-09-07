@@ -493,6 +493,7 @@ add_executable(${PROJECT_NAME}
   src/hosts/llm_host.cpp
   src/hosts/mcp_host.cpp
   src/hosts/api_server_host.cpp
+  src/hosts/event_bus_host.cpp
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
   src/hosts/process_host.cpp

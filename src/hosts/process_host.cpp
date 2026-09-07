@@ -1,4 +1,5 @@
 #include "process_host.hpp"
+#include "event_bus_host.hpp"
 #include "../models/productivity/process_definition.hpp"
 #include "../helpers/debug.hpp"
 
@@ -124,6 +125,7 @@ struct process_host::running_process {
 
     std::atomic<process_run_state> state{process_run_state::running};
     std::atomic<long> pid{0};
+    bool is_attached{false};
 
     mutable std::mutex data_mutex; // guards stderr_lines / stats / exit_code below
     std::vector<std::string> stderr_lines;
@@ -145,11 +147,8 @@ struct process_host::running_process {
 #endif
 
     ~running_process() {
-        // Rouen is the only supervisor of these runs; nothing persists the
-        // run_id/pid mapping across restarts, so a still-running child at
-        // shutdown would become unmanageable. Terminate it here rather than
-        // leaking an orphan.
-        if (state.load() == process_run_state::running) {
+        // Rouen is the supervisor of spawned runs, but attached processes belong to the user
+        if (state.load() == process_run_state::running && !is_attached) {
 #ifdef _WIN32
             if (job_handle) TerminateJobObject(job_handle, 1);
             else if (process_handle) TerminateProcess(process_handle, 1);
@@ -679,19 +678,39 @@ namespace {
                 exited = true;
             }
 #else
-            int status = 0;
-            pid_t res = waitpid(rp->os_pid, &status, WNOHANG);
-            if (res == rp->os_pid) {
-                code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-                exited = true;
+            if (rp->is_attached) {
+                if (kill(rp->os_pid, 0) == -1 && errno == ESRCH) {
+                    exited = true;
+                    code = 0;
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
             } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                int status = 0;
+                pid_t res = waitpid(rp->os_pid, &status, WNOHANG);
+                if (res == rp->os_pid) {
+                    code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+                    exited = true;
+                } else {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
             }
 #endif
             if (exited) {
                 std::lock_guard<std::mutex> lock(rp->data_mutex);
                 rp->exit_code = code;
                 rp->state.store(process_run_state::exited);
+                event_bus_host::instance().publish({
+                    .topic = (code == 0) ? "host:process:completed" : "host:process:exited",
+                    .source_id = "host:process",
+                    .payload = glz::json_t{
+                        {"run_id", rp->run_id},
+                        {"definition_id", rp->definition_id},
+                        {"definition_name", rp->definition_name},
+                        {"exit_code", code},
+                        {"pid", static_cast<long>(rp->pid.load())}
+                    }
+                });
                 break;
             }
 
@@ -735,6 +754,17 @@ std::string process_host::start(const process_definition& def) {
         PROCHOST_ERROR_FMT("Failed to start '{}' ({}): {}", def.name, def.executable_path, err);
     } else {
         PROCHOST_INFO_FMT("Started '{}' as run {} (pid {})", def.name, rp->run_id, rp->pid.load());
+        event_bus_host::instance().publish({
+            .topic = "host:process:started",
+            .source_id = "host:process",
+            .payload = glz::json_t{
+                {"run_id", rp->run_id},
+                {"definition_id", rp->definition_id},
+                {"definition_name", rp->definition_name},
+                {"pid", static_cast<long>(rp->pid.load())},
+                {"is_attached", false}
+            }
+        });
         rp->stderr_thread = std::thread(stderr_reader_loop, rp);
         rp->watcher_thread = std::thread(watcher_loop, rp);
     }
@@ -744,6 +774,42 @@ std::string process_host::start(const process_definition& def) {
         std::lock_guard<std::mutex> lock(mutex_);
         runs_[run_id] = rp;
         latest_run_by_definition_[def.id] = run_id;
+    }
+    return run_id;
+}
+
+std::string process_host::attach(long pid, std::string_view name) {
+    if (pid <= 0) return "";
+
+    auto rp = std::make_shared<running_process>();
+    rp->run_id = std::format("attached-run-{}", pid);
+    rp->definition_id = 0;
+    rp->definition_name = name.empty() ? std::format("Attached (PID {})", pid) : std::string(name);
+    rp->is_attached = true;
+    rp->pid.store(pid);
+#ifdef _WIN32
+    rp->process_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, static_cast<DWORD>(pid));
+#else
+    rp->os_pid = static_cast<pid_t>(pid);
+#endif
+    rp->state.store(process_run_state::running);
+    event_bus_host::instance().publish({
+        .topic = "host:process:started",
+        .source_id = "host:process",
+        .payload = glz::json_t{
+            {"run_id", rp->run_id},
+            {"definition_id", rp->definition_id},
+            {"definition_name", rp->definition_name},
+            {"pid", static_cast<long>(rp->pid.load())},
+            {"is_attached", true}
+        }
+    });
+    rp->watcher_thread = std::thread(watcher_loop, rp);
+
+    std::string run_id = rp->run_id;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        runs_[run_id] = rp;
     }
     return run_id;
 }
@@ -777,6 +843,7 @@ std::optional<process_run_snapshot> process_host::snapshot(const std::string& ru
     result.definition_name = rp->definition_name;
     result.state = rp->state.load();
     result.pid = rp->pid.load();
+    result.is_attached = rp->is_attached;
     result.start_error = rp->start_error;
 
     std::lock_guard<std::mutex> lock(rp->data_mutex);
