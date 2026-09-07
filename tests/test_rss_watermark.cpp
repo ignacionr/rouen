@@ -41,6 +41,7 @@ public:
 #include "../src/helpers/platform_utils.hpp"
 #include "../src/helpers/media_player.hpp"
 #include "../src/helpers/media_player_item.hpp"
+#include "../src/cards/interface/deck.hpp"
 #include "../src/hosts/rss_host.hpp"
 
 // Global/static pointer to keep the host alive to prevent background thread cleanup crashes
@@ -51,6 +52,7 @@ protected:
     std::filesystem::path temp_home;
     
     void SetUp() override {
+        deck::no_initial_cards = true;
         temp_home = RSSWatermarkEnvironment::setup_temp_home();
         
         // Register mock notify service globally for the test duration
@@ -349,7 +351,8 @@ TEST_F(RSSWatermarkTest, ResetWatermarkToZeroOnNaturalExit) {
 
     // Verify in-memory of Episode 1 is updated to 0.0
     bool in_memory_updated = false;
-    for (auto& feed_item : target_feed->items) {
+    auto updated_feed = host->feeds()[0];
+    for (auto& feed_item : updated_feed->items) {
         if (feed_item.title == "Episode 1") {
             if (feed_item.watermark.has_value()) {
                 EXPECT_DOUBLE_EQ(*feed_item.watermark, 0.0);

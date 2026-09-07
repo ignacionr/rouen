@@ -14,6 +14,9 @@ class tag_manager {
 public:
     static tag_manager& get();
 
+    // Re-initialize database at custom path (useful for isolated unit testing)
+    void set_database_path(const std::string& db_path);
+
     // Associate a tag with a URI (and optional display title)
     void add_tag(const std::string& uri, const std::string& tag, const std::string& title = "");
 
@@ -51,6 +54,8 @@ public:
     int delete_unused_tags();
 
 private:
+    void init_db();
+
     tag_manager();
     ~tag_manager() = default;
 

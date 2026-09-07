@@ -46,6 +46,9 @@ include_directories(../src/models)
 include_directories(../src/cards)
 include_directories(../external)
 include_directories(../external/imguicolortextedit)
+include_directories(../external/imgui)
+include_directories(../external/imgui/backends)
+include_directories(../plugin-sdk)
 include_directories(${SDL3_INCLUDE_DIRS})
 include_directories(${SDL3_IMAGE_INCLUDE_DIRS})
 if(imgui_SOURCE_DIR)
@@ -72,9 +75,13 @@ function(add_gtest_executable test_name source_file)
     )
     # Add test to CTest
     add_test(NAME ${test_name} COMMAND ${test_name})
+    if(APPLE)
+        set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "DYLD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/rouen.app/Contents/MacOS:${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
     # Set properties for better output
     set_target_properties(${test_name} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        BUILD_RPATH "${CMAKE_BINARY_DIR}/rouen.app/Contents/MacOS;${CMAKE_CURRENT_BINARY_DIR}"
     )
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR MSVC)
         target_add_strict_warnings(${test_name})
@@ -211,6 +218,7 @@ add_gtest_rss_executable(test_rt_media test_rt_media.cpp)
 # RSS Watermark Test
 add_gtest_rss_executable(test_rss_watermark test_rss_watermark.cpp)
 target_sources(test_rss_watermark PRIVATE 
+    ../src/hosts/event_bus_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
@@ -246,6 +254,7 @@ add_test(NAME RSSWatermarkTest COMMAND test_rss_watermark)
 # RSS Diagnostics Test
 add_gtest_rss_executable(test_rss_diagnostics test_rss_diagnostics.cpp)
 target_sources(test_rss_diagnostics PRIVATE 
+    ../src/hosts/event_bus_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
@@ -281,6 +290,7 @@ add_test(NAME RSSDiagnosticsTest COMMAND test_rss_diagnostics)
 # Audio Time Progression Test
 add_gtest_rss_executable(test_audio_time_progression test_audio_time_progression.cpp)
 target_sources(test_audio_time_progression PRIVATE 
+    ../src/hosts/event_bus_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
@@ -324,12 +334,75 @@ add_test(NAME ObjectivesTest COMMAND test_objectives)
 # Deck Scrolling Test
 add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
 target_sources(test_deck_scrolling PRIVATE
+    ../src/hosts/event_bus_host.cpp
     ../src/cards/interface/card.cpp
     ../src/helpers/config_service.cpp
     ../src/helpers/theme_manager.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/hosts/process_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/git_sync_host.cpp
+    ../src/hosts/universal_sync_host.cpp
+    ../src/hosts/plugin_host.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/ytdlp_service.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/tag_manager.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/piped_process.cpp
+    ../src/models/git_scanner.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/mail/metadata_serialization.cpp
+    ../src/models/rss/feed_item.cpp
+    ../src/models/rss/rss_date_parser.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
+    ../src/models/rss/rss_url_resolver.cpp
+    ../src/fonts.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/development/github_registrar.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/information/bybit_registrar.cpp
+    ../src/cards/information/movies_registrar.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_commands.cpp
+    ../src/hosts/mcp_host.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/dynamic_library.cpp
+    ../src/helpers/card_decorations.cpp
+    ../src/helpers/capture_helper.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
 )
-target_link_libraries(test_deck_scrolling PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
-set_target_properties(test_deck_scrolling PROPERTIES EXCLUDE_FROM_ALL TRUE)
+if(APPLE)
+    target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
+    target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
+endif()
+target_link_libraries(test_deck_scrolling PRIVATE pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
 add_test(NAME DeckScrollingTest COMMAND test_deck_scrolling)
 
 # Camera Device List Test
@@ -379,6 +452,7 @@ add_gtest_http_executable(test_gemini_adapter test_gemini_adapter.cpp)
 # MCP Test
 add_executable(test_mcp 
     test_mcp.cpp 
+    ../src/hosts/event_bus_host.cpp
     ../src/hosts/mcp_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/git_sync_host.cpp
@@ -533,6 +607,13 @@ add_executable(test_example_math
     test_example_math.cpp
 )
 add_test(NAME ExampleMathTest COMMAND test_example_math)
+
+# Event Bus infrastructure unit test
+add_executable(test_event_bus
+    test_event_bus.cpp
+    ${CMAKE_SOURCE_DIR}/src/hosts/event_bus_host.cpp
+)
+add_test(NAME EventBusTest COMMAND test_event_bus)
 
 add_executable(test_notes_repository_legacy
     test_notes_repository_legacy.cpp

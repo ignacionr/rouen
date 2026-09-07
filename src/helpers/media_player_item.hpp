@@ -83,7 +83,7 @@ struct media_player_item : public std::enable_shared_from_this<media_player_item
     std::atomic<float> current_luminance{0.0f};
     std::atomic<float> current_audio_peak_l{0.0f};
     std::atomic<float> current_audio_peak_r{0.0f};
-    std::atomic<bool> has_presented_first_frame{false};
+    mutable std::atomic<bool> has_presented_first_frame{false};
     std::atomic<bool> is_adlib_item{false};
     std::vector<uint8_t> get_current_adlib_frame_pixels() const;
     std::atomic<double> initial_pts_offset{0.0};

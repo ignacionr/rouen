@@ -33,7 +33,7 @@ public:
         auto& typeMap = getTypeMap<T>();
         auto it = typeMap.find(key);
         if (it == typeMap.end()) {
-            throw std::runtime_error("Service not found for the given key");
+            throw std::runtime_error("Service not found for key: " + key + " (" + typeid(T).name() + ")");
         }
         return it->second;
     }

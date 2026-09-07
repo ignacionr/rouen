@@ -9,6 +9,7 @@
 #if defined(__APPLE__)
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <libproc.h>
 #elif defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -21,6 +22,77 @@
 namespace rouen::helpers {
 
 #if defined(__APPLE__)
+
+static std::string get_process_executable_path(pid_t pid) {
+    char pathbuf[PROC_PIDPATHINFO_MAXSIZE];
+    int res = proc_pidpath(pid, pathbuf, sizeof(pathbuf));
+    if (res > 0) {
+        return std::string(pathbuf);
+    }
+    return "";
+}
+
+static std::string get_app_bundle_dir(const std::string& exec_path) {
+    size_t app_pos = exec_path.find(".app/");
+    if (app_pos != std::string::npos) {
+        return exec_path.substr(0, app_pos + 5);
+    }
+    return "";
+}
+
+static void collect_child_pids_recursive(pid_t parent_pid, std::vector<pid_t>& out_pids, int max_depth = 4) {
+    if (max_depth <= 0) return;
+    int num_children = proc_listchildpids(parent_pid, nullptr, 0);
+    if (num_children <= 0) return;
+
+    std::vector<pid_t> children(static_cast<size_t>(num_children));
+    int bytes_returned = proc_listchildpids(parent_pid, children.data(), static_cast<int>(children.size() * sizeof(pid_t)));
+    if (bytes_returned <= 0) return;
+
+    size_t count = static_cast<size_t>(bytes_returned) / sizeof(pid_t);
+    for (size_t i = 0; i < count; ++i) {
+        pid_t child_pid = children[i];
+        if (child_pid <= 0) continue;
+        if (std::find(out_pids.begin(), out_pids.end(), child_pid) == out_pids.end()) {
+            out_pids.push_back(child_pid);
+            collect_child_pids_recursive(child_pid, out_pids, max_depth - 1);
+        }
+    }
+}
+
+static std::vector<pid_t> get_related_pids(pid_t parent_pid) {
+    std::vector<pid_t> related;
+
+    // 1. Recursive child PIDs
+    collect_child_pids_recursive(parent_pid, related, 4);
+
+    // 2. Bundle PIDs (other processes running inside the same .app bundle directory)
+    std::string main_path = get_process_executable_path(parent_pid);
+    std::string bundle_dir = get_app_bundle_dir(main_path);
+
+    if (!bundle_dir.empty()) {
+        int num_pids = proc_listpids(PROC_ALL_PIDS, 0, nullptr, 0);
+        if (num_pids > 0) {
+            std::vector<pid_t> all_pids(static_cast<size_t>(num_pids));
+            int bytes = proc_listpids(PROC_ALL_PIDS, 0, all_pids.data(), static_cast<int>(all_pids.size() * sizeof(pid_t)));
+            if (bytes > 0) {
+                size_t total = static_cast<size_t>(bytes) / sizeof(pid_t);
+                for (size_t i = 0; i < total; ++i) {
+                    pid_t p = all_pids[i];
+                    if (p <= 0 || p == parent_pid) continue;
+                    if (std::find(related.begin(), related.end(), p) != related.end()) continue;
+
+                    std::string p_path = get_process_executable_path(p);
+                    if (!p_path.empty() && p_path.starts_with(bundle_dir)) {
+                        related.push_back(p);
+                    }
+                }
+            }
+        }
+    }
+
+    return related;
+}
 
 static std::string cfstring_to_utf8(CFStringRef cfstr) {
     if (!cfstr) return "";
@@ -80,6 +152,42 @@ static std::string cftype_to_string(CFTypeRef val) {
         return std::format("[Array ({})]", count);
     }
     return "[CFType]";
+}
+
+static std::vector<AXUIElementRef> get_ax_child_elements(AXUIElementRef element, bool is_app) {
+    std::vector<AXUIElementRef> children;
+
+    auto add_children_from_attr = [&](CFStringRef attr_name) {
+        CFTypeRef type_ref = nullptr;
+        if (AXUIElementCopyAttributeValue(element, attr_name, &type_ref) == kAXErrorSuccess && type_ref) {
+            if (CFGetTypeID(type_ref) == CFArrayGetTypeID()) {
+                CFArrayRef arr = static_cast<CFArrayRef>(type_ref);
+                CFIndex count = CFArrayGetCount(arr);
+                for (CFIndex i = 0; i < count; ++i) {
+                    AXUIElementRef child = static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i)));
+                    bool exists = false;
+                    for (AXUIElementRef existing : children) {
+                        if (CFEqual(existing, child)) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        CFRetain(child);
+                        children.push_back(child);
+                    }
+                }
+            }
+            CFRelease(type_ref);
+        }
+    };
+
+    add_children_from_attr(kAXChildrenAttribute);
+    if (is_app) {
+        add_children_from_attr(kAXWindowsAttribute);
+    }
+
+    return children;
 }
 
 static void populate_ax_element(AXUIElementRef element, ui_element_node& node, int depth, int max_depth, int max_children, size_t& total_count) {
@@ -217,20 +325,16 @@ static void populate_ax_element(AXUIElementRef element, ui_element_node& node, i
 
     // Children
     if (depth < max_depth) {
-        CFTypeRef children_type_ref = nullptr;
-        if (AXUIElementCopyAttributeValue(element, kAXChildrenAttribute, &children_type_ref) == kAXErrorSuccess && children_type_ref) {
-            if (CFGetTypeID(children_type_ref) == CFArrayGetTypeID()) {
-                CFArrayRef children_ref = static_cast<CFArrayRef>(children_type_ref);
-                CFIndex child_count = CFArrayGetCount(children_ref);
-                CFIndex limit = (std::min)(child_count, static_cast<CFIndex>(max_children));
-                for (CFIndex i = 0; i < limit; ++i) {
-                    AXUIElementRef child_elem = static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(children_ref, i)));
-                    ui_element_node child_node;
-                    populate_ax_element(child_elem, child_node, depth + 1, max_depth, max_children, total_count);
-                    node.children.push_back(std::move(child_node));
-                }
+        bool is_app = (depth == 0) || (node.role == "Application");
+        std::vector<AXUIElementRef> children = get_ax_child_elements(element, is_app);
+        size_t limit = (std::min)(children.size(), static_cast<size_t>(max_children));
+        for (size_t i = 0; i < children.size(); ++i) {
+            if (i < limit) {
+                ui_element_node child_node;
+                populate_ax_element(children[i], child_node, depth + 1, max_depth, max_children, total_count);
+                node.children.push_back(std::move(child_node));
             }
-            CFRelease(children_type_ref);
+            CFRelease(children[i]);
         }
     }
 }
@@ -495,10 +599,57 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
         return result;
     }
 
+    // Enable accessibility engine in Electron/Chromium applications
+    AXUIElementSetAttributeValue(app_ref, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
+    AXUIElementSetAttributeValue(app_ref, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+
     result.root.role = "Application";
     result.root.name = std::format("Process ({})", pid);
     populate_ax_element(app_ref, result.root, 0, max_depth, max_children_per_node, result.total_node_count);
     CFRelease(app_ref);
+
+    // If main process exposed no window elements (common for multi-process apps like Teams, Chrome, Slack),
+    // automatically search child helper processes for windows
+    bool has_windows = false;
+    for (const auto& child : result.root.children) {
+        if (child.role == "Window") {
+            has_windows = true;
+            break;
+        }
+    }
+
+    if (!has_windows) {
+        std::vector<pid_t> related_pids = get_related_pids(static_cast<pid_t>(pid));
+        for (pid_t rel_pid : related_pids) {
+            AXUIElementRef rel_app_ref = AXUIElementCreateApplication(rel_pid);
+            if (!rel_app_ref) continue;
+
+            AXUIElementSetAttributeValue(rel_app_ref, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
+            AXUIElementSetAttributeValue(rel_app_ref, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+
+            std::vector<AXUIElementRef> ax_windows = get_ax_child_elements(rel_app_ref, true);
+            for (size_t i = 0; i < ax_windows.size(); ++i) {
+                CFTypeRef role_ref = nullptr;
+                std::string role_str;
+                if (AXUIElementCopyAttributeValue(ax_windows[i], kAXRoleAttribute, &role_ref) == kAXErrorSuccess && role_ref) {
+                    role_str = cftype_to_string(role_ref);
+                    if (role_str.starts_with("AX")) role_str = role_str.substr(2);
+                    CFRelease(role_ref);
+                }
+
+                if (role_str != "MenuBar" && role_str != "Unknown") {
+                    ui_element_node window_node;
+                    populate_ax_element(ax_windows[i], window_node, 1, max_depth, max_children_per_node, result.total_node_count);
+                    result.root.children.push_back(std::move(window_node));
+                    has_windows = true;
+                }
+                CFRelease(ax_windows[i]);
+            }
+
+            CFRelease(rel_app_ref);
+        }
+    }
+
     result.success = true;
 
 #elif defined(_WIN32)
@@ -796,24 +947,29 @@ static AXUIElementRef find_ax_element_recursive(AXUIElementRef parent, std::stri
         return parent;
     }
 
-    CFTypeRef children_ref = nullptr;
-    if (AXUIElementCopyAttributeValue(parent, kAXChildrenAttribute, &children_ref) == kAXErrorSuccess && children_ref) {
-        if (CFGetTypeID(children_ref) == CFArrayGetTypeID()) {
-            CFArrayRef arr = static_cast<CFArrayRef>(children_ref);
-            CFIndex count = CFArrayGetCount(arr);
-            for (CFIndex i = 0; i < count; ++i) {
-                AXUIElementRef child = static_cast<AXUIElementRef>(const_cast<void*>(CFArrayGetValueAtIndex(arr, i)));
-                AXUIElementRef found = find_ax_element_recursive(child, query, depth + 1, max_depth, out_id, out_name, out_role);
-                if (found) {
-                    CFRelease(children_ref);
-                    return found;
+    bool is_app = (depth == 0);
+    if (!is_app) {
+        CFTypeRef role_ref = nullptr;
+        if (AXUIElementCopyAttributeValue(parent, kAXRoleAttribute, &role_ref) == kAXErrorSuccess && role_ref) {
+            if (CFGetTypeID(role_ref) == CFStringGetTypeID()) {
+                if (CFStringCompare(static_cast<CFStringRef>(role_ref), CFSTR("AXApplication"), 0) == kCFCompareEqualTo) {
+                    is_app = true;
                 }
             }
+            CFRelease(role_ref);
         }
-        CFRelease(children_ref);
     }
 
-    return nullptr;
+    AXUIElementRef found_elem = nullptr;
+    std::vector<AXUIElementRef> children = get_ax_child_elements(parent, is_app);
+    for (AXUIElementRef child : children) {
+        if (!found_elem) {
+            found_elem = find_ax_element_recursive(child, query, depth + 1, max_depth, out_id, out_name, out_role);
+        }
+        CFRelease(child);
+    }
+
+    return found_elem;
 }
 
 #endif
@@ -842,8 +998,29 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
         return result;
     }
 
+    // Enable accessibility engine in Electron/Chromium applications
+    AXUIElementSetAttributeValue(app_ref, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
+    AXUIElementSetAttributeValue(app_ref, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+
     std::string matched_id, matched_name, matched_role;
     AXUIElementRef target_elem = find_ax_element_recursive(app_ref, identifier_name_or_path, 0, 8, matched_id, matched_name, matched_role);
+
+    // If not found in main process, search related helper processes
+    if (!target_elem) {
+        std::vector<pid_t> related_pids = get_related_pids(static_cast<pid_t>(pid));
+        for (pid_t rel_pid : related_pids) {
+            AXUIElementRef rel_app_ref = AXUIElementCreateApplication(rel_pid);
+            if (!rel_app_ref) continue;
+
+            AXUIElementSetAttributeValue(rel_app_ref, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
+            AXUIElementSetAttributeValue(rel_app_ref, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
+
+            target_elem = find_ax_element_recursive(rel_app_ref, identifier_name_or_path, 0, 8, matched_id, matched_name, matched_role);
+            CFRelease(rel_app_ref);
+            if (target_elem) break;
+        }
+    }
+
     CFRelease(app_ref);
 
     if (!target_elem) {

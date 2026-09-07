@@ -9,6 +9,8 @@
 #include <string>
 
 #include "../src/models/rss/sqliterepo.hpp"
+#include "../src/helpers/tag_manager.hpp"
+#include "../src/helpers/platform_utils.hpp"
 
 class RSSTagTest : public ::testing::Test {
 protected:
@@ -17,10 +19,14 @@ protected:
     void SetUp() override {
         test_db_path = (std::filesystem::temp_directory_path() / "test_rss_tags.db").string();
         std::filesystem::remove(test_db_path);
+        rouen::helpers::tag_manager::get().set_database_path(test_db_path);
     }
 
     void TearDown() override {
         std::filesystem::remove(test_db_path);
+        rouen::helpers::tag_manager::get().set_database_path(
+            rouen::platform::get_user_data_path("tags.db").string()
+        );
     }
 };
 

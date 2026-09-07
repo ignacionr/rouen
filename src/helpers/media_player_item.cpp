@@ -524,7 +524,15 @@ double media_player_item::get_current_position() const {
 
     if (!is_playing) return position.load();
     if (is_paused.load()) return position.load();
-    if (!has_presented_first_frame.load()) return std::max(start_offset.load(), position.load());
+    
+    // For audio-only content, mark first frame presented once audio PTS is initialized
+    if (!has_presented_first_frame.load()) {
+        if (!has_video.load() && first_audio_pts.load() >= 0.0) {
+            has_presented_first_frame.store(true);
+        } else {
+            return std::max(start_offset.load(), position.load());
+        }
+    }
 
     auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - playback_start_time).count();
     double live_pos = start_offset.load() + elapsed;
@@ -534,7 +542,8 @@ double media_player_item::get_current_position() const {
         if (audio_active && first_audio_pts.load() >= 0.0 && audio_clock_initialized.load()) {
             double const speaker_pts = get_speaker_audio_pts();
             double const audio_pos = start_offset.load() + (speaker_pts - first_audio_pts.load());
-            if (audio_pos > live_pos - 2.0 && audio_pos < live_pos + 2.0 && audio_pos >= start_offset.load()) {
+            // Only use speaker audio PTS if it is actively advancing alongside steady_clock
+            if (speaker_pts > first_audio_pts.load() && audio_pos > live_pos - 2.0 && audio_pos < live_pos + 2.0 && audio_pos >= start_offset.load()) {
                 live_pos = audio_pos;
             }
         }
@@ -1102,6 +1111,9 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 if (first_audio_pts.load() < 0.0 && pts_time >= 0.0) {
                                     first_audio_pts.store(pts_time);
                                     playback_start_time = std::chrono::steady_clock::now();
+                                    if (!has_video.load()) {
+                                        has_presented_first_frame.store(true);
+                                    }
                                 }
                                 last_audio_pts.store(pts_time);
 
@@ -1405,6 +1417,10 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         }
                         if (first_audio_pts.load() < 0.0 && pts_time >= 0.0) {
                             first_audio_pts.store(pts_time);
+                            playback_start_time = std::chrono::steady_clock::now();
+                            if (!has_video.load()) {
+                                has_presented_first_frame.store(true);
+                            }
                         }
 
                         const uint8_t* input_data[8];

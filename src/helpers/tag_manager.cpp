@@ -9,9 +9,20 @@ tag_manager& tag_manager::get() {
     return instance;
 }
 
-tag_manager::tag_manager() {
-    std::string db_path = rouen::platform::get_user_data_path("tags.db").string();
+void tag_manager::set_database_path(const std::string& db_path) {
+    std::lock_guard<std::mutex> const lock(mutex_);
     db_ = std::make_unique<hosting::db::sqlite>(db_path);
+    init_db();
+}
+
+tag_manager::tag_manager() {
+    std::string const db_path = rouen::platform::get_user_data_path("tags.db").string();
+    db_ = std::make_unique<hosting::db::sqlite>(db_path);
+    init_db();
+}
+
+void tag_manager::init_db() {
+    if (!db_) return;
 
     // Table 1: uri_tag - associates URIs with tags
     db_->ensure_table("uri_tag", 

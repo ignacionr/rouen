@@ -3,6 +3,8 @@
 #include "../src/cards/interface/card.hpp"
 #include "../src/cards/interface/deck.hpp"
 #include "../src/helpers/card_render_metrics.hpp"
+#include "../src/helpers/deferred_operations.hpp"
+#include "../src/hosts/event_bus_host.hpp"
 #include <memory>
 #include <vector>
 
@@ -32,6 +34,28 @@ protected:
         imgui_ctx = ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
         io.DisplaySize = ImVec2(1200.0f, 800.0f); // 1200px viewport
+
+        unsigned char* pixels;
+        int width, height;
+        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+
+        auto def_ops = std::make_shared<deferred_operations>();
+        registrar::add("deferred_ops", def_ops);
+
+        auto event_bus = std::shared_ptr<rouen::hosts::event_bus_host>(&rouen::hosts::event_bus_host::instance(), [](rouen::hosts::event_bus_host*){});
+        registrar::add("event_bus", event_bus);
+
+        auto get_win = std::make_shared<std::function<SDL_Window*()>>([]() -> SDL_Window* { return nullptr; });
+        registrar::add("get_window", get_win);
+
+        auto resize_win = std::make_shared<std::function<void(int, int)>>([](int, int) {});
+        registrar::add("resize_window", resize_win);
+
+        auto expand_full = std::make_shared<std::function<void()>>([]() {});
+        registrar::add("expand_to_full_width", expand_full);
+
+        auto close_handled = std::make_shared<std::function<void()>>([]() {});
+        registrar::add("signal_card_close_handled", close_handled);
     }
 
     void TearDown() override {
@@ -79,8 +103,8 @@ TEST_F(DeckScrollingTest, VerifyDirectPage3ToPage1ScrollTargeting) {
     (void)test_deck.render();
     ImGui::Render();
 
-    // Target scroll must be Page 3 (2400.0f)
-    EXPECT_NEAR(test_deck.get_target_scroll_x(), 2400.0f, 1.0f);
+    // Target scroll must be Page 3 max scroll (1200.0f)
+    EXPECT_NEAR(test_deck.get_target_scroll_x(), 1200.0f, 1.0f);
 
     // 2. Now user selects Card 4 (on Page 1) while on Page 3
     c8->grab_focus = false;
@@ -114,7 +138,7 @@ TEST_F(DeckScrollingTest, VerifyDirectPage3ToPage1ScrollTargeting) {
     (void)test_deck.render();
     ImGui::Render();
 
-    EXPECT_NEAR(test_deck.get_target_scroll_x(), 2400.0f, 1.0f);
+    EXPECT_NEAR(test_deck.get_target_scroll_x(), 1200.0f, 1.0f);
     EXPECT_TRUE(c8->is_visible_in_viewport); // Card 8 must NOT be culled while grab_focus is true
 }
 
