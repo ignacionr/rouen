@@ -611,7 +611,7 @@ add_test(NAME ExampleMathTest COMMAND test_example_math)
 # Event Bus infrastructure unit test
 add_executable(test_event_bus
     test_event_bus.cpp
-    ${CMAKE_SOURCE_DIR}/src/hosts/event_bus_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/event_bus_host.cpp
 )
 add_test(NAME EventBusTest COMMAND test_event_bus)
 
