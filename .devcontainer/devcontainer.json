@@ -1,0 +1,39 @@
+{
+  "name": "Rouen (Nix-first)",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false,
+      "username": "vscode"
+    },
+    "ghcr.io/devcontainers/features/nix:1": {
+      "multiUser": true
+    }
+  },
+  "mounts": [
+    "type=volume,source=rouen-nix-store,target=/nix"
+  ],
+  "containerEnv": {
+    "CMAKE_BUILD_PARALLEL_LEVEL": "2",
+    "MAKEFLAGS": "-j2",
+    "NIX_BUILD_CORES": "2"
+  },
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.makefile-tools",
+        "xaver.clang-format"
+      ],
+      "settings": {
+        "cmake.generator": "Ninja",
+        "cmake.configureOnOpen": false,
+        "cmake.buildBeforeRun": false,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
