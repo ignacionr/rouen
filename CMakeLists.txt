@@ -43,7 +43,7 @@ endif()
 project(rouen VERSION 1.0 LANGUAGES C CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
 endif()
 
 # Debug-specific settings
@@ -484,6 +484,23 @@ set(USE_BUNDLED OFF CACHE BOOL "" FORCE)
 set(USE_UNBUNDLED_FALLBACK_BUNDLED ON CACHE BOOL "" FORCE)
 set(PDFHUMMUS_NO_TIFF ON CACHE BOOL "" FORCE)
 add_subdirectory(external/PDFWriter EXCLUDE_FROM_ALL)
+
+# The vendored PDFWriter tree emits a large amount of third-party warning output
+# under debug/non-optimized builds. Keep strict warnings for Rouen's code, but
+# suppress them for the vendor dependency itself.
+function(suppress_third_party_warnings)
+  foreach(_target IN ITEMS PDFWriter Zlib FreeType LibAesgm LibJpeg LibPng LibTiff)
+    if(TARGET ${_target})
+      if(MSVC)
+        target_compile_options(${_target} PRIVATE /W0)
+      else()
+        target_compile_options(${_target} PRIVATE -w)
+      endif()
+    endif()
+  endforeach()
+endfunction()
+
+suppress_third_party_warnings()
 
 # Include modular cmake configuration files
 include(cmake/warnings.cmake)

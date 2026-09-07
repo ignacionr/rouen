@@ -15,6 +15,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   
   # Disable inlining in debug mode for better debugging experience
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-inline")
+
+  # glibc Fortify is meant for optimized builds; in Debug with -O0 it emits a warning on every header.
+  # Disable it explicitly so plain Debug builds remain quiet while preserving fast optimized defaults elsewhere.
+  set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0")
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0")
   
   # Set debugging helper macros - but avoid _GLIBCXX_DEBUG which conflicts with Glaze constexpr evaluation
   add_compile_definitions(
@@ -22,7 +27,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   )
   
   # Note: _GLIBCXX_DEBUG=1 disabled to avoid constexpr conflicts with Glaze library
-  message(STATUS "Linux debug mode configured with enhanced symbols (without _GLIBCXX_DEBUG)")
+  message(STATUS "Linux debug mode configured with enhanced symbols and Fortify disabled for -O0 builds")
 endif()
 
 # Link with additional Linux libraries
