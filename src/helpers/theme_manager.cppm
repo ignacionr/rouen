@@ -6,11 +6,9 @@ module;
 #include <string>
 #include <vector>
 #include <memory>
-#include "imgui_include.hpp"
+struct card;
 
 export module rouen.helpers.theme_manager;
-
-struct card;
 
 export namespace rouen::theme {
 
