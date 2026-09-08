@@ -1,6 +1,5 @@
 module;
 
-#include <concepts>
 #include "platform_utils.hpp"
 #include "sqlite.hpp"
 #include <sqlite3.h>

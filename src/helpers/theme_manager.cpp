@@ -1,7 +1,5 @@
 module;
 
-#include <concepts>
-#include <utility>
 #include "../cards/interface/card.hpp"
 #include "platform_utils.hpp"
 #include "glaze_include.hpp"
