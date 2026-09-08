@@ -29,11 +29,21 @@
 #include <string.h>
 #include <inttypes.h>
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define likely(x)       (x)
+#define unlikely(x)     (x)
+#define force_inline    __forceinline
+#define no_inline       __declspec(noinline)
+#define __maybe_unused
+#define __attribute__(x)
+#else
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define force_inline inline __attribute__((always_inline))
 #define no_inline __attribute__((noinline))
 #define __maybe_unused __attribute__((unused))
+#endif
 
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
@@ -125,6 +135,57 @@ static inline int64_t min_int64(int64_t a, int64_t b)
         return b;
 }
 
+#if defined(_MSC_VER)
+/* WARNING: undefined if a = 0 */
+static inline int clz32(unsigned int a)
+{
+    unsigned long idx;
+    if (_BitScanReverse(&idx, a))
+        return 31 - (int)idx;
+    return 32;
+}
+
+/* WARNING: undefined if a = 0 */
+static inline int clz64(uint64_t a)
+{
+    unsigned long idx;
+    if (_BitScanReverse64(&idx, a))
+        return 63 - (int)idx;
+    return 64;
+}
+
+/* WARNING: undefined if a = 0 */
+static inline int ctz32(unsigned int a)
+{
+    unsigned long idx;
+    if (_BitScanForward(&idx, a))
+        return (int)idx;
+    return 32;
+}
+
+/* WARNING: undefined if a = 0 */
+static inline int ctz64(uint64_t a)
+{
+    unsigned long idx;
+    if (_BitScanForward64(&idx, a))
+        return (int)idx;
+    return 64;
+}
+
+#pragma pack(push, 1)
+struct packed_u64 {
+    uint64_t v;
+};
+
+struct packed_u32 {
+    uint32_t v;
+};
+
+struct packed_u16 {
+    uint16_t v;
+};
+#pragma pack(pop)
+#else
 /* WARNING: undefined if a = 0 */
 static inline int clz32(unsigned int a)
 {
@@ -160,6 +221,7 @@ struct __attribute__((packed)) packed_u32 {
 struct __attribute__((packed)) packed_u16 {
     uint16_t v;
 };
+#endif
 
 static inline uint64_t get_u64(const uint8_t *tab)
 {
