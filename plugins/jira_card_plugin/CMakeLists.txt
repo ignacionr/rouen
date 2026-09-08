@@ -69,6 +69,7 @@ target_include_directories(jira_card_plugin PRIVATE
 )
 
 target_link_libraries(jira_card_plugin PRIVATE
+  rouen_modules
   imgui
   CURL::libcurl
 )

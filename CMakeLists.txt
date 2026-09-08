@@ -511,6 +511,42 @@ if(APPLE)
   set_source_files_properties(src/helpers/mac_menu_helper.mm src/helpers/mac_mic_permissions.mm src/helpers/app_icon.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 endif()
 
+# C++20 Modules Library Target for Rouen & Plugins
+add_library(rouen_modules STATIC)
+
+target_sources(rouen_modules
+  PUBLIC
+  FILE_SET CXX_MODULES FILES
+    src/models/rss/rss_date_parser.cppm
+    src/models/rss/rss_url_resolver.cppm
+    src/models/rss/feed_item.cppm
+    src/models/mail/metadata_serialization.cppm
+    src/helpers/config_service.cppm
+    src/helpers/tag_manager.cppm
+    src/helpers/theme_manager.cppm
+    src/helpers/dynamic_library.cppm
+)
+
+target_sources(rouen_modules
+  PRIVATE
+    src/models/rss/rss_date_parser.cpp
+    src/models/rss/rss_url_resolver.cpp
+    src/models/rss/feed_item.cpp
+    src/models/mail/metadata_serialization.cpp
+    src/helpers/config_service.cpp
+    src/helpers/tag_manager.cpp
+    src/helpers/theme_manager.cpp
+    src/helpers/dynamic_library.cpp
+)
+
+target_include_directories(rouen_modules PUBLIC
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/src/helpers
+  ${CMAKE_SOURCE_DIR}/src/hosts
+  ${CMAKE_SOURCE_DIR}/external
+  ${CMAKE_SOURCE_DIR}/plugin-sdk
+)
+
 # Add the executable
 add_executable(${PROJECT_NAME} 
   src/rouen.cpp
@@ -521,7 +557,6 @@ add_executable(${PROJECT_NAME}
   src/main_wnd_theme.cpp
   src/fonts.cpp
   src/helpers/capture_helper.cpp
-  src/helpers/config_service.cpp
   src/helpers/filetype_handler.cpp
   src/helpers/image_cache.cpp
   src/helpers/directory_watch.cpp
@@ -537,27 +572,11 @@ add_executable(${PROJECT_NAME}
 )
 
 target_sources(${PROJECT_NAME}
-  PUBLIC
-  FILE_SET CXX_MODULES FILES
-    src/models/rss/rss_date_parser.cppm
-    src/models/rss/rss_url_resolver.cppm
-    src/models/rss/feed_item.cppm
-    src/models/mail/metadata_serialization.cppm
-    src/helpers/config_service.cppm
-    src/helpers/tag_manager.cppm
-    src/helpers/theme_manager.cppm
-    src/helpers/dynamic_library.cppm
-)
-
-target_sources(${PROJECT_NAME}
   PRIVATE
-  src/helpers/dynamic_library.cpp
   src/helpers/piped_process.cpp
   src/helpers/media_player.cpp
   src/helpers/media_player_item.cpp
   src/helpers/ytdlp_service.cpp
-  src/helpers/theme_manager.cpp
-  src/helpers/tag_manager.cpp
   src/helpers/card_decorations.cpp
   src/helpers/vu_meter.cpp
   src/helpers/ui_automation_explorer.cpp
@@ -679,6 +698,7 @@ endif()
 if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
   # vcpkg dependencies with specific target names
   target_link_libraries(${PROJECT_NAME} PRIVATE 
+    rouen_modules
     imgui
     imcolortextedit
     glaze::glaze 
@@ -709,6 +729,7 @@ else()
   endif()
   
   target_link_libraries(${PROJECT_NAME} PRIVATE 
+    rouen_modules
     ${IMGUI_TARGET}
     imcolortextedit
     glaze::glaze 

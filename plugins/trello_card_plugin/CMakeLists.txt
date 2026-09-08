@@ -41,7 +41,7 @@ elseif(TARGET glaze)
 endif()
 
 find_package(CURL REQUIRED)
-target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE CURL::libcurl)
+target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE CURL::libcurl rouen_modules)
 
 if(TARGET imgui)
     target_link_libraries(${PLUGIN_TARGET_NAME} PRIVATE imgui)
