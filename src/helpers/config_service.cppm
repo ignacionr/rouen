@@ -11,8 +11,6 @@ module;
 #include <functional>
 #include <memory>
 #include <mutex>
-#include "platform_utils.hpp"
-#include "debug.hpp"
 
 export module rouen.helpers.config_service;
 
