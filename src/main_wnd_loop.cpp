@@ -1,4 +1,36 @@
-// 1. Standard includes in alphabetic order
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cfloat>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <exception>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <future>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gpu.h>
@@ -8,26 +40,8 @@
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_surface.h>
 #include <SDL3/SDL_video.h>
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <cfloat>
-#include <chrono>
-#include <cstdint>
-#include <exception>
-#include <filesystem>
-#include <format>
-#include <functional>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <iostream>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <set>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers
