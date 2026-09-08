@@ -1,11 +1,23 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
 #include <format>
-#include <iostream>
-#include <string_view>
-#include <sstream>
 #include <iomanip>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 // None in this file
