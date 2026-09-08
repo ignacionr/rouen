@@ -1,7 +1,9 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <format>
 #include <functional>

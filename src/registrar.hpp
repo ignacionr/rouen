@@ -1,6 +1,8 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <atomic>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <memory>
