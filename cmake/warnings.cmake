@@ -256,8 +256,6 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -fpermissive
     -Wno-subobject-linkage
     $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-template-names-tu-local>
-    $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-tu-local>
-    $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-error=tu-local>
   )
   
   # Add function for GCC too
@@ -274,8 +272,6 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       # This is a known GCC 14 regression; disable the warning to avoid build log spam.
       $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},14.0>:-Wno-null-dereference>
       $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-template-names-tu-local>
-      $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-tu-local>
-      $<$<VERSION_GREATER_EQUAL:${CMAKE_CXX_COMPILER_VERSION},15.0>:-Wno-error=tu-local>
       -Wno-subobject-linkage
       -Wno-pedantic
       -fpermissive
