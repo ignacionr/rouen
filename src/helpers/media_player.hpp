@@ -1,18 +1,19 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string_view>
+#include <vector>
+
 #include "media_player_item.hpp"
 #include "media_player_alarm.hpp"
 #include "mac_menu_helper.hpp"
 #include "./imgui_include.hpp"
 #include "../registrar.hpp"
 #include "../../external/IconsMaterialDesign.h"
-#include <algorithm>
-#include <cmath>
-#include <memory>
-#include <mutex>
-#include <vector>
-#include <optional>
-#include <string_view>
 
 #include "../cards/interface/card.hpp"
 

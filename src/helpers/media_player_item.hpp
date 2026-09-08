@@ -12,6 +12,7 @@ extern "C" {
 #include "sdl_compat.hpp"
 #include <algorithm>
 #include <string>
+#include <map>
 #include <atomic>
 #include <thread>
 #include <mutex>

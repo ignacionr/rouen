@@ -28,7 +28,6 @@ module;
 #elif defined(__linux__)
 #include <unistd.h>
 #include <climits>
-extern "C" char **environ;
 #elif defined(_WIN32)
 #include <windows.h>
 #include <stdlib.h>
