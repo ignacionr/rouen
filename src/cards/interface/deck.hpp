@@ -2,6 +2,8 @@
 
 // 1. Standard includes in alphabetic order
 #include <algorithm> // Added for std::find_if
+#include <array>
+#include <atomic>
 #include <chrono>    // Added for timestamp
 #include <cmath>     // Added for std::abs
 #include <filesystem>

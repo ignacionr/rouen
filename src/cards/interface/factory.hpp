@@ -1,8 +1,12 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>

@@ -20,10 +20,35 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 #endif
 
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <filesystem>
+#include <format>
+#include <functional>
+#include <future>
+#include <initializer_list>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <map>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 // Include Glaze headers
