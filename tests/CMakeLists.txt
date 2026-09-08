@@ -1,12 +1,17 @@
 # Tests CMake configuration for Rouen project
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.28)
 
 # Project declaration
 project(RouenTests LANGUAGES C CXX)
 
-# Set C++23 standard for tests
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if(APPLE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "15.4")
+  add_compile_options(-stdlib=libc++)
+  add_link_options(-stdlib=libc++)
+endif()
 
 # Enable testing
 enable_testing()
@@ -65,11 +70,51 @@ if(NOT COMMAND target_add_strict_warnings)
     include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/warnings.cmake)
 endif()
 
+# C++20 Modules Library Target for Tests
+add_library(rouen_test_modules STATIC)
+
+target_sources(rouen_test_modules
+  PUBLIC
+  FILE_SET CXX_MODULES
+  BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  FILES
+    ../src/models/rss/rss_date_parser.cppm
+    ../src/models/rss/rss_url_resolver.cppm
+    ../src/models/rss/feed_item.cppm
+    ../src/models/mail/metadata_serialization.cppm
+    ../src/helpers/config_service.cppm
+    ../src/helpers/tag_manager.cppm
+    ../src/helpers/theme_manager.cppm
+    ../src/helpers/dynamic_library.cppm
+)
+
+target_sources(rouen_test_modules
+  PRIVATE
+    ../src/models/rss/rss_date_parser.cpp
+    ../src/models/rss/rss_url_resolver.cpp
+    ../src/models/rss/feed_item.cpp
+    ../src/models/mail/metadata_serialization.cpp
+    ../src/helpers/config_service.cpp
+    ../src/helpers/tag_manager.cpp
+    ../src/helpers/theme_manager.cpp
+    ../src/helpers/dynamic_library.cpp
+)
+
+target_include_directories(rouen_test_modules PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/..
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts
+  ${CMAKE_CURRENT_SOURCE_DIR}/../external
+  ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
+)
+
 # Helper function to create GTest-based tests
 function(add_gtest_executable test_name source_file)
     add_executable(${test_name} ${source_file})
     target_link_libraries(${test_name} 
         PRIVATE 
+        rouen_test_modules
         GTest::gtest 
         GTest::gtest_main
         GTest::gmock
@@ -95,11 +140,6 @@ endfunction()
 function(add_gtest_http_executable test_name source_file)
     add_executable(${test_name} ${source_file})
     
-    # Add sources needed from the main project
-    target_sources(${test_name} PRIVATE
-        ../src/helpers/config_service.cpp
-    )
-
     # Include directories needed for the test
     target_include_directories(${test_name} PRIVATE
         ../src
@@ -112,6 +152,7 @@ function(add_gtest_http_executable test_name source_file)
     
     target_link_libraries(${test_name} 
         PRIVATE 
+        rouen_test_modules
         GTest::gtest 
         GTest::gtest_main
         GTest::gmock
@@ -133,13 +174,6 @@ endfunction()
 function(add_gtest_rss_executable test_name source_file)
     add_executable(${test_name} ${source_file})
     
-    # Add RSS-related sources needed from the main project
-    target_sources(${test_name} PRIVATE
-        ../src/models/rss/rss_date_parser.cpp
-        ../src/models/rss/feed_item.cpp
-        ../src/models/rss/rss_url_resolver.cpp
-    )
-
     # Include directories needed for the test
     target_include_directories(${test_name} PRIVATE
         ../src
@@ -147,6 +181,7 @@ function(add_gtest_rss_executable test_name source_file)
     
     target_link_libraries(${test_name} 
         PRIVATE 
+        rouen_test_modules
         GTest::gtest 
         GTest::gtest_main
         GTest::gmock
