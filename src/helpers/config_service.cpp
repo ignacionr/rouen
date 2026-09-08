@@ -1,5 +1,6 @@
 module;
 
+#include <concepts>
 #include "platform_utils.hpp"
 #include "process_helper.hpp"
 #include "debug.hpp"
