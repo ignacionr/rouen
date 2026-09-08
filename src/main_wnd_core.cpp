@@ -5,9 +5,13 @@
 #include <functional>
 #include <imgui.h>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "api_server_host.hpp"
 #include "imgui_impl_sdl3.h"
