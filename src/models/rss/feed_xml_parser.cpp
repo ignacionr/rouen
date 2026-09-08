@@ -1,8 +1,8 @@
+#include <string>
+#include <vector>
+#include <tinyxml2.h>
 #include "feed_xml_parser.hpp"
 #include "feed_item.hpp"
-#include <string>
-#include <tinyxml2.h>
-#include <vector>
 
 namespace media::rss {
     std::vector<feed_item> feed_xml_parser::parse(const std::string& contents) {
