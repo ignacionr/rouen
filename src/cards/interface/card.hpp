@@ -22,11 +22,8 @@
 
 // 3. All other includes
 #include "../../registrar.hpp"
-#include "../../helpers/ui_context.hpp"
 #include "../../helpers/card_decorations.hpp"
-namespace rouen::theme {
-    class theme_manager;
-}
+#include "../../helpers/ui_context.hpp"
 // Forward declarations to avoid circular dependencies
 namespace rouen::hosts {
     class mcp_host;
