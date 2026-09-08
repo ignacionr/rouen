@@ -7,13 +7,6 @@
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
-#include "api_server_host.hpp"
-#include "audio_capture.hpp"
-#include "mp4_writer.hpp"
-
-// 1. Standard includes in alphabetic order
-#include <SDL3/SDL_audio.h>
-#include <SDL3/SDL_video.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -24,10 +17,19 @@
 #include <format>
 #include <functional>
 #include <future>
-#include <glaze/core/reflect.hpp>
-#include <glaze/json/json_t.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+
+#include "../helpers/glaze_include.hpp"
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_video.h>
+
+#include "api_server_host.hpp"
+#include "audio_capture.hpp"
+#include "mp4_writer.hpp"
 #include <iostream>
 #include <memory>
 #include <mutex>

@@ -1,20 +1,18 @@
-// 1. Standard includes in alphabetic order
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <format>
 #include <functional>
-#include <glaze/core/common.hpp>
-#include <glaze/json/json_t.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
 #include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "../helpers/glaze_include.hpp"
 
 // 2. Libraries used in the project, in alphabetic order
 #include "config_service.hpp"

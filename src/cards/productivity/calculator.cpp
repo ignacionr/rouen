@@ -1,21 +1,21 @@
-#include "calculator.hpp"
-#include "cards/interface/card.hpp"
-
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <exception>
+#include <filesystem>
 #include <format>
-#include <glaze/json/json_t.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
-#include <imgui.h>
 #include <numbers>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "../../helpers/glaze_include.hpp"
+#include <imgui.h>
+
+#include "calculator.hpp"
+#include "cards/interface/card.hpp"
 
 namespace rouen::cards {
 

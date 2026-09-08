@@ -1,20 +1,18 @@
 module;
 
-#include "../cards/interface/card.hpp"
-#include "platform_utils.hpp"
-#include "glaze_include.hpp"
 #include <cstddef>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <glaze/core/common.hpp>
-#include <glaze/core/reflect.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
-#include <imgui.h>
 #include <iostream>
 #include <iterator>
 #include <vector>
+
+#include "glaze_include.hpp"
+#include <imgui.h>
+
+#include "../cards/interface/card.hpp"
+#include "platform_utils.hpp"
 
 module rouen.helpers.theme_manager;
 

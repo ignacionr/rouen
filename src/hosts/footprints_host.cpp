@@ -1,6 +1,3 @@
-#include "footprints_host.hpp"
-
-// 1. Standard includes in alphabetic order
 #include <cctype>
 #include <filesystem>
 #include <format>
@@ -10,8 +7,9 @@
 #include <sstream>
 #include <vector>
 
-// 2. Libraries used in the project, in alphabetic order
-#include <glaze/glaze.hpp>
+#include "../helpers/glaze_include.hpp"
+
+#include "footprints_host.hpp"
 
 // 3. All other includes
 #include "../helpers/debug.hpp"

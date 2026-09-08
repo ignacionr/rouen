@@ -1,10 +1,11 @@
 module;
 
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
+#include <filesystem>
 #include <map>
 #include <string>
 #include <vector>
+
+#include "../../helpers/glaze_include.hpp"
 
 module rouen.models.mail.metadata_serialization;
 

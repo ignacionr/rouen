@@ -1,22 +1,23 @@
-#include "llm_host.hpp"
-#include "config_service.hpp"
-#include "cppgpt.hpp"
-#include "debug.hpp"
-#include "gemini_adapter.hpp"
-#include "persona_manager.hpp"
-#include "platform_utils.hpp"
+#include <algorithm>
 #include <cctype>
 #include <exception>
 #include <filesystem>
 #include <fstream>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
-#include <algorithm>
 #include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
+
+#include "../helpers/glaze_include.hpp"
+
+#include "llm_host.hpp"
+#include "../helpers/config_service.hpp"
+#include "../helpers/cppgpt.hpp"
+#include "../helpers/debug.hpp"
+#include "../helpers/gemini_adapter.hpp"
+#include "../helpers/persona_manager.hpp"
+#include "../helpers/platform_utils.hpp"
 
 namespace rouen::hosts {
 

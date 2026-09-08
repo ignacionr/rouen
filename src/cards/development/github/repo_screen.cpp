@@ -1,17 +1,18 @@
-#include "repo_screen.hpp"
-
 #include <cstdint>
 #include <exception>
-#include <glaze/json/json_t.hpp>
-#include <glaze/json/write.hpp>
-#include <imgui.h>
-#include <iostream>
+#include <filesystem>
 #include <format>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "../../../helpers/glaze_include.hpp"
+#include <imgui.h>
+
+#include "repo_screen.hpp"
 
 #include "../../../../external/IconsMaterialDesign.h"
 #include "../../../models/github/host.hpp"

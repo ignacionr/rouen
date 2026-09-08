@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -9,7 +10,8 @@
 #include <string_view>
 #include <vector>
 
-#include <glaze/json/json_t.hpp>
+#include "../helpers/glaze_include.hpp"
+
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-identifier"

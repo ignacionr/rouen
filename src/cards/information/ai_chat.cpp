@@ -1,3 +1,23 @@
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <cstdlib>
+#include <ctime>
+#include <deque>
+#include <exception>
+#include <filesystem>
+#include <format>
+#include <future>
+#include <new>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <typeinfo>
+
+#include "../../helpers/glaze_include.hpp"
+#include <imgui.h>
+
 #include "ai_chat.hpp"
 
 #include "../../helpers/cppgpt.hpp"
@@ -14,25 +34,6 @@
 #include "../../hosts/dictation_host.hpp"
 #include "llm_host.hpp"
 #include "mcp_host.hpp"
-
-#include <cctype>
-#include <cstdlib>
-#include <ctime>
-#include <exception>
-#include <glaze/core/common.hpp>
-#include <glaze/json/read.hpp>
-#include <imgui.h>
-#include <new>
-#include <stdexcept>
-#include <string>
-#include <deque>
-#include <future>
-#include <optional>
-#include <array>
-#include <atomic>
-#include <string_view>
-#include <typeinfo>
-#include <format>
 #include <memory>
 #include <mutex>
 #include <utility>

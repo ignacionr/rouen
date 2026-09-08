@@ -1,28 +1,29 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <ctime>
+#include <filesystem>
+#include <format>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include "../interface/card.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/fetch.hpp"
-#include <glaze/glaze.hpp>
 #include "../../helpers/flag_renderer.hpp"
 #include "../../helpers/image_cache.hpp"
-
-#include <string>
-#include <vector>
-#include <unordered_map>
-#include <chrono>
-#include <format>
-#include <algorithm>
-#include <cmath>
-#include <mutex>
-#include <thread>
-#include <ctime>
-#include <atomic>
-#include <cctype>
-#include <unordered_set>
 #include <fstream>
 #include <filesystem>
 #include "../../helpers/llm_config.hpp"

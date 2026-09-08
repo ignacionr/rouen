@@ -1,19 +1,18 @@
-#include "github_card.hpp"
-
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <format>
-#include <glaze/json/json_t.hpp>
-#include <glaze/json/read.hpp>
-#include <glaze/json/write.hpp>
-#include <imgui.h>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "../../../helpers/glaze_include.hpp"
+#include <imgui.h>
+
+#include "github_card.hpp"
 
 #include "../../../helpers/debug.hpp"
 #include "../../../../external/IconsMaterialDesign.h"
