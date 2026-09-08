@@ -552,12 +552,20 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     CURL::libcurl
     unofficial::sqlite3::sqlite3
     tinyxml2::tinyxml2
+    glaze::glaze
+    imgui
   )
 else()
   target_link_libraries(rouen_modules PUBLIC
     CURL::libcurl
     SQLite::SQLite3
+    glaze::glaze
   )
+  if(TARGET imgui)
+    target_link_libraries(rouen_modules PUBLIC imgui)
+  elseif(TARGET imgui::imgui)
+    target_link_libraries(rouen_modules PUBLIC imgui::imgui)
+  endif()
   if(TARGET tinyxml2::tinyxml2)
     target_link_libraries(rouen_modules PUBLIC tinyxml2::tinyxml2)
   else()
@@ -568,6 +576,13 @@ else()
     ${CURL_INCLUDE_DIRS}
     ${SQLite3_INCLUDE_DIRS}
   )
+endif()
+
+if(imgui_SOURCE_DIR)
+  target_include_directories(rouen_modules PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+endif()
+if(IMGUI_INCLUDE_DIR)
+  target_include_directories(rouen_modules PUBLIC ${IMGUI_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/external/imgui_backends)
 endif()
 
 # Add the executable
