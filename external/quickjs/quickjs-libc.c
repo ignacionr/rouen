@@ -31,7 +31,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#ifndef _WIN32
 #include <sys/time.h>
+#endif
 #include <time.h>
 #include <signal.h>
 #include <limits.h>
