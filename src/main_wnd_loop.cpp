@@ -13,14 +13,19 @@
 #include <chrono>
 #include <cstdint>
 #include <exception>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers

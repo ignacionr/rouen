@@ -1,11 +1,24 @@
-// 1. Standard includes in alphabetic order
-// None in this file's top section
+#include <exception>
+#include <filesystem>
+#include <functional>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_video.h>
+#include <imgui.h>
 
-// 2. Libraries used in the project, in alphabetic order
-// Include ImGui wrapper first which handles all ImGui related headers
 #include "deferred_operations.hpp"
-
-// 3. All other includes
 #include "fonts.hpp"
 #include "helpers/debug.hpp"
 #include "imgui_impl_sdl3.h"
@@ -15,18 +28,6 @@
 #include "mcp_host.hpp"
 #include "registrar.hpp"
 #include "texture_helper.hpp"
-#include <SDL3/SDL_error.h>
-#include <SDL3/SDL_gpu.h>
-#include <SDL3/SDL_hints.h>
-#include <SDL3/SDL_init.h>
-#include <SDL3/SDL_keyboard.h>
-#include <SDL3/SDL_stdinc.h>
-#include <SDL3/SDL_video.h>
-#include <exception>
-#include <functional>
-#include <imgui.h>
-#include <iostream>
-#include <memory>
 
 #ifdef __APPLE__
 #include "helpers/mac_menu_helper.hpp"

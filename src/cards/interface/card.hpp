@@ -2,11 +2,16 @@
 
 // 1. Standard includes in alphabetic order
 #include <array>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
