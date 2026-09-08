@@ -1,18 +1,41 @@
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <future>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
 #include "process_host.hpp"
 #include "event_bus_host.hpp"
 #include "../models/productivity/process_definition.hpp"
 #include "../helpers/debug.hpp"
-
-#include <atomic>
-#include <thread>
-#include <chrono>
-#include <cstring>
-#include <cctype>
-#include <format>
-#include <algorithm>
-#include <fstream>
-#include <sstream>
-#include <unordered_set>
 
 #define PROCHOST_ERROR(message) LOG_COMPONENT("PROCHOST", LOG_LEVEL_ERROR, message)
 #define PROCHOST_INFO(message) LOG_COMPONENT("PROCHOST", LOG_LEVEL_INFO, message)
