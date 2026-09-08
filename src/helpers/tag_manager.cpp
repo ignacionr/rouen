@@ -1,6 +1,17 @@
-#include "tag_manager.hpp"
+module;
+
 #include "platform_utils.hpp"
+#include "sqlite.hpp"
+#include <sqlite3.h>
+#include <set>
+#include <vector>
+#include <string>
+#include <unordered_map>
+#include <memory>
+#include <mutex>
 #include <sstream>
+
+module rouen.helpers.tag_manager;
 
 namespace rouen::helpers {
 

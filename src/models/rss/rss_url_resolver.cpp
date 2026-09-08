@@ -1,4 +1,4 @@
-#include "rss_url_resolver.hpp"
+module;
 
 #include <cstddef>
 #include <exception>
@@ -10,6 +10,8 @@
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/debug.hpp"
+
+module rouen.models.rss.rss_url_resolver;
 
 namespace rouen::hosts {
 

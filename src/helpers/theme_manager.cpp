@@ -1,6 +1,8 @@
-#include "theme_manager.hpp"
+module;
+
 #include "../cards/interface/card.hpp"
 #include "platform_utils.hpp"
+#include "glaze_include.hpp"
 #include <cstddef>
 #include <exception>
 #include <filesystem>
@@ -13,6 +15,32 @@
 #include <iostream>
 #include <iterator>
 #include <vector>
+
+module rouen.helpers.theme_manager;
+
+template <>
+struct glz::meta<rouen::theme::theme_palette> {
+    using T = rouen::theme::theme_palette;
+    static constexpr auto value = glz::object(
+        "name", &T::name,
+        "draw_card_outline", &T::draw_card_outline,
+        "window_bg", &T::window_bg,
+        "text", &T::text,
+        "text_disabled", &T::text_disabled,
+        "title_bg", &T::title_bg,
+        "title_bg_active", &T::title_bg_active,
+        "menu_bar_bg", &T::menu_bar_bg,
+        "button", &T::button,
+        "button_hovered", &T::button_hovered,
+        "button_active", &T::button_active,
+        "frame_bg", &T::frame_bg,
+        "frame_bg_hovered", &T::frame_bg_hovered,
+        "frame_bg_active", &T::frame_bg_active,
+        "check_mark", &T::check_mark,
+        "slider_grab", &T::slider_grab,
+        "card_colors", &T::card_colors
+    );
+};
 
 namespace rouen::theme {
 

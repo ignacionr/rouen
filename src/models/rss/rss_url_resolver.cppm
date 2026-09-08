@@ -1,14 +1,17 @@
 module;
 
-#include "models/rss/rss_url_resolver.hpp"
+#include <string>
+#include <string_view>
 
 export module rouen.models.rss.rss_url_resolver;
 
 export namespace rouen::hosts {
-    using rouen::hosts::trim_copy;
-    using rouen::hosts::resolve_relative_url;
-    using rouen::hosts::resolve_youtube_url;
-    using rouen::hosts::resolve_nyt_podcast_url;
-    using rouen::hosts::extract_rss_url_from_html;
-    using rouen::hosts::resolve_feed_url;
-}
+
+std::string trim_copy(std::string value);
+std::string resolve_relative_url(std::string_view href, std::string_view base_url);
+std::string resolve_youtube_url(const std::string& input_url);
+std::string resolve_nyt_podcast_url(const std::string& input_url);
+std::string extract_rss_url_from_html(std::string_view html, std::string_view base_url);
+std::string resolve_feed_url(const std::string& input_url);
+
+} // namespace rouen::hosts

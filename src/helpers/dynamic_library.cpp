@@ -1,4 +1,4 @@
-#include "dynamic_library.hpp"
+module;
 
 #include <filesystem>
 #include <string>
@@ -9,6 +9,8 @@
 #else
 #include <dlfcn.h>
 #endif
+
+module rouen.helpers.dynamic_library;
 
 namespace rouen::helpers::dynamic_library {
 

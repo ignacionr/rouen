@@ -1,4 +1,5 @@
-#include "config_service.hpp"
+module;
+
 #include "platform_utils.hpp"
 #include "process_helper.hpp"
 #include "debug.hpp"
@@ -32,6 +33,8 @@ extern "C" char **environ;
 #include <windows.h>
 #include <stdlib.h>
 #endif
+
+module rouen.helpers.config_service;
 
 #define CONFIG_ERROR(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_ERROR, message)
 #define CONFIG_WARN(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_WARN, message)

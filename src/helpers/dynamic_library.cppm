@@ -1,12 +1,16 @@
 module;
 
-#include "dynamic_library.hpp"
+#include <filesystem>
+#include <string>
+#include <string_view>
 
 export module rouen.helpers.dynamic_library;
 
 export namespace rouen::helpers::dynamic_library {
-    using rouen::helpers::dynamic_library::load;
-    using rouen::helpers::dynamic_library::get_symbol;
-    using rouen::helpers::dynamic_library::last_error;
-    using rouen::helpers::dynamic_library::platform_extension;
-}
+
+    void* load(std::filesystem::path const& path);
+    void* get_symbol(void* handle, std::string_view name);
+    std::string last_error();
+    std::string_view platform_extension();
+
+} // namespace rouen::helpers::dynamic_library

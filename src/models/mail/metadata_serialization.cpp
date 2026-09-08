@@ -1,9 +1,12 @@
-#include "metadata_serialization.hpp"
+module;
+
 #include <glaze/json/read.hpp>
 #include <glaze/json/write.hpp>
 #include <map>
 #include <string>
 #include <vector>
+
+module rouen.models.mail.metadata_serialization;
 
 namespace mail {
     bool serialize_tags(const std::vector<std::string>& tags, std::string& out_json) {

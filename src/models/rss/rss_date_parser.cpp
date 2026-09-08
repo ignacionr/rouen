@@ -1,4 +1,6 @@
-#include "rss_date_parser.hpp"
+module;
+
+#include "models/rss/rss_date_parser.hpp"
 #include <chrono>
 #include <ctime>
 #include <iomanip>
@@ -7,6 +9,8 @@
 #include <format>
 #include <regex>
 #include <string>
+
+module rouen.models.rss.rss_date_parser;
 
 namespace media::rss {
     namespace {

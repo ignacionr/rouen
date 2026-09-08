@@ -540,6 +540,14 @@ target_sources(${PROJECT_NAME}
   PUBLIC
   FILE_SET CXX_MODULES FILES
     src/hosts/quickjs_host.cppm
+    src/models/rss/rss_date_parser.cppm
+    src/models/rss/rss_url_resolver.cppm
+    src/models/rss/feed_item.cppm
+    src/models/mail/metadata_serialization.cppm
+    src/helpers/config_service.cppm
+    src/helpers/tag_manager.cppm
+    src/helpers/theme_manager.cppm
+    src/helpers/dynamic_library.cppm
 )
 
 target_sources(${PROJECT_NAME}

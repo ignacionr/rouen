@@ -1,4 +1,5 @@
-#include "feed_item.hpp"
+module;
+
 #include "../../helpers/fetch.hpp"
 #include "../../registrar.hpp"
 #include <chrono>
@@ -6,6 +7,8 @@
 #include <functional>
 #include <optional>
 #include <string_view>
+
+module rouen.models.rss.feed_item;
 
 namespace media::rss {
     feed_item::feed_item(std::string_view title_param, std::string_view link_param, std::string_view description_param,

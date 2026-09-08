@@ -22,6 +22,7 @@
 
 // Include Glaze headers
 #include <glaze/glaze.hpp>
+#include <glaze/json/json_t.hpp>
 
 #ifdef __clang__
 #pragma clang diagnostic pop
