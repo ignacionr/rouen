@@ -1,10 +1,15 @@
 #pragma once
 
 // 1. Standard includes in alphabetic order
+#include <array>
+#include <filesystem>
+#include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 // 2. Libraries used in the project, in alphabetic order
 #include <SDL3/SDL.h>

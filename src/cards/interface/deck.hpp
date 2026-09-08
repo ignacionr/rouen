@@ -4,13 +4,18 @@
 #include <algorithm> // Added for std::find_if
 #include <chrono>    // Added for timestamp
 #include <cmath>     // Added for std::abs
+#include <filesystem>
 #include <fstream>   // Added for file I/O
 #include <functional>
 #include <iomanip>   // Added for std::put_time
 #include <iostream>  // Added for console output
 #include <limits>    // Added for std::numeric_limits
+#include <map>
+#include <memory>
+#include <set>
 #include <sstream>   // Added for string stream
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
