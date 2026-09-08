@@ -1,7 +1,3 @@
-#include "git.hpp"
-#include "cards/interface/card.hpp"
-#include "git_overlay.hpp"
-
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -11,7 +7,6 @@
 #include <exception>
 #include <filesystem>
 #include <format>
-#include <imgui.h>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -20,9 +15,14 @@
 #include <string>
 #include <string_view>
 #include <thread>
-
 #include <utility>
 #include <vector>
+
+#include <imgui.h>
+
+#include "git.hpp"
+#include "cards/interface/card.hpp"
+#include "git_overlay.hpp"
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"

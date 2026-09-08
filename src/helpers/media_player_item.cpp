@@ -1,3 +1,19 @@
+#include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <format>
+#include <iostream>
+
+#include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_stdinc.h>
+#include <imgui.h>
+
 #include "media_player_item.hpp"
 #include "config_service.hpp"
 #include "media_player.hpp"
@@ -9,19 +25,6 @@
 #include "texture_helper.hpp"
 #include "texture_utils.hpp"
 #include "ytdlp_service.hpp"
-#include <SDL3/SDL_audio.h>
-#include <SDL3/SDL_gpu.h>
-#include <SDL3/SDL_stdinc.h>
-#include <algorithm>
-#include <atomic>
-#include <cerrno>
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <format>
-#include <imgui.h>
-#include <iostream>
 #include <libavcodec/avcodec.h>
 #include <libavcodec/codec.h>
 #include <libavcodec/packet.h>

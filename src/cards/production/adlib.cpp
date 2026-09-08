@@ -1,19 +1,21 @@
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <iterator>
+#include <string>
+#include <string_view>
+#include <system_error>
+
+#include <imgui.h>
+
 #include "adlib.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "IconsMaterialDesign.h"
 #include "adlib_engine.hpp"
 #include "audio_capture.hpp"
 #include "config_service.hpp"
-#include <cstdlib>
-#include <cstring>
-#include <format>
-#include <filesystem>
-#include <fstream>
-#include <imgui.h>
-#include <iterator>
-#include <string>
-#include <string_view>
-#include <system_error>
 
 namespace rouen::cards {
 

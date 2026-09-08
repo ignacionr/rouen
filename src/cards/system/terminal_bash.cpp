@@ -1,6 +1,3 @@
-#include "terminal_bash.hpp"
-#include "../../helpers/config_service.hpp"
-#include "cards/system/terminal_output.hpp"
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -9,11 +6,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "terminal_bash.hpp"
+#include "../../helpers/config_service.hpp"
+#include "cards/system/terminal_output.hpp"
 
 namespace rouen::cards {
 

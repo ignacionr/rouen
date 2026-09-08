@@ -1,17 +1,12 @@
-#include "media_companion.hpp"
-#include "../../helpers/ytdlp_service.hpp"
-
-#include <SDL3/SDL_surface.h>
 #include <algorithm>
-#include <chrono>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <functional>
-#include <imgui.h>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -22,6 +17,12 @@
 #include <unistd.h>
 #endif
 #include <vector>
+
+#include <SDL3/SDL_surface.h>
+#include <imgui.h>
+
+#include "media_companion.hpp"
+#include "../../helpers/ytdlp_service.hpp"
 
 #include "../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"

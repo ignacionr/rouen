@@ -1,13 +1,15 @@
-#include "git_sync_host.hpp"
-
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdio>
 #include <filesystem>
 #include <format>
-#include <array>
-#include <cstdio>
-#include <algorithm>
-#include <cctype>
+#include <memory>
 #include <mutex>
+#include <string>
+#include <vector>
 
+#include "git_sync_host.hpp"
 #include "config_service.hpp"
 #include "platform_utils.hpp"
 #include "debug.hpp"
