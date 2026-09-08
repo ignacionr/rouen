@@ -7,6 +7,9 @@ find_package(Threads REQUIRED)
 find_package(OpenGL REQUIRED)
 
 # Ensure all warnings are treated as errors for local target code
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Wno-tu-local)
+endif()
 
 # Add Linux-specific debug settings
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
