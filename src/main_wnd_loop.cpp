@@ -29,6 +29,7 @@
 
 // 2. Libraries used in the project, in alphabetic order
 // Include ImGui wrapper first which handles all ImGui related headers
+#include "helpers/glaze_include.hpp"
 #include "cards/interface/card.hpp"
 
 // 3. All other includes

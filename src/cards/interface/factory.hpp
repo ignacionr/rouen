@@ -15,6 +15,7 @@
 #include <SDL3/SDL.h>
 
 // 3. All other includes
+#include "../../helpers/glaze_include.hpp"
 #include "card.hpp"
 #include "menu.hpp"
 #include "plugin_registry.hpp"
