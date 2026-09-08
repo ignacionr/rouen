@@ -216,12 +216,9 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/hosts/mcp_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/git_sync_host.cpp
-    ../src/helpers/config_service.cpp
     ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
-    ../src/helpers/theme_manager.cpp
     ../src/helpers/card_decorations.cpp
-    ../src/helpers/tag_manager.cpp
     ../src/fonts.cpp
 )
 target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} CURL::libcurl)
@@ -247,7 +244,6 @@ add_gtest_rss_executable(test_rss_autodiscovery test_rss_autodiscovery.cpp)
 
 # RSS Tags Test
 add_gtest_rss_executable(test_rss_tags test_rss_tags.cpp)
-target_sources(test_rss_tags PRIVATE ../src/helpers/tag_manager.cpp)
 target_link_libraries(test_rss_tags PRIVATE SQLite::SQLite3)
 
 # RT Media Extraction Test - tests RT.com specific RSS media extraction patterns
@@ -266,10 +262,8 @@ target_sources(test_rss_watermark PRIVATE
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
-    ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
-    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_rss_watermark PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -302,10 +296,8 @@ target_sources(test_rss_diagnostics PRIVATE
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
-    ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
-    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_rss_diagnostics PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -338,10 +330,8 @@ target_sources(test_audio_time_progression PRIVATE
     ../src/helpers/audio_capture.cpp
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
-    ../src/helpers/config_service.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/vu_meter.cpp
-    ../src/helpers/tag_manager.cpp
 )
 if(APPLE)
     target_sources(test_audio_time_progression PRIVATE ../src/helpers/mac_mic_permissions.mm)
@@ -359,7 +349,6 @@ target_link_libraries(test_audio_time_progression
     ${SWSCALE_LIBRARIES}
     ${SWRESAMPLE_LIBRARIES}
 )
-add_test(NAME AudioTimeProgressionTest COMMAND test_audio_time_progression)
 
 # Objectives Test
 add_gtest_executable(test_objectives test_objectives.cpp)
@@ -367,15 +356,12 @@ target_link_libraries(test_objectives
     PRIVATE 
     SQLite::SQLite3
 )
-add_test(NAME ObjectivesTest COMMAND test_objectives)
 
 # Deck Scrolling Test
 add_gtest_executable(test_deck_scrolling test_deck_scrolling.cpp)
 target_sources(test_deck_scrolling PRIVATE
     ../src/hosts/event_bus_host.cpp
     ../src/cards/interface/card.cpp
-    ../src/helpers/config_service.cpp
-    ../src/helpers/theme_manager.cpp
     ../src/helpers/image_cache.cpp
     ../src/hosts/process_host.cpp
     ../src/hosts/rss_host.cpp
@@ -392,18 +378,13 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/vu_meter.cpp
-    ../src/helpers/tag_manager.cpp
     ../src/helpers/directory_watch.cpp
     ../src/helpers/ui_automation_explorer.cpp
     ../src/helpers/piped_process.cpp
     ../src/models/git_scanner.cpp
     ../src/models/git_process_helper.cpp
-    ../src/models/mail/metadata_serialization.cpp
-    ../src/models/rss/feed_item.cpp
-    ../src/models/rss/rss_date_parser.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
-    ../src/models/rss/rss_url_resolver.cpp
     ../src/fonts.cpp
     ../src/cards/information/ai_chat.cpp
     ../src/cards/information/rss.cpp
@@ -432,7 +413,6 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/cards/system/terminal_commands.cpp
     ../src/hosts/mcp_host.cpp
     ../src/helpers/filetype_handler.cpp
-    ../src/helpers/dynamic_library.cpp
     ../src/helpers/card_decorations.cpp
     ../src/helpers/capture_helper.cpp
     ../external/imguicolortextedit/TextEditor.cpp
@@ -442,7 +422,6 @@ if(APPLE)
     target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
 endif()
 target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
-add_test(NAME DeckScrollingTest COMMAND test_deck_scrolling)
 
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
@@ -462,7 +441,6 @@ add_executable(test_terminal_cd
     test_terminal_cd.cpp
     ../src/cards/system/terminal_bash.cpp
     ../src/cards/system/terminal_output.cpp
-    ../src/helpers/config_service.cpp
 )
 target_include_directories(test_terminal_cd PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -470,6 +448,7 @@ target_include_directories(test_terminal_cd PRIVATE
 )
 target_link_libraries(test_terminal_cd
     PRIVATE
+    rouen_test_modules
     GTest::gtest
     GTest::gtest_main
     GTest::gmock
@@ -498,13 +477,8 @@ add_executable(test_mcp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
-    ../src/models/rss/rss_url_resolver.cpp
-    ../src/models/rss/rss_date_parser.cpp
-    ../src/models/rss/feed_item.cpp
-    ../src/models/mail/metadata_serialization.cpp
     ../src/models/git_process_helper.cpp
     ../src/models/git_scanner.cpp
-    ../src/helpers/config_service.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
     ../src/helpers/ytdlp_service.cpp
@@ -513,11 +487,9 @@ add_executable(test_mcp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/vu_meter.cpp
     ../src/helpers/image_cache.cpp
-    ../src/helpers/tag_manager.cpp
     ../src/helpers/card_decorations.cpp
     ../src/cards/interface/card.cpp
     ../src/cards/information/rss.cpp
-    ../src/helpers/theme_manager.cpp
     ../src/hosts/llm_host.cpp
 )
 if(APPLE)
@@ -526,6 +498,7 @@ if(APPLE)
 endif()
 target_link_libraries(test_mcp 
     PRIVATE 
+    rouen_test_modules
     GTest::gtest 
     GTest::gtest_main
     GTest::gmock
@@ -568,6 +541,7 @@ target_include_directories(test_text_editor PRIVATE
 )
 target_link_libraries(test_text_editor
     PRIVATE
+    rouen_test_modules
     GTest::gtest
     GTest::gtest_main
     imgui::imgui
@@ -597,6 +571,7 @@ target_include_directories(test_editor_screenshot PRIVATE
 )
 target_link_libraries(test_editor_screenshot
     PRIVATE
+    rouen_test_modules
     GTest::gtest
     GTest::gtest_main
     imgui::imgui
@@ -620,6 +595,7 @@ target_include_directories(test_text_editor_scrolling PRIVATE
 )
 target_link_libraries(test_text_editor_scrolling
     PRIVATE
+    rouen_test_modules
     GTest::gtest
     GTest::gtest_main
     imgui::imgui
@@ -639,12 +615,14 @@ endif()
 add_executable(test_bybit_currency_fix 
     test_currency_fix.cpp
 )
+target_link_libraries(test_bybit_currency_fix PRIVATE rouen_test_modules)
 add_test(NAME BybitCurrencyFixTest COMMAND test_bybit_currency_fix)
 
 # Example test for basic math operations
 add_executable(test_example_math
     test_example_math.cpp
 )
+target_link_libraries(test_example_math PRIVATE rouen_test_modules)
 add_test(NAME ExampleMathTest COMMAND test_example_math)
 
 # Event Bus infrastructure unit test
@@ -652,18 +630,19 @@ add_executable(test_event_bus
     test_event_bus.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/event_bus_host.cpp
 )
+target_link_libraries(test_event_bus PRIVATE rouen_test_modules)
 add_test(NAME EventBusTest COMMAND test_event_bus)
 
 add_executable(test_notes_repository_legacy
     test_notes_repository_legacy.cpp
 )
-target_link_libraries(test_notes_repository_legacy PRIVATE SQLite::SQLite3)
+target_link_libraries(test_notes_repository_legacy PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME NotesRepositoryLegacyTest COMMAND test_notes_repository_legacy)
 
 add_executable(test_series_repository
     test_series_repository.cpp
 )
-target_link_libraries(test_series_repository PRIVATE SQLite::SQLite3)
+target_link_libraries(test_series_repository PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME SeriesRepositoryTest COMMAND test_series_repository)
 
 # Set output directory for test executables
@@ -706,8 +685,6 @@ target_sources(test_quickjs PRIVATE
     ../src/hosts/quickjs_host.cpp
     ../src/hosts/event_bus_host.cpp
     ../src/cards/interface/card.cpp
-    ../src/helpers/config_service.cpp
-    ../src/helpers/theme_manager.cpp
     ../src/helpers/image_cache.cpp
     ../src/hosts/process_host.cpp
     ../src/hosts/rss_host.cpp
@@ -723,19 +700,13 @@ target_sources(test_quickjs PRIVATE
     ../src/helpers/adlib_engine.cpp
     ../src/helpers/mp4_writer.cpp
     ../src/helpers/vu_meter.cpp
-    ../src/helpers/tag_manager.cpp
     ../src/helpers/directory_watch.cpp
     ../src/helpers/ui_automation_explorer.cpp
     ../src/helpers/piped_process.cpp
-    ../src/helpers/dynamic_library.cpp
     ../src/models/git_scanner.cpp
     ../src/models/git_process_helper.cpp
-    ../src/models/mail/metadata_serialization.cpp
-    ../src/models/rss/feed_item.cpp
-    ../src/models/rss/rss_date_parser.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
-    ../src/models/rss/rss_url_resolver.cpp
     ../src/fonts.cpp
     ../src/cards/information/ai_chat.cpp
     ../src/cards/information/rss.cpp
@@ -782,6 +753,7 @@ target_include_directories(test_quickjs PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
 )
 target_link_libraries(test_quickjs PRIVATE 
+    rouen_test_modules
     quickjs
     pdfium
     PDFWriter
