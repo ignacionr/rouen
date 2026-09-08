@@ -1,10 +1,14 @@
 #pragma once
 
+#include <array>
+#include <atomic>
+#include <filesystem>
+#include <string>
+#include <vector>
+
 #include "../interface/card.hpp"
 #include "../../helpers/theme_manager.hpp"
 #include "../../external/IconsMaterialDesign.h"
-#include <array>
-#include <string>
 
 namespace rouen::cards {
 

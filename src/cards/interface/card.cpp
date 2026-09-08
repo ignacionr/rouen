@@ -1,17 +1,16 @@
-// 1. Standard includes in alphabetic order
-// None in this file's top section
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <exception>
+#include <filesystem>
+#include <string>
+#include <vector>
 
-// 2. Libraries used in the project, in alphabetic order
-// None in this file's top section
-
-// 3. All other includes
 #include "card.hpp"
 #include "../../registrar.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../helpers/theme_manager.hpp"
 #include "hosts/mcp_host.hpp"
-#include <exception>
-#include <string>
 
 void card::apply_theme() {
     rouen::theme::theme_manager::get().apply_theme_to_card(this);
