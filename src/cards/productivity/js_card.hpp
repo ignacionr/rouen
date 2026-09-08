@@ -86,7 +86,7 @@ function onRender() {
             bound_,
             input_state_,
             helpers::adaptive_cards::renderer::action_callbacks{
-                .open_url = [this](const std::string& url) {
+                .open_url = [](const std::string& url) {
                     static_cast<void>(rouen::platform::open_url(url));
                 },
                 .on_submit = [this](const std::string& payload) {
@@ -135,12 +135,12 @@ private:
         error_.clear();
         auto& host = hosts::quickjs_host::instance();
         if (!script_code_.empty()) {
-            host.eval_script(script_code_, locator_.empty() ? "js_card.js" : locator_.c_str());
+            static_cast<void>(host.eval_script(script_code_, locator_.empty() ? "js_card.js" : locator_.c_str()));
         }
 
         glz::json_t card_json = host.call_function("onRender");
         std::string json_str{};
-        glz::write_json(card_json, json_str);
+        static_cast<void>(glz::write_json(card_json, json_str));
 
         if (json_str.empty() || json_str == "null" || json_str == "{}") {
             // Fallback layout if no onRender returned
@@ -167,7 +167,7 @@ private:
         auto& host = hosts::quickjs_host::instance();
         glz::json_t new_card_json = host.call_function("onSubmit", payload_obj);
         std::string json_str{};
-        glz::write_json(new_card_json, json_str);
+        static_cast<void>(glz::write_json(new_card_json, json_str));
         if (!json_str.empty() && json_str != "null" && json_str != "{}") {
             try {
                 helpers::adaptive_cards::context ctx{};

@@ -38,6 +38,7 @@
             unstable.curl
             unstable.openssl
             unstable.sqlite
+            unstable.libavif
             unstable.libtiff
             unstable.lerc
             unstable.tinyxml-2  # TinyXML2 (version 2)
@@ -132,6 +133,7 @@
             unstable.sqlite 
             unstable.sdl3-image
             unstable.ffmpeg
+            unstable.libavif
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)
@@ -225,6 +227,7 @@
             unstable.sqlite 
             unstable.sdl3-image
             unstable.ffmpeg
+            unstable.libavif
             unstable.libtiff 
             unstable.lerc 
             unstable.tinyxml-2  # TinyXML2 (version 2)

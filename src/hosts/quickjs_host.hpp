@@ -10,7 +10,31 @@
 #include <vector>
 
 #include <glaze/json/json_t.hpp>
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#pragma clang diagnostic ignored "-Wc99-extensions"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wimplicit-int-float-conversion"
+#pragma clang diagnostic ignored "-Wshorten-64-to-32"
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wcast-qual"
+#pragma clang diagnostic ignored "-Wnested-anon-types"
+#pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+
 #include "quickjs.h"
+
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 namespace rouen::hosts {
 
@@ -74,7 +98,7 @@ private:
     // Track active event bus subscription handlers created from JS
     struct js_event_subscription {
         uint64_t sub_id{0};
-        JSValue js_callback{JS_UNDEFINED};
+        JSValue js_callback{};
     };
     std::vector<js_event_subscription> event_subscriptions_{};
 };

@@ -86,7 +86,7 @@ JSValue quickjs_host::glaze_to_jsvalue(JSContext* ctx, const glz::json_t& json_o
         return JS_UNDEFINED;
     }
     std::string json_str{};
-    glz::write_json(json_obj, json_str);
+    static_cast<void>(glz::write_json(json_obj, json_str));
     if (json_str.empty()) {
         json_str = "null";
     }
@@ -141,7 +141,7 @@ std::string quickjs_host::eval_script(std::string_view js_code, const char* file
     JS_FreeValue(ctx_, val);
 
     std::string out_str{};
-    glz::write_json(res_json, out_str);
+    static_cast<void>(glz::write_json(res_json, out_str));
     return out_str;
 }
 
