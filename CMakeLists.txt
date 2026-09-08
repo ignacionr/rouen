@@ -547,6 +547,29 @@ target_include_directories(rouen_modules PUBLIC
   ${CMAKE_SOURCE_DIR}/plugin-sdk
 )
 
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  target_link_libraries(rouen_modules PUBLIC
+    CURL::libcurl
+    unofficial::sqlite3::sqlite3
+    tinyxml2::tinyxml2
+  )
+else()
+  target_link_libraries(rouen_modules PUBLIC
+    CURL::libcurl
+    SQLite::SQLite3
+  )
+  if(TARGET tinyxml2::tinyxml2)
+    target_link_libraries(rouen_modules PUBLIC tinyxml2::tinyxml2)
+  else()
+    target_link_libraries(rouen_modules PUBLIC ${TINYXML2_LIBRARIES})
+    target_include_directories(rouen_modules PUBLIC ${TINYXML2_INCLUDE_DIRS})
+  endif()
+  target_include_directories(rouen_modules PUBLIC
+    ${CURL_INCLUDE_DIRS}
+    ${SQLite3_INCLUDE_DIRS}
+  )
+endif()
+
 # Add the executable
 add_executable(${PROJECT_NAME} 
   src/rouen.cpp
@@ -608,13 +631,8 @@ target_sources(${PROJECT_NAME}
   src/helpers/audio_capture.cpp
   src/cards/production/adlib.cpp
   # RSS model refactor additions
-  src/models/rss/feed_item.cpp
-  src/models/rss/rss_date_parser.cpp
   src/models/rss/feed_xml_parser.cpp
   src/models/rss/rss_item_repo.cpp
-  src/models/rss/rss_url_resolver.cpp
-  # Mail model refactor additions
-  src/models/mail/metadata_serialization.cpp
   # Git model refactor additions
   src/models/git_process_helper.cpp
   src/models/git_scanner.cpp

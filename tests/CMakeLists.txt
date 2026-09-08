@@ -109,6 +109,29 @@ target_include_directories(rouen_test_modules PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/../plugin-sdk
 )
 
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  target_link_libraries(rouen_test_modules PUBLIC
+    CURL::libcurl
+    unofficial::sqlite3::sqlite3
+    tinyxml2::tinyxml2
+  )
+else()
+  target_link_libraries(rouen_test_modules PUBLIC
+    CURL::libcurl
+    SQLite::SQLite3
+  )
+  if(TARGET tinyxml2::tinyxml2)
+    target_link_libraries(rouen_test_modules PUBLIC tinyxml2::tinyxml2)
+  else()
+    target_link_libraries(rouen_test_modules PUBLIC ${TINYXML2_LIBRARIES})
+    target_include_directories(rouen_test_modules PUBLIC ${TINYXML2_INCLUDE_DIRS})
+  endif()
+  target_include_directories(rouen_test_modules PUBLIC
+    ${CURL_INCLUDE_DIRS}
+    ${SQLite3_INCLUDE_DIRS}
+  )
+endif()
+
 # Helper function to create GTest-based tests
 function(add_gtest_executable test_name source_file)
     add_executable(${test_name} ${source_file})
