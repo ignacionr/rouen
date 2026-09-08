@@ -37,6 +37,7 @@
 #define no_inline       __declspec(noinline)
 #define __maybe_unused
 #define __attribute__(x)
+#define __attribute(x)
 #else
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
@@ -65,6 +66,24 @@
 #define minimum_length(n)  static n
 #else
 #define minimum_length(n)  n
+#endif
+
+#if defined(_WIN32)
+#include <windows.h>
+struct timeval {
+    long tv_sec;
+    long tv_usec;
+};
+static inline int gettimeofday(struct timeval *tv, void *tz) {
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    unsigned long long t = ((unsigned long long)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
+    if (t >= 116444736000000000ULL)
+        t -= 116444736000000000ULL;
+    tv->tv_sec = (long)(t / 10000000ULL);
+    tv->tv_usec = (long)((t % 10000000ULL) / 10ULL);
+    return 0;
+}
 #endif
 
 typedef int BOOL;
