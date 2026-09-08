@@ -20,6 +20,12 @@
 #pragma GCC diagnostic ignored "-Wshadow"
 #endif
 
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include <map>
+#include <vector>
+
 // Include Glaze headers
 #include <glaze/glaze.hpp>
 #include <glaze/json/json_t.hpp>
