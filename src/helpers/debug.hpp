@@ -169,10 +169,17 @@ namespace debug {
         return std::string(fmt);
     }
 
+#if defined(__GNUC__) && !defined(__clang__)
+    __attribute__((noinline))
+#endif
+    inline std::string format_log_v(std::string_view fmt, std::format_args args) {
+        return std::vformat(fmt, args);
+    }
+
     template<typename... Args>
     requires (sizeof...(Args) > 0)
     inline std::string format_log(std::string_view fmt, Args... args) {
-        return std::vformat(fmt, std::make_format_args(args...));
+        return format_log_v(fmt, std::make_format_args(args...));
     }
 }
 
