@@ -12834,7 +12834,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
         if (!(flags & ATOD_INT_ONLY) &&
             (atod_type == ATOD_TYPE_FLOAT64) &&
             strstart(p, "Infinity", &p)) {
-            double d = 1.0 / 0.0;
+            double d = INFINITY;
             if (is_neg)
                 d = -d;
             val = JS_NewFloat64(ctx, d);
@@ -23409,7 +23409,7 @@ static int json_parse_number(JSParseState *s, const uint8_t **pp)
     if (!is_digit(*p)) {
         if (s->ext_json) {
             if (strstart((const char *)p, "Infinity", (const char **)&p)) {
-                d = 1.0 / 0.0;
+                d = INFINITY;
                 if (*p_start == '-')
                     d = -d;
                 goto done;
@@ -46964,7 +46964,7 @@ static JSValue js_math_min_max(JSContext *ctx, JSValueConst this_val,
     uint32_t tag;
 
     if (unlikely(argc == 0)) {
-        return __JS_NewFloat64(ctx, is_max ? -1.0 / 0.0 : 1.0 / 0.0);
+        return __JS_NewFloat64(ctx, is_max ? -INFINITY : INFINITY);
     }
 
     tag = JS_VALUE_GET_TAG(argv[0]);
@@ -47397,6 +47397,60 @@ static JSValue js_math_random(JSContext *ctx, JSValueConst this_val,
     u.u64 = ((uint64_t)0x3ff << 52) | (v >> 12);
     return __JS_NewFloat64(ctx, u.d - 1.0);
 }
+
+#if defined(_MSC_VER)
+static double js_msvc_fabs(double x) { return fabs(x); }
+static double js_msvc_floor(double x) { return floor(x); }
+static double js_msvc_ceil(double x) { return ceil(x); }
+static double js_msvc_sqrt(double x) { return sqrt(x); }
+static double js_msvc_acos(double x) { return acos(x); }
+static double js_msvc_asin(double x) { return asin(x); }
+static double js_msvc_atan(double x) { return atan(x); }
+static double js_msvc_atan2(double x, double y) { return atan2(x, y); }
+static double js_msvc_cos(double x) { return cos(x); }
+static double js_msvc_exp(double x) { return exp(x); }
+static double js_msvc_log(double x) { return log(x); }
+static double js_msvc_sin(double x) { return sin(x); }
+static double js_msvc_tan(double x) { return tan(x); }
+static double js_msvc_trunc(double x) { return trunc(x); }
+static double js_msvc_cosh(double x) { return cosh(x); }
+static double js_msvc_sinh(double x) { return sinh(x); }
+static double js_msvc_tanh(double x) { return tanh(x); }
+static double js_msvc_acosh(double x) { return acosh(x); }
+static double js_msvc_asinh(double x) { return asinh(x); }
+static double js_msvc_atanh(double x) { return atanh(x); }
+static double js_msvc_expm1(double x) { return expm1(x); }
+static double js_msvc_log1p(double x) { return log1p(x); }
+static double js_msvc_log2(double x) { return log2(x); }
+static double js_msvc_log10(double x) { return log10(x); }
+static double js_msvc_cbrt(double x) { return cbrt(x); }
+
+#define fabs js_msvc_fabs
+#define floor js_msvc_floor
+#define ceil js_msvc_ceil
+#define sqrt js_msvc_sqrt
+#define acos js_msvc_acos
+#define asin js_msvc_asin
+#define atan js_msvc_atan
+#define atan2 js_msvc_atan2
+#define cos js_msvc_cos
+#define exp js_msvc_exp
+#define log js_msvc_log
+#define sin js_msvc_sin
+#define tan js_msvc_tan
+#define trunc js_msvc_trunc
+#define cosh js_msvc_cosh
+#define sinh js_msvc_sinh
+#define tanh js_msvc_tanh
+#define acosh js_msvc_acosh
+#define asinh js_msvc_asinh
+#define atanh js_msvc_atanh
+#define expm1 js_msvc_expm1
+#define log1p js_msvc_log1p
+#define log2 js_msvc_log2
+#define log10 js_msvc_log10
+#define cbrt js_msvc_cbrt
+#endif
 
 static const JSCFunctionListEntry js_math_funcs[] = {
     JS_CFUNC_MAGIC_DEF("min", 2, js_math_min_max, 0 ),
@@ -55009,7 +55063,7 @@ static const JSCFunctionListEntry js_global_funcs[] = {
     JS_CFUNC_MAGIC_DEF("encodeURIComponent", 1, js_global_encodeURI, 1 ),
     JS_CFUNC_DEF("escape", 1, js_global_escape ),
     JS_CFUNC_DEF("unescape", 1, js_global_unescape ),
-    JS_PROP_DOUBLE_DEF("Infinity", 1.0 / 0.0, 0 ),
+    JS_PROP_DOUBLE_DEF("Infinity", INFINITY, 0 ),
     JS_PROP_DOUBLE_DEF("NaN", NAN, 0 ),
     JS_PROP_UNDEFINED_DEF("undefined", 0 ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "global", JS_PROP_CONFIGURABLE ),
