@@ -166,9 +166,6 @@ namespace debug {
         return ss.str();
     }
 
-#if defined(__GNUC__) && !defined(__clang__)
-    __attribute__((noinline))
-#endif
     inline std::string format_log_v(std::string_view fmt, std::format_args args) {
         return std::vformat(fmt, args);
     }
