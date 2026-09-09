@@ -169,9 +169,9 @@ namespace debug {
         return std::string(fmt);
     }
 
-    template<typename... Args>
-    inline std::string format_log(std::string_view fmt, Args&&... args) {
-        return std::vformat(fmt, std::make_format_args(args...));
+    template<typename Arg, typename... Args>
+    inline std::string format_log(std::string_view fmt, const Arg& arg, const Args&... args) {
+        return std::vformat(fmt, std::make_format_args(arg, args...));
     }
 }
 
