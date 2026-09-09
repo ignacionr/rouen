@@ -6,9 +6,9 @@ module;
 #include <string>
 #include <vector>
 #include <memory>
-struct card;
-
 export module rouen.helpers.theme_manager;
+
+struct card;
 
 export namespace rouen::theme {
 
