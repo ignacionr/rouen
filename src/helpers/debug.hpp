@@ -171,7 +171,7 @@ namespace debug {
 
     template<typename... Args>
     requires (sizeof...(Args) > 0)
-    inline std::string format_log(std::string_view fmt, const Args&... args) {
+    inline std::string format_log(std::string_view fmt, Args... args) {
         return std::vformat(fmt, std::make_format_args(args...));
     }
 }
