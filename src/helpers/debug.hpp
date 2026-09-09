@@ -165,13 +165,13 @@ namespace debug {
         return ss.str();
     }
 
-    inline std::string format_log(std::string_view fmt) {
-        return std::string(fmt);
-    }
-
     template<typename... Args>
-    inline std::string format_log(std::format_string<Args...> fmt, Args&&... args) {
-        return std::format(fmt, std::forward<Args>(args)...);
+    inline std::string format_log(std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(Args) == 0) {
+            return std::string(fmt);
+        } else {
+            return std::vformat(fmt, std::make_format_args(args...));
+        }
     }
 }
 
