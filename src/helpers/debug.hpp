@@ -171,7 +171,7 @@ namespace debug {
     }
 
     template<typename... Args>
-    inline std::string format_log(std::format_string<Args...> fmt, Args&&... args) {
+    inline std::string format_log(std::format_string<std::type_identity_t<Args>...> fmt, Args&&... args) {
         return std::format(fmt, std::forward<Args>(args)...);
     }
 }
