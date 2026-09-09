@@ -166,13 +166,16 @@ namespace debug {
         return ss.str();
     }
 
-    inline std::string format_log(std::string_view fmt) {
-        return std::string(fmt);
-    }
-
+#if defined(__GNUC__) && !defined(__clang__)
+    __attribute__((noinline))
+#endif
     template<typename... Args>
-    inline std::string format_log(std::format_string<std::type_identity_t<Args>...> fmt, Args&&... args) {
-        return std::format(fmt, std::forward<Args>(args)...);
+    inline std::string format_log(std::string_view fmt, Args&&... args) {
+        if constexpr (sizeof...(Args) == 0) {
+            return std::string(fmt);
+        } else {
+            return std::vformat(fmt, std::make_format_args(args...));
+        }
     }
 }
 
