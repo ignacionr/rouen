@@ -468,8 +468,10 @@ set(QUICKJS_SOURCES
   ${CMAKE_SOURCE_DIR}/external/quickjs/libunicode.c
   ${CMAKE_SOURCE_DIR}/external/quickjs/cutils.c
   ${CMAKE_SOURCE_DIR}/external/quickjs/libregexp.c
-  ${CMAKE_SOURCE_DIR}/external/quickjs/quickjs-libc.c
 )
+if(NOT WIN32)
+  list(APPEND QUICKJS_SOURCES ${CMAKE_SOURCE_DIR}/external/quickjs/quickjs-libc.c)
+endif()
 add_library(quickjs STATIC ${QUICKJS_SOURCES})
 set_target_properties(quickjs PROPERTIES LINKER_LANGUAGE C)
 target_include_directories(quickjs PUBLIC ${CMAKE_SOURCE_DIR}/external/quickjs)
