@@ -21,13 +21,13 @@
 #include "debug.hpp"
 
 #define HTTP_ERROR(message) LOG_COMPONENT("HTTP", LOG_LEVEL_ERROR, message)
-#define HTTP_ERROR_FMT(fmt, ...) HTTP_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define HTTP_ERROR_FMT(fmt, ...) HTTP_ERROR(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define HTTP_WARN(message) LOG_COMPONENT("HTTP", LOG_LEVEL_WARN, message)
-#define HTTP_WARN_FMT(fmt, ...) HTTP_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define HTTP_WARN_FMT(fmt, ...) HTTP_WARN(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define HTTP_INFO(message) LOG_COMPONENT("HTTP", LOG_LEVEL_INFO, message)
-#define HTTP_INFO_FMT(fmt, ...) HTTP_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define HTTP_INFO_FMT(fmt, ...) HTTP_INFO(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define HTTP_DEBUG(message) LOG_COMPONENT("HTTP", LOG_LEVEL_DEBUG, message)
-#define HTTP_DEBUG_FMT(fmt, ...) HTTP_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define HTTP_DEBUG_FMT(fmt, ...) HTTP_DEBUG(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 
 namespace http {
 

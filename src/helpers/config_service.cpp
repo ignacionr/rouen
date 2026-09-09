@@ -40,10 +40,10 @@ module rouen.helpers.config_service;
 #define CONFIG_INFO(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_INFO, message)
 #define CONFIG_DEBUG(message) LOG_COMPONENT("CONFIG", LOG_LEVEL_DEBUG, message)
 
-#define CONFIG_ERROR_FMT(fmt, ...) CONFIG_ERROR(debug::format_log(fmt, __VA_ARGS__))
-#define CONFIG_WARN_FMT(fmt, ...) CONFIG_WARN(debug::format_log(fmt, __VA_ARGS__))
-#define CONFIG_INFO_FMT(fmt, ...) CONFIG_INFO(debug::format_log(fmt, __VA_ARGS__))
-#define CONFIG_DEBUG_FMT(fmt, ...) CONFIG_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define CONFIG_ERROR_FMT(fmt, ...) CONFIG_ERROR(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define CONFIG_WARN_FMT(fmt, ...) CONFIG_WARN(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define CONFIG_INFO_FMT(fmt, ...) CONFIG_INFO(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define CONFIG_DEBUG_FMT(fmt, ...) CONFIG_DEBUG(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 
 namespace rouen::helpers {
 

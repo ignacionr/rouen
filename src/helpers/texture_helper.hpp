@@ -9,13 +9,13 @@
 
 // Add texture-specific logging macros
 #define TEXTURE_ERROR(message) LOG_COMPONENT("TEXTURE", LOG_LEVEL_ERROR, message)
-#define TEXTURE_ERROR_FMT(fmt, ...) TEXTURE_ERROR(debug::format_log(fmt, __VA_ARGS__))
+#define TEXTURE_ERROR_FMT(fmt, ...) TEXTURE_ERROR(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define TEXTURE_WARN(message) LOG_COMPONENT("TEXTURE", LOG_LEVEL_WARN, message)
-#define TEXTURE_WARN_FMT(fmt, ...) TEXTURE_WARN(debug::format_log(fmt, __VA_ARGS__))
+#define TEXTURE_WARN_FMT(fmt, ...) TEXTURE_WARN(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define TEXTURE_INFO(message) LOG_COMPONENT("TEXTURE", LOG_LEVEL_INFO, message)
-#define TEXTURE_INFO_FMT(fmt, ...) TEXTURE_INFO(debug::format_log(fmt, __VA_ARGS__))
+#define TEXTURE_INFO_FMT(fmt, ...) TEXTURE_INFO(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define TEXTURE_DEBUG(message) LOG_COMPONENT("TEXTURE", LOG_LEVEL_DEBUG, message)
-#define TEXTURE_DEBUG_FMT(fmt, ...) TEXTURE_DEBUG(debug::format_log(fmt, __VA_ARGS__))
+#define TEXTURE_DEBUG_FMT(fmt, ...) TEXTURE_DEBUG(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 
 struct RouenGPUTexture {
     SDL_GPUTextureSamplerBinding binding;
