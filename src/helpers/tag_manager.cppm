@@ -8,9 +8,10 @@ module;
 #include <unordered_map>
 #include <memory>
 #include <mutex>
-namespace hosting::db { class sqlite; }
 
 export module rouen.helpers.tag_manager;
+
+namespace hosting::db { class sqlite; }
 
 export namespace rouen::helpers {
 
