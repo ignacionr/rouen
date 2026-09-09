@@ -32,6 +32,8 @@ tag_manager::tag_manager() {
     init_db();
 }
 
+tag_manager::~tag_manager() = default;
+
 void tag_manager::init_db() {
     if (!db_) return;
 

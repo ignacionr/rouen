@@ -8,9 +8,11 @@ module;
 #include <unordered_map>
 #include <memory>
 #include <mutex>
-#include "sqlite.hpp"
-
 export module rouen.helpers.tag_manager;
+
+namespace hosting::db {
+    struct sqlite;
+}
 
 export namespace rouen::helpers {
 
@@ -36,7 +38,7 @@ private:
     void init_db();
 
     tag_manager();
-    ~tag_manager() = default;
+    ~tag_manager();
 
     tag_manager(const tag_manager&) = delete;
     tag_manager& operator=(const tag_manager&) = delete;
