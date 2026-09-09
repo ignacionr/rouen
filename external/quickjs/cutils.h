@@ -69,11 +69,8 @@
 #endif
 
 #if defined(_WIN32)
+#include <winsock2.h>
 #include <windows.h>
-struct timeval {
-    long tv_sec;
-    long tv_usec;
-};
 static inline int gettimeofday(struct timeval *tv, void *tz) {
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
