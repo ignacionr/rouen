@@ -299,6 +299,8 @@ elseif(MSVC)
     /w14458      # Warn on declaration hiding class member (-Wshadow equivalent)
     /w14459      # Warn on declaration hiding global declaration (-Wshadow equivalent)
     /w14834      # Warn on discarding return value of function with [[nodiscard]] attribute (-Wunused-result equivalent)
+    /wd5050      # Suppress 'Possible incompatible environment while importing module' warning
+    /wd4100      # Suppress 'unreferenced formal parameter' warning
   )
   
   # Function for adding strict warnings to MSVC targets
@@ -314,6 +316,8 @@ elseif(MSVC)
       /wd4244      # Suppress 'conversion from double to float' warnings
       /wd4101      # Suppress 'unreferenced local variable' warnings
       /wd4996      # Suppress deprecated function warnings
+      /wd5050      # Suppress 'Possible incompatible environment while importing module' warning
+      /wd4100      # Suppress 'unreferenced formal parameter' warning
     )
   endfunction()
 endif()

@@ -57,6 +57,9 @@
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wfloat-conversion"
 #pragma GCC diagnostic ignored "-Wshadow"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4100 4244 4267 4996)
 #endif
 
 #include "quickjs.h"
@@ -65,6 +68,8 @@
 #pragma clang diagnostic pop
 #elif defined(__GNUC__)
 #pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
 #endif
 
 namespace rouen::hosts {
