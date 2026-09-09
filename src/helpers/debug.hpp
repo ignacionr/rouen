@@ -165,6 +165,9 @@ namespace debug {
         return ss.str();
     }
 
+#if defined(__GNUC__) && !defined(__clang__)
+    __attribute__((noinline))
+#endif
     inline std::string format_log(std::string_view fmt) {
         return std::string(fmt);
     }
@@ -176,6 +179,9 @@ namespace debug {
         return std::vformat(fmt, args);
     }
 
+#if defined(__GNUC__) && !defined(__clang__)
+    __attribute__((noinline))
+#endif
     template<typename... Args>
     requires (sizeof...(Args) > 0)
     inline std::string format_log(std::string_view fmt, Args... args) {
