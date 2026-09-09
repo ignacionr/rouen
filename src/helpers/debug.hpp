@@ -164,6 +164,15 @@ namespace debug {
            << static_cast<uint32_t>(c);
         return ss.str();
     }
+
+    inline std::string format_log(std::string_view fmt) {
+        return std::string(fmt);
+    }
+
+    template<typename... Args>
+    inline std::string format_log(std::string_view fmt, Args&&... args) {
+        return std::vformat(fmt, std::make_format_args(args...));
+    }
 }
 
 // C++23 formatter for char32_t with support for hex format specifier
@@ -207,14 +216,6 @@ struct std::formatter<char32_t> {
         }
     }
 };
-
-namespace debug {
-    // Helper function for format-based logging with proper C++20/C++23 support for all types
-    template<typename... Args>
-    inline std::string format_log(std::string_view fmt, Args&&... args) {
-        return std::vformat(fmt, std::make_format_args(args...));
-    }
-}
 
 // Convenience macros with format support
 #define RSS_ERROR_FMT(fmt, ...) RSS_ERROR(debug::format_log(fmt, __VA_ARGS__))
