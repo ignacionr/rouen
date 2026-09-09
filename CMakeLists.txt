@@ -480,7 +480,7 @@ else()
 endif()
 set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES LANGUAGE C)
 if(NOT MSVC)
-  set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough")
+  set_source_files_properties(${QUICKJS_SOURCES} PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-unused-parameter -Wno-sign-compare -Wno-implicit-fallthrough -Wno-conversion -Wno-sign-conversion -Wno-shorten-64-to-32 -Wno-float-conversion -Wno-shadow")
 endif()
 
 # Add PDFHummus (PDFWriter)
@@ -666,7 +666,7 @@ target_sources(${PROJECT_NAME}
 
 set_source_files_properties(src/helpers/mp4_writer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 if(NOT MSVC)
-  set_source_files_properties(src/hosts/quickjs_host.cpp PROPERTIES COMPILE_FLAGS "-Wno-error -Wno-c99-extensions -Wno-old-style-cast -Wno-sign-conversion -Wno-unused-parameter -Wno-shorten-64-to-32 -Wno-implicit-int-float-conversion")
+  set_source_files_properties(src/hosts/quickjs_host.cpp PROPERTIES COMPILE_FLAGS "-Wno-error -Wno-c99-extensions -Wno-old-style-cast -Wno-sign-conversion -Wno-conversion -Wno-unused-parameter -Wno-shorten-64-to-32 -Wno-implicit-int-float-conversion -Wno-float-conversion -Wno-shadow")
 endif()
 
 target_include_directories(${PROJECT_NAME} SYSTEM BEFORE PRIVATE "${AVCODEC_INCLUDEDIR}")

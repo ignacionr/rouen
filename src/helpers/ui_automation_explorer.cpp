@@ -708,6 +708,8 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
     if (result.total_node_count == 0) result.total_node_count = 1;
 
 #else
+    (void)max_depth;
+    (void)max_children_per_node;
     result.error_message = "UI Automation explorer is not supported on this platform";
     result.root.role = "Application";
     result.root.name = std::format("Process ({})", pid);
