@@ -1,7 +1,6 @@
 module;
 
 #include "platform_utils.hpp"
-#include "sqlite.hpp"
 #include <sqlite3.h>
 #include <set>
 #include <vector>
@@ -12,6 +11,8 @@ module;
 #include <sstream>
 
 module rouen.helpers.tag_manager;
+
+#include "sqlite.hpp"
 
 namespace rouen::helpers {
 
