@@ -182,10 +182,9 @@ namespace debug {
 #if defined(__GNUC__) && !defined(__clang__)
     __attribute__((noinline))
 #endif
-    template<typename... Args>
-    requires (sizeof...(Args) > 0)
-    inline std::string format_log(std::string_view fmt, Args... args) {
-        return format_log_v(fmt, std::make_format_args(args...));
+    template<typename T, typename... Args>
+    inline std::string format_log(std::string_view fmt, const T& first, const Args&... rest) {
+        return format_log_v(fmt, std::make_format_args(first, rest...));
     }
 }
 
