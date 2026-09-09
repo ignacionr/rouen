@@ -166,29 +166,13 @@ namespace debug {
         return ss.str();
     }
 
-    inline std::string format_log_v(std::string_view fmt, std::format_args args) {
-        return std::vformat(fmt, args);
-    }
-
-    template<typename T>
-    inline decltype(auto) format_clean(const T& val) {
-        if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
-            return std::string_view(val);
-        } else {
-            return val;
-        }
+    inline std::string format_log(std::string_view fmt) {
+        return std::string(fmt);
     }
 
     template<typename... Args>
-    inline std::string format_log(std::string_view fmt, const Args&... args) {
-        if constexpr (sizeof...(Args) == 0) {
-            return std::string(fmt);
-        } else {
-            auto args_tuple = std::make_tuple(format_clean(args)...);
-            return std::apply([fmt](const auto&... lvalue_args) -> std::string {
-                return format_log_v(fmt, std::make_format_args(lvalue_args...));
-            }, args_tuple);
-        }
+    inline std::string format_log(std::format_string<Args...> fmt, Args&&... args) {
+        return std::format(fmt, std::forward<Args>(args)...);
     }
 }
 
