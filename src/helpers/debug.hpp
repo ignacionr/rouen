@@ -17,6 +17,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -179,12 +180,28 @@ namespace debug {
         return std::vformat(fmt, args);
     }
 
+    template<typename T>
+    inline decltype(auto) format_arg_clean(T&& arg) {
+        using Decayed = std::decay_t<T>;
+        if constexpr (std::is_same_v<Decayed, std::string> || std::is_same_v<Decayed, std::string_view>) {
+            return std::string_view(arg);
+        } else if constexpr (std::is_convertible_v<T, const char*>) {
+            return static_cast<const char*>(arg);
+        } else {
+            return std::forward<T>(arg);
+        }
+    }
+
 #if defined(__GNUC__) && !defined(__clang__)
     __attribute__((noinline))
 #endif
     template<typename T, typename... Args>
-    inline std::string format_log(std::string_view fmt, const T& first, const Args&... rest) {
-        return format_log_v(fmt, std::make_format_args(first, rest...));
+    inline std::string format_log(std::string_view fmt, T&& first, Args&&... rest) {
+        auto clean_first = format_arg_clean(std::forward<T>(first));
+        auto clean_rest = std::make_tuple(format_arg_clean(std::forward<Args>(rest))...);
+        return std::apply([&](auto&&... clean_args) {
+            return format_log_v(fmt, std::make_format_args(clean_args...));
+        }, std::tuple_cat(std::make_tuple(clean_first), clean_rest));
     }
 }
 
