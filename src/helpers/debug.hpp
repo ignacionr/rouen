@@ -166,13 +166,6 @@ namespace debug {
         return ss.str();
     }
 
-#if defined(__GNUC__) && !defined(__clang__)
-    __attribute__((noinline))
-#endif
-    inline std::string format_log(std::string_view fmt) {
-        return std::string(fmt);
-    }
-
     template<typename T>
     inline decltype(auto) format_clean(const T& val) {
         if constexpr (std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>) {
@@ -187,10 +180,14 @@ namespace debug {
 #endif
     template<typename... Args>
     inline std::string format_log(std::string_view fmt, const Args&... args) {
-        auto args_tuple = std::make_tuple(format_clean(args)...);
-        return std::apply([fmt](const auto&... lvalue_args) -> std::string {
-            return std::vformat(fmt, std::make_format_args(lvalue_args...));
-        }, args_tuple);
+        if constexpr (sizeof...(Args) == 0) {
+            return std::string(fmt);
+        } else {
+            auto args_tuple = std::make_tuple(format_clean(args)...);
+            return std::apply([fmt](const auto&... lvalue_args) -> std::string {
+                return std::vformat(fmt, std::make_format_args(lvalue_args...));
+            }, args_tuple);
+        }
     }
 }
 
