@@ -209,10 +209,10 @@ struct std::formatter<char32_t> {
 };
 
 namespace debug {
-    // Helper function for format-based logging with proper C++23 support for all types
+    // Helper function for format-based logging with proper C++20/C++23 support for all types
     template<typename... Args>
-    inline std::string format_log(std::format_string<Args...> fmt, Args&&... args) {
-        return std::format(fmt, std::forward<Args>(args)...);
+    inline std::string format_log(std::string_view fmt, Args&&... args) {
+        return std::vformat(fmt, std::make_format_args(args...));
     }
 }
 
