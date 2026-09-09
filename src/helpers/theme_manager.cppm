@@ -6,9 +6,9 @@ module;
 #include <string>
 #include <vector>
 #include <memory>
-export module rouen.helpers.theme_manager;
+#include "../cards/interface/card_fwd.hpp"
 
-struct card;
+export module rouen.helpers.theme_manager;
 
 export namespace rouen::theme {
 
