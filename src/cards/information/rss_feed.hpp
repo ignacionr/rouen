@@ -1036,6 +1036,32 @@ namespace rouen::cards
             return std::format("rss-feed:{}", feed_id);
         }
 
+        std::string get_adaptive_card_json() const override
+        {
+            return std::format(
+                R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "{}", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Feed ID: {}", "isSubtle": true}},
+    {{"type": "TextBlock", "text": "Items: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Feed", "verb": "refresh"}}
+  ]
+}})",
+                feed_title.empty() ? "RSS Feed" : feed_title, feed_id, items.size());
+        }
+
+        void handle_action(std::string_view action_json) override
+        {
+            std::string act(action_json);
+            if (act.find("\"refresh\"") != std::string::npos) {
+                refresh_feed();
+            }
+        }
+
         void refresh_feed()
         {
             try

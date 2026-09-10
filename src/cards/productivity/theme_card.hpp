@@ -18,6 +18,9 @@ namespace rouen::cards {
 
         std::string get_uri() const override;
 
+        std::string get_adaptive_card_json() const override;
+        void handle_action(std::string_view action_json) override;
+
         bool render() override;
 
     private:

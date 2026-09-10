@@ -17,6 +17,39 @@ namespace rouen::cards {
         return "theme";
     }
 
+    std::string theme_card::get_adaptive_card_json() const {
+        auto& tm = rouen::theme::theme_manager::get();
+        auto active_theme = tm.get_active_theme();
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "Theme Settings", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Active Theme: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Next Theme", "verb": "next_theme"}},
+    {{"type": "Action.Execute", "title": "Previous Theme", "verb": "prev_theme"}}
+  ]
+}})",
+            active_theme.name);
+    }
+
+    void theme_card::handle_action(std::string_view action_json) {
+        std::string act(action_json);
+        auto& tm = rouen::theme::theme_manager::get();
+        size_t active_idx = tm.get_active_theme_index();
+        size_t total = tm.get_themes().size();
+        if (total == 0) return;
+
+        if (act.find("\"next_theme\"") != std::string::npos) {
+            tm.select_theme((active_idx + 1) % total);
+        } else if (act.find("\"prev_theme\"") != std::string::npos) {
+            tm.select_theme((active_idx + total - 1) % total);
+        }
+    }
+
     bool theme_card::render() {
         return render_window([this]() {
             auto& tm = rouen::theme::theme_manager::get();

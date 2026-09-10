@@ -47,6 +47,31 @@ public:
     bool supports_menu_decoration() const override { return false; }
     bool render() override;
     [[nodiscard]] std::string get_uri() const override;
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        auto h = getHost();
+        size_t count = h ? h->feeds().size() : 0;
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "RSS Reader", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Subscribed Feeds: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Feeds", "verb": "refresh"}}
+  ]
+}})",
+            count);
+    }
+
+    void handle_action(std::string_view action_json) override {
+        std::string act(action_json);
+        if (act.find("\"refresh\"") != std::string::npos) {
+            auto h = getHost();
+            if (h) h->trigger_manual_refresh();
+        }
+    }
     std::vector<card_performance_metric> get_performance_measurements() const override;
 
     void set_renderer(SDL_Renderer* r);

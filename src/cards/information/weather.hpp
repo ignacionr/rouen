@@ -540,6 +540,31 @@ public:
     std::string get_uri() const override {
         return std::format("weather:{}", weather_host->getLocation());
     }
+
+    std::string get_adaptive_card_json() const override {
+        std::string loc = weather_host ? weather_host->getLocation() : "Unknown";
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": 60000,
+  "body": [
+    {{"type": "TextBlock", "text": "Weather - {}", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Location: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Weather", "verb": "refresh"}}
+  ]
+}})",
+            loc, loc);
+    }
+
+    void handle_action(std::string_view action_json) override {
+        std::string act(action_json);
+        if (act.find("\"refresh\"") != std::string::npos && weather_host) {
+            weather_host->refreshWeather();
+        }
+    }
     
 private:
     void draw_analog_clock(ImDrawList* draw_list, ImVec2 center, float radius, std::chrono::system_clock::time_point local_tp, ImVec4 accent_color) {

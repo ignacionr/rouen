@@ -66,6 +66,33 @@ invoice_card::invoice_card() {
     refresh_contacts();
 }
 
+std::string invoice_card::get_adaptive_card_json() const {
+    return std::format(
+        R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "Invoice {}", "weight": "Bolder", "size": "Large"}},
+    {{"type": "FactSet", "facts": [
+      {{"title": "Date", "value": "{}"}},
+      {{"title": "Seller", "value": "{}"}},
+      {{"title": "Client", "value": "{}"}}
+    ]}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Apply Retainer", "verb": "apply_retainer"}}
+  ]
+}})",
+        invoice_number, invoice_date, seller_name, client_name);
+}
+
+void invoice_card::handle_action(std::string_view action_json) {
+    std::string act(action_json);
+    if (act.find("\"apply_retainer\"") != std::string::npos) {
+        apply_monthly_retainer();
+    }
+}
+
 void invoice_card::refresh_contacts() {
     if (contacts_repo_) {
         cached_contacts_ = contacts_repo_->get_all_contacts();

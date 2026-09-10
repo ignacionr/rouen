@@ -56,6 +56,38 @@ namespace rouen::cards {
             update_time_string();
         }
 
+        std::string get_adaptive_card_json() const override {
+            auto time_rem = get_time_remaining(std::chrono::system_clock::now());
+            long long secs = time_rem.count();
+            bool ringing = alarm_active && secs <= 0;
+            std::string status = ringing ? "Ringing" : (alarm_active ? "Active" : "Disabled");
+            return std::format(
+                R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": 1000,
+  "body": [
+    {{"type": "TextBlock", "text": "Alarm", "weight": "Bolder", "size": "Medium"}},
+    {{"type": "TextBlock", "text": "Target: {}", "size": "Default"}},
+    {{"type": "TextBlock", "text": "Status: {}", "isSubtle": true}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Toggle Alarm", "verb": "toggle_alarm"}},
+    {{"type": "Action.Execute", "title": "Dismiss", "verb": "dismiss"}}
+  ]
+}})",
+                time_buffer, status);
+        }
+
+        void handle_action(std::string_view action_json) override {
+            std::string act(action_json);
+            if (act.find("\"toggle_alarm\"") != std::string::npos) {
+                alarm_active = !alarm_active;
+            } else if (act.find("\"dismiss\"") != std::string::npos) {
+                alarm_active = false;
+            }
+        }
+
         bool render() override {
             auto time_remaining = get_time_remaining(std::chrono::system_clock::now());
 

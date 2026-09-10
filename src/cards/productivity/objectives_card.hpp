@@ -69,6 +69,33 @@ namespace rouen::cards {
             return "objectives";
         }
 
+        std::string get_adaptive_card_json() const override {
+            return std::format(
+                R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "Objectives & Goals", "weight": "Bolder", "size": "Large"}},
+    {{"type": "FactSet", "facts": [
+      {{"title": "Daily Objectives", "value": "{}"}},
+      {{"title": "Weekly Objectives", "value": "{}"}},
+      {{"title": "Monthly Objectives", "value": "{}"}}
+    ]}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Objectives", "verb": "refresh"}}
+  ]
+}})",
+                daily_objs_.size(), weekly_objs_.size(), monthly_objs_.size());
+        }
+
+        void handle_action(std::string_view action_json) override {
+            std::string act(action_json);
+            if (act.find("\"refresh\"") != std::string::npos) {
+                refresh_state();
+            }
+        }
+
     private:
         enum class ui_state {
             forgiveness_buffer,

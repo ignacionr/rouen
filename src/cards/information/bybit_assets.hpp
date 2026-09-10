@@ -57,6 +57,30 @@ public:
     std::string get_uri() const override {
         return "bybit-assets";
     }
+
+    std::string get_adaptive_card_json() const override {
+        bool has_creds = bybit_host && bybit_host->hasCredentials();
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "Bybit Assets", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Credentials: {}", "isSubtle": true}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Assets", "verb": "refresh"}}
+  ]
+}})",
+            has_creds ? "Configured" : "Missing");
+    }
+
+    void handle_action(std::string_view action_json) override {
+        std::string act(action_json);
+        if (act.find("\"refresh\"") != std::string::npos && bybit_host) {
+            bybit_host->getWalletInfo(hosts::WalletType::UNIFIED);
+        }
+    }
     
 private:
     std::shared_ptr<hosts::BybitHost> bybit_host;

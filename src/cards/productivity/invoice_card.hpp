@@ -31,6 +31,9 @@ struct invoice_card : public card {
         return "invoice";
     }
 
+    std::string get_adaptive_card_json() const override;
+    void handle_action(std::string_view action_json) override;
+
     bool render(rouen::ui::ui_context& ui) override;
 
     std::vector<card::mcp_function> get_mcp_functions() const override;

@@ -263,6 +263,43 @@ target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
+add_gtest_executable(test_card_adaptive_interface test_card_adaptive_interface.cpp)
+target_sources(test_card_adaptive_interface PRIVATE
+    ../src/cards/interface/card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/hosts/mcp_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/event_bus_host.cpp
+    ../src/hosts/universal_sync_host.cpp
+    ../src/hosts/git_sync_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/helpers/ytdlp_service.cpp
+    ../src/helpers/piped_process.cpp
+    ../src/helpers/card_decorations.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/theme_manager.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/fonts.cpp
+)
+if(APPLE)
+    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm)
+    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation")
+endif()
+target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter)
+if(NOT MSVC)
+    target_compile_options(test_card_adaptive_interface PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
+endif()
+
 add_gtest_executable(test_adaptive_cards_repository test_adaptive_cards_repository.cpp)
 target_link_libraries(test_adaptive_cards_repository PRIVATE SQLite::SQLite3)
 add_gtest_http_executable(test_adaptive_card_image test_adaptive_card_image.cpp)

@@ -901,6 +901,33 @@ namespace rouen::cards {
         return "ai-chat";
     }
 
+    std::string ai_chat::get_adaptive_card_json() const {
+        std::lock_guard<std::mutex> const lock(const_cast<std::mutex&>(chat_history_mutex_));
+        int refresh_ms = waiting_for_response_ ? 500 : 0;
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": {},
+  "body": [
+    {{"type": "TextBlock", "text": "AI Assistant Chat", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Messages in history: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Send Message", "verb": "send_message"}}
+  ]
+}})",
+            refresh_ms, chat_history_.size());
+    }
+
+    void ai_chat::handle_action(std::string_view action_json) {
+        std::string act(action_json);
+        if (act.find("\"send_message\"") != std::string::npos && !input_text_.empty()) {
+            send_message(input_text_);
+            input_text_.clear();
+        }
+    }
+
     void ai_chat::maybe_speak_reply(const std::string& text) {
         if (text.empty()) {
             return;

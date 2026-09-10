@@ -73,6 +73,45 @@ struct contact_card : public card {
         return "contact:new";
     }
 
+    std::string get_adaptive_card_json() const override {
+        std::string full_name = contact_data_.get_full_name();
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "{}", "weight": "Bolder", "size": "Large"}},
+    {{"type": "FactSet", "facts": [
+      {{"title": "Email", "value": "{}"}},
+      {{"title": "Phone", "value": "{}"}},
+      {{"title": "Organization", "value": "{}"}},
+      {{"title": "Job Title", "value": "{}"}}
+    ]}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Toggle Edit", "verb": "toggle_edit"}},
+    {{"type": "Action.Execute", "title": "Delete Contact", "verb": "delete"}}
+  ]
+}})",
+            full_name.empty() ? "New Contact" : full_name,
+            contact_data_.email,
+            contact_data_.phone,
+            contact_data_.organization,
+            contact_data_.job_title);
+    }
+
+    void handle_action(std::string_view action_json) override {
+        std::string act(action_json);
+        if (act.find("\"toggle_edit\"") != std::string::npos) {
+            edit_mode_ = !edit_mode_;
+        } else if (act.find("\"delete\"") != std::string::npos) {
+            if (repo_ && contact_data_.id > 0) {
+                static_cast<void>(repo_->delete_contact(contact_data_.id));
+                is_closed_ = true;
+            }
+        }
+    }
+
     bool render(rouen::ui::ui_context& ui) override {
         if (is_closed_) return false;
         return render_window([this, &ui]() {

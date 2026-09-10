@@ -22,6 +22,8 @@ namespace rouen::cards {
 
         bool render() override;
         std::string get_uri() const override;
+        std::string get_adaptive_card_json() const override;
+        void handle_action(std::string_view action_json) override;
         std::vector<card_performance_metric> get_performance_measurements() const override;
 
         static std::string get_assistant_name();

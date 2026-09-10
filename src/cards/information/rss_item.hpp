@@ -24,6 +24,18 @@ public:
     void on_close() override;
     bool render() override;
     [[nodiscard]] std::string get_uri() const override;
+    [[nodiscard]] std::string get_adaptive_card_json() const override {
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "{}", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Link: {}", "isSubtle": true}}
+  ]
+}})",
+            item_title.empty() ? "RSS Item" : item_title, item_link);
+    }
 
     void set_renderer(SDL_Renderer* r) noexcept;
     void clear_item_textures();

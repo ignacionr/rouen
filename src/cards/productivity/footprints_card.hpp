@@ -40,6 +40,32 @@ namespace rouen::cards {
 
         std::string get_uri() const override { return "footprints"; }
 
+        std::string get_adaptive_card_json() const override {
+            bool conn = host_ && host_->is_connected();
+            std::string user = conn ? host_->username() : "Not Connected";
+            return std::format(
+                R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "FootPrints", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Status: {}", "size": "Medium"}},
+    {{"type": "TextBlock", "text": "User: {}", "isSubtle": true}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Logout", "verb": "logout"}}
+  ]
+}})",
+                conn ? "Connected" : "Disconnected", user);
+        }
+
+        void handle_action(std::string_view action_json) override {
+            std::string act(action_json);
+            if (act.find("\"logout\"") != std::string::npos && host_) {
+                host_->logout();
+            }
+        }
+
     private:
         void render_connected() {
             ImGui::TextColored(colors[0], ICON_MD_CONFIRMATION_NUMBER " FootPrints");

@@ -80,6 +80,34 @@ public:
         return "movies";
     }
 
+    std::string get_adaptive_card_json() const override {
+        std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(data_mutex_));
+        size_t total = 0;
+        for (const auto& [k, v] : lists_) {
+            total += v.size();
+        }
+        return std::format(
+            R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {{"type": "TextBlock", "text": "My Movies & Watchlists", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Movies in collection: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Collection", "verb": "refresh"}}
+  ]
+}})",
+            total);
+    }
+
+    void handle_action(std::string_view action_json) override {
+        std::string act(action_json);
+        if (act.find("\"refresh\"") != std::string::npos) {
+            load_lists_from_db();
+        }
+    }
+
     bool render() override {
         return render_window([this]() {
             // Left Side: Sidebar navigation (List selector)

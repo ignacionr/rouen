@@ -104,6 +104,33 @@ namespace rouen::cards
         {
             return calendar_url.empty() ? "calendar" : std::format("calendar:{}", calendar_url);
         }
+
+        std::string get_adaptive_card_json() const override
+        {
+            std::lock_guard<std::mutex> const lock(events_mutex_);
+            return std::format(
+                R"({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": 300000,
+  "body": [
+    {{"type": "TextBlock", "text": "Calendar", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Upcoming events: {}", "size": "Medium"}}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Refresh Calendar", "verb": "refresh"}}
+  ]
+}})",
+                events_.size());
+        }
+
+        void handle_action(std::string_view action_json) override
+        {
+            std::string act(action_json);
+            if (act.find("\"refresh\"") != std::string::npos) {
+                refresh_events();
+            }
+        }
         
     private:
         std::shared_ptr<::calendar::calendar_fetcher> fetcher_;
