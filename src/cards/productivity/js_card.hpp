@@ -69,6 +69,10 @@ function onRender() {
         load_script(locator);
     }
 
+    void handle_action(std::string_view action_json) override {
+        handle_submit(std::string(action_json));
+    }
+
     bool render() override {
         if (!error_.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "JS Error: %s", error_.c_str());

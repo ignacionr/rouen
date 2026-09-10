@@ -72,6 +72,10 @@ public:
         return std::format("adaptive-card:{}", locator_);
     }
 
+    std::string get_adaptive_card_json() const override {
+        return current_card_.card_json;
+    }
+
     bool matches_uri(std::string_view uri) const override {
         return uri == "adaptive-card" || uri.starts_with("adaptive-card:");
     }

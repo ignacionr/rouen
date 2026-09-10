@@ -102,6 +102,12 @@ struct card {
 
     virtual void handle_uri(std::string_view /*uri*/) {}
 
+    /// Returns an Adaptive Cards JSON representation of this card, if supported.
+    virtual std::string get_adaptive_card_json() const { return {}; }
+
+    /// Handles an Adaptive Cards action payload (JSON string) for this card.
+    virtual void handle_action(std::string_view /*action_json*/) {}
+
     bool video_overlay_visible = true;
 
     /// Optional virtual method for cards to paint themselves onto the video feed surface

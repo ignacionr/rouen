@@ -74,6 +74,16 @@ namespace rouen::cards {
             impl_->on_close();
         }
 
+        [[nodiscard]] std::string get_adaptive_card_json() const override {
+            return impl_ ? impl_->card_json() : std::string{};
+        }
+
+        void handle_action(std::string_view action_json) override {
+            if (impl_) {
+                impl_->on_submit(std::string(action_json));
+            }
+        }
+
     private:
         void rebuild() {
             try {

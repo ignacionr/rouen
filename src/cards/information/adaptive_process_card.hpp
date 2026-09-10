@@ -141,6 +141,15 @@ namespace rouen::cards {
             return has_pending_update_;
         }
 
+        [[nodiscard]] std::string get_adaptive_card_json() const override {
+            std::lock_guard<std::mutex> const lock(mutex_);
+            return pending_card_json_;
+        }
+
+        void handle_action(std::string_view action_json) override {
+            post_to_process(std::string(action_json));
+        }
+
     private:
         void apply_title() {
             name(command_line_.empty() ? "Adaptive Process" : command_line_);
