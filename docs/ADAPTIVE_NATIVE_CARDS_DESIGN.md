@@ -22,10 +22,41 @@ For cards with visual content that cannot be represented using standard Adaptive
 - **Visual Canvas Snapshots**: Rendered to an off-screen surface and embedded in the card using **Base64 Data URIs** (`"data:image/png;base64,..."`) or **Rouen HTTP/Image Cache URLs** (`"http://localhost:8080/cards/{id}/snapshot.png"`).
 
 ### 2. Live Card Refresh & Cadence Mechanics
-For cards with dynamic state (e.g. running Pomodoro countdown timer or live system monitor):
-- **In-Card Metadata**: The card JSON includes `"refreshIntervalMs": 1000` and standard `"refresh"` action objects to inform external renderers of update frequency.
-- **Push Model** (`adaptive-process` & Streaming Plugins): Background processes emit new single-line Adaptive Card JSONs directly over `stdout` or WebSocket/event bus as state updates.
-- **Pull Model** (Native C++ Cards): Cards manage `card::requested_fps` (`1` while active/running, `0` when paused/idle) to drive host render/update loops efficiently.
+For cards with dynamic state (e.g. running Pomodoro countdown timer, live system monitor, or streaming AI chat):
+
+#### A. Declarative In-Card JSON Refresh Hints (`refreshIntervalMs`)
+Cards include a top-level `"refreshIntervalMs"` hint in their Adaptive Cards JSON string output by `get_adaptive_card_json()`:
+```json
+{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": 1000,
+  "refresh": {
+    "action": {
+      "type": "Action.Execute",
+      "verb": "tick"
+    }
+  },
+  "body": [ ... ]
+}
+```
+- **Interpretation**: Tells host renderers (Rouen deck, REST API consumers, remote web views, or LLM agents) the recommended polling interval in milliseconds.
+- **Value `0` / Omitted**: Indicates a static card that only updates in response to explicit user actions (`Action.Execute` / `Action.Submit`).
+
+#### B. Native C++ Host Loop FPS Control (`card::requested_fps`)
+Native Rouen cards inherit the `requested_fps` property defined in `struct card` (`src/cards/interface/card.hpp`):
+```cpp
+int requested_fps{1}; // Target update frequency in frames per second
+```
+Cards dynamically scale `requested_fps` based on active execution state:
+- **`ai_chat`**: Sets `requested_fps = 2` (and `"refreshIntervalMs": 500`) while LLM response tokens are streaming; drops to `requested_fps = 0` when idle.
+- **`alarm`**: Sets `requested_fps = 60` when ringing for smooth visual flashing/animations; scales to `requested_fps = 1` for countdowns.
+- **`pomodoro`**: Sets `requested_fps = 1` while countdown timer is running; sets `requested_fps = 0` when paused.
+- **`weather`**: Sets `requested_fps = 1` (and `"refreshIntervalMs": 60000` for OpenWeather API cache checks).
+
+#### C. Push vs. Pull Update Models
+- **Push Model** (`adaptive-process` & Streaming Plugins): Background executables emit new single-line Adaptive Card JSONs directly over `stdout` or WebSocket/event bus as state updates occur.
+- **Pull Model** (Native C++ Cards & REST Clients): External clients poll `get_adaptive_card_json()` or send `handle_action({"verb": "tick"})` at intervals governed by `"refreshIntervalMs"`.
 
 ---
 

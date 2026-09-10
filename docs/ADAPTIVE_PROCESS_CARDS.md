@@ -66,6 +66,8 @@ count = 0
 def emit_card():
     card = {
         "type": "AdaptiveCard",
+        "version": "1.5",
+        "refreshIntervalMs": 1000,  # Recommended auto-refresh hint (ms)
         "body": [
             {"type": "TextBlock", "text": f"Greeted {count} time(s)", "size": "large"},
             {"type": "Input.Text", "id": "name", "title": "Your name", "placeholder": "Ada"},
@@ -92,6 +94,7 @@ to clean it up.
 
 ## Card behavior
 
+- **Refresh & Cadence Hints**: JSON payloads emitted on stdout may include a top-level `"refreshIntervalMs": <ms>` property (e.g. `1000` for live status indicators, `500` for streaming text). Host renderers use this hint to poll or request periodic state updates via `Action.Execute` (`"verb": "tick"`).
 - **Status line**: "Running" while the process is alive, or
   "Process exited (code N)" once it has (crashed, or exited on its own -
   e.g. after reading EOF). A **Restart** button relaunches the same
