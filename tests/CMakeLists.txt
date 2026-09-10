@@ -50,6 +50,7 @@ include_directories(../src/hosts)
 include_directories(../src/models)
 include_directories(../src/cards)
 include_directories(../external)
+include_directories(../external/mongoose-7.15)
 include_directories(../external/quickjs)
 include_directories(../external/imguicolortextedit)
 include_directories(../external/imgui)
@@ -271,6 +272,8 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/cards/information/ai_chat.cpp
     ../src/cards/information/rss.cpp
     ../src/cards/information/rss_item.cpp
+    ../src/hosts/api_server_host.cpp
+    ../external/mongoose-7.15/mongoose.c
     ../src/hosts/mcp_host.cpp
     ../src/hosts/llm_host.cpp
     ../src/hosts/event_bus_host.cpp
@@ -278,6 +281,33 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
+    ../src/hosts/process_host.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_commands.cpp
+    ../src/hosts/quickjs_host.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/capture_helper.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/git_scanner.cpp
+    ../src/hosts/plugin_host.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
     ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/card_decorations.cpp
@@ -292,10 +322,10 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/fonts.cpp
 )
 if(APPLE)
-    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation")
+    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
+    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa")
 endif()
-target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter)
+target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_card_adaptive_interface PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()

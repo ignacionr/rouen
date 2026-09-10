@@ -369,6 +369,20 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/cards/adaptive"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_cards_adaptive(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/cards/action"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_cards_action(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else if (mg_match(hm->uri, mg_str("/api/cards"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_card_creation(c, hm);
@@ -680,6 +694,26 @@ std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, s
     }
 }
 
+static std::string get_query_param(const struct mg_str* query, const char* var_name) {
+    if (!query || query->len == 0 || !var_name) return "";
+    char buf[512];
+    int len = mg_http_get_var(query, var_name, buf, sizeof(buf));
+    if (len > 0) return std::string(buf, static_cast<size_t>(len));
+    return "";
+}
+
+struct card_adaptive_request {
+    int index{-1};
+    std::string uri{};
+};
+
+struct card_action_request {
+    int index{-1};
+    std::string uri{};
+    glz::json_t action{};
+    std::string action_str{};
+};
+
 std::string api_server_host::handle_cards_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
         auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
@@ -704,6 +738,188 @@ std::string api_server_host::handle_cards_get(struct mg_connection* /*c*/, struc
 
         std::string out;
         (void)glz::write_json(cards_arr, out);
+        return out;
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+std::string api_server_host::handle_cards_adaptive(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+        if (!active_cards_func || !*active_cards_func) {
+            error_response response{"Active cards service not available"};
+            return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+        }
+
+        int target_index = -1;
+        std::string target_uri;
+
+        if (hm->query.len > 0) {
+            std::string idx_str = get_query_param(&hm->query, "index");
+            if (!idx_str.empty()) {
+                try { target_index = std::stoi(idx_str); } catch (...) {}
+            }
+            target_uri = get_query_param(&hm->query, "uri");
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        if (!body.empty()) {
+            card_adaptive_request req;
+            auto err = glz::read_json(req, body);
+            if (!err) {
+                if (target_index < 0 && req.index >= 0) target_index = req.index;
+                if (target_uri.empty() && !req.uri.empty()) target_uri = req.uri;
+            }
+        }
+
+        auto cards = (*active_cards_func)();
+
+        auto parse_adaptive = [](const std::shared_ptr<card>& c) -> glz::json_t {
+            if (!c) return nullptr;
+            std::string card_json = c->get_adaptive_card_json();
+            if (card_json.empty()) return nullptr;
+            glz::json_t obj;
+            auto err = glz::read_json(obj, card_json);
+            if (!err) return obj;
+            return card_json;
+        };
+
+        std::shared_ptr<card> target_card;
+        size_t found_index = 0;
+
+        if (target_index >= 0 && static_cast<size_t>(target_index) < cards.size()) {
+            target_card = cards[static_cast<size_t>(target_index)];
+            found_index = static_cast<size_t>(target_index);
+        } else if (!target_uri.empty()) {
+            for (size_t i = 0; i < cards.size(); ++i) {
+                if (cards[i] && (cards[i]->get_uri() == target_uri || cards[i]->get_uri().starts_with(target_uri))) {
+                    target_card = cards[i];
+                    found_index = i;
+                    break;
+                }
+            }
+        }
+
+        if (target_index >= 0 || !target_uri.empty()) {
+            if (!target_card) {
+                error_response response{"Card not found for specified index or uri"};
+                return glz::write_json(response).value_or(R"({"error":"Card not found"})");
+            }
+            glz::json_t resp_obj;
+            resp_obj["success"] = true;
+            resp_obj["index"] = static_cast<double>(found_index);
+            resp_obj["title"] = target_card->window_title;
+            resp_obj["uri"] = target_card->get_uri();
+            resp_obj["adaptive_card"] = parse_adaptive(target_card);
+            std::string out;
+            (void)glz::write_json(resp_obj, out);
+            return out;
+        }
+
+        std::vector<glz::json_t> cards_arr;
+        cards_arr.reserve(cards.size());
+        for (size_t i = 0; i < cards.size(); ++i) {
+            if (!cards[i]) continue;
+            glz::json_t card_obj;
+            card_obj["index"] = static_cast<double>(i);
+            card_obj["title"] = cards[i]->window_title;
+            card_obj["uri"] = cards[i]->get_uri();
+            card_obj["adaptive_card"] = parse_adaptive(cards[i]);
+            cards_arr.push_back(std::move(card_obj));
+        }
+
+        glz::json_t resp_obj;
+        resp_obj["success"] = true;
+        resp_obj["cards"] = std::move(cards_arr);
+        std::string out;
+        (void)glz::write_json(resp_obj, out);
+        return out;
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
+
+std::string api_server_host::handle_cards_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+        if (!active_cards_func || !*active_cards_func) {
+            error_response response{"Active cards service not available"};
+            return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+        }
+
+        int target_index = -1;
+        std::string target_uri;
+        std::string action_payload;
+
+        std::string body(hm->body.buf, hm->body.len);
+        if (!body.empty()) {
+            card_action_request req;
+            auto parse_err = glz::read_json(req, body);
+            if (!parse_err) {
+                target_index = req.index;
+                target_uri = req.uri;
+                if (!req.action_str.empty()) {
+                    action_payload = req.action_str;
+                } else if (req.action.holds<std::string>()) {
+                    action_payload = req.action.get<std::string>();
+                } else {
+                    (void)glz::write_json(req.action, action_payload);
+                    if (action_payload == "null") action_payload.clear();
+                }
+            }
+        }
+
+        if (hm->query.len > 0) {
+            if (target_index < 0) {
+                std::string idx_str = get_query_param(&hm->query, "index");
+                if (!idx_str.empty()) {
+                    try { target_index = std::stoi(idx_str); } catch (...) {}
+                }
+            }
+            if (target_uri.empty()) {
+                target_uri = get_query_param(&hm->query, "uri");
+            }
+            if (action_payload.empty()) {
+                action_payload = get_query_param(&hm->query, "action");
+            }
+        }
+
+        auto cards = (*active_cards_func)();
+        std::shared_ptr<card> target_card;
+        size_t found_index = 0;
+
+        if (target_index >= 0 && static_cast<size_t>(target_index) < cards.size()) {
+            target_card = cards[static_cast<size_t>(target_index)];
+            found_index = static_cast<size_t>(target_index);
+        } else if (!target_uri.empty()) {
+            for (size_t i = 0; i < cards.size(); ++i) {
+                if (cards[i] && (cards[i]->get_uri() == target_uri || cards[i]->get_uri().starts_with(target_uri))) {
+                    target_card = cards[i];
+                    found_index = i;
+                    break;
+                }
+            }
+        }
+
+        if (!target_card) {
+            error_response response{"Card not found for action dispatch"};
+            return glz::write_json(response).value_or(R"({"error":"Card not found"})");
+        }
+
+        target_card->handle_action(action_payload);
+
+        glz::json_t resp_obj;
+        resp_obj["success"] = true;
+        resp_obj["message"] = "Action payload dispatched successfully";
+        resp_obj["index"] = static_cast<double>(found_index);
+        resp_obj["title"] = target_card->window_title;
+        resp_obj["uri"] = target_card->get_uri();
+
+        std::string out;
+        (void)glz::write_json(resp_obj, out);
         return out;
     } catch (const std::exception& e) {
         error_response response{std::string(e.what())};
@@ -1529,14 +1745,6 @@ std::string api_server_host::handle_processes_list(struct mg_connection* /*c*/, 
     return out;
 }
 
-static std::string get_query_param(const struct mg_str* query, const char* var_name) {
-    if (!query || query->len == 0 || !var_name) return "";
-    char buf[512];
-    int len = mg_http_get_var(query, var_name, buf, sizeof(buf));
-    if (len > 0) return std::string(buf, static_cast<size_t>(len));
-    return "";
-}
-
 static void populate_process_ui_request(process_ui_request& req, struct mg_http_message* hm) {
     if (hm->body.len > 0) {
         std::string body(hm->body.buf, hm->body.len);
@@ -2055,6 +2263,93 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "responses": {
           "200": {
             "description": "Card created successfully"
+          }
+        }
+      }
+    },
+    "/api/cards/adaptive": {
+      "get": {
+        "tags": ["Cards"],
+        "summary": "Get Adaptive Card JSON representation for active cards",
+        "operationId": "getAdaptiveCards",
+        "parameters": [
+          {
+            "name": "index",
+            "in": "query",
+            "description": "Card index in active deck",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "uri",
+            "in": "query",
+            "description": "Card URI",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Adaptive Card JSON representation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean", "example": true},
+                    "index": {"type": "integer", "example": 0},
+                    "title": {"type": "string", "example": "Alarm"},
+                    "uri": {"type": "string", "example": "alarm:wake_up"},
+                    "adaptive_card": {"type": "object", "description": "Adaptive Cards specification JSON object"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cards/action": {
+      "post": {
+        "tags": ["Cards"],
+        "summary": "Dispatch an Adaptive Cards action payload to a card",
+        "operationId": "dispatchCardAction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "index": {"type": "integer", "example": 0},
+                  "uri": {"type": "string", "example": "alarm:wake_up"},
+                  "action": {
+                    "type": "object",
+                    "description": "Adaptive Cards action payload (e.g. {\"type\":\"Action.Execute\",\"verb\":\"toggle_alarm\"})",
+                    "example": {"type": "Action.Execute", "verb": "toggle_alarm"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Action executed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {"type": "boolean", "example": true},
+                    "message": {"type": "string", "example": "Action payload dispatched successfully"},
+                    "index": {"type": "integer", "example": 0},
+                    "title": {"type": "string", "example": "Alarm"},
+                    "uri": {"type": "string", "example": "alarm:wake_up"}
+                  }
+                }
+              }
+            }
           }
         }
       }

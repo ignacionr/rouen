@@ -58,6 +58,12 @@ Cards dynamically scale `requested_fps` based on active execution state:
 - **Push Model** (`adaptive-process` & Streaming Plugins): Background executables emit new single-line Adaptive Card JSONs directly over `stdout` or WebSocket/event bus as state updates occur.
 - **Pull Model** (Native C++ Cards & REST Clients): External clients poll `get_adaptive_card_json()` or send `handle_action({"verb": "tick"})` at intervals governed by `"refreshIntervalMs"`.
 
+### 3. HTTP REST API Endpoints & OpenAPI Specification
+Adaptive Card synthesis and Action payload dispatch are exposed over the embedded REST API on port `8081`:
+- **`GET /api/cards/adaptive`**: Query parameters `index` or `uri`. Returns the Adaptive Cards JSON specification object for active cards. If no parameters are provided, returns an array of all active cards with their Adaptive Card representations.
+- **`POST /api/cards/action`**: Accepts a JSON body containing `index` or `uri` and an `action` object (`Action.Execute` / `Action.Submit`). Dispatches the action payload directly to `card::handle_action()`.
+- **OpenAPI 3.0 Documentation**: Fully documented in `/api/openapi.json` and interactive Swagger UI (`/swagger`).
+
 ---
 
 ## Implementation Difficulty Ranking

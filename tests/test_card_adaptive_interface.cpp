@@ -16,6 +16,16 @@
 #include "../src/cards/information/rss_feed.hpp"
 #include "../src/cards/information/rss_item.hpp"
 #include "../src/cards/information/ai_chat.hpp"
+#include "../src/hosts/api_server_host.hpp"
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wreserved-macro-identifier"
+#endif
+#include "../external/mongoose-7.15/mongoose.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 TEST(CardAdaptiveInterface, Rank2ProductivityAndInfoCards) {
     auto dummy_quitting = std::make_shared<std::function<bool()>>([]() { return false; });
@@ -121,3 +131,47 @@ TEST(CardAdaptiveInterface, AIChatCard) {
     EXPECT_NE(chat_json.find("AI Assistant Chat"), std::string::npos);
     chat.handle_action(R"({"verb":"send_message"})");
 }
+
+TEST(CardAdaptiveInterface, HttpApiAdaptiveAndActionEndpoints) {
+    auto alarm_card = std::make_shared<rouen::cards::alarm>();
+    auto cards_vector = std::vector<std::shared_ptr<card>>{ alarm_card };
+    auto get_cards_fn = std::make_shared<std::function<std::vector<std::shared_ptr<card>>()>>(
+        [cards_vector]() { return cards_vector; }
+    );
+    registrar::add<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards", get_cards_fn);
+
+    // 1. GET /api/cards/adaptive
+    struct mg_http_message hm_get {};
+    std::string get_uri = "/api/cards/adaptive";
+    hm_get.uri = mg_str_n(get_uri.data(), get_uri.size());
+    hm_get.method = mg_str("GET");
+
+    std::string get_res = rouen::hosts::api_server_host::handle_cards_adaptive(nullptr, &hm_get);
+    EXPECT_NE(get_res.find("Alarm"), std::string::npos);
+    EXPECT_NE(get_res.find("adaptive_card"), std::string::npos);
+
+    // 2. GET /api/cards/adaptive?index=0
+    struct mg_http_message hm_get_idx {};
+    std::string get_idx_uri = "/api/cards/adaptive";
+    std::string get_idx_q = "index=0";
+    hm_get_idx.uri = mg_str_n(get_idx_uri.data(), get_idx_uri.size());
+    hm_get_idx.query = mg_str_n(get_idx_q.data(), get_idx_q.size());
+    hm_get_idx.method = mg_str("GET");
+
+    std::string get_idx_res = rouen::hosts::api_server_host::handle_cards_adaptive(nullptr, &hm_get_idx);
+    EXPECT_NE(get_idx_res.find("Alarm"), std::string::npos);
+    EXPECT_NE(get_idx_res.find("adaptive_card"), std::string::npos);
+
+    // 3. POST /api/cards/action
+    struct mg_http_message hm_act {};
+    std::string act_uri = "/api/cards/action";
+    std::string act_body = R"({"index":0,"action":{"type":"Action.Execute","verb":"toggle_alarm"}})";
+    hm_act.uri = mg_str_n(act_uri.data(), act_uri.size());
+    hm_act.method = mg_str("POST");
+    hm_act.body = mg_str_n(act_body.data(), act_body.size());
+
+    std::string act_res = rouen::hosts::api_server_host::handle_cards_action(nullptr, &hm_act);
+    EXPECT_NE(act_res.find("success"), std::string::npos);
+    EXPECT_NE(act_res.find("dispatched"), std::string::npos);
+}
+

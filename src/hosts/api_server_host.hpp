@@ -27,6 +27,9 @@ public:
     bool start(const std::string& address);
     void stop();
 
+    static std::string handle_cards_adaptive(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_cards_action(struct mg_connection* c, struct mg_http_message* hm);
+
 private:
     void server_loop();
     static void event_handler(struct mg_connection* c, int ev, void* ev_data);
