@@ -127,10 +127,15 @@ jobs:
 
     - name: Run Tests
       run: |
-        echo "Running tests with proven CI approach..."
-        nix develop --command bash -c "mkdir -p build-tests && cd build-tests && cmake -G Ninja ../tests -DCMAKE_TOOLCHAIN_FILE=../cmake/nix-toolchain.cmake"
-        nix develop --command bash -c "cd build-tests && cmake --build . --parallel 2"
-        nix develop --command bash -c "cd build-tests && ./test_ssl_modes_simple && ./test_fetch_ssl"
+        echo "Running tests with Nix..."
+        nix develop --command bash -c "
+          cmake -G Ninja -B build-tests \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=ON \
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF && \
+          cmake --build build-tests --parallel 2 && \
+          cd build-tests/tests && ./test_ssl_modes_simple && ./test_fetch_ssl
+        "
 
     - name: Package Linux Release
       run: |
@@ -170,56 +175,22 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.10.6
       with:
-        xcode-version: latest
-
-    - name: Cache vcpkg
-      uses: actions/cache@v6
-      with:
-        path: |
-          ${{ github.workspace }}/vcpkg/installed
-          ${{ github.workspace }}/vcpkg/buildtrees
-          ${{ github.workspace }}/vcpkg/packages
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-
-
-    - name: Setup vcpkg
-      run: |
-        chmod +x ./scripts/setup-macos-build.sh
-        ./scripts/setup-macos-build.sh
+        nix_path: nixpkgs=channel:nixos-unstable
+        extra_nix_config: |
+          experimental-features = nix-command flakes
+          accept-flake-config = true
 
     - name: Configure and Build
       run: |
-        export MACOSX_DEPLOYMENT_TARGET=11.0
-        
-        if [ -f "${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" ]; then
-          echo "Building with vcpkg..."
-          cmake -G Ninja -B build-release -S . \
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-            -DVCPKG_TARGET_TRIPLET=arm64-osx \
+        nix develop --command bash -c "
+          cmake -G Ninja -B build-release \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-            -DCMAKE_CXX_STANDARD=23 \
-            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
-            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast -Wno-cast-function-type-strict -Wno-error"
-        else
-          echo "Building with system dependencies..."
-          export PKG_CONFIG_PATH="/opt/homebrew/lib/pkgconfig:/opt/homebrew/opt/openssl/lib/pkgconfig"
-          cmake -G Ninja -B build-release -S . \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-            -DCMAKE_CXX_STANDARD=23 \
-            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF \
-            -DCMAKE_CXX_FLAGS="-Wno-old-style-cast -Wno-cast-function-type-strict -Wno-error" \
-            -DOPENSSL_ROOT_DIR="/opt/homebrew/opt/openssl"
-        fi
-        
-        cmake --build build-release --config Release --parallel 2
+            -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF && \
+          cmake --build build-release --parallel 2
+        "
 
     - name: Create macOS Package
       run: |
