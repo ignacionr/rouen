@@ -51,8 +51,321 @@
 #include "../models/contacts/contacts_repository.hpp"
 #include "universal_sync_host.hpp"
 #include "persona_manager.hpp"
+#include <SDL3/SDL_video.h>
+#include "../cards/information/rss.hpp"
+#include "../cards/interface/card.hpp"
+#include "../cards/interface/factory.hpp"
+#include "../helpers/adlib_engine.hpp"
+#include "../helpers/card_render_metrics.hpp"
+#include "../helpers/deferred_operations.hpp"
+#include "../helpers/media_player.hpp"
+#include "../helpers/ui_automation_explorer.hpp"
+#include "../hosts/process_host.hpp"
+#include "../hosts/video_feed_host.hpp"
 
 namespace rouen::hosts {
+
+struct mcp_close_card_params {
+    int index{-1};
+    std::string uri;
+    struct glaze {
+        using T = mcp_close_card_params;
+        static constexpr auto value = glz::object(
+            "index", &T::index,
+            "uri", &T::uri
+        );
+    };
+};
+
+struct mcp_focus_card_params {
+    int index{-1};
+    std::string uri;
+    struct glaze {
+        using T = mcp_focus_card_params;
+        static constexpr auto value = glz::object(
+            "index", &T::index,
+            "uri", &T::uri
+        );
+    };
+};
+
+struct mcp_scroll_deck_params {
+    int section{0};
+    struct glaze {
+        using T = mcp_scroll_deck_params;
+        static constexpr auto value = glz::object(
+            "section", &T::section
+        );
+    };
+};
+
+struct mcp_execute_card_action_params {
+    int index{-1};
+    std::string uri;
+    std::string action;
+    struct glaze {
+        using T = mcp_execute_card_action_params;
+        static constexpr auto value = glz::object(
+            "index", &T::index,
+            "uri", &T::uri,
+            "action", &T::action
+        );
+    };
+};
+
+struct mcp_get_active_card_adaptive_params {
+    int index{-1};
+    std::string uri;
+    struct glaze {
+        using T = mcp_get_active_card_adaptive_params;
+        static constexpr auto value = glz::object(
+            "index", &T::index,
+            "uri", &T::uri
+        );
+    };
+};
+
+struct mcp_set_window_geometry_params {
+    int x{-1};
+    int y{-1};
+    int width{-1};
+    int height{-1};
+    struct glaze {
+        using T = mcp_set_window_geometry_params;
+        static constexpr auto value = glz::object(
+            "x", &T::x,
+            "y", &T::y,
+            "width", &T::width,
+            "height", &T::height
+        );
+    };
+};
+
+struct mcp_take_screenshot_params {
+    std::string target{"deck"};
+    std::string filename{"/tmp/snapshot.png"};
+    int width{0};
+    int height{0};
+    struct glaze {
+        using T = mcp_take_screenshot_params;
+        static constexpr auto value = glz::object(
+            "target", &T::target,
+            "filename", &T::filename,
+            "width", &T::width,
+            "height", &T::height
+        );
+    };
+};
+
+struct mcp_set_camera_layout_params {
+    std::string layout;
+    int preset{-1};
+    struct glaze {
+        using T = mcp_set_camera_layout_params;
+        static constexpr auto value = glz::object(
+            "layout", &T::layout,
+            "preset", &T::preset
+        );
+    };
+};
+
+struct mcp_start_process_params {
+    int64_t definition_id{0};
+    std::string definition_name;
+    struct glaze {
+        using T = mcp_start_process_params;
+        static constexpr auto value = glz::object(
+            "definition_id", &T::definition_id,
+            "definition_name", &T::definition_name
+        );
+    };
+};
+
+struct mcp_attach_process_params {
+    int64_t pid{0};
+    std::string name;
+    struct glaze {
+        using T = mcp_attach_process_params;
+        static constexpr auto value = glz::object(
+            "pid", &T::pid,
+            "name", &T::name
+        );
+    };
+};
+
+struct mcp_kill_process_params {
+    std::string run_id;
+    struct glaze {
+        using T = mcp_kill_process_params;
+        static constexpr auto value = glz::object(
+            "run_id", &T::run_id
+        );
+    };
+};
+
+struct mcp_get_process_ui_tree_params {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    int max_depth{6};
+    struct glaze {
+        using T = mcp_get_process_ui_tree_params;
+        static constexpr auto value = glz::object(
+            "run_id", &T::run_id,
+            "definition_id", &T::definition_id,
+            "pid", &T::pid,
+            "max_depth", &T::max_depth
+        );
+    };
+};
+
+struct mcp_get_process_ui_values_params {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    int max_depth{8};
+    bool edit_boxes_only{true};
+    struct glaze {
+        using T = mcp_get_process_ui_values_params;
+        static constexpr auto value = glz::object(
+            "run_id", &T::run_id,
+            "definition_id", &T::definition_id,
+            "pid", &T::pid,
+            "max_depth", &T::max_depth,
+            "edit_boxes_only", &T::edit_boxes_only
+        );
+    };
+};
+
+struct mcp_interact_process_ui_params {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    std::string target;
+    std::string action{"click"};
+    std::string value;
+    float x{0.0f};
+    float y{0.0f};
+    struct glaze {
+        using T = mcp_interact_process_ui_params;
+        static constexpr auto value = glz::object(
+            "run_id", &T::run_id,
+            "definition_id", &T::definition_id,
+            "pid", &T::pid,
+            "target", &T::target,
+            "action", &T::action,
+            "value", &T::value,
+            "x", &T::x,
+            "y", &T::y
+        );
+    };
+};
+
+struct mcp_control_adlib_params {
+    std::string command;
+    std::string intro_video_path;
+    std::string background_path;
+    std::string outro_video_path;
+    std::string output_mp4_path{"/Users/ignaciorodriguez/Downloads/adlib_output.mp4"};
+    std::string mode{"recorded"};
+    std::string mic_device_name;
+    uint32_t mic_device_id{0};
+    int duration_seconds{3};
+    struct glaze {
+        using T = mcp_control_adlib_params;
+        static constexpr auto value = glz::object(
+            "command", &T::command,
+            "intro_video_path", &T::intro_video_path,
+            "background_path", &T::background_path,
+            "outro_video_path", &T::outro_video_path,
+            "output_mp4_path", &T::output_mp4_path,
+            "mode", &T::mode,
+            "mic_device_name", &T::mic_device_name,
+            "mic_device_id", &T::mic_device_id,
+            "duration_seconds", &T::duration_seconds
+        );
+    };
+};
+
+struct mcp_control_cast_playback_params {
+    std::string command{"play"};
+    std::string url;
+    std::string uri;
+    struct glaze {
+        using T = mcp_control_cast_playback_params;
+        static constexpr auto value = glz::object(
+            "command", &T::command,
+            "url", &T::url,
+            "uri", &T::uri
+        );
+    };
+};
+
+struct mcp_get_card_metrics_params {
+    bool reset{false};
+    bool include_all{false};
+    struct glaze {
+        using T = mcp_get_card_metrics_params;
+        static constexpr auto value = glz::object(
+            "reset", &T::reset,
+            "include_all", &T::include_all
+        );
+    };
+};
+
+static int64_t mcp_resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid) {
+    if (pid > 0) return pid;
+    if (!run_id.empty()) {
+        auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+        if (snap && snap->state == rouen::hosts::process_run_state::running) {
+            return snap->pid;
+        }
+    }
+    if (definition_id > 0) {
+        auto latest = rouen::hosts::process_host::instance().latest_run_id(definition_id);
+        if (latest) {
+            auto snap = rouen::hosts::process_host::instance().snapshot(*latest);
+            if (snap && snap->state == rouen::hosts::process_run_state::running) {
+                return snap->pid;
+            }
+        }
+    }
+    return 0;
+}
+
+static glz::json_t mcp_serialize_ui_node(const rouen::helpers::ui_element_node& node) {
+    glz::json_t obj;
+    if (!node.id.empty()) obj["id"] = node.id;
+    if (!node.name.empty()) obj["name"] = node.name;
+    if (!node.role.empty()) obj["role"] = node.role;
+    if (!node.subrole.empty()) obj["subrole"] = node.subrole;
+    if (!node.description.empty()) obj["description"] = node.description;
+    if (!node.value.empty()) obj["value"] = node.value;
+    obj["x"] = static_cast<double>(node.x);
+    obj["y"] = static_cast<double>(node.y);
+    obj["width"] = static_cast<double>(node.width);
+    obj["height"] = static_cast<double>(node.height);
+    obj["enabled"] = node.enabled;
+    obj["focused"] = node.focused;
+
+    if (!node.attributes.empty()) {
+        glz::json_t attrs;
+        for (const auto& a : node.attributes) {
+            attrs[a.name] = a.value;
+        }
+        obj["attributes"] = std::move(attrs);
+    }
+
+    if (!node.children.empty()) {
+        std::vector<glz::json_t> children_arr;
+        for (const auto& child : node.children) {
+            children_arr.push_back(mcp_serialize_ui_node(child));
+        }
+        obj["children"] = std::move(children_arr);
+    }
+
+    return obj;
+}
 
 struct local_command_request {
     std::string command;
@@ -1458,6 +1771,1000 @@ mcp_host::mcp_host() {
     );
     register_function("deck", get_active_persona_def);
     register_function("persona", get_active_persona_def);
+
+    // ----------------------------------------------------
+    // REST API Parity MCP Functions
+    // ----------------------------------------------------
+
+    // 1. list_open_cards
+    function_definition const list_open_cards_def(
+        "list_open_cards",
+        "List all cards currently open and active in the Rouen deck view, returning their 0-based indices, titles, URIs, and widths.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                if (!active_cards_func || !*active_cards_func) {
+                    return R"({"status":"error","message":"Active cards service not available"})";
+                }
+                auto cards = (*active_cards_func)();
+                std::vector<glz::json_t> cards_arr;
+                cards_arr.reserve(cards.size());
+                for (size_t i = 0; i < cards.size(); ++i) {
+                    if (!cards[i]) continue;
+                    glz::json_t card_obj;
+                    card_obj["index"] = static_cast<double>(i);
+                    card_obj["title"] = cards[i]->window_title;
+                    card_obj["uri"] = cards[i]->get_uri();
+                    card_obj["width"] = static_cast<double>(cards[i]->width);
+                    cards_arr.push_back(std::move(card_obj));
+                }
+                std::string out;
+                (void)glz::write_json(cards_arr, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", list_open_cards_def);
+
+    // 2. close_card
+    function_definition const close_card_def(
+        "close_card",
+        "Close an active card in the deck by its 0-based index or URI. If no index or URI is provided, closes the currently focused card.",
+        R"mcp({"type":"object","properties":{"index":{"type":"integer","description":"0-based index of the card to close"},"uri":{"type":"string","description":"URI of the card to close"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                int target_index = -1;
+                std::string target_uri;
+                if (!params.empty()) {
+                    mcp_close_card_params req{};
+                    (void)glz::read_json(req, params);
+                    target_index = req.index;
+                    target_uri = req.uri;
+                }
+                bool closed = false;
+                auto close_by_index_fn = registrar::get<std::function<bool(size_t)>>("close_card_index");
+                auto close_by_uri_fn = registrar::get<std::function<bool(const std::string&)>>("close_card");
+
+                if (target_index >= 0 && close_by_index_fn && *close_by_index_fn) {
+                    closed = (*close_by_index_fn)(static_cast<size_t>(target_index));
+                } else if (!target_uri.empty() && close_by_uri_fn && *close_by_uri_fn) {
+                    closed = (*close_by_uri_fn)(target_uri);
+                } else {
+                    auto close_focused_fn = registrar::get<std::function<bool()>>("close_focused_card");
+                    if (close_focused_fn && *close_focused_fn) {
+                        closed = (*close_focused_fn)();
+                    }
+                }
+
+                if (closed) {
+                    return R"({"status":"success","message":"Card closed successfully"})";
+                } else {
+                    return R"({"status":"error","message":"Card not found or could not be closed"})";
+                }
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", close_card_def);
+
+    // 3. focus_card
+    function_definition const focus_card_def(
+        "focus_card",
+        "Focus and bring an open card into active view in the deck by its 0-based index or URI.",
+        R"mcp({"type":"object","properties":{"index":{"type":"integer","description":"0-based index of card to focus"},"uri":{"type":"string","description":"URI of card to focus"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_focus_card_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                if (req.index >= 0) {
+                    auto fn = registrar::get<std::function<void(size_t)>>("focus_card_index");
+                    if (fn && *fn) {
+                        (*fn)(static_cast<size_t>(req.index));
+                        return std::format(R"({{"status":"success","message":"Focused card at index {}"}})", req.index);
+                    }
+                }
+                if (!req.uri.empty()) {
+                    auto fn = registrar::get<std::function<void(const std::string&)>>("focus_card");
+                    if (fn && *fn) {
+                        (*fn)(req.uri);
+                        return std::format(R"({{"status":"success","message":"Focused card with URI {}"}})", req.uri);
+                    }
+                }
+                return R"({"status":"error","message":"Focus card service not available or invalid parameters"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", focus_card_def);
+
+    // 4. scroll_deck
+    function_definition const scroll_deck_def(
+        "scroll_deck",
+        "Scroll the deck view to a specific section index, or get current deck status.",
+        R"mcp({"type":"object","properties":{"section":{"type":"integer","description":"Section index to scroll deck to"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                if (params.empty() || params == "{}") {
+                    auto fn = registrar::get<std::function<std::string()>>("get_deck_status");
+                    if (fn && *fn) {
+                        return (*fn)();
+                    }
+                }
+                mcp_scroll_deck_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                auto fn = registrar::get<std::function<void(int)>>("scroll_to_section");
+                if (fn && *fn) {
+                    (*fn)(req.section);
+                    return std::format(R"({{"status":"success","message":"Scrolled deck to section {}"}})", req.section);
+                }
+                return R"({"status":"error","message":"Scroll deck service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", scroll_deck_def);
+
+    // 5. execute_card_action
+    function_definition const execute_card_action_def(
+        "execute_card_action",
+        "Dispatch an Adaptive Cards action payload (e.g. Action.Execute or form submission) to an active open card by index or URI.",
+        R"mcp({"type":"object","properties":{"index":{"type":"integer","description":"Target card index"},"uri":{"type":"string","description":"Target card URI"},"action":{"type":"string","description":"JSON action payload string to dispatch"}},"required":["action"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_execute_card_action_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                if (!active_cards_func || !*active_cards_func) {
+                    return R"({"status":"error","message":"Active cards service not available"})";
+                }
+                auto cards = (*active_cards_func)();
+                std::shared_ptr<card> target_card;
+                size_t found_index = 0;
+                if (req.index >= 0 && static_cast<size_t>(req.index) < cards.size()) {
+                    target_card = cards[static_cast<size_t>(req.index)];
+                    found_index = static_cast<size_t>(req.index);
+                } else if (!req.uri.empty()) {
+                    for (size_t i = 0; i < cards.size(); ++i) {
+                        if (cards[i] && (cards[i]->get_uri() == req.uri || cards[i]->get_uri().starts_with(req.uri))) {
+                            target_card = cards[i];
+                            found_index = i;
+                            break;
+                        }
+                    }
+                }
+                if (!target_card) {
+                    return R"({"status":"error","message":"Card not found for action dispatch"})";
+                }
+                target_card->handle_action(req.action);
+                glz::json_t resp_obj;
+                resp_obj["status"] = "success";
+                resp_obj["message"] = "Action payload dispatched successfully";
+                resp_obj["index"] = static_cast<double>(found_index);
+                resp_obj["title"] = target_card->window_title;
+                resp_obj["uri"] = target_card->get_uri();
+                std::string out;
+                (void)glz::write_json(resp_obj, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", execute_card_action_def);
+    register_function("adaptive_card", execute_card_action_def);
+
+    // 6. get_active_card_adaptive
+    function_definition const get_active_card_adaptive_def(
+        "get_active_card_adaptive",
+        "Get Adaptive Card JSON structure and state for all active open cards or a specific card by index/URI.",
+        R"mcp({"type":"object","properties":{"index":{"type":"integer","description":"Optional card index"},"uri":{"type":"string","description":"Optional card URI"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_get_active_card_adaptive_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                auto active_cards_func = registrar::get<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards");
+                if (!active_cards_func || !*active_cards_func) {
+                    return R"({"status":"error","message":"Active cards service not available"})";
+                }
+                auto cards = (*active_cards_func)();
+                auto parse_adaptive = [](const std::shared_ptr<card>& c) -> glz::json_t {
+                    if (!c) return nullptr;
+                    std::string card_json = c->get_adaptive_card_json();
+                    if (card_json.empty()) return nullptr;
+                    glz::json_t obj;
+                    auto err = glz::read_json(obj, card_json);
+                    if (!err) return obj;
+                    return card_json;
+                };
+
+                std::shared_ptr<card> target_card;
+                size_t found_index = 0;
+                if (req.index >= 0 && static_cast<size_t>(req.index) < cards.size()) {
+                    target_card = cards[static_cast<size_t>(req.index)];
+                    found_index = static_cast<size_t>(req.index);
+                } else if (!req.uri.empty()) {
+                    for (size_t i = 0; i < cards.size(); ++i) {
+                        if (cards[i] && (cards[i]->get_uri() == req.uri || cards[i]->get_uri().starts_with(req.uri))) {
+                            target_card = cards[i];
+                            found_index = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (req.index >= 0 || !req.uri.empty()) {
+                    if (!target_card) {
+                        return R"({"status":"error","message":"Card not found for specified index or uri"})";
+                    }
+                    glz::json_t resp_obj;
+                    resp_obj["status"] = "success";
+                    resp_obj["index"] = static_cast<double>(found_index);
+                    resp_obj["title"] = target_card->window_title;
+                    resp_obj["uri"] = target_card->get_uri();
+                    resp_obj["adaptive_card"] = parse_adaptive(target_card);
+                    std::string out;
+                    (void)glz::write_json(resp_obj, out);
+                    return out;
+                }
+
+                std::vector<glz::json_t> cards_arr;
+                cards_arr.reserve(cards.size());
+                for (size_t i = 0; i < cards.size(); ++i) {
+                    if (!cards[i]) continue;
+                    glz::json_t card_obj;
+                    card_obj["index"] = static_cast<double>(i);
+                    card_obj["title"] = cards[i]->window_title;
+                    card_obj["uri"] = cards[i]->get_uri();
+                    card_obj["adaptive_card"] = parse_adaptive(cards[i]);
+                    cards_arr.push_back(std::move(card_obj));
+                }
+                glz::json_t resp_obj;
+                resp_obj["status"] = "success";
+                resp_obj["cards"] = std::move(cards_arr);
+                std::string out;
+                (void)glz::write_json(resp_obj, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", get_active_card_adaptive_def);
+    register_function("adaptive_card", get_active_card_adaptive_def);
+
+    // 7. get_window_geometry & set_window_geometry
+    function_definition const get_window_geometry_def(
+        "get_window_geometry",
+        "Get main Rouen application window position (x, y) and dimensions (width, height).",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
+                if (!get_window_fn || !*get_window_fn) {
+                    return R"({"status":"error","message":"Window service not available"})";
+                }
+                SDL_Window* window = (*get_window_fn)();
+                if (!window) {
+                    return R"({"status":"error","message":"Window instance not available"})";
+                }
+                int x = 0, y = 0, w = 0, h = 0;
+                SDL_GetWindowPosition(window, &x, &y);
+                SDL_GetWindowSize(window, &w, &h);
+                return std::format(R"({{"status":"success","x":{},"y":{},"width":{},"height":{}}})", x, y, w, h);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "window"
+    );
+    register_function("window", get_window_geometry_def);
+    register_function("deck", get_window_geometry_def);
+
+    function_definition const set_window_geometry_def(
+        "set_window_geometry",
+        "Set main Rouen window position (x, y) and/or size dimensions (width, height).",
+        R"mcp({"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"},"width":{"type":"integer"},"height":{"type":"integer"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                auto get_window_fn = registrar::get<std::function<SDL_Window*()>>("get_window");
+                if (!get_window_fn || !*get_window_fn) {
+                    return R"({"status":"error","message":"Window service not available"})";
+                }
+                SDL_Window* window = (*get_window_fn)();
+                if (!window) {
+                    return R"({"status":"error","message":"Window instance not available"})";
+                }
+                mcp_set_window_geometry_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                int cur_x = 0, cur_y = 0, cur_w = 0, cur_h = 0;
+                SDL_GetWindowPosition(window, &cur_x, &cur_y);
+                SDL_GetWindowSize(window, &cur_w, &cur_h);
+                int new_x = (req.x != -1) ? req.x : cur_x;
+                int new_y = (req.y != -1) ? req.y : cur_y;
+                int new_w = (req.width > 0) ? req.width : cur_w;
+                int new_h = (req.height > 0) ? req.height : cur_h;
+                auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+                if (deferred_ops) {
+                    deferred_ops->queue([window, req, new_x, new_y, new_w, new_h] {
+                        if (req.x != -1 || req.y != -1) {
+                            SDL_SetWindowPosition(window, new_x, new_y);
+                        }
+                        if (req.width > 0 || req.height > 0) {
+                            SDL_SetWindowSize(window, new_w, new_h);
+                        }
+                    });
+                }
+                return std::format(R"({{"status":"success","message":"Window position and size updated","x":{},"y":{},"width":{},"height":{}}})", new_x, new_y, new_w, new_h);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "window"
+    );
+    register_function("window", set_window_geometry_def);
+    register_function("deck", set_window_geometry_def);
+
+    // 8. take_screenshot
+    function_definition const take_screenshot_def(
+        "take_screenshot",
+        "Capture a visual screenshot of the Rouen application window, deck, selected card, or editor snapshot.",
+        R"mcp({"type":"object","properties":{"target":{"type":"string","description":"Target to snapshot: 'deck', 'selected', or 'editor'"},"filename":{"type":"string","description":"Output image filepath (e.g. /tmp/snapshot.png)"},"width":{"type":"integer"},"height":{"type":"integer"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_take_screenshot_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+                if (req.target.empty()) req.target = "deck";
+                if (req.filename.empty()) {
+                    std::error_code ec;
+                    auto temp_dir = std::filesystem::temp_directory_path(ec);
+                    req.filename = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
+                }
+                auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
+                if (deferred_ops) {
+                    auto promise = std::make_shared<std::promise<std::string>>();
+                    auto future = promise->get_future();
+                    deferred_ops->queue([req, promise]() {
+                        try {
+                            auto screenshot_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
+                            if (screenshot_fn && *screenshot_fn) {
+                                promise->set_value((*screenshot_fn)(req.target, req.filename, req.width, req.height));
+                                return;
+                            }
+                            if (req.target == "editor") {
+                                auto ed_fn = registrar::get<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
+                                if (ed_fn && *ed_fn) {
+                                    promise->set_value((*ed_fn)(req.filename, req.width, req.height));
+                                    return;
+                                }
+                            }
+                            promise->set_value(R"({"status":"error","message":"Screenshot service not available"})");
+                        } catch (const std::exception& e) {
+                            promise->set_value(std::format(R"({{"status":"error","message":"{}"}})", e.what()));
+                        }
+                    });
+                    if (future.wait_for(std::chrono::seconds(10)) == std::future_status::ready) {
+                        return future.get();
+                    } else {
+                        return R"({"status":"error","message":"Screenshot operation timed out waiting for main thread"})";
+                    }
+                }
+                auto screenshot_fn = registrar::get<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
+                if (screenshot_fn && *screenshot_fn) {
+                    return (*screenshot_fn)(req.target, req.filename, req.width, req.height);
+                }
+                return R"({"status":"error","message":"Screenshot service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", take_screenshot_def);
+    register_function("system", take_screenshot_def);
+
+    // 9. Camera Tools
+    function_definition const get_camera_status_def(
+        "get_camera_status",
+        "Get camera service status, resolution, and active streaming state.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto fn = registrar::get<std::function<std::string()>>("camera_get_status");
+                if (fn && *fn) return (*fn)();
+                return R"({"active":false,"message":"Camera service not active"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "camera"
+    );
+    register_function("camera", get_camera_status_def);
+
+    function_definition const take_camera_snapshot_def(
+        "take_camera_snapshot",
+        "Save a frame snapshot from the active camera feed to a file.",
+        R"mcp({"type":"object","properties":{"filename":{"type":"string","description":"Output snapshot file path (e.g. /tmp/camera_snapshot.ppm)"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                std::string filename = "/tmp/camera_snapshot.ppm";
+                if (!params.empty()) {
+                    glz::json_t obj;
+                    if (!glz::read_json(obj, params) && obj.contains("filename") && obj["filename"].is_string()) {
+                        filename = obj["filename"].get<std::string>();
+                    }
+                }
+                auto fn = registrar::get<std::function<std::string(const std::string&)>>("camera_save_snapshot");
+                if (fn && *fn) return (*fn)(filename);
+                return R"({"status":"error","message":"Camera snapshot service not available"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "camera"
+    );
+    register_function("camera", take_camera_snapshot_def);
+
+    function_definition const set_camera_layout_def(
+        "set_camera_layout",
+        "Get or set the camera tile grid layout / preset.",
+        R"mcp({"type":"object","properties":{"layout":{"type":"string","description":"Layout descriptor string (e.g. '1x1', '2x2')"},"preset":{"type":"integer","description":"Preset index"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                auto set_fn = registrar::get<std::function<std::string(const std::string&)>>("camera_set_layout");
+                auto get_fn = registrar::get<std::function<std::string()>>("camera_get_layout");
+                if (params.empty() || params == "{}") {
+                    if (get_fn && *get_fn) return (*get_fn)();
+                    return R"({"status":"error","message":"Camera layout service not available"})";
+                }
+                if (!set_fn || !*set_fn) return R"({"status":"error","message":"Camera layout service not available"})";
+                mcp_set_camera_layout_params req{};
+                (void)glz::read_json(req, params);
+                std::string const target = !req.layout.empty() ? req.layout : (req.preset >= 0 ? std::to_string(req.preset) : "0");
+                return (*set_fn)(target);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "camera"
+    );
+    register_function("camera", set_camera_layout_def);
+
+    // 10. Process Management & UI Automation Tools
+    function_definition const list_processes_def(
+        "list_processes",
+        "List all configured background process definitions and their current running state, PIDs, and run IDs.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                rouen::models::productivity::process_definition_repository repo;
+                auto defs = repo.get_all();
+                glz::json_t root;
+                std::vector<glz::json_t> defs_arr;
+                for (const auto& def : defs) {
+                    glz::json_t item;
+                    item["id"] = def.id;
+                    item["name"] = def.name;
+                    item["executable_path"] = def.executable_path;
+                    item["arguments"] = def.arguments;
+                    item["working_directory"] = def.working_directory;
+                    item["has_active_run"] = rouen::hosts::process_host::instance().has_active_run(def.id);
+                    auto latest_run_id = rouen::hosts::process_host::instance().latest_run_id(def.id);
+                    if (latest_run_id) {
+                        item["latest_run_id"] = *latest_run_id;
+                        auto snap = rouen::hosts::process_host::instance().snapshot(*latest_run_id);
+                        if (snap) {
+                            item["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" :
+                                            ((snap->state == rouen::hosts::process_run_state::exited) ? "exited" : "failed_to_start");
+                            item["pid"] = snap->pid;
+                            if (snap->exit_code) item["exit_code"] = *snap->exit_code;
+                        }
+                    } else {
+                        item["state"] = "stopped";
+                    }
+                    defs_arr.push_back(std::move(item));
+                }
+                root["processes"] = std::move(defs_arr);
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", list_processes_def);
+
+    function_definition const start_process_def(
+        "start_process",
+        "Launch a configured process definition by definition ID or definition name.",
+        R"mcp({"type":"object","properties":{"definition_id":{"type":"integer"},"definition_name":{"type":"string"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_start_process_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                rouen::models::productivity::process_definition_repository repo;
+                std::optional<rouen::models::productivity::process_definition> def;
+                if (req.definition_id > 0) {
+                    def = repo.get_by_id(req.definition_id);
+                } else if (!req.definition_name.empty()) {
+                    auto all = repo.get_all();
+                    for (const auto& d : all) {
+                        if (d.name == req.definition_name) { def = d; break; }
+                    }
+                }
+                if (!def) return R"({"status":"error","message":"Process definition not found"})";
+                std::string run_id = rouen::hosts::process_host::instance().start(*def);
+                auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+                glz::json_t resp;
+                resp["status"] = "success";
+                resp["run_id"] = run_id;
+                resp["definition_id"] = def->id;
+                resp["definition_name"] = def->name;
+                if (snap) {
+                    resp["pid"] = snap->pid;
+                    resp["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" : "failed_to_start";
+                    if (!snap->start_error.empty()) resp["start_error"] = snap->start_error;
+                }
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", start_process_def);
+
+    function_definition const attach_process_def(
+        "attach_process",
+        "Attach Rouen process inspection tracking to an existing running OS process by PID.",
+        R"mcp({"type":"object","properties":{"pid":{"type":"integer","description":"PID of process to attach"},"name":{"type":"string","description":"Optional descriptive name"}},"required":["pid"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_attach_process_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                if (req.pid <= 0) return R"({"status":"error","message":"Valid process PID is required"})";
+                std::string run_id = rouen::hosts::process_host::instance().attach(req.pid, req.name);
+                auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
+                if (!snap) return R"({"status":"error","message":"Failed to attach to process"})";
+                glz::json_t resp;
+                resp["status"] = "success";
+                resp["run_id"] = snap->run_id;
+                resp["definition_name"] = snap->definition_name;
+                resp["state"] = (snap->state == rouen::hosts::process_run_state::running) ? "running" : "failed_to_start";
+                resp["pid"] = snap->pid;
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", attach_process_def);
+
+    function_definition const kill_process_def(
+        "kill_process",
+        "Kill or terminate a running process by its run_id.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string","description":"Run ID of process to kill"}},"required":["run_id"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_kill_process_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                if (req.run_id.empty()) return R"({"status":"error","message":"run_id parameter is required"})";
+                rouen::hosts::process_host::instance().kill(req.run_id);
+                glz::json_t resp;
+                resp["status"] = "success";
+                resp["run_id"] = req.run_id;
+                resp["message"] = std::format("Kill command sent for process run '{}'", req.run_id);
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", kill_process_def);
+
+    function_definition const get_process_ui_tree_def(
+        "get_process_ui_tree",
+        "Inspect accessibility UI element tree of a running process (by run_id, definition_id, or pid) up to max_depth.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"max_depth":{"type":"integer"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_get_process_ui_tree_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
+                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier (run_id, definition_id, or pid) is required"})";
+                int max_depth = req.max_depth > 0 ? req.max_depth : 6;
+                auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth);
+                glz::json_t root;
+                root["status"] = res.success ? "success" : "error";
+                root["pid"] = pid;
+                root["total_node_count"] = res.total_node_count;
+                if (res.permission_denied) root["permission_denied"] = true;
+                if (!res.error_message.empty()) root["error_message"] = res.error_message;
+                if (res.success) root["root"] = mcp_serialize_ui_node(res.root);
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", get_process_ui_tree_def);
+
+    function_definition const get_process_ui_values_def(
+        "get_process_ui_values",
+        "Extract input and edit control values from the accessibility UI tree of a running process.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"max_depth":{"type":"integer"},"edit_boxes_only":{"type":"boolean"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_get_process_ui_values_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
+                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier required"})";
+                auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8);
+                glz::json_t root;
+                root["status"] = "success";
+                root["pid"] = pid;
+                std::vector<glz::json_t> vals_arr;
+                for (const auto& item : extracted) {
+                    glz::json_t val_obj;
+                    val_obj["id"] = item.id;
+                    val_obj["name"] = item.name;
+                    val_obj["role"] = item.role;
+                    val_obj["subrole"] = item.subrole;
+                    val_obj["value"] = item.value;
+                    val_obj["description"] = item.description;
+                    val_obj["path"] = item.path;
+                    vals_arr.push_back(std::move(val_obj));
+                }
+                root["values"] = std::move(vals_arr);
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", get_process_ui_values_def);
+
+    function_definition const interact_process_ui_def(
+        "interact_process_ui",
+        "Perform UI interactions (click, set_value, focus, or click at x/y coordinates) on accessibility controls of a running process.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"target":{"type":"string","description":"Element ID or name target"},"action":{"type":"string","description":"Action verb: 'click', 'set_value', 'focus'"},"value":{"type":"string","description":"Value to set for set_value action"},"x":{"type":"number","description":"X coordinate for direct coordinate click"},"y":{"type":"number","description":"Y coordinate for direct coordinate click"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_interact_process_ui_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
+                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier required"})";
+                rouen::helpers::ui_manipulation_result res;
+                if (req.target.empty() && (req.x > 0.0f || req.y > 0.0f)) {
+                    res = rouen::helpers::ui_automation_explorer::click_at_coordinates(pid, req.x, req.y);
+                } else {
+                    std::string action = req.action.empty() ? "click" : req.action;
+                    res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value);
+                }
+                glz::json_t root;
+                root["status"] = res.success ? "success" : "error";
+                root["pid"] = pid;
+                if (res.permission_denied) root["permission_denied"] = true;
+                if (!res.error_message.empty()) root["error_message"] = res.error_message;
+                if (!res.matched_element_id.empty()) root["matched_element_id"] = res.matched_element_id;
+                if (!res.matched_element_name.empty()) root["matched_element_name"] = res.matched_element_name;
+                if (!res.matched_element_role.empty()) root["matched_element_role"] = res.matched_element_role;
+                if (!res.action_performed.empty()) root["action_performed"] = res.action_performed;
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", interact_process_ui_def);
+
+    // 11. AdLib & Cast Controls
+    function_definition const get_adlib_status_def(
+        "get_adlib_status",
+        "Get status of the AdLib audio/video recording and presentation engine.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& engine = rouen::helpers::AdLibEngine::instance();
+                auto stage = engine.get_stage();
+                const char* stage_str = "Idle";
+                if (stage == rouen::helpers::AdLibStage::Prepared) stage_str = "Prepared";
+                else if (stage == rouen::helpers::AdLibStage::Intro) stage_str = "Intro";
+                else if (stage == rouen::helpers::AdLibStage::Middle) stage_str = "Middle";
+                else if (stage == rouen::helpers::AdLibStage::Outro) stage_str = "Outro";
+                else if (stage == rouen::helpers::AdLibStage::Finished) stage_str = "Finished";
+                return std::format(R"({{"status":"success","stage":"{}","is_active":{},"is_paused":{},"is_recording":{},"elapsed_seconds":{:.2f}}})",
+                    stage_str, engine.is_active() ? "true" : "false", engine.is_paused() ? "true" : "false",
+                    engine.is_recording() ? "true" : "false", engine.get_elapsed_seconds());
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "adlib"
+    );
+    register_function("adlib", get_adlib_status_def);
+
+    function_definition const control_adlib_engine_def(
+        "control_adlib_engine",
+        "Control the AdLib video production engine (commands: 'prepare', 'start', 'next_stage', 'stop', 'run').",
+        R"mcp({"type":"object","properties":{"command":{"type":"string","description":"Command verb: 'prepare', 'start', 'next_stage', 'stop', 'run'"},"intro_video_path":{"type":"string"},"background_path":{"type":"string"},"outro_video_path":{"type":"string"},"output_mp4_path":{"type":"string"},"mode":{"type":"string"},"mic_device_name":{"type":"string"},"duration_seconds":{"type":"integer"}},"required":["command"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_control_adlib_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                auto& engine = rouen::helpers::AdLibEngine::instance();
+                if (req.command == "status") {
+                    return std::format(R"({{"status":"success","stage":{}}})", static_cast<int>(engine.get_stage()));
+                } else if (req.command == "prepare") {
+                    rouen::helpers::AdLibConfig cfg;
+                    cfg.intro_video_path = req.intro_video_path;
+                    cfg.background_path = req.background_path;
+                    cfg.outro_video_path = req.outro_video_path;
+                    cfg.output_mp4_path = req.output_mp4_path;
+                    cfg.mode = (req.mode == "live") ? rouen::helpers::AdLibMode::Live : rouen::helpers::AdLibMode::Recorded;
+                    bool prepared = engine.prepare(cfg);
+                    return std::format(R"({{"status":"success","prepared":{}}})", prepared ? "true" : "false");
+                } else if (req.command == "start") {
+                    bool started = engine.start();
+                    return std::format(R"({{"status":"success","started":{}}})", started ? "true" : "false");
+                } else if (req.command == "next_stage") {
+                    engine.next_stage();
+                    return R"({"status":"success","message":"Advanced to next stage"})";
+                } else if (req.command == "stop") {
+                    engine.stop();
+                    return R"({"status":"success","message":"Stopped AdLib recording"})";
+                } else if (req.command == "run") {
+                    rouen::helpers::AdLibConfig cfg;
+                    cfg.intro_video_path = req.intro_video_path;
+                    cfg.background_path = req.background_path;
+                    cfg.outro_video_path = req.outro_video_path;
+                    cfg.output_mp4_path = req.output_mp4_path;
+                    cfg.mode = (req.mode == "live") ? rouen::helpers::AdLibMode::Live : rouen::helpers::AdLibMode::Recorded;
+                    if (!req.mic_device_name.empty()) {
+                        cfg.mic_device_id = rouen::helpers::AudioCapture::find_device_id_by_name(req.mic_device_name);
+                    } else if (req.mic_device_id > 0) {
+                        cfg.mic_device_id = req.mic_device_id;
+                    }
+                    engine.prepare(cfg);
+                    engine.set_auto_stop_seconds(req.duration_seconds > 0 ? static_cast<double>(req.duration_seconds) : 3.0);
+                    engine.start();
+                    return std::format(R"({{"status":"success","output_mp4_path":"{}","recording_started":true}})", req.output_mp4_path);
+                }
+                return R"({"status":"error","message":"Unknown command. Supported: prepare, start, next_stage, stop, run"})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "adlib"
+    );
+    register_function("adlib", control_adlib_engine_def);
+
+    function_definition const get_cast_status_def(
+        "get_cast_status",
+        "Get media player & casting service status, playback position, duration, VU levels, and video stats.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto host = rouen::hosts::VideoFeedHost::get_host();
+                bool is_casting = host ? host->is_running() : false;
+                size_t audio_queued = host ? host->get_cast_queued_bytes() : 0;
+                bool is_playing = false;
+                double pos = 0.0, dur = 0.0;
+                std::string media_url;
+                bool has_video = false, texture_ready = false;
+                float luminance = 0.0f, vu_l = 0.0f, vu_r = 0.0f;
+                size_t video_q_size = 0;
+                {
+                    std::lock_guard<std::recursive_mutex> lock(media_player::items_mutex());
+                    for (auto& [id, item_ptr] : media_player::items()) {
+                        if (item_ptr && item_ptr->is_playing) {
+                            is_playing = true;
+                            pos = item_ptr->get_current_position();
+                            dur = item_ptr->duration.load();
+                            media_url = item_ptr->url;
+                            has_video = item_ptr->has_video.load();
+                            texture_ready = (item_ptr->video_texture != nullptr);
+                            luminance = item_ptr->current_luminance.load();
+                            vu_l = item_ptr->get_vu_level_l();
+                            vu_r = item_ptr->get_vu_level_r();
+                            {
+                                std::lock_guard<std::mutex> q_lock(item_ptr->video_queue_mutex);
+                                video_q_size = item_ptr->decoded_video_queue.size();
+                            }
+                            break;
+                        }
+                    }
+                }
+                return std::format(R"({{"status":"success","is_casting":{},"is_media_playing":{},"media_url":"{}","position":{:.3f},"duration":{:.3f},"audio_queued_bytes":{},"has_video":{},"texture_ready":{},"luminance":{:.4f},"vu_level_l":{:.4f},"vu_level_r":{:.4f},"video_queue_size":{}}})",
+                    is_casting ? "true" : "false", is_playing ? "true" : "false", media_url, pos, dur, audio_queued,
+                    has_video ? "true" : "false", texture_ready ? "true" : "false", luminance, vu_l, vu_r, video_q_size);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "cast"
+    );
+    register_function("cast", get_cast_status_def);
+
+    function_definition const control_cast_playback_def(
+        "control_cast_playback",
+        "Start casting service or trigger media playback for a given URL/URI.",
+        R"mcp({"type":"object","properties":{"command":{"type":"string","description":"'start_service' or 'play'"},"url":{"type":"string"},"uri":{"type":"string"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_control_cast_playback_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                auto host = rouen::hosts::VideoFeedHost::get_host();
+                if (req.command == "start_service") {
+                    if (host) { host->start(); return R"({"status":"success","message":"Video feed service started"})"; }
+                    return R"({"status":"error","message":"VideoFeedHost unavailable"})";
+                }
+                if (host) host->start();
+                std::string target_url = !req.url.empty() ? req.url : req.uri;
+                if (target_url.empty()) return R"({"status":"error","message":"No media URL/URI provided"})";
+                auto& item = media_player::get_item(target_url);
+                item.url = target_url;
+                item.playMedia();
+                return std::format(R"({{"status":"success","message":"Media playback started","url":"{}"}})", target_url);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "cast"
+    );
+    register_function("cast", control_cast_playback_def);
+
+    // 12. Metrics, Diagnostics, and Card Schemas
+    function_definition const get_card_metrics_def(
+        "get_card_metrics",
+        "Get card rendering performance metrics and FPS data, or reset metrics.",
+        R"mcp({"type":"object","properties":{"reset":{"type":"boolean","description":"Reset card render metrics if true"},"include_all":{"type":"boolean","description":"Include inactive cards if true"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_get_card_metrics_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                if (req.reset) {
+                    rouen::helpers::CardRenderMetrics::instance().reset();
+                    return R"({"status":"success","message":"Card metrics reset"})";
+                }
+                auto metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics(req.include_all);
+                std::vector<glz::json_t> arr;
+                for (const auto& m : metrics) {
+                    glz::json_t item;
+                    item["title"] = m.title;
+                    item["uri"] = m.uri;
+                    item["last_render_ms"] = m.last_render_ms;
+                    item["avg_render_ms"] = m.avg_render_ms;
+                    item["max_render_ms"] = m.max_render_ms;
+                    item["min_render_ms"] = m.min_render_ms;
+                    item["render_count"] = m.render_count;
+                    item["slow_render_count"] = m.slow_render_count;
+                    item["very_slow_render_count"] = m.very_slow_render_count;
+                    item["requested_fps"] = m.requested_fps;
+                    arr.push_back(item);
+                }
+                std::string out;
+                (void)glz::write_json(arr, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "metrics"
+    );
+    register_function("metrics", get_card_metrics_def);
+
+    function_definition const get_rss_diagnostics_def(
+        "get_rss_diagnostics",
+        "Get RSS feed diagnostics, feed item counts, and rendering performance metrics.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto rss_host = rouen::cards::rss::getHost();
+                if (!rss_host) return R"({"status":"error","message":"RSS Host not available"})";
+                auto diag = rss_host->get_rss_diagnostics();
+                glz::json_t root;
+                root["status"] = "success";
+                glz::json_t data;
+                data["total_feeds"] = diag.total_feeds;
+                data["total_items"] = diag.total_items;
+                data["slowest_feed_title"] = diag.slowest_feed_title;
+                data["slowest_feed_uri"] = diag.slowest_feed_uri;
+                data["slowest_feed_render_ms"] = diag.slowest_feed_render_ms;
+                std::vector<glz::json_t> feeds_arr;
+                for (const auto& f : diag.feeds) {
+                    glz::json_t item;
+                    item["feed_id"] = f.id;
+                    item["title"] = f.title;
+                    item["url"] = f.url;
+                    item["language"] = f.language;
+                    item["item_count"] = f.item_count;
+                    item["tag_count"] = f.tag_count;
+                    item["last_render_ms"] = f.last_render_ms;
+                    item["avg_render_ms"] = f.avg_render_ms;
+                    item["max_render_ms"] = f.max_render_ms;
+                    item["min_render_ms"] = f.min_render_ms;
+                    item["render_count"] = f.render_count;
+                    item["slow_render_count"] = f.slow_render_count;
+                    item["is_slow"] = f.is_slow;
+                    feeds_arr.push_back(item);
+                }
+                data["feeds"] = feeds_arr;
+                root["diagnostics"] = data;
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "rss"
+    );
+    register_function("rss", get_rss_diagnostics_def);
+
+    function_definition const list_card_schemas_def(
+        "list_card_schemas",
+        "List all available card schemas and registered card URIs.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                std::vector<std::string> schemas;
+                const auto& dict = rouen::cards::factory::dictionary();
+                schemas.reserve(dict.size());
+                for (const auto& pair : dict) {
+                    schemas.push_back(pair.first);
+                }
+                std::sort(schemas.begin(), schemas.end());
+                return glz::write_json(schemas).value_or("[]");
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", list_card_schemas_def);
 }
 
 void mcp_host::register_function(const std::string& card_type, const function_definition& func) {

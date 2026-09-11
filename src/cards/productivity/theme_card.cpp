@@ -76,8 +76,8 @@ namespace rouen::cards {
             }
             ImGui::Spacing();
 
-            // Custom theme deletion (only indexes >= 4 are custom/deletable)
-            if (active_idx >= 4) {
+            // Custom theme deletion (only indexes >= num_default_themes are custom/deletable)
+            if (active_idx >= rouen::theme::num_default_themes) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.4f, 0.4f, 1.0f));

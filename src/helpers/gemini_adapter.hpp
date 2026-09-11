@@ -26,6 +26,7 @@ namespace rouen::helpers {
     struct GeminiPart {
         std::string text;
         std::optional<GeminiFunctionCall> functionCall;
+        std::string thoughtSignature;
     };
 
     struct GeminiContent {
@@ -52,7 +53,9 @@ struct glz::meta<rouen::helpers::GeminiPart> {
     using T = rouen::helpers::GeminiPart;
     static constexpr auto value = object(
         "text", &T::text,
-        "functionCall", &T::functionCall
+        "functionCall", &T::functionCall,
+        "thoughtSignature", &T::thoughtSignature,
+        "thought_signature", &T::thoughtSignature
     );
 };
 
@@ -107,12 +110,12 @@ namespace rouen::helpers {
                 std::string name;
                 std::string args; // JSON string of arguments
                 std::string id;
+                std::string thought_signature;
             };
 
             struct FunctionResponse {
                 std::string name;
                 std::string response; // JSON string of response
-                std::string id;
             };
 
             std::string role;
@@ -162,7 +165,13 @@ namespace rouen::helpers {
                     case '\n': escaped += "\\n"; break;
                     case '\r': escaped += "\\r"; break;
                     case '\t': escaped += "\\t"; break;
-                    default: escaped += c; break;
+                    default:
+                        if (static_cast<unsigned char>(c) < 0x20) {
+                            escaped += std::format("\\u{:04x}", static_cast<unsigned char>(c));
+                        } else {
+                            escaped += c;
+                        }
+                        break;
                 }
             }
             return escaped;
@@ -222,13 +231,16 @@ namespace rouen::helpers {
                 for (const auto& fc : msg.function_calls) {
                     if (!first_part) json += ",";
                     std::string args_json = fc.args.empty() ? "{}" : fc.args;
+                    json += "{\"functionCall\":{";
+                    json += std::format("\"name\":\"{}\",\"args\":{}", fc.name, args_json);
                     if (!fc.id.empty()) {
-                        json += std::format("{{\"functionCall\":{{\"name\":\"{}\",\"args\":{},\"id\":\"{}\"}}}}", 
-                                           fc.name, args_json, fc.id);
-                    } else {
-                        json += std::format("{{\"functionCall\":{{\"name\":\"{}\",\"args\":{}}}}}", 
-                                           fc.name, args_json);
+                        json += std::format(",\"id\":\"{}\"", fc.id);
                     }
+                    json += "}";
+                    if (!fc.thought_signature.empty()) {
+                        json += std::format(",\"thoughtSignature\":\"{}\"", escape_json(fc.thought_signature));
+                    }
+                    json += "}";
                     first_part = false;
                 }
                 
@@ -237,19 +249,10 @@ namespace rouen::helpers {
                     if (!first_part) json += ",";
                     std::string resp_json;
                     if (!fr.response.empty() && fr.response.front() == '{') {
-                        if (!fr.id.empty()) {
-                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{},\"id\":\"{}\"}}", fr.name, fr.response, fr.id);
-                        } else {
-                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
-                        }
+                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
                     } else {
-                        if (!fr.id.empty()) {
-                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}},\"id\":\"{}\"}}", 
-                                                   fr.name, escape_json(fr.response), fr.id);
-                        } else {
-                            resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
-                                                   fr.name, escape_json(fr.response));
-                        }
+                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
+                                               fr.name, escape_json(fr.response));
                     }
                     json += std::format("{{\"functionResponse\":{}}}", resp_json);
                     first_part = false;
@@ -400,7 +403,7 @@ namespace rouen::helpers {
 
     public:
         GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "") 
-            : api_key_(trim(api_key)), model_("gemini-2.5-flash-lite"), last_request_time_(std::chrono::steady_clock::now()) {
+            : api_key_(trim(api_key)), model_("gemini-3.8-flash"), last_request_time_(std::chrono::steady_clock::now()) {
             CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
         }
 
@@ -422,7 +425,7 @@ namespace rouen::helpers {
             std::string_view message, 
             DoPostFunc do_post, 
             std::string_view role = "user", 
-            std::string_view model = "gemini-2.5-flash-lite", 
+            std::string_view model = "gemini-3.8-flash", 
             std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
@@ -470,10 +473,45 @@ namespace rouen::helpers {
 
             CONFIG_DEBUG_FMT("Sending Gemini request to: {}", url);
 
-            // Make the HTTP request
-            auto response = do_post(url, request_body, [](auto header_setter) {
-                header_setter("Content-Type: application/json");
-            });
+            // Make the HTTP request with candidate model loop (primary -> gemini-3.7-flash -> gemini-3.5-flash)
+            std::vector<std::string> candidates = {model_name};
+            if (model_name != "gemini-3.7-flash" && model_name != "gemini-3.5-flash") {
+                candidates.push_back("gemini-3.7-flash");
+            }
+            if (model_name != "gemini-3.5-flash") {
+                candidates.push_back("gemini-3.5-flash");
+            }
+
+            std::string response;
+            bool request_ok = false;
+            std::exception_ptr last_err;
+
+            for (const auto& try_model : candidates) {
+                auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
+                                           try_model, api_key_);
+                try {
+                    response = do_post(try_url, request_body, [](auto header_setter) {
+                        header_setter("Content-Type: application/json");
+                    });
+                    request_ok = true;
+                    model_name = try_model;
+                    url = try_url;
+                    break;
+                } catch (const std::exception& e) {
+                    last_err = std::current_exception();
+                    std::string const err_str = e.what();
+                    bool const is_retryable = (err_str.find("503") != std::string::npos ||
+                                               err_str.find("404") != std::string::npos ||
+                                               err_str.find("429") != std::string::npos);
+                    if (!is_retryable) {
+                        std::rethrow_exception(last_err);
+                    }
+                    CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
+                }
+            }
+            if (!request_ok && last_err) {
+                std::rethrow_exception(last_err);
+            }
 
             // Parse response and extract content
             std::string result = parse_gemini_response(response);
@@ -501,7 +539,7 @@ namespace rouen::helpers {
             DoPostFunc do_post, 
             std::function<std::string(const std::string&, const std::string&)> function_executor,
             std::string_view role = "user", 
-            std::string_view model = "gemini-2.5-flash-lite", 
+            std::string_view model = "gemini-3.8-flash", 
             std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
@@ -558,10 +596,45 @@ namespace rouen::helpers {
 
                 CONFIG_DEBUG_FMT("Sending Gemini request (iteration {}) to: {}", iterations, url);
 
-                // Make the HTTP request
-                auto response = do_post(url, request_body, [](auto header_setter) {
-                    header_setter("Content-Type: application/json");
-                });
+                // Make the HTTP request with candidate model loop (primary -> gemini-3.7-flash -> gemini-3.5-flash)
+                std::vector<std::string> candidates = {model_name};
+                if (model_name != "gemini-3.7-flash" && model_name != "gemini-3.5-flash") {
+                    candidates.push_back("gemini-3.7-flash");
+                }
+                if (model_name != "gemini-3.5-flash") {
+                    candidates.push_back("gemini-3.5-flash");
+                }
+
+                std::string response;
+                bool request_ok = false;
+                std::exception_ptr last_err;
+
+                for (const auto& try_model : candidates) {
+                    auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
+                                               try_model, api_key_);
+                    try {
+                        response = do_post(try_url, request_body, [](auto header_setter) {
+                            header_setter("Content-Type: application/json");
+                        });
+                        request_ok = true;
+                        model_name = try_model;
+                        url = try_url;
+                        break;
+                    } catch (const std::exception& e) {
+                        last_err = std::current_exception();
+                        std::string const err_str = e.what();
+                        bool const is_retryable = (err_str.find("503") != std::string::npos ||
+                                                   err_str.find("404") != std::string::npos ||
+                                                   err_str.find("429") != std::string::npos);
+                        if (!is_retryable) {
+                            std::rethrow_exception(last_err);
+                        }
+                        CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
+                    }
+                }
+                if (!request_ok && last_err) {
+                    std::rethrow_exception(last_err);
+                }
 
                 // Parse response and check for function calls
                 auto gemini_response = parse_gemini_response_full(response);
@@ -587,7 +660,7 @@ namespace rouen::helpers {
                             args_json = "{}";
                         }
                         
-                        current_calls.push_back({fc.name, args_json, fc.id});
+                        current_calls.push_back({fc.name, args_json, fc.id, part.thoughtSignature});
                     }
                     if (!part.text.empty()) {
                         turn_text += part.text;
@@ -614,7 +687,7 @@ namespace rouen::helpers {
                         } catch (const std::exception& e) {
                             result = std::format("{{\"error\":\"{}\"}}", e.what());
                         }
-                        response_msg.function_responses.push_back({call.name, result, call.id});
+                        response_msg.function_responses.push_back({call.name, result});
                     }
                     
                     // 3. Add function response turn to history

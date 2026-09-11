@@ -371,7 +371,12 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                 return;
             }
 
-            std::string full_path = "/Users/inz/src/rouen-web/" + rel_path;
+            const char* home_env = std::getenv("HOME");
+            std::string base_dir = home_env ? (std::string(home_env) + "/src/rouen-web/") : "/Users/inz/src/rouen-web/";
+            if (!home_env && std::filesystem::exists("/Users/inz/src/rouen-web/")) {
+                base_dir = "/Users/inz/src/rouen-web/";
+            }
+            std::string full_path = base_dir + rel_path;
             struct mg_http_serve_opts opts {};
             opts.extra_headers = "Cache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\n";
             mg_http_serve_file(c, hm, full_path.c_str(), &opts);

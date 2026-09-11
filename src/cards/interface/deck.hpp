@@ -545,12 +545,17 @@ public:
     }
 
     void create_card(std::string_view uri, bool move_first = false, bool insert_before = false) {
-        bool const shift_pressed = insert_before || ImGui::GetIO().KeyShift;
+        bool shift_pressed = insert_before;
+        if (ImGui::GetCurrentContext() != nullptr) {
+            shift_pressed = shift_pressed || ImGui::GetIO().KeyShift;
+        }
         // this needs to be deferred
         auto deferred_ops = registrar::get<deferred_operations>("deferred_ops");
-        deferred_ops->queue([this, uri_str = std::string{uri}, move_first, shift_pressed] {
-            create_card_impl(uri_str, move_first, shift_pressed);
-        });
+        if (deferred_ops) {
+            deferred_ops->queue([this, uri_str = std::string{uri}, move_first, shift_pressed] {
+                create_card_impl(uri_str, move_first, shift_pressed);
+            });
+        }
     }
 
     void focus_card_by_uri(std::string_view uri) {

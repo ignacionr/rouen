@@ -89,7 +89,7 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
             case Provider::GEMINI:
                 settings.api_key = config_service_->get_env_optional("GEMINI_API_KEY").value_or("");
                 settings.base_url = "https://generativelanguage.googleapis.com";
-                settings.model_name = "gemini-1.5-flash";
+                settings.model_name = "gemini-3.8-flash";
                 break;
             case Provider::CUSTOM:
                 settings.api_key = config_service_->get_env_optional("LLM_API_KEY").value_or("");
@@ -168,7 +168,7 @@ std::string LLMHost::get_default_model(Provider provider) {
         case Provider::GROK: return "grok-3-latest";
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
-        case Provider::GEMINI: return "gemini-1.5-flash";
+        case Provider::GEMINI: return "gemini-3.8-flash";
         case Provider::CUSTOM: return "llama2";
     }
     return "grok-3-latest";
@@ -225,7 +225,7 @@ void LLMConfigManager::setup_default_configs() {
     LLMConfigEntry gemini_entry;
     gemini_entry.name = "Gemini Flash";
     gemini_entry.provider = "gemini";
-    gemini_entry.model_name = "gemini-1.5-flash";
+    gemini_entry.model_name = "gemini-3.8-flash";
     configs_.push_back(gemini_entry);
     
     default_config_name_ = "Grok Default";

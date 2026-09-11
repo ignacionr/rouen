@@ -12,6 +12,8 @@ export module rouen.helpers.theme_manager;
 
 export namespace rouen::theme {
 
+    inline constexpr size_t num_default_themes = 5;
+
     struct theme_palette {
         std::string name;
         bool draw_card_outline = true;

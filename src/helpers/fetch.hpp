@@ -874,8 +874,8 @@ private:
                 return request_func();
             } catch (const std::exception& e) {
                 attempts++;
-                if (attempts > max_retries_) {
-                    HTTP_ERROR_FMT("Request to {} failed after {} attempts: {}", url, attempts, e.what());
+                if (attempts > max_retries_ || last_http_code_ == 429) {
+                    HTTP_ERROR_FMT("Request to {} failed (http_code: {}): {}", url, last_http_code_, e.what());
                     throw;
                 }
                 long delay = retry_delay_seconds_ * (1 << (attempts - 1));

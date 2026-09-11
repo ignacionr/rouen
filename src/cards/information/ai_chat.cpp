@@ -1492,7 +1492,8 @@ namespace rouen::cards {
                     
                     // Try to use function calling if we have a Gemini adapter directly
                     auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
-                    fetcher->set_max_retries(3);
+                    fetcher->set_max_retries(2);
+                    fetcher->set_retry_delay_seconds(2);
                     auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
                         return adapter_ptr->sendMessageWithFunctionCalling(
                             message,

@@ -70,7 +70,37 @@ namespace rouen::theme {
     void theme_manager::setup_default_themes() {
         themes_.clear();
 
-        // 1. Dark (Default)
+        // 1. Amber (Default)
+        theme_palette amber;
+        amber.name = "Amber";
+        amber.draw_card_outline = true;
+        amber.window_bg = {0.12f, 0.10f, 0.09f, 1.00f};
+        amber.text = {0.96f, 0.93f, 0.88f, 1.00f};
+        amber.text_disabled = {0.55f, 0.50f, 0.45f, 1.00f};
+        amber.title_bg = {0.09f, 0.07f, 0.06f, 1.00f};
+        amber.title_bg_active = {0.22f, 0.14f, 0.06f, 1.00f};
+        amber.menu_bar_bg = {0.11f, 0.09f, 0.08f, 1.00f};
+        amber.button = {0.38f, 0.22f, 0.08f, 1.00f};
+        amber.button_hovered = {0.52f, 0.30f, 0.09f, 1.00f};
+        amber.button_active = {0.72f, 0.44f, 0.12f, 1.00f};
+        amber.frame_bg = {0.18f, 0.14f, 0.11f, 1.00f};
+        amber.frame_bg_hovered = {0.25f, 0.19f, 0.14f, 1.00f};
+        amber.frame_bg_active = {0.32f, 0.24f, 0.17f, 1.00f};
+        amber.check_mark = {0.95f, 0.58f, 0.10f, 1.00f};
+        amber.slider_grab = {0.95f, 0.58f, 0.10f, 1.00f};
+        amber.card_colors[0] = {0.95f, 0.58f, 0.10f, 1.00f};
+        amber.card_colors[1] = {0.16f, 0.12f, 0.09f, 0.85f};
+        amber.card_colors[2] = {0.85f, 0.25f, 0.20f, 1.00f};
+        amber.card_colors[3] = {0.30f, 0.70f, 0.35f, 1.00f};
+        amber.card_colors[4] = {0.95f, 0.75f, 0.15f, 1.00f};
+        amber.card_colors[5] = {0.25f, 0.65f, 0.75f, 1.00f};
+        amber.card_colors[6] = {0.70f, 0.40f, 0.80f, 1.00f};
+        amber.card_colors[7] = {0.90f, 0.45f, 0.45f, 1.00f};
+        amber.card_colors[8] = {0.90f, 0.42f, 0.08f, 1.00f};
+        amber.card_colors[9] = {0.50f, 0.45f, 0.40f, 1.00f};
+        themes_.push_back(amber);
+
+        // 2. Dark
         theme_palette dark;
         dark.name = "Dark";
         dark.draw_card_outline = true;
@@ -197,7 +227,7 @@ namespace rouen::theme {
     }
 
     void theme_manager::delete_theme(size_t index) {
-        if (index >= themes_.size() || themes_.size() <= 1) {
+        if (index < num_default_themes || index >= themes_.size() || themes_.size() <= num_default_themes) {
             return;
         }
 
