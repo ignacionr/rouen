@@ -18,6 +18,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 # NOTE: this file is always included from CMakeLists.txt after add_executable(), so
 # ${PROJECT_NAME} is guaranteed to refer to an existing target.
 if(TARGET ${PROJECT_NAME})
+  target_sources(${PROJECT_NAME} PRIVATE src/models/calendar/calendar_fetcher_apple.mm)
   target_compile_options(${PROJECT_NAME} PRIVATE -Wno-poison-system-directories)
 endif()
 
@@ -60,6 +61,7 @@ find_library(FORCEFEEDBACK_LIBRARY ForceFeedback REQUIRED)
 find_library(CARBON_LIBRARY Carbon REQUIRED)
 find_library(CORESERVICES_LIBRARY CoreServices REQUIRED) # FSEvents (directory_watch.hpp)
 find_library(APPLICATIONSERVICES_LIBRARY ApplicationServices REQUIRED)
+find_library(EVENTKIT_LIBRARY EventKit REQUIRED)
 
 # Add GL library path directly for macOS
 find_library(OPENGL_LIBRARY OpenGL REQUIRED)
@@ -78,6 +80,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${CARBON_LIBRARY}
   ${CORESERVICES_LIBRARY}
   ${APPLICATIONSERVICES_LIBRARY}
+  ${EVENTKIT_LIBRARY}
   "-framework OpenGL"
   ${OPENGL_LIBRARY}
 )

@@ -1075,12 +1075,15 @@ namespace rouen::cards {
             // Try to extract message_input from the action payload
             glz::json_t payload;
             if (auto err = glz::read_json(payload, act); !err) {
-                if (payload.contains("message_input")) {
-                    std::string msg = payload["message_input"].get<std::string>();
-                    if (!msg.empty()) {
-                        send_message(msg);
-                        return;
-                    }
+                std::string msg;
+                if (payload.contains("message_input") && payload["message_input"].holds<std::string>()) {
+                    msg = payload["message_input"].get<std::string>();
+                } else if (payload.contains("data") && payload["data"].contains("message_input") && payload["data"]["message_input"].holds<std::string>()) {
+                    msg = payload["data"]["message_input"].get<std::string>();
+                }
+                if (!msg.empty()) {
+                    send_message(msg);
+                    return;
                 }
             }
             // Fallback: use current input_text_ if present

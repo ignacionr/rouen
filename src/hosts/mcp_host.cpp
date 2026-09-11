@@ -49,6 +49,7 @@
 #include "../models/series/series_repository.hpp"
 #include "../models/adaptive_cards/adaptive_cards_repository.hpp"
 #include "../models/contacts/contacts_repository.hpp"
+#include "../models/calendar/calendar_fetcher.hpp"
 #include "universal_sync_host.hpp"
 #include "persona_manager.hpp"
 #include <SDL3/SDL_video.h>
@@ -740,6 +741,82 @@ struct mcp_notes_operation_result {
             "status", &T::status,
             "message", &T::message,
             "id", &T::id
+        );
+    };
+};
+
+struct mcp_get_calendar_events_params {
+    std::string start_date;
+    std::string end_date;
+    struct glaze {
+        using T = mcp_get_calendar_events_params;
+        static constexpr auto value = glz::object(
+            "start_date", &T::start_date,
+            "end_date", &T::end_date
+        );
+    };
+};
+
+struct mcp_calendar_event_dto {
+    std::string id;
+    std::string summary;
+    std::string description;
+    std::string location;
+    std::string start;
+    std::string end;
+    std::string creator;
+    std::string organizer;
+    bool all_day{false};
+    struct glaze {
+        using T = mcp_calendar_event_dto;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "summary", &T::summary,
+            "description", &T::description,
+            "location", &T::location,
+            "start", &T::start,
+            "end", &T::end,
+            "creator", &T::creator,
+            "organizer", &T::organizer,
+            "all_day", &T::all_day
+        );
+    };
+};
+
+struct mcp_create_calendar_event_params {
+    std::string calendar_name;
+    std::string summary;
+    std::string description;
+    std::string location;
+    int start_year{0};
+    int start_month{0};
+    int start_day{0};
+    int start_hour{0};
+    int start_min{0};
+    int end_year{0};
+    int end_month{0};
+    int end_day{0};
+    int end_hour{0};
+    int end_min{0};
+    bool is_all_day{false};
+    struct glaze {
+        using T = mcp_create_calendar_event_params;
+        static constexpr auto value = glz::object(
+            "calendar_name", &T::calendar_name,
+            "summary", &T::summary,
+            "description", &T::description,
+            "location", &T::location,
+            "start_year", &T::start_year,
+            "start_month", &T::start_month,
+            "start_day", &T::start_day,
+            "start_hour", &T::start_hour,
+            "start_min", &T::start_min,
+            "end_year", &T::end_year,
+            "end_month", &T::end_month,
+            "end_day", &T::end_day,
+            "end_hour", &T::end_hour,
+            "end_min", &T::end_min,
+            "is_all_day", &T::is_all_day
         );
     };
 };
@@ -1668,6 +1745,96 @@ mcp_host::mcp_host() {
     );
     register_function("directory", contacts_import_macos_def);
     register_function("contacts", contacts_import_macos_def);
+
+    // Register Calendar MCP functions
+    function_definition const get_calendar_events_def(
+        "get_calendar_events",
+        "Fetch upcoming or date-filtered calendar events from the local system/macOS Calendar app or delegate service. Call with empty parameters {} to list all current/upcoming events, or optionally pass start_date and end_date (e.g. '2026-09-11' or ISO-8601 strings).",
+        R"mcp({"type":"object","properties":{"start_date":{"type":"string","description":"Optional start date for filtering (YYYY-MM-DD or ISO string)"},"end_date":{"type":"string","description":"Optional end date for filtering (YYYY-MM-DD or ISO string)"}}})mcp",
+        [](const std::string& params) -> std::string {
+            std::string start_date;
+            std::string end_date;
+            if (!params.empty()) {
+                mcp_get_calendar_events_params request{};
+                auto parse_result = glz::read_json(request, params);
+                if (!parse_result) {
+                    start_date = request.start_date;
+                    end_date = request.end_date;
+                }
+            }
+
+            try {
+                calendar::calendar_fetcher fetcher;
+                auto events = fetcher.fetch_events(start_date, end_date);
+                if (fetcher.has_error() && events.empty()) {
+                    return std::format(R"({{"status":"error","message":"{}"}})", fetcher.last_error());
+                }
+
+                std::vector<mcp_calendar_event_dto> dtos;
+                dtos.reserve(events.size());
+                for (const auto& ev : events) {
+                    dtos.push_back(mcp_calendar_event_dto{
+                        .id = ev.id,
+                        .summary = ev.summary,
+                        .description = ev.description,
+                        .location = ev.location,
+                        .start = ev.start,
+                        .end = ev.end,
+                        .creator = ev.creator,
+                        .organizer = ev.organizer,
+                        .all_day = ev.all_day
+                    });
+                }
+
+                std::string response;
+                auto ec = glz::write_json(dtos, response);
+                if (ec) {
+                    return R"({"status":"error","message":"Failed to serialize calendar events list"})";
+                }
+                return response;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "calendar"
+    );
+    register_function("calendar", get_calendar_events_def);
+
+    function_definition const create_calendar_event_def(
+        "create_calendar_event",
+        "Create a new calendar appointment/event in the local calendar. Parameters specify title, description, location, calendar name, start and end dates/times.",
+        R"mcp({"type":"object","properties":{"calendar_name":{"type":"string","description":"Target calendar name (e.g. 'Calendar' or 'Work')"},"summary":{"type":"string","description":"Event title / summary"},"description":{"type":"string","description":"Event description"},"location":{"type":"string","description":"Event location"},"start_year":{"type":"integer"},"start_month":{"type":"integer"},"start_day":{"type":"integer"},"start_hour":{"type":"integer"},"start_min":{"type":"integer"},"end_year":{"type":"integer"},"end_month":{"type":"integer"},"end_day":{"type":"integer"},"end_hour":{"type":"integer"},"end_min":{"type":"integer"},"is_all_day":{"type":"boolean"}},"required":["summary","start_year","start_month","start_day"]})mcp",
+        [](const std::string& params) -> std::string {
+            mcp_create_calendar_event_params request{};
+            auto parse_result = glz::read_json(request, params);
+            if (parse_result) {
+                return R"({"status":"error","message":"Invalid parameters for create_calendar_event"})";
+            }
+
+            try {
+                calendar::calendar_fetcher fetcher;
+                bool ok = fetcher.create_event(
+                    request.calendar_name,
+                    request.summary,
+                    request.description,
+                    request.location,
+                    request.start_year, request.start_month, request.start_day, request.start_hour, request.start_min,
+                    request.end_year, request.end_month, request.end_day, request.end_hour, request.end_min,
+                    request.is_all_day
+                );
+
+                if (ok) {
+                    return std::format(R"({{"status":"success","message":"Calendar event '{}' created successfully"}})", request.summary);
+                } else {
+                    return std::format(R"({{"status":"error","message":"{}"}})", fetcher.has_error() ? fetcher.last_error() : "Failed to create calendar event");
+                }
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "calendar"
+    );
+    register_function("calendar", create_calendar_event_def);
 
     // Register Persona MCP functions
     function_definition const list_personas_def(

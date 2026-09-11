@@ -92,14 +92,14 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
                 settings.model_name = "gemini-3.8-flash";
                 break;
             case Provider::CUSTOM:
-                settings.api_key = config_service_->get_env_optional("LLM_API_KEY").value_or("");
-                settings.base_url = config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:11434");
-                settings.model_name = config_service_->get_env_optional("LLM_MODEL").value_or("llama2");
+                settings.api_key = config_service_->get_env_optional("LLM_API_KEY").value_or("mlx-local");
+                settings.base_url = config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:8098/v1");
+                settings.model_name = config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen2.5-7B-Instruct-4bit");
                 break;
         }
     }
     
-    settings.is_configured = !settings.api_key.empty();
+    settings.is_configured = !settings.api_key.empty() || settings.provider == Provider::CUSTOM;
     return settings;
 }
 
@@ -169,7 +169,7 @@ std::string LLMHost::get_default_model(Provider provider) {
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
         case Provider::GEMINI: return "gemini-3.8-flash";
-        case Provider::CUSTOM: return "llama2";
+        case Provider::CUSTOM: return "mlx-community/Qwen2.5-7B-Instruct-4bit";
     }
     return "grok-3-latest";
 }
@@ -180,7 +180,7 @@ std::string LLMHost::get_base_url(Provider provider) {
         case Provider::OPENAI: return "https://api.openai.com/v1";
         case Provider::GROQ: return "https://api.groq.com/openai/v1";
         case Provider::GEMINI: return "https://generativelanguage.googleapis.com";
-        case Provider::CUSTOM: return "http://localhost:11434";
+        case Provider::CUSTOM: return "http://localhost:8098/v1";
     }
     return "https://api.x.ai/v1";
 }
@@ -227,6 +227,14 @@ void LLMConfigManager::setup_default_configs() {
     gemini_entry.provider = "gemini";
     gemini_entry.model_name = "gemini-3.8-flash";
     configs_.push_back(gemini_entry);
+
+    LLMConfigEntry local_mlx_entry;
+    local_mlx_entry.name = "Local MLX";
+    local_mlx_entry.provider = "custom";
+    local_mlx_entry.base_url = "http://localhost:8098/v1";
+    local_mlx_entry.model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit";
+    local_mlx_entry.api_key = "mlx-local";
+    configs_.push_back(local_mlx_entry);
     
     default_config_name_ = "Grok Default";
     save_configs();

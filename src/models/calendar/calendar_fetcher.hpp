@@ -15,6 +15,7 @@
 #include "event.hpp"
 
 #if defined(__APPLE__)
+#include "calendar_fetcher_apple.h"
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include <filesystem>
@@ -225,59 +226,7 @@ namespace calendar {
 #if defined(__APPLE__)
             std::lock_guard<std::mutex> lock(mutex_);
             last_error_.clear();
-            
-            std::string command_args;
-            if (!start_date.empty() && !end_date.empty()) {
-                command_args = " \"" + start_date + "\" \"" + end_date + "\"";
-            }
-            
-            // 1. Try the Swift/EventKit fetcher (fetch_calendar.swift) first
-            auto swift_path = rouen::platform::get_resource_path("fetch_calendar.swift");
-            if (!std::filesystem::exists(swift_path)) {
-                auto dev_swift_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.swift";
-                if (std::filesystem::exists(dev_swift_path)) {
-                    swift_path = dev_swift_path;
-                }
-            }
-
-            if (std::filesystem::exists(swift_path)) {
-                try {
-                    std::string command = "/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/swift \"" + swift_path.string() + "\"" + command_args;
-                    std::string response = ProcessHelper::executeCommand(command);
-                    if (!response.empty()) {
-                        auto data = parse_response(response);
-                        return data;
-                    }
-                } catch (const std::exception&) {
-                    // Swift failed, proceed to AppleScript fallback
-                }
-            }
-
-            // 2. Fall back to the legacy AppleScript (fetch_calendar.scpt)
-            try {
-                auto script_path = rouen::platform::get_resource_path("fetch_calendar.scpt");
-                if (!std::filesystem::exists(script_path)) {
-                    auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "fetch_calendar.scpt";
-                    if (std::filesystem::exists(dev_script_path)) {
-                        script_path = dev_script_path;
-                    } else {
-                        throw std::runtime_error("fetch_calendar.swift / fetch_calendar.scpt not found in resources");
-                    }
-                }
-                
-                std::string command = "osascript \"" + script_path.string() + "\"" + command_args;
-                std::string response = ProcessHelper::executeCommand(command);
-                if (response.empty()) {
-                    throw std::runtime_error("calendar fetch command returned empty response or failed");
-                }
-                
-                // Parse the JSON response
-                auto data = parse_response(response);
-                return data;
-            } catch (const std::exception& e) {
-                last_error_ = e.what();
-                return {};
-            }
+            return fetch_events_apple(start_date, end_date, last_error_);
 #else
             if (calendar_delegate_url_.empty()) {
                 last_error_ = "Calendar URL not provided. Please configure CALENDAR_DELEGATE_URL.";
@@ -317,63 +266,11 @@ namespace calendar {
                           bool is_all_day) {
 #if defined(__APPLE__)
             std::lock_guard<std::mutex> lock(mutex_);
-            try {
-                last_error_.clear();
-                
-                auto script_path = rouen::platform::get_resource_path("create_event.scpt");
-                if (!std::filesystem::exists(script_path)) {
-                    auto dev_script_path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path() / "scripts" / "create_event.scpt";
-                    if (std::filesystem::exists(dev_script_path)) {
-                        script_path = dev_script_path;
-                    } else {
-                        throw std::runtime_error("create_event.scpt not found in resources");
-                    }
-                }
-                
-                auto escape_arg = [](const std::string& arg) {
-                    std::string res = "'";
-                    for (char c : arg) {
-                        if (c == '\'') {
-                            res += "'\\''";
-                        } else {
-                            res += c;
-                        }
-                    }
-                    res += "'";
-                    return res;
-                };
-                
-                std::string command = "osascript \"" + script_path.string() + "\" "
-                    + escape_arg(calendar_name) + " "
-                    + escape_arg(summary) + " "
-                    + escape_arg(description) + " "
-                    + escape_arg(location) + " "
-                    + std::to_string(start_year) + " "
-                    + std::to_string(start_month) + " "
-                    + std::to_string(start_day) + " "
-                    + std::to_string(start_hour) + " "
-                    + std::to_string(start_min) + " "
-                    + std::to_string(end_year) + " "
-                    + std::to_string(end_month) + " "
-                    + std::to_string(end_day) + " "
-                    + std::to_string(end_hour) + " "
-                    + std::to_string(end_min) + " "
-                    + (is_all_day ? "true" : "false");
-                
-                std::string response = ProcessHelper::executeCommand(command);
-                while (!response.empty() && (response.back() == '\n' || response.back() == '\r')) {
-                    response.pop_back();
-                }
-                
-                if (response == "SUCCESS") {
-                    return true;
-                } else {
-                    throw std::runtime_error(response.empty() ? "Event creation failed with empty response" : response);
-                }
-            } catch (const std::exception& e) {
-                last_error_ = e.what();
-                return false;
-            }
+            last_error_.clear();
+            return create_event_apple(calendar_name, summary, description, location,
+                                      start_year, start_month, start_day, start_hour, start_min,
+                                      end_year, end_month, end_day, end_hour, end_min,
+                                      is_all_day, last_error_);
 #else
             (void)calendar_name; (void)summary; (void)description; (void)location;
             (void)start_year; (void)start_month; (void)start_day; (void)start_hour; (void)start_min;

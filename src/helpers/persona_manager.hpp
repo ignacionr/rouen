@@ -147,7 +147,7 @@ namespace rouen::helpers {
             Persona default_p;
             default_p.name = "Rouen Assistant";
             default_p.description = "Primary orchestrator persona for Rouen. Coordinates requests by delegating to specialized per-MCP sub-personas.";
-            default_p.allowed_mcps = {"deck", "persona"};
+            default_p.allowed_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro"};
             default_p.allowed_personas = {"Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
             default_p.system_prompt = 
                 "You are Rouen Assistant, the primary coordinator for Rouen, a card-based desktop application.\n\n"
@@ -198,7 +198,7 @@ namespace rouen::helpers {
             term_p.description = "Gated per-MCP persona dedicated strictly to running system terminal commands.";
             term_p.allowed_mcps = {"terminal"};
             term_p.system_prompt = "You are Terminal Specialist, a minimal, command-line focused utility agent.";
-            term_p.llm_config_name = "Default";
+            term_p.llm_config_name = "Local MLX";
             term_p.enable_search = false;
             term_p.temperature = 0.1f;
             personas_.push_back(term_p);
@@ -208,7 +208,7 @@ namespace rouen::helpers {
             edit_p.description = "Gated per-MCP persona dedicated strictly to inspecting and editing files.";
             edit_p.allowed_mcps = {"editor"};
             edit_p.system_prompt = "You are Editor Specialist, responsible for reading, writing, and editing files safely.";
-            edit_p.llm_config_name = "Default";
+            edit_p.llm_config_name = "Local MLX";
             edit_p.enable_search = false;
             edit_p.temperature = 0.1f;
             personas_.push_back(edit_p);
@@ -218,7 +218,7 @@ namespace rouen::helpers {
             adaptive_p.description = "Gated per-MCP persona specialized in designing and rendering rich Adaptive Cards.";
             adaptive_p.allowed_mcps = {"deck", "adaptive_card"};
             adaptive_p.system_prompt = "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.";
-            adaptive_p.llm_config_name = "Default";
+            adaptive_p.llm_config_name = "Local MLX";
             adaptive_p.enable_search = false;
             adaptive_p.temperature = 0.3f;
             personas_.push_back(adaptive_p);
@@ -228,7 +228,7 @@ namespace rouen::helpers {
             git_p.description = "Gated per-MCP persona dedicated to Git repositories, branches, commits, GitHub issues, PRs, and CI.";
             git_p.allowed_mcps = {"git", "github"};
             git_p.system_prompt = "You are Git & GitHub Specialist, managing version control and repository workflows.";
-            git_p.llm_config_name = "Default";
+            git_p.llm_config_name = "Local MLX";
             git_p.enable_search = false;
             git_p.temperature = 0.2f;
             personas_.push_back(git_p);
@@ -238,7 +238,7 @@ namespace rouen::helpers {
             archive_p.description = "Gated per-MCP librarian persona managing notes, knowledge archiving, and cross-references.";
             archive_p.allowed_mcps = {"notes"};
             archive_p.system_prompt = "As the Archiver of All Data, you serve as Rouen's precision librarian, safeguarding information across sessions.";
-            archive_p.llm_config_name = "Default";
+            archive_p.llm_config_name = "Local MLX";
             archive_p.enable_search = false;
             archive_p.temperature = 0.0f;
             personas_.push_back(archive_p);
@@ -248,7 +248,7 @@ namespace rouen::helpers {
             dir_p.description = "Gated per-MCP persona managing contacts, user directory, and macOS address book integration.";
             dir_p.allowed_mcps = {"contacts", "directory"};
             dir_p.system_prompt = "You are Directory & Address Book, managing contact cards and user directory entries in Rouen.";
-            dir_p.llm_config_name = "Default";
+            dir_p.llm_config_name = "Local MLX";
             dir_p.enable_search = false;
             dir_p.temperature = 0.2f;
             personas_.push_back(dir_p);
@@ -258,7 +258,7 @@ namespace rouen::helpers {
             time_p.description = "Gated per-MCP persona managing schedule events, focus timers, and alarms.";
             time_p.allowed_mcps = {"calendar", "alarm", "pomodoro"};
             time_p.system_prompt = "You are Schedule & Timekeeper, managing calendar events, reminders, Pomodoro focus intervals, and alarms in Rouen.";
-            time_p.llm_config_name = "Default";
+            time_p.llm_config_name = "Local MLX";
             time_p.enable_search = false;
             time_p.temperature = 0.2f;
             personas_.push_back(time_p);

@@ -140,16 +140,18 @@ namespace rouen::helpers {
         std::string api_key_;
         std::string model_;
         std::vector<Message> conversation_;
-        std::chrono::steady_clock::time_point last_request_time_;
-        static constexpr auto min_request_interval_ = std::chrono::milliseconds(1200);
+        static inline std::mutex global_rate_limit_mutex_;
+        static inline std::chrono::steady_clock::time_point global_last_request_time_{};
+        static constexpr auto min_request_interval_ = std::chrono::milliseconds(1500);
 
         void wait_min_time() {
+            std::lock_guard<std::mutex> lock(global_rate_limit_mutex_);
             auto now = std::chrono::steady_clock::now();
-            auto elapsed = now - last_request_time_;
+            auto elapsed = now - global_last_request_time_;
             if (elapsed < min_request_interval_) {
                 std::this_thread::sleep_for(min_request_interval_ - elapsed);
             }
-            last_request_time_ = std::chrono::steady_clock::now();
+            global_last_request_time_ = std::chrono::steady_clock::now();
         }
 
         std::string escape_json(const std::string& str) const {
@@ -300,6 +302,12 @@ namespace rouen::helpers {
         // Parse Gemini response and return the full response structure for function call handling
         GeminiResponse parse_gemini_response_full(const std::string& response) const {
             CONFIG_DEBUG_FMT("Parsing Gemini response: {}", response);
+            if (response.find("RESOURCE_EXHAUSTED") != std::string::npos || response.find("429") != std::string::npos || response.find("quota") != std::string::npos) {
+                throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit");
+            }
+            if (response.find("\"error\":") != std::string::npos) {
+                throw std::runtime_error("Gemini API Error: " + response);
+            }
             
             try {
                 CONFIG_DEBUG("Creating GeminiResponse object");
@@ -403,7 +411,7 @@ namespace rouen::helpers {
 
     public:
         GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "") 
-            : api_key_(trim(api_key)), model_("gemini-3.8-flash"), last_request_time_(std::chrono::steady_clock::now()) {
+            : api_key_(trim(api_key)), model_("gemini-3.8-flash") {
             CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
         }
 
@@ -489,25 +497,34 @@ namespace rouen::helpers {
             for (const auto& try_model : candidates) {
                 auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                            try_model, api_key_);
-                try {
-                    response = do_post(try_url, request_body, [](auto header_setter) {
-                        header_setter("Content-Type: application/json");
-                    });
-                    request_ok = true;
-                    model_name = try_model;
-                    url = try_url;
-                    break;
-                } catch (const std::exception& e) {
-                    last_err = std::current_exception();
-                    std::string const err_str = e.what();
-                    bool const is_retryable = (err_str.find("503") != std::string::npos ||
-                                               err_str.find("404") != std::string::npos ||
-                                               err_str.find("429") != std::string::npos);
-                    if (!is_retryable) {
-                        std::rethrow_exception(last_err);
+                for (int attempt = 0; attempt < 3; ++attempt) {
+                    try {
+                        wait_min_time();
+                        response = do_post(try_url, request_body, [](auto header_setter) {
+                            header_setter("Content-Type: application/json");
+                        });
+                        request_ok = true;
+                        model_name = try_model;
+                        url = try_url;
+                        break;
+                    } catch (const std::exception& e) {
+                        last_err = std::current_exception();
+                        std::string const err_str = e.what();
+                        if (err_str.find("429") != std::string::npos) {
+                            CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
+                            std::this_thread::sleep_for(std::chrono::milliseconds(3000 * (attempt + 1)));
+                            continue;
+                        }
+                        bool const is_retryable = (err_str.find("503") != std::string::npos ||
+                                                   err_str.find("404") != std::string::npos);
+                        if (!is_retryable) {
+                            std::rethrow_exception(last_err);
+                        }
+                        CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
+                        break;
                     }
-                    CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
                 }
+                if (request_ok) break;
             }
             if (!request_ok && last_err) {
                 std::rethrow_exception(last_err);
@@ -613,25 +630,34 @@ namespace rouen::helpers {
                 for (const auto& try_model : candidates) {
                     auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                                try_model, api_key_);
-                    try {
-                        response = do_post(try_url, request_body, [](auto header_setter) {
-                            header_setter("Content-Type: application/json");
-                        });
-                        request_ok = true;
-                        model_name = try_model;
-                        url = try_url;
-                        break;
-                    } catch (const std::exception& e) {
-                        last_err = std::current_exception();
-                        std::string const err_str = e.what();
-                        bool const is_retryable = (err_str.find("503") != std::string::npos ||
-                                                   err_str.find("404") != std::string::npos ||
-                                                   err_str.find("429") != std::string::npos);
-                        if (!is_retryable) {
-                            std::rethrow_exception(last_err);
+                    for (int attempt = 0; attempt < 3; ++attempt) {
+                        try {
+                            wait_min_time();
+                            response = do_post(try_url, request_body, [](auto header_setter) {
+                                header_setter("Content-Type: application/json");
+                            });
+                            request_ok = true;
+                            model_name = try_model;
+                            url = try_url;
+                            break;
+                        } catch (const std::exception& e) {
+                            last_err = std::current_exception();
+                            std::string const err_str = e.what();
+                            if (err_str.find("429") != std::string::npos) {
+                                CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(3000 * (attempt + 1)));
+                                continue;
+                            }
+                            bool const is_retryable = (err_str.find("503") != std::string::npos ||
+                                                       err_str.find("404") != std::string::npos);
+                            if (!is_retryable) {
+                                std::rethrow_exception(last_err);
+                            }
+                            CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
+                            break;
                         }
-                        CONFIG_WARN_FMT("Model {} failed with '{}', trying next candidate...", try_model, err_str);
                     }
+                    if (request_ok) break;
                 }
                 if (!request_ok && last_err) {
                     std::rethrow_exception(last_err);
