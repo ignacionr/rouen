@@ -546,10 +546,10 @@ public:
             return R"({"type":"AdaptiveCard","version":"1.5","body":[{"type":"TextBlock","text":"Weather service unavailable"}]})";
         }
 
-        glz::json_t card;
-        card["type"] = "AdaptiveCard";
-        card["version"] = "1.5";
-        card["refreshIntervalMs"] = 60000.0;
+        glz::json_t card_json;
+        card_json["type"] = "AdaptiveCard";
+        card_json["version"] = "1.5";
+        card_json["refreshIntervalMs"] = 60000.0;
 
         std::vector<glz::json_t> body;
 
@@ -778,7 +778,7 @@ public:
             body.push_back(std::move(input));
         }
 
-        card["body"] = std::move(body);
+        card_json["body"] = std::move(body);
 
         // Actions
         {
@@ -797,11 +797,11 @@ public:
                 refresh_act["verb"] = "refresh";
                 actions.push_back(std::move(refresh_act));
             }
-            card["actions"] = std::move(actions);
+            card_json["actions"] = std::move(actions);
         }
 
         std::string out;
-        (void)glz::write_json(card, out);
+        (void)glz::write_json(card_json, out);
         return out;
     }
 

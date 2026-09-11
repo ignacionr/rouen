@@ -880,7 +880,7 @@ private:
                 }
                 long delay = retry_delay_seconds_ * (1 << (attempts - 1));
                 if (last_http_code_ == 429) {
-                    delay = std::max(delay, 2L * attempts);
+                    delay = (std::max)(delay, 2L * attempts);
                 }
                 HTTP_WARN_FMT("Request to {} failed (attempt {}/{}): {}. Retrying in {}s...", 
                               url, attempts, max_retries_, e.what(), delay);
