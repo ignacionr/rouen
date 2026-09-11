@@ -874,11 +874,14 @@ private:
                 return request_func();
             } catch (const std::exception& e) {
                 attempts++;
-                if (attempts > max_retries_ || last_http_code_ == 429) {
+                if (attempts > max_retries_) {
                     HTTP_ERROR_FMT("Request to {} failed (http_code: {}): {}", url, last_http_code_, e.what());
                     throw;
                 }
                 long delay = retry_delay_seconds_ * (1 << (attempts - 1));
+                if (last_http_code_ == 429) {
+                    delay = std::max(delay, 2L * attempts);
+                }
                 HTTP_WARN_FMT("Request to {} failed (attempt {}/{}): {}. Retrying in {}s...", 
                               url, attempts, max_retries_, e.what(), delay);
                 std::this_thread::sleep_for(std::chrono::seconds(delay));

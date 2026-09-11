@@ -141,7 +141,7 @@ namespace rouen::helpers {
         std::string model_;
         std::vector<Message> conversation_;
         std::chrono::steady_clock::time_point last_request_time_;
-        static constexpr auto min_request_interval_ = std::chrono::milliseconds(100);
+        static constexpr auto min_request_interval_ = std::chrono::milliseconds(1200);
 
         void wait_min_time() {
             auto now = std::chrono::steady_clock::now();
@@ -588,6 +588,7 @@ namespace rouen::helpers {
             
             while (keep_calling && iterations < max_iterations) {
                 iterations++;
+                wait_min_time();
                 
                 // Build Gemini API request using current_conversation and function schemas
                 std::string request_body = function_schemas ? 
