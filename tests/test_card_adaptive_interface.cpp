@@ -127,9 +127,25 @@ TEST(CardAdaptiveInterface, AIChatCard) {
         registrar::add<rouen::hosts::mcp_host>("mcp_service", dummy_mcp);
     } catch (...) {}
     rouen::cards::ai_chat chat{};
+    
+    // Initial card state verification
     std::string chat_json = chat.get_adaptive_card_json();
     EXPECT_NE(chat_json.find("AI Assistant Chat"), std::string::npos);
-    chat.handle_action(R"({"verb":"send_message"})");
+    EXPECT_NE(chat_json.find("message_input"), std::string::npos);
+    EXPECT_NE(chat_json.find("send_message"), std::string::npos);
+    EXPECT_NE(chat_json.find("clear_history"), std::string::npos);
+    EXPECT_NE(chat_json.find("Provider:"), std::string::npos);
+
+    // Test sending message with payload via action
+    chat.handle_action(R"({"verb":"send_message","message_input":"Hello from unit test"})");
+    chat_json = chat.get_adaptive_card_json();
+    EXPECT_NE(chat_json.find("Hello from unit test"), std::string::npos);
+    EXPECT_NE(chat_json.find("You"), std::string::npos);
+
+    // Test clear history action
+    chat.handle_action(R"({"verb":"clear_history"})");
+    chat_json = chat.get_adaptive_card_json();
+    EXPECT_EQ(chat_json.find("Hello from unit test"), std::string::npos);
 }
 
 TEST(CardAdaptiveInterface, HttpApiAdaptiveAndActionEndpoints) {

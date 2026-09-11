@@ -904,27 +904,195 @@ namespace rouen::cards {
     std::string ai_chat::get_adaptive_card_json() const {
         std::lock_guard<std::mutex> const lock(const_cast<std::mutex&>(chat_history_mutex_));
         int refresh_ms = waiting_for_response_ ? 500 : 0;
-        return std::format(
-            R"({{
-  "type": "AdaptiveCard",
-  "version": "1.5",
-  "refreshIntervalMs": {},
-  "body": [
-    {{"type": "TextBlock", "text": "AI Assistant Chat", "weight": "Bolder", "size": "Large"}},
-    {{"type": "TextBlock", "text": "Messages in history: {}", "size": "Medium"}}
-  ],
-  "actions": [
-    {{"type": "Action.Execute", "title": "Send Message", "verb": "send_message"}}
-  ]
-}})",
-            refresh_ms, chat_history_.size());
+
+        // Build the card using glz::json_t for safe JSON construction
+        // (message text may contain characters that break raw string formatting).
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["refreshIntervalMs"] = static_cast<double>(refresh_ms);
+
+        std::vector<glz::json_t> body;
+
+        // Title
+        {
+            glz::json_t title;
+            title["type"] = "TextBlock";
+            title["text"] = "AI Assistant Chat";
+            title["weight"] = "Bolder";
+            title["size"] = "Large";
+            body.push_back(std::move(title));
+        }
+
+        // Configuration status line
+        {
+            auto settings = helpers::LLMConfig::get_current_config();
+            std::string config_text;
+            if (settings.is_configured) {
+                config_text = std::format("Provider: {} | Model: {} | ✓ Configured",
+                    helpers::LLMConfig::provider_to_string(settings.provider),
+                    settings.model_name);
+            } else {
+                config_text = "⚠ LLM not configured";
+            }
+            glz::json_t config_block;
+            config_block["type"] = "TextBlock";
+            config_block["text"] = config_text;
+            config_block["isSubtle"] = true;
+            config_block["size"] = "Small";
+            config_block["separator"] = true;
+            body.push_back(std::move(config_block));
+        }
+
+        // Chat messages
+        constexpr size_t max_messages = 20; // limit for reasonable payload size
+        size_t start_idx = 0;
+        if (chat_history_.size() > max_messages) {
+            start_idx = chat_history_.size() - max_messages;
+            // Indicate truncation
+            glz::json_t trunc;
+            trunc["type"] = "TextBlock";
+            trunc["text"] = std::format("... {} earlier messages not shown ...",
+                start_idx);
+            trunc["isSubtle"] = true;
+            trunc["horizontalAlignment"] = "Center";
+            trunc["size"] = "Small";
+            body.push_back(std::move(trunc));
+        }
+
+        std::string assistant_name = get_assistant_name();
+        for (size_t i = start_idx; i < chat_history_.size(); ++i) {
+            const auto& [role, text] = chat_history_[i];
+            bool is_user = (role == "user");
+            bool is_debug = (role == "debug");
+
+            // Container for each message bubble
+            glz::json_t container;
+            container["type"] = "Container";
+            container["separator"] = (i == start_idx); // separator before first message
+            container["spacing"] = "Small";
+
+            std::vector<glz::json_t> items;
+
+            // Sender label
+            {
+                glz::json_t sender;
+                sender["type"] = "TextBlock";
+                sender["text"] = is_user ? "You" : (is_debug ? "Debug Info" : assistant_name);
+                sender["weight"] = "Bolder";
+                sender["size"] = "Small";
+                sender["spacing"] = "None";
+                items.push_back(std::move(sender));
+            }
+
+            // Message text (truncate very long messages for JSON sanity)
+            {
+                glz::json_t msg;
+                msg["type"] = "TextBlock";
+                constexpr size_t max_text_len = 2000;
+                if (text.size() > max_text_len) {
+                    msg["text"] = text.substr(0, max_text_len) + "…";
+                } else {
+                    msg["text"] = text;
+                }
+                msg["wrap"] = true;
+                msg["spacing"] = "None";
+                items.push_back(std::move(msg));
+            }
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // Typing indicator when waiting for response
+        if (waiting_for_response_.load()) {
+            glz::json_t thinking;
+            thinking["type"] = "Container";
+            thinking["spacing"] = "Small";
+
+            std::vector<glz::json_t> thinking_items;
+            {
+                glz::json_t label;
+                label["type"] = "TextBlock";
+                label["text"] = assistant_name;
+                label["weight"] = "Bolder";
+                label["size"] = "Small";
+                label["spacing"] = "None";
+                thinking_items.push_back(std::move(label));
+            }
+            {
+                glz::json_t indicator;
+                indicator["type"] = "TextBlock";
+                indicator["text"] = "typing...";
+                indicator["isSubtle"] = true;
+                indicator["spacing"] = "None";
+                thinking_items.push_back(std::move(indicator));
+            }
+            thinking["items"] = std::move(thinking_items);
+            body.push_back(std::move(thinking));
+        }
+
+        // Message input field
+        {
+            glz::json_t input;
+            input["type"] = "Input.Text";
+            input["id"] = "message_input";
+            input["placeholder"] = "Type your message...";
+            input["separator"] = true;
+            body.push_back(std::move(input));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        {
+            std::vector<glz::json_t> actions;
+            {
+                glz::json_t send_action;
+                send_action["type"] = "Action.Execute";
+                send_action["title"] = "Send Message";
+                send_action["verb"] = "send_message";
+                actions.push_back(std::move(send_action));
+            }
+            {
+                glz::json_t clear_action;
+                clear_action["type"] = "Action.Execute";
+                clear_action["title"] = "Clear";
+                clear_action["verb"] = "clear_history";
+                actions.push_back(std::move(clear_action));
+            }
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
     }
 
     void ai_chat::handle_action(std::string_view action_json) {
         std::string act(action_json);
-        if (act.find("\"send_message\"") != std::string::npos && !input_text_.empty()) {
-            send_message(input_text_);
-            input_text_.clear();
+        if (act.find("\"send_message\"") != std::string::npos) {
+            // Try to extract message_input from the action payload
+            glz::json_t payload;
+            if (auto err = glz::read_json(payload, act); !err) {
+                if (payload.contains("message_input")) {
+                    std::string msg = payload["message_input"].get<std::string>();
+                    if (!msg.empty()) {
+                        send_message(msg);
+                        return;
+                    }
+                }
+            }
+            // Fallback: use current input_text_ if present
+            if (!input_text_.empty()) {
+                send_message(input_text_);
+                input_text_.clear();
+            }
+        } else if (act.find("\"clear_history\"") != std::string::npos) {
+            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+            chat_history_.clear();
+            message_cache_.clear();
+            layout_dirty_ = true;
         }
     }
 
