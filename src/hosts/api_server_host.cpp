@@ -309,7 +309,8 @@ void api_server_host::event_handler(struct mg_connection* c, int ev, void* ev_da
                              "Content-Type: text/event-stream\r\n"
                              "Cache-Control: no-cache\r\n"
                              "Connection: keep-alive\r\n"
-                             "Access-Control-Allow-Origin: *\r\n\r\n");
+                             "Access-Control-Allow-Origin: *\r\n"
+                             "Access-Control-Allow-Private-Network: true\r\n\r\n");
                 add_sse_connection(c);
                 return;
             }
@@ -324,16 +325,62 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     int status_code = 200;
     std::string content_type = "application/json";
 
+    std::string origin_val = "*";
+    struct mg_str* origin_hdr = mg_http_get_header(hm, "Origin");
+    if (origin_hdr && origin_hdr->len > 0) {
+        origin_val = std::string(origin_hdr->buf, origin_hdr->len);
+    }
+
     if (mg_strcmp(hm->method, mg_str("OPTIONS")) == 0) {
-        mg_http_reply(c, 204,
-                      "Access-Control-Allow-Origin: *\r\n"
-                      "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
-                      "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
-                      "Access-Control-Max-Age: 86400\r\n", "");
+        std::string cors_headers =
+            "Access-Control-Allow-Origin: " + origin_val + "\r\n"
+            "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
+            "Access-Control-Allow-Headers: Content-Type, Authorization, Access-Control-Request-Private-Network, Access-Control-Request-Method, *\r\n"
+            "Access-Control-Allow-Private-Network: true\r\n"
+            "Access-Control-Allow-Credentials: true\r\n"
+            "Access-Control-Max-Age: 86400\r\n";
+        mg_http_reply(c, 204, cors_headers.c_str(), "");
         return;
     }
 
-    if (mg_match(hm->uri, mg_str("/swagger"), nullptr) ||
+    if (mg_match(hm->uri, mg_str("/web"), nullptr) ||
+        mg_match(hm->uri, mg_str("/web/*"), nullptr) ||
+        mg_match(hm->uri, mg_str("/ui"), nullptr) ||
+        mg_match(hm->uri, mg_str("/ui/*"), nullptr) ||
+        mg_match(hm->uri, mg_str("/styles.css"), nullptr) ||
+        mg_match(hm->uri, mg_str("/app.js"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            std::string uri_str(hm->uri.buf, hm->uri.len);
+            if (uri_str == "/web" || uri_str == "/ui") {
+                std::string location = uri_str + "/";
+                mg_http_reply(c, 302, ("Location: " + location + "\r\n").c_str(), "");
+                return;
+            }
+
+            std::string rel_path;
+            if (uri_str.starts_with("/web/")) rel_path = uri_str.substr(5);
+            else if (uri_str.starts_with("/ui/")) rel_path = uri_str.substr(4);
+            else if (uri_str.starts_with("/")) rel_path = uri_str.substr(1);
+            else rel_path = uri_str;
+            
+            if (rel_path.empty()) {
+                rel_path = "index.html";
+            }
+            if (rel_path.find("..") != std::string::npos) {
+                mg_http_reply(c, 400, "", "Bad Request");
+                return;
+            }
+
+            std::string full_path = "/Users/inz/src/rouen-web/" + rel_path;
+            struct mg_http_serve_opts opts {};
+            opts.extra_headers = "Cache-Control: no-cache, no-store, must-revalidate\r\nPragma: no-cache\r\nExpires: 0\r\n";
+            mg_http_serve_file(c, hm, full_path.c_str(), &opts);
+            return;
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/swagger"), nullptr) ||
         mg_match(hm->uri, mg_str("/swagger/*"), nullptr) ||
         mg_match(hm->uri, mg_str("/docs"), nullptr) ||
         mg_match(hm->uri, mg_str("/docs/*"), nullptr) ||
@@ -388,6 +435,8 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             response = handle_card_creation(c, hm);
         } else if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_cards_get(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+            response = handle_card_delete(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -655,12 +704,14 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         response = R"({"error":"Not found"})";
     }
 
-    mg_http_reply(c, status_code,
-                  ("Content-Type: " + content_type + "\r\n"
-                   "Access-Control-Allow-Origin: *\r\n"
-                   "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
-                   "Access-Control-Allow-Headers: Content-Type, Authorization\r\n").c_str(),
-                  "%s", response.c_str());
+    std::string cors_headers =
+        "Content-Type: " + content_type + "\r\n"
+        "Access-Control-Allow-Origin: " + origin_val + "\r\n"
+        "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type, Authorization, Access-Control-Request-Private-Network, Access-Control-Request-Method, *\r\n"
+        "Access-Control-Allow-Private-Network: true\r\n"
+        "Access-Control-Allow-Credentials: true\r\n";
+    mg_http_reply(c, status_code, cors_headers.c_str(), "%s", response.c_str());
 }
 
 std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, struct mg_http_message* hm) {
@@ -713,6 +764,60 @@ struct card_action_request {
     glz::json_t action{};
     std::string action_str{};
 };
+
+std::string api_server_host::handle_card_delete(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        int target_index = -1;
+        std::string target_uri;
+
+        if (hm->query.len > 0) {
+            std::string idx_str = get_query_param(&hm->query, "index");
+            if (!idx_str.empty()) {
+                try { target_index = std::stoi(idx_str); } catch (...) {}
+            }
+            target_uri = get_query_param(&hm->query, "uri");
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        if (!body.empty()) {
+            glz::json_t obj;
+            auto err = glz::read_json(obj, body);
+            if (!err) {
+                if (target_index < 0 && obj.contains("index") && obj["index"].holds<double>()) {
+                    target_index = static_cast<int>(obj["index"].get<double>());
+                }
+                if (target_uri.empty() && obj.contains("uri") && obj["uri"].holds<std::string>()) {
+                    target_uri = obj["uri"].get<std::string>();
+                }
+            }
+        }
+
+        bool closed = false;
+        auto close_by_index_fn = registrar::get<std::function<bool(size_t)>>("close_card_index");
+        auto close_by_uri_fn = registrar::get<std::function<bool(const std::string&)>>("close_card");
+
+        if (target_index >= 0 && close_by_index_fn && *close_by_index_fn) {
+            closed = (*close_by_index_fn)(static_cast<size_t>(target_index));
+        } else if (!target_uri.empty() && close_by_uri_fn && *close_by_uri_fn) {
+            closed = (*close_by_uri_fn)(target_uri);
+        } else {
+            auto close_focused_fn = registrar::get<std::function<bool()>>("close_focused_card");
+            if (close_focused_fn && *close_focused_fn) {
+                closed = (*close_focused_fn)();
+            }
+        }
+
+        if (closed) {
+            return R"({"success":true,"message":"Card closed"})";
+        } else {
+            error_response response{"Card not found or could not be closed"};
+            return glz::write_json(response).value_or(R"({"error":"Card not found"})");
+        }
+    } catch (const std::exception& e) {
+        error_response response{std::string(e.what())};
+        return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
+    }
+}
 
 std::string api_server_host::handle_cards_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     try {
@@ -2263,6 +2368,20 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "responses": {
           "200": {
             "description": "Card created successfully"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Cards"],
+        "summary": "Close an active card by index or URI",
+        "operationId": "deleteCard",
+        "parameters": [
+          {"name": "index", "in": "query", "required": false, "schema": {"type": "integer"}},
+          {"name": "uri", "in": "query", "required": false, "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {
+            "description": "Card closed successfully"
           }
         }
       }

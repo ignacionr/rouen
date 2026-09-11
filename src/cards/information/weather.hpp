@@ -542,27 +542,298 @@ public:
     }
 
     std::string get_adaptive_card_json() const override {
-        std::string loc = weather_host ? weather_host->getLocation() : "Unknown";
-        return std::format(
-            R"({{
-  "type": "AdaptiveCard",
-  "version": "1.5",
-  "refreshIntervalMs": 60000,
-  "body": [
-    {{"type": "TextBlock", "text": "Weather - {}", "weight": "Bolder", "size": "Large"}},
-    {{"type": "TextBlock", "text": "Location: {}", "size": "Medium"}}
-  ],
-  "actions": [
-    {{"type": "Action.Execute", "title": "Refresh Weather", "verb": "refresh"}}
-  ]
-}})",
-            loc, loc);
+        if (!weather_host) {
+            return R"({"type":"AdaptiveCard","version":"1.5","body":[{"type":"TextBlock","text":"Weather service unavailable"}]})";
+        }
+
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["refreshIntervalMs"] = 60000.0;
+
+        std::vector<glz::json_t> body;
+
+        std::string loc = weather_host->getLocation();
+        auto current_opt = const_cast<weather&>(*this).weather_host->getCurrentWeather();
+        auto forecast_opt = const_cast<weather&>(*this).weather_host->getForecast();
+
+        auto get_emoji = [](std::string_view main_cond) -> const char* {
+            if (main_cond == "Clear") return "☀️";
+            if (main_cond == "Clouds") return "🌤️";
+            if (main_cond == "Rain" || main_cond == "Drizzle") return "🌧️";
+            if (main_cond == "Thunderstorm") return "🌩️";
+            if (main_cond == "Snow") return "❄️";
+            if (main_cond == "Mist" || main_cond == "Fog" || main_cond == "Haze") return "🌫️";
+            return "🌡️";
+        };
+
+        // 1. Header Container
+        {
+            glz::json_t header_container;
+            header_container["type"] = "Container";
+            
+            std::vector<glz::json_t> header_items;
+            
+            std::string city_display = loc;
+            std::string country_display;
+            if (current_opt.has_value()) {
+                if (!current_opt->name.empty()) city_display = current_opt->name;
+                if (!current_opt->sys.country.empty()) country_display = ", " + current_opt->sys.country;
+            }
+
+            glz::json_t title;
+            title["type"] = "TextBlock";
+            title["text"] = "☁️ " + city_display + country_display;
+            title["weight"] = "Bolder";
+            title["size"] = "Large";
+            header_items.push_back(std::move(title));
+
+            header_container["items"] = std::move(header_items);
+            body.push_back(std::move(header_container));
+        }
+
+        // 2. Current Weather Hero Container
+        if (current_opt.has_value()) {
+            const auto& cw = *current_opt;
+            std::string main_cond = cw.weather.empty() ? "Clear" : cw.weather[0].main;
+            std::string desc_cond = cw.weather.empty() ? "Clear sky" : cw.weather[0].description;
+            const char* emoji = get_emoji(main_cond);
+
+            glz::json_t hero;
+            hero["type"] = "Container";
+            hero["separator"] = true;
+            hero["spacing"] = "Medium";
+
+            std::vector<glz::json_t> cols;
+
+            // Left Column: Temperature & Condition
+            {
+                glz::json_t left_col;
+                left_col["type"] = "Column";
+                left_col["width"] = "stretch";
+
+                std::vector<glz::json_t> items;
+                
+                glz::json_t temp_blk;
+                temp_blk["type"] = "TextBlock";
+                temp_blk["text"] = std::format("{} {:.1f}°C", emoji, cw.main.temp);
+                temp_blk["size"] = "ExtraLarge";
+                temp_blk["weight"] = "Bolder";
+                items.push_back(std::move(temp_blk));
+
+                glz::json_t desc_blk;
+                desc_blk["type"] = "TextBlock";
+                desc_blk["text"] = desc_cond;
+                desc_blk["size"] = "Medium";
+                desc_blk["isSubtle"] = true;
+                desc_blk["spacing"] = "None";
+                items.push_back(std::move(desc_blk));
+
+                glz::json_t feels_blk;
+                feels_blk["type"] = "TextBlock";
+                feels_blk["text"] = std::format("Feels like {:.1f}°C", cw.main.feels_like);
+                feels_blk["size"] = "Small";
+                feels_blk["isSubtle"] = true;
+                feels_blk["spacing"] = "None";
+                items.push_back(std::move(feels_blk));
+
+                left_col["items"] = std::move(items);
+                cols.push_back(std::move(left_col));
+            }
+
+            // Right Column: FactSet Details
+            {
+                glz::json_t right_col;
+                right_col["type"] = "Column";
+                right_col["width"] = "auto";
+
+                std::vector<glz::json_t> facts;
+                
+                auto add_fact = [&](std::string title_str, std::string val_str) {
+                    glz::json_t f;
+                    f["title"] = std::move(title_str);
+                    f["value"] = std::move(val_str);
+                    facts.push_back(std::move(f));
+                };
+
+                add_fact("High / Low", std::format("{:.1f}° / {:.1f}°", cw.main.temp_max, cw.main.temp_min));
+                add_fact("Humidity", std::format("{}%", cw.main.humidity));
+                add_fact("Wind", std::format("{:.1f} m/s", cw.wind.speed));
+                add_fact("Pressure", std::format("{:.0f} hPa", cw.main.pressure));
+
+                glz::json_t fact_set;
+                fact_set["type"] = "FactSet";
+                fact_set["facts"] = std::move(facts);
+
+                std::vector<glz::json_t> items;
+                items.push_back(std::move(fact_set));
+                right_col["items"] = std::move(items);
+                cols.push_back(std::move(right_col));
+            }
+
+            glz::json_t col_set;
+            col_set["type"] = "ColumnSet";
+            col_set["columns"] = std::move(cols);
+
+            std::vector<glz::json_t> hero_items;
+            hero_items.push_back(std::move(col_set));
+            hero["items"] = std::move(hero_items);
+            body.push_back(std::move(hero));
+        } else {
+            glz::json_t loading;
+            loading["type"] = "TextBlock";
+            loading["text"] = "Fetching current weather data...";
+            loading["isSubtle"] = true;
+            body.push_back(std::move(loading));
+        }
+
+        // 3. Forecast Section
+        if (forecast_opt.has_value() && !forecast_opt->list.empty()) {
+            glz::json_t forecast_container;
+            forecast_container["type"] = "Container";
+            forecast_container["separator"] = true;
+            forecast_container["spacing"] = "Medium";
+
+            std::vector<glz::json_t> f_items;
+
+            glz::json_t f_heading;
+            f_heading["type"] = "TextBlock";
+            f_heading["text"] = "📅 5-Period Forecast";
+            f_heading["weight"] = "Bolder";
+            f_heading["size"] = "Medium";
+            f_items.push_back(std::move(f_heading));
+
+            std::vector<glz::json_t> f_cols;
+            size_t count = std::min<size_t>(5, forecast_opt->list.size());
+
+            for (size_t i = 0; i < count; ++i) {
+                const auto& item = forecast_opt->list[i];
+                std::string f_cond = item.weather.empty() ? "Clear" : item.weather[0].main;
+                const char* f_emoji = get_emoji(f_cond);
+
+                std::string time_str = item.dt_txt;
+                if (time_str.size() >= 16) {
+                    time_str = time_str.substr(11, 5);
+                }
+
+                glz::json_t f_col;
+                f_col["type"] = "Column";
+                f_col["width"] = "stretch";
+
+                std::vector<glz::json_t> item_elms;
+
+                glz::json_t time_blk;
+                time_blk["type"] = "TextBlock";
+                time_blk["text"] = time_str;
+                time_blk["size"] = "Small";
+                time_blk["isSubtle"] = true;
+                time_blk["horizontalAlignment"] = "Center";
+                item_elms.push_back(std::move(time_blk));
+
+                glz::json_t emoji_blk;
+                emoji_blk["type"] = "TextBlock";
+                emoji_blk["text"] = f_emoji;
+                emoji_blk["size"] = "Medium";
+                emoji_blk["horizontalAlignment"] = "Center";
+                item_elms.push_back(std::move(emoji_blk));
+
+                glz::json_t temp_blk;
+                temp_blk["type"] = "TextBlock";
+                temp_blk["text"] = std::format("{:.1f}°", item.main.temp);
+                temp_blk["weight"] = "Bolder";
+                temp_blk["size"] = "Small";
+                temp_blk["horizontalAlignment"] = "Center";
+                item_elms.push_back(std::move(temp_blk));
+
+                if (item.pop > 0.05) {
+                    glz::json_t pop_blk;
+                    pop_blk["type"] = "TextBlock";
+                    pop_blk["text"] = std::format("{:.0f}%", item.pop * 100.0);
+                    pop_blk["size"] = "Small";
+                    pop_blk["isSubtle"] = true;
+                    pop_blk["horizontalAlignment"] = "Center";
+                    item_elms.push_back(std::move(pop_blk));
+                }
+
+                f_col["items"] = std::move(item_elms);
+                f_cols.push_back(std::move(f_col));
+            }
+
+            glz::json_t f_col_set;
+            f_col_set["type"] = "ColumnSet";
+            f_col_set["columns"] = std::move(f_cols);
+            f_items.push_back(std::move(f_col_set));
+
+            forecast_container["items"] = std::move(f_items);
+            body.push_back(std::move(forecast_container));
+        }
+
+        // 4. Change Location Controls & Input Field
+        {
+            glz::json_t input;
+            input["type"] = "Input.Text";
+            input["id"] = "city_input";
+            input["placeholder"] = "Enter city (e.g. London, Paris, Tokyo)";
+            input["separator"] = true;
+            body.push_back(std::move(input));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        {
+            std::vector<glz::json_t> actions;
+            {
+                glz::json_t search_act;
+                search_act["type"] = "Action.Execute";
+                search_act["title"] = "🔍 Search City";
+                search_act["verb"] = "change_location";
+                actions.push_back(std::move(search_act));
+            }
+            {
+                glz::json_t refresh_act;
+                refresh_act["type"] = "Action.Execute";
+                refresh_act["title"] = "🔄 Refresh";
+                refresh_act["verb"] = "refresh";
+                actions.push_back(std::move(refresh_act));
+            }
+            card["actions"] = std::move(actions);
+        }
+
+        std::string out;
+        (void)glz::write_json(card, out);
+        return out;
     }
 
     void handle_action(std::string_view action_json) override {
         std::string act(action_json);
-        if (act.find("\"refresh\"") != std::string::npos && weather_host) {
-            weather_host->refreshWeather();
+        if (weather_host) {
+            if (act.find("\"change_location\"") != std::string::npos) {
+                glz::json_t payload;
+                if (auto err = glz::read_json(payload, act); !err) {
+                    std::string city;
+                    if (payload.contains("city_input") && payload["city_input"].holds<std::string>()) {
+                        city = payload["city_input"].get<std::string>();
+                    } else if (payload.contains("data") && payload["data"].is_object() && payload["data"].contains("city_input") && payload["data"]["city_input"].holds<std::string>()) {
+                        city = payload["data"]["city_input"].get<std::string>();
+                    } else if (payload.contains("data") && payload["data"].is_object()) {
+                        for (auto& [k, v] : payload["data"].get<glz::json_t::object_t>()) {
+                            if (v.holds<std::string>() && !v.get<std::string>().empty() && !k.starts_with("__ac")) {
+                                city = v.get<std::string>();
+                                break;
+                            }
+                        }
+                    }
+                    if (!city.empty()) {
+                        weather_host->setLocation(city);
+                        weather_host->refreshWeather();
+                        return;
+                    }
+                }
+            }
+            if (act.find("\"refresh\"") != std::string::npos) {
+                weather_host->refreshWeather();
+            }
         }
     }
     

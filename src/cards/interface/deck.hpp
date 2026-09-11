@@ -143,6 +143,20 @@ public:
                 [this]() { return close_focused_card(); }
             )
         );
+
+        registrar::add<std::function<bool(size_t)>>(
+            "close_card_index",
+            std::make_shared<std::function<bool(size_t)>>(
+                [this](size_t index) { return close_card_by_index(index); }
+            )
+        );
+
+        registrar::add<std::function<bool(std::string const&)>>(
+            "close_card",
+            std::make_shared<std::function<bool(std::string const&)>>(
+                [this](std::string const& uri) { return close_card_by_uri(uri); }
+            )
+        );
         
         // Load cards from ImGui configuration or create default menu card
         load_card_uris();
@@ -162,6 +176,8 @@ public:
         registrar::remove<std::function<std::string()>>("get_deck_status");
         registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("card_save_snapshot");
         registrar::remove<std::function<bool()>>("close_focused_card");
+        registrar::remove<std::function<bool(size_t)>>("close_card_index");
+        registrar::remove<std::function<bool(std::string const&)>>("close_card");
     }
 
     struct card_layout_item {
@@ -1448,14 +1464,48 @@ public:
     // Public accessor for all cards (needed for registrar iteration)
     const std::vector<std::shared_ptr<card>>& get_cards() const { return cards_; }
 
+    // Close card by index
+    bool close_card_by_index(size_t index) {
+        if (index < cards_.size()) {
+            auto c = cards_[index];
+            if (c) {
+                try {
+                    rouen::hosts::event_bus_host::instance().publish({
+                        .topic = "system:card_closed",
+                        .source_id = "deck",
+                        .payload = glz::json_t{
+                            {"uri", c->get_uri()},
+                            {"title", c->window_title}
+                        }
+                    });
+                    c->unregister_mcp_functions();
+                    c->on_close();
+                } catch (...) {}
+            }
+            cards_to_cleanup_.push_back(c);
+            cards_.erase(cards_.begin() + static_cast<ptrdiff_t>(index));
+            save_card_uris();
+            return true;
+        }
+        return false;
+    }
+
+    // Close card by URI
+    bool close_card_by_uri(std::string const& uri) {
+        for (size_t i = 0; i < cards_.size(); ++i) {
+            if (cards_[i] && (cards_[i]->get_uri() == uri || cards_[i]->get_uri().starts_with(uri))) {
+                return close_card_by_index(i);
+            }
+        }
+        return false;
+    }
+
     // Try to close a focused card, return true if a card was closed
     bool close_focused_card() {
-        auto focused_card = std::find_if(cards_.begin(), cards_.end(),
-            [](const auto& card) { return card->is_focused; });
-        if (focused_card != cards_.end()) {
-            cards_to_cleanup_.push_back(*focused_card);
-            cards_.erase(focused_card);
-            return true;
+        for (size_t i = 0; i < cards_.size(); ++i) {
+            if (cards_[i] && cards_[i]->is_focused) {
+                return close_card_by_index(i);
+            }
         }
         return false;
     }
