@@ -266,7 +266,26 @@ void LLMConfigManager::load_configs() {
         }
 
         configs_ = save_model.configs;
-        default_config_name_ = save_model.default_config_name;
+        
+        bool has_mlx = false;
+        for (const auto& cfg : configs_) {
+            if (cfg.name == "Local MLX") {
+                has_mlx = true;
+                break;
+            }
+        }
+        if (!has_mlx) {
+            LLMConfigEntry local_mlx_entry;
+            local_mlx_entry.name = "Local MLX";
+            local_mlx_entry.provider = "custom";
+            local_mlx_entry.base_url = "http://localhost:8098/v1";
+            local_mlx_entry.model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit";
+            local_mlx_entry.api_key = "mlx-local";
+            configs_.push_back(local_mlx_entry);
+        }
+        
+        default_config_name_ = "Local MLX";
+        save_configs();
 
         if (configs_.empty()) {
             setup_default_configs();

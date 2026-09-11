@@ -1457,8 +1457,9 @@ namespace rouen::cards {
             // Launch response generation asynchronously to prevent UI blocking
             std::thread([this, function_schemas, message, model_name, search_mode_str]() {
                 try {
-                    // Create a private local LLM instance for this request to ensure thread safety
                     auto local_llm_opt = helpers::LLMConfig::create_llm_instance();
+                    auto target_config = helpers::LLMConfig::get_current_config();
+                    std::string const active_model_name = target_config.model_name;
                     if (!local_llm_opt) {
                         throw std::runtime_error("LLM configuration is incomplete");
                     }
@@ -1497,25 +1498,63 @@ namespace rouen::cards {
                     auto fetcher = std::make_shared<http::fetch>(ai_request_timeout_seconds_);
                     fetcher->set_max_retries(2);
                     fetcher->set_retry_delay_seconds(2);
-                    auto chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
-                        return adapter_ptr->sendMessageWithFunctionCalling(
-                            message,
-                            [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
-                                if (log_requests) {
-                                    std::cerr << "[LLM Request] URL: " << url << "\n[LLM Request Body]: " << body << "\n";
+                    ignacionr::ChatCompletion chat_completion;
+                    try {
+                        chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
+                            return adapter_ptr->sendMessageWithFunctionCalling(
+                                message,
+                                [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
+                                    if (log_requests) {
+                                        std::cerr << "[LLM Request] URL: " << url << "\n[LLM Request Body]: " << body << "\n";
+                                    }
+                                    auto response = fetcher->post(url, body, header_setter);
+                                    if (log_requests) {
+                                        std::cerr << "[LLM Response]: " << response << "\n";
+                                    }
+                                    return response;
+                                },
+                                [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
+                                    return execute_function_with_debug(func_name, func_args_json, 1);
+                                },
+                                "user", active_model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas
+                            );
+                        }, local_llm.instance_);
+                    } catch (const std::exception& primary_err) {
+                        std::string const err_str = primary_err.what();
+                        if ((err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) &&
+                            helpers::LLMConfig::is_configured("Local MLX")) {
+                            LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, "Primary LLM rate limited (429). Falling back to Local MLX...");
+                            auto fallback_llm_opt = helpers::LLMConfig::create_llm_instance("Local MLX");
+                            if (fallback_llm_opt) {
+                                auto& fallback_llm = *fallback_llm_opt;
+                                fallback_llm.add_instructions(time_instr);
+                                fallback_llm.add_instructions(active_persona.system_prompt);
+                                if (!modular_instr.empty()) {
+                                    fallback_llm.add_instructions(modular_instr);
                                 }
-                                auto response = fetcher->post(url, body, header_setter);
-                                if (log_requests) {
-                                    std::cerr << "[LLM Response]: " << response << "\n";
+                                if (std::holds_alternative<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_)) {
+                                    auto& cppgpt_ptr = std::get<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_);
+                                    if (cppgpt_ptr) {
+                                        chat_completion = cppgpt_ptr->sendMessageWithFunctionCalling(
+                                            message,
+                                            [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
+                                                if (log_requests) {
+                                                    std::cerr << "[Local MLX Request] URL: " << url << "\n[Local MLX Body]: " << body << "\n";
+                                                }
+                                                return fetcher->post(url, body, header_setter);
+                                            },
+                                            [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
+                                                return execute_function_with_debug(func_name, func_args_json, 1);
+                                            },
+                                            "user", "mlx-community/Qwen2.5-7B-Instruct-4bit", "", active_persona.temperature, &conversation_for_llm, &function_schemas
+                                        );
+                                    }
                                 }
-                                return response;
-                            },
-                            [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
-                                return execute_function_with_debug(func_name, func_args_json, 1);
-                            },
-                            "user", model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas
-                        );
-                    }, local_llm.instance_);
+                            }
+                        } else {
+                            throw;
+                        }
+                    }
                     
                     // Process the response
                     if (!chat_completion.choices.empty()) {

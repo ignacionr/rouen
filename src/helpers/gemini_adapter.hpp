@@ -643,10 +643,8 @@ namespace rouen::helpers {
                         } catch (const std::exception& e) {
                             last_err = std::current_exception();
                             std::string const err_str = e.what();
-                            if (err_str.find("429") != std::string::npos) {
-                                CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
-                                std::this_thread::sleep_for(std::chrono::milliseconds(3000 * (attempt + 1)));
-                                continue;
+                            if (err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
+                                std::rethrow_exception(last_err);
                             }
                             bool const is_retryable = (err_str.find("503") != std::string::npos ||
                                                        err_str.find("404") != std::string::npos);
