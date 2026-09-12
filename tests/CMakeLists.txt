@@ -252,15 +252,64 @@ endif()
 add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
 target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/interface/card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_commands.cpp
     ../src/hosts/mcp_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/git_sync_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/event_bus_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/process_host.cpp
+    ../src/hosts/quickjs_host.cpp
+    ../src/hosts/plugin_host.cpp
     ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/card_decorations.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/capture_helper.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/git_scanner.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
     ../src/fonts.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
 )
-target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} CURL::libcurl)
+if(APPLE)
+    target_sources(test_adaptive_process_card PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
+    target_link_libraries(test_adaptive_process_card PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa")
+endif()
+target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -580,6 +629,11 @@ add_executable(test_mcp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/process_host.cpp
+    ../src/hosts/quickjs_host.cpp
+    ../src/hosts/plugin_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
     ../src/models/git_process_helper.cpp
@@ -593,13 +647,40 @@ add_executable(test_mcp
     ../src/helpers/vu_meter.cpp
     ../src/helpers/image_cache.cpp
     ../src/helpers/card_decorations.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/capture_helper.cpp
+    ../src/helpers/piped_process.cpp
     ../src/cards/interface/card.cpp
     ../src/cards/information/rss.cpp
-    ../src/hosts/llm_host.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_commands.cpp
+    ../src/fonts.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
 )
 if(APPLE)
-    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_mcp PRIVATE "-framework Foundation" "-framework AVFoundation")
+    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
+    target_link_libraries(test_mcp PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
 endif()
 target_link_libraries(test_mcp 
     PRIVATE 
@@ -610,7 +691,8 @@ target_link_libraries(test_mcp
     GTest::gmock_main
     CURL::libcurl
     imgui::imgui
-    tinyxml2
+    imgui_backends
+    tinyxml2::tinyxml2
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
@@ -619,6 +701,9 @@ target_link_libraries(test_mcp
     ${AVUTIL_LIBRARIES}
     ${SWSCALE_LIBRARIES}
     ${SWRESAMPLE_LIBRARIES}
+    quickjs
+    PDFWriter
+    $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES
