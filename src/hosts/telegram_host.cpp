@@ -281,7 +281,7 @@ void telegram_host::poll_loop() {
             req_body["allowed_updates"] = allowed;
 
             std::string req_json;
-            glz::write_json(req_body, req_json);
+            (void)glz::write_json(req_body, req_json);
 
             std::string res_str = client.post(url, req_json, {"Content-Type: application/json"});
 
@@ -302,7 +302,7 @@ void telegram_host::poll_loop() {
                     }
                 }
             }
-        } catch (const std::exception& ex) {
+        } catch (const std::exception&) {
             // Log & pause briefly before retrying poll
             std::this_thread::sleep_for(std::chrono::seconds(3));
         }
@@ -528,7 +528,7 @@ std::string run_ai_persona_completion(
     // Check if preferred LLM config has an API key or is customized
     if (!llm_config.is_configured || (llm_config.api_key.empty() && llm_config.provider != rouen::hosts::LLMHost::Provider::CUSTOM)) {
         // Fallback to active configured API providers
-        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
         for (const auto& f : fallbacks) {
             auto cfg = rouen::hosts::LLMHost::get_current_config(f);
             if (!cfg.api_key.empty()) {
@@ -541,7 +541,7 @@ std::string run_ai_persona_completion(
 
     auto llm_opt = rouen::hosts::LLMHost::create_llm_instance(config_name);
     if (!llm_opt && !config_name.empty()) {
-        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
         for (const auto& f : fallbacks) {
             auto cfg = rouen::hosts::LLMHost::get_current_config(f);
             if (!cfg.api_key.empty()) {
@@ -694,7 +694,7 @@ std::string run_ai_persona_completion(
             return fallback_fetcher.post(url, data, hdr);
         };
 
-        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
         for (const auto& f : fallbacks) {
             auto fallback_config = rouen::hosts::LLMHost::get_current_config(f);
             if (fallback_config.api_key.empty()) continue;
@@ -933,23 +933,57 @@ bool telegram_host::send_telegram_message(int64_t chat_id, const std::string& te
         glz::json_t req_body;
         req_body["chat_id"] = chat_id;
         req_body["text"] = text;
+        req_body["parse_mode"] = "Markdown";
 
         std::string req_json;
-        glz::write_json(req_body, req_json);
+        (void)glz::write_json(req_body, req_json);
 
-        std::string res_str = client.post(url, req_json, {"Content-Type: application/json"});
+        bool used_markdown = true;
+        std::string res_str;
+        try {
+            res_str = client.post(url, req_json, {"Content-Type: application/json"});
+        } catch (const std::exception& ex) {
+            std::cerr << "[TelegramHost] send_telegram_message HTTP error with parse_mode: " << ex.what() << ". Retrying without parse_mode..." << std::endl;
+            used_markdown = false;
+            glz::json_t req_body_plain;
+            req_body_plain["chat_id"] = chat_id;
+            req_body_plain["text"] = text;
+            std::string fallback_json;
+            (void)glz::write_json(req_body_plain, fallback_json);
+            try {
+                res_str = client.post(url, fallback_json, {"Content-Type: application/json"});
+            } catch (...) {}
+        }
 
         if (!res_str.empty()) {
             glz::json_t json;
             auto err = glz::read_json(json, res_str);
-            if (!err && json.contains("ok") && json["ok"].get<bool>()) {
-                if (json.contains("result") && json["result"].contains("message_id")) {
-                    int64_t real_id = static_cast<int64_t>(json["result"]["message_id"].get<double>());
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    auto& session = sessions_map_[chat_id];
-                    if (!session.messages.empty() && session.messages.back().text == text) {
-                        session.messages.back().message_id = real_id;
-                        save_state();
+            if (!err && json.contains("ok")) {
+                if (!json["ok"].get<bool>() && used_markdown) {
+                    std::string desc = json.contains("description") ? json["description"].get<std::string>() : "";
+                    std::cerr << "[TelegramHost] Telegram API rejected parse_mode: " << desc << ". Retrying without parse_mode..." << std::endl;
+                    glz::json_t req_body_plain;
+                    req_body_plain["chat_id"] = chat_id;
+                    req_body_plain["text"] = text;
+                    std::string fallback_json;
+                    (void)glz::write_json(req_body_plain, fallback_json);
+                    try {
+                        res_str = client.post(url, fallback_json, {"Content-Type: application/json"});
+                        if (!res_str.empty()) {
+                            err = glz::read_json(json, res_str);
+                        }
+                    } catch (...) {}
+                }
+
+                if (!err && json.contains("ok") && json["ok"].get<bool>()) {
+                    if (json.contains("result") && json["result"].contains("message_id")) {
+                        int64_t real_id = static_cast<int64_t>(json["result"]["message_id"].get<double>());
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        auto& session = sessions_map_[chat_id];
+                        if (!session.messages.empty() && session.messages.back().text == text) {
+                            session.messages.back().message_id = real_id;
+                            save_state();
+                        }
                     }
                 }
             }

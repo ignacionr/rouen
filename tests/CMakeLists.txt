@@ -628,6 +628,38 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     target_add_strict_warnings(test_mcp)
 endif()
 
+# Telegram Performance & Efficacy Test
+add_executable(test_telegram_perf 
+    test_telegram_perf.cpp 
+    ../src/hosts/telegram_host.cpp
+    ../src/hosts/llm_host.cpp
+)
+if(APPLE)
+    target_link_libraries(test_telegram_perf PRIVATE "-framework Foundation")
+endif()
+target_link_libraries(test_telegram_perf 
+    PRIVATE 
+    rouen_test_modules
+    GTest::gtest 
+    GTest::gtest_main
+    GTest::gmock
+    GTest::gmock_main
+    CURL::libcurl
+    imgui::imgui
+    tinyxml2
+    SQLite::SQLite3
+    ${SDL3_LIBRARIES}
+    ${SDL3_IMAGE_LIBRARIES}
+    ${AVFORMAT_LIBRARIES}
+    ${AVCODEC_LIBRARIES}
+    ${AVUTIL_LIBRARIES}
+    ${SWSCALE_LIBRARIES}
+    ${SWRESAMPLE_LIBRARIES}
+)
+set_target_properties(test_telegram_perf PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
 # TextEditor Functionality Unit Test
 add_executable(test_text_editor
     test_text_editor.cpp

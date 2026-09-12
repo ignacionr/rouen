@@ -155,7 +155,7 @@ namespace rouen::helpers {
                 "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, etc.).\n"
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
                 "- Keep responses concise, clear, and helpful.";
-            default_p.llm_config_name = "Gemini Flash";
+            default_p.llm_config_name = "Local MLX";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             personas_.push_back(default_p);
@@ -166,7 +166,7 @@ namespace rouen::helpers {
             dev_arch.allowed_mcps = {"editor", "deck"};
             dev_arch.allowed_personas = {"Terminal Specialist", "Git & GitHub Specialist", "Adaptive Card Architect"};
             dev_arch.system_prompt = "You are Code & Git Architect, leading software development and system operations in Rouen.";
-            dev_arch.llm_config_name = "Default";
+            dev_arch.llm_config_name = "Local MLX";
             dev_arch.enable_search = false;
             dev_arch.temperature = 0.2f;
             personas_.push_back(dev_arch);
@@ -177,7 +177,7 @@ namespace rouen::helpers {
             prod_lead.allowed_mcps = {"deck"};
             prod_lead.allowed_personas = {"Schedule & Timekeeper", "Directory & Address Book", "Archiver of all data"};
             prod_lead.system_prompt = "You are Personal Productivity Lead, orchestrating personal organization, time management, and note archives in Rouen.";
-            prod_lead.llm_config_name = "Default";
+            prod_lead.llm_config_name = "Local MLX";
             prod_lead.enable_search = false;
             prod_lead.temperature = 0.3f;
             personas_.push_back(prod_lead);
@@ -188,7 +188,7 @@ namespace rouen::helpers {
             media_dir.allowed_mcps = {"deck"};
             media_dir.allowed_personas = {"Media & Stream Director", "Google", "Archiver of all data"};
             media_dir.system_prompt = "You are Media & Knowledge Director, managing media consumption, news feeds, and external research.";
-            media_dir.llm_config_name = "Default";
+            media_dir.llm_config_name = "Local MLX";
             media_dir.enable_search = false;
             media_dir.temperature = 0.4f;
             personas_.push_back(media_dir);
@@ -268,7 +268,7 @@ namespace rouen::helpers {
             stream_p.description = "Gated per-MCP persona managing video playback, media casting, news RSS feeds, and Wikipedia summaries.";
             stream_p.allowed_mcps = {"youtube", "cast", "media", "rss", "wikipedia"};
             stream_p.system_prompt = "You are Media & Stream Director, controlling media playback, YouTube video searches, casting feeds, RSS news items, and Wikipedia article lookups.";
-            stream_p.llm_config_name = "Default";
+            stream_p.llm_config_name = "Local MLX";
             stream_p.enable_search = false;
             stream_p.temperature = 0.3f;
             personas_.push_back(stream_p);
@@ -278,7 +278,7 @@ namespace rouen::helpers {
             fin_p.description = "Gated per-MCP persona dedicated to crypto market analytics, ticker stats, and account assets.";
             fin_p.allowed_mcps = {"bybit"};
             fin_p.system_prompt = "You are Financial Analyst, inspecting market datasets, Bybit crypto tickers, orderbook depth, and asset balances.";
-            fin_p.llm_config_name = "Default";
+            fin_p.llm_config_name = "Local MLX";
             fin_p.enable_search = false;
             fin_p.temperature = 0.2f;
             personas_.push_back(fin_p);
@@ -288,7 +288,7 @@ namespace rouen::helpers {
             health_p.description = "Gated per-MCP persona monitoring system performance, FPS, and card render metrics.";
             health_p.allowed_mcps = {"metrics"};
             health_p.system_prompt = "You are System Health & Metrics, monitoring Rouen card render frame rates, slow render counts, and application performance metrics.";
-            health_p.llm_config_name = "Default";
+            health_p.llm_config_name = "Local MLX";
             health_p.enable_search = false;
             health_p.temperature = 0.1f;
             personas_.push_back(health_p);
