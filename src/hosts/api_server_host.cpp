@@ -78,6 +78,7 @@
 #include "../hosts/process_host.hpp"
 #include "../hosts/event_bus_host.hpp"
 #include "../helpers/ui_automation_explorer.hpp"
+#include "../hosts/telegram_host.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -704,6 +705,42 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         response = handle_adlib_test_video(c, hm);
     } else if (mg_match(hm->uri, mg_str("/api/adlib/test/mux"), nullptr)) {
         response = handle_adlib_test_mux(c, hm);
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_telegram_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/sessions"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_telegram_sessions(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/routes"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_telegram_routes(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/send"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_telegram_send(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/simulate_incoming"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/telegram/incoming"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_telegram_simulate(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -1040,7 +1077,7 @@ std::string api_server_host::handle_cards_action(struct mg_connection* /*c*/, st
 std::string api_server_host::handle_ai_request(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     try {
         // Get the MCP service from registrar
-        auto mcp_service = registrar::get<std::shared_ptr<rouen::helpers::mcp_service>>("mcp_service");
+        auto mcp_service = registrar::try_get<rouen::helpers::mcp_service>("mcp_service");
         if (!mcp_service) {
             error_response response{"AI service not available"};
             return glz::write_json(response).value_or(R"({"error":"Unknown error"})");
@@ -2067,7 +2104,7 @@ std::string api_server_host::handle_process_ui_tree(struct mg_connection* /*c*/,
         return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
     }
 
-    int max_depth = req.max_depth > 0 ? req.max_depth : 6;
+    int max_depth = req.max_depth > 0 ? req.max_depth : 30;
     auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth);
 
     glz::json_t root;
@@ -2250,7 +2287,8 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     {"name": "Deck Navigation", "description": "Deck view status and card stack scrolling controls"},
     {"name": "Metrics & Diagnostics", "description": "Card render performance metrics and RSS diagnostics"},
     {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"},
-    {"name": "Process Orchestration & UI Automation", "description": "Process definitions, process lifecycle management, UI element inspection, and UI control manipulation for orchestrated applications"}
+    {"name": "Process Orchestration & UI Automation", "description": "Process definitions, process lifecycle management, UI element inspection, and UI control manipulation for orchestrated applications"},
+    {"name": "Telegram Bot Host", "description": "Telegram bot host status, active chat sessions, auto-routing rules, and message dispatch"}
   ],
   "paths": {
     "/api/health": {
@@ -3541,9 +3579,337 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
           }
         }
       }
+    },
+    "/api/telegram/status": {
+      "get": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Get Telegram Bot Host status and session metrics",
+        "operationId": "getTelegramStatus",
+        "responses": {
+          "200": {
+            "description": "Telegram host status, username, session count, and route metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string", "example": "Active"},
+                    "status_message": {"type": "string", "example": "Bot @RouenAssistant running"},
+                    "bot_username": {"type": "string", "example": "RouenAssistantBot"},
+                    "has_bot_token": {"type": "boolean", "example": true},
+                    "sessions_count": {"type": "integer", "example": 2},
+                    "routes_count": {"type": "integer", "example": 1}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/sessions": {
+      "get": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Get active Telegram chat sessions and message histories",
+        "operationId": "getTelegramSessions",
+        "responses": {
+          "200": {
+            "description": "Array of active Telegram chat sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "chat_id": {"type": "integer", "example": 123456789},
+                      "user_id": {"type": "integer", "example": 987654321},
+                      "user_name": {"type": "string", "example": "John Doe"},
+                      "last_message_text": {"type": "string", "example": "Hello Rouen!"},
+                      "last_message_time": {"type": "integer", "example": 1725537600},
+                      "messages": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "message_id": {"type": "integer", "example": 1},
+                            "from_id": {"type": "integer", "example": 987654321},
+                            "from_name": {"type": "string", "example": "John Doe"},
+                            "chat_id": {"type": "integer", "example": 123456789},
+                            "text": {"type": "string", "example": "Hello Rouen!"},
+                            "timestamp": {"type": "integer", "example": 1725537600},
+                            "is_outgoing": {"type": "boolean", "example": false}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/telegram/routes": {
+      "get": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Get configured Telegram message auto-routing rules",
+        "operationId": "getTelegramRoutes",
+        "responses": {
+          "200": {
+            "description": "List of active Telegram routes"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Add or replace Telegram message auto-routing rules",
+        "operationId": "updateTelegramRoutes",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {"type": "string", "example": "route_1"},
+                  "is_default": {"type": "boolean", "example": true},
+                  "user_id": {"type": "integer", "example": 0},
+                  "priority": {"type": "integer", "example": 10},
+                  "target_type": {"type": "integer", "example": 1},
+                  "fixed_message": {"type": "string", "example": ""},
+                  "persona_name": {"type": "string", "example": "Assistant"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Route update result"
+          }
+        }
+      }
+    },
+    "/api/telegram/send": {
+      "post": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Send a manual text message to a Telegram chat session",
+        "operationId": "sendTelegramMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["chat_id", "text"],
+                "properties": {
+                  "chat_id": {"type": "integer", "example": 123456789},
+                  "text": {"type": "string", "example": "Response from Rouen API"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message sending result"
+          }
+        }
+      }
+    },
+    "/api/telegram/simulate_incoming": {
+      "post": {
+        "tags": ["Telegram Bot Host"],
+        "summary": "Simulate an incoming Telegram message for routing tests",
+        "operationId": "simulateTelegramIncomingMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["chat_id", "text"],
+                "properties": {
+                  "chat_id": {"type": "integer", "example": 123456789},
+                  "from_id": {"type": "integer", "example": 987654321},
+                  "from_name": {"type": "string", "example": "Test User"},
+                  "text": {"type": "string", "example": "Simulated message"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Simulation and routing result"
+          }
+        }
+      }
     }
   }
 })json";
+}
+
+std::string api_server_host::handle_telegram_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto host = telegram_host::get_host();
+        if (!host) {
+            return R"({"error":"Telegram host not available"})";
+        }
+        std::string status_str;
+        switch (host->get_status()) {
+            case telegram_host::Status::Disconnected: status_str = "Disconnected"; break;
+            case telegram_host::Status::Connecting: status_str = "Connecting"; break;
+            case telegram_host::Status::Active: status_str = "Active"; break;
+            case telegram_host::Status::Error: status_str = "Error"; break;
+        }
+
+        glz::json_t res;
+        res["status"] = status_str;
+        res["status_message"] = host->get_status_message();
+        res["bot_username"] = host->get_bot_username();
+        res["has_bot_token"] = !host->get_bot_token().empty();
+        res["sessions_count"] = host->get_sessions().size();
+        res["routes_count"] = host->get_routes().size();
+
+        std::string json_out;
+        (void)glz::write_json(res, json_out);
+        return json_out;
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server_host::handle_telegram_sessions(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto host = telegram_host::get_host();
+        if (!host) {
+            return R"({"error":"Telegram host not available"})";
+        }
+        auto sessions = host->get_sessions();
+        std::string json_out;
+        (void)glz::write_json(sessions, json_out);
+        return json_out;
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server_host::handle_telegram_routes(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto host = telegram_host::get_host();
+        if (!host) {
+            return R"({"error":"Telegram host not available"})";
+        }
+
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            auto routes = host->get_routes();
+            std::string json_out;
+            (void)glz::write_json(routes, json_out);
+            return json_out;
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            std::string body(hm->body.buf, hm->body.len);
+            std::vector<telegram_route> new_routes;
+            auto err = glz::read_json(new_routes, body);
+            if (!err) {
+                host->set_routes(new_routes);
+                return R"({"success":true,"message":"Routes updated successfully"})";
+            } else {
+                telegram_route single_route;
+                auto err2 = glz::read_json(single_route, body);
+                if (!err2) {
+                    host->add_route(single_route);
+                    return R"({"success":true,"message":"Route added successfully"})";
+                }
+            }
+            return R"({"error":"Invalid route JSON payload"})";
+        }
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+    return R"({"error":"Invalid request"})";
+}
+
+struct telegram_send_request {
+    int64_t chat_id{0};
+    std::string text;
+
+    struct glaze {
+        using T = telegram_send_request;
+        static constexpr auto value = glz::object(
+            "chat_id", &T::chat_id,
+            "text", &T::text
+        );
+    };
+};
+
+std::string api_server_host::handle_telegram_send(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto host = telegram_host::get_host();
+        if (!host) {
+            return R"({"error":"Telegram host not available"})";
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        telegram_send_request req;
+        auto err = glz::read_json(req, body);
+        if (err || req.chat_id == 0 || req.text.empty()) {
+            return R"json({"error":"Invalid payload. Requires chat_id and text"})json";
+        }
+
+        bool ok = host->send_manual_message(req.chat_id, req.text);
+        if (ok) {
+            return R"({"success":true,"message":"Message sent successfully"})";
+        } else {
+            return R"({"error":"Failed to send message via Telegram host"})";
+        }
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+struct telegram_simulate_request {
+    int64_t chat_id{0};
+    int64_t from_id{0};
+    std::string from_name;
+    std::string text;
+
+    struct glaze {
+        using T = telegram_simulate_request;
+        static constexpr auto value = glz::object(
+            "chat_id", &T::chat_id,
+            "from_id", &T::from_id,
+            "from_name", &T::from_name,
+            "text", &T::text
+        );
+    };
+};
+
+std::string api_server_host::handle_telegram_simulate(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        auto host = telegram_host::get_host();
+        if (!host) {
+            return R"({"error":"Telegram host not available"})";
+        }
+
+        std::string body(hm->body.buf, hm->body.len);
+        telegram_simulate_request req;
+        auto err = glz::read_json(req, body);
+        if (err || req.chat_id == 0 || req.text.empty()) {
+            return R"json({"error":"Invalid payload. Requires chat_id and text"})json";
+        }
+
+        bool ok = host->inject_incoming_message(req.chat_id, req.from_id, req.from_name, req.text);
+        if (ok) {
+            return R"({"success":true,"message":"Incoming message simulated and routing triggered"})";
+        } else {
+            return R"({"error":"Failed to simulate incoming message"})";
+        }
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
 }
 
 } // namespace rouen::hosts

@@ -645,6 +645,8 @@ target_sources(${PROJECT_NAME}
   src/cards/information/rss_item.cpp
   src/hosts/footprints_host.cpp
   src/hosts/rss_host.cpp
+  src/hosts/telegram_host.cpp
+  src/cards/information/telegram.cpp
   src/cards/media/chess_com_integration.cpp
   src/cards/media/media_companion.cpp
   src/helpers/adlib_engine.cpp

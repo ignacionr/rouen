@@ -51,6 +51,7 @@
 #include "../information/weather.hpp"
 #include "../information/solar_system.hpp"
 #include "../information/whatsapp.hpp"
+#include "../information/telegram.hpp"
 #include "../information/wikipedia.hpp"
 #include "../information/number_series.hpp"
 #include "../media/chess_replay.hpp"
@@ -439,6 +440,14 @@ namespace rouen::cards {
 
                 instance.emplace("whatsapp", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<whatsapp>(uri);
+                });
+
+                instance.emplace("telegram", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<telegram_card>(uri);
+                });
+
+                instance.emplace("telegram-bot", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<telegram_card>(uri);
                 });
 
                 instance.emplace("wikipedia", [](std::string_view uri, SDL_Renderer* renderer) {

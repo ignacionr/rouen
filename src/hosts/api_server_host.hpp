@@ -73,6 +73,11 @@ private:
     static std::string handle_process_ui_click(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_ui_set_value(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_ui_focus(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_sessions(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_routes(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_send(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_simulate(struct mg_connection* c, struct mg_http_message* hm);
     static void add_sse_connection(struct mg_connection* c);
     static void remove_sse_connection(struct mg_connection* c);
 

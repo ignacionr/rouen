@@ -21,8 +21,8 @@
   `cp build/rouen.app/Contents/MacOS/rouen $HOME/Applications/Rouen.app/Contents/MacOS/rouen && ([ ! -f $HOME/Applications/Rouen.app/Contents/MacOS/.env ] || cp $HOME/Applications/Rouen.app/Contents/MacOS/.env $HOME/Applications/Rouen.app/Contents/Resources/.env) && rm -f $HOME/Applications/Rouen.app/Contents/MacOS/.env $HOME/Applications/Rouen.app/Contents/MacOS/.rouen-wrapped && chmod +x $HOME/Applications/Rouen.app/Contents/MacOS/libpdfium.dylib 2>/dev/null || true && codesign --force --sign - $HOME/Applications/Rouen.app/Contents/MacOS/libpdfium.dylib && codesign --force --sign - --requirements '=designated => identifier "com.rouen.app"' $HOME/Applications/Rouen.app/Contents/MacOS/rouen`
 
 
-## Windows Environment & Dev Tools
-- On this computer (Windows), developer tools are located in the Visual Studio 2022 installation directory (`C:\Program Files\Microsoft Visual Studio\2022\Professional\`):
-  - **Git**: `C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd\git.exe`
-  - **CMake**: `C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`
-  - **Ninja**: `C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe`
+
+## LLM Backend & Model Querying
+- Never guess or hardcode static LLM model identifiers when configuring or suggesting LLM providers.
+- Always query the LLM backend endpoint (e.g. `GET /v1/models` or `GET /v1beta/models`) to retrieve the list of active available models dynamically.
+

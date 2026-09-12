@@ -155,7 +155,7 @@ namespace rouen::helpers {
                 "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, etc.).\n"
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
                 "- Keep responses concise, clear, and helpful.";
-            default_p.llm_config_name = "Local MLX";
+            default_p.llm_config_name = "Gemini Flash";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             personas_.push_back(default_p);

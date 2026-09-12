@@ -468,7 +468,8 @@ public:
 
         auto& c = *(*card_it);
         ImGuiIO& io = ImGui::GetIO();
-        int width = (req_width > 0) ? req_width : static_cast<int>(c.width);
+        int default_w = (io.DisplaySize.x > 0.0f) ? static_cast<int>(io.DisplaySize.x) : 800;
+        int width = (req_width > 0) ? req_width : default_w;
         int height = (req_height > 0) ? req_height : static_cast<int>(io.DisplaySize.y > 0.0f ? io.DisplaySize.y : 450.0f);
 
         auto render_fn = [this, &c]() {

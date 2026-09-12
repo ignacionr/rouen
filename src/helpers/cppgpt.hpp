@@ -111,7 +111,14 @@ namespace ignacionr
     struct OpenAIChatCompletionMessage {
         std::string role;
         std::optional<std::string> content;
+        std::optional<std::string> reasoning;
         std::vector<OpenAIToolCall> tool_calls;
+
+        std::string get_text() const {
+            if (content.has_value() && !content->empty()) return *content;
+            if (reasoning.has_value() && !reasoning->empty()) return *reasoning;
+            return "";
+        }
     };
     
     struct OpenAIChatCompletionChoice {
@@ -297,6 +304,7 @@ struct glz::meta<ignacionr::OpenAIChatCompletionMessage> {
     static constexpr auto value = object(
         "role", &T::role,
         "content", &T::content,
+        "reasoning", &T::reasoning,
         "tool_calls", &T::tool_calls
     );
 };
@@ -569,8 +577,9 @@ namespace ignacionr
             auto escape_json = [](const std::string& str) -> std::string {
                 std::string escaped;
                 escaped.reserve(str.size() + str.size() / 10 + 1);
-                for (char c : str) {
-                    switch (c) {
+                for (auto c : str) {
+                    auto uc = static_cast<unsigned char>(c);
+                    switch (uc) {
                         case '"': escaped += "\\\""; break;
                         case '\\': escaped += "\\\\"; break;
                         case '\b': escaped += "\\b"; break;
@@ -578,7 +587,13 @@ namespace ignacionr
                         case '\n': escaped += "\\n"; break;
                         case '\r': escaped += "\\r"; break;
                         case '\t': escaped += "\\t"; break;
-                        default: escaped += c; break;
+                        default:
+                            if (uc < 0x20) {
+                                escaped += std::format("\\u{:04x}", static_cast<unsigned int>(uc));
+                            } else {
+                                escaped += c;
+                            }
+                            break;
                     }
                 }
                 return escaped;
@@ -700,7 +715,7 @@ namespace ignacionr
                     
                     keep_calling = true;
                 } else {
-                    final_text = choice.message.content.value_or("");
+                    final_text = choice.message.get_text();
                     keep_calling = false;
                 }
             }

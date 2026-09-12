@@ -89,12 +89,12 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
             case Provider::GEMINI:
                 settings.api_key = config_service_->get_env_optional("GEMINI_API_KEY").value_or("");
                 settings.base_url = "https://generativelanguage.googleapis.com";
-                settings.model_name = "gemini-3.8-flash";
+                settings.model_name = "gemini-3.6-flash";
                 break;
             case Provider::CUSTOM:
                 settings.api_key = config_service_->get_env_optional("LLM_API_KEY").value_or("mlx-local");
                 settings.base_url = config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:8098/v1");
-                settings.model_name = config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen2.5-7B-Instruct-4bit");
+                settings.model_name = config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen3.5-9B-MLX-4bit");
                 break;
         }
     }
@@ -168,8 +168,8 @@ std::string LLMHost::get_default_model(Provider provider) {
         case Provider::GROK: return "grok-3-latest";
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
-        case Provider::GEMINI: return "gemini-3.8-flash";
-        case Provider::CUSTOM: return "mlx-community/Qwen2.5-7B-Instruct-4bit";
+        case Provider::GEMINI: return "gemini-3.6-flash";
+        case Provider::CUSTOM: return "mlx-community/Qwen3.5-9B-MLX-4bit";
     }
     return "grok-3-latest";
 }
@@ -225,14 +225,14 @@ void LLMConfigManager::setup_default_configs() {
     LLMConfigEntry gemini_entry;
     gemini_entry.name = "Gemini Flash";
     gemini_entry.provider = "gemini";
-    gemini_entry.model_name = "gemini-3.8-flash";
+    gemini_entry.model_name = "gemini-3.6-flash";
     configs_.push_back(gemini_entry);
 
     LLMConfigEntry local_mlx_entry;
     local_mlx_entry.name = "Local MLX";
     local_mlx_entry.provider = "custom";
     local_mlx_entry.base_url = "http://localhost:8098/v1";
-    local_mlx_entry.model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit";
+    local_mlx_entry.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
     local_mlx_entry.api_key = "mlx-local";
     configs_.push_back(local_mlx_entry);
     
@@ -246,19 +246,17 @@ void LLMConfigManager::load_configs() {
         setup_default_configs();
         return;
     }
-
     try {
         std::ifstream file(config_path);
         if (!file.is_open()) {
             setup_default_configs();
             return;
         }
-
-        std::string json_str((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
 
         LLMConfigSaveModel save_model;
-        auto err = glz::read_json(save_model, json_str);
+        auto err = glz::read_json(save_model, content);
         if (err) {
             LOG_COMPONENT("LLMConfigManager", LOG_LEVEL_ERROR, "Failed to parse llm_configs.json");
             setup_default_configs();
@@ -266,11 +264,28 @@ void LLMConfigManager::load_configs() {
         }
 
         configs_ = save_model.configs;
+        default_config_name_ = save_model.default_config_name;
+        
+        bool updated = false;
+        for (auto& cfg : configs_) {
+            if (cfg.model_name == "gemini-3.8-flash" || cfg.model_name == "gemini-3.7-flash" || cfg.model_name == "gemini-3.5-flash" || cfg.model_name == "gemini-2.5-flash") {
+                cfg.model_name = "gemini-3.6-flash";
+                updated = true;
+            }
+            if (cfg.model_name == "mlx-community/Qwen2.5-7B-Instruct-4bit" || (cfg.provider == "custom" && cfg.model_name.find("Qwen2.5") != std::string::npos)) {
+                cfg.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
+                updated = true;
+            }
+        }
         
         bool has_mlx = false;
-        for (const auto& cfg : configs_) {
+        for (auto& cfg : configs_) {
             if (cfg.name == "Local MLX") {
                 has_mlx = true;
+                if (cfg.model_name != "mlx-community/Qwen3.5-9B-MLX-4bit") {
+                    cfg.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
+                    updated = true;
+                }
                 break;
             }
         }
@@ -279,13 +294,15 @@ void LLMConfigManager::load_configs() {
             local_mlx_entry.name = "Local MLX";
             local_mlx_entry.provider = "custom";
             local_mlx_entry.base_url = "http://localhost:8098/v1";
-            local_mlx_entry.model_name = "mlx-community/Qwen2.5-7B-Instruct-4bit";
+            local_mlx_entry.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
             local_mlx_entry.api_key = "mlx-local";
             configs_.push_back(local_mlx_entry);
+            updated = true;
         }
         
-        default_config_name_ = "Local MLX";
-        save_configs();
+        if (updated) {
+            save_configs();
+        }
 
         if (configs_.empty()) {
             setup_default_configs();

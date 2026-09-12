@@ -1546,7 +1546,7 @@ namespace rouen::cards {
                                             [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
                                                 return execute_function_with_debug(func_name, func_args_json, 1);
                                             },
-                                            "user", "mlx-community/Qwen2.5-7B-Instruct-4bit", "", active_persona.temperature, &conversation_for_llm, &function_schemas
+                                            "user", "mlx-community/Qwen3.5-9B-MLX-4bit", "", active_persona.temperature, &conversation_for_llm, &function_schemas
                                         );
                                     }
                                 }

@@ -202,10 +202,17 @@ namespace rouen::helpers {
                 }
             }
             
-            // Add system instructions to first user message if present
-            if (!system_instructions.empty() && !user_assistant_messages.empty()) {
-                if (user_assistant_messages[0].role == "user") {
+            // Ensure first non-system message is from role 'user' (Gemini API requirement)
+            while (!user_assistant_messages.empty() && user_assistant_messages[0].role != "user" && user_assistant_messages[0].role != "human") {
+                user_assistant_messages.erase(user_assistant_messages.begin());
+            }
+
+            // Prepend system instructions to first user message (or insert as first user message)
+            if (!system_instructions.empty()) {
+                if (!user_assistant_messages.empty() && (user_assistant_messages[0].role == "user" || user_assistant_messages[0].role == "human")) {
                     user_assistant_messages[0].content = system_instructions + "\n\n" + user_assistant_messages[0].content;
+                } else {
+                    user_assistant_messages.insert(user_assistant_messages.begin(), Message{"user", system_instructions});
                 }
             }
             
@@ -252,6 +259,8 @@ namespace rouen::helpers {
                     std::string resp_json;
                     if (!fr.response.empty() && fr.response.front() == '{') {
                         resp_json = std::format("{{\"name\":\"{}\",\"response\":{}}}", fr.name, fr.response);
+                    } else if (!fr.response.empty() && fr.response.front() == '[') {
+                        resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":{}}}}}", fr.name, fr.response);
                     } else {
                         resp_json = std::format("{{\"name\":\"{}\",\"response\":{{\"result\":\"{}\"}}}}", 
                                                fr.name, escape_json(fr.response));
@@ -411,7 +420,7 @@ namespace rouen::helpers {
 
     public:
         GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "") 
-            : api_key_(trim(api_key)), model_("gemini-3.8-flash") {
+            : api_key_(trim(api_key)), model_("gemini-3.6-flash") {
             CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
         }
 
@@ -433,7 +442,7 @@ namespace rouen::helpers {
             std::string_view message, 
             DoPostFunc do_post, 
             std::string_view role = "user", 
-            std::string_view model = "gemini-3.8-flash", 
+            std::string_view model = "gemini-3.6-flash", 
             std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
@@ -481,13 +490,13 @@ namespace rouen::helpers {
 
             CONFIG_DEBUG_FMT("Sending Gemini request to: {}", url);
 
-            // Make the HTTP request with candidate model loop (primary -> gemini-3.7-flash -> gemini-3.5-flash)
+            // Make the HTTP request with candidate model loop
             std::vector<std::string> candidates = {model_name};
-            if (model_name != "gemini-3.7-flash" && model_name != "gemini-3.5-flash") {
-                candidates.push_back("gemini-3.7-flash");
+            if (model_name != "gemini-3.6-flash") {
+                candidates.push_back("gemini-3.6-flash");
             }
-            if (model_name != "gemini-3.5-flash") {
-                candidates.push_back("gemini-3.5-flash");
+            if (model_name != "gemini-flash-latest") {
+                candidates.push_back("gemini-flash-latest");
             }
 
             std::string response;
@@ -516,7 +525,9 @@ namespace rouen::helpers {
                             continue;
                         }
                         bool const is_retryable = (err_str.find("503") != std::string::npos ||
-                                                   err_str.find("404") != std::string::npos);
+                                                   err_str.find("404") != std::string::npos ||
+                                                   err_str.find("400") != std::string::npos ||
+                                                   err_str.find("NOT_FOUND") != std::string::npos);
                         if (!is_retryable) {
                             std::rethrow_exception(last_err);
                         }
@@ -556,7 +567,7 @@ namespace rouen::helpers {
             DoPostFunc do_post, 
             std::function<std::string(const std::string&, const std::string&)> function_executor,
             std::string_view role = "user", 
-            std::string_view model = "gemini-3.8-flash", 
+            std::string_view model = "gemini-3.6-flash", 
             std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
@@ -614,13 +625,13 @@ namespace rouen::helpers {
 
                 CONFIG_DEBUG_FMT("Sending Gemini request (iteration {}) to: {}", iterations, url);
 
-                // Make the HTTP request with candidate model loop (primary -> gemini-3.7-flash -> gemini-3.5-flash)
+                // Make the HTTP request with candidate model loop
                 std::vector<std::string> candidates = {model_name};
-                if (model_name != "gemini-3.7-flash" && model_name != "gemini-3.5-flash") {
-                    candidates.push_back("gemini-3.7-flash");
+                if (model_name != "gemini-3.6-flash") {
+                    candidates.push_back("gemini-3.6-flash");
                 }
-                if (model_name != "gemini-3.5-flash") {
-                    candidates.push_back("gemini-3.5-flash");
+                if (model_name != "gemini-flash-latest") {
+                    candidates.push_back("gemini-flash-latest");
                 }
 
                 std::string response;
@@ -644,10 +655,13 @@ namespace rouen::helpers {
                             last_err = std::current_exception();
                             std::string const err_str = e.what();
                             if (err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
-                                std::rethrow_exception(last_err);
+                                std::this_thread::sleep_for(std::chrono::seconds(2));
+                                continue;
                             }
                             bool const is_retryable = (err_str.find("503") != std::string::npos ||
-                                                       err_str.find("404") != std::string::npos);
+                                                       err_str.find("404") != std::string::npos ||
+                                                       err_str.find("400") != std::string::npos ||
+                                                       err_str.find("NOT_FOUND") != std::string::npos);
                             if (!is_retryable) {
                                 std::rethrow_exception(last_err);
                             }

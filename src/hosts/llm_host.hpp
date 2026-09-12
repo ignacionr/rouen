@@ -111,6 +111,29 @@ namespace rouen::hosts {
                     return ptr->sendMessage(message, std::forward<DoPostFunc>(do_post), role, model, search_mode, temperature, full_conversation);
                 }, instance_);
             }
+
+            template<typename DoPostFunc, typename ExecFunc>
+            ignacionr::ChatCompletion sendMessageWithFunctionCalling(
+                std::string_view message,
+                DoPostFunc&& do_post,
+                ExecFunc&& function_executor,
+                std::string_view role = "user",
+                std::string_view model = "",
+                std::string_view search_mode = {},
+                float temperature = 0.45f,
+                const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
+                const std::vector<std::string>* function_schemas = nullptr
+            ) {
+                return std::visit([&](auto& ptr) -> ignacionr::ChatCompletion {
+                    if (!ptr) throw std::runtime_error("Null LLM instance access");
+                    return ptr->sendMessageWithFunctionCalling(
+                        message,
+                        std::forward<DoPostFunc>(do_post),
+                        std::forward<ExecFunc>(function_executor),
+                        role, model, search_mode, temperature, full_conversation, function_schemas
+                    );
+                }, instance_);
+            }
             
             void reset() { 
                 std::visit([](auto& ptr) { ptr.reset(); }, instance_);

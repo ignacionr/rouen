@@ -321,7 +321,7 @@ TEST(MCPTest, ConfiguredLLMToolingIntegration) {
         CONFIG_SERVICE()->set_env_value("LLM_PROVIDER", "custom");
         CONFIG_SERVICE()->set_env_value("LLM_CUSTOM_URL", "http://192.168.1.33:8098/v1");
         CONFIG_SERVICE()->set_env_value("LLM_CUSTOM_API_KEY", "dummy_key");
-        CONFIG_SERVICE()->set_env_value("LLM_CUSTOM_MODEL", "mlx-community/Qwen2.5-7B-Instruct-4bit");
+        CONFIG_SERVICE()->set_env_value("LLM_CUSTOM_MODEL", "mlx-community/Qwen3.5-9B-MLX-4bit");
     }
     
     // Only run if the LLM is configured in the environment

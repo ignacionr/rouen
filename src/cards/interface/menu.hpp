@@ -386,6 +386,7 @@ namespace rouen::cards {
                     {"Wikipedia", []() { "create_card"_sfn("wikipedia"); }},
                     {"Email", []() { "create_card"_sfn("mail"); }},
                     {"WhatsApp", []() { "create_card"_sfn("whatsapp"); }},
+                    {"Telegram Bot", []() { "create_card"_sfn("telegram"); }},
                     {"Bybit Assets", []() { "create_card"_sfn("bybit-assets"); }},
                     {"Movies & Watchlists", []() { "create_card"_sfn("movies"); }},
                     {"Adaptive Cards", []() { "create_card"_sfn("adaptive-card"); }}

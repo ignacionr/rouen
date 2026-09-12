@@ -33,6 +33,7 @@
 #include "../helpers/glaze_include.hpp"
 
 #include "quickjs_host.hpp"
+#include "../helpers/fetch.hpp"
 #include "cards/interface/factory.hpp"
 #include "hosts/event_bus_host.hpp"
 #include "hosts/plugin_host.hpp"
@@ -371,11 +372,60 @@ JSValue quickjs_host::js_rouen_fetch(JSContext* ctx, JSValueConst /*this_val*/, 
     std::string url{url_str};
     JS_FreeCString(ctx, url_str);
 
-    glz::json_t mock_resp = glz::json_t::object_t{};
-    mock_resp["status"] = 200;
-    mock_resp["url"] = url;
-    mock_resp["ok"] = true;
-    return glaze_to_jsvalue(ctx, mock_resp);
+    std::string method = "GET";
+    std::string body;
+    std::vector<std::string> headers{"Content-Type: application/json"};
+
+    if (argc >= 2 && JS_IsObject(argv[1])) {
+        JSValue method_val = JS_GetPropertyStr(ctx, argv[1], "method");
+        if (!JS_IsUndefined(method_val)) {
+            const char* m_str = JS_ToCString(ctx, method_val);
+            if (m_str) {
+                method = m_str;
+                JS_FreeCString(ctx, m_str);
+            }
+            JS_FreeValue(ctx, method_val);
+        }
+
+        JSValue body_val = JS_GetPropertyStr(ctx, argv[1], "body");
+        if (!JS_IsUndefined(body_val)) {
+            const char* b_str = JS_ToCString(ctx, body_val);
+            if (b_str) {
+                body = b_str;
+                JS_FreeCString(ctx, b_str);
+            }
+            JS_FreeValue(ctx, body_val);
+        }
+    }
+
+    std::string response_str;
+    long status_code = 200;
+    try {
+        http::fetch fetcher{10};
+        if (method == "POST") {
+            response_str = fetcher.post(url, body, headers);
+        } else {
+            response_str = fetcher(url, headers);
+        }
+        status_code = fetcher.last_http_code();
+        if (status_code == 0) status_code = 200;
+    } catch (const std::exception& ex) {
+        std::cerr << "[QuickJS] Rouen.fetch error: " << ex.what() << "\n";
+        return JS_NULL;
+    }
+
+    if (!response_str.empty() && (response_str.starts_with('{') || response_str.starts_with('['))) {
+        JSValue parsed = JS_ParseJSON(ctx, response_str.c_str(), response_str.length(), "<fetch>");
+        if (!JS_IsException(parsed)) {
+            return parsed;
+        }
+    }
+
+    glz::json_t resp_obj = glz::json_t::object_t{};
+    resp_obj["status"] = status_code;
+    resp_obj["body"] = response_str;
+    resp_obj["ok"] = (status_code >= 200 && status_code < 300);
+    return glaze_to_jsvalue(ctx, resp_obj);
 }
 
 void quickjs_host::bind_rouen_namespace() {
