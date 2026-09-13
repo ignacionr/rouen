@@ -659,11 +659,48 @@ add_executable(test_mcp
     ../src/helpers/card_decorations.cpp
     ../src/cards/interface/card.cpp
     ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/telegram.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_commands.cpp
     ../src/hosts/llm_host.cpp
+    ../src/hosts/process_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/rouen_mesh_host.cpp
+    ../src/hosts/telegram_host.cpp
+    ../src/hosts/api_server_host.cpp
+    ../external/mongoose-7.15/mongoose.c
+    ../src/hosts/quickjs_host.cpp
+    ../src/hosts/plugin_host.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/piped_process.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/capture_helper.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
+    ../src/fonts.cpp
 )
 if(APPLE)
-    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm)
-    target_link_libraries(test_mcp PRIVATE "-framework Foundation" "-framework AVFoundation")
+    target_sources(test_mcp PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(test_mcp PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
 endif()
 target_link_libraries(test_mcp 
     PRIVATE 
@@ -673,8 +710,14 @@ target_link_libraries(test_mcp
     GTest::gmock
     GTest::gmock_main
     CURL::libcurl
+    OpenSSL::Crypto
+    OpenSSL::SSL
     imgui::imgui
-    tinyxml2
+    imgui_backends
+    imcolortextedit
+    quickjs
+    PDFWriter
+    tinyxml2::tinyxml2
     SQLite::SQLite3
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
@@ -683,6 +726,7 @@ target_link_libraries(test_mcp
     ${AVUTIL_LIBRARIES}
     ${SWSCALE_LIBRARIES}
     ${SWRESAMPLE_LIBRARIES}
+    $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>
 )
 add_test(NAME MCPTest COMMAND test_mcp)
 set_target_properties(test_mcp PROPERTIES
