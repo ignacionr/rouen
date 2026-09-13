@@ -213,7 +213,7 @@ public:
                 ImGui::TextColored(colors[5], "Active threads: %zu, Queued tasks: %zu", 
                                  thread_pool.get_thread_count(), thread_pool.get_queue_size());
                 
-                if (ImGui::Button("Stop Scan", ImVec2(120.0f * dpi_scale, 0))) {
+                if (ImGui::Button("Stop Scan", ImVec2(120.0f, 0))) {
                     stop_scan();
                 }
             } else {

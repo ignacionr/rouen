@@ -176,13 +176,6 @@ void main_wnd::run() {
 
                     ImGui_ImplSDLGPU3_NewFrame();
                     ImGui_ImplSDL3_NewFrame();
-                    
-                    // Save actual scale and override to 1.0 for layout phase
-                    auto& io = ImGui::GetIO();
-                    float const actual_scale_x = io.DisplayFramebufferScale.x;
-                    float const actual_scale_y = io.DisplayFramebufferScale.y;
-                    io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
-                    
                     ImGui::NewFrame();
 
                     m_card_close_handled_this_frame = false;
@@ -316,10 +309,7 @@ void main_wnd::run() {
                     } catch (...) {
                         // Ignore video overlay render errors for detached card
                     }
-                    render_detached_toast(io.DisplaySize.x, io.DisplaySize.y);
-
-                    // Restore actual scale before rendering so backends work with correct physical coordinates
-                    io.DisplayFramebufferScale = ImVec2(actual_scale_x, actual_scale_y);
+                    render_detached_toast(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
                     ImGui::Render();
 
                     SDL_GPUCommandBuffer* cmdbuf = SDL_AcquireGPUCommandBuffer(m_device);
@@ -364,12 +354,6 @@ void main_wnd::run() {
                 ImGui_ImplSDLGPU3_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
                 
-                // Save actual scale and override to 1.0 for layout phase
-                auto& io = ImGui::GetIO();
-                float const actual_scale_x = io.DisplayFramebufferScale.x;
-                float const actual_scale_y = io.DisplayFramebufferScale.y;
-                io.DisplayFramebufferScale = ImVec2(1.0f, 1.0f);
-                
                 ImGui::NewFrame();
 
                 // Reset the card close handled flag for this frame
@@ -408,9 +392,6 @@ void main_wnd::run() {
                     // Ignore texture pre-fetch errors
                 }
 
-                // Restore actual scale before rendering so backends work with correct physical coordinates
-                io.DisplayFramebufferScale = ImVec2(actual_scale_x, actual_scale_y);
-                
                 // Render ImGui
                 ImGui::Render();
 

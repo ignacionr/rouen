@@ -289,7 +289,7 @@ void rouen_mesh_host::set_config(const config& cfg) {
     config_ = cfg;
 }
 
-bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error) {
+bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port) {
     if (target_client_id.empty()) {
         out_error = "Target client ID cannot be empty";
         return false;
@@ -306,14 +306,28 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
     std::lock_guard<std::mutex> lock(mutex_);
     uint32_t route_id = next_route_id_++;
 
+    if (local_port == 0) {
+        if (target_port == 8081) {
+            local_port = 18081;
+        } else if (target_port == 11434) {
+            local_port = 21434;
+        } else {
+            local_port = static_cast<uint16_t>(10000 + target_port);
+        }
+    }
+
+    std::string local_url = std::format("http://127.0.0.1:{}", local_port);
+
     mesh::virtual_route_info route{
         .route_id = route_id,
         .source_client_id = config_.client_id,
         .target_client_id = target_client_id,
         .target_host = "127.0.0.1",
         .target_port = target_port,
+        .local_port = local_port,
         .bytes_transferred = 0,
-        .status = "active"
+        .status = "active",
+        .local_url = local_url
     };
 
     active_routes_[route_id] = route;

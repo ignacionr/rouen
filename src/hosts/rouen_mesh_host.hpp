@@ -176,8 +176,10 @@ struct virtual_route_info {
     std::string target_client_id;
     std::string target_host{"127.0.0.1"};
     uint16_t target_port{0};
+    uint16_t local_port{0};
     uint64_t bytes_transferred{0};
     std::string status{"active"}; // "active", "pending", "closed"
+    std::string local_url;
 };
 
 // Virtual Route ACK DTO
@@ -193,9 +195,9 @@ namespace rouen::hosts {
 
 struct mesh_host_config {
     bool enabled{false};
-    bool is_paired{false};
     std::string server_url{"wss://rouen.inz.dev/ws/connect"};
-    std::string client_id{"rouen-client"};
+    std::string client_id{"rouen-macbook-pro"};
+    bool is_paired{false};
     std::string public_key;
     std::string private_key;
     uint16_t local_api_port{8081};
@@ -228,7 +230,7 @@ public:
     static void generate_keypair(std::string& out_public_hex, std::string& out_private_hex);
 
     // Route Management
-    bool open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error);
+    bool open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port = 0);
     bool close_virtual_route(uint32_t route_id);
     [[nodiscard]] std::vector<mesh::virtual_route_info> get_active_routes() const;
 

@@ -1012,7 +1012,7 @@ private:
         ImGui::Dummy(ImVec2(0, 4.0f)); // Inner vertical padding
         ImGui::Indent(8.0f); // Inner horizontal padding
 
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
         ImGui::TextColored(colors[2], "%s Passionate AI Commentary", ICON_MD_AUTO_AWESOME);
         ImGui::PopFont();
@@ -1664,7 +1664,7 @@ private:
         }
 
         if (!loaded) {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
             ImGui::Spacing();
             ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 240.0f * dpi_scale) / 2.0f);
             ImGui::TextColored(colors[6], "Loading live match schedule...");
@@ -1694,7 +1694,7 @@ private:
         if (featured) {
             bool is_live = featured->status == "LIVE";
             bool has_scorers = (is_live || featured->status == "COMPLETED") && (!featured->home_scorers.empty() || !featured->away_scorers.empty());
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
 
             ImGui::TextColored(colors[2], "Featured Match");
             ImGui::Separator();
@@ -1933,7 +1933,7 @@ private:
 
         // Render completed and other matches in a scrollable list
         ImGui::BeginChild("MatchScrollBox", ImVec2(0, 0), false);
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         for (const auto& m : display_matches) {
             // Skip the featured match since it's pinned to the top
             if (featured && m.home_code == featured->home_code && m.away_code == featured->away_code && m.date_str == featured->date_str) {
@@ -2115,7 +2115,7 @@ private:
     }
 
     void render_standings() {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         bool loaded = false;
         std::unordered_map<std::string, std::vector<GroupTeam>> active_groups;
         {
@@ -2245,7 +2245,7 @@ private:
         };
 
         ImGui::BeginChild("StadiumsScroll", ImVec2(0, 0), false);
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         for (const auto& s : stadiums) {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, colors[7]);
             ImGui::BeginChild(s.name.c_str(), ImVec2(0, 100.0f * dpi_scale), true);
@@ -2283,7 +2283,7 @@ private:
         }
 
         if (!loaded) {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
             ImGui::Spacing();
             ImGui::SetCursorPosX((ImGui::GetContentRegionMax().x - 240.0f * dpi_scale) / 2.0f);
             ImGui::TextColored(colors[6], "Loading team tracker...");
@@ -2323,7 +2323,7 @@ private:
             clear_player_textures();
         }
 
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         ImGui::TextColored(colors[2], "Select a Team to Track:");
         ImGui::SetNextItemWidth(250.0f * dpi_scale);
         
@@ -2415,7 +2415,7 @@ private:
 
     void render_team_matches_section(const std::vector<const Match*>& upcoming_matches, const std::string& sel_code, const std::string& sel_name) {
         if (!upcoming_matches.empty()) {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
             ImDrawList* draw_list = ImGui::GetWindowDrawList();
             const Match* next_match = upcoming_matches[0];
             bool has_scorers = (next_match->status == "LIVE") && (!next_match->home_scorers.empty() || !next_match->away_scorers.empty());
@@ -2673,7 +2673,7 @@ private:
     }
 
     void render_team_players_section(const std::string& team_code, const std::string& team_name) {
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+        float const dpi_scale = 1.0f;
         bool has_cache = false;
         bool is_fetching_players = false;
         TeamPlayersCache cache;

@@ -583,7 +583,7 @@ public:
                 if (results.empty()) {
                     ImGui::TextColored(colors[3], "Enter a search term to find articles.");
                 } else {
-                    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+                    float const dpi_scale = 1.0f;
                     float avail_width = ImGui::GetContentRegionAvail().x;
                     
                     for (size_t i = 0; i < results.size(); ++i) {

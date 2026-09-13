@@ -447,7 +447,7 @@ namespace rouen::cards
 
         void render_day_view_event(const ::calendar::event& event)
         {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
             
             // Calculate the event time display
             std::string time_display;
@@ -578,7 +578,7 @@ namespace rouen::cards
 
         void render_create_event_form()
         {
-            float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+            float const dpi_scale = 1.0f;
             
             ImGui::PushStyleColor(ImGuiCol_Text, colors[2]);
             ImGui::Text("Create New Event");

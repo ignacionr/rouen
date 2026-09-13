@@ -69,6 +69,7 @@ private:
     static std::string handle_mesh_routes(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_clients(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_services(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_proxy(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_rss_diagnostics(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_processes_list(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_start(struct mg_connection* c, struct mg_http_message* hm);

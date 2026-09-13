@@ -110,10 +110,9 @@ void rss::render_add_feed() {
     // Add a new feed section
     ImGui::TextColored(colors[0], "Add RSS Feed:");
     
-    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
     float const add_btn_w = ImGui::CalcTextSize("Add").x + ImGui::GetStyle().FramePadding.x * 2.0f;
     float const ai_btn_w = ImGui::CalcTextSize("AI Search").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-    float const input_w = ImGui::GetContentRegionAvail().x - add_btn_w - ai_btn_w - ImGui::GetStyle().ItemSpacing.x * 2.0f - 8.0f * dpi_scale;
+    float const input_w = ImGui::GetContentRegionAvail().x - add_btn_w - ai_btn_w - ImGui::GetStyle().ItemSpacing.x * 2.0f - 8.0f;
     
     ImGui::PushItemWidth(input_w);
     bool const url_entered = ImGui::InputText("##url", url_buffer, sizeof(url_buffer), 
@@ -542,8 +541,7 @@ bool rss::render() {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
         
         // Calculate width for input field to leave space for clear button
-        float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
-        float const clear_button_width = 20.0f * dpi_scale;
+        float const clear_button_width = 20.0f;
         float const input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
         ImGui::PushItemWidth(input_width);
         
@@ -601,7 +599,7 @@ bool rss::render() {
         ImGui::Separator();
         
         static bool settings_open = false;
-        float const bottom_margin = (settings_open ? 210.0f : 120.0f) * dpi_scale;
+        float const bottom_margin = settings_open ? 210.0f : 120.0f;
         
         // Create scrollable area for feeds
         auto available_size = ImGui::GetContentRegionAvail();
@@ -886,7 +884,7 @@ bool rss::render() {
         settings_open = ImGui::CollapsingHeader("Connection Settings");
         if (settings_open) {
             int timeout = rss_host->get_timeout();
-            ImGui::SetNextItemWidth(120.0f * dpi_scale);
+            ImGui::SetNextItemWidth(120.0f);
             if (ImGui::SliderInt("Timeout (s)##rss_timeout", &timeout, 5, 180)) {
                 rss_host->set_timeout(timeout);
             }
@@ -990,7 +988,7 @@ void rss::render_feed_list(const std::vector<std::shared_ptr<media::rss::feed>>&
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     auto now = std::chrono::system_clock::now();
 
-    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+    float const dpi_scale = 1.0f;
     float const card_width = 180.0f * dpi_scale;
     float const card_height = 290.0f * dpi_scale;
     float const spacing = 12.0f * dpi_scale;

@@ -394,7 +394,7 @@ namespace rouen::cards
                     // Display the feed image (or placeholder) and tags to the side of it
                     ImGui::BeginGroup();
                     
-                    float const dpi_scale = ImGui::GetIO().DisplayFramebufferScale.x;
+                    float const dpi_scale = 1.0f;
                     float img_display_w = 100.0f * dpi_scale;
                     float img_display_h = 100.0f * dpi_scale;
                     ImVec2 cur_pos = ImGui::GetCursorScreenPos();

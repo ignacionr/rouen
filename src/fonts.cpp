@@ -291,6 +291,12 @@ namespace rouen::fonts {
 
         io_fonts->Build();
 
+        float const font_scale = 1.0f / dpi_scale;
+        if (g_fonts.default_font) g_fonts.default_font->Scale = font_scale;
+        if (g_fonts.mono_font) g_fonts.mono_font->Scale = font_scale;
+        if (g_fonts.bold_font) g_fonts.bold_font->Scale = font_scale;
+        if (g_fonts.italic_font) g_fonts.italic_font->Scale = font_scale;
+
         if (g_fonts.default_font) {
             io.FontDefault = g_fonts.default_font;
         }
