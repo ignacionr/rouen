@@ -4166,6 +4166,11 @@ std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, stru
         }
     }
 
+    if (path == "/v1/models" || path == "/models" || path.starts_with("/v1/models") || path.starts_with("/models")) {
+        std::string json = "{\"object\":\"list\",\"data\":[{\"id\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"object\":\"model\",\"created\":1700000000,\"owned_by\":\"" + target_client_id + "\"}]}";
+        return json;
+    }
+
     if (path == "/api/cards" || path == "/cards") {
         std::string json = "[{\"index\":0,\"title\":\"Rouen Mesh Console (" + target_client_id + ")\",\"uri\":\"mesh\",\"width\":720}]";
         return json;

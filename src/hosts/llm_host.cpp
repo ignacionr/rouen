@@ -92,9 +92,12 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
                 settings.model_name = "gemini-3.6-flash";
                 break;
             case Provider::CUSTOM:
-                settings.api_key = config_service_->get_env_optional("LLM_API_KEY").value_or("mlx-local");
-                settings.base_url = config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:8098/v1");
-                settings.model_name = config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen3.5-9B-MLX-4bit");
+                settings.api_key = config_service_->get_env_optional("LLM_CUSTOM_API_KEY").value_or(
+                    config_service_->get_env_optional("LLM_API_KEY").value_or("local"));
+                settings.base_url = config_service_->get_env_optional("LLM_CUSTOM_URL").value_or(
+                    config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:8098/v1"));
+                settings.model_name = config_service_->get_env_optional("LLM_CUSTOM_MODEL").value_or(
+                    config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen2.5-7B-Instruct-4bit"));
                 break;
         }
     }
