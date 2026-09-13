@@ -7,10 +7,17 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <sstream>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+#endif
 #include <glaze/glaze.hpp>
 #include <mongoose.h>
 #include "../helpers/config_service.hpp"
@@ -19,6 +26,21 @@
 namespace rouen::hosts {
 
 static bool is_local_port_available(uint16_t port) {
+#ifdef _WIN32
+    SOCKET sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) return false;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    char reuse = 1;
+    ::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    bool available = (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+    ::closesocket(sock);
+    return available;
+#else
     int sock = ::socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) return false;
     sockaddr_in addr{};
@@ -32,6 +54,7 @@ static bool is_local_port_available(uint16_t port) {
     bool available = (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
     ::close(sock);
     return available;
+#endif
 }
 
 static uint16_t find_available_mesh_port(uint16_t start_port) {
@@ -834,40 +857,46 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         case mesh::frame_type::REGISTRY_RESP: {
             if (!frame.payload.empty()) {
                 std::cout << "[MeshRegistry] Received REGISTRY_RESP: " << frame.payload << std::endl;
-                std::vector<mesh::registry_entry_dto> entries;
-                if (glz::read_json(entries, frame.payload) == glz::error_code::none) {
+                std::vector<mesh::mesh_service_info> direct_services;
+                if (glz::read_json(direct_services, frame.payload) == glz::error_code::none && !direct_services.empty() && !direct_services[0].service.empty()) {
                     peer_services_.clear();
-                    for (const auto& entry : entries) {
-                        if (!entry.value.empty()) {
-                            mesh::mesh_service_info svc;
-                            if (glz::read_json(svc, entry.value) == glz::error_code::none && svc.target_port != 0) {
-                                if (svc.client_id.empty()) {
+                    for (const auto& svc : direct_services) {
+                        peer_services_[svc.client_id + ":" + svc.service] = svc;
+                    }
+                } else {
+                    std::vector<mesh::registry_entry_dto> entries;
+                    if (glz::read_json(entries, frame.payload) == glz::error_code::none) {
+                        peer_services_.clear();
+                        for (const auto& entry : entries) {
+                            if (!entry.value.empty()) {
+                                mesh::mesh_service_info svc;
+                                if (glz::read_json(svc, entry.value) == glz::error_code::none && svc.target_port != 0) {
+                                    if (svc.client_id.empty()) {
+                                        svc.client_id = entry.owner_client_id.empty() ? "server" : entry.owner_client_id;
+                                    }
+                                    if (svc.service.empty()) {
+                                        size_t slash = entry.key.rfind('/');
+                                        svc.service = (slash != std::string::npos) ? entry.key.substr(slash + 1) : entry.key;
+                                    }
+                                    peer_services_[svc.client_id + ":" + svc.service] = svc;
+                                } else {
                                     svc.client_id = entry.owner_client_id.empty() ? "server" : entry.owner_client_id;
-                                }
-                                if (svc.service.empty()) {
                                     size_t slash = entry.key.rfind('/');
                                     svc.service = (slash != std::string::npos) ? entry.key.substr(slash + 1) : entry.key;
-                                }
-                                peer_services_[svc.client_id + ":" + svc.service] = svc;
-                            } else {
-                                svc.client_id = entry.owner_client_id.empty() ? "server" : entry.owner_client_id;
-                                size_t slash = entry.key.rfind('/');
-                                svc.service = (slash != std::string::npos) ? entry.key.substr(slash + 1) : entry.key;
-                                svc.protocol = "http";
+                                    svc.protocol = "http";
 
-                                size_t port_pos = entry.value.find("port\":");
-                                if (port_pos == std::string::npos) port_pos = entry.value.find("port :");
-                                if (port_pos != std::string::npos) {
-                                    size_t val_start = entry.value.find_first_of("0123456789", port_pos);
-                                    if (val_start != std::string::npos) {
-                                        try {
-                                            svc.target_port = static_cast<uint16_t>(std::stoi(entry.value.substr(val_start)));
-                                        } catch (...) {}
+                                    size_t port_pos = entry.value.find("port\":");
+                                    if (port_pos == std::string::npos) port_pos = entry.value.find("port :");
+                                    if (port_pos != std::string::npos) {
+                                        size_t val_start = entry.value.find_first_of("0123456789", port_pos);
+                                        if (val_start != std::string::npos) {
+                                            svc.target_port = static_cast<uint16_t>(std::atoi(entry.value.c_str() + val_start));
+                                        }
+                                    }
+                                    if (svc.target_port != 0) {
+                                        peer_services_[svc.client_id + ":" + svc.service] = svc;
                                     }
                                 }
-                                if (svc.target_port == 0) svc.target_port = 8080;
-
-                                peer_services_[svc.client_id + ":" + svc.service] = svc;
                             }
                         }
                     }

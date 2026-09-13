@@ -6,10 +6,17 @@
 #include <cstdio>
 #include <string>
 #include <vector>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <io.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+#endif
 
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
@@ -20,20 +27,35 @@ namespace rouen::cards {
 
 inline uint16_t find_available_local_port(uint16_t start_port = 20000) {
     for (uint32_t port = start_port; port <= 65535; ++port) {
+#ifdef _WIN32
+        SOCKET sock = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == INVALID_SOCKET) {
+            continue;
+        }
+#else
         int sock = ::socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) {
             continue;
         }
+#endif
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_port = htons(static_cast<uint16_t>(port));
         addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
         if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+#ifdef _WIN32
+            ::closesocket(sock);
+#else
             ::close(sock);
+#endif
             return static_cast<uint16_t>(port);
         }
+#ifdef _WIN32
+        ::closesocket(sock);
+#else
         ::close(sock);
+#endif
     }
     return start_port;
 }

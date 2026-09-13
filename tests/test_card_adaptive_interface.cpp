@@ -83,7 +83,7 @@ TEST(CardAdaptiveInterface, BybitAssets) {
 TEST(CardAdaptiveInterface, WeatherCard) {
     rouen::cards::weather weather_card{"Buenos Aires"};
     std::string weather_json = weather_card.get_adaptive_card_json();
-    EXPECT_NE(weather_json.find("Weather"), std::string::npos);
+    EXPECT_NE(weather_json.find("Buenos Aires"), std::string::npos);
     weather_card.handle_action(R"({"verb":"refresh"})");
 }
 

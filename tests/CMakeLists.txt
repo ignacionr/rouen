@@ -21,6 +21,7 @@ find_package(GTest CONFIG REQUIRED)
 
 # Find required dependencies for tests
 find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SDL3 REQUIRED sdl3)
@@ -252,15 +253,70 @@ endif()
 add_gtest_executable(test_adaptive_process_card test_adaptive_process_card.cpp)
 target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/interface/card.cpp
+    ../src/cards/productivity/theme_card.cpp
+    ../src/cards/productivity/invoice_card.cpp
+    ../src/cards/information/ai_chat.cpp
+    ../src/cards/information/rss.cpp
+    ../src/cards/information/rss_item.cpp
+    ../src/cards/information/telegram.cpp
+    ../src/hosts/api_server_host.cpp
+    ../external/mongoose-7.15/mongoose.c
     ../src/hosts/mcp_host.cpp
+    ../src/hosts/llm_host.cpp
+    ../src/hosts/event_bus_host.cpp
     ../src/hosts/universal_sync_host.cpp
     ../src/hosts/git_sync_host.cpp
+    ../src/hosts/rss_host.cpp
+    ../src/hosts/footprints_host.cpp
+    ../src/hosts/rouen_mesh_host.cpp
+    ../src/hosts/telegram_host.cpp
+    ../src/hosts/process_host.cpp
+    ../src/helpers/ui_automation_explorer.cpp
+    ../src/helpers/directory_watch.cpp
+    ../src/cards/media/chess_com_integration.cpp
+    ../src/cards/media/media_companion.cpp
+    ../src/cards/development/cmake.cpp
+    ../src/cards/development/fs-directory.cpp
+    ../src/cards/development/git.cpp
+    ../src/cards/development/github/github_card.cpp
+    ../src/cards/development/github/ci_card.cpp
+    ../src/cards/development/github/login_screen.cpp
+    ../src/cards/development/github/repo_screen.cpp
+    ../src/cards/productivity/calculator.cpp
+    ../src/cards/productivity/converter.cpp
+    ../src/cards/system/terminal.cpp
+    ../src/cards/system/terminal_bash.cpp
+    ../src/cards/system/terminal_output.cpp
+    ../src/cards/system/terminal_commands.cpp
+    ../src/hosts/quickjs_host.cpp
+    ../src/helpers/filetype_handler.cpp
+    ../src/helpers/capture_helper.cpp
+    ../src/cards/development/git_overlay.cpp
+    ../src/cards/production/adlib.cpp
+    ../src/models/git_process_helper.cpp
+    ../src/models/git_scanner.cpp
+    ../src/hosts/plugin_host.cpp
+    ../external/imguicolortextedit/TextEditor.cpp
     ../src/helpers/ytdlp_service.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/card_decorations.cpp
+    ../src/helpers/adlib_engine.cpp
+    ../src/helpers/audio_capture.cpp
+    ../src/helpers/mp4_writer.cpp
+    ../src/helpers/vu_meter.cpp
+    ../src/helpers/theme_manager.cpp
+    ../src/helpers/media_player.cpp
+    ../src/helpers/media_player_item.cpp
+    ../src/helpers/image_cache.cpp
+    ../src/models/rss/feed_xml_parser.cpp
+    ../src/models/rss/rss_item_repo.cpp
     ../src/fonts.cpp
 )
-target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} CURL::libcurl)
+if(APPLE)
+    target_sources(test_adaptive_process_card PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(test_adaptive_process_card PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
+endif()
+target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -272,6 +328,7 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/cards/information/ai_chat.cpp
     ../src/cards/information/rss.cpp
     ../src/cards/information/rss_item.cpp
+    ../src/cards/information/telegram.cpp
     ../src/hosts/api_server_host.cpp
     ../external/mongoose-7.15/mongoose.c
     ../src/hosts/mcp_host.cpp
@@ -281,6 +338,8 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
+    ../src/hosts/rouen_mesh_host.cpp
+    ../src/hosts/telegram_host.cpp
     ../src/hosts/process_host.cpp
     ../src/helpers/ui_automation_explorer.cpp
     ../src/helpers/directory_watch.cpp
@@ -322,10 +381,10 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/fonts.cpp
 )
 if(APPLE)
-    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
-    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa")
+    target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
 endif()
-target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
+target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_card_adaptive_interface PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -471,6 +530,11 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/hosts/process_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
+    ../src/hosts/rouen_mesh_host.cpp
+    ../src/hosts/telegram_host.cpp
+    ../src/hosts/api_server_host.cpp
+    ../external/mongoose-7.15/mongoose.c
+    ../src/cards/information/telegram.cpp
     ../src/hosts/llm_host.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/universal_sync_host.cpp
@@ -523,10 +587,10 @@ target_sources(test_deck_scrolling PRIVATE
     ../external/imguicolortextedit/TextEditor.cpp
 )
 if(APPLE)
-    target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
-    target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
+    target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
 endif()
-target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} OpenSSL::Crypto OpenSSL::SSL imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
 
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
@@ -842,6 +906,11 @@ target_sources(test_quickjs PRIVATE
     ../src/hosts/process_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
+    ../src/hosts/rouen_mesh_host.cpp
+    ../src/hosts/telegram_host.cpp
+    ../src/cards/information/telegram.cpp
+    ../src/hosts/api_server_host.cpp
+    ../external/mongoose-7.15/mongoose.c
     ../src/hosts/llm_host.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/universal_sync_host.cpp
@@ -895,8 +964,8 @@ target_sources(test_quickjs PRIVATE
     ../external/imguicolortextedit/TextEditor.cpp
 )
 if(APPLE)
-    target_sources(test_quickjs PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm)
-    target_link_libraries(test_quickjs PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices")
+    target_sources(test_quickjs PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
+    target_link_libraries(test_quickjs PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
 endif()
 target_include_directories(test_quickjs PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -913,6 +982,8 @@ target_link_libraries(test_quickjs PRIVATE
     tinyxml2::tinyxml2
     SQLite::SQLite3 
     CURL::libcurl 
+    OpenSSL::Crypto
+    OpenSSL::SSL
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
     imgui::imgui

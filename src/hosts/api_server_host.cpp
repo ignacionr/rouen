@@ -347,32 +347,6 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         return;
     }
 
-    struct mg_str* host_hdr = mg_http_get_header(hm, "Host");
-    std::string host_val = (host_hdr && host_hdr->len > 0) ? std::string(host_hdr->buf, host_hdr->len) : "";
-    uint16_t req_port = 0;
-    if (host_val.find(':') != std::string::npos) {
-        try {
-            req_port = static_cast<uint16_t>(std::stoi(host_val.substr(host_val.rfind(':') + 1)));
-        } catch (...) {}
-    }
-    if (req_port == 0 && c) {
-        req_port = mg_ntohs(c->loc.port);
-        if (req_port == 0) req_port = c->loc.port;
-    }
-
-    bool is_proxy_port = (req_port != 0 && req_port != 8081);
-
-    if (is_proxy_port) {
-        response = handle_mesh_proxy(c, hm);
-        std::string cors_headers =
-            "Content-Type: application/json\r\n"
-            "Access-Control-Allow-Origin: " + origin_val + "\r\n"
-            "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
-            "Access-Control-Allow-Headers: Content-Type, Authorization, *\r\n";
-        mg_http_reply(c, 200, cors_headers.c_str(), "%s", response.c_str());
-        return;
-    }
-
     if (mg_match(hm->uri, mg_str("/web"), nullptr) ||
         mg_match(hm->uri, mg_str("/web/*"), nullptr) ||
         mg_match(hm->uri, mg_str("/ui"), nullptr) ||
