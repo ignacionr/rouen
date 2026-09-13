@@ -770,6 +770,16 @@ add_executable(test_event_bus
 target_link_libraries(test_event_bus PRIVATE rouen_test_modules)
 add_test(NAME EventBusTest COMMAND test_event_bus)
 
+# Rouen Mesh host unit test
+find_package(OpenSSL REQUIRED)
+add_executable(test_rouen_mesh
+    test_rouen_mesh.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
+)
+target_link_libraries(test_rouen_mesh PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL)
+add_test(NAME RouenMeshTest COMMAND test_rouen_mesh)
+
 add_executable(test_notes_repository_legacy
     test_notes_repository_legacy.cpp
 )

@@ -393,6 +393,17 @@ namespace rouen::helpers {
         register_config("CAST_FULL_SCREEN_MEDIA", Category::GENERAL, false, false,
                        "Show Media Streams Full Screen on Video Cast (true/false)", "false");
 
+        // Rouen Mesh Configuration
+        register_config("ROUEN_MESH_PAIRED", Category::GENERAL, false, false,
+                       "Enable Rouen Mesh host pairing (1=paired, 0=unpaired)", "0");
+        register_config("ROUEN_MESH_CLIENT_ID", Category::GENERAL, false, false,
+                       "Rouen Mesh client node identifier", "rouen-macbook-pro");
+        register_config("ROUEN_MESH_PUBLIC_KEY", Category::GENERAL, false, true,
+                       "Ed25519 public key for Rouen Mesh pairing");
+        register_config("ROUEN_MESH_PRIVATE_KEY", Category::GENERAL, false, true,
+                       "Ed25519 private key for Rouen Mesh pairing");
+        register_config("ROUEN_MESH_SERVER_URL", Category::GENERAL, false, false,
+                       "Rouen Mesh WSS server URL", "wss://rouen.inz.dev/ws/connect");
 
         CONFIG_INFO("Default configurations registered");
     }

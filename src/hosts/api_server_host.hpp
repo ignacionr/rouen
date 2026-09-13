@@ -62,6 +62,13 @@ private:
     static std::string handle_adlib_test_mux(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_swagger_ui(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_openapi_spec(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_connect(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_disconnect(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_pair(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_routes(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_clients(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_mesh_services(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_rss_diagnostics(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_processes_list(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_start(struct mg_connection* c, struct mg_http_message* hm);

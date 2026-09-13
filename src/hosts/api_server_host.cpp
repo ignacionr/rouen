@@ -71,6 +71,7 @@
 #include "deferred_operations.hpp"
 #include "media_player.hpp"
 #include "card_render_metrics.hpp"
+#include "rouen_mesh_host.hpp"
 #include "../helpers/adlib_engine.hpp"
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
@@ -737,6 +738,50 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                mg_match(hm->uri, mg_str("/api/telegram/incoming"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_telegram_simulate(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_mesh_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/connect"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_mesh_connect(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/disconnect"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_mesh_disconnect(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/pair"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_mesh_pair(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/routes"), nullptr)) {
+        response = handle_mesh_routes(c, hm);
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/clients"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_mesh_clients(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/services"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_mesh_services(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -3910,6 +3955,145 @@ std::string api_server_host::handle_telegram_simulate(struct mg_connection* /*c*
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }
+}
+
+struct mesh_conn_request {
+    std::string server_url;
+    std::string client_id;
+};
+
+struct mesh_pair_request {
+    std::string pairing_code;
+    std::string server_url;
+};
+
+struct mesh_open_route_request {
+    std::string target_client_id;
+    uint16_t target_port{11434};
+};
+
+struct mesh_close_route_request {
+    uint32_t route_id{0};
+};
+
+std::string api_server_host::handle_mesh_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& host = rouen_mesh_host::instance();
+    auto cfg = host.get_config();
+
+    std::string json = std::format(
+        R"({{"connected":{},"paired":{},"status_message":"{}","server_url":"{}","client_id":"{}","public_key":"{}","ping_ms":{},"total_requests":{},"total_bytes_sent":{},"total_bytes_received":{}}})",
+        host.is_connected() ? "true" : "false",
+        host.is_paired() ? "true" : "false",
+        host.get_status_message(),
+        cfg.server_url,
+        cfg.client_id,
+        cfg.public_key,
+        host.get_ping_ms(),
+        host.get_total_requests(),
+        host.get_total_bytes_sent(),
+        host.get_total_bytes_received()
+    );
+    return json;
+}
+
+std::string api_server_host::handle_mesh_connect(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& host = rouen_mesh_host::instance();
+    std::string body(hm->body.buf, hm->body.len);
+    if (!body.empty()) {
+        mesh_conn_request req{};
+        (void)glz::read_json(req, body);
+        auto cfg = host.get_config();
+        if (!req.server_url.empty()) cfg.server_url = req.server_url;
+        if (!req.client_id.empty()) cfg.client_id = req.client_id;
+        host.set_config(cfg);
+    }
+    bool started = host.start();
+    return std::format(R"({{"success":{},"connected":{},"message":"{}"}})",
+                       started ? "true" : "false",
+                       host.is_connected() ? "true" : "false",
+                       host.get_status_message());
+}
+
+std::string api_server_host::handle_mesh_disconnect(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& host = rouen_mesh_host::instance();
+    host.stop();
+    return R"({"success":true,"connected":false,"message":"Disconnected"})";
+}
+
+std::string api_server_host::handle_mesh_pair(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& host = rouen_mesh_host::instance();
+    std::string body(hm->body.buf, hm->body.len);
+    mesh_pair_request req{};
+    if (!body.empty()) {
+        (void)glz::read_json(req, body);
+    }
+
+    std::string server_base = req.server_url;
+    if (server_base.empty()) {
+        server_base = host.get_config().server_url;
+    }
+    if (server_base.find("wss://") == 0) {
+        server_base.replace(0, 6, "https://");
+    } else if (server_base.find("ws://") == 0) {
+        server_base.replace(0, 5, "http://");
+    }
+    size_t ws_pos = server_base.find("/ws/connect");
+    if (ws_pos != std::string::npos) {
+        server_base.erase(ws_pos);
+    }
+
+    std::string err;
+    bool ok = host.send_pairing_request(server_base, req.pairing_code, err);
+    if (ok) {
+        return R"({"success":true,"message":"Paired successfully"})";
+    } else {
+        return std::format(R"({{"success":false,"error":"{}"}})", err);
+    }
+}
+
+std::string api_server_host::handle_mesh_routes(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& host = rouen_mesh_host::instance();
+    if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        mesh_open_route_request req{};
+        (void)glz::read_json(req, body);
+        std::string err;
+        bool ok = host.open_virtual_route(req.target_client_id, req.target_port, err);
+        if (ok) {
+            return R"({"success":true,"message":"Route opened"})";
+        } else {
+            return std::format(R"({{"success":false,"error":"{}"}})", err);
+        }
+    } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        mesh_close_route_request req{};
+        (void)glz::read_json(req, body);
+        bool ok = host.close_virtual_route(req.route_id);
+        return std::format(R"({{"success":{}}})", ok ? "true" : "false");
+    } else {
+        auto routes = host.get_active_routes();
+        std::string json;
+        (void)glz::write_json(routes, json);
+        return json;
+    }
+}
+
+std::string api_server_host::handle_mesh_clients(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& host = rouen_mesh_host::instance();
+    host.refresh_connected_clients();
+    auto clients = host.get_connected_clients();
+    std::string json;
+    (void)glz::write_json(clients, json);
+    return json;
+}
+
+std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& host = rouen_mesh_host::instance();
+    host.refresh_peer_services();
+    auto services = host.get_peer_services();
+    std::string json;
+    (void)glz::write_json(services, json);
+    return json;
 }
 
 } // namespace rouen::hosts

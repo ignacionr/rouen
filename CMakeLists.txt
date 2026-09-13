@@ -42,6 +42,8 @@ endif()
 # Project name and version
 project(rouen VERSION 1.0 LANGUAGES C CXX)
 
+add_compile_definitions(MG_TLS=2)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build (Debug or Release)" FORCE)
 endif()
@@ -608,6 +610,7 @@ add_executable(${PROJECT_NAME}
   src/hosts/mcp_host.cpp
   src/hosts/api_server_host.cpp
   src/hosts/event_bus_host.cpp
+  src/hosts/rouen_mesh_host.cpp
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
   src/hosts/process_host.cpp
