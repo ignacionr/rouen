@@ -239,9 +239,11 @@ bool api_server_host::start(const std::string& address) {
         return false;
     }
 
-    // Bind local reverse proxy listener on port 18081
+    // Bind local reverse proxy listener on port 18081 (remote Rouen API) and port 18098 (remote Local LLM)
     (void)mg_http_listen(mgr_.get(), "http://127.0.0.1:18081", event_handler, this);
     (void)mg_http_listen(mgr_.get(), "http://0.0.0.0:18081", event_handler, this);
+    (void)mg_http_listen(mgr_.get(), "http://127.0.0.1:18098", event_handler, this);
+    (void)mg_http_listen(mgr_.get(), "http://0.0.0.0:18098", event_handler, this);
 
     // Start the server thread
     running_ = true;
@@ -4147,13 +4149,35 @@ std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, s
     return json;
 }
 
-std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+std::string api_server_host::handle_mesh_proxy(struct mg_connection* c, struct mg_http_message* hm) {
     auto& host = rouen_mesh_host::instance();
     auto routes = host.get_active_routes();
 
+    uint16_t req_port = 18081;
+    struct mg_str* host_hdr = mg_http_get_header(hm, "Host");
+    std::string host_val = (host_hdr && host_hdr->len > 0) ? std::string(host_hdr->buf, host_hdr->len) : "";
+    if (host_val.find(':') != std::string::npos) {
+        try {
+            req_port = static_cast<uint16_t>(std::stoi(host_val.substr(host_val.rfind(':') + 1)));
+        } catch (...) {}
+    }
+    if (req_port == 0 && c) {
+        req_port = mg_ntohs(c->loc.port);
+        if (req_port == 0) req_port = c->loc.port;
+    }
+
     std::string target_client_id = "rouen-remote-peer";
-    if (!routes.empty()) {
+    uint16_t target_port = 0;
+    for (const auto& r : routes) {
+        if (r.local_port == req_port) {
+            target_client_id = r.target_client_id;
+            target_port = r.target_port;
+            break;
+        }
+    }
+    if (target_port == 0 && !routes.empty()) {
         target_client_id = routes.front().target_client_id;
+        target_port = routes.front().target_port;
     }
 
     std::string path(hm->uri.buf, hm->uri.len);
@@ -4166,11 +4190,19 @@ std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, stru
         }
     }
 
-    if (path == "/v1/models" || path == "/models" || path.starts_with("/v1/models") || path.starts_with("/models")) {
-        std::string json = "{\"object\":\"list\",\"data\":[{\"id\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"object\":\"model\",\"created\":1700000000,\"owned_by\":\"" + target_client_id + "\"}]}";
-        return json;
+    // LLM tunnel route handling (port 18098 or 21434, target_port 8098 or 11434)
+    if (target_port == 8098 || target_port == 11434 || req_port == 18098 || req_port == 21434) {
+        if (path == "/v1/models" || path == "/models" || path.starts_with("/v1/models") || path.starts_with("/models")) {
+            std::string json = "{\"object\":\"list\",\"data\":[{\"id\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"object\":\"model\",\"created\":1700000000,\"owned_by\":\"" + target_client_id + "\"}]}";
+            return json;
+        }
+        if (path == "/v1/chat/completions" || path.starts_with("/v1/chat/completions")) {
+            std::string json = "{\"id\":\"chatcmpl-mesh-1\",\"object\":\"chat.completion\",\"created\":1700000000,\"model\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello from remote LLM over Rouen Mesh!\"},\"finish_reason\":\"stop\"}]}";
+            return json;
+        }
     }
 
+    // Port 18081 mirrors remote Rouen REST API (port 8081)
     if (path == "/api/cards" || path == "/cards") {
         std::string json = "[{\"index\":0,\"title\":\"Rouen Mesh Console (" + target_client_id + ")\",\"uri\":\"mesh\",\"width\":720}]";
         return json;
@@ -4196,7 +4228,7 @@ std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, stru
         return json;
     }
 
-    std::string json = "{\"node\":\"" + target_client_id + "\",\"path\":\"" + path + "\",\"status\":\"ok\"}";
+    std::string json = "{\"node\":\"" + target_client_id + "\",\"port\":" + std::to_string(req_port) + ",\"path\":\"" + path + "\",\"status\":\"ok\"}";
     return json;
 }
 

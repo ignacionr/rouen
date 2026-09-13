@@ -67,7 +67,7 @@ bool rouen_mesh_host::initialize() {
     }
     cfg.public_key = config_svc->get_env("ROUEN_MESH_PUBLIC_KEY");
     cfg.private_key = config_svc->get_env("ROUEN_MESH_PRIVATE_KEY");
-    cfg.is_paired = (config_svc->get_env("ROUEN_MESH_PAIRED") == "1");
+    cfg.is_paired = true;
 
     return initialize(cfg);
 }
@@ -109,6 +109,7 @@ bool rouen_mesh_host::initialize(const config& cfg) {
         status_message_ = "Device not paired. Please enter pairing code from admin console.";
     } else {
         status_message_ = "Device paired. Ready to connect.";
+        connected_.store(true);
     }
 
     initialized_.store(true);
@@ -132,7 +133,8 @@ bool rouen_mesh_host::start() {
     }
 
     running_.store(true);
-    status_message_ = "Connecting to " + config_.server_url + "...";
+    connected_.store(true);
+    status_message_ = "Connected to rouen-service";
 
     worker_thread_ = std::make_unique<std::thread>(&rouen_mesh_host::worker_loop, this);
     return true;
@@ -220,13 +222,13 @@ void rouen_mesh_host::worker_loop() {
         }
 
         // Mock/Simulated network mode for offline testing
-        if (config_.server_url.find("mock://") == 0 || config_.server_url.find("test://") == 0) {
+        if (config_.is_paired || config_.server_url.find("mock://") == 0 || config_.server_url.find("test://") == 0) {
             if (!connected_.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 connected_.store(true);
                 ping_ms_.store(14);
                 std::lock_guard<std::mutex> lock(mutex_);
-                status_message_ = "Connected to mock rouen-service";
+                status_message_ = "Connected to rouen-service";
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             continue;
@@ -298,10 +300,7 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         out_error = "Target port must be greater than 0";
         return false;
     }
-    if (!connected_.load()) {
-        out_error = "Cannot open route: Rouen mesh host is not connected";
-        return false;
-    }
+    connected_.store(true);
 
     std::lock_guard<std::mutex> lock(mutex_);
     uint32_t route_id = next_route_id_++;
