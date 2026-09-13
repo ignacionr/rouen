@@ -460,6 +460,9 @@ endif()
 add_library(mongoose STATIC ${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c)
 set_target_properties(mongoose PROPERTIES LINKER_LANGUAGE C)
 target_include_directories(mongoose PUBLIC ${CMAKE_SOURCE_DIR}/external/mongoose-7.15)
+if(TARGET OpenSSL::SSL)
+  target_link_libraries(mongoose PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
 # Force C compilation for mongoose
 set_source_files_properties(${CMAKE_SOURCE_DIR}/external/mongoose-7.15/mongoose.c PROPERTIES LANGUAGE C)
 
