@@ -397,7 +397,7 @@ namespace rouen::helpers {
         register_config("ROUEN_MESH_PAIRED", Category::GENERAL, false, false,
                        "Enable Rouen Mesh host pairing (1=paired, 0=unpaired)", "0");
         register_config("ROUEN_MESH_CLIENT_ID", Category::GENERAL, false, false,
-                       "Rouen Mesh client node identifier", "rouen-macbook-pro");
+                       "Rouen Mesh client node identifier", "rouen-node");
         register_config("ROUEN_MESH_PUBLIC_KEY", Category::GENERAL, false, true,
                        "Ed25519 public key for Rouen Mesh pairing");
         register_config("ROUEN_MESH_PRIVATE_KEY", Category::GENERAL, false, true,

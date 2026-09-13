@@ -4089,7 +4089,7 @@ std::string api_server_host::handle_mesh_pair(struct mg_connection* /*c*/, struc
     }
 }
 
-std::string api_server_host::handle_mesh_routes(struct mg_connection* c, struct mg_http_message* hm) {
+std::string api_server_host::handle_mesh_routes(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     auto& host = rouen_mesh_host::instance();
     if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
         std::string body(hm->body.buf, hm->body.len);
@@ -4107,10 +4107,6 @@ std::string api_server_host::handle_mesh_routes(struct mg_connection* c, struct 
                 assigned_local_port = last_route.local_port;
                 assigned_url = last_route.local_url;
                 route_id = last_route.route_id;
-            }
-            if (c && c->mgr) {
-                std::string bind_addr = std::format("http://127.0.0.1:{}", assigned_local_port);
-                (void)mg_http_listen(c->mgr, bind_addr.c_str(), event_handler, c->fn_data);
             }
             return std::format(R"({{"success":true,"message":"Route opened","route_id":{},"local_port":{},"local_url":"{}"}})",
                                route_id, assigned_local_port, assigned_url);
@@ -4149,87 +4145,14 @@ std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, s
     return json;
 }
 
-std::string api_server_host::handle_mesh_proxy(struct mg_connection* c, struct mg_http_message* hm) {
+std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     auto& host = rouen_mesh_host::instance();
     auto routes = host.get_active_routes();
-
-    uint16_t req_port = 18081;
-    struct mg_str* host_hdr = mg_http_get_header(hm, "Host");
-    std::string host_val = (host_hdr && host_hdr->len > 0) ? std::string(host_hdr->buf, host_hdr->len) : "";
-    if (host_val.find(':') != std::string::npos) {
-        try {
-            req_port = static_cast<uint16_t>(std::stoi(host_val.substr(host_val.rfind(':') + 1)));
-        } catch (...) {}
-    }
-    if (req_port == 0 && c) {
-        req_port = mg_ntohs(c->loc.port);
-        if (req_port == 0) req_port = c->loc.port;
-    }
-
-    std::string target_client_id = "rouen-remote-peer";
-    uint16_t target_port = 0;
-    for (const auto& r : routes) {
-        if (r.local_port == req_port) {
-            target_client_id = r.target_client_id;
-            target_port = r.target_port;
-            break;
-        }
-    }
-    if (target_port == 0 && !routes.empty()) {
-        target_client_id = routes.front().target_client_id;
-        target_port = routes.front().target_port;
-    }
-
-    std::string path(hm->uri.buf, hm->uri.len);
-    if (path.starts_with("/proxy/")) {
-        size_t next_slash = path.find('/', 7);
-        if (next_slash != std::string::npos) {
-            path = path.substr(next_slash);
-        } else {
-            path = "/";
-        }
-    }
-
-    // LLM tunnel route handling (port 18098 or 21434, target_port 8098 or 11434)
-    if (target_port == 8098 || target_port == 11434 || req_port == 18098 || req_port == 21434) {
-        if (path == "/v1/models" || path == "/models" || path.starts_with("/v1/models") || path.starts_with("/models")) {
-            std::string json = "{\"object\":\"list\",\"data\":[{\"id\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"object\":\"model\",\"created\":1700000000,\"owned_by\":\"" + target_client_id + "\"}]}";
-            return json;
-        }
-        if (path == "/v1/chat/completions" || path.starts_with("/v1/chat/completions")) {
-            std::string json = "{\"id\":\"chatcmpl-mesh-1\",\"object\":\"chat.completion\",\"created\":1700000000,\"model\":\"mlx-community/Qwen2.5-7B-Instruct-4bit\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Hello from remote LLM over Rouen Mesh!\"},\"finish_reason\":\"stop\"}]}";
-            return json;
-        }
-    }
-
-    // Port 18081 mirrors remote Rouen REST API (port 8081)
-    if (path == "/api/cards" || path == "/cards") {
-        std::string json = "[{\"index\":0,\"title\":\"Rouen Mesh Console (" + target_client_id + ")\",\"uri\":\"mesh\",\"width\":720}]";
+    std::string json;
+    if (glz::write_json(routes, json) == glz::error_code::none) {
         return json;
     }
-
-    if (path == "/api/mesh/status" || path == "/status") {
-        std::string json = "{\"client_id\":\"" + target_client_id + "\",\"connected\":true,\"paired\":true,\"ping_ms\":14,\"public_key\":\"cf15dab4a65641b76186786935bc120d04d099e2d2c5336f0b37564eb29d4a9c\",\"server_url\":\"wss://rouen.inz.dev/ws/connect\",\"status_message\":\"Connected to rouen-service\",\"total_bytes_received\":65536,\"total_bytes_sent\":131072,\"total_requests\":64}";
-        return json;
-    }
-
-    if (path == "/api/health" || path == "/health") {
-        std::string json = "{\"status\":\"healthy\",\"node\":\"" + target_client_id + "\",\"uptime_seconds\":1800}";
-        return json;
-    }
-
-    if (path == "/api/mesh/clients" || path == "/clients") {
-        std::string json = "[{\"bytes_received\":65536,\"bytes_sent\":131072,\"client_id\":\"" + target_client_id + "\",\"ip_address\":\"192.168.1.54\",\"last_ping_ago_seconds\":1,\"requests_tunneled\":64,\"uptime_seconds\":1800,\"user_agent\":\"RouenApp/1.3\"}]";
-        return json;
-    }
-
-    if (path == "/api/mesh/services" || path == "/services") {
-        std::string json = "[{\"auth_required\":false,\"capabilities\":[\"completions\",\"streaming\"],\"client_id\":\"" + target_client_id + "\",\"protocol\":\"openai_compatible\",\"service\":\"llm\",\"target_port\":11434}]";
-        return json;
-    }
-
-    std::string json = "{\"node\":\"" + target_client_id + "\",\"port\":" + std::to_string(req_port) + ",\"path\":\"" + path + "\",\"status\":\"ok\"}";
-    return json;
+    return R"({"status":"active","message":"Transparent TCP mesh tunnel proxy listeners active"})";
 }
 
 } // namespace rouen::hosts

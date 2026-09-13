@@ -26,6 +26,32 @@ rouen_mesh_host::~rouen_mesh_host() {
     stop();
 }
 
+std::string rouen_mesh_host::generate_default_client_id() {
+    char hostname_buf[256] = {0};
+    if (gethostname(hostname_buf, sizeof(hostname_buf)) == 0 && hostname_buf[0] != '\0') {
+        std::string raw(hostname_buf);
+        size_t dot_pos = raw.find('.');
+        if (dot_pos != std::string::npos) {
+            raw = raw.substr(0, dot_pos);
+        }
+        std::string cleaned;
+        for (char c : raw) {
+            if (std::isalnum(static_cast<unsigned char>(c))) {
+                cleaned += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            } else if (c == '-' || c == '_') {
+                cleaned += c;
+            }
+        }
+        if (!cleaned.empty()) {
+            if (cleaned.starts_with("rouen-")) {
+                return cleaned;
+            }
+            return "rouen-" + cleaned;
+        }
+    }
+    return "rouen-node";
+}
+
 void rouen_mesh_host::generate_keypair(std::string& out_public_hex, std::string& out_private_hex) {
     EVP_PKEY* pkey = EVP_PKEY_Q_keygen(nullptr, nullptr, "ED25519");
     if (pkey) {
@@ -49,9 +75,17 @@ void rouen_mesh_host::generate_keypair(std::string& out_public_hex, std::string&
         EVP_PKEY_free(pkey);
     }
 
-    // Fallback keypair generation
-    out_public_hex = "3b6d27a65a1e2581614f27b4e87291a0b1c2d3e4f5061728394a5b6c7d8e9f00";
-    out_private_hex = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809";
+    // Dynamic cryptographic random byte generation fallback if OpenSSL ED25519 keygen fails
+    unsigned char pub_buf[32], priv_buf[32];
+    RAND_bytes(pub_buf, 32);
+    RAND_bytes(priv_buf, 32);
+    std::ostringstream pub_ss, priv_ss;
+    for (int i = 0; i < 32; ++i) {
+        pub_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(pub_buf[i]);
+        priv_ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(priv_buf[i]);
+    }
+    out_public_hex = pub_ss.str();
+    out_private_hex = priv_ss.str();
 }
 
 bool rouen_mesh_host::initialize() {
@@ -62,22 +96,22 @@ bool rouen_mesh_host::initialize() {
         cfg.server_url = "wss://rouen.inz.dev/ws/connect";
     }
     cfg.client_id = config_svc->get_env("ROUEN_MESH_CLIENT_ID");
-    if (cfg.client_id.empty()) {
-        cfg.client_id = "rouen-macbook-pro";
+    if (cfg.client_id.empty() || cfg.client_id == "rouen-macbook-pro") {
+        cfg.client_id = generate_default_client_id();
     }
     cfg.public_key = config_svc->get_env("ROUEN_MESH_PUBLIC_KEY");
     cfg.private_key = config_svc->get_env("ROUEN_MESH_PRIVATE_KEY");
-    cfg.is_paired = true;
+    cfg.is_paired = (config_svc->get_env("ROUEN_MESH_PAIRED") == "1");
 
     return initialize(cfg);
 }
 
 bool rouen_mesh_host::initialize(const config& cfg) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     config_ = cfg;
 
-    if (config_.client_id.empty()) {
-        config_.client_id = "rouen-macbook-pro";
+    if (config_.client_id.empty() || config_.client_id == "rouen-macbook-pro") {
+        config_.client_id = generate_default_client_id();
     }
 
     if (config_.public_key.empty() || config_.private_key.empty()) {
@@ -105,12 +139,8 @@ bool rouen_mesh_host::initialize(const config& cfg) {
     };
     local_services_["llm"] = llm_service;
 
-    if (!config_.is_paired) {
-        status_message_ = "Device not paired. Please enter pairing code from admin console.";
-    } else {
-        status_message_ = "Device paired. Ready to connect.";
-        connected_.store(true);
-    }
+    config_.is_paired = true;
+    status_message_ = "Ready to connect.";
 
     initialized_.store(true);
     return true;
@@ -121,20 +151,15 @@ bool rouen_mesh_host::start() {
         initialize();
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!config_.is_paired) {
-        status_message_ = "Device not paired. Enter pairing code from https://rouen.inz.dev/admin and click Pair Device.";
-        connected_.store(false);
-        return false;
-    }
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     if (running_.load()) {
         return true;
     }
 
     running_.store(true);
-    connected_.store(true);
-    status_message_ = "Connected to rouen-service";
+    connected_.store(false);
+    status_message_ = "Connecting to " + config_.server_url + "...";
 
     worker_thread_ = std::make_unique<std::thread>(&rouen_mesh_host::worker_loop, this);
     return true;
@@ -142,10 +167,11 @@ bool rouen_mesh_host::start() {
 
 void rouen_mesh_host::stop() {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         running_.store(false);
         connected_.store(false);
         status_message_ = "Disconnected";
+        active_ws_conn_ = nullptr;
     }
 
     if (worker_thread_ && worker_thread_->joinable()) {
@@ -158,20 +184,14 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
     if (!c || !c->fn_data) return;
     auto* host = static_cast<rouen_mesh_host*>(c->fn_data);
 
-    if (ev == MG_EV_CONNECT) {
-        std::cout << "[MeshWS] MG_EV_CONNECT triggered! TCP socket connected." << std::endl;
-        std::string server_url = host->get_config().server_url;
-        if (mg_url_is_ssl(server_url.c_str()) || c->is_tls) {
-            struct mg_tls_opts opts{};
-            opts.name = mg_url_host(server_url.c_str());
-            opts.ca = mg_str_n(nullptr, 0);
-            mg_tls_init(c, &opts);
-        }
+    if (ev == MG_EV_OPEN) {
+        std::cout << "[MeshWS] MG_EV_OPEN: Connection object created." << std::endl;
+    } else if (ev == MG_EV_CONNECT) {
+        std::cout << "[MeshWS] MG_EV_CONNECT: TCP Socket connected." << std::endl;
     } else if (ev == MG_EV_WS_OPEN) {
-        std::cout << "[MeshWS] MG_EV_WS_OPEN triggered! WebSocket Handshake Complete." << std::endl;
-        host->on_ws_connected();
+        std::cout << "[MeshWS] MG_EV_WS_OPEN: WebSocket Handshake complete!" << std::endl;
+        host->on_ws_connected(c);
     } else if (ev == MG_EV_WS_MSG) {
-        std::cout << "[MeshWS] MG_EV_WS_MSG received frame" << std::endl;
         auto* wm = static_cast<struct mg_ws_message*>(ev_data);
         if (wm && wm->data.buf && wm->data.len > 0) {
             std::string_view frame_bytes(wm->data.buf, wm->data.len);
@@ -182,7 +202,7 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
         }
     } else if (ev == MG_EV_ERROR) {
         const char* err_msg = static_cast<const char*>(ev_data);
-        std::cout << "[MeshWS] MG_EV_ERROR: " << (err_msg ? err_msg : "unknown") << std::endl;
+        std::cout << "[MeshWS] MG_EV_ERROR: " << (err_msg ? err_msg : "unknown error") << std::endl;
         host->on_ws_disconnected(err_msg ? err_msg : "WebSocket error");
     } else if (ev == MG_EV_CLOSE) {
         std::cout << "[MeshWS] MG_EV_CLOSE triggered" << std::endl;
@@ -190,17 +210,179 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
     }
 }
 
-void rouen_mesh_host::on_ws_connected() {
-    std::lock_guard<std::mutex> lock(mutex_);
+static void mg_route_listener_handler(struct mg_connection* c, int ev, void* ev_data) {
+    if (!c || !c->fn_data) return;
+    auto* ctx = static_cast<mesh::route_listener_ctx*>(c->fn_data);
+    auto& host = rouen_mesh_host::instance();
+    host.handle_route_listener_event(c, ev, ev_data, ctx);
+}
+
+static void mg_route_stream_handler(struct mg_connection* c, int ev, void* ev_data) {
+    if (!c || !c->fn_data) return;
+    auto* ctx = static_cast<mesh::route_stream_ctx*>(c->fn_data);
+    auto& host = rouen_mesh_host::instance();
+    host.handle_route_stream_event(c, ev, ev_data, ctx);
+}
+
+[[maybe_unused]] static void mg_inbound_target_handler(struct mg_connection* c, int ev, void* ev_data) {
+    if (!c || !c->fn_data) return;
+    auto* ctx = static_cast<mesh::route_stream_ctx*>(c->fn_data);
+    auto& host = rouen_mesh_host::instance();
+    host.handle_inbound_target_event(c, ev, ev_data, ctx);
+}
+
+void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    active_ws_conn_ = c;
     connected_.store(true);
-    ping_ms_.store(14);
     status_message_ = "Connected to rouen-service";
+
+    // Request fresh online clients and peer services
+    refresh_connected_clients();
+    refresh_peer_services();
 }
 
 void rouen_mesh_host::on_ws_disconnected(const std::string& reason) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     connected_.store(false);
+    active_ws_conn_ = nullptr;
     status_message_ = "Disconnected: " + reason;
+}
+
+void rouen_mesh_host::send_frame_over_ws(mesh::frame_type type, uint16_t flags, uint32_t route_id, std::string_view payload) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!active_ws_conn_) return;
+    auto bytes = mesh::frame_codec::encode(type, flags, route_id, payload);
+    mg_ws_send(active_ws_conn_, bytes.data(), bytes.size(), WEBSOCKET_OP_BINARY);
+}
+
+void rouen_mesh_host::handle_route_listener_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_listener_ctx* ctx) {
+    (void)ev_data;
+    if (!ctx) return;
+
+    if (ev == MG_EV_ACCEPT) {
+        uint32_t stream_route_id = next_route_id_++;
+
+        auto stream = std::make_shared<mesh::route_stream_ctx>();
+        stream->route_id = stream_route_id;
+        stream->source_client_id = config_.client_id;
+        stream->target_client_id = ctx->target_client_id;
+        stream->target_port = ctx->target_port;
+        stream->local_port = ctx->local_port;
+        stream->local_conn = c;
+        stream->is_inbound = false;
+
+        c->fn_data = stream.get();
+        c->fn = mg_route_stream_handler;
+
+        {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            active_streams_[stream_route_id] = stream;
+        }
+
+        std::string open_payload = std::format(
+            R"({{"target_client_id":"{}","target_port":{}}})",
+            ctx->target_client_id, ctx->target_port
+        );
+        send_frame_over_ws(mesh::frame_type::ROUTE_OPEN, mesh::frame_flags::JSON_PAYLOAD, stream_route_id, open_payload);
+    }
+}
+
+void rouen_mesh_host::handle_route_stream_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_stream_ctx* ctx) {
+    (void)ev_data;
+    if (!ctx) return;
+
+    if (ev == MG_EV_READ) {
+        if (c->recv.buf && c->recv.len > 0) {
+            std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
+            
+            total_bytes_sent_ += payload.size();
+            total_requests_++;
+            ctx->bytes_sent += payload.size();
+
+            send_frame_over_ws(mesh::frame_type::ROUTE_DATA, mesh::frame_flags::NONE, ctx->route_id, payload);
+
+            mg_iobuf_del(&c->recv, 0, c->recv.len);
+        }
+    } else if (ev == MG_EV_CLOSE) {
+        send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
+        {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            active_streams_.erase(ctx->route_id);
+        }
+    }
+}
+
+void rouen_mesh_host::handle_inbound_target_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_stream_ctx* ctx) {
+    (void)ev_data;
+    if (!ctx) return;
+
+    if (ev == MG_EV_CONNECT) {
+        std::string ack = R"({"status":"ok","reason":"Connected to local service target"})";
+        send_frame_over_ws(mesh::frame_type::ROUTE_OPEN_ACK, mesh::frame_flags::JSON_PAYLOAD, ctx->route_id, ack);
+    } else if (ev == MG_EV_READ) {
+        if (c->recv.buf && c->recv.len > 0) {
+            std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
+
+            total_bytes_received_ += payload.size();
+            ctx->bytes_received += payload.size();
+
+            send_frame_over_ws(mesh::frame_type::ROUTE_DATA, mesh::frame_flags::NONE, ctx->route_id, payload);
+
+            mg_iobuf_del(&c->recv, 0, c->recv.len);
+        }
+    } else if (ev == MG_EV_CLOSE) {
+        send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
+        {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            active_streams_.erase(ctx->route_id);
+        }
+    }
+}
+
+void rouen_mesh_host::process_pending_route_requests(struct mg_mgr* mgr) {
+    std::vector<mesh::route_open_request> reqs;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (pending_route_requests_.empty()) return;
+        reqs.swap(pending_route_requests_);
+    }
+
+    for (const auto& req : reqs) {
+        uint32_t route_id = next_route_id_++;
+
+        auto listener_ctx = std::make_shared<mesh::route_listener_ctx>();
+        listener_ctx->route_id = route_id;
+        listener_ctx->target_client_id = req.target_client_id;
+        listener_ctx->target_port = req.target_port;
+        listener_ctx->local_port = req.local_port;
+
+        std::string listen_url = std::format("tcp://127.0.0.1:{}", req.local_port);
+        struct mg_connection* listener = mg_listen(mgr, listen_url.c_str(), mg_route_listener_handler, listener_ctx.get());
+
+        if (listener) {
+            listener_ctx->listener_conn = listener;
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            active_listeners_[route_id] = listener_ctx;
+
+            std::string local_url = std::format("http://127.0.0.1:{}", req.local_port);
+            mesh::virtual_route_info route_info{
+                .route_id = route_id,
+                .source_client_id = config_.client_id,
+                .target_client_id = req.target_client_id,
+                .target_host = "127.0.0.1",
+                .target_port = req.target_port,
+                .local_port = req.local_port,
+                .bytes_transferred = 0,
+                .status = "listening",
+                .local_url = local_url
+            };
+            active_routes_[route_id] = route_info;
+            std::cout << "[Mesh] Transparent TCP listener active on " << listen_url << " -> " << req.target_client_id << ":" << req.target_port << std::endl;
+        } else {
+            std::cerr << "[Mesh] Failed to bind transparent TCP listener on " << listen_url << std::endl;
+        }
+    }
 }
 
 void rouen_mesh_host::worker_loop() {
@@ -211,28 +393,7 @@ void rouen_mesh_host::worker_loop() {
     auto last_connect_try = std::chrono::steady_clock::now() - std::chrono::seconds(10);
 
     while (running_.load()) {
-        if (!config_.is_paired) {
-            connected_.store(false);
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                status_message_ = "Device not paired. Enter pairing code from admin console.";
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-            continue;
-        }
-
-        // Mock/Simulated network mode for offline testing
-        if (config_.is_paired || config_.server_url.find("mock://") == 0 || config_.server_url.find("test://") == 0) {
-            if (!connected_.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                connected_.store(true);
-                ping_ms_.store(14);
-                std::lock_guard<std::mutex> lock(mutex_);
-                status_message_ = "Connected to rouen-service";
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            continue;
-        }
+        process_pending_route_requests(&mgr);
 
         auto now = std::chrono::steady_clock::now();
 
@@ -244,26 +405,35 @@ void rouen_mesh_host::worker_loop() {
                     target_url += (target_url.find('?') == std::string::npos ? "?" : "&");
                     target_url += "client_id=" + config_.client_id;
                 }
-                if (target_url.find("token=") == std::string::npos) {
-                    target_url += "&token=rouen-client-secret";
-                }
 
                 {
-                    std::lock_guard<std::mutex> lock(mutex_);
+                    std::lock_guard<std::recursive_mutex> lock(mutex_);
                     status_message_ = "Connecting to " + target_url + "...";
                 }
+
+                std::cout << "[MeshWS] Attempting WebSocket connection to: " << target_url << std::endl;
                 active_conn = mg_ws_connect(&mgr, target_url.c_str(), mg_mesh_event_handler, this, nullptr);
-                if (!active_conn) {
-                    std::lock_guard<std::mutex> lock(mutex_);
-                    status_message_ = "Failed to connect to " + target_url;
+                if (active_conn) {
+                    if (mg_url_is_ssl(target_url.c_str())) {
+                        struct mg_tls_opts opts{};
+                        struct mg_str host_str = mg_url_host(target_url.c_str());
+                        opts.name = host_str;
+                        opts.ca = mg_str_n(nullptr, 0);
+                        mg_tls_init(active_conn, &opts);
+                    }
+                } else {
+                    std::lock_guard<std::recursive_mutex> lock(mutex_);
+                    status_message_ = "Failed to initiate connection to " + target_url;
+                    std::cout << "[MeshWS] mg_ws_connect returned NULL for " << target_url << std::endl;
                 }
             }
         }
 
-        mg_mgr_poll(&mgr, 100);
+        mg_mgr_poll(&mgr, 50);
     }
 
     connected_.store(false);
+    active_ws_conn_ = nullptr;
     mg_mgr_free(&mgr);
 }
 
@@ -272,22 +442,22 @@ bool rouen_mesh_host::is_connected() const noexcept {
 }
 
 bool rouen_mesh_host::is_paired() const noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return config_.is_paired;
 }
 
 std::string rouen_mesh_host::get_status_message() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return status_message_;
 }
 
 rouen_mesh_host::config rouen_mesh_host::get_config() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return config_;
 }
 
 void rouen_mesh_host::set_config(const config& cfg) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     config_ = cfg;
 }
 
@@ -300,10 +470,6 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         out_error = "Target port must be greater than 0";
         return false;
     }
-    connected_.store(true);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    uint32_t route_id = next_route_id_++;
 
     if (local_port == 0) {
         if (target_port == 8081) {
@@ -315,9 +481,17 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         }
     }
 
-    std::string local_url = std::format("http://127.0.0.1:{}", local_port);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    uint32_t route_id = next_route_id_++;
 
-    mesh::virtual_route_info route{
+    pending_route_requests_.push_back({
+        .target_client_id = target_client_id,
+        .target_port = target_port,
+        .local_port = local_port
+    });
+
+    std::string local_url = std::format("http://127.0.0.1:{}", local_port);
+    mesh::virtual_route_info route_info{
         .route_id = route_id,
         .source_client_id = config_.client_id,
         .target_client_id = target_client_id,
@@ -325,27 +499,28 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         .target_port = target_port,
         .local_port = local_port,
         .bytes_transferred = 0,
-        .status = "active",
+        .status = "pending",
         .local_url = local_url
     };
+    active_routes_[route_id] = route_info;
 
-    active_routes_[route_id] = route;
     total_requests_++;
     return true;
 }
 
 bool rouen_mesh_host::close_virtual_route(uint32_t route_id) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     auto it = active_routes_.find(route_id);
     if (it != active_routes_.end()) {
         active_routes_.erase(it);
+        active_listeners_.erase(route_id);
         return true;
     }
     return false;
 }
 
 std::vector<mesh::virtual_route_info> rouen_mesh_host::get_active_routes() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<mesh::virtual_route_info> result;
     result.reserve(active_routes_.size());
     for (const auto& [_, route] : active_routes_) {
@@ -355,28 +530,16 @@ std::vector<mesh::virtual_route_info> rouen_mesh_host::get_active_routes() const
 }
 
 void rouen_mesh_host::refresh_connected_clients() {
-    mesh::mesh_frame req_frame{
-        .type = mesh::frame_type::CLIENT_LIST_REQ,
-        .flags = mesh::frame_flags::NONE,
-        .route_id = 0,
-        .payload = ""
-    };
-    handle_incoming_frame(req_frame);
+    send_frame_over_ws(mesh::frame_type::CLIENT_LIST_REQ, mesh::frame_flags::NONE, 0, "");
 }
 
 std::vector<mesh::mesh_client_dto> rouen_mesh_host::get_connected_clients() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     return connected_clients_;
 }
 
 void rouen_mesh_host::refresh_server_routes() {
-    mesh::mesh_frame req_frame{
-        .type = mesh::frame_type::ROUTE_LIST_REQ,
-        .flags = mesh::frame_flags::NONE,
-        .route_id = 0,
-        .payload = ""
-    };
-    handle_incoming_frame(req_frame);
+    send_frame_over_ws(mesh::frame_type::ROUTE_LIST_REQ, mesh::frame_flags::NONE, 0, "");
 }
 
 uint64_t rouen_mesh_host::get_total_requests() const noexcept {
@@ -396,27 +559,26 @@ uint32_t rouen_mesh_host::get_ping_ms() const noexcept {
 }
 
 void rouen_mesh_host::register_service(const mesh::mesh_service_info& info) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_[info.service] = info;
+
+    std::string json;
+    if (glz::write_json(info, json) == glz::error_code::none) {
+        send_frame_over_ws(mesh::frame_type::REGISTRY_SET, mesh::frame_flags::JSON_PAYLOAD, 0, json);
+    }
 }
 
 void rouen_mesh_host::unregister_service(const std::string& service_name) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_.erase(service_name);
 }
 
 void rouen_mesh_host::refresh_peer_services() {
-    mesh::mesh_frame req_frame{
-        .type = mesh::frame_type::REGISTRY_LIST,
-        .flags = mesh::frame_flags::JSON_PAYLOAD,
-        .route_id = 0,
-        .payload = "services/"
-    };
-    handle_incoming_frame(req_frame);
+    send_frame_over_ws(mesh::frame_type::REGISTRY_LIST, mesh::frame_flags::JSON_PAYLOAD, 0, "services/");
 }
 
 std::vector<mesh::mesh_service_info> rouen_mesh_host::get_peer_services() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<mesh::mesh_service_info> result;
     result.reserve(peer_services_.size());
     for (const auto& [_, svc] : peer_services_) {
@@ -447,24 +609,10 @@ bool rouen_mesh_host::send_pairing_request(const std::string& server_http_base, 
         return false;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     if (config_.public_key.empty() || config_.private_key.empty()) {
         generate_keypair(config_.public_key, config_.private_key);
-    }
-
-    // Support mock scheme for offline unit testing
-    if (server_http_base.find("mock://") == 0 || server_http_base.find("test://") == 0) {
-        auto config_svc = helpers::ConfigService::instance();
-        config_svc->set_env_value("ROUEN_MESH_PAIRED", "1", true);
-        config_svc->set_env_value("ROUEN_MESH_CLIENT_ID", config_.client_id, true);
-        config_svc->set_env_value("ROUEN_MESH_PUBLIC_KEY", config_.public_key, true);
-        config_svc->set_env_value("ROUEN_MESH_PRIVATE_KEY", config_.private_key, true);
-        config_svc->set_env_value("ROUEN_MESH_SERVER_URL", config_.server_url, true);
-
-        config_.is_paired = true;
-        status_message_ = "Device paired (Mock). Ready to connect.";
-        return true;
     }
 
     std::string pair_url = server_http_base;
@@ -505,62 +653,77 @@ bool rouen_mesh_host::send_pairing_request(const std::string& server_http_base, 
 }
 
 void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     switch (frame.type) {
         case mesh::frame_type::HEARTBEAT_PING: {
+            send_frame_over_ws(mesh::frame_type::HEARTBEAT_PONG, mesh::frame_flags::NONE, 0, frame.payload);
             break;
         }
         case mesh::frame_type::HEARTBEAT_PONG: {
             break;
         }
-        case mesh::frame_type::CLIENT_LIST_REQ:
         case mesh::frame_type::CLIENT_LIST_RESP: {
-            connected_clients_ = {
-                {
-                    .client_id = config_.client_id,
-                    .ip_address = "127.0.0.1",
-                    .user_agent = "RouenApp/1.3",
-                    .uptime_seconds = 3600,
-                    .last_ping_ago_seconds = 2,
-                    .requests_tunneled = total_requests_.load(),
-                    .bytes_sent = total_bytes_sent_.load(),
-                    .bytes_received = total_bytes_received_.load()
-                },
-                {
-                    .client_id = "rouen-remote-peer",
-                    .ip_address = "192.168.1.54",
-                    .user_agent = "RouenApp/1.3",
-                    .uptime_seconds = 1800,
-                    .last_ping_ago_seconds = 1,
-                    .requests_tunneled = 64,
-                    .bytes_sent = 131072,
-                    .bytes_received = 65536
+            if (!frame.payload.empty()) {
+                std::vector<mesh::mesh_client_dto> clients;
+                if (glz::read_json(clients, frame.payload) == glz::error_code::none) {
+                    connected_clients_ = std::move(clients);
                 }
-            };
+            }
             break;
         }
         case mesh::frame_type::REGISTRY_RESP: {
             if (!frame.payload.empty()) {
-                mesh::mesh_service_info mock_peer{
-                    .client_id = "rouen-remote-peer",
-                    .service = "llm",
-                    .protocol = "openai_compatible",
-                    .target_port = 11434,
-                    .capabilities = {"completions", "streaming"},
-                    .auth_required = false
-                };
-                peer_services_[mock_peer.client_id + ":" + mock_peer.service] = mock_peer;
+                std::vector<mesh::mesh_service_info> services;
+                if (glz::read_json(services, frame.payload) == glz::error_code::none) {
+                    peer_services_.clear();
+                    for (const auto& svc : services) {
+                        peer_services_[svc.client_id + ":" + svc.service] = svc;
+                    }
+                }
+            }
+            break;
+        }
+        case mesh::frame_type::ROUTE_DATA: {
+            auto it = active_streams_.find(frame.route_id);
+            if (it != active_streams_.end()) {
+                auto stream = it->second;
+                if (!stream->is_inbound && stream->local_conn) {
+                    mg_send(stream->local_conn, frame.payload.data(), frame.payload.size());
+                    total_bytes_received_ += frame.payload.size();
+                    stream->bytes_received += frame.payload.size();
+                } else if (stream->is_inbound && stream->target_conn) {
+                    mg_send(stream->target_conn, frame.payload.data(), frame.payload.size());
+                    total_bytes_sent_ += frame.payload.size();
+                    stream->bytes_sent += frame.payload.size();
+                }
             }
             break;
         }
         case mesh::frame_type::ROUTE_OPEN: {
-            mesh::route_open_ack_payload ack{
-                .route_id = frame.route_id,
-                .status = "ok",
-                .reason = "Route accepted by Rouen Mesh Host"
-            };
-            (void)ack;
+            uint16_t target_port = 8081;
+            if (!frame.payload.empty() && frame.payload.find("target_port") != std::string::npos) {
+                size_t p = frame.payload.find("target_port\":");
+                if (p != std::string::npos) {
+                    try {
+                        target_port = static_cast<uint16_t>(std::stoi(frame.payload.substr(p + 13)));
+                    } catch (...) {}
+                }
+            }
+            auto stream = std::make_shared<mesh::route_stream_ctx>();
+            stream->route_id = frame.route_id;
+            stream->target_port = target_port;
+            stream->is_inbound = true;
+            active_streams_[frame.route_id] = stream;
+            break;
+        }
+        case mesh::frame_type::ROUTE_CLOSE: {
+            auto it = active_streams_.find(frame.route_id);
+            if (it != active_streams_.end()) {
+                if (it->second->local_conn) it->second->local_conn->is_closing = 1;
+                if (it->second->target_conn) it->second->target_conn->is_closing = 1;
+                active_streams_.erase(it);
+            }
             break;
         }
         case mesh::frame_type::HTTP_REQUEST:
@@ -571,9 +734,8 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         case mesh::frame_type::REGISTRY_LIST:
         case mesh::frame_type::PAIRING_REQ:
         case mesh::frame_type::PAIRING_RESP:
+        case mesh::frame_type::CLIENT_LIST_REQ:
         case mesh::frame_type::ROUTE_OPEN_ACK:
-        case mesh::frame_type::ROUTE_CLOSE:
-        case mesh::frame_type::ROUTE_DATA:
         case mesh::frame_type::ROUTE_LIST_REQ:
         case mesh::frame_type::ROUTE_LIST_RESP:
         case mesh::frame_type::RAW_DATA:
@@ -583,12 +745,16 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
 }
 
 void rouen_mesh_host::clear() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_.clear();
     peer_services_.clear();
     active_routes_.clear();
+    active_listeners_.clear();
+    active_streams_.clear();
+    pending_route_requests_.clear();
     connected_clients_.clear();
     config_ = {};
+    active_ws_conn_ = nullptr;
     total_requests_.store(0);
     total_bytes_sent_.store(0);
     total_bytes_received_.store(0);

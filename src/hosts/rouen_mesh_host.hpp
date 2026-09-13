@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <mongoose.h>
 #include "../helpers/glaze_include.hpp"
 
 namespace rouen::mesh {
@@ -147,6 +148,23 @@ public:
     }
 };
 
+/**
+ * Rouen Mesh Transparent Port Proxying & Relay Tunneling Architecture
+ * ===================================================================
+ * Rouen Mesh offers transparent TCP and HTTP proxying by binding local listening
+ * sockets that expose remote mesh node resources, operating similarly to SSH local
+ * port forwarding (`ssh -L local_port:target_host:target_port`).
+ *
+ * Virtual routes bind local TCP listeners on `127.0.0.1:local_port`. Any local client
+ * (HTTP client, curl, AI model host client, browser, or raw socket app) connecting to
+ * `127.0.0.1:local_port` is transparently tunneled across the Mesh WebSocket daemon
+ * connection using 12-byte binary multiplexed frames:
+ *   - ROUTE_OPEN      (0x0040): Opens virtual stream route to remote target node & port
+ *   - ROUTE_OPEN_ACK  (0x0041): Acknowledges route stream readiness
+ *   - ROUTE_DATA      (0x0043): Carries raw TCP stream payloads between endpoints
+ *   - ROUTE_CLOSE     (0x0042): Teardowns route stream session
+ */
+
 // Mesh Service Information DTO
 struct mesh_service_info {
     std::string client_id;
@@ -178,7 +196,7 @@ struct virtual_route_info {
     uint16_t target_port{0};
     uint16_t local_port{0};
     uint64_t bytes_transferred{0};
-    std::string status{"active"}; // "active", "pending", "closed"
+    std::string status{"active"}; // "active", "listening", "closed"
     std::string local_url;
 };
 
@@ -189,6 +207,33 @@ struct route_open_ack_payload {
     std::string reason;
 };
 
+struct route_open_request {
+    std::string target_client_id;
+    uint16_t target_port{0};
+    uint16_t local_port{0};
+};
+
+struct route_listener_ctx {
+    uint32_t route_id{0};
+    std::string target_client_id;
+    uint16_t target_port{0};
+    uint16_t local_port{0};
+    struct mg_connection* listener_conn{nullptr};
+};
+
+struct route_stream_ctx {
+    uint32_t route_id{0};
+    std::string source_client_id;
+    std::string target_client_id;
+    uint16_t target_port{0};
+    uint16_t local_port{0};
+    struct mg_connection* local_conn{nullptr};   // Outbound local socket connection
+    struct mg_connection* target_conn{nullptr};  // Inbound remote target connection
+    uint64_t bytes_sent{0};
+    uint64_t bytes_received{0};
+    bool is_inbound{false};
+};
+
 } // namespace rouen::mesh
 
 namespace rouen::hosts {
@@ -196,7 +241,7 @@ namespace rouen::hosts {
 struct mesh_host_config {
     bool enabled{false};
     std::string server_url{"wss://rouen.inz.dev/ws/connect"};
-    std::string client_id{"rouen-macbook-pro"};
+    std::string client_id{"rouen-node"};
     bool is_paired{false};
     std::string public_key;
     std::string private_key;
@@ -225,6 +270,9 @@ public:
     [[nodiscard]] std::string get_status_message() const;
     [[nodiscard]] config get_config() const;
     void set_config(const config& cfg);
+
+    // Dynamic hostname client ID helper
+    static std::string generate_default_client_id();
 
     // Keypair generation helper
     static void generate_keypair(std::string& out_public_hex, std::string& out_private_hex);
@@ -257,8 +305,11 @@ public:
     void handle_incoming_frame(const mesh::mesh_frame& frame);
 
     // WebSocket connection event handlers
-    void on_ws_connected();
+    void on_ws_connected(struct mg_connection* c);
     void on_ws_disconnected(const std::string& reason = "Disconnected from rouen-service");
+
+    // Frame transmission helper
+    void send_frame_over_ws(mesh::frame_type type, uint16_t flags, uint32_t route_id, std::string_view payload);
 
     // Handshake signature helper
     [[nodiscard]] std::string generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms) const;
@@ -266,13 +317,19 @@ public:
     // Reset state for testing
     void clear();
 
+    // Event handlers for transparent proxy listeners and streams
+    void handle_route_listener_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_listener_ctx* ctx);
+    void handle_route_stream_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_stream_ctx* ctx);
+    void handle_inbound_target_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_stream_ctx* ctx);
+
 private:
     rouen_mesh_host() = default;
     ~rouen_mesh_host();
 
     void worker_loop();
+    void process_pending_route_requests(struct mg_mgr* mgr);
 
-    mutable std::mutex mutex_;
+    mutable std::recursive_mutex mutex_;
     config config_{};
     std::atomic<bool> initialized_{false};
     std::atomic<bool> running_{false};
@@ -286,12 +343,19 @@ private:
     std::atomic<uint32_t> ping_ms_{0};
     std::atomic<uint32_t> next_route_id_{1001};
 
+    struct mg_connection* active_ws_conn_{nullptr};
+
     std::unordered_map<std::string, mesh::mesh_service_info> local_services_;
     std::unordered_map<std::string, mesh::mesh_service_info> peer_services_;
     std::unordered_map<uint32_t, mesh::virtual_route_info> active_routes_;
     std::vector<mesh::mesh_client_dto> connected_clients_;
 
+    std::vector<mesh::route_open_request> pending_route_requests_;
+    std::unordered_map<uint32_t, std::shared_ptr<mesh::route_listener_ctx>> active_listeners_;
+    std::unordered_map<uint32_t, std::shared_ptr<mesh::route_stream_ctx>> active_streams_;
+
     std::unique_ptr<std::thread> worker_thread_;
 };
 
 } // namespace rouen::hosts
+
