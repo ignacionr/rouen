@@ -14,6 +14,7 @@
 
 #include "fonts.hpp"
 #include "IconsMaterialDesign.h"
+#include "helpers/config_service.hpp"
 #include "helpers/debug.hpp"
 #include "helpers/platform_utils.hpp"
 #include "registrar.hpp"
@@ -26,6 +27,7 @@ namespace rouen::fonts {
         };
 
         static font_state g_font_state;
+        static float g_font_scale_multiplier = 1.0f;
 
         struct FontPointers {
             ImFont* default_font = nullptr;
@@ -291,7 +293,17 @@ namespace rouen::fonts {
 
         io_fonts->Build();
 
-        float const font_scale = 1.0f / dpi_scale;
+        auto config = rouen::helpers::ConfigService::instance();
+        if (config) {
+            std::string const val_str = config->get_env("ROUEN_FONT_SCALE_MULTIPLIER");
+            if (!val_str.empty()) {
+                try {
+                    g_font_scale_multiplier = std::stof(val_str);
+                } catch (...) {}
+            }
+        }
+
+        float const font_scale = (1.0f / dpi_scale) * g_font_scale_multiplier;
         if (g_fonts.default_font) g_fonts.default_font->Scale = font_scale;
         if (g_fonts.mono_font) g_fonts.mono_font->Scale = font_scale;
         if (g_fonts.bold_font) g_fonts.bold_font->Scale = font_scale;
@@ -319,6 +331,20 @@ namespace rouen::fonts {
 
     void clear_font_rebuild_flag() {
         g_font_state.rebuild_requested = false;
+    }
+
+    void set_font_scale_multiplier(float scale_multiplier) {
+        g_font_scale_multiplier = scale_multiplier;
+        float const dpi_scale = g_font_state.last_dpi_scale > 0.0f ? g_font_state.last_dpi_scale : 1.0f;
+        float const font_scale = (1.0f / dpi_scale) * g_font_scale_multiplier;
+        if (g_fonts.default_font) g_fonts.default_font->Scale = font_scale;
+        if (g_fonts.mono_font) g_fonts.mono_font->Scale = font_scale;
+        if (g_fonts.bold_font) g_fonts.bold_font->Scale = font_scale;
+        if (g_fonts.italic_font) g_fonts.italic_font->Scale = font_scale;
+    }
+
+    float get_font_scale_multiplier() {
+        return g_font_scale_multiplier;
     }
 
     ImFont* get_font(FontType type) {

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "../../external/IconsMaterialDesign.h"
+#include "../../fonts.hpp"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/media_player_item.hpp"
@@ -105,6 +106,37 @@ public:
             ImGui::TextColored(colors[0], "Current Layout Metrics:");
             ImGui::BulletText("Active Width Factor: %.1fx", static_cast<double>(s_width_factor));
             ImGui::BulletText("Row Capacity: %.1fx OS Window Width", static_cast<double>(s_width_factor));
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::TextColored(colors[0], "%s Font Size Multiplier:", ICON_MD_TEXT_FIELDS);
+            ImGui::Spacing();
+            ImGui::TextWrapped("Choose global font size scale factor:");
+            ImGui::Spacing();
+
+            float font_scales[] = { 0.75f, 1.0f, 1.5f, 2.0f, 3.0f };
+            const char* font_labels[] = { "0.75x", "1.0x", "1.5x", "2.0x", "3.0x" };
+            float current_font_scale = rouen::fonts::get_font_scale_multiplier();
+
+            for (int i = 0; i < 5; ++i) {
+                if (i > 0) ImGui::SameLine();
+                bool is_selected = (std::abs(current_font_scale - font_scales[i]) < 0.01f);
+                if (is_selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, colors[0]);
+                }
+                if (ImGui::Button(font_labels[i], ImVec2(52, 0))) {
+                    rouen::fonts::set_font_scale_multiplier(font_scales[i]);
+                    auto config_svc = rouen::helpers::ConfigService::instance();
+                    if (config_svc) {
+                        config_svc->set_env_value("ROUEN_FONT_SCALE_MULTIPLIER", std::format("{:.2f}", font_scales[i]), true);
+                    }
+                }
+                if (is_selected) {
+                    ImGui::PopStyleColor();
+                }
+            }
 
             ImGui::Spacing();
             ImGui::Separator();

@@ -175,6 +175,24 @@ struct mesh_service_info {
     bool auth_required{false};
 };
 
+// Mesh Registry Set DTO
+struct registry_set_dto {
+    std::string key;
+    std::string value;
+    std::string client_id;
+    bool ephemeral{true};
+};
+
+// Mesh Registry Entry DTO
+struct registry_entry_dto {
+    std::string key;
+    std::string value;
+    std::string owner_client_id;
+    uint64_t created_at_sec{0};
+    uint64_t updated_at_sec{0};
+    bool is_ephemeral{true};
+};
+
 // Mesh Client Node Discovery DTO
 struct mesh_client_dto {
     std::string client_id;
@@ -246,7 +264,6 @@ struct mesh_host_config {
     std::string public_key;
     std::string private_key;
     uint16_t local_api_port{8081};
-    uint16_t local_llm_port{11434};
     std::chrono::seconds reconnect_interval{5};
     std::chrono::seconds ping_interval{15};
 };
@@ -296,7 +313,11 @@ public:
     // Service Discovery & Registration
     void register_service(const mesh::mesh_service_info& info);
     void unregister_service(const std::string& service_name);
+    void publish_local_services();
+    void save_custom_services();
+    void load_custom_services();
     void refresh_peer_services();
+    [[nodiscard]] std::vector<mesh::mesh_service_info> get_local_services() const;
     [[nodiscard]] std::vector<mesh::mesh_service_info> get_peer_services() const;
 
     bool send_pairing_request(const std::string& server_http_base, const std::string& pairing_code, std::string& out_error);

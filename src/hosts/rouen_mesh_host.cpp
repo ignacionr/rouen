@@ -118,7 +118,7 @@ bool rouen_mesh_host::initialize(const config& cfg) {
         generate_keypair(config_.public_key, config_.private_key);
     }
 
-    // Default register Rouen internal REST API & Local LLM
+    // Default register Rouen internal REST API
     mesh::mesh_service_info api_service{
         .client_id = config_.client_id,
         .service = "rest_api",
@@ -129,15 +129,8 @@ bool rouen_mesh_host::initialize(const config& cfg) {
     };
     local_services_["rest_api"] = api_service;
 
-    mesh::mesh_service_info llm_service{
-        .client_id = config_.client_id,
-        .service = "llm",
-        .protocol = "openai_compatible",
-        .target_port = config_.local_llm_port,
-        .capabilities = {"completions", "chat", "embeddings", "streaming"},
-        .auth_required = false
-    };
-    local_services_["llm"] = llm_service;
+    // Load persisted user-configured custom mesh services
+    load_custom_services();
 
     config_.is_paired = true;
     status_message_ = "Ready to connect.";
@@ -237,7 +230,8 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     connected_.store(true);
     status_message_ = "Connected to rouen-service";
 
-    // Request fresh online clients and peer services
+    // Publish own local services and request fresh online clients and peer services
+    publish_local_services();
     refresh_connected_clients();
     refresh_peer_services();
 }
@@ -561,20 +555,102 @@ uint32_t rouen_mesh_host::get_ping_ms() const noexcept {
 void rouen_mesh_host::register_service(const mesh::mesh_service_info& info) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_[info.service] = info;
+    save_custom_services();
 
-    std::string json;
-    if (glz::write_json(info, json) == glz::error_code::none) {
-        send_frame_over_ws(mesh::frame_type::REGISTRY_SET, mesh::frame_flags::JSON_PAYLOAD, 0, json);
+    std::string val_json;
+    if (glz::write_json(info, val_json) == glz::error_code::none) {
+        mesh::registry_set_dto req{
+            .key = std::format("services/{}/{}", config_.client_id, info.service),
+            .value = val_json,
+            .client_id = config_.client_id,
+            .ephemeral = true
+        };
+        std::string req_json;
+        if (glz::write_json(req, req_json) == glz::error_code::none) {
+            send_frame_over_ws(mesh::frame_type::REGISTRY_SET, mesh::frame_flags::JSON_PAYLOAD, 0, req_json);
+        }
     }
 }
 
 void rouen_mesh_host::unregister_service(const std::string& service_name) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_.erase(service_name);
+    save_custom_services();
+
+    mesh::registry_set_dto req{
+        .key = std::format("services/{}/{}", config_.client_id, service_name),
+        .value = "",
+        .client_id = config_.client_id,
+        .ephemeral = true
+    };
+    std::string req_json;
+    if (glz::write_json(req, req_json) == glz::error_code::none) {
+        send_frame_over_ws(mesh::frame_type::REGISTRY_SET, mesh::frame_flags::JSON_PAYLOAD, 0, req_json);
+    }
+}
+
+void rouen_mesh_host::save_custom_services() {
+    std::vector<mesh::mesh_service_info> custom_svcs;
+    for (const auto& [name, svc] : local_services_) {
+        if (name != "rest_api") {
+            custom_svcs.push_back(svc);
+        }
+    }
+    std::string json;
+    if (glz::write_json(custom_svcs, json) == glz::error_code::none) {
+        auto config_svc = helpers::ConfigService::instance();
+        if (config_svc) {
+            config_svc->set_env_value("ROUEN_CUSTOM_SERVICES", json, true);
+        }
+    }
+}
+
+void rouen_mesh_host::load_custom_services() {
+    auto config_svc = helpers::ConfigService::instance();
+    if (!config_svc) return;
+    std::string json = config_svc->get_env("ROUEN_CUSTOM_SERVICES");
+    if (json.empty()) return;
+
+    std::vector<mesh::mesh_service_info> custom_svcs;
+    if (glz::read_json(custom_svcs, json) == glz::error_code::none) {
+        for (auto& svc : custom_svcs) {
+            svc.client_id = config_.client_id;
+            local_services_[svc.service] = svc;
+        }
+    }
+}
+
+void rouen_mesh_host::publish_local_services() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    for (const auto& [_, svc] : local_services_) {
+        std::string val_json;
+        if (glz::write_json(svc, val_json) == glz::error_code::none) {
+            mesh::registry_set_dto req{
+                .key = std::format("services/{}/{}", config_.client_id, svc.service),
+                .value = val_json,
+                .client_id = config_.client_id,
+                .ephemeral = true
+            };
+            std::string req_json;
+            if (glz::write_json(req, req_json) == glz::error_code::none) {
+                send_frame_over_ws(mesh::frame_type::REGISTRY_SET, mesh::frame_flags::JSON_PAYLOAD, 0, req_json);
+            }
+        }
+    }
 }
 
 void rouen_mesh_host::refresh_peer_services() {
     send_frame_over_ws(mesh::frame_type::REGISTRY_LIST, mesh::frame_flags::JSON_PAYLOAD, 0, "services/");
+}
+
+std::vector<mesh::mesh_service_info> rouen_mesh_host::get_local_services() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::vector<mesh::mesh_service_info> result;
+    result.reserve(local_services_.size());
+    for (const auto& [_, svc] : local_services_) {
+        result.push_back(svc);
+    }
+    return result;
 }
 
 std::vector<mesh::mesh_service_info> rouen_mesh_host::get_peer_services() const {
@@ -674,11 +750,19 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         }
         case mesh::frame_type::REGISTRY_RESP: {
             if (!frame.payload.empty()) {
-                std::vector<mesh::mesh_service_info> services;
-                if (glz::read_json(services, frame.payload) == glz::error_code::none) {
+                std::vector<mesh::registry_entry_dto> entries;
+                if (glz::read_json(entries, frame.payload) == glz::error_code::none) {
                     peer_services_.clear();
-                    for (const auto& svc : services) {
-                        peer_services_[svc.client_id + ":" + svc.service] = svc;
+                    for (const auto& entry : entries) {
+                        if (!entry.value.empty()) {
+                            mesh::mesh_service_info svc;
+                            if (glz::read_json(svc, entry.value) == glz::error_code::none) {
+                                if (svc.client_id.empty()) {
+                                    svc.client_id = entry.owner_client_id;
+                                }
+                                peer_services_[svc.client_id + ":" + svc.service] = svc;
+                            }
+                        }
                     }
                 }
             }

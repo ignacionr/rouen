@@ -404,6 +404,10 @@ namespace rouen::helpers {
                        "Ed25519 private key for Rouen Mesh pairing");
         register_config("ROUEN_MESH_SERVER_URL", Category::GENERAL, false, false,
                        "Rouen Mesh WSS server URL", "wss://rouen.inz.dev/ws/connect");
+        register_config("ROUEN_FONT_SCALE_MULTIPLIER", Category::GENERAL, false, false,
+                       "UI font size scale multiplier (0.75, 1.0, 1.5, 2.0, 3.0)", "1.0");
+        register_config("ROUEN_CUSTOM_SERVICES", Category::GENERAL, false, false,
+                       "JSON list of custom exposed local mesh services");
 
         CONFIG_INFO("Default configurations registered");
     }

@@ -28,6 +28,10 @@ namespace rouen::fonts {
     // Clear the font rebuild flag (called after fonts are rebuilt)
     void clear_font_rebuild_flag();
 
+    // Font scale multiplier (0.75, 1.0, 1.5, 2.0, 3.0)
+    void set_font_scale_multiplier(float scale_multiplier);
+    float get_font_scale_multiplier();
+
     // Get a font by type
     ImFont* get_font(FontType type);
 

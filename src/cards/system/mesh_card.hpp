@@ -6,6 +6,10 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
@@ -13,6 +17,26 @@
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
+
+inline uint16_t find_available_local_port(uint16_t start_port = 20000) {
+    for (uint32_t port = start_port; port <= 65535; ++port) {
+        int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (sock < 0) {
+            continue;
+        }
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(static_cast<uint16_t>(port));
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+        if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+            ::close(sock);
+            return static_cast<uint16_t>(port);
+        }
+        ::close(sock);
+    }
+    return start_port;
+}
 
 struct mesh_card : public card {
     mesh_card() {
@@ -38,8 +62,8 @@ struct mesh_card : public card {
         return render_window([this]() {
             if (ImGui::BeginChild("##mesh_card_scroll_region", ImVec2(0, 0), false)) {
                 render_mesh_content();
-                ImGui::EndChild();
             }
+            ImGui::EndChild();
         });
     }
 
@@ -51,6 +75,9 @@ private:
     std::array<char, 256> server_url_buf_{};
     std::array<char, 128> client_id_buf_{};
     std::array<char, 32> pairing_code_buf_{};
+
+    // Tab selection override flag (-1 = none, 0 = Status, 1 = Nodes, 2 = Services)
+    int select_tab_next_frame_{-1};
 
     // Route open form buffers
     std::array<char, 128> route_target_client_buf_{};
@@ -92,6 +119,9 @@ private:
         bool is_paired = host.is_paired();
         std::string status_msg = host.get_status_message();
 
+        int select_tab = select_tab_next_frame_;
+        select_tab_next_frame_ = -1;
+
         // Header & Connection Summary Badge
         ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "ROUEN MESH NETWORK CONSOLE");
         ImGui::SameLine();
@@ -112,7 +142,8 @@ private:
 
         if (ImGui::BeginTabBar("##mesh_console_tabs")) {
             // TAB 1: Connection & Ed25519 Pairing
-            if (ImGui::BeginTabItem("Status & Pairing")) {
+            ImGuiTabItemFlags tab0_flags = (select_tab == 0) ? ImGuiTabItemFlags_SetSelected : 0;
+            if (ImGui::BeginTabItem("Status & Pairing", nullptr, tab0_flags)) {
                 ImGui::Spacing();
                 if (!status_msg.empty()) {
                     ImGui::TextDisabled("Status: %s", status_msg.c_str());
@@ -191,7 +222,8 @@ private:
             }
 
             // TAB 2: Nodes & Route Tunnels
-            if (ImGui::BeginTabItem("Nodes & Tunnels")) {
+            ImGuiTabItemFlags tab1_flags = (select_tab == 1) ? ImGuiTabItemFlags_SetSelected : 0;
+            if (ImGui::BeginTabItem("Nodes & Tunnels", nullptr, tab1_flags)) {
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Online Connected Mesh Nodes (CLIENT_LIST)");
                 if (ImGui::Button("Refresh Online Nodes")) {
@@ -308,37 +340,36 @@ private:
             }
 
             // TAB 3: Shared & Peer Services
-            if (ImGui::BeginTabItem("Services & Discovery")) {
+            ImGuiTabItemFlags tab2_flags = (select_tab == 2) ? ImGuiTabItemFlags_SetSelected : 0;
+            if (ImGui::BeginTabItem("Services & Discovery", nullptr, tab2_flags)) {
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Local Shared Services");
                 ImGui::TextWrapped("Services exposed from this computer to remote Rouen mesh nodes:");
 
-                if (ImGui::BeginTable("local_services_table", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                if (ImGui::BeginTable("local_services_table", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                     ImGui::TableSetupColumn("Service Name");
                     ImGui::TableSetupColumn("Protocol");
                     ImGui::TableSetupColumn("Target Port");
                     ImGui::TableSetupColumn("Status");
+                    ImGui::TableSetupColumn("Action");
                     ImGui::TableHeadersRow();
 
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("rest_api");
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("http");
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("8081");
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "Active");
-
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("llm");
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("openai_compatible");
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("11434");
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "Active");
+                    auto local_svcs = rouen::hosts::rouen_mesh_host::instance().get_local_services();
+                    for (const auto& svc : local_svcs) {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%s", svc.service.c_str());
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::Text("%s", svc.protocol.c_str());
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Text("%u", svc.target_port);
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "Active");
+                        ImGui::TableSetColumnIndex(4);
+                        if (ImGui::Button(std::format("Unlist##{}", svc.service).c_str())) {
+                            rouen::hosts::rouen_mesh_host::instance().unregister_service(svc.service);
+                        }
+                    }
 
                     ImGui::EndTable();
                 }
@@ -397,6 +428,19 @@ private:
                             ImGui::Text("%u", peer.target_port);
                             ImGui::TableSetColumnIndex(4);
 
+                            std::string prep_btn_label = "Prepare Route##" + peer.client_id + "_" + peer.service;
+                            if (ImGui::Button(prep_btn_label.c_str())) {
+                                route_target_client_buf_.fill('\0');
+                                std::snprintf(route_target_client_buf_.data(), route_target_client_buf_.size(), "%s", peer.client_id.c_str());
+                                route_target_port_ = peer.target_port;
+                                uint16_t free_port = find_available_local_port(20000);
+                                route_local_port_ = free_port;
+                                route_action_msg_ = "Pre-filled virtual route for '" + peer.service + "' (" + peer.client_id + ":" + std::to_string(peer.target_port) + ") on probed local port " + std::to_string(free_port) + ". Review and open route below.";
+                                route_action_success_ = true;
+                                select_tab_next_frame_ = 1;
+                            }
+
+                            ImGui::SameLine();
                             std::string proxy_btn_label = "Proxy " + peer.service + "##" + peer.client_id;
                             if (ImGui::Button(proxy_btn_label.c_str())) {
                                 std::string err;

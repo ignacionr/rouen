@@ -4006,7 +4006,7 @@ struct mesh_pair_request {
 
 struct mesh_open_route_request {
     std::string target_client_id;
-    uint16_t target_port{11434};
+    uint16_t target_port{8081};
     uint16_t local_port{0};
 };
 
