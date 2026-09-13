@@ -7,12 +7,41 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <sstream>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #include <glaze/glaze.hpp>
 #include <mongoose.h>
 #include "../helpers/config_service.hpp"
 #include "../helpers/fetch.hpp"
 
 namespace rouen::hosts {
+
+static bool is_local_port_available(uint16_t port) {
+    int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) return false;
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    int reuse = 1;
+    ::setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+    bool available = (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+    ::close(sock);
+    return available;
+}
+
+static uint16_t find_available_mesh_port(uint16_t start_port) {
+    for (uint32_t port = start_port; port <= 65535; ++port) {
+        if (is_local_port_available(static_cast<uint16_t>(port))) {
+            return static_cast<uint16_t>(port);
+        }
+    }
+    return start_port;
+}
 
 rouen_mesh_host& rouen_mesh_host::instance() {
     static rouen_mesh_host inst;
@@ -217,7 +246,7 @@ static void mg_route_stream_handler(struct mg_connection* c, int ev, void* ev_da
     host.handle_route_stream_event(c, ev, ev_data, ctx);
 }
 
-[[maybe_unused]] static void mg_inbound_target_handler(struct mg_connection* c, int ev, void* ev_data) {
+static void mg_inbound_target_handler(struct mg_connection* c, int ev, void* ev_data) {
     if (!c || !c->fn_data) return;
     auto* ctx = static_cast<mesh::route_stream_ctx*>(c->fn_data);
     auto& host = rouen_mesh_host::instance();
@@ -256,6 +285,7 @@ void rouen_mesh_host::handle_route_listener_event(struct mg_connection* c, int e
 
     if (ev == MG_EV_ACCEPT) {
         uint32_t stream_route_id = next_route_id_++;
+        std::cout << "[MeshTunnel] Listener accepted TCP connection on local port " << ctx->local_port << " -> stream route #" << stream_route_id << std::endl;
 
         auto stream = std::make_shared<mesh::route_stream_ctx>();
         stream->route_id = stream_route_id;
@@ -286,9 +316,14 @@ void rouen_mesh_host::handle_route_stream_event(struct mg_connection* c, int ev,
     (void)ev_data;
     if (!ctx) return;
 
+    if (c->is_draining && c->send.len == 0) {
+        c->is_closing = 1;
+    }
+
     if (ev == MG_EV_READ) {
         if (c->recv.buf && c->recv.len > 0) {
             std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
+            std::cout << "[MeshTunnel] Outbound client sent " << payload.size() << " bytes on route #" << ctx->route_id << std::endl;
             
             total_bytes_sent_ += payload.size();
             total_requests_++;
@@ -299,10 +334,14 @@ void rouen_mesh_host::handle_route_stream_event(struct mg_connection* c, int ev,
             mg_iobuf_del(&c->recv, 0, c->recv.len);
         }
     } else if (ev == MG_EV_CLOSE) {
+        std::cout << "[MeshTunnel] Outbound client closed connection on route #" << ctx->route_id << std::endl;
         send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
-            active_streams_.erase(ctx->route_id);
+            ctx->local_conn = nullptr;
+            if (ctx->target_conn == nullptr) {
+                active_streams_.erase(ctx->route_id);
+            }
         }
     }
 }
@@ -311,25 +350,35 @@ void rouen_mesh_host::handle_inbound_target_event(struct mg_connection* c, int e
     (void)ev_data;
     if (!ctx) return;
 
+    if (c->is_draining && c->send.len == 0) {
+        c->is_closing = 1;
+    }
+
     if (ev == MG_EV_CONNECT) {
+        std::cout << "[MeshTunnel] Inbound target TCP connected to target port " << ctx->target_port << " for route #" << ctx->route_id << std::endl;
         std::string ack = R"({"status":"ok","reason":"Connected to local service target"})";
         send_frame_over_ws(mesh::frame_type::ROUTE_OPEN_ACK, mesh::frame_flags::JSON_PAYLOAD, ctx->route_id, ack);
     } else if (ev == MG_EV_READ) {
         if (c->recv.buf && c->recv.len > 0) {
             std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
+            std::cout << "[MeshTunnel] Inbound target service read " << payload.size() << " bytes on route #" << ctx->route_id << std::endl;
 
             total_bytes_received_ += payload.size();
             ctx->bytes_received += payload.size();
 
-            send_frame_over_ws(mesh::frame_type::ROUTE_DATA, mesh::frame_flags::NONE, ctx->route_id, payload);
+            send_frame_over_ws(mesh::frame_type::ROUTE_DATA, mesh::frame_flags::INBOUND_DIR, ctx->route_id, payload);
 
             mg_iobuf_del(&c->recv, 0, c->recv.len);
         }
     } else if (ev == MG_EV_CLOSE) {
+        std::cout << "[MeshTunnel] Inbound target service closed connection on route #" << ctx->route_id << std::endl;
         send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
-            active_streams_.erase(ctx->route_id);
+            ctx->target_conn = nullptr;
+            if (ctx->local_conn == nullptr) {
+                active_streams_.erase(ctx->route_id);
+            }
         }
     }
 }
@@ -343,7 +392,7 @@ void rouen_mesh_host::process_pending_route_requests(struct mg_mgr* mgr) {
     }
 
     for (const auto& req : reqs) {
-        uint32_t route_id = next_route_id_++;
+        uint32_t route_id = req.route_id;
 
         auto listener_ctx = std::make_shared<mesh::route_listener_ctx>();
         listener_ctx->route_id = route_id;
@@ -354,26 +403,35 @@ void rouen_mesh_host::process_pending_route_requests(struct mg_mgr* mgr) {
         std::string listen_url = std::format("tcp://127.0.0.1:{}", req.local_port);
         struct mg_connection* listener = mg_listen(mgr, listen_url.c_str(), mg_route_listener_handler, listener_ctx.get());
 
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
         if (listener) {
             listener_ctx->listener_conn = listener;
-            std::lock_guard<std::recursive_mutex> lock(mutex_);
             active_listeners_[route_id] = listener_ctx;
 
-            std::string local_url = std::format("http://127.0.0.1:{}", req.local_port);
-            mesh::virtual_route_info route_info{
-                .route_id = route_id,
-                .source_client_id = config_.client_id,
-                .target_client_id = req.target_client_id,
-                .target_host = "127.0.0.1",
-                .target_port = req.target_port,
-                .local_port = req.local_port,
-                .bytes_transferred = 0,
-                .status = "listening",
-                .local_url = local_url
-            };
-            active_routes_[route_id] = route_info;
+            auto it = active_routes_.find(route_id);
+            if (it != active_routes_.end()) {
+                it->second.status = "listening";
+            } else {
+                std::string local_url = std::format("http://127.0.0.1:{}", req.local_port);
+                mesh::virtual_route_info route_info{
+                    .route_id = route_id,
+                    .source_client_id = config_.client_id,
+                    .target_client_id = req.target_client_id,
+                    .target_host = "127.0.0.1",
+                    .target_port = req.target_port,
+                    .local_port = req.local_port,
+                    .bytes_transferred = 0,
+                    .status = "listening",
+                    .local_url = local_url
+                };
+                active_routes_[route_id] = route_info;
+            }
             std::cout << "[Mesh] Transparent TCP listener active on " << listen_url << " -> " << req.target_client_id << ":" << req.target_port << std::endl;
         } else {
+            auto it = active_routes_.find(route_id);
+            if (it != active_routes_.end()) {
+                it->second.status = "failed (port in use)";
+            }
             std::cerr << "[Mesh] Failed to bind transparent TCP listener on " << listen_url << std::endl;
         }
     }
@@ -382,6 +440,11 @@ void rouen_mesh_host::process_pending_route_requests(struct mg_mgr* mgr) {
 void rouen_mesh_host::worker_loop() {
     struct mg_mgr mgr;
     mg_mgr_init(&mgr);
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        current_mgr_ = &mgr;
+    }
 
     struct mg_connection* active_conn = nullptr;
     auto last_connect_try = std::chrono::steady_clock::now() - std::chrono::seconds(10);
@@ -428,6 +491,10 @@ void rouen_mesh_host::worker_loop() {
 
     connected_.store(false);
     active_ws_conn_ = nullptr;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        current_mgr_ = nullptr;
+    }
     mg_mgr_free(&mgr);
 }
 
@@ -475,10 +542,16 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         }
     }
 
+    if (!is_local_port_available(local_port)) {
+        local_port = find_available_mesh_port(local_port);
+    }
+
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+
     uint32_t route_id = next_route_id_++;
 
     pending_route_requests_.push_back({
+        .route_id = route_id,
         .target_client_id = target_client_id,
         .target_port = target_port,
         .local_port = local_port
@@ -498,6 +571,10 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
     };
     active_routes_[route_id] = route_info;
 
+    if (!running_.load()) {
+        start();
+    }
+
     total_requests_++;
     return true;
 }
@@ -507,7 +584,13 @@ bool rouen_mesh_host::close_virtual_route(uint32_t route_id) {
     auto it = active_routes_.find(route_id);
     if (it != active_routes_.end()) {
         active_routes_.erase(it);
-        active_listeners_.erase(route_id);
+        auto listener_it = active_listeners_.find(route_id);
+        if (listener_it != active_listeners_.end()) {
+            if (listener_it->second && listener_it->second->listener_conn) {
+                listener_it->second->listener_conn->is_closing = 1;
+            }
+            active_listeners_.erase(listener_it);
+        }
         return true;
     }
     return false;
@@ -640,7 +723,7 @@ void rouen_mesh_host::publish_local_services() {
 }
 
 void rouen_mesh_host::refresh_peer_services() {
-    send_frame_over_ws(mesh::frame_type::REGISTRY_LIST, mesh::frame_flags::JSON_PAYLOAD, 0, "services/");
+    send_frame_over_ws(mesh::frame_type::REGISTRY_LIST, mesh::frame_flags::JSON_PAYLOAD, 0, "");
 }
 
 std::vector<mesh::mesh_service_info> rouen_mesh_host::get_local_services() const {
@@ -750,16 +833,40 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         }
         case mesh::frame_type::REGISTRY_RESP: {
             if (!frame.payload.empty()) {
+                std::cout << "[MeshRegistry] Received REGISTRY_RESP: " << frame.payload << std::endl;
                 std::vector<mesh::registry_entry_dto> entries;
                 if (glz::read_json(entries, frame.payload) == glz::error_code::none) {
                     peer_services_.clear();
                     for (const auto& entry : entries) {
                         if (!entry.value.empty()) {
                             mesh::mesh_service_info svc;
-                            if (glz::read_json(svc, entry.value) == glz::error_code::none) {
+                            if (glz::read_json(svc, entry.value) == glz::error_code::none && svc.target_port != 0) {
                                 if (svc.client_id.empty()) {
-                                    svc.client_id = entry.owner_client_id;
+                                    svc.client_id = entry.owner_client_id.empty() ? "server" : entry.owner_client_id;
                                 }
+                                if (svc.service.empty()) {
+                                    size_t slash = entry.key.rfind('/');
+                                    svc.service = (slash != std::string::npos) ? entry.key.substr(slash + 1) : entry.key;
+                                }
+                                peer_services_[svc.client_id + ":" + svc.service] = svc;
+                            } else {
+                                svc.client_id = entry.owner_client_id.empty() ? "server" : entry.owner_client_id;
+                                size_t slash = entry.key.rfind('/');
+                                svc.service = (slash != std::string::npos) ? entry.key.substr(slash + 1) : entry.key;
+                                svc.protocol = "http";
+
+                                size_t port_pos = entry.value.find("port\":");
+                                if (port_pos == std::string::npos) port_pos = entry.value.find("port :");
+                                if (port_pos != std::string::npos) {
+                                    size_t val_start = entry.value.find_first_of("0123456789", port_pos);
+                                    if (val_start != std::string::npos) {
+                                        try {
+                                            svc.target_port = static_cast<uint16_t>(std::stoi(entry.value.substr(val_start)));
+                                        } catch (...) {}
+                                    }
+                                }
+                                if (svc.target_port == 0) svc.target_port = 8080;
+
                                 peer_services_[svc.client_id + ":" + svc.service] = svc;
                             }
                         }
@@ -772,14 +879,18 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
             auto it = active_streams_.find(frame.route_id);
             if (it != active_streams_.end()) {
                 auto stream = it->second;
-                if (!stream->is_inbound && stream->local_conn) {
-                    mg_send(stream->local_conn, frame.payload.data(), frame.payload.size());
-                    total_bytes_received_ += frame.payload.size();
-                    stream->bytes_received += frame.payload.size();
-                } else if (stream->is_inbound && stream->target_conn) {
-                    mg_send(stream->target_conn, frame.payload.data(), frame.payload.size());
-                    total_bytes_sent_ += frame.payload.size();
-                    stream->bytes_sent += frame.payload.size();
+                if (frame.is_flag_set(mesh::frame_flags::INBOUND_DIR)) {
+                    if (stream->local_conn) {
+                        mg_send(stream->local_conn, frame.payload.data(), frame.payload.size());
+                        total_bytes_received_ += frame.payload.size();
+                        stream->bytes_received += frame.payload.size();
+                    }
+                } else {
+                    if (stream->target_conn) {
+                        mg_send(stream->target_conn, frame.payload.data(), frame.payload.size());
+                        total_bytes_sent_ += frame.payload.size();
+                        stream->bytes_sent += frame.payload.size();
+                    }
                 }
             }
             break;
@@ -794,19 +905,52 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                     } catch (...) {}
                 }
             }
-            auto stream = std::make_shared<mesh::route_stream_ctx>();
-            stream->route_id = frame.route_id;
-            stream->target_port = target_port;
-            stream->is_inbound = true;
-            active_streams_[frame.route_id] = stream;
+
+            std::shared_ptr<mesh::route_stream_ctx> stream;
+            auto it = active_streams_.find(frame.route_id);
+            if (it != active_streams_.end()) {
+                stream = it->second;
+                stream->target_port = target_port;
+            } else {
+                stream = std::make_shared<mesh::route_stream_ctx>();
+                stream->route_id = frame.route_id;
+                stream->target_port = target_port;
+                stream->is_inbound = true;
+                active_streams_[frame.route_id] = stream;
+            }
+
+            if (current_mgr_ && !stream->target_conn) {
+                std::string target_url = std::format("tcp://127.0.0.1:{}", target_port);
+                struct mg_connection* target_conn = mg_connect(current_mgr_, target_url.c_str(), mg_inbound_target_handler, stream.get());
+                if (target_conn) {
+                    stream->target_conn = target_conn;
+                    std::cout << "[Mesh] Inbound route #" << frame.route_id << " connected to local target " << target_url << std::endl;
+                } else {
+                    std::cerr << "[Mesh] Failed to connect inbound route #" << frame.route_id << " to " << target_url << std::endl;
+                    std::string fail_ack = R"({"status":"error","reason":"Failed to connect to local target"})";
+                    send_frame_over_ws(mesh::frame_type::ROUTE_OPEN_ACK, mesh::frame_flags::JSON_PAYLOAD, frame.route_id, fail_ack);
+                }
+            }
             break;
         }
         case mesh::frame_type::ROUTE_CLOSE: {
             auto it = active_streams_.find(frame.route_id);
             if (it != active_streams_.end()) {
-                if (it->second->local_conn) it->second->local_conn->is_closing = 1;
-                if (it->second->target_conn) it->second->target_conn->is_closing = 1;
-                active_streams_.erase(it);
+                auto stream = it->second;
+                if (stream->local_conn) {
+                    if (stream->local_conn->send.len == 0) {
+                        stream->local_conn->is_closing = 1;
+                    } else {
+                        stream->local_conn->is_draining = 1;
+                    }
+                }
+                if (stream->target_conn) {
+                    if (stream->target_conn->send.len == 0) {
+                        stream->target_conn->is_closing = 1;
+                    } else {
+                        stream->target_conn->is_draining = 1;
+                    }
+                }
             }
             break;
         }

@@ -239,11 +239,7 @@ bool api_server_host::start(const std::string& address) {
         return false;
     }
 
-    // Bind local reverse proxy listener on port 18081 (remote Rouen API) and port 18098 (remote Local LLM)
-    (void)mg_http_listen(mgr_.get(), "http://127.0.0.1:18081", event_handler, this);
-    (void)mg_http_listen(mgr_.get(), "http://0.0.0.0:18081", event_handler, this);
-    (void)mg_http_listen(mgr_.get(), "http://127.0.0.1:18098", event_handler, this);
-    (void)mg_http_listen(mgr_.get(), "http://0.0.0.0:18098", event_handler, this);
+
 
     // Start the server thread
     running_ = true;
@@ -812,7 +808,7 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             response = R"({"error":"Method not allowed"})";
         }
     } else if (mg_match(hm->uri, mg_str("/api/mesh/services"), nullptr)) {
-        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_mesh_services(c, hm);
         } else {
             status_code = 405;
@@ -2370,7 +2366,8 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     {"name": "Metrics & Diagnostics", "description": "Card render performance metrics and RSS diagnostics"},
     {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"},
     {"name": "Process Orchestration & UI Automation", "description": "Process definitions, process lifecycle management, UI element inspection, and UI control manipulation for orchestrated applications"},
-    {"name": "Telegram Bot Host", "description": "Telegram bot host status, active chat sessions, auto-routing rules, and message dispatch"}
+    {"name": "Telegram Bot Host", "description": "Telegram bot host status, active chat sessions, auto-routing rules, and message dispatch"},
+    {"name": "Mesh Networking", "description": "Mesh network status, WebSocket relay connection, pairing, virtual route tunneling, peer client discovery, and local service registration"}
   ],
   "paths": {
     "/api/health": {
@@ -3829,6 +3826,208 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
           }
         }
       }
+    },
+    "/api/mesh/status": {
+      "get": {
+        "tags": ["Mesh Networking"],
+        "summary": "Get mesh network host status and pairing info",
+        "operationId": "getMeshStatus",
+        "responses": {
+          "200": {
+            "description": "Mesh host status and configuration"
+          }
+        }
+      }
+    },
+    "/api/mesh/connect": {
+      "post": {
+        "tags": ["Mesh Networking"],
+        "summary": "Connect to mesh relay server",
+        "operationId": "connectMesh",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "server_url": {"type": "string", "example": "wss://rouen.inz.dev/mesh"},
+                  "client_id": {"type": "string", "example": "rouen-macbook"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connection initiated"
+          }
+        }
+      }
+    },
+    "/api/mesh/disconnect": {
+      "post": {
+        "tags": ["Mesh Networking"],
+        "summary": "Disconnect from mesh relay server",
+        "operationId": "disconnectMesh",
+        "responses": {
+          "200": {
+            "description": "Disconnected"
+          }
+        }
+      }
+    },
+    "/api/mesh/pair": {
+      "post": {
+        "tags": ["Mesh Networking"],
+        "summary": "Pair client using one-time pairing code",
+        "operationId": "pairMesh",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pairing_code"],
+                "properties": {
+                  "pairing_code": {"type": "string", "example": "123456"},
+                  "server_url": {"type": "string", "example": "https://rouen.inz.dev"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pairing result"
+          }
+        }
+      }
+    },
+    "/api/mesh/routes": {
+      "get": {
+        "tags": ["Mesh Networking"],
+        "summary": "List active mesh virtual routes",
+        "operationId": "getMeshRoutes",
+        "responses": {
+          "200": {
+            "description": "List of open virtual routes"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Mesh Networking"],
+        "summary": "Open a virtual route / transparent proxy listener",
+        "operationId": "openMeshRoute",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["target_client_id", "target_port"],
+                "properties": {
+                  "target_client_id": {"type": "string", "example": "rouen-macbook"},
+                  "target_port": {"type": "integer", "example": 17017},
+                  "local_port": {"type": "integer", "example": 19017}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Virtual route created"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Mesh Networking"],
+        "summary": "Close a virtual route",
+        "operationId": "closeMeshRoute",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "route_id": {"type": "integer", "example": 1001},
+                  "local_port": {"type": "integer", "example": 19017}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Route closed"
+          }
+        }
+      }
+    },
+    "/api/mesh/clients": {
+      "get": {
+        "tags": ["Mesh Networking"],
+        "summary": "List connected peer clients on mesh network",
+        "operationId": "getMeshClients",
+        "responses": {
+          "200": {
+            "description": "Array of registered mesh client IDs"
+          }
+        }
+      }
+    },
+    "/api/mesh/services": {
+      "get": {
+        "tags": ["Mesh Networking"],
+        "summary": "List registered peer services on mesh network",
+        "operationId": "getMeshServices",
+        "responses": {
+          "200": {
+            "description": "List of active peer services"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Mesh Networking"],
+        "summary": "Register a local service with the mesh network",
+        "operationId": "registerMeshService",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["service", "target_port"],
+                "properties": {
+                  "service": {"type": "string", "example": "qotd"},
+                  "protocol": {"type": "string", "example": "http"},
+                  "target_port": {"type": "integer", "example": 17017},
+                  "description": {"type": "string", "example": "Quote of the day service"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Local service registered"
+          }
+        }
+      }
+    },
+    "/api/mesh/proxy": {
+      "get": {
+        "tags": ["Mesh Networking"],
+        "summary": "Get transparent TCP mesh proxy listeners status",
+        "operationId": "getMeshProxyStatus",
+        "responses": {
+          "200": {
+            "description": "Proxy status information"
+          }
+        }
+      }
     }
   }
 })json";
@@ -4136,13 +4335,29 @@ std::string api_server_host::handle_mesh_clients(struct mg_connection* /*c*/, st
     return json;
 }
 
-std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     auto& host = rouen_mesh_host::instance();
-    host.refresh_peer_services();
-    auto services = host.get_peer_services();
-    std::string json;
-    (void)glz::write_json(services, json);
-    return json;
+    if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        mesh::mesh_service_info info{};
+        if (glz::read_json(info, body) == glz::error_code::none && !info.service.empty()) {
+            if (info.client_id.empty()) {
+                info.client_id = host.get_config().client_id;
+            }
+            if (info.protocol.empty()) {
+                info.protocol = "http";
+            }
+            host.register_service(info);
+            return std::format(R"({{"success":true,"message":"Service '{}' registered","service":"{}"}})", info.service, info.service);
+        }
+        return R"({"success":false,"error":"Invalid JSON service info payload"})";
+    } else {
+        host.refresh_peer_services();
+        auto services = host.get_peer_services();
+        std::string json;
+        (void)glz::write_json(services, json);
+        return json;
+    }
 }
 
 std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {

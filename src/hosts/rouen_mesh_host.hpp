@@ -56,6 +56,7 @@ namespace frame_flags {
     constexpr uint16_t COMPRESSED   = 0x0002;
     constexpr uint16_t JSON_PAYLOAD = 0x0004;
     constexpr uint16_t STREAM_END   = 0x0008;
+    constexpr uint16_t INBOUND_DIR  = 0x0010;
 }
 
 // 3. Binary 12-Byte Packed Frame Header
@@ -226,6 +227,7 @@ struct route_open_ack_payload {
 };
 
 struct route_open_request {
+    uint32_t route_id{0};
     std::string target_client_id;
     uint16_t target_port{0};
     uint16_t local_port{0};
@@ -364,6 +366,7 @@ private:
     std::atomic<uint32_t> ping_ms_{0};
     std::atomic<uint32_t> next_route_id_{1001};
 
+    struct mg_mgr* current_mgr_{nullptr};
     struct mg_connection* active_ws_conn_{nullptr};
 
     std::unordered_map<std::string, mesh::mesh_service_info> local_services_;
