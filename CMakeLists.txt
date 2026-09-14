@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.30)
 # Define project version
 set(ROUEN_VERSION_MAJOR 1)
-set(ROUEN_VERSION_MINOR 3)
-set(ROUEN_VERSION_PATCH 8)
+set(ROUEN_VERSION_MINOR 4)
+set(ROUEN_VERSION_PATCH 2)
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
 
 if(APPLE AND UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clang-scan-deps-nix")
@@ -110,8 +110,10 @@ if(NOT COMPILE_GIT_HASH)
     set(COMPILE_GIT_HASH "unknown")
   endif()
 endif()
+set(ROUEN_VERSION "${ROUEN_VERSION_MAJOR}.${ROUEN_VERSION_MINOR}.${ROUEN_VERSION_PATCH}")
+add_compile_definitions(ROUEN_VERSION="${ROUEN_VERSION}")
 add_compile_definitions(COMPILE_GIT_HASH="${COMPILE_GIT_HASH}")
-message(STATUS "Build git commit hash: ${COMPILE_GIT_HASH}")
+message(STATUS "Build version: ${ROUEN_VERSION} (git commit: ${COMPILE_GIT_HASH})")
 
 # Enable ccache if available to improve rebuild times
 find_program(CCACHE_PROGRAM ccache)
@@ -597,9 +599,14 @@ if(IMGUI_INCLUDE_DIR)
 endif()
 
 # Add the executable
-add_executable(${PROJECT_NAME} 
-  src/rouen.cpp
-  ${MAC_SOURCES}
+add_executable(${PROJECT_NAME} src/rouen.cpp)
+
+if(APPLE AND MAC_SOURCES)
+  target_sources(${PROJECT_NAME} PRIVATE ${MAC_SOURCES})
+endif()
+
+target_sources(${PROJECT_NAME}
+  PRIVATE
   src/main_wnd_core.cpp
   src/main_wnd_init.cpp
   src/main_wnd_loop.cpp

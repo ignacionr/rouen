@@ -9,6 +9,16 @@
 #include <cstdlib>
 #include "../src/helpers/fetch.hpp"
 
+#ifdef _WIN32
+static inline int setenv(const char *name, const char *value, int overwrite) {
+    if (!overwrite && std::getenv(name) != nullptr) return 0;
+    return _putenv_s(name, value);
+}
+static inline int unsetenv(const char *name) {
+    return _putenv_s(name, "");
+}
+#endif
+
 // Test fixture for SSL configuration tests
 class FetchSSLTest : public ::testing::Test {
 protected:
@@ -174,4 +184,14 @@ TEST_F(FetchSSLTest, ResponseStateInitAndReset) {
     EXPECT_FALSE(client.last_response_header("content-type").has_value());
     EXPECT_EQ(client.last_effective_url(), "");
 }
+
+// Test fetching GitHub API HTTPS endpoint (used by About card)
+TEST_F(FetchSSLTest, FetchGitHubBranchAPI) {
+    http::fetch client;
+    std::string response = client("https://api.github.com/repos/ignacionr/rouen/branches/main");
+    EXPECT_FALSE(response.empty());
+    EXPECT_NE(response.find("commit"), std::string::npos);
+    EXPECT_EQ(client.last_http_code(), 200);
+}
+
 

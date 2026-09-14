@@ -698,7 +698,7 @@ namespace rouen::cards
                             const float add_item_section_height =
                                 ImGui::GetFrameHeightWithSpacing() * 2.0f + 42.0f;
                             const float items_child_height =
-                                std::max(120.0f, ImGui::GetContentRegionAvail().y - add_item_section_height);
+                                (std::max)(120.0f, ImGui::GetContentRegionAvail().y - add_item_section_height);
                             const bool feed_items_scroll_open = ImGui::BeginChild(
                                 "FeedItemsScroll",
                                 ImVec2(0, items_child_height),
@@ -706,7 +706,7 @@ namespace rouen::cards
                                 ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened
                             );
                             if (feed_items_scroll_open) {
-                                size_t count = std::min(static_cast<size_t>(items_limit), filtered_items.size());
+                                size_t count = (std::min)(static_cast<size_t>(items_limit), filtered_items.size());
                                 for (size_t i = 0; i < count; ++i) {
                                     auto& item = *filtered_items[i];
                                     ImGui::PushID(std::format("{}##{}", item.link, i).c_str());
@@ -860,7 +860,7 @@ namespace rouen::cards
                                                 
                                                 ImVec2 thumb_size(120.0f * dpi_scale, 80.0f * dpi_scale);
                                                 ImVec2 thumb_pos = ImGui::GetCursorScreenPos();
-                                                const float row_bottom = std::max(ImGui::GetCursorScreenPos().y, thumb_pos.y + thumb_size.y);
+                                                const float row_bottom = (std::max)(ImGui::GetCursorScreenPos().y, thumb_pos.y + thumb_size.y);
                                                 const bool row_hovered = ImGui::IsMouseHoveringRect(
                                                     row_start,
                                                     ImVec2(row_start.x + avail_width, row_bottom),
@@ -926,7 +926,7 @@ namespace rouen::cards
                                 float max_scroll_y = ImGui::GetScrollMaxY();
                                 if (max_scroll_y > 0.0f && scroll_y >= max_scroll_y - 50.0f) {
                                     if (items_limit < static_cast<int>(filtered_items.size())) {
-                                        items_limit = std::min(items_limit + 20, static_cast<int>(filtered_items.size()));
+                                        items_limit = (std::min)(items_limit + 20, static_cast<int>(filtered_items.size()));
                                     }
                                 }
                                 
@@ -1182,7 +1182,7 @@ namespace rouen::cards
                             std::lock_guard<std::mutex> lock(items_mutex_);
                             items_copy = items;
                         }
-                        for (size_t i = 0; i < std::min(static_cast<size_t>(5), items_copy.size()); ++i) {
+                        for (size_t i = 0; i < (std::min)(static_cast<size_t>(5), items_copy.size()); ++i) {
                             std::string desc = ::helpers::StringHelper::strip_html_tags(items_copy[i].description);
                             if (desc.length() > 150) {
                                 desc = desc.substr(0, 150) + "...";
@@ -1294,7 +1294,7 @@ namespace rouen::cards
                 ImGui::CalcTextSize("Add Item").x + ImGui::GetStyle().FramePadding.x * 2.0f;
             const float add_input_width =
                 ImGui::GetContentRegionAvail().x - add_button_width - ImGui::GetStyle().ItemSpacing.x;
-            ImGui::PushItemWidth(std::max(140.0f, add_input_width));
+            ImGui::PushItemWidth((std::max)(140.0f, add_input_width));
             const bool submit_from_enter = ImGui::InputText(
                 "##manual_item_url",
                 manual_item_url_buffer,

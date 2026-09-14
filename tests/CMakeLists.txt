@@ -13,6 +13,14 @@ if(APPLE)
   add_link_options(-stdlib=libc++)
 endif()
 
+if(WIN32)
+  add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
+endif()
+
+if(MSVC)
+  add_compile_options(/utf-8 /bigobj)
+endif()
+
 # Enable testing
 enable_testing()
 
@@ -20,17 +28,62 @@ enable_testing()
 find_package(GTest CONFIG REQUIRED)
 
 # Find required dependencies for tests
-find_package(CURL REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(SQLite3 REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SDL3 REQUIRED sdl3)
-pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
-pkg_check_modules(AVFORMAT REQUIRED libavformat)
-pkg_check_modules(AVCODEC REQUIRED libavcodec)
-pkg_check_modules(AVUTIL REQUIRED libavutil)
-pkg_check_modules(SWSCALE REQUIRED libswscale)
-pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
+if(DEFINED CMAKE_TOOLCHAIN_FILE AND CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
+  message(STATUS "Tests: Using vcpkg dependencies")
+  find_package(CURL CONFIG REQUIRED)
+  find_package(OpenSSL REQUIRED)
+  find_package(unofficial-sqlite3 CONFIG REQUIRED)
+  if(TARGET unofficial::sqlite3::sqlite3 AND NOT TARGET SQLite::SQLite3)
+    add_library(SQLite::SQLite3 ALIAS unofficial::sqlite3::sqlite3)
+  endif()
+  find_package(SDL3 CONFIG REQUIRED)
+  find_package(SDL3_image CONFIG REQUIRED)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+  pkg_check_modules(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
+  pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+  pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
+  pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+  set(AVFORMAT_LIBRARIES PkgConfig::AVFORMAT)
+  set(AVCODEC_LIBRARIES PkgConfig::AVCODEC)
+  set(AVUTIL_LIBRARIES PkgConfig::AVUTIL)
+  set(SWSCALE_LIBRARIES PkgConfig::SWSCALE)
+  set(SWRESAMPLE_LIBRARIES PkgConfig::SWRESAMPLE)
+
+  if(TARGET SDL3::SDL3)
+    set(SDL3_LIBRARIES SDL3::SDL3)
+  elseif(TARGET SDL3::SDL3-static)
+    set(SDL3_LIBRARIES SDL3::SDL3-static)
+  endif()
+
+  if(TARGET SDL3_image::SDL3_image)
+    set(SDL3_IMAGE_LIBRARIES SDL3_image::SDL3_image)
+  elseif(TARGET SDL3_image::SDL3_image-shared)
+    set(SDL3_IMAGE_LIBRARIES SDL3_image::SDL3_image-shared)
+  elseif(TARGET SDL3_image::SDL3_image-static)
+    set(SDL3_IMAGE_LIBRARIES SDL3_image::SDL3_image-static)
+  endif()
+else()
+  message(STATUS "Tests: Using system dependencies")
+  find_package(CURL REQUIRED)
+  find_package(OpenSSL REQUIRED)
+  find_package(SQLite3 REQUIRED)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(SDL3 REQUIRED sdl3)
+  pkg_check_modules(SDL3_IMAGE REQUIRED sdl3-image)
+  pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
+  pkg_check_modules(AVCODEC REQUIRED IMPORTED_TARGET libavcodec)
+  pkg_check_modules(AVUTIL REQUIRED IMPORTED_TARGET libavutil)
+  pkg_check_modules(SWSCALE REQUIRED IMPORTED_TARGET libswscale)
+  pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+  if(TARGET PkgConfig::AVFORMAT)
+    set(AVFORMAT_LIBRARIES PkgConfig::AVFORMAT)
+    set(AVCODEC_LIBRARIES PkgConfig::AVCODEC)
+    set(AVUTIL_LIBRARIES PkgConfig::AVUTIL)
+    set(SWSCALE_LIBRARIES PkgConfig::SWSCALE)
+    set(SWRESAMPLE_LIBRARIES PkgConfig::SWRESAMPLE)
+  endif()
+endif()
 
 # Find TinyXML2 for RSS parsing tests
 if(NOT TARGET tinyxml2::tinyxml2 AND NOT TARGET tinyxml2)
@@ -316,7 +369,7 @@ if(APPLE)
     target_sources(test_adaptive_process_card PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
     target_link_libraries(test_adaptive_process_card PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
 endif()
-target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
+target_link_libraries(test_adaptive_process_card PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_adaptive_process_card PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -384,7 +437,7 @@ if(APPLE)
     target_sources(test_card_adaptive_interface PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
     target_link_libraries(test_card_adaptive_interface PRIVATE "-framework AVFoundation" "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa" "-framework EventKit")
 endif()
-target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs imgui_backends $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
+target_link_libraries(test_card_adaptive_interface PRIVATE SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} CURL::libcurl OpenSSL::Crypto OpenSSL::SSL ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES} tinyxml2::tinyxml2 PDFWriter imcolortextedit quickjs $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> $<IF:$<TARGET_EXISTS:pdfium::pdfium>,pdfium::pdfium,$<IF:$<TARGET_EXISTS:pdfium>,pdfium,>>)
 if(NOT MSVC)
     target_compile_options(test_card_adaptive_interface PRIVATE -Wno-error=sign-conversion -Wno-sign-conversion)
 endif()
@@ -590,7 +643,7 @@ if(APPLE)
     target_sources(test_deck_scrolling PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
     target_link_libraries(test_deck_scrolling PRIVATE "-framework Cocoa" "-framework Foundation" "-framework AVFoundation" "-framework ApplicationServices" "-framework EventKit")
 endif()
-target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} OpenSSL::Crypto OpenSSL::SSL imgui::imgui imgui_backends CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
+target_link_libraries(test_deck_scrolling PRIVATE quickjs pdfium PDFWriter tinyxml2::tinyxml2 SQLite::SQLite3 ${SDL3_LIBRARIES} ${SDL3_IMAGE_LIBRARIES} OpenSSL::Crypto OpenSSL::SSL imgui::imgui $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,> CURL::libcurl ${AVFORMAT_LIBRARIES} ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${SWSCALE_LIBRARIES} ${SWRESAMPLE_LIBRARIES})
 
 # Camera Device List Test
 add_gtest_executable(test_camera_device_list test_camera_device_list.cpp)
@@ -713,7 +766,7 @@ target_link_libraries(test_mcp
     OpenSSL::Crypto
     OpenSSL::SSL
     imgui::imgui
-    imgui_backends
+    $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,>
     imcolortextedit
     quickjs
     PDFWriter
@@ -1031,7 +1084,7 @@ target_link_libraries(test_quickjs PRIVATE
     ${SDL3_LIBRARIES}
     ${SDL3_IMAGE_LIBRARIES}
     imgui::imgui
-    imgui_backends
+    $<IF:$<TARGET_EXISTS:imgui_backends>,imgui_backends,>
     ${AVFORMAT_LIBRARIES}
     ${AVCODEC_LIBRARIES}
     ${AVUTIL_LIBRARIES}

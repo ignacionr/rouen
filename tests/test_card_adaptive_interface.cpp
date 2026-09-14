@@ -16,6 +16,7 @@
 #include "../src/cards/information/rss_feed.hpp"
 #include "../src/cards/information/rss_item.hpp"
 #include "../src/cards/information/ai_chat.hpp"
+#include "../src/cards/system/about.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
 #ifdef __clang__
@@ -147,6 +148,15 @@ TEST(CardAdaptiveInterface, AIChatCard) {
     chat_json = chat.get_adaptive_card_json();
     EXPECT_EQ(chat_json.find("Hello from unit test"), std::string::npos);
 }
+
+TEST(CardAdaptiveInterface, AboutCard) {
+    rouen::cards::about_card about{nullptr};
+    std::string about_json = about.get_adaptive_card_json();
+    EXPECT_NE(about_json.find("Rouen Dashboard Application"), std::string::npos);
+    EXPECT_NE(about_json.find("Version Information"), std::string::npos);
+    EXPECT_NE(about_json.find("SemVer:"), std::string::npos);
+}
+
 
 TEST(CardAdaptiveInterface, HttpApiAdaptiveAndActionEndpoints) {
     auto alarm_card = std::make_shared<rouen::cards::alarm>();

@@ -19,6 +19,10 @@
 
 #include "mongoose.h"
 
+#ifdef _MSC_VER
+#pragma warning(disable: 4013 4310)
+#endif
+
 #ifdef MG_ENABLE_LINES
 #line 1 "src/base64.c"
 #endif
@@ -2143,7 +2147,9 @@ static size_t p_write(void *fp, const void *buf, size_t len) {
 }
 
 static size_t p_seek(void *fp, size_t offset) {
-#if (defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64) ||  \
+#if defined(_MSC_VER)
+  if (_fseeki64((FILE *) fp, (__int64) offset, SEEK_SET) != 0) (void) 0;
+#elif (defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64) ||  \
     (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) || \
     (defined(_XOPEN_SOURCE) && _XOPEN_SOURCE >= 600)
   if (fseeko((FILE *) fp, (off_t) offset, SEEK_SET) != 0) (void) 0;

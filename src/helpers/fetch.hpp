@@ -906,30 +906,35 @@ private:
         // Configure hostname verification
         curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, ssl_options_.verify_host ? 2L : 0L);
         
-        // Configure certificate revocation checking
+        // Configure certificate revocation checking and native CA store
+        long ssl_options_bitmask = 0;
         if (!ssl_options_.check_revocation) {
-            // Disable certificate revocation checks (CRL/OCSP)
-            // This helps in corporate environments where revocation servers are not accessible
+            #ifdef CURLSSLOPT_NO_REVOKE
+            ssl_options_bitmask |= CURLSSLOPT_NO_REVOKE;
+            #endif
+        }
+        #ifdef CURLSSLOPT_NATIVE_CA
+        // Enable Windows native OS CA certificate store integration if available
+        ssl_options_bitmask |= CURLSSLOPT_NATIVE_CA;
+        #endif
+        if (ssl_options_bitmask != 0) {
             #ifdef CURLOPT_SSL_OPTIONS
-            curl_easy_setopt(handle, CURLOPT_SSL_OPTIONS, CURLSSLOPT_NO_REVOKE);
+            curl_easy_setopt(handle, CURLOPT_SSL_OPTIONS, ssl_options_bitmask);
             #endif
         }
         
         // Additional SSL options for better compatibility
-        // Use system's CA bundle for certificate verification
+        // Use system's CA bundle for certificate verification if specified in environment
         const char* env_ssl_file = std::getenv("SSL_CERT_FILE");
-        if (env_ssl_file) {
+        if (env_ssl_file && *env_ssl_file) {
             curl_easy_setopt(handle, CURLOPT_CAINFO, env_ssl_file);
         } else {
 #ifdef __APPLE__
             if (std::filesystem::exists("/etc/ssl/cert.pem")) {
                 curl_easy_setopt(handle, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
-            } else {
-                curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);
             }
-#else
-            curl_easy_setopt(handle, CURLOPT_CAINFO, nullptr);
 #endif
+            // Do not explicitly set CURLOPT_CAINFO to nullptr, as that clears libcurl's built-in default CA bundle path
         }
         curl_easy_setopt(handle, CURLOPT_CAPATH, nullptr);
         
@@ -942,9 +947,21 @@ private:
         curl_easy_setopt(handle, CURLOPT_SSL_ENABLE_ALPN, 1L);
         #endif
         
-        // Set cipher list for broad compatibility while maintaining security
-        // Use the cipher list from SSL options which varies based on the SSL mode
-        curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, ssl_options_.cipher_list.c_str());
+        // Query libcurl version info to check SSL backend
+        curl_version_info_data* vinfo = curl_version_info(CURLVERSION_NOW);
+        bool is_schannel = false;
+        if (vinfo && vinfo->ssl_version) {
+            std::string ssl_ver = vinfo->ssl_version;
+            for (auto& c : ssl_ver) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (ssl_ver.find("schannel") != std::string::npos || ssl_ver.find("winssl") != std::string::npos) {
+                is_schannel = true;
+            }
+        }
+        
+        // Set cipher list ONLY if backend is NOT Schannel/WinSSL (Schannel does not support OpenSSL cipher list strings)
+        if (!is_schannel && !ssl_options_.cipher_list.empty()) {
+            curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, ssl_options_.cipher_list.c_str());
+        }
         
         // Additional options for corporate environments
         curl_easy_setopt(handle, CURLOPT_SSL_SESSIONID_CACHE, 1L);  // Enable SSL session reuse

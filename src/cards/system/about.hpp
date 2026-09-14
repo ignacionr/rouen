@@ -19,9 +19,14 @@
 #define COMPILE_GIT_HASH "unknown"
 #endif
 
+#ifndef ROUEN_VERSION
+#define ROUEN_VERSION "1.4.2"
+#endif
+
 namespace rouen::cards {
 
 struct about_card : public card {
+    std::string semver_version = ROUEN_VERSION;
     std::string local_hash = COMPILE_GIT_HASH;
     std::string remote_hash = "Checking...";
     std::string error_message = "";
@@ -196,6 +201,7 @@ struct about_card : public card {
         {{
           "type": "FactSet",
           "facts": [
+            {{"title": "SemVer:", "value": "v{}"}},
             {{"title": "Local Commit:", "value": "{}"}},
             {{"title": "Remote Commit:", "value": "{}"}},
             {{"title": "Status:", "value": "{}"}}
@@ -229,7 +235,7 @@ struct about_card : public card {
       "verb": "check_updates"
     }}
   ]
-}})", local_short, remote_short, status_str, gpu_driver, shader_formats);
+}})", semver_version, local_short, remote_short, status_str, gpu_driver, shader_formats);
     }
 
     void handle_action(std::string_view action_json) override {
@@ -260,7 +266,7 @@ struct about_card : public card {
             }
             
             ui.begin_group();
-            ui.text("Rouen Dashboard Application");
+            ui.text(std::format("Rouen Dashboard Application v{}", semver_version));
             ui.text("A productivity tool built with C++, SDL3, and ImGui.");
             ui.end_group();
             
@@ -268,6 +274,7 @@ struct about_card : public card {
             
             ui.text_colored(colors[0], "Version Information");
             ui.indent(10.0f);
+            ui.text(std::format("Version (SemVer): v{}", semver_version));
             ui.text(std::format("Local Commit Hash: {}", local_hash));
             ui.same_line();
             if (ui.button(ICON_MD_CONTENT_COPY " Copy")) {
