@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../helpers/glass_top_bar.hpp"
 #include "../../helpers/tag_manager.hpp"
 #include "../../external/IconsMaterialDesign.h"
 #include "../../helpers/debug.hpp"
@@ -486,8 +487,13 @@ bool rss::render() {
         }
 
 
-        // Smart Lists section
-        {
+        static bool settings_open = false;
+        float const bottom_margin = settings_open ? 210.0f : 120.0f;
+        auto available_size = ImGui::GetContentRegionAvail();
+        ImVec2 const scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
+
+        auto top_controls = [&]() {
+            // Smart Lists section
             const auto& smart_lists = cached_smart_lists_;
             if (!smart_lists.empty()) {
                 ImGui::TextColored(colors[0], "Your Smart Lists:");
@@ -529,82 +535,62 @@ bool rss::render() {
                 }
                 ImGui::PopStyleVar(2);
                 ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
             }
-        }
 
-        // Feeds section title
-        ImGui::TextColored(colors[0], "Your RSS Feeds:");
-        
-        // Search functionality
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
-        
-        // Calculate width for input field to leave space for clear button
-        float const clear_button_width = 20.0f;
-        float const input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
-        ImGui::PushItemWidth(input_width);
-        
-        bool const changed = ImGui::InputText("##search", search_buffer_, static_cast<int>(sizeof(search_buffer_)));
-        if (changed) {
-            last_search_type_time_ = std::chrono::system_clock::now();
-            search_pending_ = true;
-        }
-        
-        // Apply search immediately if Enter is pressed
-        if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-            debounced_search_query_ = search_buffer_;
-            search_pending_ = false;
-        }
-        
-        // Debounce logic: update query after 1 second of inactivity
-        if (search_pending_) {
-            auto elapsed = std::chrono::system_clock::now() - last_search_type_time_;
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= 1000) {
+            // Feeds search bar
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.6f));
+            
+            float const clear_button_width = 20.0f;
+            float const input_width = ImGui::GetContentRegionAvail().x - clear_button_width - ImGui::GetStyle().ItemSpacing.x;
+            ImGui::PushItemWidth(input_width);
+            
+            bool const changed = ImGui::InputText("##search", search_buffer_, static_cast<int>(sizeof(search_buffer_)));
+            if (changed) {
+                last_search_type_time_ = std::chrono::system_clock::now();
+                search_pending_ = true;
+            }
+            
+            if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter)) {
                 debounced_search_query_ = search_buffer_;
                 search_pending_ = false;
             }
-        }
-        
-        // Handle ESC key to clear search while maintaining focus
-        if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            search_buffer_[0] = '\0';
-            debounced_search_query_ = "";
-            search_pending_ = false;
-        }
+            
+            if (search_pending_) {
+                auto elapsed = std::chrono::system_clock::now() - last_search_type_time_;
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() >= 1000) {
+                    debounced_search_query_ = search_buffer_;
+                    search_pending_ = false;
+                }
+            }
+            
+            if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                search_buffer_[0] = '\0';
+                debounced_search_query_ = "";
+                search_pending_ = false;
+            }
 
-        // for the placeholder
-        auto pos = ImGui::GetItemRectMin();
-        
-        // Clear button (soft X)
-        ImGui::SameLine();
-        if (ImGui::SmallButton("×")) {
-            search_buffer_[0] = '\0'; // Clear the search buffer
-            debounced_search_query_ = "";
-            search_pending_ = false;
-            ImGui::SetKeyboardFocusHere(-1); // Focus the previous item (the InputText)
-        }
-        
-        // Show placeholder text when input is empty
-        if (search_buffer_[0] == '\0' && !ImGui::IsItemActive()) {
-            ImGui::GetWindowDrawList()->AddText(
-                ImVec2(pos.x + 5, pos.y + 2),
-                ImGui::GetColorU32(ImGuiCol_TextDisabled),
-                "Search feeds..."
-            );
-        }
-        ImGui::PopItemWidth();
-        ImGui::PopStyleColor(); // Pop FrameBg
-        
-        ImGui::Separator();
-        
-        static bool settings_open = false;
-        float const bottom_margin = settings_open ? 210.0f : 120.0f;
-        
-        // Create scrollable area for feeds
-        auto available_size = ImGui::GetContentRegionAvail();
-        ImVec2 const scroll_area_size = ImVec2(available_size.x, available_size.y - bottom_margin);
-        if (ImGui::BeginChild("FeedsScrollArea", scroll_area_size, false, ImGuiWindowFlags_NavFlattened)) {
+            auto pos = ImGui::GetItemRectMin();
+            
+            ImGui::SameLine();
+            if (ImGui::SmallButton("×")) {
+                search_buffer_[0] = '\0';
+                debounced_search_query_ = "";
+                search_pending_ = false;
+                ImGui::SetKeyboardFocusHere(-1);
+            }
+            
+            if (search_buffer_[0] == '\0' && !ImGui::IsItemActive()) {
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2(pos.x + 5, pos.y + 2),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled),
+                    "Search feeds..."
+                );
+            }
+            ImGui::PopItemWidth();
+            ImGui::PopStyleColor();
+        };
+
+        auto feed_content = [&]() {
             const auto all_feeds = cached_all_feeds_;
             
             // Check if we need to re-filter and re-sort feeds
@@ -873,8 +859,9 @@ bool rss::render() {
 
 
             }
-        }
-        ImGui::EndChild();
+        };
+
+        rouen::helpers::glass_top_bar::render("FeedsScrollArea", scroll_area_size, top_controls, feed_content);
 
         ImGui::Separator();
 

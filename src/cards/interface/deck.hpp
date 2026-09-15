@@ -300,6 +300,11 @@ public:
 
     struct color_setup {
         color_setup(ImVec4 first_color, ImVec4 second_color) {
+            ImVec4 title_active_glass = first_color;
+            title_active_glass.w = 0.75f;
+            ImVec4 title_inactive_glass = ImVec4(first_color.x * 0.7f, first_color.y * 0.7f, first_color.z * 0.7f, 0.65f);
+            ImGui::PushStyleColor(ImGuiCol_TitleBgActive, title_active_glass);
+            ImGui::PushStyleColor(ImGuiCol_TitleBg, title_inactive_glass);
             for (const auto& col : first_color_elements) {
                 ImGui::PushStyleColor(col, first_color);
             }
@@ -308,13 +313,12 @@ public:
             }
         }
         ~color_setup() {
-            const int total_style_pushes = std::size(first_color_elements) + std::size(second_color_elements);
+            const int total_style_pushes = 2 + std::size(first_color_elements) + std::size(second_color_elements);
             for (int i = 0; i < total_style_pushes; ++i) {
                 ImGui::PopStyleColor();
             }
         }
         static constexpr ImGuiCol_ first_color_elements[] = {
-            ImGuiCol_TitleBgActive,
             ImGuiCol_Border,
             ImGuiCol_BorderShadow,
             ImGuiCol_ButtonHovered,

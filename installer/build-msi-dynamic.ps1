@@ -159,8 +159,6 @@ $WixSource = @"
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/ignaciorodriguez/rouen" />
-    <Property Id="ARPNOREPAIR" Value="1" />
-    <Property Id="ARPNOMODIFY" Value="1" />
     
     <!-- Define the media and directory structure -->
     <MediaTemplate EmbedCab="yes" />
@@ -225,13 +223,23 @@ foreach ($category in $Categories) {
     $WixSource += "      </Component>`n      `n"
 }
 
-# Add assets component
+# Add assets component dynamically
+$WixSource += "      <!-- Assets component -->`n"
+$WixSource += "      <Component Id=`"Assets`" Guid=`"$(New-Guid)`">`n"
+$assetFiles = @("MaterialIcons-Regular.ttf", "cacert.pem", "DEPENDENCIES.txt", "LICENSE", "README.md", "podcasts.txt", "presets.txt")
+$firstAsset = $true
+foreach ($assetName in $assetFiles) {
+    if (Test-Path "$SourceDir\$assetName") {
+        $assetId = "Asset_" + ($assetName -replace '[^a-zA-Z0-9_]', '_')
+        if ($firstAsset) {
+            $WixSource += "        <File Id=`"$assetId`" Source=`"`$(var.SourceDir)\$assetName`" KeyPath=`"yes`" />`n"
+            $firstAsset = $false
+        } else {
+            $WixSource += "        <File Id=`"$assetId`" Source=`"`$(var.SourceDir)\$assetName`" />`n"
+        }
+    }
+}
 $WixSource += @"
-      <!-- Assets component -->
-      <Component Id="Assets" Guid="$(New-Guid)">
-        <File Id="DependenciesManifest" Source="`$(var.SourceDir)\DEPENDENCIES.txt" />
-        <File Id="License" Source="`$(var.SourceDir)\LICENSE" />
-        <File Id="ReadMe" Source="`$(var.SourceDir)\README.md" />
       </Component>
     </DirectoryRef>
     
@@ -306,6 +314,11 @@ Write-Host "`n=== Creating MSI Package ==="
 $lightArgs = @(
     "-out", $OutputPath,
     "-ext", "WixUIExtension",
+    "-sice:ICE38",
+    "-sice:ICE43",
+    "-sice:ICE64",
+    "-sice:ICE91",
+    "-spdb",
     $WixObjPath
 )
 

@@ -635,6 +635,7 @@ target_sources(${PROJECT_NAME}
   src/helpers/media_player_item.cpp
   src/helpers/ytdlp_service.cpp
   src/helpers/card_decorations.cpp
+  src/helpers/glass_top_bar.cpp
   src/helpers/vu_meter.cpp
   src/helpers/ui_automation_explorer.cpp
   src/cards/interface/card.cpp

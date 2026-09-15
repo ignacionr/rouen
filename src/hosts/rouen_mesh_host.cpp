@@ -21,6 +21,7 @@
 #include <glaze/glaze.hpp>
 #include <mongoose.h>
 #include "../helpers/config_service.hpp"
+#include "../helpers/debug.hpp"
 #include "../helpers/fetch.hpp"
 
 namespace rouen::hosts {
@@ -230,11 +231,11 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
     auto* host = static_cast<rouen_mesh_host*>(c->fn_data);
 
     if (ev == MG_EV_OPEN) {
-        std::cout << "[MeshWS] MG_EV_OPEN: Connection object created." << std::endl;
+        MESH_TRACE("[MeshWS] MG_EV_OPEN: Connection object created.");
     } else if (ev == MG_EV_CONNECT) {
-        std::cout << "[MeshWS] MG_EV_CONNECT: TCP Socket connected." << std::endl;
+        MESH_TRACE("[MeshWS] MG_EV_CONNECT: TCP Socket connected.");
     } else if (ev == MG_EV_WS_OPEN) {
-        std::cout << "[MeshWS] MG_EV_WS_OPEN: WebSocket Handshake complete!" << std::endl;
+        MESH_INFO("[MeshWS] MG_EV_WS_OPEN: WebSocket Handshake complete!");
         host->on_ws_connected(c);
     } else if (ev == MG_EV_WS_MSG) {
         auto* wm = static_cast<struct mg_ws_message*>(ev_data);
@@ -247,10 +248,10 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
         }
     } else if (ev == MG_EV_ERROR) {
         const char* err_msg = static_cast<const char*>(ev_data);
-        std::cout << "[MeshWS] MG_EV_ERROR: " << (err_msg ? err_msg : "unknown error") << std::endl;
+        MESH_WARN_FMT("[MeshWS] MG_EV_ERROR: {}", err_msg ? err_msg : "unknown error");
         host->on_ws_disconnected(err_msg ? err_msg : "WebSocket error");
     } else if (ev == MG_EV_CLOSE) {
-        std::cout << "[MeshWS] MG_EV_CLOSE triggered" << std::endl;
+        MESH_DEBUG("[MeshWS] MG_EV_CLOSE triggered");
         host->on_ws_disconnected("Connection closed");
     }
 }
@@ -308,7 +309,7 @@ void rouen_mesh_host::handle_route_listener_event(struct mg_connection* c, int e
 
     if (ev == MG_EV_ACCEPT) {
         uint32_t stream_route_id = next_route_id_++;
-        std::cout << "[MeshTunnel] Listener accepted TCP connection on local port " << ctx->local_port << " -> stream route #" << stream_route_id << std::endl;
+        MESH_DEBUG_FMT("[MeshTunnel] Listener accepted TCP connection on local port {} -> stream route #{}", ctx->local_port, stream_route_id);
 
         auto stream = std::make_shared<mesh::route_stream_ctx>();
         stream->route_id = stream_route_id;
@@ -346,7 +347,7 @@ void rouen_mesh_host::handle_route_stream_event(struct mg_connection* c, int ev,
     if (ev == MG_EV_READ) {
         if (c->recv.buf && c->recv.len > 0) {
             std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
-            std::cout << "[MeshTunnel] Outbound client sent " << payload.size() << " bytes on route #" << ctx->route_id << std::endl;
+            MESH_TRACE_FMT("[MeshTunnel] Outbound client sent {} bytes on route #{}", payload.size(), ctx->route_id);
             
             total_bytes_sent_ += payload.size();
             total_requests_++;
@@ -357,7 +358,7 @@ void rouen_mesh_host::handle_route_stream_event(struct mg_connection* c, int ev,
             mg_iobuf_del(&c->recv, 0, c->recv.len);
         }
     } else if (ev == MG_EV_CLOSE) {
-        std::cout << "[MeshTunnel] Outbound client closed connection on route #" << ctx->route_id << std::endl;
+        MESH_DEBUG_FMT("[MeshTunnel] Outbound client closed connection on route #{}", ctx->route_id);
         send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -378,13 +379,13 @@ void rouen_mesh_host::handle_inbound_target_event(struct mg_connection* c, int e
     }
 
     if (ev == MG_EV_CONNECT) {
-        std::cout << "[MeshTunnel] Inbound target TCP connected to target port " << ctx->target_port << " for route #" << ctx->route_id << std::endl;
+        MESH_DEBUG_FMT("[MeshTunnel] Inbound target TCP connected to target port {} for route #{}", ctx->target_port, ctx->route_id);
         std::string ack = R"({"status":"ok","reason":"Connected to local service target"})";
         send_frame_over_ws(mesh::frame_type::ROUTE_OPEN_ACK, mesh::frame_flags::JSON_PAYLOAD, ctx->route_id, ack);
     } else if (ev == MG_EV_READ) {
         if (c->recv.buf && c->recv.len > 0) {
             std::string_view payload(reinterpret_cast<const char*>(c->recv.buf), c->recv.len);
-            std::cout << "[MeshTunnel] Inbound target service read " << payload.size() << " bytes on route #" << ctx->route_id << std::endl;
+            MESH_TRACE_FMT("[MeshTunnel] Inbound target service read {} bytes on route #{}", payload.size(), ctx->route_id);
 
             total_bytes_received_ += payload.size();
             ctx->bytes_received += payload.size();
@@ -394,7 +395,7 @@ void rouen_mesh_host::handle_inbound_target_event(struct mg_connection* c, int e
             mg_iobuf_del(&c->recv, 0, c->recv.len);
         }
     } else if (ev == MG_EV_CLOSE) {
-        std::cout << "[MeshTunnel] Inbound target service closed connection on route #" << ctx->route_id << std::endl;
+        MESH_DEBUG_FMT("[MeshTunnel] Inbound target service closed connection on route #{}", ctx->route_id);
         send_frame_over_ws(mesh::frame_type::ROUTE_CLOSE, mesh::frame_flags::NONE, ctx->route_id, "");
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -449,13 +450,13 @@ void rouen_mesh_host::process_pending_route_requests(struct mg_mgr* mgr) {
                 };
                 active_routes_[route_id] = route_info;
             }
-            std::cout << "[Mesh] Transparent TCP listener active on " << listen_url << " -> " << req.target_client_id << ":" << req.target_port << std::endl;
+            MESH_INFO_FMT("[Mesh] Transparent TCP listener active on {} -> {}:{}", listen_url, req.target_client_id, req.target_port);
         } else {
             auto it = active_routes_.find(route_id);
             if (it != active_routes_.end()) {
                 it->second.status = "failed (port in use)";
             }
-            std::cerr << "[Mesh] Failed to bind transparent TCP listener on " << listen_url << std::endl;
+            MESH_ERROR_FMT("[Mesh] Failed to bind transparent TCP listener on {}", listen_url);
         }
     }
 }
@@ -491,7 +492,7 @@ void rouen_mesh_host::worker_loop() {
                     status_message_ = "Connecting to " + target_url + "...";
                 }
 
-                std::cout << "[MeshWS] Attempting WebSocket connection to: " << target_url << std::endl;
+                MESH_DEBUG_FMT("[MeshWS] Attempting WebSocket connection to: {}", target_url);
                 active_conn = mg_ws_connect(&mgr, target_url.c_str(), mg_mesh_event_handler, this, nullptr);
                 if (active_conn) {
                     if (mg_url_is_ssl(target_url.c_str())) {
@@ -504,7 +505,7 @@ void rouen_mesh_host::worker_loop() {
                 } else {
                     std::lock_guard<std::recursive_mutex> lock(mutex_);
                     status_message_ = "Failed to initiate connection to " + target_url;
-                    std::cout << "[MeshWS] mg_ws_connect returned NULL for " << target_url << std::endl;
+                    MESH_WARN_FMT("[MeshWS] mg_ws_connect returned NULL for {}", target_url);
                 }
             }
         }
@@ -856,7 +857,7 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         }
         case mesh::frame_type::REGISTRY_RESP: {
             if (!frame.payload.empty()) {
-                std::cout << "[MeshRegistry] Received REGISTRY_RESP: " << frame.payload << std::endl;
+                MESH_TRACE_FMT("[MeshRegistry] Received REGISTRY_RESP: {}", frame.payload);
                 std::vector<mesh::mesh_service_info> direct_services;
                 if (glz::read_json(direct_services, frame.payload) == glz::error_code::none && !direct_services.empty() && !direct_services[0].service.empty()) {
                     peer_services_.clear();
@@ -953,9 +954,9 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                 struct mg_connection* target_conn = mg_connect(current_mgr_, target_url.c_str(), mg_inbound_target_handler, stream.get());
                 if (target_conn) {
                     stream->target_conn = target_conn;
-                    std::cout << "[Mesh] Inbound route #" << frame.route_id << " connected to local target " << target_url << std::endl;
+                    MESH_DEBUG_FMT("[Mesh] Inbound route #{} connected to local target {}", frame.route_id, target_url);
                 } else {
-                    std::cerr << "[Mesh] Failed to connect inbound route #" << frame.route_id << " to " << target_url << std::endl;
+                    MESH_WARN_FMT("[Mesh] Failed to connect inbound route #{} to {}", frame.route_id, target_url);
                     std::string fail_ack = R"({"status":"error","reason":"Failed to connect to local target"})";
                     send_frame_over_ws(mesh::frame_type::ROUTE_OPEN_ACK, mesh::frame_flags::JSON_PAYLOAD, frame.route_id, fail_ack);
                 }

@@ -142,6 +142,13 @@
 #define VIDEOFEED_DEBUG(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_DEBUG, message)
 #define VIDEOFEED_TRACE(message) LOG_COMPONENT("VIDEOFEED", LOG_LEVEL_TRACE, message)
 
+// Mesh component logging macros
+#define MESH_ERROR(message) LOG_COMPONENT("MESH", LOG_LEVEL_ERROR, message)
+#define MESH_WARN(message) LOG_COMPONENT("MESH", LOG_LEVEL_WARN, message)
+#define MESH_INFO(message) LOG_COMPONENT("MESH", LOG_LEVEL_INFO, message)
+#define MESH_DEBUG(message) LOG_COMPONENT("MESH", LOG_LEVEL_DEBUG, message)
+#define MESH_TRACE(message) LOG_COMPONENT("MESH", LOG_LEVEL_TRACE, message)
+
 // Legacy macros for backward compatibility
 #define DEBUG_ERROR MCP_ERROR
 #define DEBUG_WARN MCP_WARN
@@ -298,3 +305,10 @@ struct std::formatter<char32_t> {
 #define VIDEOFEED_INFO_FMT(fmt, ...) VIDEOFEED_INFO(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define VIDEOFEED_DEBUG_FMT(fmt, ...) VIDEOFEED_DEBUG(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
 #define VIDEOFEED_TRACE_FMT(fmt, ...) VIDEOFEED_TRACE(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+
+// Mesh component format macros
+#define MESH_ERROR_FMT(fmt, ...) MESH_ERROR(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define MESH_WARN_FMT(fmt, ...) MESH_WARN(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define MESH_INFO_FMT(fmt, ...) MESH_INFO(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define MESH_DEBUG_FMT(fmt, ...) MESH_DEBUG(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
+#define MESH_TRACE_FMT(fmt, ...) MESH_TRACE(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))

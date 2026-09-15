@@ -876,9 +876,10 @@ private:
             } catch (const std::exception& e) {
                 attempts++;
                 std::string err_msg = e.what();
-                if ((err_msg.find("SSL") != std::string::npos || err_msg.find("certificate") != std::string::npos || err_msg.find("CURL") != std::string::npos) && ssl_options_.verify_peer) {
-                    HTTP_WARN_FMT("SSL verification issue for {}, falling back to relaxed SSL options for retry...", url);
+                if ((err_msg.find("SSL") != std::string::npos || err_msg.find("cipher") != std::string::npos || err_msg.find("certificate") != std::string::npos || err_msg.find("CURL") != std::string::npos)) {
+                    HTTP_WARN_FMT("SSL verification or cipher issue for {}, falling back to relaxed SSL options and default ciphers for retry...", url);
                     ssl_options_ = SSLOptions::relaxed();
+                    ssl_options_.cipher_list.clear(); // Clear cipher list string to use libcurl backend defaults
                 }
                 if (attempts > max_retries_) {
                     HTTP_ERROR_FMT("Request to {} failed (http_code: {}): {}", url, last_http_code_, e.what());
@@ -973,9 +974,12 @@ private:
             }
         }
         
-        // Set cipher list ONLY if backend is NOT Schannel/WinSSL (Schannel does not support OpenSSL cipher list strings)
+        // Set cipher list ONLY if backend is NOT Schannel/WinSSL and string is not empty.
         if (!is_schannel && !ssl_options_.cipher_list.empty()) {
-            curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, ssl_options_.cipher_list.c_str());
+            CURLcode cres = curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, ssl_options_.cipher_list.c_str());
+            if (cres != CURLE_OK) {
+                curl_easy_setopt(handle, CURLOPT_SSL_CIPHER_LIST, nullptr);
+            }
         }
         
         // Additional options for corporate environments
