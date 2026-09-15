@@ -19,6 +19,7 @@
 #include <chrono>
 
 #include "debug.hpp"
+#include "platform_utils.hpp"
 
 #define HTTP_ERROR(message) LOG_COMPONENT("HTTP", LOG_LEVEL_ERROR, message)
 #define HTTP_ERROR_FMT(fmt, ...) HTTP_ERROR(debug::format_log(fmt __VA_OPT__(,) __VA_ARGS__))
@@ -856,8 +857,8 @@ public:
 private:
     long timeout_;        // Request timeout in seconds
     long connect_timeout_; // Connection timeout in seconds
-    int max_retries_ = 0;       // Number of retries on failure
-    long retry_delay_seconds_ = 2; // Initial delay between retries in seconds
+    int max_retries_ = 2;       // Number of retries on failure
+    long retry_delay_seconds_ = 1; // Initial delay between retries in seconds
     SSLOptions ssl_options_; // SSL/TLS configuration options
     bool last_redirect_was_permanent_ = false;
     std::string last_effective_url_;
@@ -874,6 +875,11 @@ private:
                 return request_func();
             } catch (const std::exception& e) {
                 attempts++;
+                std::string err_msg = e.what();
+                if ((err_msg.find("SSL") != std::string::npos || err_msg.find("certificate") != std::string::npos || err_msg.find("CURL") != std::string::npos) && ssl_options_.verify_peer) {
+                    HTTP_WARN_FMT("SSL verification issue for {}, falling back to relaxed SSL options for retry...", url);
+                    ssl_options_ = SSLOptions::relaxed();
+                }
                 if (attempts > max_retries_) {
                     HTTP_ERROR_FMT("Request to {} failed (http_code: {}): {}", url, last_http_code_, e.what());
                     throw;
@@ -929,12 +935,21 @@ private:
         if (env_ssl_file && *env_ssl_file) {
             curl_easy_setopt(handle, CURLOPT_CAINFO, env_ssl_file);
         } else {
+            // Check for bundled cacert.pem or curl-ca-bundle.crt
+            std::filesystem::path ca_path = rouen::platform::get_resource_path("cacert.pem", "");
+            if (std::filesystem::exists(ca_path)) {
+                curl_easy_setopt(handle, CURLOPT_CAINFO, ca_path.string().c_str());
+            } else {
+                std::filesystem::path ca_bundle = rouen::platform::get_resource_path("curl-ca-bundle.crt", "");
+                if (std::filesystem::exists(ca_bundle)) {
+                    curl_easy_setopt(handle, CURLOPT_CAINFO, ca_bundle.string().c_str());
+                }
 #ifdef __APPLE__
-            if (std::filesystem::exists("/etc/ssl/cert.pem")) {
-                curl_easy_setopt(handle, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
-            }
+                else if (std::filesystem::exists("/etc/ssl/cert.pem")) {
+                    curl_easy_setopt(handle, CURLOPT_CAINFO, "/etc/ssl/cert.pem");
+                }
 #endif
-            // Do not explicitly set CURLOPT_CAINFO to nullptr, as that clears libcurl's built-in default CA bundle path
+            }
         }
         curl_easy_setopt(handle, CURLOPT_CAPATH, nullptr);
         

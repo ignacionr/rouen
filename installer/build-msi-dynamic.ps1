@@ -14,6 +14,28 @@ param(
     [string]$WixPath = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
 )
 
+# Resolve WiX path dynamically if not directly specified or not found
+if (-not (Test-Path "$WixPath\candle.exe")) {
+    $possiblePaths = @(
+        $env:WIX_PATH,
+        "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin",
+        "${env:ProgramFiles}\WiX Toolset v3.11\bin",
+        "${env:LOCALAPPDATA}\WiX Toolset v3.11\bin",
+        "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin",
+        "${env:ProgramFiles}\WiX Toolset v3.14\bin"
+    )
+    $cmdPath = (Get-Command candle.exe -ErrorAction SilentlyContinue)
+    if ($cmdPath) {
+        $possiblePaths += (Split-Path $cmdPath.Path)
+    }
+    foreach ($p in $possiblePaths) {
+        if ($p -and (Test-Path "$p\candle.exe")) {
+            $WixPath = $p
+            break
+        }
+    }
+}
+
 Write-Host "=== Dynamic MSI Builder for Rouen ==="
 Write-Host "Source Directory: $SourceDir"
 Write-Host "Version: $Version"
@@ -31,7 +53,7 @@ $candleExe = "$WixPath\candle.exe"
 $lightExe = "$WixPath\light.exe"
 
 if (-not (Test-Path $candleExe)) {
-    Write-Error "candle.exe not found at: $candleExe"
+    Write-Error "candle.exe not found at: $candleExe. Please ensure WiX Toolset v3 is installed."
     exit 1
 }
 
@@ -89,7 +111,7 @@ foreach ($dll in $AllDLLs) {
             Description = $info.Description
             Required = $info.Required
         }
-        $status = if ($info.Required) { "✅ REQUIRED" } else { "📦 OPTIONAL" }
+        $status = if ($info.Required) { "[REQUIRED]" } else { "[OPTIONAL]" }
         Write-Host "  $status $dllName ($sizeKB KB) - $($info.Description)"
     } else {
         $PresentDLLs[$dllName] = @{
@@ -99,7 +121,7 @@ foreach ($dll in $AllDLLs) {
             Description = "Additional library"
             Required = $false
         }
-        Write-Host "  📄 ADDITIONAL $dllName ($sizeKB KB) - Additional library"
+        Write-Host "  [ADDITIONAL] $dllName ($sizeKB KB) - Additional library"
     }
 }
 
@@ -113,9 +135,9 @@ foreach ($dllName in $ExpectedDLLs.Keys) {
 }
 
 if ($MissingRequired.Count -gt 0) {
-    Write-Host "`n⚠️ WARNING: Missing required DLLs:"
+    Write-Host "`nWARNING: Missing required DLLs:"
     foreach ($dll in $MissingRequired) {
-        Write-Host "  ❌ $dll - $($ExpectedDLLs[$dll].Description)"
+        Write-Host "  [MISSING] $dll - $($ExpectedDLLs[$dll].Description)"
     }
     Write-Host "`nContinuing anyway, but the application may not work correctly..."
 }
@@ -303,13 +325,13 @@ if (Test-Path $OutputPath) {
     $msiInfo = Get-Item $OutputPath
     $sizeMB = [math]::Round($msiInfo.Length / 1MB, 2)
     
-    Write-Host "`n✅ MSI Package Created Successfully!"
+    Write-Host "`n[SUCCESS] MSI Package Created Successfully!"
     Write-Host "File: $($msiInfo.Name)"
     Write-Host "Size: $sizeMB MB"
     Write-Host "Path: $($msiInfo.FullName)"
     Write-Host "Created: $($msiInfo.CreationTime)"
     
-    Write-Host "`n📊 Package Contents Summary:"
+    Write-Host "`nPackage Contents Summary:"
     Write-Host "  - Main executable: rouen.exe"
     Write-Host "  - Total DLLs: $($PresentDLLs.Count)"
     Write-Host "  - Required DLLs present: $(($PresentDLLs.Values | Where-Object { $_.Required }).Count)"
@@ -326,4 +348,4 @@ if (Test-Path $OutputPath) {
 if (Test-Path $DynamicWxsPath) { Remove-Item $DynamicWxsPath -Force }
 if (Test-Path $WixObjPath) { Remove-Item $WixObjPath -Force }
 
-Write-Host "`n🎉 Dynamic MSI creation completed successfully!"
+Write-Host "`nDynamic MSI creation completed successfully!"

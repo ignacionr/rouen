@@ -583,6 +583,7 @@ jobs:
         
         # Copy individual files if they exist
         $files = @(
+          "$workspace\resources\cacert.pem",
           "$workspace\external\MaterialIcons-Regular.ttf",
           "$workspace\external\IconsMaterialDesign.h",
           "$workspace\presets.txt",
@@ -914,13 +915,21 @@ jobs:
         $workspace = "${{ github.workspace }}"
         $distDir = "$workspace\dist"
         $installerDir = "$workspace\installer"
-        $version = "1.0.${{ github.run_number }}.0"
+        
+        # Calculate clean semver version from tag / inputs
+        $rawTag = "${{ inputs.tag_name }}"
+        if (-not $rawTag) { $rawTag = "${{ github.ref_name }}" }
+        $cleanSemVer = $rawTag -replace '^v', ''
+        if ($cleanSemVer -notmatch '^\d+\.\d+\.\d+') {
+          $cleanSemVer = "1.4.2"
+        }
+        $version = "$cleanSemVer.0"
         
         Write-Host "=== Creating MSI Installer ==="
         Write-Host "Workspace: $workspace"
         Write-Host "Distribution: $distDir" 
         Write-Host "Installer config: $installerDir"
-        Write-Host "Version: $version"
+        Write-Host "Version: $version (SemVer: $cleanSemVer)"
         
         # Ensure installer directory exists
         if (-not (Test-Path $installerDir)) {
@@ -1010,7 +1019,8 @@ jobs:
         
         # Set up output paths
         $wixobjFile = "$workspace\rouen.wixobj"
-        $msiFile = "$workspace\Rouen-$version-x64.msi"
+        $msiFile = "$workspace\rouen-windows-x64.msi"
+        $versionedMsiFile = "$workspace\rouen-v$cleanSemVer-windows-x64.msi"
         
         # Clean up any existing intermediate files
         if (Test-Path $wixobjFile) {
@@ -1018,6 +1028,9 @@ jobs:
         }
         if (Test-Path $msiFile) {
           Remove-Item $msiFile -Force
+        }
+        if (Test-Path $versionedMsiFile) {
+          Remove-Item $versionedMsiFile -Force
         }
         
         # Dynamically inject any missing DLLs and fonts (.ttf, .otf) from distDir into rouen.wxs Component Id="Dependencies"
@@ -1109,18 +1122,20 @@ jobs:
         
         # Verify MSI was created
         if (Test-Path $msiFile) {
+          Copy-Item $msiFile $versionedMsiFile -Force
           $msiInfo = Get-Item $msiFile
           $sizeMB = [math]::Round($msiInfo.Length / 1MB, 2)
           
           Write-Host "`n✅ MSI Package Created Successfully!"
-          Write-Host "File: $($msiInfo.Name)"
+          Write-Host "Primary MSI: $($msiInfo.Name)"
+          Write-Host "Versioned MSI: $(Split-Path -Leaf $versionedMsiFile)"
           Write-Host "Size: $sizeMB MB"
           Write-Host "Path: $($msiInfo.FullName)"
           Write-Host "Created: $($msiInfo.CreationTime)"
           
           # Set output for later steps
           echo "MSI_FILE=$msiFile" >> $env:GITHUB_ENV
-          echo "MSI_NAME=Rouen-$version-x64.msi" >> $env:GITHUB_ENV
+          echo "MSI_NAME=rouen-windows-x64.msi" >> $env:GITHUB_ENV
           
         } else {
           Write-Error "MSI file was not created: $msiFile"
@@ -1141,7 +1156,7 @@ jobs:
         name: rouen-windows-x64-complete
         path: |
           rouen-windows-x64.zip
-          Rouen-*.msi
+          *.msi
 
     - name: Upload Windows Release Assets
       if: github.event_name == 'release' || (inputs.tag_name != null && inputs.tag_name != '')
@@ -1155,6 +1170,7 @@ jobs:
         }
         $msiFiles = Get-ChildItem -Filter "*.msi" -ErrorAction SilentlyContinue
         foreach ($msi in $msiFiles) {
+          Write-Host "Uploading MSI asset: $($msi.Name)"
           gh release upload $tag $msi.FullName --clobber
         }
       env:

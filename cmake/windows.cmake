@@ -84,6 +84,14 @@ if(WIN32)
         ${CMAKE_SOURCE_DIR}/external/MaterialIcons-Regular.ttf
         $<TARGET_FILE_DIR:${PROJECT_NAME}>/MaterialIcons-Regular.ttf
     )
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/cacert.pem")
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/resources/cacert.pem
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/cacert.pem
+        )
+    endif()
     
     # Copy configuration files
     set(CONFIG_FILES

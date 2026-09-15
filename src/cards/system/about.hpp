@@ -23,10 +23,21 @@
 #define ROUEN_VERSION "1.4.2"
 #endif
 
+inline std::string get_rouen_version_str() {
+    std::string v = ROUEN_VERSION;
+    if (v.size() >= 2 && v.front() == '"' && v.back() == '"') {
+        v = v.substr(1, v.size() - 2);
+    }
+    if (v.empty()) {
+        v = "1.4.2";
+    }
+    return v;
+}
+
 namespace rouen::cards {
 
 struct about_card : public card {
-    std::string semver_version = ROUEN_VERSION;
+    std::string semver_version = get_rouen_version_str();
     std::string local_hash = COMPILE_GIT_HASH;
     std::string remote_hash = "Checking...";
     std::string error_message = "";
