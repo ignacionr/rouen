@@ -129,7 +129,7 @@ TEST_F(SSLUIConfigTest, AllSSLModes) {
         EXPECT_EQ(mode, test_mode.name);
         
         // Create a new fetch client that should pick up the new mode
-        fetch client;
+        http::fetch client;
         auto options = client.get_ssl_options();
         
         // Verify settings match expected values
@@ -145,7 +145,7 @@ TEST_F(SSLUIConfigTest, AtlassianModeHasSpecialCiphers) {
     simulate_ui_selection("atlassian");
     
     // Create fetch instance which should use Atlassian SSL settings
-    fetch client;
+    http::fetch client;
     auto options = client.get_ssl_options();
     
     // Verify Atlassian mode has specific cipher configurations
