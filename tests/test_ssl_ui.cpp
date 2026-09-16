@@ -2,10 +2,15 @@
 #include "../src/helpers/fetch.hpp"
 #include "../src/helpers/config_service.hpp"
 #include <string>
-#include <cstdlib>
-
-using namespace http;
-using namespace rouen::helpers;
+#ifdef _WIN32
+static inline int setenv(const char *name, const char *value, int overwrite) {
+    if (!overwrite && std::getenv(name) != nullptr) return 0;
+    return _putenv_s(name, value);
+}
+static inline int unsetenv(const char *name) {
+    return _putenv_s(name, "");
+}
+#endif
 
 // Mock for ConfigServiceInitializer, needed when testing in isolation
 namespace rouen::helpers {
