@@ -12,7 +12,7 @@
 - **CRITICAL**: When compiling this project, STRICTLY limit parallel build jobs to at most 2 (e.g., `-j2` or `--max-jobs 2`). Never omit `-j` or set `-j` higher than 2. The host machine has 16 GB RAM and heavy C++ compilation memory usage (~4 GB per job) will cause complete system memory exhaustion and force a hard reboot.
 
 ## Notifications
-- When a task is completed, use the macOS `say` command to announce a brief summary (e.g., `say "Build succeeded"` or `say "Changes applied to AI chat card"`). Use the default voice.
+- When a task is completed, use the macOS `say` command to announce a brief summary (e.g., `say "Build succeeded"` or `say "Changes applied to AI chat card"`). Do NOT pass `-v` flags as explicit voice flags fall back to robotic compact legacy engines; let `say` use the default system voice.
 
 ## Deployment
 - The app is locally deployed to `$HOME/Applications/Rouen.app`. After a successful build, copy the compiled binary to `$HOME/Applications/Rouen.app/Contents/MacOS/rouen`.
