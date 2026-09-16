@@ -183,6 +183,51 @@ void test_pairing_request_validation() {
     test_helpers::assert_true(!host.send_pairing_request("https://rouen.inz.dev", "", err), "Rejects empty pairing code");
 }
 
+void test_self_healing_resilience() {
+    std::cout << "\n--- Testing Mesh Client Self-Healing & Route Persistence ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.enabled = true;
+    cfg.is_paired = true;
+    cfg.client_id = "rouen-test-node";
+    host.initialize(cfg);
+
+    std::string err;
+    bool ok = host.open_virtual_route("peer-ollama-node", 11434, err, 21434);
+    test_helpers::assert_true(ok, "Opened virtual route 21434 -> peer-ollama-node:11434");
+
+    // Simulate WebSocket disconnect event
+    host.on_ws_disconnected("Simulated Network Dropout");
+    test_helpers::assert_true(!host.is_connected(), "Host reports disconnected state after dropout");
+
+    auto routes = host.get_active_routes();
+    test_helpers::assert_equal(1, routes.size(), "Mapped port remains active in routes map during dropout");
+    test_helpers::assert_string_equal("listening (reconnecting)", routes[0].status, "Route status updated to listening (reconnecting)");
+
+    // Simulate WebSocket reconnect event
+    host.on_ws_connected(nullptr);
+    test_helpers::assert_true(host.is_connected(), "Host reports connected state after reconnect");
+
+    routes = host.get_active_routes();
+    test_helpers::assert_equal(1, routes.size(), "Mapped route remains preserved after reconnection");
+
+    // Simulate receiving Heartbeat Pong
+    uint64_t past_ts = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count()) - 45;
+    rouen::mesh::mesh_frame pong_frame{
+        .type = rouen::mesh::frame_type::HEARTBEAT_PONG,
+        .flags = rouen::mesh::frame_flags::NONE,
+        .route_id = 0,
+        .payload = std::to_string(past_ts)
+    };
+    host.handle_incoming_frame(pong_frame);
+    test_helpers::assert_true(host.get_ping_ms() >= 40, "Calculated ping latency from HEARTBEAT_PONG payload");
+
+    host.stop();
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
@@ -194,6 +239,7 @@ int main() {
         test_handshake_signature_generation();
         test_service_registration_and_discovery_parsing();
         test_pairing_request_validation();
+        test_self_healing_resilience();
 
         std::cout << "\n" << std::string(50, '=') << "\n";
         std::cout << "✅ All Rouen Mesh Host unit tests passed successfully!\n";

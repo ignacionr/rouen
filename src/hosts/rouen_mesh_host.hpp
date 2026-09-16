@@ -259,6 +259,12 @@ struct route_stream_ctx {
     bool is_inbound{false};
 };
 
+struct persistent_route_dto {
+    std::string target_client_id;
+    uint16_t target_port{0};
+    uint16_t local_port{0};
+};
+
 } // namespace rouen::mesh
 
 namespace rouen::hosts {
@@ -345,6 +351,12 @@ public:
     // Reset state for testing
     void clear();
 
+    // Self-Healing & Route Persistence
+    bool reconnect();
+    void save_custom_routes();
+    void load_custom_routes();
+    void verify_and_restore_listeners();
+
     // Event handlers for transparent proxy listeners and streams
     void handle_route_listener_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_listener_ctx* ctx);
     void handle_route_stream_event(struct mg_connection* c, int ev, void* ev_data, mesh::route_stream_ctx* ctx);
@@ -356,12 +368,16 @@ private:
 
     void worker_loop();
     void process_pending_route_requests(struct mg_mgr* mgr);
+    void check_heartbeat_and_reconnect(struct mg_mgr* mgr, std::chrono::steady_clock::time_point now);
+    void flush_pending_ws_streams();
+    void check_pending_ws_streams();
 
     mutable std::recursive_mutex mutex_;
     config config_{};
     std::atomic<bool> initialized_{false};
     std::atomic<bool> running_{false};
     std::atomic<bool> connected_{false};
+    std::atomic<bool> force_reconnect_{false};
 
     std::string status_message_{"Disconnected"};
 
@@ -374,12 +390,17 @@ private:
     struct mg_mgr* current_mgr_{nullptr};
     struct mg_connection* active_ws_conn_{nullptr};
 
+    std::chrono::steady_clock::time_point last_ping_sent_{};
+    std::chrono::steady_clock::time_point last_frame_received_{};
+    std::chrono::milliseconds current_reconnect_backoff_{1000};
+
     std::unordered_map<std::string, mesh::mesh_service_info> local_services_;
     std::unordered_map<std::string, mesh::mesh_service_info> peer_services_;
     std::unordered_map<uint32_t, mesh::virtual_route_info> active_routes_;
     std::vector<mesh::mesh_client_dto> connected_clients_;
 
     std::vector<mesh::route_open_request> pending_route_requests_;
+    std::vector<std::shared_ptr<mesh::route_stream_ctx>> pending_streams_awaiting_ws_;
     std::unordered_map<uint32_t, std::shared_ptr<mesh::route_listener_ctx>> active_listeners_;
     std::unordered_map<uint32_t, std::shared_ptr<mesh::route_stream_ctx>> active_streams_;
 

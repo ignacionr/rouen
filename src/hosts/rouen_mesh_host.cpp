@@ -185,6 +185,9 @@ bool rouen_mesh_host::initialize(const config& cfg) {
     // Load persisted user-configured custom mesh services
     load_custom_services();
 
+    // Load persisted user-configured custom virtual routes
+    load_custom_routes();
+
     config_.is_paired = true;
     status_message_ = "Ready to connect.";
 
@@ -281,12 +284,25 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     active_ws_conn_ = c;
     connected_.store(true);
+    force_reconnect_.store(false);
     status_message_ = "Connected to rouen-service";
+
+    current_reconnect_backoff_ = std::chrono::milliseconds(1000);
+    auto now = std::chrono::steady_clock::now();
+    last_frame_received_ = now;
+    last_ping_sent_ = now;
+
+    // Self-healing: verify all active mapped route listeners are listening
+    verify_and_restore_listeners();
 
     // Publish own local services and request fresh online clients and peer services
     publish_local_services();
     refresh_connected_clients();
     refresh_peer_services();
+    refresh_server_routes();
+
+    // Flush any streams queued while WS was reconnecting
+    flush_pending_ws_streams();
 }
 
 void rouen_mesh_host::on_ws_disconnected(const std::string& reason) {
@@ -294,6 +310,23 @@ void rouen_mesh_host::on_ws_disconnected(const std::string& reason) {
     connected_.store(false);
     active_ws_conn_ = nullptr;
     status_message_ = "Disconnected: " + reason;
+
+    for (auto& [_, route] : active_routes_) {
+        if (route.status == "listening" || route.status == "active" || route.status == "pending") {
+            route.status = "listening (reconnecting)";
+        }
+    }
+
+    // Clean up stale stream sockets (WS multiplex tunnel was severed)
+    for (auto& [id, stream] : active_streams_) {
+        if (stream->local_conn) {
+            stream->local_conn->is_closing = 1;
+        }
+        if (stream->target_conn) {
+            stream->target_conn->is_closing = 1;
+        }
+    }
+    active_streams_.clear();
 }
 
 void rouen_mesh_host::send_frame_over_ws(mesh::frame_type type, uint16_t flags, uint32_t route_id, std::string_view payload) {
@@ -323,16 +356,24 @@ void rouen_mesh_host::handle_route_listener_event(struct mg_connection* c, int e
         c->fn_data = stream.get();
         c->fn = mg_route_stream_handler;
 
+        bool is_ws_active = false;
         {
             std::lock_guard<std::recursive_mutex> lock(mutex_);
             active_streams_[stream_route_id] = stream;
+            is_ws_active = connected_.load() && (active_ws_conn_ != nullptr);
+            if (!is_ws_active) {
+                MESH_INFO_FMT("[MeshSelfHealing] WS disconnected, queueing stream route #{} until connection re-established", stream_route_id);
+                pending_streams_awaiting_ws_.push_back(stream);
+            }
         }
 
-        std::string open_payload = std::format(
-            R"({{"target_client_id":"{}","target_port":{}}})",
-            ctx->target_client_id, ctx->target_port
-        );
-        send_frame_over_ws(mesh::frame_type::ROUTE_OPEN, mesh::frame_flags::JSON_PAYLOAD, stream_route_id, open_payload);
+        if (is_ws_active) {
+            std::string open_payload = std::format(
+                R"({{"target_client_id":"{}","target_port":{}}})",
+                ctx->target_client_id, ctx->target_port
+            );
+            send_frame_over_ws(mesh::frame_type::ROUTE_OPEN, mesh::frame_flags::JSON_PAYLOAD, stream_route_id, open_payload);
+        }
     }
 }
 
@@ -471,16 +512,23 @@ void rouen_mesh_host::worker_loop() {
     }
 
     struct mg_connection* active_conn = nullptr;
-    auto last_connect_try = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+    auto last_connect_try = std::chrono::steady_clock::now() - std::chrono::seconds(60);
 
     while (running_.load()) {
         process_pending_route_requests(&mgr);
 
         auto now = std::chrono::steady_clock::now();
 
-        if (!connected_.load()) {
-            if (now - last_connect_try >= std::chrono::seconds(3)) {
+        check_pending_ws_streams();
+        check_heartbeat_and_reconnect(&mgr, now);
+
+        bool forced = force_reconnect_.exchange(false);
+
+        if (!connected_.load() || forced) {
+            if (forced || (now - last_connect_try >= current_reconnect_backoff_)) {
                 last_connect_try = now;
+                current_reconnect_backoff_ = std::min(current_reconnect_backoff_ * 2, std::chrono::milliseconds(15000));
+
                 std::string target_url = config_.server_url;
                 if (target_url.find("client_id=") == std::string::npos) {
                     target_url += (target_url.find('?') == std::string::npos ? "?" : "&");
@@ -594,6 +642,7 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         .local_url = local_url
     };
     active_routes_[route_id] = route_info;
+    save_custom_routes();
 
     if (!running_.load()) {
         start();
@@ -615,6 +664,7 @@ bool rouen_mesh_host::close_virtual_route(uint32_t route_id) {
             }
             active_listeners_.erase(listener_it);
         }
+        save_custom_routes();
         return true;
     }
     return false;
@@ -837,6 +887,7 @@ bool rouen_mesh_host::send_pairing_request(const std::string& server_http_base, 
 
 void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    last_frame_received_ = std::chrono::steady_clock::now();
 
     switch (frame.type) {
         case mesh::frame_type::HEARTBEAT_PING: {
@@ -844,6 +895,16 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
             break;
         }
         case mesh::frame_type::HEARTBEAT_PONG: {
+            if (!frame.payload.empty()) {
+                try {
+                    uint64_t sent_ts = std::stoull(frame.payload);
+                    uint64_t now_ts = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count());
+                    if (now_ts >= sent_ts) {
+                        ping_ms_.store(static_cast<uint32_t>(now_ts - sent_ts));
+                    }
+                } catch (...) {}
+            }
             break;
         }
         case mesh::frame_type::CLIENT_LIST_RESP: {
@@ -1002,7 +1063,138 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
     }
 }
 
+bool rouen_mesh_host::reconnect() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (active_ws_conn_) {
+        active_ws_conn_->is_closing = 1;
+    }
+    current_reconnect_backoff_ = std::chrono::milliseconds(1000);
+    force_reconnect_.store(true);
+    if (!running_.load()) {
+        return start();
+    }
+    return true;
+}
+
+void rouen_mesh_host::save_custom_routes() {
+    std::vector<mesh::persistent_route_dto> routes;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        for (const auto& [_, route] : active_routes_) {
+            routes.push_back({
+                .target_client_id = route.target_client_id,
+                .target_port = route.target_port,
+                .local_port = route.local_port
+            });
+        }
+    }
+    std::string json;
+    if (glz::write_json(routes, json) == glz::error_code::none) {
+        auto config_svc = helpers::ConfigService::instance();
+        if (config_svc) {
+            config_svc->set_env_value("ROUEN_MESH_ROUTES", json, true);
+        }
+    }
+}
+
+void rouen_mesh_host::load_custom_routes() {
+    auto config_svc = helpers::ConfigService::instance();
+    if (!config_svc) return;
+    std::string json = config_svc->get_env("ROUEN_MESH_ROUTES");
+    if (json.empty()) return;
+
+    std::vector<mesh::persistent_route_dto> routes;
+    if (glz::read_json(routes, json) == glz::error_code::none) {
+        for (const auto& r : routes) {
+            std::string err;
+            open_virtual_route(r.target_client_id, r.target_port, err, r.local_port);
+        }
+    }
+}
+
+void rouen_mesh_host::verify_and_restore_listeners() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    for (auto& [route_id, route] : active_routes_) {
+        auto it = active_listeners_.find(route_id);
+        bool listener_alive = (it != active_listeners_.end() && it->second && it->second->listener_conn != nullptr);
+        if (!listener_alive) {
+            MESH_INFO_FMT("[MeshSelfHealing] Restoring listener for route #{} (127.0.0.1:{}) -> {}:{}",
+                          route_id, route.local_port, route.target_client_id, route.target_port);
+            pending_route_requests_.push_back({
+                .route_id = route_id,
+                .target_client_id = route.target_client_id,
+                .target_port = route.target_port,
+                .local_port = route.local_port
+            });
+            route.status = "pending";
+        } else {
+            route.status = "listening";
+        }
+    }
+}
+
+void rouen_mesh_host::flush_pending_ws_streams() {
+    std::vector<std::shared_ptr<mesh::route_stream_ctx>> streams_to_send;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        if (pending_streams_awaiting_ws_.empty()) return;
+        streams_to_send.swap(pending_streams_awaiting_ws_);
+    }
+
+    for (const auto& stream : streams_to_send) {
+        if (stream && stream->local_conn && !stream->local_conn->is_closing) {
+            MESH_INFO_FMT("[MeshSelfHealing] Flushing queued stream route #{} over restored WS connection", stream->route_id);
+            std::string open_payload = std::format(
+                R"({{"target_client_id":"{}","target_port":{}}})",
+                stream->target_client_id, stream->target_port
+            );
+            send_frame_over_ws(mesh::frame_type::ROUTE_OPEN, mesh::frame_flags::JSON_PAYLOAD, stream->route_id, open_payload);
+        }
+    }
+}
+
+void rouen_mesh_host::check_pending_ws_streams() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (pending_streams_awaiting_ws_.empty()) return;
+    std::erase_if(pending_streams_awaiting_ws_, [](const auto& stream) {
+        return !stream || !stream->local_conn || stream->local_conn->is_closing;
+    });
+}
+
+void rouen_mesh_host::check_heartbeat_and_reconnect(struct mg_mgr* mgr, std::chrono::steady_clock::time_point now) {
+    (void)mgr;
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+
+    if (connected_.load() && active_ws_conn_) {
+        // Send periodic HEARTBEAT_PING frame
+        if (last_ping_sent_ == std::chrono::steady_clock::time_point{} ||
+            now - last_ping_sent_ >= config_.ping_interval) {
+            
+            last_ping_sent_ = now;
+            uint64_t ts_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+            std::string ping_payload = std::to_string(ts_ms);
+            send_frame_over_ws(mesh::frame_type::HEARTBEAT_PING, mesh::frame_flags::NONE, 0, ping_payload);
+        }
+
+        // Check for heartbeat timeout (dead/zombie socket detection)
+        auto timeout_limit = config_.ping_interval * 2 + std::chrono::seconds(10);
+        if (last_frame_received_ != std::chrono::steady_clock::time_point{} &&
+            now - last_frame_received_ > timeout_limit) {
+            
+            MESH_WARN_FMT("[MeshSelfHealing] Heartbeat timeout after {} seconds of silence! Closing zombie WS connection...",
+                          std::chrono::duration_cast<std::chrono::seconds>(now - last_frame_received_).count());
+            
+            if (active_ws_conn_) {
+                active_ws_conn_->is_closing = 1;
+            }
+            on_ws_disconnected("Heartbeat timeout (zombie socket)");
+        }
+    }
+}
+
 void rouen_mesh_host::clear() {
+    stop();
+
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_.clear();
     peer_services_.clear();
@@ -1010,9 +1202,14 @@ void rouen_mesh_host::clear() {
     active_listeners_.clear();
     active_streams_.clear();
     pending_route_requests_.clear();
+    pending_streams_awaiting_ws_.clear();
     connected_clients_.clear();
     config_ = {};
     active_ws_conn_ = nullptr;
+    last_ping_sent_ = {};
+    last_frame_received_ = {};
+    current_reconnect_backoff_ = std::chrono::milliseconds(1000);
+    force_reconnect_.store(false);
     total_requests_.store(0);
     total_bytes_sent_.store(0);
     total_bytes_received_.store(0);
