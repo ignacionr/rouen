@@ -2,10 +2,15 @@
 #include "../src/helpers/fetch.hpp"
 #include "../src/helpers/config_service.hpp"
 #include <string>
-#include <cstdlib>
-
-using namespace http;
-using namespace rouen::helpers;
+#ifdef _WIN32
+static inline int setenv(const char *name, const char *value, int overwrite) {
+    if (!overwrite && std::getenv(name) != nullptr) return 0;
+    return _putenv_s(name, value);
+}
+static inline int unsetenv(const char *name) {
+    return _putenv_s(name, "");
+}
+#endif
 
 // Mock for ConfigServiceInitializer, needed when testing in isolation
 namespace rouen::helpers {
@@ -124,7 +129,7 @@ TEST_F(SSLUIConfigTest, AllSSLModes) {
         EXPECT_EQ(mode, test_mode.name);
         
         // Create a new fetch client that should pick up the new mode
-        fetch client;
+        http::fetch client;
         auto options = client.get_ssl_options();
         
         // Verify settings match expected values
@@ -140,7 +145,7 @@ TEST_F(SSLUIConfigTest, AtlassianModeHasSpecialCiphers) {
     simulate_ui_selection("atlassian");
     
     // Create fetch instance which should use Atlassian SSL settings
-    fetch client;
+    http::fetch client;
     auto options = client.get_ssl_options();
     
     // Verify Atlassian mode has specific cipher configurations
