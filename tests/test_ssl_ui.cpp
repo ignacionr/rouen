@@ -2,6 +2,11 @@
 #include "../src/helpers/fetch.hpp"
 #include "../src/helpers/config_service.hpp"
 #include <string>
+#include <cstdlib>
+
+using namespace http;
+using namespace rouen::helpers;
+
 #ifdef _WIN32
 static inline int setenv(const char *name, const char *value, int overwrite) {
     if (!overwrite && std::getenv(name) != nullptr) return 0;
