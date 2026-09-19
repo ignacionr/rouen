@@ -23,6 +23,8 @@
 #include "../helpers/config_service.hpp"
 #include "../helpers/debug.hpp"
 #include "../helpers/fetch.hpp"
+#include "../helpers/notify_service.hpp"
+#include "../registrar.hpp"
 
 namespace rouen::hosts {
 
@@ -171,16 +173,18 @@ bool rouen_mesh_host::initialize(const config& cfg) {
         generate_keypair(config_.public_key, config_.private_key);
     }
 
-    // Default register Rouen internal REST API
-    mesh::mesh_service_info api_service{
-        .client_id = config_.client_id,
-        .service = "rest_api",
-        .protocol = "http",
-        .target_port = config_.local_api_port,
-        .capabilities = {"adaptive_cards", "deck_control", "process_ui"},
-        .auth_required = false
-    };
-    local_services_["rest_api"] = api_service;
+    // Default register Rouen internal REST API (only for full nodes, not transient CLI clients)
+    if (config_.client_id.find("-cli-") == std::string::npos) {
+        mesh::mesh_service_info api_service{
+            .client_id = config_.client_id,
+            .service = "rest_api",
+            .protocol = "http",
+            .target_port = config_.local_api_port,
+            .capabilities = {"adaptive_cards", "deck_control", "process_ui"},
+            .auth_required = false
+        };
+        local_services_["rest_api"] = api_service;
+    }
 
     // Load persisted user-configured custom mesh services
     load_custom_services();
@@ -251,7 +255,12 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
         }
     } else if (ev == MG_EV_ERROR) {
         const char* err_msg = static_cast<const char*>(ev_data);
-        MESH_WARN_FMT("[MeshWS] MG_EV_ERROR: {}", err_msg ? err_msg : "unknown error");
+        std::string recv_snippet;
+        if (c && c->recv.buf && c->recv.len > 0) {
+            size_t len = std::min(c->recv.len, static_cast<size_t>(256));
+            recv_snippet = std::string(reinterpret_cast<const char*>(c->recv.buf), len);
+        }
+        MESH_WARN_FMT("[MeshWS] MG_EV_ERROR: {} | recv: '{}'", err_msg ? err_msg : "unknown error", recv_snippet);
         host->on_ws_disconnected(err_msg ? err_msg : "WebSocket error");
     } else if (ev == MG_EV_CLOSE) {
         MESH_DEBUG("[MeshWS] MG_EV_CLOSE triggered");
@@ -300,6 +309,7 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     refresh_connected_clients();
     refresh_peer_services();
     refresh_server_routes();
+    refresh_registry();
 
     // Flush any streams queued while WS was reconnecting
     flush_pending_ws_streams();
@@ -779,6 +789,68 @@ std::unordered_map<std::string, mesh::registry_entry_dto> rouen_mesh_host::get_r
     return filtered;
 }
 
+bool rouen_mesh_host::send_mesh_notification(const std::string& target_client_id, const std::string& message, bool spoken) {
+    if (target_client_id.empty() || message.empty()) {
+        return false;
+    }
+
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    auto now_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
+
+    mesh::inbox_notification_dto notif{
+        .message = message,
+        .from_client = config_.client_id,
+        .spoken = spoken,
+        .timestamp_ms = now_ms
+    };
+
+    std::string payload_json;
+    if (glz::write_json(notif, payload_json) != glz::error_code::none) {
+        return false;
+    }
+
+    static std::atomic<uint64_t> notif_seq{0};
+    std::string key = std::format("notifications/inbox/{}/{}_{}", target_client_id, now_ms, notif_seq.fetch_add(1, std::memory_order_relaxed));
+    set_registry_value(key, payload_json, true);
+    MESH_INFO_FMT("[MeshNotify] Sent notification to target client '{}' at key '{}'", target_client_id, key);
+    return true;
+}
+
+void rouen_mesh_host::process_incoming_notifications() {
+    std::vector<std::pair<std::string, mesh::inbox_notification_dto>> pending;
+    {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        std::string prefix = std::format("notifications/inbox/{}/", config_.client_id);
+
+        for (const auto& [k, entry] : registry_entries_) {
+            if (k.starts_with(prefix) && !entry.value.empty()) {
+                mesh::inbox_notification_dto notif{};
+                if (glz::read_json(notif, entry.value) == glz::error_code::none) {
+                    pending.push_back({k, notif});
+                }
+            }
+        }
+
+        // Delete keys immediately so they are not re-processed
+        for (const auto& [key, _] : pending) {
+            delete_registry_value(key);
+        }
+    }
+
+    // Deliver notifications outside of lock
+    for (const auto& [_, notif] : pending) {
+        MESH_INFO_FMT("[MeshNotify] Received incoming notification from '{}': {}", notif.from_client, notif.message);
+
+        auto notify_fn = registrar::try_get<std::function<void(std::string const&)>>("notify");
+        if (notify_fn) {
+            (*notify_fn)(notif.message);
+        } else if (notif.spoken) {
+            notify_service::speak_notification(notif.message);
+        }
+    }
+}
+
 void rouen_mesh_host::register_service(const mesh::mesh_service_info& info) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     local_services_[info.service] = info;
@@ -1021,6 +1093,7 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
                     }
                 }
             }
+            process_incoming_notifications();
             break;
         }
         case mesh::frame_type::ROUTE_DATA: {
@@ -1105,7 +1178,29 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         case mesh::frame_type::HTTP_REQUEST:
         case mesh::frame_type::HTTP_RESPONSE:
         case mesh::frame_type::HTTP_RESPONSE_CHUNK:
-        case mesh::frame_type::REGISTRY_SET:
+        case mesh::frame_type::REGISTRY_SET: {
+            if (!frame.payload.empty()) {
+                mesh::registry_set_dto set_req{};
+                if (glz::read_json(set_req, frame.payload) == glz::error_code::none) {
+                    if (set_req.value.empty()) {
+                        registry_entries_.erase(set_req.key);
+                    } else {
+                        uint64_t now_sec = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                        registry_entries_[set_req.key] = mesh::registry_entry_dto{
+                            .key = set_req.key,
+                            .value = set_req.value,
+                            .owner_client_id = set_req.client_id,
+                            .created_at_sec = now_sec,
+                            .updated_at_sec = now_sec,
+                            .is_ephemeral = set_req.ephemeral
+                        };
+                    }
+                    process_incoming_notifications();
+                }
+            }
+            break;
+        }
         case mesh::frame_type::REGISTRY_GET:
         case mesh::frame_type::REGISTRY_LIST:
         case mesh::frame_type::PAIRING_REQ:
@@ -1134,6 +1229,7 @@ bool rouen_mesh_host::reconnect() {
 }
 
 void rouen_mesh_host::save_custom_routes() {
+    if (helpers::presence_service::is_headless()) return;
     std::vector<mesh::persistent_route_dto> routes;
     {
         std::lock_guard<std::recursive_mutex> lock(mutex_);

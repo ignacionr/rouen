@@ -34,10 +34,12 @@
 
 #ifndef _WIN32
 #include <sys/signal.h>
+#include <unistd.h>
 #endif
 
 // 2. Libraries used in the project, in alphabetic order
 #include "config_service.hpp"
+#include "hosts/rouen_mesh_host.hpp"
 #include "media_player.hpp"
 #include "universal_sync_host.hpp"
 
@@ -85,6 +87,16 @@ void setup_windows_debug_console() {
     }
 #endif // _DEBUG
 }
+
+void ensure_windows_console_attached() {
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        FILE* fp = nullptr;
+        freopen_s(&fp, "CONOUT$", "w", stdout);
+        freopen_s(&fp, "CONOUT$", "w", stderr);
+        freopen_s(&fp, "CONIN$", "r", stdin);
+        std::ios::sync_with_stdio(true);
+    }
+}
 #else
 #include <sys/wait.h>
 #endif
@@ -95,6 +107,8 @@ void setup_windows_debug_console() {
 #include "helpers/notify_service.hpp"
 #include "helpers/presence_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
+#include "helpers/fetch.hpp"
+#include <glaze/glaze.hpp>
 #include "hosts/plugin_host.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
@@ -111,12 +125,212 @@ int main(int argc, char* argv[]) {
 #endif
     // Initialize CURL globally on the main thread before starting any threads
     curl_global_init(CURL_GLOBAL_ALL);
+    bool cli_mode = false;
+    std::string notify_message;
+    std::string explicit_target;
+    bool spoken = true;
+    bool show_presence = false;
+    bool show_help = false;
+
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg(argv[i]);
-        if (arg == "--no-initial-cards" || arg == "--no-cards") {
+        if (arg == "--notify" || arg == "-n") {
+            cli_mode = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                notify_message = argv[++i];
+            }
+        } else if (arg == "--target" || arg == "-t") {
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                explicit_target = argv[++i];
+            }
+        } else if (arg == "--no-speak" || arg == "--silent") {
+            spoken = false;
+        } else if (arg == "--presence" || arg == "-p") {
+            cli_mode = true;
+            show_presence = true;
+        } else if (arg == "--help" || arg == "-h") {
+            cli_mode = true;
+            show_help = true;
+        } else if (arg == "--no-initial-cards" || arg == "--no-cards") {
             deck::no_initial_cards = true;
         }
     }
+
+    if (cli_mode) {
+#ifdef _WIN32
+        ensure_windows_console_attached();
+#endif
+        if (show_help) {
+            std::cout << "Rouen - Universal AI & Dashboard Mesh\n\n"
+                      << "Usage:\n"
+                      << "  rouen [options]\n\n"
+                      << "Headless CLI Options:\n"
+                      << "  -n, --notify <message>         Send a notification routed to user's active presence\n"
+                      << "  -t, --target <client_id>       Specify explicit recipient client ID (optional)\n"
+                      << "      --no-speak, --silent       Send notification silently without speech\n"
+                      << "  -p, --presence                 Query and display current presence across mesh\n"
+                      << "  -h, --help                     Display this help message\n\n"
+                      << "GUI Options:\n"
+                      << "      --no-cards                 Start with an empty deck\n";
+            curl_global_cleanup();
+            return 0;
+        }
+
+        if (notify_message.empty() && !show_presence) {
+            std::cerr << "Error: --notify / -n requires a message argument.\n"
+                      << "Usage: rouen --notify \"Your message here\"\n";
+            curl_global_cleanup();
+            return 1;
+        }
+
+        // 1. Fast path: check if local Rouen GUI instance is running on port 8081
+        bool local_api_available = false;
+        try {
+            http::fetch api_check(1);
+            std::string health = api_check("http://127.0.0.1:8081/api/health");
+            if (api_check.last_http_code() == 200 && health.find("\"ok\"") != std::string::npos) {
+                local_api_available = true;
+            }
+        } catch (...) {
+            local_api_available = false;
+        }
+
+        if (local_api_available) {
+            http::fetch api_client(3);
+            if (show_presence) {
+                try {
+                    std::string pres_json = api_client("http://127.0.0.1:8081/api/presence");
+                    glz::json_t doc;
+                    if (glz::read_json(doc, pres_json) == glz::error_code::none) {
+                        std::string rec_target;
+                        if (doc.contains("recommended_target") && doc["recommended_target"].is_string()) {
+                            rec_target = doc["recommended_target"].get<std::string>();
+                        }
+                        std::cout << "\n=== Rouen Mesh Presence ===\n";
+                        std::cout << "Recommended Target: " << (rec_target.empty() ? "(none / local)" : rec_target) << "\n\n";
+                        std::cout << std::format("{:<28} {:<12} {:<10} {:<16} {:<24}\n", "CLIENT ID", "USER", "PLATFORM", "STATUS", "LAST ACTIVE");
+                        std::cout << std::string(90, '-') << "\n";
+                        if (doc.contains("presences") && doc["presences"].is_array()) {
+                            for (const auto& p : doc["presences"].get<std::vector<glz::json_t>>()) {
+                                std::cout << std::format("{:<28} {:<12} {:<10} {:<16} {:<24}\n",
+                                    p.contains("client_id") ? p["client_id"].get<std::string>() : "",
+                                    p.contains("user") ? p["user"].get<std::string>() : "",
+                                    p.contains("platform") ? p["platform"].get<std::string>() : "",
+                                    p.contains("status") ? p["status"].get<std::string>() : "",
+                                    p.contains("last_active_iso") ? p["last_active_iso"].get<std::string>() : "");
+                            }
+                        }
+                        std::cout << "\n";
+                        curl_global_cleanup();
+                        return 0;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[Rouen CLI] Local API presence query error: " << e.what() << "\n";
+                }
+            } else if (!notify_message.empty()) {
+                try {
+                    glz::json_t req;
+                    req["message"] = notify_message;
+                    if (!explicit_target.empty()) {
+                        req["target"] = explicit_target;
+                    }
+                    req["speak"] = spoken;
+                    std::string req_json;
+                    (void)glz::write_json(req, req_json);
+
+                    std::string res = api_client.post("http://127.0.0.1:8081/api/notify", req_json, {"Content-Type: application/json"});
+                    if (api_client.last_http_code() == 200) {
+                        std::cout << "[Rouen CLI] Notification successfully sent to running Rouen instance.\n";
+                        curl_global_cleanup();
+                        return 0;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[Rouen CLI] Local API notify error: " << e.what() << ", attempting fallback...\n";
+                }
+            }
+        }
+
+        rouen::helpers::ConfigServiceInitializer::initialize();
+        auto config_service = rouen::helpers::ConfigService::instance();
+        config_service->load_env_file();
+
+        auto& mesh = rouen::hosts::rouen_mesh_host::instance();
+        mesh.initialize();
+        auto mesh_cfg = mesh.get_config();
+        rouen::services::presence_service::instance().set_headless(true);
+        mg_log_set(MG_LL_NONE);
+        mesh.start();
+
+        std::cout << "[Rouen CLI] Connecting to Rouen Mesh..." << std::flush;
+        auto start_wait = std::chrono::steady_clock::now();
+        bool connected = false;
+        while (std::chrono::steady_clock::now() - start_wait < std::chrono::milliseconds(5000)) {
+            if (mesh.is_connected()) {
+                connected = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+
+        if (connected) {
+            std::cout << " connected (" << mesh.get_status_message() << ").\n";
+            mesh.refresh_registry();
+            mesh.refresh_connected_clients();
+            auto reg_wait = std::chrono::steady_clock::now();
+            while (std::chrono::steady_clock::now() - reg_wait < std::chrono::milliseconds(1500)) {
+                auto entries = mesh.get_registry_entries("presence/");
+                if (!entries.empty()) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        } else {
+            std::cout << " offline (mesh server unavailable).\n";
+        }
+
+        if (show_presence) {
+            auto& ps = rouen::services::presence_service::instance();
+            auto presences = ps.get_all_presences();
+            std::string rec_target = ps.get_recommended_notification_target();
+            std::cout << "\n=== Rouen Mesh Presence ===\n";
+            std::cout << "Recommended Notification Target: " << (rec_target.empty() ? "(none / local)" : rec_target) << "\n\n";
+            std::cout << std::format("{:<28} {:<12} {:<10} {:<16} {:<24}\n", "CLIENT ID", "USER", "PLATFORM", "STATUS", "LAST ACTIVE");
+            std::cout << std::string(90, '-') << "\n";
+            for (const auto& p : presences) {
+                std::cout << std::format("{:<28} {:<12} {:<10} {:<16} {:<24}\n",
+                                         p.client_id, p.user, p.platform, p.status, p.last_active_iso);
+            }
+            std::cout << "\n";
+            mesh.stop();
+            curl_global_cleanup();
+            return 0;
+        }
+
+        // Route notification
+        auto& ps = rouen::services::presence_service::instance();
+        std::string target = explicit_target.empty() ? ps.get_recommended_notification_target() : explicit_target;
+        bool is_remote_or_gui = connected && !target.empty() && target != mesh_cfg.client_id;
+
+        if (is_remote_or_gui) {
+            std::cout << std::format("[Rouen CLI] Routing notification to target '{}' (spoken: {})...\n", target, spoken ? "yes" : "no");
+            bool sent = mesh.send_mesh_notification(target, notify_message, spoken);
+            if (sent) {
+                std::cout << std::format("[Rouen CLI] Successfully delivered notification to '{}'.\n", target);
+                std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            } else {
+                std::cerr << "[Rouen CLI] Failed to deliver over mesh, falling back to local.\n";
+                ps.route_notification(notify_message, ps.get_local_client_id(), spoken);
+            }
+        } else {
+            std::cout << std::format("[Rouen CLI] Delivering notification locally (spoken: {})...\n", spoken ? "yes" : "no");
+            ps.route_notification(notify_message, ps.get_local_client_id(), spoken);
+        }
+
+        mesh.stop();
+        curl_global_cleanup();
+        return 0;
+    }
+
 #ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
 #endif

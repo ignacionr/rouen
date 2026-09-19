@@ -63,6 +63,10 @@ struct notify_service {
         return rouen::services::presence_service::instance().get_recommended_notification_target();
     }
 
+    static std::pair<bool, std::string> route_notification(const std::string& message, const std::string& explicit_target = "", bool spoken = true) {
+        return rouen::services::presence_service::instance().route_notification(message, explicit_target, spoken);
+    }
+
     static std::vector<notification_entry> history_snapshot() {
         std::lock_guard<std::mutex> lock(history_mutex_);
         return {history_.rbegin(), history_.rend()};

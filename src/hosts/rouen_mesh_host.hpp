@@ -199,6 +199,14 @@ struct registry_entry_dto {
     bool is_ephemeral{true};
 };
 
+// Mesh Inbox Notification DTO
+struct inbox_notification_dto {
+    std::string message;
+    std::string from_client;
+    bool spoken{true};
+    uint64_t timestamp_ms{0};
+};
+
 // Mesh Client Node Discovery DTO
 struct mesh_client_dto {
     std::string client_id;
@@ -339,6 +347,10 @@ public:
     void refresh_registry();
     [[nodiscard]] std::optional<std::string> get_registry_value(const std::string& key) const;
     [[nodiscard]] std::unordered_map<std::string, mesh::registry_entry_dto> get_registry_entries(std::string_view prefix = "") const;
+
+    // Notification Routing
+    bool send_mesh_notification(const std::string& target_client_id, const std::string& message, bool spoken = true);
+    void process_incoming_notifications();
 
     bool send_pairing_request(const std::string& server_http_base, const std::string& pairing_code, std::string& out_error);
 

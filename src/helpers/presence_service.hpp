@@ -202,19 +202,35 @@ public:
         return "rouen-client";
     }
 
+    static void set_headless(bool headless) noexcept {
+        is_headless_.store(headless);
+    }
+
+    [[nodiscard]] static bool is_headless() noexcept {
+        return is_headless_.load();
+    }
+
+    [[nodiscard]] bool is_cli_client() const {
+        return is_headless() || get_local_client_id().find("-cli-") != std::string::npos;
+    }
+
     /**
      * Infer the presence record where the user was last active across all mesh nodes.
      */
     [[nodiscard]] presence_record get_last_active_presence() const {
         auto& mesh = hosts::rouen_mesh_host::instance();
-        presence_record best_record = get_local_presence();
+        presence_record best_record{};
+        if (running_.load() && !is_cli_client()) {
+            best_record = get_local_presence();
+        }
 
         // 1. Try checking "presence/last_active" in mesh registry
         auto last_active_val = mesh.get_registry_value("presence/last_active");
         if (last_active_val && !last_active_val->empty()) {
             last_active_summary summary{};
             if (glz::read_json(summary, *last_active_val) == glz::error_code::none && !summary.client_id.empty()) {
-                if (summary.last_active_epoch_ms >= best_record.last_active_epoch_ms) {
+                if (summary.client_id.find("-cli-") == std::string::npos &&
+                    summary.last_active_epoch_ms >= best_record.last_active_epoch_ms) {
                     best_record.client_id = summary.client_id;
                     best_record.user = summary.user;
                     best_record.last_active_epoch_ms = summary.last_active_epoch_ms;
@@ -231,10 +247,15 @@ public:
             if (entry.value.empty()) continue;
             presence_record rec{};
             if (glz::read_json(rec, entry.value) == glz::error_code::none && !rec.client_id.empty()) {
+                if (rec.client_id.find("-cli-") != std::string::npos) continue;
                 if (rec.last_active_epoch_ms > best_record.last_active_epoch_ms) {
                     best_record = rec;
                 }
             }
+        }
+
+        if (best_record.client_id.empty()) {
+            best_record = get_local_presence();
         }
 
         return best_record;
@@ -263,6 +284,56 @@ public:
     }
 
     /**
+     * Route a notification to an explicit target client or to the recommended target inferred from presence.
+     * If the target is local (or empty), delivers immediately to local notification handlers.
+     * Otherwise publishes to the target's mesh inbox.
+     * Returns a pair: {bool success, std::string routed_to_client_id}.
+     */
+    std::pair<bool, std::string> route_notification(const std::string& message, const std::string& explicit_target = "", bool spoken = true) {
+        if (message.empty()) {
+            return {false, ""};
+        }
+
+        std::string target = explicit_target.empty() ? get_recommended_notification_target() : explicit_target;
+        std::string local_id = get_local_client_id();
+
+        if (target.empty()) {
+            target = local_id;
+        }
+
+        if (target == local_id) {
+            auto notify_fn = registrar::try_get<std::function<void(std::string const&)>>("notify");
+            if (notify_fn) {
+                (*notify_fn)(message);
+            } else if (spoken) {
+                std::string safe_message;
+                safe_message.reserve(message.size());
+                for (char c : message) {
+                    if (c == '"' || c == '\\' || c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
+                        safe_message += ' ';
+                    } else {
+                        safe_message += c;
+                    }
+                }
+#ifdef _WIN32
+                std::string ps_cmd = std::format("powershell -Command \"Add-Type –AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}');\"", safe_message);
+                [[maybe_unused]] int r = std::system(ps_cmd.c_str());
+#else
+                std::string say_path = CONFIG_SERVICE()->get_say_path();
+                std::string say_cmd = std::format("{} \"{}\"", say_path, safe_message);
+                [[maybe_unused]] int r = std::system(say_cmd.c_str());
+#endif
+            }
+            return {true, local_id};
+        }
+
+        // Deliver over mesh
+        auto& mesh = hosts::rouen_mesh_host::instance();
+        bool ok = mesh.send_mesh_notification(target, message, spoken);
+        return {ok, target};
+    }
+
+    /**
      * Returns true if notifications should be handled/alerted on this local client.
      */
     [[nodiscard]] bool should_notify_locally() const {
@@ -284,6 +355,7 @@ public:
             if (entry.value.empty()) continue;
             presence_record rec{};
             if (glz::read_json(rec, entry.value) == glz::error_code::none && !rec.client_id.empty()) {
+                if (rec.client_id.find("-cli-") != std::string::npos) continue;
                 if (rec.client_id == local_id) {
                     local_included = true;
                 }
@@ -291,7 +363,7 @@ public:
             }
         }
 
-        if (!local_included) {
+        if (!local_included && running_.load() && !is_cli_client()) {
             result.push_back(get_local_presence());
         }
 
@@ -411,6 +483,7 @@ private:
     std::condition_variable worker_cv_;
 
     std::atomic<bool> running_{false};
+    static inline std::atomic<bool> is_headless_{false};
     std::atomic<bool> needs_publish_{false};
     bool is_idle_reported_{false};
 

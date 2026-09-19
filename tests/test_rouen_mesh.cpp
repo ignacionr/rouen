@@ -9,6 +9,8 @@
 #include "../src/helpers/presence_service.hpp"
 #include "../src/helpers/notify_service.hpp"
 #include <cassert>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -346,9 +348,99 @@ void test_presence_service_and_inference() {
     ps.stop();
 }
 
+void test_mesh_notification_routing() {
+    std::cout << "\n[Test] Mesh Notification Routing & Inbox Processing\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "test-local-node";
+    cfg.server_url = "ws://127.0.0.1:8765/ws/mesh";
+    host.initialize(cfg);
+
+    // 1. Send notification to remote node
+    bool sent = host.send_mesh_notification("test-remote-node", "Hello from mesh test!", true);
+    test_helpers::assert_true(sent, "send_mesh_notification succeeds");
+
+    // Verify written to registry under target inbox
+    auto entries = host.get_registry_entries("notifications/inbox/test-remote-node/");
+    test_helpers::assert_equal(static_cast<size_t>(1), entries.size(), "Inbox notification entry was recorded in registry");
+    
+    for (const auto& [k, v] : entries) {
+        test_helpers::assert_true(v.value.find("Hello from mesh test!") != std::string::npos, "Notification payload contains expected message");
+        test_helpers::assert_true(v.value.find("test-local-node") != std::string::npos, "Notification payload contains sender client_id");
+    }
+
+    // 2. Simulate receiving notification for local client
+    rouen::mesh::inbox_notification_dto incoming{
+        .message = "Alert: compile finished",
+        .from_client = "remote-builder",
+        .spoken = false,
+        .timestamp_ms = 123456789
+    };
+    std::string incoming_json;
+    (void)glz::write_json(incoming, incoming_json);
+
+    std::string local_inbox_key = "notifications/inbox/test-local-node/123456789";
+    host.set_registry_value(local_inbox_key, incoming_json);
+
+    // Register a test listener in registrar to capture notification
+    std::string received_msg;
+    registrar::add<std::function<void(std::string const&)>>("notify",
+        std::make_shared<std::function<void(std::string const&)>>([&received_msg](const std::string& m) {
+            received_msg = m;
+        })
+    );
+
+    // Process incoming notifications
+    host.process_incoming_notifications();
+
+    // Verify notification was delivered
+    test_helpers::assert_string_equal("Alert: compile finished", received_msg, "Incoming notification delivered to registrar listener");
+
+    // Verify inbox entry was deleted from registry
+    auto local_entries = host.get_registry_entries("notifications/inbox/test-local-node/");
+    test_helpers::assert_equal(static_cast<size_t>(0), local_entries.size(), "Processed inbox notification deleted from registry");
+
+    // 3. Test presence_service::route_notification with explicit target
+    auto& ps = rouen::services::presence_service::instance();
+    auto [route_ok, routed_to] = ps.route_notification("Deploy ready", "test-remote-node", false);
+    test_helpers::assert_true(route_ok, "route_notification succeeds with explicit remote target");
+    test_helpers::assert_string_equal("test-remote-node", routed_to, "route_notification routed to expected target");
+
+    entries = host.get_registry_entries("notifications/inbox/test-remote-node/");
+    test_helpers::assert_equal(static_cast<size_t>(2), entries.size(), "Remote inbox now has second routed notification");
+
+    host.clear();
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
+
+    // Set headless mode so test runs don't advertise workstation presence
+    rouen::helpers::presence_service::set_headless(true);
+
+    // RAII guard to preserve the user's .env file from being modified during tests
+    struct env_restorer {
+        std::string content;
+        bool exists = false;
+        env_restorer() {
+            if (std::filesystem::exists(".env")) {
+                std::ifstream in(".env");
+                if (in) {
+                    content.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                    exists = true;
+                }
+            }
+        }
+        ~env_restorer() {
+            if (exists) {
+                std::ofstream out(".env");
+                out << content;
+            }
+        }
+    } restorer;
 
     try {
         test_binary_frame_codec();
@@ -358,6 +450,7 @@ int main() {
         test_service_registration_and_discovery_parsing();
         test_mesh_registry_generic_api();
         test_presence_service_and_inference();
+        test_mesh_notification_routing();
         test_pairing_request_validation();
         test_self_healing_resilience();
 

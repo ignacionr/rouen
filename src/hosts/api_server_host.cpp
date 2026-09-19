@@ -803,6 +803,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/notify"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_notify(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else if (mg_match(hm->uri, mg_str("/proxy"), nullptr) ||
                mg_match(hm->uri, mg_str("/proxy/*"), nullptr) ||
                mg_match(hm->uri, mg_str("/api/mesh/proxy"), nullptr) ||
@@ -2356,7 +2363,8 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     {"name": "AdLib Engine", "description": "AdLib session orchestration, video rendering, and audio hardware tests"},
     {"name": "Process Orchestration & UI Automation", "description": "Process definitions, process lifecycle management, UI element inspection, and UI control manipulation for orchestrated applications"},
     {"name": "Telegram Bot Host", "description": "Telegram bot host status, active chat sessions, auto-routing rules, and message dispatch"},
-    {"name": "Mesh Networking", "description": "Mesh network status, WebSocket relay connection, pairing, virtual route tunneling, peer client discovery, and local service registration"}
+    {"name": "Mesh Networking", "description": "Mesh network status, WebSocket relay connection, pairing, virtual route tunneling, peer client discovery, and local service registration"},
+    {"name": "Presence & Notifications", "description": "User presence tracking across mesh nodes and intelligent notification routing"}
   ],
   "paths": {
     "/api/health": {
@@ -4017,6 +4025,58 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
           }
         }
       }
+    },
+    "/api/notify": {
+      "post": {
+        "tags": ["Presence & Notifications"],
+        "summary": "Send a notification routed via presence inference or directly to target",
+        "operationId": "sendNotification",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": {"type": "string", "example": "Compilation completed"},
+                  "target": {"type": "string", "example": "rouen-desktop-mac"},
+                  "speak": {"type": "boolean", "default": true}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notification routed successfully"
+          }
+        }
+      }
+    },
+    "/api/presence": {
+      "get": {
+        "tags": ["Presence & Notifications"],
+        "summary": "Get user presence across mesh and active workstation inference",
+        "operationId": "getPresence",
+        "responses": {
+          "200": {
+            "description": "Current presence information"
+          }
+        }
+      }
+    },
+    "/api/presence/touch": {
+      "post": {
+        "tags": ["Presence & Notifications"],
+        "summary": "Touch local client presence to indicate active user interaction",
+        "operationId": "touchPresence",
+        "responses": {
+          "200": {
+            "description": "Presence touched"
+          }
+        }
+      }
     }
   }
 })json";
@@ -4392,6 +4452,50 @@ std::string api_server_host::handle_presence_touch(struct mg_connection* /*c*/, 
     return std::format(R"({{"success":true,"client_id":"{}","last_active_client_id":"{}"}})",
                        svc.get_local_client_id(),
                        svc.get_last_active_client_id());
+}
+
+struct notify_api_request {
+    std::string message;
+    std::string target;
+    bool speak{true};
+};
+
+std::string api_server_host::handle_notify(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    std::string body(hm->body.buf, hm->body.len);
+    std::string message;
+    std::string target;
+    bool speak = true;
+
+    if (!body.empty()) {
+        notify_api_request req{};
+        if (glz::read_json(req, body) == glz::error_code::none) {
+            message = req.message;
+            target = req.target;
+            speak = req.speak;
+        }
+    }
+
+    if (message.empty()) {
+        char buf[512];
+        if (mg_http_get_var(&hm->query, "message", buf, sizeof(buf)) > 0) {
+            message = buf;
+        }
+        if (mg_http_get_var(&hm->query, "target", buf, sizeof(buf)) > 0) {
+            target = buf;
+        }
+    }
+
+    if (message.empty()) {
+        return R"({"error":"Message is required"})";
+    }
+
+    auto& ps = rouen::services::presence_service::instance();
+    auto [success, routed_target] = ps.route_notification(message, target, speak);
+
+    return std::format(R"({{"success":{},"target":"{}","message":"{}"}})",
+                       success ? "true" : "false",
+                       routed_target,
+                       message);
 }
 
 } // namespace rouen::hosts
