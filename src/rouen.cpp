@@ -93,6 +93,7 @@ void setup_windows_debug_console() {
 #include "cards/interface/deck.hpp"
 #include "helpers/debug.hpp"
 #include "helpers/notify_service.hpp"
+#include "helpers/presence_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
 #include "hosts/plugin_host.hpp"
 #include "hosts/video_feed_host.hpp"
@@ -126,6 +127,11 @@ int main(int argc, char* argv[]) {
     std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << '\n';
     
     notify_service const notify; // Initialize the notify service
+    
+    // Initialize the presence service and register in service registrar
+    rouen::services::presence_service::instance().start();
+    registrar::add<rouen::services::presence_service>("presence_service",
+        std::shared_ptr<rouen::services::presence_service>(&rouen::services::presence_service::instance(), [](auto*){}));
     
     // Initialize the configuration service
     rouen::helpers::ConfigServiceInitializer::initialize();
@@ -252,6 +258,9 @@ int main(int argc, char* argv[]) {
 
     // Run the main loop
     window.run();
+
+    // Stop presence service
+    rouen::services::presence_service::instance().stop();
 
     // Stop all media players and video feed host
     media_player::shutdown();

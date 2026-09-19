@@ -19,6 +19,7 @@
 #include "../registrar.hpp"
 #include "debug.hpp"
 #include "config_service.hpp"
+#include "presence_service.hpp"
 
 struct notify_service {
     struct notification_entry {
@@ -37,12 +38,29 @@ struct notify_service {
                 [](std::string const &message) {
                     record_notification(message);
                     if (spoken_notifications_enabled()) {
-                        speak_notification(message);
+                        bool follow_presence = CONFIG_SERVICE()->get_typed<bool>("ROUEN_NOTIFY_FOLLOW_PRESENCE").value_or(false);
+                        if (!follow_presence || is_user_present()) {
+                            speak_notification(message);
+                        } else {
+                            NOTIFY_DEBUG(std::format("Spoken notification suppressed locally; user was last active on: {}", last_active_client()));
+                        }
                     }
                     NOTIFY_INFO(message);
                 }
             )
         );
+    }
+
+    static std::string last_active_client() {
+        return rouen::services::presence_service::instance().get_last_active_client_id();
+    }
+
+    static bool is_user_present() {
+        return rouen::services::presence_service::instance().should_notify_locally();
+    }
+
+    static std::string recommended_notification_target() {
+        return rouen::services::presence_service::instance().get_recommended_notification_target();
     }
 
     static std::vector<notification_entry> history_snapshot() {

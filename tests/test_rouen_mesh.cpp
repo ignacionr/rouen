@@ -6,6 +6,8 @@
  */
 
 #include "../src/hosts/rouen_mesh_host.hpp"
+#include "../src/helpers/presence_service.hpp"
+#include "../src/helpers/notify_service.hpp"
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -228,6 +230,122 @@ void test_self_healing_resilience() {
     host.stop();
 }
 
+void test_mesh_registry_generic_api() {
+    std::cout << "\n--- Testing Mesh Registry Generic Key-Value API ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "test-node-1";
+    host.initialize(cfg);
+
+    // Test setting registry value
+    host.set_registry_value("test/key1", "sample_value_1");
+    auto val1 = host.get_registry_value("test/key1");
+    test_helpers::assert_true(val1.has_value(), "Retrieved registry value for test/key1");
+    test_helpers::assert_string_equal("sample_value_1", *val1, "Registry value matches set content");
+
+    // Test prefix filtering
+    host.set_registry_value("test/key2", "sample_value_2");
+    host.set_registry_value("other/key3", "sample_value_3");
+
+    auto test_entries = host.get_registry_entries("test/");
+    test_helpers::assert_equal(2, test_entries.size(), "Filtered 2 entries with prefix test/");
+
+    auto all_entries = host.get_registry_entries();
+    test_helpers::assert_true(all_entries.size() >= 3, "Total registry entries contains at least 3 items");
+
+    // Test deleting registry value
+    host.delete_registry_value("test/key1");
+    auto deleted_val = host.get_registry_value("test/key1");
+    test_helpers::assert_true(!deleted_val.has_value(), "Deleted key returns nullopt");
+}
+
+void test_presence_service_and_inference() {
+    std::cout << "\n--- Testing Presence Service & Mesh Inference ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "rouen-desktop-mac";
+    host.initialize(cfg);
+
+    auto& ps = rouen::services::presence_service::instance();
+    ps.start();
+
+    // 1. Verify local presence initialization
+    ps.record_interaction("ui_input");
+    ps.publish_presence("ui_input", true);
+
+    test_helpers::assert_string_equal("rouen-desktop-mac", ps.get_local_client_id(), "Local client ID matches configuration");
+    test_helpers::assert_string_equal("rouen-desktop-mac", ps.get_last_active_client_id(), "Last active client inferred as local client");
+    test_helpers::assert_true(ps.is_local_client_last_active(), "Local client is recognized as last active");
+    test_helpers::assert_true(ps.should_notify_locally(), "Local client should handle notification");
+    test_helpers::assert_string_equal("rouen-desktop-mac", ps.get_recommended_notification_target(), "Recommended notification target is local client");
+
+    // 2. Simulate remote peer client "rouen-macbook-air" reporting recent activity on the mesh
+    uint64_t remote_time = ps.get_local_presence().last_active_epoch_ms + 60000; // 1 minute in the future
+    rouen::services::presence_record remote_rec{
+        .client_id = "rouen-macbook-air",
+        .user = "inz",
+        .hostname = "macbook-air",
+        .platform = "mac",
+        .last_active_epoch_ms = remote_time,
+        .last_active_iso = "2026-09-18T19:30:00Z",
+        .interaction_type = "keyboard",
+        .status = "active"
+    };
+    std::string remote_json;
+    [[maybe_unused]] auto ec1 = glz::write_json(remote_rec, remote_json);
+
+    rouen::services::last_active_summary remote_summary{
+        .client_id = "rouen-macbook-air",
+        .user = "inz",
+        .last_active_epoch_ms = remote_time,
+        .last_active_iso = "2026-09-18T19:30:00Z",
+        .interaction_type = "keyboard"
+    };
+    std::string summary_json;
+    [[maybe_unused]] auto ec2 = glz::write_json(remote_summary, summary_json);
+
+    // Inject remote presence into mesh registry
+    host.set_registry_value("presence/rouen-macbook-air", remote_json);
+    host.set_registry_value("presence/last_active", summary_json);
+
+    // 3. Verify presence inference identifies remote peer as where the user is
+    test_helpers::assert_string_equal("rouen-macbook-air", ps.get_last_active_client_id(), "Inferred user was last active on remote peer rouen-macbook-air");
+    test_helpers::assert_true(!ps.is_local_client_last_active(), "Local client is NOT last active when remote peer was newer");
+    test_helpers::assert_string_equal("rouen-macbook-air", ps.get_recommended_notification_target(), "Recommended notification target points to remote peer");
+
+    // 4. Verify notify_service integration queries presence correctly
+    test_helpers::assert_string_equal("rouen-macbook-air", notify_service::last_active_client(), "notify_service reports last active client matching presence");
+    test_helpers::assert_string_equal("rouen-macbook-air", notify_service::recommended_notification_target(), "notify_service recommends notification target matching presence");
+
+    // 5. User now interacts on the local machine
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ps.record_interaction("ui_input");
+    ps.publish_presence("ui_input", true);
+
+    // Simulate local timestamp advancing past remote
+    rouen::services::last_active_summary local_summary{
+        .client_id = "rouen-desktop-mac",
+        .user = "inz",
+        .last_active_epoch_ms = remote_time + 10000,
+        .last_active_iso = "2026-09-18T19:30:10Z",
+        .interaction_type = "ui_input"
+    };
+    std::string local_summary_json;
+    (void)glz::write_json(local_summary, local_summary_json);
+    host.set_registry_value("presence/last_active", local_summary_json);
+    host.set_registry_value("presence/rouen-desktop-mac", local_summary_json);
+
+    test_helpers::assert_string_equal("rouen-desktop-mac", ps.get_last_active_client_id(), "Presence correctly switches back to local client on user interaction");
+    test_helpers::assert_true(ps.is_local_client_last_active(), "Local client is once again last active");
+    test_helpers::assert_string_equal("rouen-desktop-mac", ps.get_recommended_notification_target(), "Notification target switches back to local machine");
+
+    ps.stop();
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
@@ -238,6 +356,8 @@ int main() {
         test_client_node_discovery_parsing();
         test_handshake_signature_generation();
         test_service_registration_and_discovery_parsing();
+        test_mesh_registry_generic_api();
+        test_presence_service_and_inference();
         test_pairing_request_validation();
         test_self_healing_resilience();
 

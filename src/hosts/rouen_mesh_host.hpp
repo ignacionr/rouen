@@ -333,6 +333,13 @@ public:
     [[nodiscard]] std::vector<mesh::mesh_service_info> get_local_services() const;
     [[nodiscard]] std::vector<mesh::mesh_service_info> get_peer_services() const;
 
+    // Generic Registry Management
+    void set_registry_value(const std::string& key, const std::string& value, bool ephemeral = true);
+    void delete_registry_value(const std::string& key);
+    void refresh_registry();
+    [[nodiscard]] std::optional<std::string> get_registry_value(const std::string& key) const;
+    [[nodiscard]] std::unordered_map<std::string, mesh::registry_entry_dto> get_registry_entries(std::string_view prefix = "") const;
+
     bool send_pairing_request(const std::string& server_http_base, const std::string& pairing_code, std::string& out_error);
 
     // Frame processing pipeline
@@ -396,6 +403,7 @@ private:
 
     std::unordered_map<std::string, mesh::mesh_service_info> local_services_;
     std::unordered_map<std::string, mesh::mesh_service_info> peer_services_;
+    std::unordered_map<std::string, mesh::registry_entry_dto> registry_entries_;
     std::unordered_map<uint32_t, mesh::virtual_route_info> active_routes_;
     std::vector<mesh::mesh_client_dto> connected_clients_;
 

@@ -358,6 +358,8 @@ namespace rouen::helpers {
                        "Path to the ping executable (e.g., ping)", "ping");
         register_config("ROUEN_SPOKEN_NOTIFICATIONS", Category::GENERAL, false, false,
                        "Enable spoken notifications (1=true, 0=false)", "1");
+        register_config("ROUEN_NOTIFY_FOLLOW_PRESENCE", Category::GENERAL, false, false,
+                       "Only play spoken notifications on the mesh client where user was last interacting (1=true, 0=false)", "0");
         register_config("ROUEN_COOKIES_BROWSER", Category::GENERAL, false, false,
                        "Browser to extract cookies from for yt-dlp (chrome, safari, firefox, brave, edge, etc.)", "safari");
         register_config("ROUEN_YOUTUBE_PREFERRED_QUALITY", Category::GENERAL, false, false,

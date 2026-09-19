@@ -20,6 +20,7 @@
 
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/imgui_include.hpp"
+#include "../../helpers/presence_service.hpp"
 #include "../../hosts/rouen_mesh_host.hpp"
 #include "../interface/card.hpp"
 
@@ -247,18 +248,39 @@ private:
             ImGuiTabItemFlags tab1_flags = (select_tab == 1) ? ImGuiTabItemFlags_SetSelected : 0;
             if (ImGui::BeginTabItem("Nodes & Tunnels", nullptr, tab1_flags)) {
                 ImGui::Spacing();
+
+                auto& presence_svc = rouen::services::presence_service::instance();
+                std::string last_active_node = presence_svc.get_last_active_client_id();
+                bool is_local = presence_svc.is_local_client_last_active();
+                uint64_t sec_ago = presence_svc.get_seconds_since_last_interaction();
+
+                ImGui::TextColored(ImVec4(0.40f, 0.85f, 0.65f, 1.0f), "USER PRESENCE & NOTIFICATION ROUTING");
+                ImGui::Text("Last User Interaction: ");
+                ImGui::SameLine();
+                ImGui::TextColored(is_local ? ImVec4(0.35f, 0.85f, 0.45f, 1.0f) : ImVec4(0.95f, 0.70f, 0.35f, 1.0f),
+                                   "%s %s", last_active_node.c_str(), is_local ? "(Local Machine)" : "(Remote Mesh Peer)");
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%llu seconds ago, status: %s)",
+                                    static_cast<unsigned long long>(sec_ago),
+                                    presence_svc.is_locally_idle() ? "idle" : "active");
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
                 ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Online Connected Mesh Nodes (CLIENT_LIST)");
                 if (ImGui::Button("Refresh Online Nodes")) {
                     host.refresh_connected_clients();
+                    presence_svc.publish_presence("refresh", false);
                 }
 
                 auto connected_nodes = host.get_connected_clients();
                 if (connected_nodes.empty()) {
                     ImGui::TextDisabled("No connected nodes listed. Click 'Refresh Online Nodes' to query rouen-service.");
                 } else {
-                    if (ImGui::BeginTable("connected_nodes_table", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                    if (ImGui::BeginTable("connected_nodes_table", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                         ImGui::TableSetupColumn("Node Client ID");
                         ImGui::TableSetupColumn("IP Address");
+                        ImGui::TableSetupColumn("Presence");
                         ImGui::TableSetupColumn("Uptime");
                         ImGui::TableSetupColumn("Requests");
                         ImGui::TableSetupColumn("Bytes Transferred");
@@ -271,10 +293,16 @@ private:
                             ImGui::TableSetColumnIndex(1);
                             ImGui::Text("%s", node.ip_address.c_str());
                             ImGui::TableSetColumnIndex(2);
-                            ImGui::Text("%llu s", static_cast<unsigned long long>(node.uptime_seconds));
+                            if (node.client_id == last_active_node) {
+                                ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "Active Target");
+                            } else {
+                                ImGui::TextDisabled("Idle");
+                            }
                             ImGui::TableSetColumnIndex(3);
-                            ImGui::Text("%llu", static_cast<unsigned long long>(node.requests_tunneled));
+                            ImGui::Text("%llu s", static_cast<unsigned long long>(node.uptime_seconds));
                             ImGui::TableSetColumnIndex(4);
+                            ImGui::Text("%llu", static_cast<unsigned long long>(node.requests_tunneled));
+                            ImGui::TableSetColumnIndex(5);
                             ImGui::Text("%llu B", static_cast<unsigned long long>(node.bytes_sent + node.bytes_received));
                         }
 

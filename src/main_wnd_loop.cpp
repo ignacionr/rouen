@@ -55,6 +55,7 @@
 #include "helpers/media_player.hpp"
 #include "helpers/adlib_engine.hpp"
 #include "helpers/capture_helper.hpp"
+#include "helpers/presence_service.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
@@ -541,10 +542,13 @@ bool main_wnd::process_events() {
                         case SDL_EVENT_WINDOW_MOUSE_ENTER:
                             s_input_boost_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
                             m_immediate = true;
+                            rouen::services::presence_service::instance().record_interaction("ui_input");
                             break;
                         default:
                             break;
                     }
+                } else {
+                    rouen::services::presence_service::instance().record_interaction("detached_window");
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
                     if (media_player::has_active_fullscreen_item()) {

@@ -72,6 +72,7 @@
 #include "media_player.hpp"
 #include "card_render_metrics.hpp"
 #include "rouen_mesh_host.hpp"
+#include "../helpers/presence_service.hpp"
 #include "../helpers/adlib_engine.hpp"
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
@@ -784,6 +785,20 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/mesh/services"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_mesh_services(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/presence"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_presence_get(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/presence/touch"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_presence_touch(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -4342,6 +4357,41 @@ std::string api_server_host::handle_mesh_proxy(struct mg_connection* /*c*/, stru
         return json;
     }
     return R"({"status":"active","message":"Transparent TCP mesh tunnel proxy listeners active"})";
+}
+
+std::string api_server_host::handle_presence_get(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& svc = rouen::services::presence_service::instance();
+    auto presences = svc.get_all_presences();
+    std::string presences_json;
+    (void)glz::write_json(presences, presences_json);
+
+    return std::format(
+        R"({{"local_client_id":"{}","last_active_client_id":"{}","is_local_active":{},"seconds_since_last_interaction":{},"is_locally_idle":{},"recommended_target":"{}","presences":{}}})",
+        svc.get_local_client_id(),
+        svc.get_last_active_client_id(),
+        svc.is_local_client_last_active() ? "true" : "false",
+        svc.get_seconds_since_last_interaction(),
+        svc.is_locally_idle() ? "true" : "false",
+        svc.get_recommended_notification_target(),
+        presences_json.empty() ? "[]" : presences_json
+    );
+}
+
+std::string api_server_host::handle_presence_touch(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& svc = rouen::services::presence_service::instance();
+    std::string body(hm->body.buf, hm->body.len);
+    std::string itype = "api_touch";
+    if (!body.empty()) {
+        rouen::services::presence_touch_request req{};
+        if (glz::read_json(req, body) == glz::error_code::none && !req.interaction_type.empty()) {
+            itype = req.interaction_type;
+        }
+    }
+    svc.record_interaction(itype);
+    svc.publish_presence(itype, true);
+    return std::format(R"({{"success":true,"client_id":"{}","last_active_client_id":"{}"}})",
+                       svc.get_local_client_id(),
+                       svc.get_last_active_client_id());
 }
 
 } // namespace rouen::hosts
