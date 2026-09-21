@@ -3,6 +3,10 @@ name: Windows Build & Test
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
+  release:
+    types: [published]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -18,8 +22,11 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: windows-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -921,7 +928,7 @@ jobs:
         if (-not $rawTag) { $rawTag = "${{ github.ref_name }}" }
         $cleanSemVer = $rawTag -replace '^v', ''
         if ($cleanSemVer -notmatch '^\d+\.\d+\.\d+') {
-          $cleanSemVer = "1.4.2"
+          $cleanSemVer = "1.4.7"
         }
         $version = "$cleanSemVer.0"
         
@@ -1159,10 +1166,11 @@ jobs:
           *.msi
 
     - name: Upload Windows Release Assets
-      if: github.event_name == 'release' || (inputs.tag_name != null && inputs.tag_name != '')
+      if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') || (inputs.tag_name != null && inputs.tag_name != '')
       shell: pwsh
       run: |
         $tag = "${{ inputs.tag_name }}"
+        if (-not $tag) { $tag = "${{ github.event.release.tag_name }}" }
         if (-not $tag) { $tag = "${{ github.ref_name }}" }
         Write-Host "Uploading Windows release assets for tag: $tag"
         if (Test-Path "rouen-windows-x64.zip") {

@@ -262,7 +262,18 @@ void ImGui_ImplSDLGPU3_RenderDrawData(ImDrawData* draw_data, SDL_GPUCommandBuffe
                 SDL_SetGPUScissor(render_pass,&scissor_rect);
 
                 // Bind DescriptorSet with font or user texture
-                SDL_BindGPUFragmentSamplers(render_pass, 0, (SDL_GPUTextureSamplerBinding*)pcmd->GetTexID(), 1);
+                SDL_GPUTextureSamplerBinding* binding = (SDL_GPUTextureSamplerBinding*)pcmd->GetTexID();
+                if (!binding || !binding->texture || !binding->sampler)
+                {
+                    binding = &bd->FontBinding;
+                }
+
+                if (!binding || !binding->texture || !binding->sampler)
+                {
+                    continue;
+                }
+
+                SDL_BindGPUFragmentSamplers(render_pass, 0, binding, 1);
 
                 // Draw
                 SDL_DrawGPUIndexedPrimitives(render_pass, pcmd->ElemCount, 1, pcmd->IdxOffset + global_idx_offset, pcmd->VtxOffset + global_vtx_offset, 0);
@@ -612,7 +623,8 @@ void ImGui_ImplSDLGPU3_NewFrame()
     ImGui_ImplSDLGPU3_Data* bd = ImGui_ImplSDLGPU3_GetBackendData();
     IM_ASSERT(bd != nullptr && "Context or backend not initialized! Did you call ImGui_ImplSDLGPU3_Init()?");
 
-    if (!bd->FontTexture)
+    ImGuiIO& io = ImGui::GetIO();
+    if (!bd->FontTexture || io.Fonts->TexID == 0)
         ImGui_ImplSDLGPU3_CreateFontsTexture();
 }
 

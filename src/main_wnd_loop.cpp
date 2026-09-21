@@ -613,12 +613,18 @@ bool main_wnd::process_events() {
                     }
                 }
                 
-                // Handle window resize/move/pixel size change to refresh DPI settings
+                // Handle window resize/move/display change/pixel size change to refresh DPI settings
                 if (event.type == SDL_EVENT_WINDOW_RESIZED ||
                     event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
-                    event.type == SDL_EVENT_WINDOW_MOVED) {
+                    event.type == SDL_EVENT_WINDOW_MOVED ||
+                    event.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED ||
+                    event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED ||
+                    event.type == SDL_EVENT_DISPLAY_ADDED ||
+                    event.type == SDL_EVENT_DISPLAY_REMOVED ||
+                    event.type == SDL_EVENT_DISPLAY_MOVED ||
+                    event.type == SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED) {
                     
-                    std::cout << "Window event detected, updating display settings..." << '\n';
+                    std::cout << "Window/Display event detected, updating display settings..." << '\n';
                     
                     // Update ImGui display settings immediately
                     update_imgui_display_settings();
@@ -629,14 +635,19 @@ bool main_wnd::process_events() {
                     // Only rebuild fonts if there's a significant DPI change
                     if (rouen::fonts::needs_font_rebuild()) {
                         std::cout << "Significant DPI change detected, rebuilding fonts..." << '\n';
+                        // Destroy old font texture first so GPU backend is clean
+                        ImGui_ImplSDLGPU3_DestroyFontsTexture();
                         // Clear current fonts and rebuild
-                        ImGui::GetIO().Fonts->Clear();
                         rouen::fonts::setup();
+                        // Recreate font texture in the SDL_GPU backend and set io.Fonts->TexID
+                        ImGui_ImplSDLGPU3_CreateFontsTexture();
                         
                         // Clear the rebuild flag
                         rouen::fonts::clear_font_rebuild_flag();
-                        
-                        // Font atlas is managed automatically in SDL3 GPU backend
+
+                        if (m_detached_imgui_ctx && m_detached_imgui_ctx->IO.Fonts) {
+                            m_detached_imgui_ctx->IO.Fonts->TexID = ImGui::GetIO().Fonts->TexID;
+                        }
                     }
                 }
                 else if (event.type == SDL_EVENT_KEY_DOWN) {

@@ -18,8 +18,11 @@ on:
         default: false
         type: boolean
 
+permissions:
+  contents: write
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -133,7 +136,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_TESTS=ON \
             -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF && \
-          cmake --build build-tests --parallel 2 && \
+          cmake --build build-tests --target test_ssl_modes_simple test_fetch_ssl --parallel 2 && \
           cd build-tests/tests && ./test_ssl_modes_simple && ./test_fetch_ssl
         "
 
@@ -160,7 +163,7 @@ jobs:
     - name: Upload Linux Asset
       run: |
         echo "Uploading Linux release asset..."
-        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-linux-x64.tar.gz --clobber
+        gh release upload ${{ github.event.inputs.tag_name || github.event.release.tag_name || github.ref_name }} rouen-linux-x64.tar.gz --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -218,7 +221,7 @@ jobs:
     - name: Upload macOS Asset
       run: |
         echo "Uploading macOS release asset..."
-        gh release upload ${{ github.event.inputs.tag_name || github.ref_name }} rouen-macos-universal.dmg --clobber
+        gh release upload ${{ github.event.inputs.tag_name || github.event.release.tag_name || github.ref_name }} rouen-macos-universal.dmg --clobber
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -227,5 +230,5 @@ jobs:
     if: always() && (github.event_name == 'release' || needs.create-release.result == 'success')
     uses: ./.github/workflows/windows-release.yml
     with:
-      tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+      tag_name: ${{ github.event.inputs.tag_name || github.event.release.tag_name || github.ref_name }}
     secrets: inherit
