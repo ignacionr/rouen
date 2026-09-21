@@ -782,8 +782,11 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
-    } else if (mg_match(hm->uri, mg_str("/api/mesh/services"), nullptr)) {
-        if (mg_strcmp(hm->method, mg_str("GET")) == 0 || mg_strcmp(hm->method, mg_str("POST")) == 0) {
+    } else if (mg_match(hm->uri, mg_str("/api/mesh/services"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/mesh/services/*"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0 ||
+            mg_strcmp(hm->method, mg_str("POST")) == 0 ||
+            mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
             response = handle_mesh_services(c, hm);
         } else {
             status_code = 405;
@@ -4012,6 +4015,30 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
             "description": "Local service registered"
           }
         }
+      },
+      "delete": {
+        "tags": ["Mesh Networking"],
+        "summary": "Unregister a local service from the mesh network",
+        "operationId": "unregisterMeshService",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["service"],
+                "properties": {
+                  "service": {"type": "string", "example": "llm-9095"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Local service unregistered"
+          }
+        }
       }
     },
     "/api/mesh/proxy": {
@@ -4386,7 +4413,30 @@ std::string api_server_host::handle_mesh_clients(struct mg_connection* /*c*/, st
 
 std::string api_server_host::handle_mesh_services(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     auto& host = rouen_mesh_host::instance();
-    if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+    if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+        std::string service_name;
+        std::string body(hm->body.buf, hm->body.len);
+        if (!body.empty()) {
+            glz::json_t json_body{};
+            if (glz::read_json(json_body, body) == glz::error_code::none) {
+                if (json_body.contains("service") && json_body["service"].is_string()) {
+                    service_name = json_body["service"].get<std::string>();
+                }
+            }
+        }
+        if (service_name.empty()) {
+            std::string uri(hm->uri.buf, hm->uri.len);
+            auto pos = uri.find("/api/mesh/services/");
+            if (pos != std::string::npos) {
+                service_name = uri.substr(pos + strlen("/api/mesh/services/"));
+            }
+        }
+        if (!service_name.empty()) {
+            host.unregister_service(service_name);
+            return std::format(R"({{"success":true,"message":"Service '{}' unregistered","service":"{}"}})", service_name, service_name);
+        }
+        return R"({"success":false,"error":"Missing service parameter"})";
+    } else if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
         std::string body(hm->body.buf, hm->body.len);
         mesh::mesh_service_info info{};
         if (glz::read_json(info, body) == glz::error_code::none && !info.service.empty()) {

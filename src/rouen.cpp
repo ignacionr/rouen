@@ -110,6 +110,7 @@ void ensure_windows_console_attached() {
 #include "helpers/fetch.hpp"
 #include <glaze/glaze.hpp>
 #include "hosts/plugin_host.hpp"
+#include "hosts/rouen_mesh_host.hpp"
 #include "hosts/video_feed_host.hpp"
 #include "main_wnd.hpp"
 #include "registrar.hpp"
@@ -131,6 +132,9 @@ int main(int argc, char* argv[]) {
     bool spoken = true;
     bool show_presence = false;
     bool show_help = false;
+    bool connect_mesh_on_startup = false;
+    std::string mesh_server_url;
+    std::string mesh_client_id;
 
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg(argv[i]);
@@ -153,6 +157,18 @@ int main(int argc, char* argv[]) {
             show_help = true;
         } else if (arg == "--no-initial-cards" || arg == "--no-cards") {
             deck::no_initial_cards = true;
+        } else if (arg == "--mesh" || arg == "--connect-mesh" || arg == "--mesh-connect") {
+            connect_mesh_on_startup = true;
+        } else if (arg.starts_with("--mesh-server=")) {
+            mesh_server_url = std::string(arg.substr(14));
+            connect_mesh_on_startup = true;
+        } else if (arg == "--mesh-server" && i + 1 < argc) {
+            mesh_server_url = argv[++i];
+            connect_mesh_on_startup = true;
+        } else if (arg.starts_with("--mesh-client-id=")) {
+            mesh_client_id = std::string(arg.substr(17));
+        } else if (arg == "--mesh-client-id" && i + 1 < argc) {
+            mesh_client_id = argv[++i];
         }
     }
 
@@ -170,8 +186,11 @@ int main(int argc, char* argv[]) {
                       << "      --no-speak, --silent       Send notification silently without speech\n"
                       << "  -p, --presence                 Query and display current presence across mesh\n"
                       << "  -h, --help                     Display this help message\n\n"
-                      << "GUI Options:\n"
-                      << "      --no-cards                 Start with an empty deck\n";
+                      << "GUI & Mesh Options:\n"
+                      << "  --mesh, --connect-mesh         Auto-connect to Rouen Mesh network on startup\n"
+                      << "  --mesh-server=<URL>            Set Rouen Mesh relay server WSS URL\n"
+                      << "  --mesh-client-id=<ID>          Set Rouen Mesh client node identifier\n"
+                      << "  --no-cards                     Start with an empty deck\n";
             curl_global_cleanup();
             return 0;
         }
@@ -354,6 +373,25 @@ int main(int argc, char* argv[]) {
     auto config_service = rouen::helpers::ConfigService::instance();
     config_service->load_env_file();
     std::cout << "[DEBUG] Forced reload of .env file completed" << '\n';
+    
+    // Auto-connect to Rouen Mesh if requested via CLI flags
+    if (connect_mesh_on_startup) {
+        std::cout << "[INFO] CLI option requested mesh connection. Connecting to Rouen Mesh...\n";
+        auto& mesh_host = rouen::hosts::rouen_mesh_host::instance();
+        auto cfg = mesh_host.get_config();
+        if (!mesh_server_url.empty()) {
+            cfg.server_url = mesh_server_url;
+        }
+        if (!mesh_client_id.empty()) {
+            cfg.client_id = mesh_client_id;
+        }
+        mesh_host.set_config(cfg);
+        if (mesh_host.start()) {
+            std::cout << "[INFO] Rouen Mesh host started successfully via CLI option.\n";
+        } else {
+            std::cerr << "[WARN] Failed to start Rouen Mesh host via CLI option.\n";
+        }
+    }
     
     // Register the run_command function - non-blocking with incremental output
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
