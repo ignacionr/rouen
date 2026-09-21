@@ -20,7 +20,7 @@
 #endif
 
 #ifndef ROUEN_VERSION
-#define ROUEN_VERSION "1.4.5"
+#define ROUEN_VERSION "1.4.6"
 #endif
 
 inline std::string get_rouen_version_str() {
