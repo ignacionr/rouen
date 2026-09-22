@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.30)
 # Define project version
 set(ROUEN_VERSION_MAJOR 1)
 set(ROUEN_VERSION_MINOR 4)
-set(ROUEN_VERSION_PATCH 8)
+set(ROUEN_VERSION_PATCH 10)
 # ROUEN_VERSION_HOTFIX is optional; only non-zero values appear in ROUEN_VERSION
 set(ROUEN_VERSION_HOTFIX 0)
 

@@ -56,47 +56,6 @@
 #define WTERMSIG(status) (0)
 #define popen _popen
 #define pclose _pclose
-
-// Windows debug console functionality
-void setup_windows_debug_console() {
-#ifdef _DEBUG
-    // Allocate a console for this GUI application
-    if (AllocConsole()) {
-        // Redirect stdout, stdin, stderr to console
-        freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
-        freopen_s((FILE**)stderr, "CONOUT$", "w", stderr);
-        freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
-        
-        // Set the console title
-        SetConsoleTitleW(L"Rouen Debug Console");
-        
-        // Make cout, wcout, cin, wcin, wcerr, cerr, wclog and clog
-        // point to console as well
-        std::ios::sync_with_stdio(true);
-        
-        // Optional: Set console text attributes for better visibility
-        HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-        if (hConsole != INVALID_HANDLE_VALUE) {
-            // Set console colors: white text on black background
-            SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-        }
-        
-        std::cout << "=== Rouen Debug Console Initialized ===" << '\n';
-        std::cout << "Debug build - Console output enabled" << '\n';
-        std::cout << "=========================================" << '\n';
-    }
-#endif // _DEBUG
-}
-
-void ensure_windows_console_attached() {
-    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-        FILE* fp = nullptr;
-        freopen_s(&fp, "CONOUT$", "w", stdout);
-        freopen_s(&fp, "CONOUT$", "w", stderr);
-        freopen_s(&fp, "CONIN$", "r", stdin);
-        std::ios::sync_with_stdio(true);
-    }
-}
 #else
 #include <sys/wait.h>
 #endif
@@ -105,10 +64,12 @@ void ensure_windows_console_attached() {
 #include "cards/interface/deck.hpp"
 #include "helpers/debug.hpp"
 #include "helpers/notify_service.hpp"
+#include "helpers/platform_utils.hpp"
 #include "helpers/presence_service.hpp"
 #include "helpers/config_service_init.hpp" // For configuration service initialization
 #include "helpers/fetch.hpp"
 #include <glaze/glaze.hpp>
+#include "hosts/api_server_host.hpp"
 #include "hosts/plugin_host.hpp"
 #include "hosts/rouen_mesh_host.hpp"
 #include "hosts/video_feed_host.hpp"
@@ -116,17 +77,51 @@ void ensure_windows_console_attached() {
 #include "registrar.hpp"
 #include <curl/curl.h>
 
+inline void setup_windows_debug_console() {
+    if constexpr (rouen::platform::is_windows) {
+#if defined(_WIN32) && defined(_DEBUG)
+        if (AllocConsole()) {
+            freopen_s((FILE**)stdout, "CONOUT$", "w", stdout);
+            freopen_s((FILE**)stderr, "CONOUT$", "w", stderr);
+            freopen_s((FILE**)stdin, "CONIN$", "r", stdin);
+            SetConsoleTitleW(L"Rouen Debug Console");
+            std::ios::sync_with_stdio(true);
+            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (hConsole != INVALID_HANDLE_VALUE) {
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+            }
+            std::cout << "=== Rouen Debug Console Initialized ===" << '\n';
+            std::cout << "Debug build - Console output enabled" << '\n';
+            std::cout << "=========================================" << '\n';
+        }
+#endif
+    }
+}
+
+inline void ensure_windows_console_attached() {
+    if constexpr (rouen::platform::is_windows) {
+#if defined(_WIN32)
+        if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+            FILE* fp = nullptr;
+            freopen_s(&fp, "CONOUT$", "w", stdout);
+            freopen_s(&fp, "CONOUT$", "w", stderr);
+            freopen_s(&fp, "CONIN$", "r", stdin);
+            std::ios::sync_with_stdio(true);
+        }
+#endif
+    }
+}
+
 int main(int argc, char* argv[]) {
     (void)argc; // Suppress unused parameter warning
     (void)argv; // Suppress unused parameter warning
     
-#ifdef _WIN32
     // Initialize Windows debug console for development builds
     setup_windows_debug_console();
-#endif
     // Initialize CURL globally on the main thread before starting any threads
     curl_global_init(CURL_GLOBAL_ALL);
     bool cli_mode = false;
+    bool daemon_mode = false;
     std::string notify_message;
     std::string explicit_target;
     bool spoken = true;
@@ -156,6 +151,9 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--presence" || arg == "-p") {
             cli_mode = true;
             show_presence = true;
+        } else if (arg == "--daemon" || arg == "-d" || arg == "--headless" || arg == "--headless-mesh") {
+            daemon_mode = true;
+            connect_mesh_on_startup = true;
         } else if (arg == "--help" || arg == "-h") {
             cli_mode = true;
             show_help = true;
@@ -197,14 +195,13 @@ int main(int argc, char* argv[]) {
     }
 
     if (cli_mode) {
-#ifdef _WIN32
         ensure_windows_console_attached();
-#endif
         if (show_help) {
             std::cout << "Rouen - Universal AI & Dashboard Mesh\n\n"
                       << "Usage:\n"
                       << "  rouen [options]\n\n"
-                      << "Headless CLI Options:\n"
+                      << "Headless CLI & Daemon Options:\n"
+                      << "  -d, --daemon, --headless       Run as headless background service (mesh tunnel + REST API, no GUI)\n"
                       << "  -n, --notify <message>         Send a notification routed to user's active presence\n"
                       << "  -t, --target <client_id>       Specify explicit recipient client ID (optional)\n"
                       << "      --no-speak, --silent       Send notification silently without speech\n"
@@ -232,50 +229,54 @@ int main(int argc, char* argv[]) {
             std::string exe_dir = rouen::helpers::ConfigService::get_executable_directory();
             std::string script_path;
 
-#ifdef _WIN32
-            std::vector<std::string> candidates = {
-                (std::filesystem::path(exe_dir) / "upgrade-rouen.ps1").string(),
-                (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.ps1").string(),
-                (std::filesystem::current_path() / "scripts" / "upgrade-rouen.ps1").string(),
-                (std::filesystem::current_path() / "upgrade-rouen.ps1").string()
-            };
-            for (const auto& c : candidates) {
-                if (std::filesystem::exists(c)) {
-                    script_path = c;
-                    break;
+            if constexpr (rouen::platform::is_windows) {
+                std::vector<std::string> candidates = {
+                    (std::filesystem::path(exe_dir) / "upgrade-rouen.ps1").string(),
+                    (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.ps1").string(),
+                    (std::filesystem::current_path() / "scripts" / "upgrade-rouen.ps1").string(),
+                    (std::filesystem::current_path() / "upgrade-rouen.ps1").string()
+                };
+                for (const auto& c : candidates) {
+                    if (std::filesystem::exists(c)) {
+                        script_path = c;
+                        break;
+                    }
                 }
-            }
-            if (script_path.empty()) {
-                std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.ps1 script could not be located.\n";
-                curl_global_cleanup();
-                return 1;
-            }
-            std::string cmd = std::format("powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"{}\" -Source \"{}\" -InstallDir \"{}\"",
-                                          script_path, upgrade_source, exe_dir);
-#else
-            std::vector<std::string> candidates = {
-                (std::filesystem::path(exe_dir) / "upgrade-rouen.sh").string(),
-                (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.sh").string(),
-                (std::filesystem::current_path() / "scripts" / "upgrade-rouen.sh").string(),
-                (std::filesystem::current_path() / "upgrade-rouen.sh").string()
-            };
-            for (const auto& c : candidates) {
-                if (std::filesystem::exists(c)) {
-                    script_path = c;
-                    break;
+                if (script_path.empty()) {
+                    std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.ps1 script could not be located.\n";
+                    curl_global_cleanup();
+                    return 1;
                 }
-            }
-            if (script_path.empty()) {
-                std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.sh script could not be located.\n";
+                std::string cmd = std::format("powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"{}\" -Source \"{}\" -InstallDir \"{}\"",
+                                              script_path, upgrade_source, exe_dir);
+                std::cout << "[Rouen Upgrade] Running upgrade script: " << script_path << "\n";
+                int res = std::system(cmd.c_str());
                 curl_global_cleanup();
-                return 1;
+                return res;
+            } else {
+                std::vector<std::string> candidates = {
+                    (std::filesystem::path(exe_dir) / "upgrade-rouen.sh").string(),
+                    (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.sh").string(),
+                    (std::filesystem::current_path() / "scripts" / "upgrade-rouen.sh").string(),
+                    (std::filesystem::current_path() / "upgrade-rouen.sh").string()
+                };
+                for (const auto& c : candidates) {
+                    if (std::filesystem::exists(c)) {
+                        script_path = c;
+                        break;
+                    }
+                }
+                if (script_path.empty()) {
+                    std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.sh script could not be located.\n";
+                    curl_global_cleanup();
+                    return 1;
+                }
+                std::string cmd = std::format("/bin/bash \"{}\" \"{}\" \"{}\"", script_path, upgrade_source, exe_dir);
+                std::cout << "[Rouen Upgrade] Running upgrade script: " << script_path << "\n";
+                int res = std::system(cmd.c_str());
+                curl_global_cleanup();
+                return res;
             }
-            std::string cmd = std::format("/bin/bash \"{}\" \"{}\" \"{}\"", script_path, upgrade_source, exe_dir);
-#endif
-            std::cout << "[Rouen Upgrade] Running upgrade script: " << script_path << "\n";
-            int res = std::system(cmd.c_str());
-            curl_global_cleanup();
-            return res;
         }
 
         if (notify_message.empty() && !show_presence) {
@@ -429,6 +430,100 @@ int main(int argc, char* argv[]) {
         }
 
         mesh.stop();
+        curl_global_cleanup();
+        return 0;
+    }
+
+    if (daemon_mode) {
+        ensure_windows_console_attached();
+        std::cout << "[Rouen Daemon] Starting in headless background mode...\n";
+
+        // Initialize notify service
+        notify_service const notify;
+
+        // Initialize configuration service & load .env
+        rouen::helpers::ConfigServiceInitializer::initialize();
+        auto config_service = rouen::helpers::ConfigService::instance();
+        config_service->load_env_file();
+
+        // Mark presence as headless and register
+        rouen::services::presence_service::instance().set_headless(true);
+        rouen::services::presence_service::instance().start();
+        registrar::add<rouen::services::presence_service>("presence_service",
+            std::shared_ptr<rouen::services::presence_service>(&rouen::services::presence_service::instance(), [](auto*){}));
+
+        // Start embedded REST API server
+        auto api_server = std::make_unique<rouen::hosts::api_server_host>();
+        if (api_server->initialize()) {
+            uint16_t api_port = 8081;
+            std::string api_addr = std::format("http://127.0.0.1:{}", api_port);
+            if (api_server->start(api_addr)) {
+                std::cout << "[Rouen Daemon] Embedded REST API listening on " << api_addr << '\n';
+            } else {
+                std::cerr << "[Rouen Daemon] Failed to start REST API on " << api_addr << '\n';
+            }
+        }
+
+        // Start Rouen Mesh Host
+        auto& mesh_host = rouen::hosts::rouen_mesh_host::instance();
+        mesh_host.initialize();
+        auto cfg = mesh_host.get_config();
+        if (!mesh_server_url.empty()) {
+            cfg.server_url = mesh_server_url;
+        }
+        if (!mesh_client_id.empty()) {
+            cfg.client_id = mesh_client_id;
+        }
+        if (!mesh_auth_mode_str.empty()) {
+            cfg.auth_mode = rouen::hosts::rouen_mesh_host::auth_mode_from_string(mesh_auth_mode_str);
+        }
+        if (!mesh_token_str.empty()) {
+            cfg.token = mesh_token_str;
+        }
+        mesh_host.set_config(cfg);
+
+        if (mesh_host.start()) {
+            std::cout << "[Rouen Daemon] Mesh host started successfully (" << cfg.client_id << " -> " << cfg.server_url << ")\n";
+        } else {
+            std::cerr << "[Rouen Daemon] Failed to start Mesh host\n";
+        }
+
+        // Setup termination signal handling
+        static std::atomic<bool> s_daemon_running{true};
+        auto signal_handler = [](int) {
+            std::cout << "\n[Rouen Daemon] Termination signal received, shutting down...\n";
+            s_daemon_running.store(false);
+        };
+        std::signal(SIGINT, signal_handler);
+        std::signal(SIGTERM, signal_handler);
+#ifdef _WIN32
+        SetConsoleCtrlHandler([](DWORD ctrl_type) -> BOOL {
+            if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT || 
+                ctrl_type == CTRL_CLOSE_EVENT || ctrl_type == CTRL_SHUTDOWN_EVENT) {
+                std::cout << "\n[Rouen Daemon] Windows control event " << ctrl_type << " received, shutting down...\n";
+                s_daemon_running.store(false);
+                return TRUE;
+            }
+            return FALSE;
+        }, TRUE);
+#endif
+
+        std::cout << "[Rouen Daemon] Running 24/7 background worker. Press Ctrl+C or send SIGTERM to stop.\n";
+
+        while (s_daemon_running.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+
+        std::cout << "[Rouen Daemon] Stopping mesh host...\n";
+        mesh_host.stop();
+
+        std::cout << "[Rouen Daemon] Stopping REST API...\n";
+        api_server->stop();
+
+        std::cout << "[Rouen Daemon] Stopping presence service...\n";
+        rouen::services::presence_service::instance().stop();
+
+        std::cout << "[Rouen Daemon] Shutdown complete.\n";
         curl_global_cleanup();
         return 0;
     }
