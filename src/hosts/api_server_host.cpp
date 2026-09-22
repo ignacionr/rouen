@@ -818,6 +818,27 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                mg_match(hm->uri, mg_str("/api/mesh/proxy"), nullptr) ||
                mg_match(hm->uri, mg_str("/api/mesh/proxy/*"), nullptr)) {
         response = handle_mesh_proxy(c, hm);
+    } else if (mg_match(hm->uri, mg_str("/api/system/upgrade"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_system_upgrade(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/system/version"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_system_version(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/system/upgrade/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_system_upgrade_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else {
         status_code = 404;
         response = R"({"error":"Not found"})";
@@ -4546,6 +4567,163 @@ std::string api_server_host::handle_notify(struct mg_connection* /*c*/, struct m
                        success ? "true" : "false",
                        routed_target,
                        message);
+}
+
+struct system_upgrade_request {
+    std::string source;
+    bool auto_restart{true};
+};
+
+std::string api_server_host::handle_system_version(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& host = rouen_mesh_host::instance();
+    auto cfg = host.get_config();
+    auto local_services = host.get_local_services();
+    std::string services_json;
+    (void)glz::write_json(local_services, services_json);
+
+#ifndef ROUEN_VERSION
+#define ROUEN_VERSION "1.4.7"
+#endif
+#ifndef COMPILE_GIT_HASH
+#define COMPILE_GIT_HASH "unknown"
+#endif
+
+    std::string version_str = ROUEN_VERSION;
+    if (version_str.size() >= 2 && version_str.front() == '"' && version_str.back() == '"') {
+        version_str = version_str.substr(1, version_str.size() - 2);
+    }
+
+    std::string platform_str;
+#ifdef _WIN32
+    platform_str = "windows-x64";
+#elif defined(__APPLE__)
+    platform_str = "macos";
+#else
+    platform_str = "linux";
+#endif
+
+    return std::format(
+        R"({{"version":"{}","git_hash":"{}","platform":"{}","mesh_connected":{},"mesh_paired":{},"mesh_client_id":"{}","mesh_auto_connect":{},"rdp_exposed":{},"services":{}}})",
+        version_str,
+        COMPILE_GIT_HASH,
+        platform_str,
+        host.is_connected() ? "true" : "false",
+        host.is_paired() ? "true" : "false",
+        cfg.client_id,
+        host.is_auto_connect_enabled() ? "true" : "false",
+        host.is_rdp_service_exposed() ? "true" : "false",
+        services_json.empty() ? "[]" : services_json
+    );
+}
+
+std::string api_server_host::handle_system_upgrade_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    std::string exe_dir = rouen::helpers::ConfigService::get_executable_directory();
+    std::filesystem::path log_path = std::filesystem::path(exe_dir) / "rouen-upgrade.log";
+    if (!std::filesystem::exists(log_path)) {
+        log_path = std::filesystem::current_path() / "rouen-upgrade.log";
+    }
+
+    if (!std::filesystem::exists(log_path)) {
+        return R"({"has_log":false,"message":"No upgrade log file found"})";
+    }
+
+    std::ifstream file(log_path);
+    if (!file.is_open()) {
+        return R"({"has_log":false,"message":"Failed to open upgrade log file"})";
+    }
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::string escaped;
+    for (char ch : content) {
+        if (ch == '"') escaped += "\\\"";
+        else if (ch == '\\') escaped += "\\\\";
+        else if (ch == '\n') escaped += "\\n";
+        else if (ch == '\r') escaped += "\\r";
+        else if (ch == '\t') escaped += "\\t";
+        else escaped += ch;
+    }
+
+    return std::format(R"({{"has_log":true,"log_path":"{}","content":"{}"}})",
+                       log_path.string(), escaped);
+}
+
+std::string api_server_host::handle_system_upgrade(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    std::string body(hm->body.buf, hm->body.len);
+    system_upgrade_request req{};
+    if (!body.empty()) {
+        (void)glz::read_json(req, body);
+    }
+
+    std::string exe_dir = rouen::helpers::ConfigService::get_executable_directory();
+    std::string script_path;
+
+#ifdef _WIN32
+    std::vector<std::string> candidates = {
+        (std::filesystem::path(exe_dir) / "upgrade-rouen.ps1").string(),
+        (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.ps1").string(),
+        (std::filesystem::current_path() / "scripts" / "upgrade-rouen.ps1").string(),
+        (std::filesystem::current_path() / "upgrade-rouen.ps1").string()
+    };
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            script_path = candidate;
+            break;
+        }
+    }
+    if (script_path.empty()) {
+        return R"({"error":"Upgrade script 'upgrade-rouen.ps1' not found on system"})";
+    }
+
+    std::string cmd = std::format(
+        "powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File \"{}\" -Source \"{}\" -InstallDir \"{}\" -Detached",
+        script_path, req.source, exe_dir
+    );
+
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    BOOL success = CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS, NULL, exe_dir.c_str(), &si, &pi);
+    if (success) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    } else {
+        return std::format(R"({{"error":"Failed to launch detached upgrade worker, code: {}"}})", GetLastError());
+    }
+#else
+    std::vector<std::string> candidates = {
+        (std::filesystem::path(exe_dir) / "upgrade-rouen.sh").string(),
+        (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.sh").string(),
+        (std::filesystem::current_path() / "scripts" / "upgrade-rouen.sh").string(),
+        (std::filesystem::current_path() / "upgrade-rouen.sh").string()
+    };
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            script_path = candidate;
+            break;
+        }
+    }
+    if (script_path.empty()) {
+        return R"({"error":"Upgrade script 'upgrade-rouen.sh' not found on system"})";
+    }
+
+    std::string cmd = std::format("nohup /bin/bash \"{}\" \"{}\" \"{}\" --detached > /dev/null 2>&1 &",
+                                  script_path, req.source, exe_dir);
+    int res = std::system(cmd.c_str());
+    if (res != 0) {
+        return R"({"error":"Failed to launch detached upgrade worker"})";
+    }
+#endif
+
+    // Spawn a delayed thread to shut down Rouen cleanly after the HTTP response has flown back to client
+    std::thread([]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        std::exit(0);
+    }).detach();
+
+    return std::format(
+        R"({{"status":"upgrading","message":"Upgrade initiated in detached background process. Rouen will shut down, upgrade binaries, and automatically reconnect to mesh and restore services in a few seconds.","script":"{}","install_dir":"{}"}})",
+        script_path, exe_dir
+    );
 }
 
 } // namespace rouen::hosts

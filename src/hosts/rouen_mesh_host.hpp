@@ -341,6 +341,12 @@ public:
     [[nodiscard]] std::vector<mesh::mesh_service_info> get_local_services() const;
     [[nodiscard]] std::vector<mesh::mesh_service_info> get_peer_services() const;
 
+    // Auto-Connect & RDP Service Helpers
+    [[nodiscard]] bool is_auto_connect_enabled() const;
+    void set_auto_connect_enabled(bool enabled);
+    [[nodiscard]] bool is_rdp_service_exposed() const;
+    void expose_rdp_service(bool enable = true);
+
     // Generic Registry Management
     void set_registry_value(const std::string& key, const std::string& value, bool ephemeral = true);
     void delete_registry_value(const std::string& key);

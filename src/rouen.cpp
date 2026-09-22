@@ -135,6 +135,8 @@ int main(int argc, char* argv[]) {
     bool connect_mesh_on_startup = false;
     std::string mesh_server_url;
     std::string mesh_client_id;
+    bool execute_upgrade = false;
+    std::string upgrade_source;
 
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg(argv[i]);
@@ -155,6 +157,16 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--help" || arg == "-h") {
             cli_mode = true;
             show_help = true;
+        } else if (arg == "--upgrade" || arg == "--self-upgrade") {
+            cli_mode = true;
+            execute_upgrade = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                upgrade_source = argv[++i];
+            }
+        } else if (arg.starts_with("--upgrade=")) {
+            cli_mode = true;
+            execute_upgrade = true;
+            upgrade_source = std::string(arg.substr(10));
         } else if (arg == "--no-initial-cards" || arg == "--no-cards") {
             deck::no_initial_cards = true;
         } else if (arg == "--mesh" || arg == "--connect-mesh" || arg == "--mesh-connect") {
@@ -185,6 +197,7 @@ int main(int argc, char* argv[]) {
                       << "  -t, --target <client_id>       Specify explicit recipient client ID (optional)\n"
                       << "      --no-speak, --silent       Send notification silently without speech\n"
                       << "  -p, --presence                 Query and display current presence across mesh\n"
+                      << "      --upgrade [source]         Safely upgrade Rouen and restart mesh services\n"
                       << "  -h, --help                     Display this help message\n\n"
                       << "GUI & Mesh Options:\n"
                       << "  --mesh, --connect-mesh         Auto-connect to Rouen Mesh network on startup\n"
@@ -193,6 +206,61 @@ int main(int argc, char* argv[]) {
                       << "  --no-cards                     Start with an empty deck\n";
             curl_global_cleanup();
             return 0;
+        }
+
+        if (execute_upgrade) {
+            std::cout << "\n=== Rouen Self-Upgrade & Service Restoration ===\n";
+            std::cout << "Initiating detached safe upgrade pipeline...\n";
+            rouen::helpers::ConfigServiceInitializer::initialize();
+            auto config_svc = rouen::helpers::ConfigService::instance();
+            config_svc->load_env_file();
+            std::string exe_dir = rouen::helpers::ConfigService::get_executable_directory();
+            std::string script_path;
+
+#ifdef _WIN32
+            std::vector<std::string> candidates = {
+                (std::filesystem::path(exe_dir) / "upgrade-rouen.ps1").string(),
+                (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.ps1").string(),
+                (std::filesystem::current_path() / "scripts" / "upgrade-rouen.ps1").string(),
+                (std::filesystem::current_path() / "upgrade-rouen.ps1").string()
+            };
+            for (const auto& c : candidates) {
+                if (std::filesystem::exists(c)) {
+                    script_path = c;
+                    break;
+                }
+            }
+            if (script_path.empty()) {
+                std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.ps1 script could not be located.\n";
+                curl_global_cleanup();
+                return 1;
+            }
+            std::string cmd = std::format("powershell.exe -ExecutionPolicy Bypass -NoProfile -File \"{}\" -Source \"{}\" -InstallDir \"{}\"",
+                                          script_path, upgrade_source, exe_dir);
+#else
+            std::vector<std::string> candidates = {
+                (std::filesystem::path(exe_dir) / "upgrade-rouen.sh").string(),
+                (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.sh").string(),
+                (std::filesystem::current_path() / "scripts" / "upgrade-rouen.sh").string(),
+                (std::filesystem::current_path() / "upgrade-rouen.sh").string()
+            };
+            for (const auto& c : candidates) {
+                if (std::filesystem::exists(c)) {
+                    script_path = c;
+                    break;
+                }
+            }
+            if (script_path.empty()) {
+                std::cerr << "[Rouen Upgrade] Error: upgrade-rouen.sh script could not be located.\n";
+                curl_global_cleanup();
+                return 1;
+            }
+            std::string cmd = std::format("/bin/bash \"{}\" \"{}\" \"{}\"", script_path, upgrade_source, exe_dir);
+#endif
+            std::cout << "[Rouen Upgrade] Running upgrade script: " << script_path << "\n";
+            int res = std::system(cmd.c_str());
+            curl_global_cleanup();
+            return res;
         }
 
         if (notify_message.empty() && !show_presence) {
@@ -374,10 +442,16 @@ int main(int argc, char* argv[]) {
     config_service->load_env_file();
     std::cout << "[DEBUG] Forced reload of .env file completed" << '\n';
     
-    // Auto-connect to Rouen Mesh if requested via CLI flags
-    if (connect_mesh_on_startup) {
-        std::cout << "[INFO] CLI option requested mesh connection. Connecting to Rouen Mesh...\n";
+    // Auto-connect to Rouen Mesh if requested via CLI flags or enabled in configuration
+    bool const auto_connect_mesh = connect_mesh_on_startup ||
+        (config_service->get_env("ROUEN_MESH_AUTO_CONNECT") == "1") ||
+        (config_service->get_env("ROUEN_MESH_AUTO_CONNECT") == "true") ||
+        (config_service->get_env("ROUEN_MESH_PAIRED") == "1");
+
+    if (auto_connect_mesh) {
+        std::cout << "[INFO] Connecting to Rouen Mesh network...\n";
         auto& mesh_host = rouen::hosts::rouen_mesh_host::instance();
+        mesh_host.initialize();
         auto cfg = mesh_host.get_config();
         if (!mesh_server_url.empty()) {
             cfg.server_url = mesh_server_url;
@@ -387,9 +461,9 @@ int main(int argc, char* argv[]) {
         }
         mesh_host.set_config(cfg);
         if (mesh_host.start()) {
-            std::cout << "[INFO] Rouen Mesh host started successfully via CLI option.\n";
+            std::cout << "[INFO] Rouen Mesh host started successfully.\n";
         } else {
-            std::cerr << "[WARN] Failed to start Rouen Mesh host via CLI option.\n";
+            std::cerr << "[WARN] Failed to start Rouen Mesh host.\n";
         }
     }
     

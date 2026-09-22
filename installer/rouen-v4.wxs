@@ -112,5 +112,12 @@
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Rouen is already installed." />
     
+    <!-- Auto-launch Rouen with --mesh after install/upgrade so mesh connection and services are immediately restored -->
+    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="&quot;[#RouenExe]&quot; --mesh" Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApplication" After="InstallFinalize">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+
   </Package>
 </Wix>

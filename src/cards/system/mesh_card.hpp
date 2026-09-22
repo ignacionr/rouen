@@ -117,6 +117,11 @@ private:
     std::string pairing_status_msg_;
     bool pairing_success_{false};
 
+    // Safe upgrade form buffers
+    std::array<char, 256> upgrade_source_buf_{};
+    std::string upgrade_action_msg_;
+    bool upgrade_action_success_{false};
+
     void load_config_values() {
         auto& host = hosts::rouen_mesh_host::instance();
         auto cfg = host.get_config();
@@ -238,6 +243,109 @@ private:
                         ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "%s", pairing_status_msg_.c_str());
                     } else {
                         ImGui::TextColored(ImVec4(0.85f, 0.35f, 0.35f, 1.0f), "%s", pairing_status_msg_.c_str());
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Startup & Reconnection Settings
+                ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Startup & Reconnection Settings");
+                bool auto_connect = host.is_auto_connect_enabled();
+                if (ImGui::Checkbox("Auto-connect to Rouen Mesh on startup", &auto_connect)) {
+                    host.set_auto_connect_enabled(auto_connect);
+                }
+                ImGui::TextDisabled("Restores mesh connection and virtual routes automatically across app restarts.");
+
+                bool rdp_exposed = host.is_rdp_service_exposed();
+                if (ImGui::Checkbox("Expose Windows Remote Desktop Protocol (Port 3389)", &rdp_exposed)) {
+                    host.expose_rdp_service(rdp_exposed);
+                }
+                ImGui::TextDisabled("Allows remote mesh clients to connect to this machine's RDP service.");
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Safe Upgrades & Service Maintenance
+                ImGui::TextColored(ImVec4(0.30f, 0.75f, 0.95f, 1.0f), "Resilient Self-Upgrade & Service Restoration");
+                ImGui::TextWrapped("Perform zero-lockout in-place upgrades. When initiated, a detached worker gracefully restarts Rouen, swaps binaries, preserves pairing keys/.env, and immediately restores mesh and RDP proxy.");
+
+                ImGui::InputText("Source Package / URL", upgrade_source_buf_.data(), upgrade_source_buf_.size());
+                ImGui::SameLine();
+                if (ImGui::Button("Initiate Upgrade")) {
+                    std::string exe_dir = rouen::helpers::ConfigService::get_executable_directory();
+                    std::string script_path;
+#ifdef _WIN32
+                    std::vector<std::string> candidates = {
+                        (std::filesystem::path(exe_dir) / "upgrade-rouen.ps1").string(),
+                        (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.ps1").string(),
+                        (std::filesystem::current_path() / "scripts" / "upgrade-rouen.ps1").string(),
+                        (std::filesystem::current_path() / "upgrade-rouen.ps1").string()
+                    };
+                    for (const auto& c : candidates) {
+                        if (std::filesystem::exists(c)) { script_path = c; break; }
+                    }
+                    if (!script_path.empty()) {
+                        std::string cmd = std::format("powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File \"{}\" -Source \"{}\" -InstallDir \"{}\" -Detached",
+                            script_path, upgrade_source_buf_.data(), exe_dir);
+                        STARTUPINFOA si{};
+                        si.cb = sizeof(si);
+                        PROCESS_INFORMATION pi{};
+                        if (CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE, CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS, NULL, exe_dir.c_str(), &si, &pi)) {
+                            CloseHandle(pi.hProcess);
+                            CloseHandle(pi.hThread);
+                            upgrade_action_success_ = true;
+                            upgrade_action_msg_ = "Upgrade worker launched in detached process! Rouen will restart and reconnect to mesh shortly.";
+                            std::thread([]() {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                                std::exit(0);
+                            }).detach();
+                        } else {
+                            upgrade_action_success_ = false;
+                            upgrade_action_msg_ = "Failed to launch upgrade worker.";
+                        }
+                    } else {
+                        upgrade_action_success_ = false;
+                        upgrade_action_msg_ = "upgrade-rouen.ps1 script not found.";
+                    }
+#else
+                    std::vector<std::string> candidates = {
+                        (std::filesystem::path(exe_dir) / "upgrade-rouen.sh").string(),
+                        (std::filesystem::path(exe_dir) / "scripts" / "upgrade-rouen.sh").string(),
+                        (std::filesystem::current_path() / "scripts" / "upgrade-rouen.sh").string(),
+                        (std::filesystem::current_path() / "upgrade-rouen.sh").string()
+                    };
+                    for (const auto& c : candidates) {
+                        if (std::filesystem::exists(c)) { script_path = c; break; }
+                    }
+                    if (!script_path.empty()) {
+                        std::string cmd = std::format("nohup /bin/bash \"{}\" \"{}\" \"{}\" --detached > /dev/null 2>&1 &",
+                            script_path, upgrade_source_buf_.data(), exe_dir);
+                        if (std::system(cmd.c_str()) == 0) {
+                            upgrade_action_success_ = true;
+                            upgrade_action_msg_ = "Upgrade worker launched in detached process! Rouen will restart and reconnect to mesh shortly.";
+                            std::thread([]() {
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                                std::exit(0);
+                            }).detach();
+                        } else {
+                            upgrade_action_success_ = false;
+                            upgrade_action_msg_ = "Failed to launch upgrade worker.";
+                        }
+                    } else {
+                        upgrade_action_success_ = false;
+                        upgrade_action_msg_ = "upgrade-rouen.sh script not found.";
+                    }
+#endif
+                }
+
+                if (!upgrade_action_msg_.empty()) {
+                    if (upgrade_action_success_) {
+                        ImGui::TextColored(ImVec4(0.35f, 0.75f, 0.45f, 1.0f), "%s", upgrade_action_msg_.c_str());
+                    } else {
+                        ImGui::TextColored(ImVec4(0.85f, 0.35f, 0.35f, 1.0f), "%s", upgrade_action_msg_.c_str());
                     }
                 }
 

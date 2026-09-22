@@ -414,6 +414,45 @@ void test_mesh_notification_routing() {
     host.clear();
 }
 
+void test_auto_connect_and_rdp_service_restoration() {
+    std::cout << "\n--- Testing Auto-Connect & RDP Service Restoration ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+
+    // Test auto-connect flag
+    host.set_auto_connect_enabled(true);
+    test_helpers::assert_true(host.is_auto_connect_enabled(), "Auto-connect is enabled");
+
+    host.set_auto_connect_enabled(false);
+    test_helpers::assert_true(!host.is_auto_connect_enabled(), "Auto-connect is disabled");
+
+    host.set_auto_connect_enabled(true);
+
+    // Test RDP exposure & persistence
+    host.expose_rdp_service(true);
+    test_helpers::assert_true(host.is_rdp_service_exposed(), "RDP service is exposed");
+
+    auto svcs = host.get_local_services();
+    bool found_rdp = false;
+    for (const auto& s : svcs) {
+        if (s.service == "rdp") {
+            found_rdp = true;
+            test_helpers::assert_equal(3389, s.target_port, "RDP service port is 3389");
+            test_helpers::assert_string_equal("rdp", s.protocol, "RDP protocol is rdp");
+            break;
+        }
+    }
+    test_helpers::assert_true(found_rdp, "RDP service appears in local services list");
+
+    // Test persistence across restart (load_custom_services)
+    host.save_custom_services();
+    host.load_custom_services();
+    test_helpers::assert_true(host.is_rdp_service_exposed(), "RDP service remains restored after reloading custom services");
+
+    // Cleanup
+    host.expose_rdp_service(false);
+    test_helpers::assert_true(!host.is_rdp_service_exposed(), "RDP service successfully unlisted");
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
@@ -453,6 +492,7 @@ int main() {
         test_mesh_notification_routing();
         test_pairing_request_validation();
         test_self_healing_resilience();
+        test_auto_connect_and_rdp_service_restoration();
 
         std::cout << "\n" << std::string(50, '=') << "\n";
         std::cout << "✅ All Rouen Mesh Host unit tests passed successfully!\n";

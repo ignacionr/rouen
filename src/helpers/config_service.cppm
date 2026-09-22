@@ -96,6 +96,7 @@ export namespace rouen::helpers {
         bool load_env_file(const std::string& file_path = "");
         bool export_to_env_file(const std::string& file_path = "") const;
         static std::string get_env_file_path();
+        static std::string get_executable_directory();
 
     private:
         ConfigService() = default;
@@ -114,7 +115,6 @@ export namespace rouen::helpers {
         void register_default_configs();
         
         static std::pair<std::string, std::string> parse_env_line(const std::string& line);
-        static std::string get_executable_directory();
         std::string get_env_value_priority(const std::string& name) const;
         
         std::vector<ConfigEntry> get_configs_by_category_unlocked(Category category) const;

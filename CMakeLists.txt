@@ -2,7 +2,40 @@ cmake_minimum_required(VERSION 3.30)
 # Define project version
 set(ROUEN_VERSION_MAJOR 1)
 set(ROUEN_VERSION_MINOR 4)
-set(ROUEN_VERSION_PATCH 7)
+set(ROUEN_VERSION_PATCH 8)
+# ROUEN_VERSION_HOTFIX is optional; only non-zero values appear in ROUEN_VERSION
+set(ROUEN_VERSION_HOTFIX 0)
+
+# Build date/time configuration
+string(TIMESTAMP COMPILE_TIME "%Y-%m-%d %H:%M:%S UTC" UTC)
+
+# Git commit hash configuration
+# Try to get the git commit hash at configure time
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE COMPILE_GIT_HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+endif()
+
+# Fallback to environment variable (useful for CI/Docker builds)
+if(NOT COMPILE_GIT_HASH AND DEFINED ENV{GIT_COMMIT})
+  string(SUBSTRING "$ENV{GIT_COMMIT}" 0 7 COMPILE_GIT_HASH)
+endif()
+
+# Final fallback to "unknown"
+if(NOT COMPILE_GIT_HASH)
+  set(COMPILE_GIT_HASH "unknown")
+endif()
+
+# Hotfix naming configuration
+# Empty string means no hotfix; only set this for special hotfix builds
+set(ROUEN_HOTFIX_NAME "")
+
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED TRUE)
 
 if(APPLE AND UNIX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/clang-scan-deps-nix")
@@ -40,7 +73,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Project name and version
-project(rouen VERSION 1.4.2 LANGUAGES C CXX)
+project(rouen VERSION 1.4.8 LANGUAGES C CXX)
 
 add_compile_definitions(MG_TLS=2)
 

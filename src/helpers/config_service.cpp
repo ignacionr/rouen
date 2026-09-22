@@ -410,6 +410,12 @@ namespace rouen::helpers {
                        "UI font size scale multiplier (0.75, 1.0, 1.5, 2.0, 3.0)", "1.0");
         register_config("ROUEN_CUSTOM_SERVICES", Category::GENERAL, false, false,
                        "JSON list of custom exposed local mesh services");
+        register_config("ROUEN_MESH_ROUTES", Category::GENERAL, false, false,
+                       "JSON list of persistent virtual route listeners");
+        register_config("ROUEN_MESH_AUTO_CONNECT", Category::GENERAL, false, false,
+                       "Automatically connect to Rouen Mesh on startup (1=enabled, 0=disabled)", "1");
+        register_config("ROUEN_MESH_EXPOSE_RDP", Category::GENERAL, false, false,
+                       "Expose local Windows Remote Desktop Protocol (port 3389) as a mesh service (1=enabled, 0=disabled)", "0");
 
         CONFIG_INFO("Default configurations registered");
     }
@@ -1033,6 +1039,18 @@ bool ConfigService::refresh_youtube_cookies() const {
             }
         }
         
+        // Preserve any custom or unregistered keys that were loaded from .env
+        bool has_unregistered = false;
+        for (const auto& [key, val] : env_file_values_) {
+            if (registered_configs_.find(key) == registered_configs_.end()) {
+                if (!has_unregistered) {
+                    env_file << "# Custom / Unregistered Configurations\n";
+                    has_unregistered = true;
+                }
+                env_file << key << "=" << val << "\n\n";
+            }
+        }
+
         CONFIG_INFO_FMT("Exported {} configuration entries to .env file: {}", 
                        registered_configs_.size(), env_file_path);
         

@@ -596,7 +596,9 @@ jobs:
           "$workspace\presets.txt",
           "$workspace\podcasts.txt",
           "$workspace\README.md",
-          "$workspace\LICENSE"
+          "$workspace\LICENSE",
+          "$workspace\scripts\upgrade-rouen.ps1",
+          "$workspace\scripts\upgrade-windows-msi.ps1"
         )
         
         foreach ($file in $files) {
@@ -1040,9 +1042,9 @@ jobs:
           Remove-Item $versionedMsiFile -Force
         }
         
-        # Dynamically inject any missing DLLs and fonts (.ttf, .otf) from distDir into rouen.wxs Component Id="Dependencies"
+        # Dynamically inject any missing DLLs, fonts (.ttf, .otf), and scripts (.ps1) from distDir into rouen.wxs Component Id="Dependencies"
         $wxsRaw = Get-Content $wxsFile -Raw
-        $distAssets = Get-ChildItem "$distDir\*" -Include "*.dll","*.ttf","*.otf" -ErrorAction SilentlyContinue
+        $distAssets = Get-ChildItem "$distDir\*" -Include "*.dll","*.ttf","*.otf","*.ps1" -ErrorAction SilentlyContinue
         $injectedCount = 0
         $injectedXml = ""
         foreach ($asset in $distAssets) {

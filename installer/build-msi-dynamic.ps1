@@ -226,7 +226,7 @@ foreach ($category in $Categories) {
 # Add assets component dynamically
 $WixSource += "      <!-- Assets component -->`n"
 $WixSource += "      <Component Id=`"Assets`" Guid=`"$(New-Guid)`">`n"
-$assetFiles = @("MaterialIcons-Regular.ttf", "cacert.pem", "DEPENDENCIES.txt", "LICENSE", "README.md", "podcasts.txt", "presets.txt")
+$assetFiles = @("MaterialIcons-Regular.ttf", "cacert.pem", "DEPENDENCIES.txt", "LICENSE", "README.md", "podcasts.txt", "presets.txt", "upgrade-rouen.ps1")
 $firstAsset = $true
 foreach ($assetName in $assetFiles) {
     if (Test-Path "$SourceDir\$assetName") {
@@ -271,6 +271,13 @@ $WixSource += @"
     
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Rouen is already installed." />
+
+    <!-- Auto-launch Rouen with --mesh after install/upgrade so mesh connection and services are immediately restored -->
+    <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="&quot;[#RouenExe]&quot; --mesh" Return="asyncNoWait" />
+
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApplication" After="InstallFinalize">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
     
   </Product>
 </Wix>

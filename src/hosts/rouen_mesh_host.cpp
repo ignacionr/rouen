@@ -186,6 +186,20 @@ bool rouen_mesh_host::initialize(const config& cfg) {
         local_services_["rest_api"] = api_service;
     }
 
+    // Auto-register RDP service if explicitly enabled or configured
+    auto config_svc = helpers::ConfigService::instance();
+    if (config_svc && config_svc->get_env("ROUEN_MESH_EXPOSE_RDP") == "1") {
+        mesh::mesh_service_info rdp_service{
+            .client_id = config_.client_id,
+            .service = "rdp",
+            .protocol = "rdp",
+            .target_port = 3389,
+            .capabilities = {"remote_desktop", "windows_rdp"},
+            .auth_required = true
+        };
+        local_services_["rdp"] = rdp_service;
+    }
+
     // Load persisted user-configured custom mesh services
     load_custom_services();
 
@@ -933,6 +947,51 @@ std::vector<mesh::mesh_service_info> rouen_mesh_host::get_peer_services() const 
         result.push_back(svc);
     }
     return result;
+}
+
+bool rouen_mesh_host::is_auto_connect_enabled() const {
+    auto config_svc = helpers::ConfigService::instance();
+    if (!config_svc) return true;
+    std::string val = config_svc->get_env("ROUEN_MESH_AUTO_CONNECT");
+    if (val.empty()) {
+        return config_svc->get_env("ROUEN_MESH_PAIRED") == "1";
+    }
+    return val == "1" || val == "true";
+}
+
+void rouen_mesh_host::set_auto_connect_enabled(bool enabled) {
+    auto config_svc = helpers::ConfigService::instance();
+    if (config_svc) {
+        config_svc->set_env_value("ROUEN_MESH_AUTO_CONNECT", enabled ? "1" : "0", true);
+    }
+}
+
+bool rouen_mesh_host::is_rdp_service_exposed() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return local_services_.find("rdp") != local_services_.end();
+}
+
+void rouen_mesh_host::expose_rdp_service(bool enable) {
+    auto config_svc = helpers::ConfigService::instance();
+    if (enable) {
+        mesh::mesh_service_info rdp_service{
+            .client_id = config_.client_id,
+            .service = "rdp",
+            .protocol = "rdp",
+            .target_port = 3389,
+            .capabilities = {"remote_desktop", "windows_rdp"},
+            .auth_required = true
+        };
+        register_service(rdp_service);
+        if (config_svc) {
+            config_svc->set_env_value("ROUEN_MESH_EXPOSE_RDP", "1", true);
+        }
+    } else {
+        unregister_service("rdp");
+        if (config_svc) {
+            config_svc->set_env_value("ROUEN_MESH_EXPOSE_RDP", "0", true);
+        }
+    }
 }
 
 std::string rouen_mesh_host::generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms) const {
