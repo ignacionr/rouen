@@ -135,6 +135,8 @@ int main(int argc, char* argv[]) {
     bool connect_mesh_on_startup = false;
     std::string mesh_server_url;
     std::string mesh_client_id;
+    std::string mesh_auth_mode_str;
+    std::string mesh_token_str;
     bool execute_upgrade = false;
     std::string upgrade_source;
 
@@ -181,6 +183,16 @@ int main(int argc, char* argv[]) {
             mesh_client_id = std::string(arg.substr(17));
         } else if (arg == "--mesh-client-id" && i + 1 < argc) {
             mesh_client_id = argv[++i];
+        } else if (arg == "--mesh-unauthenticated") {
+            mesh_auth_mode_str = "unauthenticated";
+        } else if (arg.starts_with("--mesh-auth=")) {
+            mesh_auth_mode_str = std::string(arg.substr(12));
+        } else if (arg == "--mesh-auth" && i + 1 < argc) {
+            mesh_auth_mode_str = argv[++i];
+        } else if (arg.starts_with("--mesh-token=")) {
+            mesh_token_str = std::string(arg.substr(13));
+        } else if (arg == "--mesh-token" && i + 1 < argc) {
+            mesh_token_str = argv[++i];
         }
     }
 
@@ -203,6 +215,9 @@ int main(int argc, char* argv[]) {
                       << "  --mesh, --connect-mesh         Auto-connect to Rouen Mesh network on startup\n"
                       << "  --mesh-server=<URL>            Set Rouen Mesh relay server WSS URL\n"
                       << "  --mesh-client-id=<ID>          Set Rouen Mesh client node identifier\n"
+                      << "  --mesh-unauthenticated         Force pure unauthenticated WS upgrade (no challenge)\n"
+                      << "  --mesh-auth=<mode>             Auth mode: challenge_preferred, unauthenticated, challenge_enforced\n"
+                      << "  --mesh-token=<token>           Optional pre-shared bearer token\n"
                       << "  --no-cards                     Start with an empty deck\n";
             curl_global_cleanup();
             return 0;
@@ -458,6 +473,12 @@ int main(int argc, char* argv[]) {
         }
         if (!mesh_client_id.empty()) {
             cfg.client_id = mesh_client_id;
+        }
+        if (!mesh_auth_mode_str.empty()) {
+            cfg.auth_mode = rouen::hosts::rouen_mesh_host::auth_mode_from_string(mesh_auth_mode_str);
+        }
+        if (!mesh_token_str.empty()) {
+            cfg.token = mesh_token_str;
         }
         mesh_host.set_config(cfg);
         if (mesh_host.start()) {

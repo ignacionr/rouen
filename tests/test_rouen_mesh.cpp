@@ -137,15 +137,118 @@ void test_client_node_discovery_parsing() {
 }
 
 void test_handshake_signature_generation() {
-    std::cout << "\n--- Testing Handshake Signature Generation ---\n";
+    std::cout << "\n--- Testing Cryptographic Handshake Signature Generation & Verification ---\n";
     auto& host = rouen::hosts::rouen_mesh_host::instance();
     host.clear();
 
-    std::string client_id = "rouen-test-macbook";
+    std::string pub_hex, priv_hex;
+    rouen::hosts::rouen_mesh_host::generate_keypair(pub_hex, priv_hex);
+    test_helpers::assert_equal(static_cast<size_t>(64), pub_hex.size(), "Generated public key is 64 hex chars (32 bytes)");
+    test_helpers::assert_equal(static_cast<size_t>(64), priv_hex.size(), "Generated private key is 64 hex chars (32 bytes)");
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "rouen-test-macbook";
+    cfg.public_key = pub_hex;
+    cfg.private_key = priv_hex;
+    host.initialize(cfg);
+
     uint64_t ts = 1726162800000;
-    std::string sig = host.generate_handshake_signature(client_id, ts);
+    std::string sig = host.generate_handshake_signature(cfg.client_id, ts);
 
     test_helpers::assert_true(!sig.empty(), "Generated signature string is non-empty");
+    test_helpers::assert_equal(static_cast<size_t>(128), sig.size(), "Signature length is exactly 128 hex chars (64 raw bytes)");
+
+    // Cryptographic verification test against public key
+    bool valid = rouen::hosts::rouen_mesh_host::verify_handshake_signature(cfg.client_id, ts, sig, pub_hex);
+    test_helpers::assert_true(valid, "OpenSSL EVP_DigestVerify validates Ed25519 handshake signature");
+
+    // Negative verification tests (tampered client_id, skewed timestamp, corrupt signature)
+    test_helpers::assert_true(!rouen::hosts::rouen_mesh_host::verify_handshake_signature("other-client", ts, sig, pub_hex),
+                             "Rejects signature for tampered client_id");
+    test_helpers::assert_true(!rouen::hosts::rouen_mesh_host::verify_handshake_signature(cfg.client_id, ts + 1000, sig, pub_hex),
+                             "Rejects signature for modified timestamp");
+
+    std::string corrupt_sig = sig;
+    corrupt_sig[0] = (corrupt_sig[0] == 'a') ? 'b' : 'a';
+    test_helpers::assert_true(!rouen::hosts::rouen_mesh_host::verify_handshake_signature(cfg.client_id, ts, corrupt_sig, pub_hex),
+                             "Rejects corrupted signature");
+}
+
+void test_dual_compatibility_websocket_url() {
+    std::cout << "\n--- Testing Dual Compatibility: Unauthenticated & Challenge-Informed WS URLs ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    std::string pub_hex, priv_hex;
+    rouen::hosts::rouen_mesh_host::generate_keypair(pub_hex, priv_hex);
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.server_url = "wss://rouen.inz.dev/ws/connect";
+    cfg.client_id = "rouen-desk";
+    cfg.public_key = pub_hex;
+    cfg.private_key = priv_hex;
+    cfg.auth_mode = rouen::hosts::mesh_auth_mode::challenge_preferred;
+    host.initialize(cfg);
+
+    // 1. Challenge-informed URL generation
+    std::string url_challenged = host.build_websocket_url();
+    test_helpers::assert_true(url_challenged.find("client_id=rouen-desk") != std::string::npos,
+                             "Challenged URL contains client_id parameter");
+    test_helpers::assert_true(url_challenged.find("&timestamp=") != std::string::npos,
+                             "Challenged URL contains timestamp parameter");
+    test_helpers::assert_true(url_challenged.find("&signature=") != std::string::npos,
+                             "Challenged URL contains signature parameter");
+
+    // Extract timestamp and signature from URL and verify with public key
+    size_t ts_pos = url_challenged.find("&timestamp=");
+    size_t sig_pos = url_challenged.find("&signature=");
+    test_helpers::assert_true(ts_pos != std::string::npos && sig_pos != std::string::npos && sig_pos > ts_pos,
+                             "URL has valid parameter ordering for timestamp and signature");
+
+    std::string ts_str = url_challenged.substr(ts_pos + 11, sig_pos - (ts_pos + 11));
+    std::string sig_str = url_challenged.substr(sig_pos + 11);
+    size_t extra_amp = sig_str.find('&');
+    if (extra_amp != std::string::npos) sig_str = sig_str.substr(0, extra_amp);
+
+    uint64_t parsed_ts = std::stoull(ts_str);
+    test_helpers::assert_true(rouen::hosts::rouen_mesh_host::verify_handshake_signature(cfg.client_id, parsed_ts, sig_str, pub_hex),
+                             "Signature extracted from build_websocket_url() cryptographically verifies against public key");
+
+    // 2. Pure unauthenticated URL generation
+    host.set_auth_mode(rouen::hosts::mesh_auth_mode::unauthenticated);
+    std::string url_unauth = host.build_websocket_url();
+    test_helpers::assert_true(url_unauth.find("client_id=rouen-desk") != std::string::npos,
+                             "Unauthenticated URL contains client_id parameter");
+    test_helpers::assert_true(url_unauth.find("timestamp=") == std::string::npos,
+                             "Unauthenticated URL omits timestamp parameter");
+    test_helpers::assert_true(url_unauth.find("signature=") == std::string::npos,
+                             "Unauthenticated URL omits signature parameter");
+
+    // 3. Optional token inclusion
+    host.set_token("my-secret-token");
+    std::string url_with_token = host.build_websocket_url();
+    test_helpers::assert_true(url_with_token.find("&token=my-secret-token") != std::string::npos,
+                             "URL includes optional pre-shared bearer token");
+
+    // 4. Auth mode string conversions
+    test_helpers::assert_string_equal("unauthenticated",
+                                      rouen::hosts::rouen_mesh_host::auth_mode_to_string(rouen::hosts::mesh_auth_mode::unauthenticated),
+                                      "auth_mode_to_string for unauthenticated");
+    test_helpers::assert_string_equal("challenge_preferred",
+                                      rouen::hosts::rouen_mesh_host::auth_mode_to_string(rouen::hosts::mesh_auth_mode::challenge_preferred),
+                                      "auth_mode_to_string for challenge_preferred");
+    test_helpers::assert_string_equal("challenge_enforced",
+                                      rouen::hosts::rouen_mesh_host::auth_mode_to_string(rouen::hosts::mesh_auth_mode::challenge_enforced),
+                                      "auth_mode_to_string for challenge_enforced");
+
+    test_helpers::assert_true(rouen::hosts::rouen_mesh_host::auth_mode_from_string("unauthenticated") == rouen::hosts::mesh_auth_mode::unauthenticated,
+                             "auth_mode_from_string parses unauthenticated");
+    test_helpers::assert_true(rouen::hosts::rouen_mesh_host::auth_mode_from_string("challenge_enforced") == rouen::hosts::mesh_auth_mode::challenge_enforced,
+                             "auth_mode_from_string parses challenge_enforced");
+    test_helpers::assert_true(rouen::hosts::rouen_mesh_host::auth_mode_from_string("challenge_preferred") == rouen::hosts::mesh_auth_mode::challenge_preferred,
+                             "auth_mode_from_string parses challenge_preferred");
+
+    host.clear();
 }
 
 void test_service_registration_and_discovery_parsing() {
@@ -486,6 +589,7 @@ int main() {
         test_virtual_route_management();
         test_client_node_discovery_parsing();
         test_handshake_signature_generation();
+        test_dual_compatibility_websocket_url();
         test_service_registration_and_discovery_parsing();
         test_mesh_registry_generic_api();
         test_presence_service_and_inference();

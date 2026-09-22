@@ -277,10 +277,19 @@ struct persistent_route_dto {
 
 namespace rouen::hosts {
 
+// Mesh Authentication & Handshake Challenge Mode
+enum class mesh_auth_mode {
+    challenge_preferred = 0, // Default: Send Ed25519 challenge if key is present (compatible with both current unauthenticated & upcoming challenged server)
+    unauthenticated = 1,     // Force pure unauthenticated WebSocket upgrade (client_id only, no timestamp/signature)
+    challenge_enforced = 2   // Enforce Ed25519 signature challenge; fail connection if key is missing or signing fails
+};
+
 struct mesh_host_config {
     bool enabled{false};
     std::string server_url{"wss://rouen.inz.dev/ws/connect"};
     std::string client_id{"rouen-node"};
+    mesh_auth_mode auth_mode{mesh_auth_mode::challenge_preferred};
+    std::string token; // Optional pre-shared bearer token
     bool is_paired{false};
     std::string public_key;
     std::string private_key;
@@ -370,8 +379,18 @@ public:
     // Frame transmission helper
     void send_frame_over_ws(mesh::frame_type type, uint16_t flags, uint32_t route_id, std::string_view payload);
 
-    // Handshake signature helper
-    [[nodiscard]] std::string generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms) const;
+    // Handshake challenge and WebSocket URL construction
+    [[nodiscard]] std::string build_websocket_url() const;
+    [[nodiscard]] std::string generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms, const std::string& private_key_hex = "") const;
+    static bool verify_handshake_signature(const std::string& client_id, uint64_t timestamp_ms, const std::string& signature_hex, const std::string& public_key_hex);
+
+    // Auth Mode & Token Management
+    [[nodiscard]] mesh_auth_mode get_auth_mode() const;
+    void set_auth_mode(mesh_auth_mode mode);
+    [[nodiscard]] std::string get_token() const;
+    void set_token(const std::string& token);
+    static std::string auth_mode_to_string(mesh_auth_mode mode);
+    static mesh_auth_mode auth_mode_from_string(std::string_view str);
 
     // Reset state for testing
     void clear();

@@ -73,7 +73,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Project name and version
-project(rouen VERSION 1.4.8 LANGUAGES C CXX)
+project(rouen VERSION 1.4.9 LANGUAGES C CXX)
 
 add_compile_definitions(MG_TLS=2)
 

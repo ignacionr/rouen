@@ -97,7 +97,9 @@ struct mesh_card : public card {
 private:
     std::array<char, 256> server_url_buf_{};
     std::array<char, 128> client_id_buf_{};
+    std::array<char, 128> token_buf_{};
     std::array<char, 32> pairing_code_buf_{};
+    int auth_mode_idx_{0}; // 0 = Challenge-Informed, 1 = Unauthenticated
 
     // Tab selection override flag (-1 = none, 0 = Status, 1 = Nodes, 2 = Services)
     int select_tab_next_frame_{-1};
@@ -134,6 +136,10 @@ private:
 
         route_target_client_buf_.fill('\0');
         std::snprintf(route_target_client_buf_.data(), route_target_client_buf_.size(), "rouen-remote-peer");
+
+        token_buf_.fill('\0');
+        std::snprintf(token_buf_.data(), token_buf_.size(), "%s", cfg.token.c_str());
+        auth_mode_idx_ = (cfg.auth_mode == hosts::mesh_auth_mode::unauthenticated) ? 1 : 0;
 
         pairing_code_buf_.fill('\0');
         new_svc_name_buf_.fill('\0');
@@ -188,6 +194,17 @@ private:
                 ImGui::Spacing();
                 ImGui::InputText("Server WSS URL", server_url_buf_.data(), server_url_buf_.size());
                 ImGui::InputText("Client Node ID", client_id_buf_.data(), client_id_buf_.size());
+                ImGui::InputText("Token (Optional)", token_buf_.data(), token_buf_.size());
+
+                ImGui::Text("Upgrade Mode:");
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Challenge-Informed (Ed25519)", auth_mode_idx_ == 0)) {
+                    auth_mode_idx_ = 0;
+                }
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Unauthenticated (Legacy)", auth_mode_idx_ == 1)) {
+                    auth_mode_idx_ = 1;
+                }
 
                 if (ImGui::Button(is_conn ? "Disconnect Mesh" : "Connect Mesh")) {
                     if (is_conn) {
@@ -196,8 +213,19 @@ private:
                         hosts::rouen_mesh_host::config cfg = host.get_config();
                         cfg.server_url = server_url_buf_.data();
                         cfg.client_id = client_id_buf_.data();
+                        cfg.token = token_buf_.data();
+                        cfg.auth_mode = (auth_mode_idx_ == 1) ? hosts::mesh_auth_mode::unauthenticated : hosts::mesh_auth_mode::challenge_preferred;
                         cfg.enabled = true;
                         host.set_config(cfg);
+
+                        auto config_svc = helpers::ConfigService::instance();
+                        if (config_svc) {
+                            config_svc->set_env_value("ROUEN_MESH_AUTH_MODE", hosts::rouen_mesh_host::auth_mode_to_string(cfg.auth_mode), true);
+                            if (!cfg.token.empty()) {
+                                config_svc->set_env_value("ROUEN_MESH_TOKEN", cfg.token, true);
+                            }
+                        }
+
                         host.start();
                     }
                 }

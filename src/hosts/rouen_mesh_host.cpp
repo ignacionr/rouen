@@ -158,6 +158,20 @@ bool rouen_mesh_host::initialize() {
     cfg.private_key = config_svc->get_env("ROUEN_MESH_PRIVATE_KEY");
     cfg.is_paired = (config_svc->get_env("ROUEN_MESH_PAIRED") == "1");
 
+    std::string auth_mode_env = config_svc->get_env("ROUEN_MESH_AUTH_MODE");
+    if (config_svc->get_env("ROUEN_MESH_FORCE_UNAUTHENTICATED") == "1") {
+        cfg.auth_mode = mesh_auth_mode::unauthenticated;
+    } else if (!auth_mode_env.empty()) {
+        cfg.auth_mode = auth_mode_from_string(auth_mode_env);
+    } else {
+        cfg.auth_mode = mesh_auth_mode::challenge_preferred;
+    }
+
+    cfg.token = config_svc->get_env("ROUEN_MESH_TOKEN");
+    if (cfg.token.empty()) {
+        cfg.token = config_svc->get_env("ROUEN_CLIENT_TOKEN");
+    }
+
     return initialize(cfg);
 }
 
@@ -275,7 +289,21 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
             recv_snippet = std::string(reinterpret_cast<const char*>(c->recv.buf), len);
         }
         MESH_WARN_FMT("[MeshWS] MG_EV_ERROR: {} | recv: '{}'", err_msg ? err_msg : "unknown error", recv_snippet);
-        host->on_ws_disconnected(err_msg ? err_msg : "WebSocket error");
+        std::string disconnect_reason = err_msg ? err_msg : "WebSocket error";
+        if (recv_snippet.find("401") != std::string::npos || recv_snippet.find("Unauthorized") != std::string::npos) {
+            if (recv_snippet.find("expired") != std::string::npos || recv_snippet.find("skew") != std::string::npos) {
+                disconnect_reason = "Unauthorized (401) - Handshake timestamp expired or clock skew > 60s";
+            } else if (recv_snippet.find("replay") != std::string::npos) {
+                disconnect_reason = "Unauthorized (401) - Handshake challenge replay detected";
+            } else if (recv_snippet.find("not paired") != std::string::npos) {
+                disconnect_reason = "Unauthorized (401) - Device is not paired with rouen-service";
+            } else if (recv_snippet.find("signature") != std::string::npos) {
+                disconnect_reason = "Unauthorized (401) - Invalid Ed25519 challenge signature";
+            } else {
+                disconnect_reason = "Unauthorized (401) - Handshake authentication failed";
+            }
+        }
+        host->on_ws_disconnected(disconnect_reason);
     } else if (ev == MG_EV_CLOSE) {
         MESH_DEBUG("[MeshWS] MG_EV_CLOSE triggered");
         host->on_ws_disconnected("Connection closed");
@@ -308,7 +336,12 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     active_ws_conn_ = c;
     connected_.store(true);
     force_reconnect_.store(false);
-    status_message_ = "Connected to rouen-service";
+
+    std::string auth_desc = (config_.auth_mode == mesh_auth_mode::unauthenticated)
+        ? "unauthenticated"
+        : (config_.private_key.empty() ? "unauthenticated (no key)" : "challenge-authenticated");
+    MESH_INFO_FMT("[MeshWS] WebSocket connected to rouen-service [{}]", auth_desc);
+    status_message_ = "Connected to rouen-service (" + auth_desc + ")";
 
     current_reconnect_backoff_ = std::chrono::milliseconds(1000);
     auto now = std::chrono::steady_clock::now();
@@ -553,11 +586,7 @@ void rouen_mesh_host::worker_loop() {
                 last_connect_try = now;
                 current_reconnect_backoff_ = std::min(current_reconnect_backoff_ * 2, std::chrono::milliseconds(15000));
 
-                std::string target_url = config_.server_url;
-                if (target_url.find("client_id=") == std::string::npos) {
-                    target_url += (target_url.find('?') == std::string::npos ? "?" : "&");
-                    target_url += "client_id=" + config_.client_id;
-                }
+                std::string target_url = build_websocket_url();
 
                 {
                     std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -994,16 +1023,192 @@ void rouen_mesh_host::expose_rdp_service(bool enable) {
     }
 }
 
-std::string rouen_mesh_host::generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms) const {
-    std::ostringstream ss;
-    ss << client_id << ":" << timestamp_ms;
-    std::string payload = ss.str();
-
-    std::stringstream sig_ss;
-    for (char c : payload) {
-        sig_ss << std::hex << std::setw(2) << std::setfill('0') << (static_cast<int>(c) & 0xFF);
+std::string rouen_mesh_host::generate_handshake_signature(const std::string& client_id, uint64_t timestamp_ms, const std::string& private_key_hex) const {
+    std::string priv_hex = !private_key_hex.empty() ? private_key_hex : config_.private_key;
+    if (priv_hex.empty()) {
+        return "";
     }
-    return sig_ss.str();
+
+    // 1. Construct canonical message payload: "{client_id}:{timestamp_ms}"
+    std::string message = client_id + ":" + std::to_string(timestamp_ms);
+
+    // 2. Decode 64-character hex private key (32 bytes raw seed)
+    std::vector<unsigned char> priv_bytes;
+    priv_bytes.reserve(32);
+    for (size_t i = 0; i + 1 < priv_hex.size() && priv_bytes.size() < 32; i += 2) {
+        std::string byte_str = priv_hex.substr(i, 2);
+        try {
+            priv_bytes.push_back(static_cast<unsigned char>(std::stoul(byte_str, nullptr, 16)));
+        } catch (...) {
+            MESH_ERROR("[MeshAuth] Invalid hex character in Ed25519 private key.");
+            return "";
+        }
+    }
+
+    if (priv_bytes.size() != 32) {
+        MESH_ERROR("[MeshAuth] Private key length invalid, expected 32 bytes (64 hex characters).");
+        return "";
+    }
+
+    // 3. Load OpenSSL Ed25519 Private Key
+    EVP_PKEY* pkey = EVP_PKEY_new_raw_private_key(
+        EVP_PKEY_ED25519,
+        nullptr,
+        priv_bytes.data(),
+        priv_bytes.size()
+    );
+    if (!pkey) {
+        MESH_ERROR("[MeshAuth] Failed to load Ed25519 private key.");
+        return "";
+    }
+
+    // 4. Sign canonical message using EVP_DigestSign
+    EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+    std::string sig_hex;
+
+    if (md_ctx && EVP_DigestSignInit(md_ctx, nullptr, nullptr, nullptr, pkey) == 1) {
+        size_t sig_len = 0;
+        // Query signature buffer size (always 64 bytes for Ed25519)
+        if (EVP_DigestSign(md_ctx, nullptr, &sig_len, reinterpret_cast<const unsigned char*>(message.data()), message.size()) == 1) {
+            std::vector<unsigned char> sig_buf(sig_len);
+            if (EVP_DigestSign(md_ctx, sig_buf.data(), &sig_len, reinterpret_cast<const unsigned char*>(message.data()), message.size()) == 1) {
+                std::ostringstream ss;
+                for (size_t i = 0; i < sig_len; ++i) {
+                    ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(sig_buf[i]);
+                }
+                sig_hex = ss.str();
+            }
+        }
+    }
+
+    if (md_ctx) EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return sig_hex;
+}
+
+bool rouen_mesh_host::verify_handshake_signature(const std::string& client_id, uint64_t timestamp_ms, const std::string& signature_hex, const std::string& public_key_hex) {
+    if (public_key_hex.size() != 64 || signature_hex.size() != 128) {
+        return false;
+    }
+
+    std::vector<unsigned char> pub_bytes;
+    pub_bytes.reserve(32);
+    for (size_t i = 0; i + 1 < public_key_hex.size() && pub_bytes.size() < 32; i += 2) {
+        try {
+            pub_bytes.push_back(static_cast<unsigned char>(std::stoul(public_key_hex.substr(i, 2), nullptr, 16)));
+        } catch (...) {
+            return false;
+        }
+    }
+    if (pub_bytes.size() != 32) return false;
+
+    std::vector<unsigned char> sig_bytes;
+    sig_bytes.reserve(64);
+    for (size_t i = 0; i + 1 < signature_hex.size() && sig_bytes.size() < 64; i += 2) {
+        try {
+            sig_bytes.push_back(static_cast<unsigned char>(std::stoul(signature_hex.substr(i, 2), nullptr, 16)));
+        } catch (...) {
+            return false;
+        }
+    }
+    if (sig_bytes.size() != 64) return false;
+
+    EVP_PKEY* pkey = EVP_PKEY_new_raw_public_key(
+        EVP_PKEY_ED25519,
+        nullptr,
+        pub_bytes.data(),
+        pub_bytes.size()
+    );
+    if (!pkey) return false;
+
+    std::string message = client_id + ":" + std::to_string(timestamp_ms);
+    EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+    bool verified = false;
+
+    if (md_ctx && EVP_DigestVerifyInit(md_ctx, nullptr, nullptr, nullptr, pkey) == 1) {
+        if (EVP_DigestVerify(md_ctx, sig_bytes.data(), sig_bytes.size(), reinterpret_cast<const unsigned char*>(message.data()), message.size()) == 1) {
+            verified = true;
+        }
+    }
+
+    if (md_ctx) EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return verified;
+}
+
+std::string rouen_mesh_host::build_websocket_url() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::string target_url = config_.server_url;
+    if (target_url.find("client_id=") == std::string::npos) {
+        target_url += (target_url.find('?') == std::string::npos ? "?" : "&");
+        target_url += "client_id=" + config_.client_id;
+    }
+
+    if (!config_.token.empty() && target_url.find("token=") == std::string::npos) {
+        target_url += "&token=" + config_.token;
+    }
+
+    // Include cryptographic challenge when challenge-informed auth is active and key is available
+    if (config_.auth_mode != mesh_auth_mode::unauthenticated) {
+        if (!config_.private_key.empty()) {
+            auto now_sys = std::chrono::system_clock::now();
+            uint64_t ts_ms = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(now_sys.time_since_epoch()).count()
+            );
+            std::string sig = generate_handshake_signature(config_.client_id, ts_ms);
+            if (!sig.empty()) {
+                target_url += "&timestamp=" + std::to_string(ts_ms);
+                target_url += "&signature=" + sig;
+            } else if (config_.auth_mode == mesh_auth_mode::challenge_enforced) {
+                MESH_ERROR("[MeshAuth] Handshake signature generation failed in challenge_enforced mode.");
+            }
+        } else if (config_.auth_mode == mesh_auth_mode::challenge_enforced) {
+            MESH_ERROR("[MeshAuth] Ed25519 private key missing while challenge_enforced mode is active.");
+        }
+    }
+
+    return target_url;
+}
+
+mesh_auth_mode rouen_mesh_host::get_auth_mode() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return config_.auth_mode;
+}
+
+void rouen_mesh_host::set_auth_mode(mesh_auth_mode mode) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    config_.auth_mode = mode;
+}
+
+std::string rouen_mesh_host::get_token() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    return config_.token;
+}
+
+void rouen_mesh_host::set_token(const std::string& token) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    config_.token = token;
+}
+
+std::string rouen_mesh_host::auth_mode_to_string(mesh_auth_mode mode) {
+    switch (mode) {
+        case mesh_auth_mode::unauthenticated: return "unauthenticated";
+        case mesh_auth_mode::challenge_enforced: return "challenge_enforced";
+        case mesh_auth_mode::challenge_preferred:
+        default: return "challenge_preferred";
+    }
+}
+
+mesh_auth_mode rouen_mesh_host::auth_mode_from_string(std::string_view str) {
+    if (str == "unauthenticated" || str == "none" || str == "off" || str == "0" || str == "legacy") {
+        return mesh_auth_mode::unauthenticated;
+    }
+    if (str == "challenge_enforced" || str == "enforced" || str == "strict" || str == "required") {
+        return mesh_auth_mode::challenge_enforced;
+    }
+    return mesh_auth_mode::challenge_preferred;
 }
 
 bool rouen_mesh_host::send_pairing_request(const std::string& server_http_base, const std::string& pairing_code, std::string& out_error) {

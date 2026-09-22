@@ -4293,6 +4293,8 @@ std::string api_server_host::handle_telegram_simulate(struct mg_connection* /*c*
 struct mesh_conn_request {
     std::string server_url;
     std::string client_id;
+    std::string auth_mode;
+    std::string token;
 };
 
 struct mesh_pair_request {
@@ -4315,12 +4317,14 @@ std::string api_server_host::handle_mesh_status(struct mg_connection* /*c*/, str
     auto cfg = host.get_config();
 
     std::string json = std::format(
-        R"({{"connected":{},"paired":{},"status_message":"{}","server_url":"{}","client_id":"{}","public_key":"{}","ping_ms":{},"total_requests":{},"total_bytes_sent":{},"total_bytes_received":{}}})",
+        R"({{"connected":{},"paired":{},"status_message":"{}","server_url":"{}","client_id":"{}","auth_mode":"{}","token":"{}","public_key":"{}","ping_ms":{},"total_requests":{},"total_bytes_sent":{},"total_bytes_received":{}}})",
         host.is_connected() ? "true" : "false",
         host.is_paired() ? "true" : "false",
         host.get_status_message(),
         cfg.server_url,
         cfg.client_id,
+        rouen_mesh_host::auth_mode_to_string(cfg.auth_mode),
+        cfg.token,
         cfg.public_key,
         host.get_ping_ms(),
         host.get_total_requests(),
@@ -4339,6 +4343,8 @@ std::string api_server_host::handle_mesh_connect(struct mg_connection* /*c*/, st
         auto cfg = host.get_config();
         if (!req.server_url.empty()) cfg.server_url = req.server_url;
         if (!req.client_id.empty()) cfg.client_id = req.client_id;
+        if (!req.auth_mode.empty()) cfg.auth_mode = rouen_mesh_host::auth_mode_from_string(req.auth_mode);
+        if (!req.token.empty()) cfg.token = req.token;
         host.set_config(cfg);
     }
     bool started = host.start();
