@@ -135,7 +135,7 @@
     <!-- Upgrade logic -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of Rouen is already installed." />
     
-    <!-- Auto-launch Rouen with --mesh after install/upgrade so mesh connection and services are immediately restored -->
+    <!-- Auto-launch Rouen with mesh argument after install/upgrade so mesh connection and services are immediately restored -->
     <CustomAction Id="LaunchApplication" Directory="INSTALLFOLDER" ExeCommand="&quot;[#RouenExe]&quot; --mesh" Return="asyncNoWait" />
 
     <InstallExecuteSequence>
