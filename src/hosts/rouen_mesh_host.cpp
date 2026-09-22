@@ -1364,7 +1364,9 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
             auto it = active_streams_.find(frame.route_id);
             if (it != active_streams_.end()) {
                 auto stream = it->second;
-                if (frame.is_flag_set(mesh::frame_flags::INBOUND_DIR)) {
+                // If the frame has INBOUND_DIR flag, or if this stream was outbound-initiated (!is_inbound / target_conn == nullptr),
+                // deliver incoming route payload back to the local client socket.
+                if (frame.is_flag_set(mesh::frame_flags::INBOUND_DIR) || (stream->local_conn && !stream->is_inbound)) {
                     if (stream->local_conn) {
                         mg_send(stream->local_conn, frame.payload.data(), frame.payload.size());
                         total_bytes_received_ += frame.payload.size();
