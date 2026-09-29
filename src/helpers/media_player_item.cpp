@@ -364,7 +364,7 @@ bool media_player_item::playMedia(const void* owner) {
 
             auto is_url_accessible = [](std::string_view stream_url) -> bool {
                 if (stream_url.empty()) return false;
-                std::string const probe_cmd = "curl -s --max-time 3 -r 0-100 -o /dev/null -w \"%{http_code}\" -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"" + std::string(stream_url) + "\" 2>&1";
+                std::string const probe_cmd = "curl -s -L --max-time 5 -r 0-100 -o /dev/null -w \"%{http_code}\" -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"" + std::string(stream_url) + "\" 2>&1";
                 std::string const status = ProcessHelper::executeCommand(probe_cmd);
                 if (status.find("403") != std::string::npos || status.find("401") != std::string::npos || status.find("429") != std::string::npos) {
                     return false;

@@ -811,6 +811,36 @@ bool ConfigService::refresh_youtube_cookies() const {
     };
 
     for (const auto& browser : candidate_browsers) {
+        bool can_attempt = true;
+        if constexpr (rouen::platform::is_apple) {
+            if (browser == "safari") {
+                std::string const safari_cookies = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
+                FILE* f = fopen(safari_cookies.c_str(), "rb");
+                if (f) fclose(f);
+                else can_attempt = false;
+            } else if (browser == "chrome") {
+                std::string const chrome_cookies = home_dir + "/Library/Application Support/Google/Chrome/Default/Cookies";
+                FILE* f = fopen(chrome_cookies.c_str(), "rb");
+                if (f) fclose(f);
+                else can_attempt = false;
+            } else if (browser == "firefox") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Firefox/Profiles");
+            } else if (browser == "brave") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/BraveSoftware/Brave-Browser");
+            } else if (browser == "edge") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Microsoft Edge");
+            } else if (browser == "vivaldi") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Vivaldi");
+            } else if (browser == "opera") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/com.operasoftware.Opera");
+            } else if (browser == "chromium") {
+                can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Chromium");
+            }
+        }
+        if (!can_attempt) {
+            continue;
+        }
+
         // Ensure fresh file target for each browser attempt
         if (std::filesystem::exists(target_file)) {
             std::filesystem::remove(target_file, ec);

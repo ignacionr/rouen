@@ -65,7 +65,7 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
 
     auto is_url_accessible = [](std::string_view stream_url) -> bool {
         if (stream_url.empty()) return false;
-        std::string const probe_cmd = "curl -s --max-time 3 -r 0-100 -o /dev/null -w \"%{http_code}\" -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"" + std::string(stream_url) + "\" 2>&1";
+        std::string const probe_cmd = "curl -s -L --max-time 5 -r 0-100 -o /dev/null -w \"%{http_code}\" -H \"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" \"" + std::string(stream_url) + "\" 2>&1";
         std::string const status = ProcessHelper::executeCommand(probe_cmd);
         if (status.find("403") != std::string::npos || status.find("401") != std::string::npos || status.find("429") != std::string::npos) {
             return false;
@@ -80,7 +80,7 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         std::string_view const target_fmt = custom_format.empty() ? std::string_view(format_spec) : custom_format;
         std::string cmd;
         std::string remote_flag = ProcessHelper::ytdlp_supports_remote_components(ytdl_exe) ? "--remote-components ejs:github " : "";
-        std::string ext_flag = extra_extractor_args.empty() ? "--extractor-args \"youtube:player_client=web_embedded,android\" " : (std::string(extra_extractor_args) + " ");
+        std::string ext_flag = extra_extractor_args.empty() ? "" : (std::string(extra_extractor_args) + " ");
         std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
         std::string ua_flag;
         if constexpr (rouen::platform::is_apple) {
@@ -170,18 +170,49 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
     if (urls.empty()) {
         std::cerr << "[ytdlp_service Diagnostics] Pass 2: Trying direct extraction across installed browsers...\n";
         static const std::vector<std::string_view> candidate_browsers = {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"};
+        const char* home = getenv("HOME");
+        std::string const home_dir = home ? home : "";
+
         for (const auto& browser : candidate_browsers) {
+            bool can_attempt = true;
+            if constexpr (rouen::platform::is_apple) {
+                if (browser == "safari") {
+                    std::string const safari_cookies = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
+                    FILE* f = fopen(safari_cookies.c_str(), "rb");
+                    if (f) fclose(f);
+                    else can_attempt = false;
+                } else if (browser == "chrome") {
+                    std::string const chrome_cookies = home_dir + "/Library/Application Support/Google/Chrome/Default/Cookies";
+                    FILE* f = fopen(chrome_cookies.c_str(), "rb");
+                    if (f) fclose(f);
+                    else can_attempt = false;
+                } else if (browser == "firefox") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Firefox/Profiles");
+                } else if (browser == "brave") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/BraveSoftware/Brave-Browser");
+                } else if (browser == "edge") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Microsoft Edge");
+                } else if (browser == "vivaldi") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Vivaldi");
+                } else if (browser == "opera") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/com.operasoftware.Opera");
+                } else if (browser == "chromium") {
+                    can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Chromium");
+                }
+            }
+            if (!can_attempt) continue;
+
             std::cerr << "[ytdlp_service Diagnostics] Pass 2: Trying browser: " << browser << '\n';
             std::string const fallback_args = std::format("--cookies-from-browser {}", browser);
             auto [fb_urls, fb_output] = run_ytdlp_cmd(fallback_args);
             if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
 
             if (fb_urls.empty()) {
-                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"");
+                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=ios,android\"");
                 if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             if (fb_urls.empty()) {
-                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"", "bestvideo+bestaudio/best[vcodec!=none]");
+                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=ios,android\"", "bestvideo+bestaudio/best[vcodec!=none]");
                 if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             resolved = fb_output;
@@ -190,9 +221,8 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
                 if (config) {
                     config->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
                 }
-                const char* home = getenv("HOME");
-                if (home) {
-                    std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdl_exe, browser, home);
+                if (!home_dir.empty()) {
+                    std::string const save_cmd = std::format("\"{}\" --no-warnings --cookies-from-browser {} --cookies \"{}/.config/rouen/cookies.txt\" --skip-download --playlist-items 0 \"https://www.youtube.com\" 2>&1", ytdl_exe, browser, home_dir);
                     ProcessHelper::executeCommand(save_cmd);
                 }
                 std::cerr << "[ytdlp_service Diagnostics] Auto-healed: resolved YouTube URL using cookies from browser: " << browser << '\n';
@@ -205,12 +235,11 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
     if (urls.empty()) {
         std::cerr << "[ytdlp_service Diagnostics] Pass 3: Trying client specs without cookies...\n";
         static const std::vector<std::string_view> client_specs = {
-            "--extractor-args \"youtube:player_client=web_embedded,android\"",
-            "--extractor-args \"youtube:player_client=mweb,android\"",
-            "--extractor-args \"youtube:player_client=web,android\"",
             "--extractor-args \"youtube:player_client=ios,android\"",
+            "--extractor-args \"youtube:player_client=mweb,android\"",
+            "--extractor-args \"youtube:player_client=tv_embedded,android\"",
             "--extractor-args \"youtube:player_client=android\"",
-            "--extractor-args \"youtube:player_client=tv_embedded,android\""
+            "--extractor-args \"youtube:player_client=web\""
         };
         for (const auto& cspec : client_specs) {
             std::cerr << "[ytdlp_service Diagnostics] Pass 3: Trying cspec: " << cspec << '\n';
