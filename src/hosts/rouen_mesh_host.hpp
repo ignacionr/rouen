@@ -325,7 +325,7 @@ public:
     static void generate_keypair(std::string& out_public_hex, std::string& out_private_hex);
 
     // Route Management
-    bool open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port = 0);
+    bool open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port = 0, bool persist = true, bool auto_start = true);
     bool close_virtual_route(uint32_t route_id);
     [[nodiscard]] std::vector<mesh::virtual_route_info> get_active_routes() const;
 

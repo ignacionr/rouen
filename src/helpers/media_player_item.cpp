@@ -399,7 +399,14 @@ bool media_player_item::playMedia(const void* owner) {
             }
 
             if (!cached_urls_to_test.empty()) {
-                if (is_url_accessible(cached_urls_to_test[0])) {
+                bool all_accessible = true;
+                for (const auto& u : cached_urls_to_test) {
+                    if (!is_url_accessible(u)) {
+                        all_accessible = false;
+                        break;
+                    }
+                }
+                if (all_accessible) {
                     assign_targets_from_urls(cached_urls_to_test);
                     found_cached = true;
                 } else {

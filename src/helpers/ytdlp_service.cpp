@@ -45,7 +45,7 @@ std::string ytdlp_service::build_format_spec(std::string_view pref_quality) {
     }
 
     return std::format(
-        "bestvideo[height<={0}]+bestaudio/bestvideo[width<={0}]+bestaudio/best[height<={0}]/best[width<={0}]/bestvideo+bestaudio/best",
+        "bestvideo[height<={0}]+bestaudio/bestvideo[width<={0}]+bestaudio/best[height<={0}][vcodec!=none]/best[width<={0}][vcodec!=none]/bestvideo+bestaudio/best[vcodec!=none]",
         target_max_h
     );
 }
@@ -103,6 +103,34 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         return {parsed_urls, output};
     };
 
+    auto urls_are_valid_video = [&is_url_accessible](const std::vector<std::string>& test_urls) -> bool {
+        if (test_urls.empty()) return false;
+
+        bool has_video = false;
+        for (const auto& u : test_urls) {
+            if (u.find("mime=video") != std::string::npos || u.find("mime%3Dvideo") != std::string::npos) {
+                has_video = true;
+                break;
+            }
+        }
+
+        // If there is only 1 URL and it's audio-only, reject it as a video stream
+        if (!has_video) {
+            for (const auto& u : test_urls) {
+                if (u.find("mime=audio") != std::string::npos || u.find("mime%3Daudio") != std::string::npos) {
+                    return false;
+                }
+            }
+        }
+
+        for (const auto& u : test_urls) {
+            if (!is_url_accessible(u)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
     std::cerr << "[ytdlp_service Diagnostics] Resolving URL: " << norm_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
     auto [urls, resolved] = run_ytdlp_cmd("");
     if (urls.empty() && !initial_cookie_args.empty()) {
@@ -110,8 +138,8 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         std::tie(urls, resolved) = run_ytdlp_cmd(initial_cookie_args);
     }
 
-    if (!urls.empty() && !is_url_accessible(urls[0])) {
-        std::cerr << "[ytdlp_service Diagnostics] Initial resolved URL returned HTTP 403 Forbidden. Invalidating to trigger auto-healing...\n";
+    if (!urls.empty() && !urls_are_valid_video(urls)) {
+        std::cerr << "[ytdlp_service Diagnostics] Initial resolved URLs failed validation (inaccessible or audio-only). Invalidating to trigger auto-healing...\n";
         urls.clear();
     }
 
@@ -131,7 +159,7 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
                 std::cerr << "[ytdlp_service Diagnostics] Pass 1: Refreshed cookies args: '" << fresh_cookie_args << "'. Retrying...\n";
                 auto [ref_urls, ref_output] = run_ytdlp_cmd(fresh_cookie_args);
                 resolved = ref_output;
-                if (!ref_urls.empty() && is_url_accessible(ref_urls[0])) {
+                if (!ref_urls.empty() && urls_are_valid_video(ref_urls)) {
                     urls = ref_urls;
                 }
             }
@@ -146,15 +174,15 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
             std::cerr << "[ytdlp_service Diagnostics] Pass 2: Trying browser: " << browser << '\n';
             std::string const fallback_args = std::format("--cookies-from-browser {}", browser);
             auto [fb_urls, fb_output] = run_ytdlp_cmd(fallback_args);
-            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+            if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
 
             if (fb_urls.empty()) {
                 std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"");
-                if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+                if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             if (fb_urls.empty()) {
-                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"", "bestvideo+bestaudio/best");
-                if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+                std::tie(fb_urls, fb_output) = run_ytdlp_cmd(fallback_args, "--extractor-args \"youtube:player_client=android_creator,tv_embedded,android\"", "bestvideo+bestaudio/best[vcodec!=none]");
+                if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             resolved = fb_output;
             if (!fb_urls.empty()) {
@@ -178,22 +206,24 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         std::cerr << "[ytdlp_service Diagnostics] Pass 3: Trying client specs without cookies...\n";
         static const std::vector<std::string_view> client_specs = {
             "--extractor-args \"youtube:player_client=web_embedded,android\"",
-            "--extractor-args \"youtube:player_client=android_testsuite,android\"",
-            "--extractor-args \"youtube:player_client=android_music,android\"",
-            "--extractor-args \"youtube:player_client=android\""
+            "--extractor-args \"youtube:player_client=mweb,android\"",
+            "--extractor-args \"youtube:player_client=web,android\"",
+            "--extractor-args \"youtube:player_client=ios,android\"",
+            "--extractor-args \"youtube:player_client=android\"",
+            "--extractor-args \"youtube:player_client=tv_embedded,android\""
         };
         for (const auto& cspec : client_specs) {
             std::cerr << "[ytdlp_service Diagnostics] Pass 3: Trying cspec: " << cspec << '\n';
             auto [fb_urls, fb_output] = run_ytdlp_cmd("--no-cookies", cspec);
-            if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+            if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
 
             if (fb_urls.empty()) {
-                std::tie(fb_urls, fb_output) = run_ytdlp_cmd("--no-cookies", cspec, "bestvideo+bestaudio/best");
-                if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+                std::tie(fb_urls, fb_output) = run_ytdlp_cmd("--no-cookies", cspec, "bestvideo+bestaudio/best[vcodec!=none]");
+                if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             if (fb_urls.empty()) {
-                std::tie(fb_urls, fb_output) = run_ytdlp_cmd("--no-cookies", cspec, "best");
-                if (!fb_urls.empty() && !is_url_accessible(fb_urls[0])) fb_urls.clear();
+                std::tie(fb_urls, fb_output) = run_ytdlp_cmd("--no-cookies", cspec, "best[vcodec!=none]");
+                if (!fb_urls.empty() && !urls_are_valid_video(fb_urls)) fb_urls.clear();
             }
             resolved = fb_output;
             if (!fb_urls.empty()) {

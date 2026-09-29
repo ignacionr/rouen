@@ -761,7 +761,29 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
             }
         }
         if (is_valid) {
-            return std::format("--cookies-from-browser {}", browser);
+            bool can_access_cookies = true;
+            if constexpr (platform::is_apple) {
+                if (home && browser == "safari") {
+                    std::string const safari_cookies = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
+                    FILE* f = fopen(safari_cookies.c_str(), "rb");
+                    if (f) {
+                        fclose(f);
+                    } else {
+                        can_access_cookies = false;
+                    }
+                } else if (home && browser == "chrome") {
+                    std::string const chrome_cookies = home_dir + "/Library/Application Support/Google/Chrome/Default/Cookies";
+                    FILE* f = fopen(chrome_cookies.c_str(), "rb");
+                    if (f) {
+                        fclose(f);
+                    } else {
+                        can_access_cookies = false;
+                    }
+                }
+            }
+            if (can_access_cookies) {
+                return std::format("--cookies-from-browser {}", browser);
+            }
         }
     }
 
@@ -971,6 +993,12 @@ bool ConfigService::refresh_youtube_cookies() const {
         
         std::string env_file_path = file_path.empty() ? get_env_file_path() : file_path;
         
+        // Safety: If .env has not been loaded into memory yet and already exists on disk,
+        // load it first so we do not clobber existing configuration with empty defaults.
+        if (!env_file_loaded_ && std::filesystem::exists(env_file_path)) {
+            const_cast<ConfigService*>(this)->load_env_file(env_file_path);
+        }
+
         std::ofstream env_file(env_file_path);
         if (!env_file.is_open()) {
             CONFIG_ERROR_FMT("Failed to create .env file: {}", env_file_path);
@@ -988,6 +1016,15 @@ bool ConfigService::refresh_youtube_cookies() const {
             // Update config value with current data
             ConfigEntry current_config = config;
             current_config.value = get_env_value_priority(name);
+
+            // Safety: If current evaluated value is empty, preserve existing value from loaded .env file
+            if (current_config.value.empty()) {
+                auto env_it = env_file_values_.find(name);
+                if (env_it != env_file_values_.end() && !env_it->second.empty()) {
+                    current_config.value = env_it->second;
+                }
+            }
+
             configs_by_category[config.category].push_back(current_config);
         }
         

@@ -177,6 +177,7 @@ bool rouen_mesh_host::initialize() {
 
 bool rouen_mesh_host::initialize(const config& cfg) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    initialized_.store(true);
     config_ = cfg;
 
     if (config_.client_id.empty() || config_.client_id == "rouen-macbook-pro") {
@@ -220,10 +221,7 @@ bool rouen_mesh_host::initialize(const config& cfg) {
     // Load persisted user-configured custom virtual routes
     load_custom_routes();
 
-    config_.is_paired = true;
     status_message_ = "Ready to connect.";
-
-    initialized_.store(true);
     return true;
 }
 
@@ -647,7 +645,7 @@ void rouen_mesh_host::set_config(const config& cfg) {
     config_ = cfg;
 }
 
-bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port) {
+bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, uint16_t target_port, std::string& out_error, uint16_t local_port, bool persist, bool auto_start) {
     if (target_client_id.empty()) {
         out_error = "Target client ID cannot be empty";
         return false;
@@ -695,9 +693,12 @@ bool rouen_mesh_host::open_virtual_route(const std::string& target_client_id, ui
         .local_url = local_url
     };
     active_routes_[route_id] = route_info;
-    save_custom_routes();
 
-    if (!running_.load()) {
+    if (persist) {
+        save_custom_routes();
+    }
+
+    if (auto_start && !running_.load()) {
         start();
     }
 
@@ -1526,7 +1527,7 @@ void rouen_mesh_host::load_custom_routes() {
     if (glz::read_json(routes, json) == glz::error_code::none) {
         for (const auto& r : routes) {
             std::string err;
-            open_virtual_route(r.target_client_id, r.target_port, err, r.local_port);
+            open_virtual_route(r.target_client_id, r.target_port, err, r.local_port, false /* persist */, false /* auto_start */);
         }
     }
 }

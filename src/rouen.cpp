@@ -537,20 +537,18 @@ int main(int argc, char* argv[]) {
     std::cout << "[DEBUG] .env file should be at: " << std::filesystem::current_path() / ".env" << '\n';
     std::cout << "[DEBUG] .env file exists: " << (std::filesystem::exists(std::filesystem::current_path() / ".env") ? "YES" : "NO") << '\n';
     
+    // Initialize the configuration service first and load .env file
+    rouen::helpers::ConfigServiceInitializer::initialize();
+    auto config_service = rouen::helpers::ConfigService::instance();
+    config_service->load_env_file();
+    std::cout << "[DEBUG] Forced reload of .env file completed" << '\n';
+
     notify_service const notify; // Initialize the notify service
     
     // Initialize the presence service and register in service registrar
     rouen::services::presence_service::instance().start();
     registrar::add<rouen::services::presence_service>("presence_service",
         std::shared_ptr<rouen::services::presence_service>(&rouen::services::presence_service::instance(), [](auto*){}));
-    
-    // Initialize the configuration service
-    rouen::helpers::ConfigServiceInitializer::initialize();
-    
-    // Force reload of .env file now that we have the correct working directory
-    auto config_service = rouen::helpers::ConfigService::instance();
-    config_service->load_env_file();
-    std::cout << "[DEBUG] Forced reload of .env file completed" << '\n';
     
     // Auto-connect to Rouen Mesh if requested via CLI flags or enabled in configuration
     bool const auto_connect_mesh = connect_mesh_on_startup ||
