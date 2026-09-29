@@ -431,6 +431,7 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
     ../src/helpers/image_cache.cpp
+    ../src/helpers/glass_top_bar.cpp
     ../src/fonts.cpp
 )
 if(APPLE)

@@ -133,6 +133,15 @@ struct error_response {
     std::string error;
 };
 
+struct process_definition_request {
+    int64_t id{-1};
+    std::string name;
+    std::string executable_path;
+    std::string arguments;
+    std::string working_directory;
+    std::string icon_source;
+};
+
 struct process_start_request {
     int64_t definition_id{0};
     std::string definition_name;
@@ -519,6 +528,23 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/processes"), nullptr) || mg_match(hm->uri, mg_str("/api/process/list"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_processes_list(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("PUT")) == 0) {
+            response = handle_process_definition_save(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+            response = handle_process_definition_delete(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/definition"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/process/definitions"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/process/save"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_process_definition_get(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("PUT")) == 0) {
+            response = handle_process_definition_save(c, hm);
+        } else if (mg_strcmp(hm->method, mg_str("DELETE")) == 0) {
+            response = handle_process_definition_delete(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -1990,6 +2016,247 @@ std::string api_server_host::handle_processes_list(struct mg_connection* /*c*/, 
     return out;
 }
 
+std::string api_server_host::handle_process_definition_save(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_definition_request req;
+    glz::json_t body_obj;
+    bool has_body = false;
+
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        if (!glz::read_json(body_obj, body)) {
+            has_body = true;
+            (void)glz::read_json(req, body);
+        }
+    }
+
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "id");
+        if (!val.empty()) {
+            try { req.id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { req.id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "name");
+        if (!val.empty()) req.name = val;
+        val = get_query_param(&hm->query, "definition_name");
+        if (!val.empty()) req.name = val;
+        val = get_query_param(&hm->query, "executable_path");
+        if (!val.empty()) req.executable_path = val;
+        val = get_query_param(&hm->query, "arguments");
+        if (!val.empty()) req.arguments = val;
+        val = get_query_param(&hm->query, "working_directory");
+        if (!val.empty()) req.working_directory = val;
+        val = get_query_param(&hm->query, "icon_source");
+        if (!val.empty()) req.icon_source = val;
+    }
+
+    rouen::models::productivity::process_definition_repository repo;
+    rouen::models::productivity::process_definition def;
+
+    if (req.id > 0) {
+        auto existing = repo.get_by_id(req.id);
+        if (!existing) {
+            error_response resp{"Process definition not found with id " + std::to_string(req.id)};
+            return glz::write_json(resp).value_or(R"({"error":"Process definition not found"})");
+        }
+        def = *existing;
+        if (has_body) {
+            if (body_obj.contains("name") && body_obj["name"].holds<std::string>()) {
+                def.name = body_obj["name"].get<std::string>();
+            }
+            if (body_obj.contains("executable_path") && body_obj["executable_path"].holds<std::string>()) {
+                def.executable_path = body_obj["executable_path"].get<std::string>();
+            }
+            if (body_obj.contains("arguments") && body_obj["arguments"].holds<std::string>()) {
+                def.arguments = body_obj["arguments"].get<std::string>();
+            }
+            if (body_obj.contains("working_directory") && body_obj["working_directory"].holds<std::string>()) {
+                def.working_directory = body_obj["working_directory"].get<std::string>();
+            }
+            if (body_obj.contains("icon_source") && body_obj["icon_source"].holds<std::string>()) {
+                def.icon_source = body_obj["icon_source"].get<std::string>();
+            }
+        }
+        if (hm->query.len > 0) {
+            std::string qname = get_query_param(&hm->query, "name");
+            if (!qname.empty()) def.name = qname;
+            std::string qexe = get_query_param(&hm->query, "executable_path");
+            if (!qexe.empty()) def.executable_path = qexe;
+            std::string qargs = get_query_param(&hm->query, "arguments");
+            if (!qargs.empty()) def.arguments = qargs;
+            std::string qcwd = get_query_param(&hm->query, "working_directory");
+            if (!qcwd.empty()) def.working_directory = qcwd;
+            std::string qicon = get_query_param(&hm->query, "icon_source");
+            if (!qicon.empty()) def.icon_source = qicon;
+        }
+    } else {
+        if (req.name.empty() || req.executable_path.empty()) {
+            error_response resp{"name and executable_path are required fields"};
+            return glz::write_json(resp).value_or(R"({"error":"name and executable_path are required fields"})");
+        }
+        def.id = -1;
+        def.name = req.name;
+        def.executable_path = req.executable_path;
+        def.arguments = req.arguments;
+        def.working_directory = req.working_directory;
+        def.icon_source = req.icon_source;
+    }
+
+    if (def.name.empty() || def.executable_path.empty()) {
+        error_response resp{"name and executable_path cannot be empty"};
+        return glz::write_json(resp).value_or(R"({"error":"name and executable_path cannot be empty"})");
+    }
+
+    int64_t saved_id = repo.upsert(def);
+    auto saved_def = repo.get_by_id(saved_id);
+
+    glz::json_t resp;
+    resp["success"] = true;
+    resp["id"] = saved_id;
+    if (saved_def) {
+        resp["name"] = saved_def->name;
+        resp["executable_path"] = saved_def->executable_path;
+        resp["arguments"] = saved_def->arguments;
+        resp["working_directory"] = saved_def->working_directory;
+        resp["icon_source"] = saved_def->icon_source;
+        resp["created"] = saved_def->created;
+        resp["updated"] = saved_def->updated;
+    }
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_definition_get(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    int64_t target_id = -1;
+    std::string target_name;
+
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "id");
+        if (!val.empty()) {
+            try { target_id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { target_id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "name");
+        if (!val.empty()) target_name = val;
+        val = get_query_param(&hm->query, "definition_name");
+        if (!val.empty()) target_name = val;
+    }
+
+    rouen::models::productivity::process_definition_repository repo;
+    std::optional<rouen::models::productivity::process_definition> def;
+
+    if (target_id > 0) {
+        def = repo.get_by_id(target_id);
+    } else if (!target_name.empty()) {
+        auto all = repo.get_all();
+        for (const auto& d : all) {
+            if (d.name == target_name) {
+                def = d;
+                break;
+            }
+        }
+    }
+
+    if (!def) {
+        error_response resp{"Process definition not found"};
+        return glz::write_json(resp).value_or(R"({"error":"Process definition not found"})");
+    }
+
+    glz::json_t resp;
+    resp["success"] = true;
+    resp["id"] = def->id;
+    resp["name"] = def->name;
+    resp["executable_path"] = def->executable_path;
+    resp["arguments"] = def->arguments;
+    resp["working_directory"] = def->working_directory;
+    resp["icon_source"] = def->icon_source;
+    resp["created"] = def->created;
+    resp["updated"] = def->updated;
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
+std::string api_server_host::handle_process_definition_delete(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    int64_t target_id = -1;
+    std::string target_name;
+
+    if (hm->query.len > 0) {
+        std::string val = get_query_param(&hm->query, "id");
+        if (!val.empty()) {
+            try { target_id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { target_id = std::stoll(val); } catch (...) {}
+        }
+        val = get_query_param(&hm->query, "name");
+        if (!val.empty()) target_name = val;
+        val = get_query_param(&hm->query, "definition_name");
+        if (!val.empty()) target_name = val;
+    }
+
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        glz::json_t obj;
+        if (!glz::read_json(obj, body)) {
+            if (target_id <= 0 && obj.contains("id") && obj["id"].holds<double>()) {
+                target_id = static_cast<int64_t>(obj["id"].get<double>());
+            }
+            if (target_id <= 0 && obj.contains("definition_id") && obj["definition_id"].holds<double>()) {
+                target_id = static_cast<int64_t>(obj["definition_id"].get<double>());
+            }
+            if (target_name.empty() && obj.contains("name") && obj["name"].holds<std::string>()) {
+                target_name = obj["name"].get<std::string>();
+            }
+            if (target_name.empty() && obj.contains("definition_name") && obj["definition_name"].holds<std::string>()) {
+                target_name = obj["definition_name"].get<std::string>();
+            }
+        }
+    }
+
+    rouen::models::productivity::process_definition_repository repo;
+    if (target_id <= 0 && !target_name.empty()) {
+        auto all = repo.get_all();
+        for (const auto& d : all) {
+            if (d.name == target_name) {
+                target_id = d.id;
+                break;
+            }
+        }
+    }
+
+    if (target_id <= 0) {
+        error_response resp{"Valid process definition identifier (id or name) is required"};
+        return glz::write_json(resp).value_or(R"({"error":"Valid process definition identifier required"})");
+    }
+
+    auto existing = repo.get_by_id(target_id);
+    if (!existing) {
+        error_response resp{"Process definition not found with id " + std::to_string(target_id)};
+        return glz::write_json(resp).value_or(R"({"error":"Process definition not found"})");
+    }
+
+    repo.remove(target_id);
+
+    glz::json_t resp;
+    resp["success"] = true;
+    resp["id"] = target_id;
+    resp["message"] = "Process definition deleted successfully";
+
+    std::string out;
+    (void)glz::write_json(resp, out);
+    return out;
+}
+
 static void populate_process_ui_request(process_ui_request& req, struct mg_http_message* hm) {
     if (hm->body.len > 0) {
         std::string body(hm->body.buf, hm->body.len);
@@ -2256,10 +2523,7 @@ std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*
     return out;
 }
 
-std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
-    process_ui_request req;
-    populate_process_ui_request(req, hm);
-
+static std::string execute_process_ui_action(const process_ui_request& req) {
     int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
     if (pid <= 0) {
         error_response resp{"Valid running process identifier required"};
@@ -2289,25 +2553,31 @@ std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*
     return out;
 }
 
-std::string api_server_host::handle_process_ui_click(struct mg_connection* c, struct mg_http_message* hm) {
+std::string api_server_host::handle_process_ui_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_ui_request req;
+    populate_process_ui_request(req, hm);
+    return execute_process_ui_action(req);
+}
+
+std::string api_server_host::handle_process_ui_click(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
     populate_process_ui_request(req, hm);
     req.action = "click";
-    return handle_process_ui_action(c, hm);
+    return execute_process_ui_action(req);
 }
 
-std::string api_server_host::handle_process_ui_set_value(struct mg_connection* c, struct mg_http_message* hm) {
+std::string api_server_host::handle_process_ui_set_value(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
     populate_process_ui_request(req, hm);
     req.action = "set_value";
-    return handle_process_ui_action(c, hm);
+    return execute_process_ui_action(req);
 }
 
-std::string api_server_host::handle_process_ui_focus(struct mg_connection* c, struct mg_http_message* hm) {
+std::string api_server_host::handle_process_ui_focus(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     process_ui_request req;
     populate_process_ui_request(req, hm);
     req.action = "focus";
-    return handle_process_ui_action(c, hm);
+    return execute_process_ui_action(req);
 }
 
 std::string api_server_host::handle_swagger_ui(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
@@ -3099,6 +3369,153 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
             "description": "List of processes with state, pid, and run IDs"
           }
         }
+      },
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Create or update a process definition",
+        "operationId": "saveProcessDefinition",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {"type": "integer", "description": "Process definition ID (omit or <= 0 to create, > 0 to update)"},
+                  "name": {"type": "string", "description": "Process definition name"},
+                  "executable_path": {"type": "string", "description": "Executable path"},
+                  "arguments": {"type": "string", "description": "Command-line arguments"},
+                  "working_directory": {"type": "string", "description": "Working directory"},
+                  "icon_source": {"type": "string", "description": "Custom icon path"}
+                },
+                "required": ["name", "executable_path"]
+              },
+              "example": {
+                "name": "Text Editor",
+                "executable_path": "/usr/bin/nano",
+                "arguments": "notes.txt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Process definition saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Delete a process definition by ID or name",
+        "operationId": "deleteProcessDefinitionFromProcesses",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Process definition ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process definition deleted"
+          }
+        }
+      }
+    },
+    "/api/process/definition": {
+      "get": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Get a process definition by ID or name",
+        "operationId": "getProcessDefinition",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Process definition ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Process definition name",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process definition details"
+          },
+          "404": {
+            "description": "Process definition not found"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Create or update a process definition",
+        "operationId": "createOrUpdateProcessDefinition",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {"type": "integer", "description": "Process definition ID (omit or <= 0 to create, > 0 to update)"},
+                  "name": {"type": "string", "description": "Process definition name"},
+                  "executable_path": {"type": "string", "description": "Executable path"},
+                  "arguments": {"type": "string", "description": "Command-line arguments"},
+                  "working_directory": {"type": "string", "description": "Working directory"},
+                  "icon_source": {"type": "string", "description": "Custom icon path"}
+                },
+                "required": ["name", "executable_path"]
+              },
+              "example": {
+                "name": "Text Editor",
+                "executable_path": "/usr/bin/nano",
+                "arguments": "notes.txt"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Process definition saved"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Delete a process definition by ID or name",
+        "operationId": "deleteProcessDefinition",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "description": "Process definition ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Process definition name",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process definition deleted"
+          },
+          "404": {
+            "description": "Process definition not found"
+          }
+        }
       }
     },
     "/api/process/start": {
@@ -3142,6 +3559,56 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "responses": {
           "200": {
             "description": "Process run started"
+          }
+        }
+      }
+    },
+    "/api/process/attach": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Attach Rouen process inspection and UI automation tracking to an existing running process by PID",
+        "operationId": "attachProcess",
+        "parameters": [
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "PID of the process to attach to",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "description": "Optional friendly name for the attached process",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pid": {"type": "integer", "description": "PID of the running process to attach to"},
+                  "name": {"type": "string", "description": "Friendly name for the process"}
+                },
+                "required": ["pid"]
+              },
+              "example": {
+                "pid": 12345,
+                "name": "External App"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Attached successfully to process"
+          },
+          "400": {
+            "description": "Invalid process PID"
           }
         }
       }
@@ -4588,7 +5055,7 @@ std::string api_server_host::handle_system_version(struct mg_connection* /*c*/, 
     (void)glz::write_json(local_services, services_json);
 
 #ifndef ROUEN_VERSION
-#define ROUEN_VERSION "1.4.7"
+#define ROUEN_VERSION "1.4.11"
 #endif
 #ifndef COMPILE_GIT_HASH
 #define COMPILE_GIT_HASH "unknown"

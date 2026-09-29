@@ -170,6 +170,38 @@ struct mcp_set_camera_layout_params {
     };
 };
 
+struct mcp_save_process_definition_params {
+    int64_t id{-1};
+    std::string name;
+    std::string executable_path;
+    std::string arguments;
+    std::string working_directory;
+    std::string icon_source;
+    struct glaze {
+        using T = mcp_save_process_definition_params;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "name", &T::name,
+            "executable_path", &T::executable_path,
+            "arguments", &T::arguments,
+            "working_directory", &T::working_directory,
+            "icon_source", &T::icon_source
+        );
+    };
+};
+
+struct mcp_delete_process_definition_params {
+    int64_t id{-1};
+    std::string name;
+    struct glaze {
+        using T = mcp_delete_process_definition_params;
+        static constexpr auto value = glz::object(
+            "id", &T::id,
+            "name", &T::name
+        );
+    };
+};
+
 struct mcp_start_process_params {
     int64_t definition_id{0};
     std::string definition_name;
@@ -2465,6 +2497,98 @@ mcp_host::mcp_host() {
         "process"
     );
     register_function("process", list_processes_def);
+
+    function_definition const save_process_definition_def(
+        "save_process_definition",
+        "Create or update a background process definition. Provide id to update an existing definition, or omit id (or id <= 0) to create a new one.",
+        R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"Process definition numeric ID (omit or <= 0 for create, > 0 for update)"},"name":{"type":"string","description":"Process name"},"executable_path":{"type":"string","description":"Executable path"},"arguments":{"type":"string","description":"Command-line arguments"},"working_directory":{"type":"string","description":"Working directory"},"icon_source":{"type":"string","description":"Custom icon path"}},"required":["name","executable_path"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_save_process_definition_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                rouen::models::productivity::process_definition_repository repo;
+                rouen::models::productivity::process_definition def;
+
+                if (req.id > 0) {
+                    auto existing = repo.get_by_id(req.id);
+                    if (!existing) return std::format(R"({{"status":"error","message":"Process definition not found with id {}"}})", req.id);
+                    def = *existing;
+                    if (!req.name.empty()) def.name = req.name;
+                    if (!req.executable_path.empty()) def.executable_path = req.executable_path;
+                    if (!req.arguments.empty()) def.arguments = req.arguments;
+                    if (!req.working_directory.empty()) def.working_directory = req.working_directory;
+                    if (!req.icon_source.empty()) def.icon_source = req.icon_source;
+                } else {
+                    if (req.name.empty() || req.executable_path.empty()) {
+                        return R"({"status":"error","message":"name and executable_path are required"})";
+                    }
+                    def.id = -1;
+                    def.name = req.name;
+                    def.executable_path = req.executable_path;
+                    def.arguments = req.arguments;
+                    def.working_directory = req.working_directory;
+                    def.icon_source = req.icon_source;
+                }
+
+                int64_t saved_id = repo.upsert(def);
+                auto saved = repo.get_by_id(saved_id);
+                glz::json_t resp;
+                resp["status"] = "success";
+                resp["id"] = saved_id;
+                if (saved) {
+                    resp["name"] = saved->name;
+                    resp["executable_path"] = saved->executable_path;
+                    resp["arguments"] = saved->arguments;
+                    resp["working_directory"] = saved->working_directory;
+                    resp["icon_source"] = saved->icon_source;
+                    resp["created"] = saved->created;
+                    resp["updated"] = saved->updated;
+                }
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", save_process_definition_def);
+
+    function_definition const delete_process_definition_def(
+        "delete_process_definition",
+        "Delete a background process definition by definition ID or name.",
+        R"mcp({"type":"object","properties":{"id":{"type":"integer","description":"Process definition numeric ID"},"name":{"type":"string","description":"Process definition name"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_delete_process_definition_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                rouen::models::productivity::process_definition_repository repo;
+                int64_t target_id = req.id;
+                if (target_id <= 0 && !req.name.empty()) {
+                    auto all = repo.get_all();
+                    for (const auto& d : all) {
+                        if (d.name == req.name) { target_id = d.id; break; }
+                    }
+                }
+                if (target_id <= 0) return R"({"status":"error","message":"Valid process definition id or name required"})";
+                auto existing = repo.get_by_id(target_id);
+                if (!existing) return std::format(R"({{"status":"error","message":"Process definition not found with id {}"}})", target_id);
+                repo.remove(target_id);
+                glz::json_t resp;
+                resp["status"] = "success";
+                resp["id"] = target_id;
+                resp["message"] = "Process definition deleted successfully";
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", delete_process_definition_def);
 
     function_definition const start_process_def(
         "start_process",

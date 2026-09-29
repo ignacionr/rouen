@@ -201,3 +201,105 @@ TEST(CardAdaptiveInterface, HttpApiAdaptiveAndActionEndpoints) {
     EXPECT_NE(act_res.find("dispatched"), std::string::npos);
 }
 
+TEST(ProcessApiTests, ProcessDefinitionsCRUD) {
+    // 1. Create a new process definition via handle_process_definition_save
+    struct mg_http_message hm_create {};
+    std::string create_uri = "/api/process/definition";
+    std::string create_body = R"({"name":"Unit Test Process","executable_path":"/bin/echo","arguments":"--test","working_directory":"/tmp"})";
+    hm_create.uri = mg_str_n(create_uri.data(), create_uri.size());
+    hm_create.method = mg_str("POST");
+    hm_create.body = mg_str_n(create_body.data(), create_body.size());
+
+    std::string create_res = rouen::hosts::api_server_host::handle_process_definition_save(nullptr, &hm_create);
+    EXPECT_NE(create_res.find("\"success\":true"), std::string::npos);
+    EXPECT_NE(create_res.find("\"name\":\"Unit Test Process\""), std::string::npos);
+
+    // Extract generated id
+    glz::json_t create_json;
+    auto err = glz::read_json(create_json, create_res);
+    ASSERT_FALSE(err);
+    ASSERT_TRUE(create_json.contains("id"));
+    int64_t def_id = static_cast<int64_t>(create_json["id"].get<double>());
+    EXPECT_GT(def_id, 0);
+
+    // 2. Fetch definition by id via handle_process_definition_get
+    struct mg_http_message hm_get {};
+    std::string get_uri = "/api/process/definition";
+    std::string get_q = "id=" + std::to_string(def_id);
+    hm_get.uri = mg_str_n(get_uri.data(), get_uri.size());
+    hm_get.query = mg_str_n(get_q.data(), get_q.size());
+    hm_get.method = mg_str("GET");
+
+    std::string get_res = rouen::hosts::api_server_host::handle_process_definition_get(nullptr, &hm_get);
+    EXPECT_NE(get_res.find("\"success\":true"), std::string::npos);
+    EXPECT_NE(get_res.find("\"arguments\":\"--test\""), std::string::npos);
+
+    // 3. Update existing definition via handle_process_definition_save
+    struct mg_http_message hm_update {};
+    std::string update_uri = "/api/process/definition";
+    std::string update_body = "{\"id\":" + std::to_string(def_id) + ",\"name\":\"Updated Test Process\",\"arguments\":\"--updated\"}";
+    hm_update.uri = mg_str_n(update_uri.data(), update_uri.size());
+    hm_update.method = mg_str("POST");
+    hm_update.body = mg_str_n(update_body.data(), update_body.size());
+
+    std::string update_res = rouen::hosts::api_server_host::handle_process_definition_save(nullptr, &hm_update);
+    EXPECT_NE(update_res.find("\"success\":true"), std::string::npos);
+    EXPECT_NE(update_res.find("\"name\":\"Updated Test Process\""), std::string::npos);
+    EXPECT_NE(update_res.find("\"arguments\":\"--updated\""), std::string::npos);
+
+    // 4. Verify in processes list
+    struct mg_http_message hm_list {};
+    std::string list_uri = "/api/processes";
+    hm_list.uri = mg_str_n(list_uri.data(), list_uri.size());
+    hm_list.method = mg_str("GET");
+
+    std::string list_res = rouen::hosts::api_server_host::handle_processes_list(nullptr, &hm_list);
+    EXPECT_NE(list_res.find("Updated Test Process"), std::string::npos);
+
+    // 5. Delete definition via handle_process_definition_delete
+    struct mg_http_message hm_del {};
+    std::string del_uri = "/api/process/definition";
+    std::string del_q = "id=" + std::to_string(def_id);
+    hm_del.uri = mg_str_n(del_uri.data(), del_uri.size());
+    hm_del.query = mg_str_n(del_q.data(), del_q.size());
+    hm_del.method = mg_str("DELETE");
+
+    std::string del_res = rouen::hosts::api_server_host::handle_process_definition_delete(nullptr, &hm_del);
+    EXPECT_NE(del_res.find("\"success\":true"), std::string::npos);
+    EXPECT_NE(del_res.find("deleted successfully"), std::string::npos);
+
+    // 6. Verify definition no longer exists
+    std::string get_deleted_res = rouen::hosts::api_server_host::handle_process_definition_get(nullptr, &hm_get);
+    EXPECT_NE(get_deleted_res.find("Process definition not found"), std::string::npos);
+}
+
+TEST(ProcessApiTests, OpenApiSpecIncludesAttachAndDefinitionEndpoints) {
+    std::string spec = rouen::hosts::api_server_host::handle_openapi_spec(nullptr, nullptr);
+    EXPECT_NE(spec.find("/api/process/attach"), std::string::npos);
+    EXPECT_NE(spec.find("attachProcess"), std::string::npos);
+    EXPECT_NE(spec.find("/api/process/definition"), std::string::npos);
+    EXPECT_NE(spec.find("saveProcessDefinition"), std::string::npos);
+    EXPECT_NE(spec.find("deleteProcessDefinition"), std::string::npos);
+}
+
+TEST(ProcessApiTests, ProcessUIEndpointsValidation) {
+    // Calling with non-existent / invalid process PID returns error response
+    struct mg_http_message hm_set_val {};
+    std::string uri = "/api/process/ui/set-value";
+    std::string body = R"({"pid":0,"target":"Username","value":"Alice"})";
+    hm_set_val.uri = mg_str_n(uri.data(), uri.size());
+    hm_set_val.method = mg_str("POST");
+    hm_set_val.body = mg_str_n(body.data(), body.size());
+
+    std::string res = rouen::hosts::api_server_host::handle_process_ui_set_value(nullptr, &hm_set_val);
+    EXPECT_NE(res.find("Valid running process identifier required"), std::string::npos);
+
+    // Verify click and focus also properly require valid process
+    std::string click_res = rouen::hosts::api_server_host::handle_process_ui_click(nullptr, &hm_set_val);
+    EXPECT_NE(click_res.find("Valid running process identifier required"), std::string::npos);
+
+    std::string focus_res = rouen::hosts::api_server_host::handle_process_ui_focus(nullptr, &hm_set_val);
+    EXPECT_NE(focus_res.find("Valid running process identifier required"), std::string::npos);
+}
+
+

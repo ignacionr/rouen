@@ -29,11 +29,6 @@ public:
 
     static std::string handle_cards_adaptive(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_cards_action(struct mg_connection* c, struct mg_http_message* hm);
-
-private:
-    void server_loop();
-    static void event_handler(struct mg_connection* c, int ev, void* ev_data);
-    static void handle_request(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_card_creation(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_card_delete(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_cards_get(struct mg_connection* c, struct mg_http_message* hm);
@@ -75,6 +70,9 @@ private:
     static std::string handle_notify(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_rss_diagnostics(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_processes_list(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_definition_save(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_definition_get(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_process_definition_delete(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_start(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_attach(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_process_kill(struct mg_connection* c, struct mg_http_message* hm);
@@ -92,6 +90,11 @@ private:
     static std::string handle_system_upgrade(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_version(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_upgrade_status(struct mg_connection* c, struct mg_http_message* hm);
+
+private:
+    void server_loop();
+    static void event_handler(struct mg_connection* c, int ev, void* ev_data);
+    static void handle_request(struct mg_connection* c, struct mg_http_message* hm);
     static void add_sse_connection(struct mg_connection* c);
     static void remove_sse_connection(struct mg_connection* c);
 
