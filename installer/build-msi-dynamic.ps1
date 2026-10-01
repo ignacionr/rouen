@@ -81,14 +81,6 @@ $ExpectedDLLs = @{
     # Utility libraries
     "tinyxml2.dll" = @{ Category = "Utility"; Description = "XML parsing library"; Required = $false }
     "zlib1.dll" = @{ Category = "Utility"; Description = "Compression library"; Required = $false }
-    
-    # Visual C++ Runtime
-    "vcruntime140.dll" = @{ Category = "Runtime"; Description = "Visual C++ Runtime"; Required = $true }
-    "vcruntime140_1.dll" = @{ Category = "Runtime"; Description = "Visual C++ Runtime"; Required = $true }
-    "msvcp140.dll" = @{ Category = "Runtime"; Description = "Visual C++ Standard Library"; Required = $true }
-    "concrt140.dll" = @{ Category = "Runtime"; Description = "Visual C++ Concurrency Runtime"; Required = $false }
-    "msvcp140_1.dll" = @{ Category = "Runtime"; Description = "Visual C++ Standard Library"; Required = $false }
-    "msvcp140_2.dll" = @{ Category = "Runtime"; Description = "Visual C++ Standard Library"; Required = $false }
 }
 
 # Scan for actual DLLs present
@@ -159,6 +151,17 @@ $WixSource = @"
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/ignaciorodriguez/rouen" />
+    
+    <!-- Visual C++ 2015-2022 Redistributable (x64) check -->
+    <Property Id="VCREDIST_INSTALLED">
+      <RegistrySearch Id="VC2015to2022Installed" Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" Name="Installed" Type="raw" Win64="yes" />
+    </Property>
+    <Property Id="VCREDIST_WOW64_INSTALLED">
+      <RegistrySearch Id="VC2015to2022InstalledWow64" Root="HKLM" Key="SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" Name="Installed" Type="raw" />
+    </Property>
+    <Condition Message="Rouen requires Microsoft Visual C++ 2015-2022 Redistributable (x64). Please install it from https://aka.ms/vs/17/release/vc_redist.x64.exe and rerun setup.">
+      <![CDATA[Installed OR VCREDIST_INSTALLED OR VCREDIST_WOW64_INSTALLED]]>
+    </Condition>
     
     <!-- Define the media and directory structure -->
     <MediaTemplate EmbedCab="yes" />

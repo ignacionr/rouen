@@ -9,6 +9,17 @@
     <Property Id="ARPNOREPAIR" Value="1" />
     <Property Id="ARPNOMODIFY" Value="1" />
     
+    <!-- Visual C++ 2015-2022 Redistributable (x64) check -->
+    <Property Id="VCREDIST_INSTALLED">
+      <RegistrySearch Id="VC2015to2022Installed" Root="HKLM" Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" Name="Installed" Type="raw" Win64="yes" />
+    </Property>
+    <Property Id="VCREDIST_WOW64_INSTALLED">
+      <RegistrySearch Id="VC2015to2022InstalledWow64" Root="HKLM" Key="SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" Name="Installed" Type="raw" />
+    </Property>
+    <Condition Message="Rouen requires Microsoft Visual C++ 2015-2022 Redistributable (x64). Please install it from https://aka.ms/vs/17/release/vc_redist.x64.exe and rerun setup.">
+      <![CDATA[Installed OR VCREDIST_INSTALLED OR VCREDIST_WOW64_INSTALLED]]>
+    </Condition>
+    
     <!-- Define installation scope as per-user -->
     <Property Id="MSIINSTALLPERUSER" Value="1" />
     <Property Id="ALLUSERS" Value="" />

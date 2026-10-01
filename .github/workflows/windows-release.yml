@@ -347,6 +347,15 @@ jobs:
             if ($exeDlls) {
               Write-Host "`n🎯 PRIORITY: Copying DLLs from executable directory ($($exeDlls.Count) found):"
               foreach ($dll in $exeDlls) {
+                $name = $dll.Name.ToLower()
+                # Exclude debug, test, runtime, and system DLLs
+                if ($name -like "*gtest*" -or $name -like "*gmock*" -or $name -like "pkgconf*" -or
+                    $name -like "*-d.dll" -or $name -like "*d1.dll" -or $name -eq "libcurld.dll" -or
+                    $name -like "msvcp140*" -or $name -like "vcruntime140*" -or $name -like "concrt140*" -or
+                    $name -eq "advapi32.dll" -or $name -eq "crypt32.dll" -or $name -eq "ws2_32.dll") {
+                  Write-Host "  ⏭️ Skipping unwanted DLL: $($dll.Name)"
+                  continue
+                }
                 $destPath = "$distDir\$($dll.Name)"
                 Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
                 $sizeKB = [math]::Round($dll.Length / 1KB, 1)
@@ -384,32 +393,29 @@ jobs:
         $workspace = "${{ github.workspace }}"
         $distDir = "$workspace\dist"
         $vcpkgBinPath = "$workspace\vcpkg\installed\x64-windows\bin"
-        $vcpkgDebugBinPath = "$workspace\vcpkg\installed\x64-windows\debug\bin"
         
         # Check what DLLs we already have from CMake
         $existingDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
         Write-Host "=== VCPKG DLL FALLBACK COPY ==="
         Write-Host "DLLs already in dist from CMake: $($existingDlls.Count)"
         
-        # Check if libcurl is already present
-        $curlPresent = $existingDlls | Where-Object { $_.Name -like "*curl*" }
-        if ($curlPresent) {
-          Write-Host "✅ CURL DLL already present from CMake: $($curlPresent.Name -join ', ')"
-        } else {
-          Write-Host "⚠️ CURL DLL missing - will attempt vcpkg fallback copy"
-        }
+        Write-Host "`nvcpkg release bin directory: $vcpkgBinPath (exists: $(Test-Path $vcpkgBinPath))"
         
-        Write-Host "`nvcpkg bin directories:"
-        Write-Host "  Release bin: $vcpkgBinPath (exists: $(Test-Path $vcpkgBinPath))"
-        Write-Host "  Debug bin: $vcpkgDebugBinPath (exists: $(Test-Path $vcpkgDebugBinPath))"
-        
-        # Copy from release bin if available (only if not already present)
+        # Copy release DLLs from vcpkg installed bin (skipping test, debug, tool, CRT, and system DLLs)
         if (Test-Path $vcpkgBinPath) {
           $vcpkgDlls = Get-ChildItem "$vcpkgBinPath\*.dll" -ErrorAction SilentlyContinue
           Write-Host "`nvcpkg release DLLs available: $($vcpkgDlls.Count)"
           
           $copiedCount = 0
           foreach ($dll in $vcpkgDlls) {
+            $name = $dll.Name.ToLower()
+            if ($name -like "*gtest*" -or $name -like "*gmock*" -or $name -like "pkgconf*" -or
+                $name -like "*-d.dll" -or $name -like "*d1.dll" -or $name -eq "libcurld.dll" -or
+                $name -like "msvcp140*" -or $name -like "vcruntime140*" -or $name -like "concrt140*" -or
+                $name -eq "advapi32.dll" -or $name -eq "crypt32.dll" -or $name -eq "ws2_32.dll") {
+              continue
+            }
+            
             $destPath = "$distDir\$($dll.Name)"
             if (-not (Test-Path $destPath)) {
               Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
@@ -427,147 +433,98 @@ jobs:
           Write-Host "⚠️ vcpkg release bin directory not found"
         }
         
-        # Also check debug bin for any missing critical DLLs
-        if (Test-Path $vcpkgDebugBinPath) {
-          $debugDllFiles = Get-ChildItem "$vcpkgDebugBinPath\*.dll" -ErrorAction SilentlyContinue
-          $copiedDebugCount = 0
-          
-          foreach ($dll in $debugDllFiles) {
-            $destPath = "$distDir\$($dll.Name)"
-            # Only copy debug DLLs if release version doesn't exist
-            if (-not (Test-Path $destPath)) {
-              Copy-Item $dll.FullName $destPath -ErrorAction SilentlyContinue
-              Write-Host "  ✅ Debug fallback: $($dll.Name)"
-              $copiedDebugCount++
-            }
-          }
-          
-          if ($copiedDebugCount -gt 0) {
-            Write-Host "Fallback copied from vcpkg debug: $copiedDebugCount DLLs"
-          }
-        }
-        
-        # Final verification - check if we now have libcurl
-        $finalCurlCheck = Get-ChildItem "$distDir\*curl*.dll" -ErrorAction SilentlyContinue
+        # Verify release libcurl
+        $finalCurlCheck = Get-ChildItem "$distDir\libcurl.dll" -ErrorAction SilentlyContinue
         if ($finalCurlCheck) {
-          Write-Host "`n✅ CURL DLLs now present in distribution:"
-          foreach ($curl in $finalCurlCheck) {
-            $sizeKB = [math]::Round($curl.Length / 1KB, 1)
-            Write-Host "  ✅ $($curl.Name) ($sizeKB KB)"
-          }
+          $sizeKB = [math]::Round($finalCurlCheck.Length / 1KB, 1)
+          Write-Host "`n✅ Release libcurl.dll present in distribution ($sizeKB KB)"
         } else {
-          Write-Host "`n❌ CURL DLL still missing after fallback copy!"
-          
-          # Desperate search for any curl DLL anywhere in vcpkg
-          Write-Host "Performing desperate search for libcurl..."
-          $foundCurl = Get-ChildItem -Recurse "$workspace\vcpkg" -Filter "*curl*.dll" -ErrorAction SilentlyContinue | Select-Object -First 5
+          Write-Host "`n⚠️ libcurl.dll not found in dist, checking vcpkg installed tree..."
+          $foundCurl = Get-ChildItem -Path "$workspace\vcpkg\installed\x64-windows\bin" -Filter "libcurl.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($foundCurl) {
-            Write-Host "Found CURL DLLs in vcpkg installation:"
-            foreach ($curl in $foundCurl) {
-              $relativePath = $curl.FullName.Replace("$workspace\vcpkg\", "")
-              Write-Host "  📍 $relativePath"
-              # Copy the first one we find
-              if (-not (Test-Path "$distDir\$($curl.Name)")) {
-                Copy-Item $curl.FullName "$distDir\$($curl.Name)" -ErrorAction SilentlyContinue
-                Write-Host "    🚑 EMERGENCY COPIED: $($curl.Name)"
-              }
-            }
+            Copy-Item $foundCurl.FullName "$distDir\libcurl.dll" -ErrorAction SilentlyContinue
+            Write-Host "  ✅ Copied libcurl.dll from $($foundCurl.FullName)"
           } else {
-            Write-Host "❌ No CURL DLLs found anywhere in vcpkg installation!"
+            Write-Host "❌ libcurl.dll not found!"
           }
         }
 
-        # Comprehensive search for any FFmpeg DLLs (avformat, avcodec, avutil, swscale, swresample) in vcpkg
-        Write-Host "`n=== Checking FFmpeg DLLs ==="
-        $ffmpegDlls = Get-ChildItem -Recurse "$workspace" -Include "avformat*.dll","avcodec*.dll","avutil*.dll","swscale*.dll","swresample*.dll" -ErrorAction SilentlyContinue
-        foreach ($ff in $ffmpegDlls) {
-          $dest = "$distDir\$($ff.Name)"
-          if (-not (Test-Path $dest)) {
-            Copy-Item $ff.FullName $dest -ErrorAction SilentlyContinue
-            Write-Host "  🎬 Copied FFmpeg DLL: $($ff.Name)"
-          } else {
-            Write-Host "  ✅ FFmpeg DLL present: $($ff.Name)"
-          }
-        }
-
-    - name: Copy Visual C++ Runtime DLLs
+    - name: Sanitize and filter release distribution
       shell: pwsh
       run: |
         $workspace = "${{ github.workspace }}"
         $distDir = "$workspace\dist"
         
-        # Essential Visual C++ runtime DLLs
-        $essentialDlls = @(
-          "msvcp140.dll", 
-          "vcruntime140.dll", 
-          "vcruntime140_1.dll",
-          "msvcp140_1.dll",
-          "msvcp140_2.dll",
-          "concrt140.dll"
+        Write-Host "=== Sanitizing Release Distribution ==="
+        
+        # 1. Purge Visual C++ runtime DLLs (never bundle app-local CRT to avoid version mismatch / std::mutex crashes)
+        $vcRuntimePatterns = @(
+          "msvcp140*.dll",
+          "vcruntime140*.dll",
+          "concrt140*.dll",
+          "vccorlib140*.dll",
+          "msvcr*.dll",
+          "ucrtbase*.dll"
         )
         
-        # Critical Windows system DLLs needed for SSL/crypto functionality
-        $systemDlls = @(
+        # 2. Purge Windows OS system DLLs (must never be shipped with desktop apps)
+        $systemDllPatterns = @(
+          "advapi32.dll",
           "crypt32.dll",
           "ws2_32.dll",
-          "advapi32.dll"
+          "kernel32.dll",
+          "user32.dll",
+          "gdi32.dll",
+          "shell32.dll",
+          "ole32.dll",
+          "oleaut32.dll",
+          "comctl32.dll",
+          "comdlg32.dll",
+          "shlwapi.dll",
+          "version.dll",
+          "winmm.dll",
+          "imm32.dll",
+          "ntdll.dll"
         )
         
-        # Search paths for VC++ runtime
-        $searchPaths = @(
-          "${env:ProgramFiles}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT",
-          "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
-          "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
-          "${env:ProgramFiles}\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\*\x64\Microsoft.VC143.CRT",
-          "$env:SystemRoot\System32"
+        # 3. Purge debug, test, and build tool artifacts
+        $debugAndTestPatterns = @(
+          "*gtest*.dll",
+          "*gmock*.dll",
+          "pkgconf*.dll",
+          "*-d.dll",
+          "*d1.dll",
+          "libcurld.dll",
+          "*.pdb",
+          "*.ilk",
+          "*.exp",
+          "*.lib"
         )
         
-        Write-Host "=== Processing Visual C++ Runtime DLLs ==="
-        foreach ($dll in $essentialDlls) {
-          $destPath = "$distDir\$dll"
-          if (-not (Test-Path $destPath)) {
-            $found = $false
-            foreach ($searchPath in $searchPaths) {
-              $dllPath = Get-ChildItem -Path $searchPath -Filter $dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-              if ($dllPath) {
-                try {
-                  Copy-Item $dllPath.FullName $destPath -ErrorAction Stop
-                  Write-Host "  ✅ Copied essential DLL: $dll"
-                  $found = $true
-                  break
-                } catch {
-                  Write-Host "  ❌ Failed to copy $dll from $($dllPath.FullName)"
-                }
-              }
-            }
-            if (-not $found) {
-              Write-Host "  ⚠️  Warning: Could not find essential DLL: $dll"
-            }
-          } else {
-            Write-Host "  ✅ Essential DLL already exists: $dll"
+        $allRemovePatterns = $vcRuntimePatterns + $systemDllPatterns + $debugAndTestPatterns
+        $removedCount = 0
+        foreach ($pattern in $allRemovePatterns) {
+          $matches = Get-ChildItem -Path $distDir -Filter $pattern -ErrorAction SilentlyContinue
+          foreach ($file in $matches) {
+            Remove-Item $file.FullName -Force -ErrorAction SilentlyContinue
+            Write-Host "  🗑️ Purged unwanted binary: $($file.Name)"
+            $removedCount++
           }
         }
         
-        Write-Host "`n=== Processing System DLLs ==="
-        foreach ($dll in $systemDlls) {
-          $destPath = "$distDir\$dll"
-          if (-not (Test-Path $destPath)) {
-            $systemPath = "$env:SystemRoot\System32\$dll"
-            if (Test-Path $systemPath) {
-              try {
-                Copy-Item $systemPath $destPath -ErrorAction Stop
-                Write-Host "  ✅ Copied system DLL: $dll"
-              } catch {
-                Write-Host "  ⚠️  Note: Could not copy system DLL $dll (may not be redistributable)"
-              }
-            } else {
-              Write-Host "  ⚠️  System DLL not found: $dll"
-            }
-          } else {
-            Write-Host "  ✅ System DLL already exists: $dll"
+        # 4. Remove duplicate unversioned FFmpeg DLLs (keep avcodec-61.dll, remove unversioned avcodec.dll)
+        $ffmpegBases = @("avcodec", "avformat", "avutil", "swscale", "swresample", "postproc")
+        foreach ($base in $ffmpegBases) {
+          $versioned = Get-ChildItem -Path $distDir -Filter "$base-[0-9]*.dll" -ErrorAction SilentlyContinue
+          $unversioned = Join-Path $distDir "$base.dll"
+          if ($versioned -and (Test-Path $unversioned)) {
+            Remove-Item $unversioned -Force -ErrorAction SilentlyContinue
+            Write-Host "  🗑️ Purged duplicate unversioned FFmpeg DLL: $base.dll (keeping $($versioned.Name))"
+            $removedCount++
           }
         }
+        
+        Write-Host "Sanitization complete: $removedCount items cleaned up."
 
     - name: Copy additional assets
       shell: pwsh
@@ -647,16 +604,47 @@ jobs:
           Write-Host "dumpbin not available, skipping detailed dependency analysis"
         }
         
+        # Assert NO forbidden DLLs are present in distDir
+        $forbiddenPatterns = @(
+          "msvcp140*.dll",
+          "vcruntime140*.dll",
+          "concrt140*.dll",
+          "crypt32.dll",
+          "ws2_32.dll",
+          "advapi32.dll",
+          "*gtest*.dll",
+          "*gmock*.dll",
+          "pkgconf*.dll",
+          "*-d.dll",
+          "*d1.dll",
+          "libcurld.dll"
+        )
+        $violations = @()
+        foreach ($pattern in $forbiddenPatterns) {
+          $found = Get-ChildItem -Path $distDir -Filter $pattern -ErrorAction SilentlyContinue
+          if ($found) {
+            foreach ($f in $found) {
+              $violations += $f.Name
+            }
+          }
+        }
+        if ($violations.Count -gt 0) {
+          Write-Error "❌ FAILED: Forbidden DLLs found in distribution: $($violations -join ', ')"
+          exit 1
+        }
+        Write-Host "✅ Verified no forbidden/system/debug DLLs exist in dist."
+        
         # List all DLLs we've collected
         $collectedDlls = Get-ChildItem "$distDir\*.dll" -ErrorAction SilentlyContinue
-        Write-Host "`n=== Collected DLLs ($($collectedDlls.Count) total) ==="
+        Write-Host "`n=== Final Release DLLs ($($collectedDlls.Count) total) ==="
         foreach ($dll in $collectedDlls | Sort-Object Name) {
           $sizeKB = [math]::Round($dll.Length / 1KB, 1)
           Write-Host "  📦 $($dll.Name) ($sizeKB KB)"
         }
         
         if ($collectedDlls.Count -eq 0) {
-          Write-Host "⚠️  WARNING: No DLLs found in distribution directory!"
+          Write-Error "❌ ERROR: No DLLs found in distribution directory!"
+          exit 1
         }
 
     - name: Create dependency manifest
@@ -672,18 +660,12 @@ jobs:
         
         # Categorize DLLs
         $vcpkgDlls = @()
-        $runtimeDlls = @()
-        $systemDlls = @()
         $otherDlls = @()
         
         foreach ($dll in $dllFiles) {
           $name = $dll.Name.ToLower()
-          if ($name -like "*ssl*" -or $name -like "*curl*" -or $name -like "*sdl*" -or $name -like "*tiny*" -or $name -like "*zlib*") {
+          if ($name -like "*ssl*" -or $name -like "*curl*" -or $name -like "*sdl*" -or $name -like "*tiny*" -or $name -like "*zlib*" -or $name -like "*av*" -or $name -like "*sw*" -or $name -like "*sqlite*") {
             $vcpkgDlls += $dll
-          } elseif ($name -like "*vcruntime*" -or $name -like "*msvcp*" -or $name -like "*concrt*") {
-            $runtimeDlls += $dll
-          } elseif ($name -like "*crypt32*" -or $name -like "*ws2_32*" -or $name -like "*advapi32*") {
-            $systemDlls += $dll
           } else {
             $otherDlls += $dll
           }
@@ -694,36 +676,18 @@ jobs:
         $manifestLines += "Rouen Windows x64 Distribution"
         $manifestLines += "=============================="
         $manifestLines += ""
-        $manifestLines += "This package contains the Rouen application with all required DLL dependencies."
+        $manifestLines += "This package contains the Rouen application with all required third-party DLL dependencies."
         $manifestLines += ""
         $manifestLines += "SUMMARY:"
         $manifestLines += "  Total DLLs included: $totalDlls"
         $manifestLines += "  Total DLL size: $([math]::Round($totalSize / 1MB, 2)) MB"
-        $manifestLines += "  vcpkg libraries: $($vcpkgDlls.Count)"
-        $manifestLines += "  Runtime libraries: $($runtimeDlls.Count)" 
-        $manifestLines += "  System libraries: $($systemDlls.Count)"
+        $manifestLines += "  Third-party / vcpkg libraries: $($vcpkgDlls.Count)"
         $manifestLines += "  Other libraries: $($otherDlls.Count)"
         $manifestLines += ""
         
         if ($vcpkgDlls.Count -gt 0) {
-          $manifestLines += "VCPKG LIBRARIES:"
+          $manifestLines += "BUNDLED LIBRARIES:"
           $vcpkgDlls | Sort-Object Name | ForEach-Object { 
-            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
-          }
-          $manifestLines += ""
-        }
-        
-        if ($runtimeDlls.Count -gt 0) {
-          $manifestLines += "VISUAL C++ RUNTIME:"
-          $runtimeDlls | Sort-Object Name | ForEach-Object { 
-            $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
-          }
-          $manifestLines += ""
-        }
-        
-        if ($systemDlls.Count -gt 0) {
-          $manifestLines += "SYSTEM LIBRARIES:"
-          $systemDlls | Sort-Object Name | ForEach-Object { 
             $manifestLines += "  - $($_.Name) ($([math]::Round($_.Length / 1KB, 1)) KB)"
           }
           $manifestLines += ""
@@ -739,7 +703,9 @@ jobs:
         
         $manifestLines += "RUNTIME REQUIREMENTS:"
         $manifestLines += "  - Windows 10 or later (x64)"
-        $manifestLines += "  - Visual C++ Redistributable 2019/2022 (included)"
+        $manifestLines += "  - Microsoft Visual C++ 2015-2022 Redistributable (x64)"
+        $manifestLines += "    Download: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        $manifestLines += "    (VC++ runtime DLLs are not bundled to prevent toolset ABI mismatch and ensure OS security patches)"
         $manifestLines += ""
         
         $manifestLines += "TROUBLESHOOTING:"
@@ -747,7 +713,7 @@ jobs:
           $manifestLines += "  ⚠️  WARNING: No vcpkg DLLs found! libcurl.dll and SSL libraries may be missing."
           $manifestLines += "  🔧 This indicates CMake DLL copying failed. Check build logs for errors."
         } else {
-          $manifestLines += "  ✅ vcpkg dependencies appear to be included."
+          $manifestLines += "  ✅ Bundled dependencies appear to be included."
         }
         
         $curlFound = $dllFiles | Where-Object { $_.Name -like "*curl*" }
@@ -770,8 +736,8 @@ jobs:
         }
         
         $manifestLines += ""
-        $manifestLines += "If you encounter missing DLL errors:"
-        $manifestLines += "  1. Ensure you have the latest Visual C++ Redistributable installed"
+        $manifestLines += "If you encounter missing DLL or runtime errors:"
+        $manifestLines += "  1. Install or update Microsoft Visual C++ 2015-2022 Redistributable (x64): https://aka.ms/vs/17/release/vc_redist.x64.exe"
         $manifestLines += "  2. Run the application from the same directory as this manifest"
         $manifestLines += "  3. Check Windows Update for the latest system updates"
         $manifestLines += ""
@@ -930,7 +896,7 @@ jobs:
         if (-not $rawTag) { $rawTag = "${{ github.ref_name }}" }
         $cleanSemVer = $rawTag -replace '^v', ''
         if ($cleanSemVer -notmatch '^\d+\.\d+\.\d+') {
-          $cleanSemVer = "1.4.11"
+          $cleanSemVer = "1.4.12"
         }
         $version = "$cleanSemVer.0"
         
@@ -1049,6 +1015,13 @@ jobs:
         $injectedXml = ""
         foreach ($asset in $distAssets) {
           $assetName = $asset.Name
+          $nameLower = $assetName.ToLower()
+          if ($nameLower -like "*gtest*" -or $nameLower -like "*gmock*" -or $nameLower -like "pkgconf*" -or
+              $nameLower -like "*-d.dll" -or $nameLower -like "*d1.dll" -or
+              $nameLower -like "msvcp140*" -or $nameLower -like "vcruntime140*" -or $nameLower -like "concrt140*" -or
+              $nameLower -eq "advapi32.dll" -or $nameLower -eq "crypt32.dll" -or $nameLower -eq "ws2_32.dll") {
+            continue
+          }
           if ($wxsRaw -notlike "*$assetName*") {
             $fileId = "DynFile_" + ($assetName -replace '[^a-zA-Z0-9_]', '_')
             $injectedXml += "`r`n        <File Id=`"$fileId`" Source=`"`$(var.SourceDir)\$assetName`" />"
@@ -1158,6 +1131,109 @@ jobs:
           Remove-Item $wixobjFile -Force
           Write-Host "Cleaned up intermediate files"
         }
+
+    - name: Run Windows smoke test
+      shell: pwsh
+      run: |
+        $workspace = "${{ github.workspace }}"
+        $distDir = "$workspace\dist"
+        $exe = "$distDir\rouen.exe"
+        $zipPath = "$workspace\rouen-windows-x64.zip"
+        $msiFile = "$workspace\rouen-windows-x64.msi"
+        
+        Write-Host "=== Running Windows Smoke Tests ==="
+        
+        # Test 1: Verify rouen.exe --help runs directly from dist directory
+        Write-Host "`n--- Test 1: CLI help from dist directory ---"
+        if (-not (Test-Path $exe)) {
+          Write-Error "rouen.exe not found at $exe"
+          exit 1
+        }
+        $helpOutput = & $exe --help 2>&1
+        $helpExit = $LASTEXITCODE
+        Write-Host ($helpOutput -join "`n")
+        if ($helpExit -ne 0) {
+          Write-Error "rouen.exe --help failed with exit code $helpExit"
+          exit 1
+        }
+        Write-Host "✅ CLI help test passed"
+        
+        # Test 2: Verify rouen.exe launches in background and stays alive without crashing
+        Write-Host "`n--- Test 2: Process startup and stability test ---"
+        $proc = Start-Process -FilePath $exe -ArgumentList "--daemon" -PassThru -NoNewWindow
+        Start-Sleep -Seconds 5
+        if ($proc.HasExited) {
+          Write-Error "rouen.exe crashed or exited prematurely! Exit code: $($proc.ExitCode)"
+          exit 1
+        }
+        Write-Host "✅ rouen.exe process is running stably after 5 seconds (PID: $($proc.Id))"
+        Stop-Process -Id $proc.Id -Force
+        
+        # Test 3: Test extracted ZIP package in a clean isolated directory
+        Write-Host "`n--- Test 3: Portable ZIP clean extract test ---"
+        $tempExtract = Join-Path $env:TEMP "rouen_smoke_zip_$([Guid]::NewGuid().ToString().Substring(0,8))"
+        Expand-Archive -Path $zipPath -DestinationPath $tempExtract -Force
+        $zipExe = Join-Path $tempExtract "rouen.exe"
+        if (-not (Test-Path $zipExe)) {
+          Write-Error "rouen.exe not found in extracted ZIP at $zipExe"
+          exit 1
+        }
+        
+        # Verify no forbidden DLLs inside ZIP
+        $forbiddenNames = @("msvcp140.dll", "vcruntime140.dll", "crypt32.dll", "ws2_32.dll", "advapi32.dll", "libcurl-d.dll")
+        foreach ($bad in $forbiddenNames) {
+          if (Test-Path (Join-Path $tempExtract $bad)) {
+            Write-Error "Forbidden DLL '$bad' was found inside the release ZIP!"
+            exit 1
+          }
+        }
+        Write-Host "✅ ZIP package is clean of forbidden/system/debug DLLs"
+        
+        $zipHelpOutput = & $zipExe --help 2>&1
+        $zipHelpExit = $LASTEXITCODE
+        if ($zipHelpExit -ne 0) {
+          Write-Error "Extracted ZIP rouen.exe --help failed with exit code $zipHelpExit"
+          exit 1
+        }
+        Write-Host "✅ Extracted ZIP rouen.exe executed cleanly"
+        Remove-Item -Recurse -Force $tempExtract -ErrorAction SilentlyContinue
+        
+        # Test 4: MSI silent install and uninstall smoke test
+        if (Test-Path $msiFile) {
+          Write-Host "`n--- Test 4: MSI Installation & Execution Test ---"
+          $msiLog = Join-Path $env:TEMP "msi_smoke_install.log"
+          $installProcess = Start-Process msiexec.exe -ArgumentList "/i `"$msiFile`" /qn /norestart /l*v `"$msiLog`"" -Wait -PassThru
+          Write-Host "MSI install exit code: $($installProcess.ExitCode)"
+          if ($installProcess.ExitCode -ne 0) {
+            Write-Host "MSI Log contents:"
+            Get-Content $msiLog -Tail 50 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+            Write-Error "MSI installation failed with exit code $($installProcess.ExitCode)"
+            exit 1
+          }
+          
+          # Check installed executable
+          $installedExe = Join-Path $env:LOCALAPPDATA "Rouen\Rouen\rouen.exe"
+          if (Test-Path $installedExe) {
+            Write-Host "✅ MSI installed rouen.exe at $installedExe"
+            $installedHelp = & $installedExe --help 2>&1
+            $installedHelpExit = $LASTEXITCODE
+            if ($installedHelpExit -ne 0) {
+              Write-Error "Installed rouen.exe --help failed with exit code $installedHelpExit"
+              exit 1
+            }
+            Write-Host "✅ Installed rouen.exe runs cleanly"
+          } else {
+            Write-Host "⚠️ Warning: Installed executable not at default perUser path $installedExe"
+          }
+          
+          # Clean uninstall
+          Write-Host "Uninstalling test MSI..."
+          $uninstallProcess = Start-Process msiexec.exe -ArgumentList "/x `"$msiFile`" /qn /norestart" -Wait -PassThru
+          Write-Host "MSI uninstall exit code: $($uninstallProcess.ExitCode)"
+          Write-Host "✅ MSI install/uninstall test passed"
+        }
+        
+        Write-Host "`n🎉 All Windows smoke tests passed successfully!"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7

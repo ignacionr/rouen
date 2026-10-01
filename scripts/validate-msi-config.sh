@@ -104,8 +104,7 @@ echo ""
 echo "=== Required DLL References Check ==="
 required_dlls=(
     "sqlite3.dll"
-    "libpng16.dll"
-    "SDL2.dll"
+    "SDL3.dll"
     "libcurl.dll"
 )
 
