@@ -106,21 +106,32 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
     auto urls_are_valid_video = [&is_url_accessible](const std::vector<std::string>& test_urls) -> bool {
         if (test_urls.empty()) return false;
 
+        bool has_audio_only = false;
         bool has_video = false;
         for (const auto& u : test_urls) {
-            if (u.find("mime=video") != std::string::npos || u.find("mime%3Dvideo") != std::string::npos) {
+            if (u.find("mime=video") != std::string::npos || u.find("mime%3Dvideo") != std::string::npos ||
+                u.find(".m3u8") != std::string::npos || u.find(".mpd") != std::string::npos || u.find(".mp4") != std::string::npos) {
                 has_video = true;
-                break;
+            }
+            if (u.find("mime=audio") != std::string::npos || u.find("mime%3Daudio") != std::string::npos || u.find(".m4a") != std::string::npos) {
+                has_audio_only = true;
             }
         }
 
-        // If there is only 1 URL and it's audio-only, reject it as a video stream
-        if (!has_video) {
+        // If there are multiple URLs (e.g. separate video + audio streams from yt-dlp bestvideo+bestaudio),
+        // as long as at least one URL is not strictly audio, consider it a valid video stream set.
+        if (!has_video && test_urls.size() >= 2) {
             for (const auto& u : test_urls) {
-                if (u.find("mime=audio") != std::string::npos || u.find("mime%3Daudio") != std::string::npos) {
-                    return false;
+                if (u.find("mime=audio") == std::string::npos && u.find("mime%3Daudio") == std::string::npos) {
+                    has_video = true;
+                    break;
                 }
             }
+        }
+
+        // Single URL that is audio-only is not a video stream
+        if (test_urls.size() == 1 && has_audio_only && !has_video) {
+            return false;
         }
 
         for (const auto& u : test_urls) {
