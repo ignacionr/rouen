@@ -52,11 +52,10 @@ jobs:
     - name: Setup vcpkg cache
       uses: actions/cache@v6
       with:
-        path: |
-          ${{ github.workspace }}/vcpkg-binary-cache
-          ${{ github.workspace }}/vcpkg/installed
-        key: ${{ runner.os }}-vcpkg-binary-${{ hashFiles('vcpkg.json') }}
+        path: ${{ github.workspace }}/vcpkg-binary-cache
+        key: ${{ runner.os }}-vcpkg-binary-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}-${{ github.run_id }}
         restore-keys: |
+          ${{ runner.os }}-vcpkg-binary-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json') }}-
           ${{ runner.os }}-vcpkg-binary-
 
     - name: Setup vcpkg
@@ -69,9 +68,9 @@ jobs:
         set "VCPKG_ROOT=%vcpkgDir%"
         >>"%GITHUB_ENV%" echo VCPKG_ROOT=%vcpkgDir%
         if not exist "%vcpkgDir%\vcpkg.exe" (
-          echo Cloning fresh vcpkg repository...
+          echo Cloning fresh pinned vcpkg repository...
           if exist "%vcpkgDir%" rmdir /s /q "%vcpkgDir%"
-          git clone https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
+          git clone --depth 1 --branch 2025.06.13 https://github.com/Microsoft/vcpkg.git "%vcpkgDir%"
           if errorlevel 1 (
             echo ERROR: Failed to clone vcpkg
             exit /b 1
