@@ -350,4 +350,56 @@ TEST(ProcessApiTests, ProcessUIScreenshotEndpointValidation) {
     EXPECT_NE(res_get.find("Target window not found"), std::string::npos);
 }
 
+TEST(ProcessApiTests, ProcessUIWindowScopingAndWin32Actions) {
+    // 1. Check OpenAPI specification contains new scoping fields and Win32 actions
+    std::string spec = rouen::hosts::api_server_host::handle_openapi_spec(nullptr, nullptr);
+    EXPECT_NE(spec.find("window_title"), std::string::npos);
+    EXPECT_NE(spec.find("window_class"), std::string::npos);
+    EXPECT_NE(spec.find("win32_click"), std::string::npos);
+    EXPECT_NE(spec.find("win32_set_text"), std::string::npos);
+    EXPECT_NE(spec.find("win32_command"), std::string::npos);
+
+    // 2. Action endpoint with Win32 click action on macOS returns platform unsupported
+    struct mg_http_message hm_action {};
+    std::string uri = "/api/process/ui/action";
+    std::string body = std::format(
+        R"({{"pid":{},"target":"btn_ok","action":"win32_click","window_title":"MainDialog","window_class":"#32770","hwnd":"0x1234"}})",
+        ::getpid()
+    );
+    hm_action.uri = mg_str_n(uri.data(), uri.size());
+    hm_action.method = mg_str("POST");
+    hm_action.body = mg_str_n(body.data(), body.size());
+
+    std::string res_action = rouen::hosts::api_server_host::handle_process_ui_action(nullptr, &hm_action);
+    EXPECT_NE(res_action.find("\"success\":false"), std::string::npos);
+#if !defined(_WIN32)
+    EXPECT_NE(res_action.find("only supported on Windows"), std::string::npos);
+#endif
+
+    // 3. Tree endpoint accepting scoped parameters (window_title, hwnd)
+    struct mg_http_message hm_tree {};
+    std::string uri_tree = "/api/process/ui/tree";
+    std::string body_tree = std::format(
+        R"({{"pid":{},"window_title":"NonExistentScopeWindow9999","max_depth":2}})",
+        ::getpid()
+    );
+    hm_tree.uri = mg_str_n(uri_tree.data(), uri_tree.size());
+    hm_tree.method = mg_str("POST");
+    hm_tree.body = mg_str_n(body_tree.data(), body_tree.size());
+
+    std::string res_tree = rouen::hosts::api_server_host::handle_process_ui_tree(nullptr, &hm_tree);
+    EXPECT_NE(res_tree.find("total_node_count"), std::string::npos);
+
+    // 4. Values endpoint GET with query parameters including window_title and window_class
+    struct mg_http_message hm_values {};
+    std::string uri_values = "/api/process/ui/values";
+    std::string q_values = std::format("pid={}&window_title=NonExistentScopeWindow9999&window_class=DialogClass", ::getpid());
+    hm_values.uri = mg_str_n(uri_values.data(), uri_values.size());
+    hm_values.query = mg_str_n(q_values.data(), q_values.size());
+    hm_values.method = mg_str("GET");
+
+    std::string res_values = rouen::hosts::api_server_host::handle_process_ui_values(nullptr, &hm_values);
+    EXPECT_NE(res_values.find("values"), std::string::npos);
+}
+
 

@@ -30,6 +30,16 @@
 #include <utility>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <ApplicationServices/ApplicationServices.h>
+#include <CoreFoundation/CoreFoundation.h>
+#elif defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "../helpers/glaze_include.hpp"
 
 // 2. Libraries used in the project, in alphabetic order
@@ -240,6 +250,9 @@ struct mcp_get_process_ui_tree_params {
     std::string run_id;
     int64_t definition_id{0};
     int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string window_title;
+    std::string window_class;
     int max_depth{6};
     struct glaze {
         using T = mcp_get_process_ui_tree_params;
@@ -247,6 +260,9 @@ struct mcp_get_process_ui_tree_params {
             "run_id", &T::run_id,
             "definition_id", &T::definition_id,
             "pid", &T::pid,
+            "hwnd", &T::hwnd,
+            "window_title", &T::window_title,
+            "window_class", &T::window_class,
             "max_depth", &T::max_depth
         );
     };
@@ -256,6 +272,9 @@ struct mcp_get_process_ui_values_params {
     std::string run_id;
     int64_t definition_id{0};
     int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string window_title;
+    std::string window_class;
     int max_depth{8};
     bool edit_boxes_only{true};
     struct glaze {
@@ -264,6 +283,9 @@ struct mcp_get_process_ui_values_params {
             "run_id", &T::run_id,
             "definition_id", &T::definition_id,
             "pid", &T::pid,
+            "hwnd", &T::hwnd,
+            "window_title", &T::window_title,
+            "window_class", &T::window_class,
             "max_depth", &T::max_depth,
             "edit_boxes_only", &T::edit_boxes_only
         );
@@ -274,6 +296,9 @@ struct mcp_interact_process_ui_params {
     std::string run_id;
     int64_t definition_id{0};
     int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string window_title;
+    std::string window_class;
     std::string target;
     std::string action{"click"};
     std::string value;
@@ -285,6 +310,9 @@ struct mcp_interact_process_ui_params {
             "run_id", &T::run_id,
             "definition_id", &T::definition_id,
             "pid", &T::pid,
+            "hwnd", &T::hwnd,
+            "window_title", &T::window_title,
+            "window_class", &T::window_class,
             "target", &T::target,
             "action", &T::action,
             "value", &T::value,
@@ -366,7 +394,7 @@ struct mcp_get_card_metrics_params {
     };
 };
 
-static int64_t mcp_resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid) {
+static int64_t mcp_resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid, uint64_t hwnd = 0) {
     if (pid > 0) return pid;
     if (!run_id.empty()) {
         auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
@@ -382,6 +410,33 @@ static int64_t mcp_resolve_process_pid(const std::string& run_id, int64_t defini
                 return snap->pid;
             }
         }
+    }
+    if (hwnd != 0) {
+#if defined(_WIN32)
+        DWORD wpid = 0;
+        GetWindowThreadProcessId(reinterpret_cast<HWND>(hwnd), &wpid);
+        if (wpid > 0) return static_cast<int64_t>(wpid);
+#elif defined(__APPLE__)
+        CFArrayRef window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
+        if (window_list) {
+            CFIndex count = CFArrayGetCount(window_list);
+            for (CFIndex i = 0; i < count; ++i) {
+                auto info = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(window_list, i));
+                if (!info) continue;
+                CGWindowID wid = 0;
+                auto num_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowNumber));
+                if (num_ref) CFNumberGetValue(num_ref, kCFNumberSInt32Type, &wid);
+                if (static_cast<uint64_t>(wid) == hwnd) {
+                    pid_t wpid = 0;
+                    auto pid_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowOwnerPID));
+                    if (pid_ref) CFNumberGetValue(pid_ref, kCFNumberIntType, &wpid);
+                    CFRelease(window_list);
+                    return static_cast<int64_t>(wpid);
+                }
+            }
+            CFRelease(window_list);
+        }
+#endif
     }
     return 0;
 }
@@ -2708,16 +2763,17 @@ mcp_host::mcp_host() {
 
     function_definition const get_process_ui_tree_def(
         "get_process_ui_tree",
-        "Inspect accessibility UI element tree of a running process (by run_id, definition_id, or pid) up to max_depth.",
-        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"max_depth":{"type":"integer"}},"required":[]})mcp",
+        "Inspect accessibility UI element tree of a running process (by run_id, definition_id, or pid) up to max_depth, optionally scoped by window_title or hwnd.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"hwnd":{"type":"integer","description":"Window HWND handle"},"window_title":{"type":"string","description":"Window title substring"},"window_class":{"type":"string","description":"Window class substring"},"max_depth":{"type":"integer"}},"required":[]})mcp",
         [](const std::string& params) -> std::string {
             try {
                 mcp_get_process_ui_tree_params req{};
                 if (!params.empty()) (void)glz::read_json(req, params);
-                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
-                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier (run_id, definition_id, or pid) is required"})";
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+                if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) return R"({"status":"error","message":"Valid running process identifier (run_id, definition_id, or pid) is required"})";
                 int max_depth = req.max_depth > 0 ? req.max_depth : 6;
-                auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth);
+                rouen::helpers::ui_window_scope scope{req.hwnd, req.window_title, req.window_class};
+                auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth, 100, scope);
                 glz::json_t root;
                 root["status"] = res.success ? "success" : "error";
                 root["pid"] = pid;
@@ -2738,15 +2794,16 @@ mcp_host::mcp_host() {
 
     function_definition const get_process_ui_values_def(
         "get_process_ui_values",
-        "Extract input and edit control values from the accessibility UI tree of a running process.",
-        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"max_depth":{"type":"integer"},"edit_boxes_only":{"type":"boolean"}},"required":[]})mcp",
+        "Extract input and edit control values from the accessibility UI tree of a running process, optionally scoped by window_title or hwnd.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"hwnd":{"type":"integer","description":"Window HWND handle"},"window_title":{"type":"string","description":"Window title substring"},"window_class":{"type":"string","description":"Window class substring"},"max_depth":{"type":"integer"},"edit_boxes_only":{"type":"boolean"}},"required":[]})mcp",
         [](const std::string& params) -> std::string {
             try {
                 mcp_get_process_ui_values_params req{};
                 if (!params.empty()) (void)glz::read_json(req, params);
-                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
-                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier required"})";
-                auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8);
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+                if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) return R"({"status":"error","message":"Valid running process identifier required"})";
+                rouen::helpers::ui_window_scope scope{req.hwnd, req.window_title, req.window_class};
+                auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8, scope);
                 glz::json_t root;
                 root["status"] = "success";
                 root["pid"] = pid;
@@ -2776,20 +2833,21 @@ mcp_host::mcp_host() {
 
     function_definition const interact_process_ui_def(
         "interact_process_ui",
-        "Perform UI interactions (click, set_value, focus, or click at x/y coordinates) on accessibility controls of a running process.",
-        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"target":{"type":"string","description":"Element ID or name target"},"action":{"type":"string","description":"Action verb: 'click', 'set_value', 'focus'"},"value":{"type":"string","description":"Value to set for set_value action"},"x":{"type":"number","description":"X coordinate for direct coordinate click"},"y":{"type":"number","description":"Y coordinate for direct coordinate click"}},"required":[]})mcp",
+        "Perform UI interactions (click, set_value, focus, win32_click, win32_set_text, win32_command, or click at x/y coordinates) on accessibility controls of a running process, optionally scoped by window_title or hwnd.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"hwnd":{"type":"integer","description":"Window HWND handle"},"window_title":{"type":"string","description":"Window title substring"},"window_class":{"type":"string","description":"Window class substring"},"target":{"type":"string","description":"Element ID or name target"},"action":{"type":"string","description":"Action verb: 'click', 'set_value', 'focus', 'win32_click', 'win32_set_text', 'win32_command'"},"value":{"type":"string","description":"Value to set for set_value / win32_set_text action"},"x":{"type":"number","description":"X coordinate for direct coordinate click"},"y":{"type":"number","description":"Y coordinate for direct coordinate click"}},"required":[]})mcp",
         [](const std::string& params) -> std::string {
             try {
                 mcp_interact_process_ui_params req{};
                 if (!params.empty()) (void)glz::read_json(req, params);
-                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
-                if (pid <= 0) return R"({"status":"error","message":"Valid running process identifier required"})";
+                int64_t pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+                if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) return R"({"status":"error","message":"Valid running process identifier required"})";
+                rouen::helpers::ui_window_scope scope{req.hwnd, req.window_title, req.window_class};
                 rouen::helpers::ui_manipulation_result res;
                 if (req.target.empty() && (req.x > 0.0f || req.y > 0.0f)) {
                     res = rouen::helpers::ui_automation_explorer::click_at_coordinates(pid, req.x, req.y);
                 } else {
                     std::string action = req.action.empty() ? "click" : req.action;
-                    res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value);
+                    res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value, scope);
                 }
                 glz::json_t root;
                 root["status"] = res.success ? "success" : "error";

@@ -11,5 +11,6 @@ export namespace rouen::helpers {
     using rouen::helpers::ui_automation_result;
     using rouen::helpers::ui_manipulation_result;
     using rouen::helpers::window_screenshot_result;
+    using rouen::helpers::ui_window_scope;
     using rouen::helpers::ui_automation_explorer;
 }

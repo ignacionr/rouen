@@ -39,6 +39,11 @@
 #include <utility>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <ApplicationServices/ApplicationServices.h>
+#include <CoreFoundation/CoreFoundation.h>
+#endif
+
 #include "../helpers/glaze_include.hpp"
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_video.h>
@@ -160,6 +165,9 @@ struct process_ui_request {
     std::string run_id;
     int64_t definition_id{0};
     int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string window_title;
+    std::string window_class;
     int max_depth{6};
     bool edit_boxes_only{true};
     std::string target;
@@ -1973,7 +1981,7 @@ std::string api_server_host::handle_rss_diagnostics(struct mg_connection* /*c*/,
     return out;
 }
 
-static int64_t resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid) {
+static int64_t resolve_process_pid(const std::string& run_id, int64_t definition_id, int64_t pid, uint64_t hwnd = 0) {
     if (pid > 0) return pid;
     if (!run_id.empty()) {
         auto snap = rouen::hosts::process_host::instance().snapshot(run_id);
@@ -1989,6 +1997,33 @@ static int64_t resolve_process_pid(const std::string& run_id, int64_t definition
                 return snap->pid;
             }
         }
+    }
+    if (hwnd != 0) {
+#if defined(_WIN32)
+        DWORD wpid = 0;
+        GetWindowThreadProcessId(reinterpret_cast<HWND>(hwnd), &wpid);
+        if (wpid > 0) return static_cast<int64_t>(wpid);
+#elif defined(__APPLE__)
+        CFArrayRef window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
+        if (window_list) {
+            CFIndex count = CFArrayGetCount(window_list);
+            for (CFIndex i = 0; i < count; ++i) {
+                auto info = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(window_list, i));
+                if (!info) continue;
+                CGWindowID wid = 0;
+                auto num_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowNumber));
+                if (num_ref) CFNumberGetValue(num_ref, kCFNumberSInt32Type, &wid);
+                if (static_cast<uint64_t>(wid) == hwnd) {
+                    pid_t wpid = 0;
+                    auto pid_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowOwnerPID));
+                    if (pid_ref) CFNumberGetValue(pid_ref, kCFNumberIntType, &wpid);
+                    CFRelease(window_list);
+                    return static_cast<int64_t>(wpid);
+                }
+            }
+            CFRelease(window_list);
+        }
+#endif
     }
     return 0;
 }
@@ -2277,6 +2312,29 @@ static void populate_process_ui_request(process_ui_request& req, struct mg_http_
     if (hm->body.len > 0) {
         std::string body(hm->body.buf, hm->body.len);
         (void)glz::read_json(req, body);
+        glz::json_t j{};
+        if (glz::read_json(j, body) == glz::error_code::none) {
+            if (j.contains("hwnd")) {
+                if (j["hwnd"].is_string()) {
+                    std::string hstr = j["hwnd"].get<std::string>();
+                    try {
+                        if (hstr.starts_with("0x") || hstr.starts_with("0X")) {
+                            req.hwnd = std::stoull(hstr, nullptr, 16);
+                        } else {
+                            req.hwnd = std::stoull(hstr);
+                        }
+                    } catch (...) {}
+                } else if (j["hwnd"].is_number()) {
+                    req.hwnd = static_cast<uint64_t>(j["hwnd"].get<double>());
+                }
+            }
+            if (j.contains("window_title") && j["window_title"].is_string()) {
+                req.window_title = j["window_title"].get<std::string>();
+            }
+            if (j.contains("window_class") && j["window_class"].is_string()) {
+                req.window_class = j["window_class"].get<std::string>();
+            }
+        }
     }
     if (hm->query.len > 0) {
         std::string val;
@@ -2292,6 +2350,23 @@ static void populate_process_ui_request(process_ui_request& req, struct mg_http_
         if (!val.empty()) {
             try { req.pid = std::stoll(val); } catch (...) {}
         }
+
+        val = get_query_param(&hm->query, "hwnd");
+        if (!val.empty()) {
+            try {
+                if (val.starts_with("0x") || val.starts_with("0X")) {
+                    req.hwnd = std::stoull(val, nullptr, 16);
+                } else {
+                    req.hwnd = std::stoull(val);
+                }
+            } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "window_title");
+        if (!val.empty()) req.window_title = val;
+
+        val = get_query_param(&hm->query, "window_class");
+        if (!val.empty()) req.window_class = val;
 
         val = get_query_param(&hm->query, "max_depth");
         if (!val.empty()) {
@@ -2479,14 +2554,19 @@ std::string api_server_host::handle_process_ui_tree(struct mg_connection* /*c*/,
     process_ui_request req;
     populate_process_ui_request(req, hm);
 
-    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
-    if (pid <= 0) {
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+    if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) {
         error_response resp{"Valid running process identifier (run_id, definition_id, or pid) is required"};
         return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
     }
 
     int max_depth = req.max_depth > 0 ? req.max_depth : 30;
-    auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth);
+    rouen::helpers::ui_window_scope scope{
+        .hwnd = req.hwnd,
+        .window_title = req.window_title,
+        .window_class = req.window_class
+    };
+    auto res = rouen::helpers::ui_automation_explorer::inspect_process(pid, max_depth, 100, scope);
 
     glz::json_t root;
     root["success"] = res.success;
@@ -2508,13 +2588,18 @@ std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*
     process_ui_request req;
     populate_process_ui_request(req, hm);
 
-    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
-    if (pid <= 0) {
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+    if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) {
         error_response resp{"Valid running process identifier required"};
         return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
     }
 
-    auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8);
+    rouen::helpers::ui_window_scope scope{
+        .hwnd = req.hwnd,
+        .window_title = req.window_title,
+        .window_class = req.window_class
+    };
+    auto extracted = rouen::helpers::ui_automation_explorer::extract_process_values(pid, req.edit_boxes_only, req.max_depth > 0 ? req.max_depth : 8, scope);
 
     glz::json_t root;
     root["success"] = true;
@@ -2540,18 +2625,24 @@ std::string api_server_host::handle_process_ui_values(struct mg_connection* /*c*
 }
 
 static std::string execute_process_ui_action(const process_ui_request& req) {
-    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
-    if (pid <= 0) {
+    int64_t pid = resolve_process_pid(req.run_id, req.definition_id, req.pid, req.hwnd);
+    if (pid <= 0 && req.hwnd == 0 && req.window_title.empty()) {
         error_response resp{"Valid running process identifier required"};
         return glz::write_json(resp).value_or(R"({"error":"Valid running process identifier required"})");
     }
+
+    rouen::helpers::ui_window_scope scope{
+        .hwnd = req.hwnd,
+        .window_title = req.window_title,
+        .window_class = req.window_class
+    };
 
     rouen::helpers::ui_manipulation_result res;
     if (req.target.empty() && (req.x > 0.0f || req.y > 0.0f)) {
         res = rouen::helpers::ui_automation_explorer::click_at_coordinates(pid, req.x, req.y);
     } else {
         std::string action = req.action.empty() ? "click" : req.action;
-        res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value);
+        res = rouen::helpers::ui_automation_explorer::perform_control_action(pid, req.target, action, req.value, scope);
     }
 
     glz::json_t root;
@@ -4054,14 +4145,35 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
           {
             "name": "action",
             "in": "query",
-            "description": "Action ('click', 'set_value', 'focus')",
+            "description": "Action ('click', 'set_value', 'focus', 'win32_click', 'win32_set_text', 'win32_command')",
             "required": false,
             "schema": {"type": "string", "default": "click"}
           },
           {
             "name": "value",
             "in": "query",
-            "description": "Value to set if action is set_value",
+            "description": "Value to set if action is set_value or win32_set_text",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "window_title",
+            "in": "query",
+            "description": "Window title substring to scope action",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "window_class",
+            "in": "query",
+            "description": "Window class name substring to scope action",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "hwnd",
+            "in": "query",
+            "description": "Specific window HWND handle (decimal or hex)",
             "required": false,
             "schema": {"type": "string"}
           }
@@ -4076,8 +4188,11 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
                   "run_id": {"type": "string", "description": "Process run identifier"},
                   "definition_id": {"type": "integer", "description": "Process definition numeric ID"},
                   "pid": {"type": "integer", "description": "Process OS PID"},
+                  "hwnd": {"type": "integer", "description": "Window HWND handle"},
+                  "window_title": {"type": "string", "description": "Window title substring to scope action"},
+                  "window_class": {"type": "string", "description": "Window class substring to scope action"},
                   "target": {"type": "string", "description": "Target control Automation ID, name, or path"},
-                  "action": {"type": "string", "default": "click", "description": "Action ('click', 'set_value', 'focus')"},
+                  "action": {"type": "string", "default": "click", "description": "Action ('click', 'set_value', 'focus', 'win32_click', 'win32_set_text', 'win32_command')"},
                   "value": {"type": "string", "description": "Value to set"},
                   "x": {"type": "number", "description": "Click X coordinate"},
                   "y": {"type": "number", "description": "Click Y coordinate"}

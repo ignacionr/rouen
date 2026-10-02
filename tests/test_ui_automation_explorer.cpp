@@ -64,3 +64,35 @@ TEST(UIAutomationExplorerTest, CaptureWindowScreenshotInvalidHwnd) {
     EXPECT_FALSE(res.success);
     EXPECT_FALSE(res.error.empty());
 }
+
+TEST(UIAutomationExplorerTest, WindowScopeDefaultsAndWin32ActionGuards) {
+    rouen::helpers::ui_window_scope scope;
+    EXPECT_EQ(scope.hwnd, 0ULL);
+    EXPECT_TRUE(scope.window_title.empty());
+    EXPECT_TRUE(scope.window_class.empty());
+
+    int64_t pid = ::getpid();
+
+    // On non-Windows platforms, Win32 message actions return a platform error
+#if !defined(_WIN32)
+    auto click_res = rouen::helpers::ui_automation_explorer::perform_control_action(
+        pid, "btn_submit", "win32_click", "", scope);
+    EXPECT_FALSE(click_res.success);
+    EXPECT_NE(click_res.error_message.find("only supported on Windows"), std::string::npos);
+
+    auto text_res = rouen::helpers::ui_automation_explorer::perform_control_action(
+        pid, "txt_field", "win32_set_text", "hello world", scope);
+    EXPECT_FALSE(text_res.success);
+    EXPECT_NE(text_res.error_message.find("only supported on Windows"), std::string::npos);
+
+    auto cmd_res = rouen::helpers::ui_automation_explorer::perform_control_action(
+        pid, "1001", "win32_command", "", scope);
+    EXPECT_FALSE(cmd_res.success);
+    EXPECT_NE(cmd_res.error_message.find("only supported on Windows"), std::string::npos);
+#endif
+
+    // Scoped extraction on non-existent window title returns empty list
+    scope.window_title = "NonExistentWindow_998877";
+    auto vals = rouen::helpers::ui_automation_explorer::extract_process_values(pid, true, 3, scope);
+    EXPECT_TRUE(vals.empty());
+}

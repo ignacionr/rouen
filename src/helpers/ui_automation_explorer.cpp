@@ -562,6 +562,133 @@ static void populate_uia_element(IUIAutomationElement* element, IUIAutomationTre
     }
 }
 
+struct Win32ScopeSearchContext {
+    DWORD pid{0};
+    std::string title_pattern;
+    std::string class_pattern;
+    HWND matched_hwnd{NULL};
+    std::string matched_title;
+    std::string matched_class;
+};
+
+static BOOL CALLBACK EnumWindowsScopeCallback(HWND hwnd, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<Win32ScopeSearchContext*>(lParam);
+    if (!hwnd || !IsWindow(hwnd)) return TRUE;
+
+    DWORD wnd_pid = 0;
+    GetWindowThreadProcessId(hwnd, &wnd_pid);
+    if (ctx->pid > 0 && wnd_pid != ctx->pid) {
+        return TRUE;
+    }
+
+    if (!IsWindowVisible(hwnd)) {
+        return TRUE;
+    }
+
+    char class_buf[256] = {0};
+    GetClassNameA(hwnd, class_buf, sizeof(class_buf));
+    std::string class_name(class_buf);
+
+    if (!ctx->class_pattern.empty()) {
+        auto it = std::search(
+            class_name.begin(), class_name.end(),
+            ctx->class_pattern.begin(), ctx->class_pattern.end(),
+            [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+            }
+        );
+        if (it == ctx->class_pattern.end()) {
+            return TRUE;
+        }
+    }
+
+    char title_buf[512] = {0};
+    GetWindowTextA(hwnd, title_buf, sizeof(title_buf));
+    std::string title(title_buf);
+
+    if (!ctx->title_pattern.empty()) {
+        auto it = std::search(
+            title.begin(), title.end(),
+            ctx->title_pattern.begin(), ctx->title_pattern.end(),
+            [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+            }
+        );
+        if (it == ctx->title_pattern.end()) {
+            return TRUE;
+        }
+    } else {
+        if (title.empty() && ctx->pid == 0) {
+            return TRUE;
+        }
+    }
+
+    ctx->matched_hwnd = hwnd;
+    ctx->matched_title = title;
+    ctx->matched_class = class_name;
+    return FALSE; // stop enum
+}
+
+static HWND find_window_by_scope(DWORD pid, std::string_view title_pattern, std::string_view class_pattern) {
+    Win32ScopeSearchContext ctx;
+    ctx.pid = pid;
+    ctx.title_pattern = std::string(title_pattern);
+    ctx.class_pattern = std::string(class_pattern);
+    EnumWindows(EnumWindowsScopeCallback, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.matched_hwnd;
+}
+
+struct Win32ChildSearchContext {
+    int target_id{0};
+    std::string query;
+    HWND matched_hwnd{NULL};
+    std::string matched_text;
+};
+
+static BOOL CALLBACK EnumChildWindowsScopeCallback(HWND hwnd, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<Win32ChildSearchContext*>(lParam);
+    if (!hwnd || !IsWindow(hwnd)) return TRUE;
+
+    int ctrl_id = GetDlgCtrlID(hwnd);
+    if (ctx->target_id != 0 && ctrl_id == ctx->target_id) {
+        ctx->matched_hwnd = hwnd;
+        return FALSE; // found by control ID
+    }
+
+    char text_buf[512] = {0};
+    GetWindowTextA(hwnd, text_buf, sizeof(text_buf));
+    std::string text(text_buf);
+
+    if (!ctx->query.empty()) {
+        auto it = std::search(
+            text.begin(), text.end(),
+            ctx->query.begin(), ctx->query.end(),
+            [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+            }
+        );
+        if (it != text.end()) {
+            ctx->matched_hwnd = hwnd;
+            ctx->matched_text = text;
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static HWND find_child_control(HWND parent_hwnd, int ctrl_id, std::string_view query) {
+    if (!parent_hwnd || !IsWindow(parent_hwnd)) return NULL;
+    if (ctrl_id != 0) {
+        HWND direct = GetDlgItem(parent_hwnd, ctrl_id);
+        if (direct && IsWindow(direct)) return direct;
+    }
+    Win32ChildSearchContext ctx;
+    ctx.target_id = ctrl_id;
+    ctx.query = std::string(query);
+    EnumChildWindows(parent_hwnd, EnumChildWindowsScopeCallback, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.matched_hwnd;
+}
+
 #endif
 
 bool ui_automation_explorer::check_accessibility_permissions(bool prompt_if_missing) {
@@ -584,9 +711,9 @@ bool ui_automation_explorer::check_accessibility_permissions(bool prompt_if_miss
 #endif
 }
 
-ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int max_depth, int max_children_per_node) {
+ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int max_depth, int max_children_per_node, const ui_window_scope& scope) {
     ui_automation_result result;
-    if (pid <= 0) {
+    if (pid <= 0 && scope.hwnd == 0) {
         result.error_message = "Invalid process PID";
         return result;
     }
@@ -655,6 +782,24 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
         }
     }
 
+    if (!scope.window_title.empty()) {
+        std::vector<ui_element_node> filtered_children;
+        for (auto& child : result.root.children) {
+            auto it = std::search(child.name.begin(), child.name.end(),
+                scope.window_title.begin(), scope.window_title.end(),
+                [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+            if (it != child.name.end()) {
+                filtered_children.push_back(std::move(child));
+            }
+        }
+        if (filtered_children.empty()) {
+            result.success = false;
+            result.error_message = std::format("No window matching title '{}' found in PID {}", scope.window_title, pid);
+            return result;
+        }
+        result.root.children = std::move(filtered_children);
+    }
+
     result.success = true;
 
 #elif defined(_WIN32)
@@ -668,15 +813,10 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
         return result;
     }
 
-    VARIANT var;
-    var.vt = VT_I4;
-    var.lVal = static_cast<LONG>(pid);
-
-    IUIAutomationCondition* cond = nullptr;
-    automation->CreatePropertyCondition(UIA_ProcessIdPropertyId, var, &cond);
-
-    IUIAutomationElement* root_elem = nullptr;
-    automation->GetRootElement(&root_elem);
+    HWND target_hwnd = (scope.hwnd != 0) ? reinterpret_cast<HWND>(scope.hwnd) : NULL;
+    if (!target_hwnd && (!scope.window_title.empty() || !scope.window_class.empty())) {
+        target_hwnd = find_window_by_scope(static_cast<DWORD>(pid), scope.window_title, scope.window_class);
+    }
 
     IUIAutomationTreeWalker* walker = nullptr;
     automation->get_ControlViewWalker(&walker);
@@ -684,27 +824,56 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
     result.root.role = "Application";
     result.root.name = std::format("Process ({})", pid);
 
-    if (root_elem && cond) {
-        IUIAutomationElementArray* element_array = nullptr;
-        if (SUCCEEDED(root_elem->FindAll(TreeScope_Children, cond, &element_array)) && element_array) {
-            int length = 0;
-            element_array->get_Length(&length);
-            for (int i = 0; i < (std::min)(length, max_children_per_node); ++i) {
-                IUIAutomationElement* child_elem = nullptr;
-                if (SUCCEEDED(element_array->GetElement(i, &child_elem)) && child_elem) {
-                    ui_element_node child_node;
-                    populate_uia_element(child_elem, walker, child_node, 1, max_depth, max_children_per_node, result.total_node_count);
-                    result.root.children.push_back(std::move(child_node));
-                    child_elem->Release();
-                }
-            }
-            element_array->Release();
+    if (scope.hwnd != 0 || !scope.window_title.empty() || !scope.window_class.empty()) {
+        if (!target_hwnd) {
+            if (walker) walker->Release();
+            automation->Release();
+            if (SUCCEEDED(hr_co)) CoUninitialize();
+            result.error_message = "Scoped window not found matching title/class/HWND";
+            return result;
         }
+
+        IUIAutomationElement* scoped_elem = nullptr;
+        if (SUCCEEDED(automation->ElementFromHandle(reinterpret_cast<UIA_HWND>(target_hwnd), &scoped_elem)) && scoped_elem) {
+            ui_element_node child_node;
+            populate_uia_element(scoped_elem, walker, child_node, 1, max_depth, max_children_per_node, result.total_node_count);
+            result.root.children.push_back(std::move(child_node));
+            scoped_elem->Release();
+        }
+    } else {
+        VARIANT var;
+        var.vt = VT_I4;
+        var.lVal = static_cast<LONG>(pid);
+
+        IUIAutomationCondition* cond = nullptr;
+        automation->CreatePropertyCondition(UIA_ProcessIdPropertyId, var, &cond);
+
+        IUIAutomationElement* root_elem = nullptr;
+        automation->GetRootElement(&root_elem);
+
+        if (root_elem && cond) {
+            IUIAutomationElementArray* element_array = nullptr;
+            if (SUCCEEDED(root_elem->FindAll(TreeScope_Children, cond, &element_array)) && element_array) {
+                int length = 0;
+                element_array->get_Length(&length);
+                for (int i = 0; i < (std::min)(length, max_children_per_node); ++i) {
+                    IUIAutomationElement* child_elem = nullptr;
+                    if (SUCCEEDED(element_array->GetElement(i, &child_elem)) && child_elem) {
+                        ui_element_node child_node;
+                        populate_uia_element(child_elem, walker, child_node, 1, max_depth, max_children_per_node, result.total_node_count);
+                        result.root.children.push_back(std::move(child_node));
+                        child_elem->Release();
+                    }
+                }
+                element_array->Release();
+            }
+        }
+
+        if (root_elem) root_elem->Release();
+        if (cond) cond->Release();
     }
 
     if (walker) walker->Release();
-    if (root_elem) root_elem->Release();
-    if (cond) cond->Release();
     automation->Release();
 
     if (SUCCEEDED(hr_co)) CoUninitialize();
@@ -715,6 +884,7 @@ ui_automation_result ui_automation_explorer::inspect_process(int64_t pid, int ma
 #else
     (void)max_depth;
     (void)max_children_per_node;
+    (void)scope;
     result.error_message = "UI Automation explorer is not supported on this platform";
     result.root.role = "Application";
     result.root.name = std::format("Process ({})", pid);
@@ -779,8 +949,8 @@ std::vector<ui_element_value_info> ui_automation_result::extract_values(bool edi
     return list;
 }
 
-std::vector<ui_element_value_info> ui_automation_explorer::extract_process_values(int64_t pid, bool edit_boxes_only, int max_depth) {
-    auto res = inspect_process(pid, max_depth);
+std::vector<ui_element_value_info> ui_automation_explorer::extract_process_values(int64_t pid, bool edit_boxes_only, int max_depth, const ui_window_scope& scope) {
+    auto res = inspect_process(pid, max_depth, 100, scope);
     if (!res.success) return {};
     return res.extract_values(edit_boxes_only);
 }
@@ -981,9 +1151,9 @@ static AXUIElementRef find_ax_element_recursive(AXUIElementRef parent, std::stri
 
 #endif
 
-ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pid, std::string_view identifier_name_or_path, std::string_view action, std::string_view value) {
+ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pid, std::string_view identifier_name_or_path, std::string_view action, std::string_view value, const ui_window_scope& scope) {
     ui_manipulation_result result;
-    if (pid <= 0) {
+    if (pid <= 0 && scope.hwnd == 0) {
         result.error_message = "Invalid process PID";
         return result;
     }
@@ -991,6 +1161,21 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
         result.error_message = "Target element identifier/name is required";
         return result;
     }
+
+    std::string act_lower(action);
+    std::transform(act_lower.begin(), act_lower.end(), act_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    bool is_win32_action = (act_lower == "win32_click" ||
+                            act_lower == "win32_set_text" ||
+                            act_lower == "win32_command" ||
+                            act_lower == "win32_msg");
+
+#if !defined(_WIN32)
+    if (is_win32_action) {
+        result.error_message = std::format("Win32 message action '{}' is only supported on Windows.", action);
+        return result;
+    }
+#endif
 
 #if defined(__APPLE__)
     if (!check_accessibility_permissions(false)) {
@@ -1009,11 +1194,46 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
     AXUIElementSetAttributeValue(app_ref, CFSTR("AXEnhancedUserInterface"), kCFBooleanTrue);
     AXUIElementSetAttributeValue(app_ref, CFSTR("AXManualAccessibility"), kCFBooleanTrue);
 
+    AXUIElementRef search_root = app_ref;
+    AXUIElementRef scoped_window_ref = nullptr;
+    if (!scope.window_title.empty()) {
+        CFTypeRef windows_ref = nullptr;
+        if (AXUIElementCopyAttributeValue(app_ref, kAXWindowsAttribute, &windows_ref) == kAXErrorSuccess && windows_ref) {
+            auto win_list = static_cast<CFArrayRef>(windows_ref);
+            CFIndex win_count = CFArrayGetCount(win_list);
+            for (CFIndex i = 0; i < win_count; ++i) {
+                auto win_elem = static_cast<AXUIElementRef>(CFArrayGetValueAtIndex(win_list, i));
+                if (!win_elem) continue;
+                CFTypeRef title_ref = nullptr;
+                std::string title_str;
+                if (AXUIElementCopyAttributeValue(win_elem, kAXTitleAttribute, &title_ref) == kAXErrorSuccess && title_ref) {
+                    title_str = cftype_to_string(title_ref);
+                    CFRelease(title_ref);
+                }
+                auto it = std::search(title_str.begin(), title_str.end(),
+                    scope.window_title.begin(), scope.window_title.end(),
+                    [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+                if (it != title_str.end()) {
+                    scoped_window_ref = win_elem;
+                    CFRetain(scoped_window_ref);
+                    break;
+                }
+            }
+            CFRelease(windows_ref);
+        }
+        if (!scoped_window_ref) {
+            CFRelease(app_ref);
+            result.error_message = std::format("No window matching title '{}' found in PID {}", scope.window_title, pid);
+            return result;
+        }
+        search_root = scoped_window_ref;
+    }
+
     std::string matched_id, matched_name, matched_role;
-    AXUIElementRef target_elem = find_ax_element_recursive(app_ref, identifier_name_or_path, 0, 8, matched_id, matched_name, matched_role);
+    AXUIElementRef target_elem = find_ax_element_recursive(search_root, identifier_name_or_path, 0, 8, matched_id, matched_name, matched_role);
 
     // If not found in main process, search related helper processes
-    if (!target_elem) {
+    if (!target_elem && scope.window_title.empty()) {
         std::vector<pid_t> related_pids = get_related_pids(static_cast<pid_t>(pid));
         for (pid_t rel_pid : related_pids) {
             AXUIElementRef rel_app_ref = AXUIElementCreateApplication(rel_pid);
@@ -1028,6 +1248,7 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
         }
     }
 
+    if (scoped_window_ref) CFRelease(scoped_window_ref);
     CFRelease(app_ref);
 
     if (!target_elem) {
@@ -1038,9 +1259,6 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
     result.matched_element_id = matched_id;
     result.matched_element_name = matched_name;
     result.matched_element_role = matched_role;
-
-    std::string act_lower(action);
-    std::transform(act_lower.begin(), act_lower.end(), act_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     if (act_lower == "click" || act_lower == "press") {
         AXError err = AXUIElementPerformAction(target_elem, kAXPressAction);
@@ -1122,6 +1340,106 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
     return result;
 
 #elif defined(_WIN32)
+    HWND target_hwnd = (scope.hwnd != 0) ? reinterpret_cast<HWND>(scope.hwnd) : NULL;
+    if (!target_hwnd && (!scope.window_title.empty() || !scope.window_class.empty())) {
+        target_hwnd = find_window_by_scope(static_cast<DWORD>(pid), scope.window_title, scope.window_class);
+    }
+    if (!target_hwnd && is_win32_action) {
+        target_hwnd = find_window_by_scope(static_cast<DWORD>(pid), "", "");
+    }
+
+    if (scope.hwnd != 0 || !scope.window_title.empty() || !scope.window_class.empty()) {
+        if (!target_hwnd) {
+            result.error_message = "Scoped window not found matching title/class/HWND";
+            return result;
+        }
+    }
+
+    if (is_win32_action) {
+        if (!target_hwnd) {
+            result.error_message = "Target window for Win32 action could not be found";
+            return result;
+        }
+
+        int ctrl_id = 0;
+        bool is_id_numeric = false;
+        try {
+            size_t idx = 0;
+            ctrl_id = std::stoi(std::string(identifier_name_or_path), &idx);
+            if (idx == identifier_name_or_path.size()) is_id_numeric = true;
+        } catch (...) {}
+
+        if (act_lower == "win32_command") {
+            if (!is_id_numeric) {
+                result.error_message = "Target must be a numeric control or command ID for win32_command";
+                return result;
+            }
+            PostMessageA(target_hwnd, WM_COMMAND, MAKEWPARAM(ctrl_id, 0), 0);
+            result.success = true;
+            result.action_performed = "win32_command";
+            result.matched_element_id = std::to_string(ctrl_id);
+            return result;
+        }
+
+        HWND hCtrl = find_child_control(target_hwnd, is_id_numeric ? ctrl_id : 0, identifier_name_or_path);
+
+        if (act_lower == "win32_click" || act_lower == "win32_msg") {
+            if (hCtrl) {
+                char cname[256] = {0};
+                GetWindowTextA(hCtrl, cname, sizeof(cname));
+                result.matched_element_name = cname;
+                int cid = GetDlgCtrlID(hCtrl);
+                result.matched_element_id = std::to_string(cid);
+
+                SendMessageA(hCtrl, BM_CLICK, 0, 0);
+                PostMessageA(hCtrl, BM_CLICK, 0, 0);
+
+                RECT cr{};
+                GetClientRect(hCtrl, &cr);
+                LPARAM lp = MAKELPARAM((std::max)(1, static_cast<int>(cr.right - cr.left)/2), (std::max)(1, static_cast<int>(cr.bottom - cr.top)/2));
+                PostMessageA(hCtrl, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+                PostMessageA(hCtrl, WM_LBUTTONUP, 0, lp);
+
+                HWND parent = GetParent(hCtrl);
+                if (!parent) parent = target_hwnd;
+                if (cid != 0 && parent) {
+                    PostMessageA(parent, WM_COMMAND, MAKEWPARAM(cid, BN_CLICKED), reinterpret_cast<LPARAM>(hCtrl));
+                }
+
+                result.success = true;
+                result.action_performed = "win32_click";
+                return result;
+            } else if (is_id_numeric) {
+                PostMessageA(target_hwnd, WM_COMMAND, MAKEWPARAM(ctrl_id, BN_CLICKED), 0);
+                result.success = true;
+                result.action_performed = "win32_command_fallback";
+                result.matched_element_id = std::to_string(ctrl_id);
+                return result;
+            } else {
+                result.error_message = std::format("No Win32 control matching '{}' found in target window", identifier_name_or_path);
+                return result;
+            }
+        } else if (act_lower == "win32_set_text") {
+            if (hCtrl) {
+                std::wstring wval(value.begin(), value.end());
+                SendMessageW(hCtrl, WM_SETTEXT, 0, reinterpret_cast<LPARAM>(wval.c_str()));
+                int cid = GetDlgCtrlID(hCtrl);
+                HWND parent = GetParent(hCtrl);
+                if (!parent) parent = target_hwnd;
+                if (cid != 0 && parent) {
+                    PostMessageA(parent, WM_COMMAND, MAKEWPARAM(cid, EN_CHANGE), reinterpret_cast<LPARAM>(hCtrl));
+                }
+                result.success = true;
+                result.action_performed = "win32_set_text";
+                result.matched_element_id = std::to_string(cid);
+                return result;
+            } else {
+                result.error_message = std::format("No Win32 control matching '{}' found in target window", identifier_name_or_path);
+                return result;
+            }
+        }
+    }
+
     HRESULT hr_co = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 
     IUIAutomation* automation = nullptr;
@@ -1142,8 +1460,16 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
     IUIAutomationElement* root_elem = nullptr;
     automation->GetRootElement(&root_elem);
 
+    IUIAutomationElement* search_root = root_elem;
+    IUIAutomationElement* scoped_elem = nullptr;
+    if (target_hwnd) {
+        if (SUCCEEDED(automation->ElementFromHandle(reinterpret_cast<UIA_HWND>(target_hwnd), &scoped_elem)) && scoped_elem) {
+            search_root = scoped_elem;
+        }
+    }
+
     IUIAutomationElement* target_elem = nullptr;
-    if (root_elem && cond) {
+    if (search_root) {
         std::wstring wquery(identifier_name_or_path.begin(), identifier_name_or_path.end());
         BSTR bstr_query = SysAllocString(wquery.c_str());
 
@@ -1154,11 +1480,16 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
             automation->CreateOrCondition(cond_id, cond_name, &cond_or);
         }
         if (cond_or) {
-            automation->CreateAndCondition(cond, cond_or, &cond_match);
+            if (search_root == root_elem && cond) {
+                automation->CreateAndCondition(cond, cond_or, &cond_match);
+            } else {
+                cond_match = cond_or;
+                cond_match->AddRef();
+            }
         }
 
         if (cond_match) {
-            root_elem->FindFirst(TreeScope_Subtree, cond_match, &target_elem);
+            search_root->FindFirst(TreeScope_Subtree, cond_match, &target_elem);
         }
 
         if (cond_id) cond_id->Release();
@@ -1167,8 +1498,14 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
         if (cond_match) cond_match->Release();
 
         if (!target_elem) {
+            IUIAutomationCondition* find_cond = (search_root == root_elem) ? cond : nullptr;
+            if (!find_cond) {
+                automation->CreateTrueCondition(&find_cond);
+            } else {
+                find_cond->AddRef();
+            }
             IUIAutomationElementArray* element_array = nullptr;
-            if (SUCCEEDED(root_elem->FindAll(TreeScope_Subtree, cond, &element_array)) && element_array) {
+            if (SUCCEEDED(search_root->FindAll(TreeScope_Subtree, find_cond, &element_array)) && element_array) {
                 int len = 0;
                 element_array->get_Length(&len);
                 for (int i = 0; i < len; ++i) {
@@ -1201,11 +1538,13 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
                 }
                 element_array->Release();
             }
+            if (find_cond) find_cond->Release();
         }
         SysFreeString(bstr_query);
     }
 
     if (!target_elem) {
+        if (scoped_elem) scoped_elem->Release();
         if (root_elem) root_elem->Release();
         if (cond) cond->Release();
         automation->Release();
@@ -1224,9 +1563,6 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
         SysFreeString(tname_bstr);
     }
 
-    std::string act_lower(action);
-    std::transform(act_lower.begin(), act_lower.end(), act_lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
     if (act_lower == "click" || act_lower == "press") {
         IUIAutomationInvokePattern* inv = nullptr;
         if (SUCCEEDED(target_elem->GetCurrentPatternAs(UIA_InvokePatternId, IID_IUIAutomationInvokePattern, (void**)&inv)) && inv) {
@@ -1244,6 +1580,16 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
                     result.action_performed = "toggle";
                 }
                 tog->Release();
+            }
+        }
+        if (!result.success) {
+            UIA_HWND uctrl = 0;
+            if (SUCCEEDED(target_elem->get_CurrentNativeWindowHandle(&uctrl)) && uctrl) {
+                HWND hCtrl = reinterpret_cast<HWND>(uctrl);
+                SendMessageA(hCtrl, BM_CLICK, 0, 0);
+                PostMessageA(hCtrl, BM_CLICK, 0, 0);
+                result.success = true;
+                result.action_performed = "win32_click";
             }
         }
         if (!result.success) {
@@ -1279,12 +1625,14 @@ ui_manipulation_result ui_automation_explorer::perform_control_action(int64_t pi
     }
 
     target_elem->Release();
+    if (scoped_elem) scoped_elem->Release();
     if (root_elem) root_elem->Release();
     if (cond) cond->Release();
     automation->Release();
     if (SUCCEEDED(hr_co)) CoUninitialize();
     return result;
 #else
+    (void)scope;
     result.error_message = "UI Automation manipulation is not supported on this platform";
     return result;
 #endif
