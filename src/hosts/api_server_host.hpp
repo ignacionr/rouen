@@ -88,6 +88,7 @@ public:
     static std::string handle_telegram_routes(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_telegram_send(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_telegram_simulate(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_telegram_presence(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_upgrade(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_version(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_upgrade_status(struct mg_connection* c, struct mg_http_message* hm);

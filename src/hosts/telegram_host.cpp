@@ -1,4 +1,5 @@
 #include "telegram_host.hpp"
+#include "rouen_mesh_host.hpp"
 
 namespace rouen::hosts {
 
@@ -22,11 +23,41 @@ std::shared_ptr<telegram_host> telegram_host::get_host() {
 
 telegram_host::telegram_host() {
     load_state();
+
+    // Register callbacks in service registrar
+    try {
+        registrar::add<std::function<void()>>(
+            "publish_telegram_presence",
+            std::make_shared<std::function<void()>>([this]() {
+                publish_telegram_presence();
+            })
+        );
+        registrar::add<std::function<bool(const std::string&, int64_t)>>(
+            "telegram_send_local",
+            std::make_shared<std::function<bool(const std::string&, int64_t)>>([this](const std::string& text, int64_t chat_id) {
+                if (status_.load() != Status::Active) return false;
+                int64_t target_chat = (chat_id != 0) ? chat_id : get_operator_chat_id();
+                if (target_chat == 0) return false;
+                return send_manual_message(target_chat, text);
+            })
+        );
+        registrar::add<std::function<bool(const std::string&)>>(
+            "telegram_relay_message",
+            std::make_shared<std::function<bool(const std::string&)>>([this](const std::string& text) {
+                if (status_.load() != Status::Active) return false;
+                int64_t op_id = get_operator_chat_id();
+                if (op_id == 0) return false;
+                return send_manual_message(op_id, text);
+            })
+        );
+    } catch (...) {}
+
     start_polling();
 }
 
 telegram_host::~telegram_host() {
     stop_polling();
+    unpublish_telegram_presence();
 }
 
 void telegram_host::load_state() {
@@ -42,6 +73,7 @@ void telegram_host::load_state() {
                 if (!err) {
                     bot_token_ = state.bot_token;
                     last_update_id_ = state.last_update_id;
+                    operator_chat_id_ = state.operator_chat_id;
                     routes_ = state.routes;
                     sessions_map_.clear();
                     session_order_.clear();
@@ -74,6 +106,7 @@ void telegram_host::save_state() {
         telegram_host_state state;
         state.bot_token = bot_token_;
         state.last_update_id = last_update_id_;
+        state.operator_chat_id = operator_chat_id_;
         state.routes = routes_;
         for (int64_t chat_id : session_order_) {
             auto it = sessions_map_.find(chat_id);
@@ -104,6 +137,9 @@ void telegram_host::set_bot_token(const std::string& token) {
         bot_username_.clear();
         bot_first_name_.clear();
         save_state();
+    }
+    if (token.empty()) {
+        unpublish_telegram_presence();
     }
     test_connection();
 }
@@ -238,6 +274,7 @@ bool telegram_host::validate_token_and_fetch_bot_info() {
             }
             status_ = Status::Active;
             status_message_ = "Connected as @" + bot_username_ + " (" + bot_first_name_ + ")";
+            publish_telegram_presence();
             return true;
         } else {
             status_ = Status::Error;
@@ -257,6 +294,14 @@ void telegram_host::poll_loop() {
     validate_token_and_fetch_bot_info();
 
     while (!stop_polling_) {
+        // Periodic heartbeat publish (every 30 seconds)
+        auto now_steady = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now_steady - last_presence_publish_).count() >= 30) {
+            if (status_.load() == Status::Active) {
+                publish_telegram_presence();
+            }
+        }
+
         std::string token;
         int64_t offset = 0;
         {
@@ -993,6 +1038,199 @@ bool telegram_host::send_telegram_message(int64_t chat_id, const std::string& te
     }
 
     return true;
+}
+
+int64_t telegram_host::get_operator_chat_id() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (operator_chat_id_ != 0) {
+        return operator_chat_id_;
+    }
+    const char* env_chat = std::getenv("TELEGRAM_OPERATOR_CHAT_ID");
+    if (env_chat && *env_chat) {
+        try {
+            return std::stoll(env_chat);
+        } catch (...) {}
+    }
+    if (!session_order_.empty()) {
+        auto it = sessions_map_.find(session_order_.front());
+        if (it != sessions_map_.end() && it->second.chat_id != 0) {
+            return it->second.chat_id;
+        }
+    }
+    for (const auto& r : routes_) {
+        if (r.user_id != 0) {
+            return r.user_id;
+        }
+    }
+    return 0;
+}
+
+void telegram_host::set_operator_chat_id(int64_t chat_id) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        operator_chat_id_ = chat_id;
+        save_state();
+    }
+    if (status_.load() == Status::Active) {
+        publish_telegram_presence();
+    }
+}
+
+telegram_presence_record telegram_host::get_local_presence_record() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& mesh = rouen_mesh_host::instance();
+    auto mesh_cfg = mesh.get_config();
+    std::string cid = mesh_cfg.client_id.empty() ? rouen_mesh_host::generate_default_client_id() : mesh_cfg.client_id;
+
+    std::string host_name;
+#ifndef _WIN32
+    char buf[256];
+    if (gethostname(buf, sizeof(buf)) == 0) {
+        buf[sizeof(buf) - 1] = '\0';
+        host_name = buf;
+    }
+#endif
+    if (host_name.empty()) host_name = "localhost";
+
+    std::string platform_str;
+#ifdef _WIN32
+    platform_str = "windows";
+#elif defined(__APPLE__)
+    platform_str = "macos";
+#else
+    platform_str = "linux";
+#endif
+
+    uint16_t api_port = 8081;
+    const char* p = std::getenv("ROUEN_API_PORT");
+    if (p && *p) {
+        try { api_port = static_cast<uint16_t>(std::stoi(p)); } catch (...) {}
+    }
+
+    auto now = std::chrono::system_clock::now();
+    uint64_t epoch_ms = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+    std::string iso_str = std::format("{:%Y-%m-%dT%H:%M:%SZ}", std::chrono::floor<std::chrono::seconds>(now));
+
+    int64_t op_id = operator_chat_id_;
+    if (op_id == 0 && !session_order_.empty()) {
+        auto it = sessions_map_.find(session_order_.front());
+        if (it != sessions_map_.end()) op_id = it->second.chat_id;
+    }
+
+    return telegram_presence_record{
+        .client_id = cid,
+        .hostname = host_name,
+        .platform = platform_str,
+        .bot_username = bot_username_,
+        .bot_first_name = bot_first_name_,
+        .operator_chat_id = op_id,
+        .status = (status_.load() == Status::Active) ? "active" : "inactive",
+        .local_api_port = api_port,
+        .capabilities = {"send_notification", "send_message", "read_sessions"},
+        .last_seen_epoch_ms = epoch_ms,
+        .last_seen_iso = iso_str
+    };
+}
+
+void telegram_host::publish_telegram_presence() {
+    if (status_.load() != Status::Active) {
+        return;
+    }
+
+    last_presence_publish_ = std::chrono::steady_clock::now();
+    auto rec = get_local_presence_record();
+    std::string json_str;
+    if (glz::write_json(rec, json_str) == glz::error_code::none) {
+        rouen_mesh_host::instance().set_registry_value(
+            "telegram/presence/" + rec.client_id,
+            json_str,
+            true
+        );
+    }
+}
+
+void telegram_host::unpublish_telegram_presence() {
+    std::string cid = rouen_mesh_host::instance().get_config().client_id;
+    if (cid.empty()) {
+        cid = rouen_mesh_host::generate_default_client_id();
+    }
+    rouen_mesh_host::instance().delete_registry_value("telegram/presence/" + cid);
+}
+
+std::optional<telegram_presence_record> telegram_host::find_active_gateway() {
+    auto local_host = get_host();
+    if (local_host && local_host->get_status() == Status::Active) {
+        return local_host->get_local_presence_record();
+    }
+
+    auto& mesh = rouen_mesh_host::instance();
+    auto entries = mesh.get_registry_entries("telegram/presence/");
+    std::optional<telegram_presence_record> best;
+    for (const auto& [k, entry] : entries) {
+        if (entry.value.empty()) continue;
+        telegram_presence_record rec{};
+        if (glz::read_json(rec, entry.value) == glz::error_code::none) {
+            if (rec.status == "active") {
+                if (!best || rec.last_seen_epoch_ms > best->last_seen_epoch_ms) {
+                    best = rec;
+                }
+            }
+        }
+    }
+    return best;
+}
+
+bool telegram_host::send_remote_notification(const std::string& message, int64_t target_chat_id) {
+    if (status_.load() == Status::Active) {
+        int64_t cid = (target_chat_id != 0) ? target_chat_id : get_operator_chat_id();
+        if (cid != 0) {
+            return send_manual_message(cid, message);
+        }
+    }
+
+    auto gw = find_active_gateway();
+    if (!gw) {
+        return false;
+    }
+
+    int64_t cid = (target_chat_id != 0) ? target_chat_id : gw->operator_chat_id;
+    auto& mesh = rouen_mesh_host::instance();
+    uint16_t local_tunnel_port = 0;
+    for (const auto& r : mesh.get_active_routes()) {
+        if (r.target_client_id == gw->client_id && r.target_port == gw->local_api_port) {
+            local_tunnel_port = r.local_port;
+            break;
+        }
+    }
+    if (local_tunnel_port == 0) {
+        std::string err;
+        mesh.open_virtual_route(gw->client_id, gw->local_api_port, err, 18081);
+        for (const auto& r : mesh.get_active_routes()) {
+            if (r.target_client_id == gw->client_id && r.target_port == gw->local_api_port) {
+                local_tunnel_port = r.local_port;
+                break;
+            }
+        }
+    }
+
+    if (local_tunnel_port != 0) {
+        try {
+            http::fetch client(2);
+            glz::json_t req_obj;
+            req_obj["chat_id"] = static_cast<double>(cid);
+            req_obj["text"] = message;
+            std::string req_json;
+            (void)glz::write_json(req_obj, req_json);
+            std::string url = std::format("http://127.0.0.1:{}/api/telegram/send", local_tunnel_port);
+            std::string res = client.post(url, req_json, {"Content-Type: application/json"});
+            if (client.last_http_code() == 200 && res.find("\"success\":true") != std::string::npos) {
+                return true;
+            }
+        } catch (...) {}
+    }
+
+    // Fallback via mesh notification
+    return mesh.send_mesh_notification(gw->client_id, "[telegram] " + message, false);
 }
 
 } // namespace rouen::hosts

@@ -2,6 +2,7 @@
 #include "../../fonts.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/presence_service.hpp"
 
 #include <cctype>
 
@@ -75,6 +76,26 @@ void telegram_card::render_content() {
     ImGui::TextColored(colors[0], "Telegram Bot Host");
     ImGui::SameLine();
     ImGui::TextColored(status_color, "[%s]", status_msg.c_str());
+
+    auto active_gw = rouen::hosts::telegram_host::find_active_gateway();
+    if (status != rouen::hosts::telegram_host::Status::Active && active_gw.has_value()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.4f, 1.0f), "| 🟢 Mesh Relay Active: @%s (via %s)",
+                           active_gw->bot_username.c_str(), active_gw->client_id.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Send Test Notification")) {
+            rouen::services::notification_options opts{
+                .channel = "telegram",
+                .urgent = false,
+                .spoken = false
+            };
+            rouen::services::presence_service::instance().route_notification(
+                "🧪 Test notification from " + rouen::hosts::rouen_mesh_host::instance().get_config().client_id + " via Mesh Telegram Gateway",
+                "",
+                opts
+            );
+        }
+    }
 
     ImGui::Separator();
     ImGui::Spacing();

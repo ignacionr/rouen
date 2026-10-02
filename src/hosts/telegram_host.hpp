@@ -21,6 +21,7 @@
 #include "../helpers/llm_config.hpp"
 #include "../helpers/persona_manager.hpp"
 #include "../helpers/platform_utils.hpp"
+#include "../models/telegram_presence.hpp"
 #include "../registrar.hpp"
 #include "mcp_host.hpp"
 
@@ -96,6 +97,7 @@ struct telegram_route {
 struct telegram_host_state {
     std::string bot_token;
     int64_t last_update_id{0};
+    int64_t operator_chat_id{0};
     std::vector<telegram_route> routes;
     std::vector<telegram_chat_session> sessions;
 
@@ -104,6 +106,7 @@ struct telegram_host_state {
         static constexpr auto value = glz::object(
             "bot_token", &T::bot_token,
             "last_update_id", &T::last_update_id,
+            "operator_chat_id", &T::operator_chat_id,
             "routes", &T::routes,
             "sessions", &T::sessions
         );
@@ -131,6 +134,15 @@ public:
     Status get_status() const { return status_.load(); }
     std::string get_status_message() const;
     std::string get_bot_username() const;
+
+    // Operator & Presence
+    int64_t get_operator_chat_id() const;
+    void set_operator_chat_id(int64_t chat_id);
+    void publish_telegram_presence();
+    void unpublish_telegram_presence();
+    telegram_presence_record get_local_presence_record() const;
+    static std::optional<telegram_presence_record> find_active_gateway();
+    bool send_remote_notification(const std::string& message, int64_t target_chat_id = 0);
 
     // Sessions & Messages
     std::vector<telegram_chat_session> get_sessions() const;
@@ -176,6 +188,8 @@ private:
 
     std::atomic<bool> stop_polling_{false};
     std::thread poll_thread_;
+    int64_t operator_chat_id_{0};
+    std::chrono::steady_clock::time_point last_presence_publish_{};
 };
 
 } // namespace rouen::hosts

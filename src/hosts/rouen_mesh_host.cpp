@@ -363,6 +363,12 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
         services::presence_service::instance().publish_presence("connect", true);
     }
 
+    // Re-publish Telegram presence if active gateway
+    auto tg_pub = registrar::try_get<std::function<void()>>("publish_telegram_presence");
+    if (tg_pub) {
+        (*tg_pub)();
+    }
+
     // Flush any streams queued while WS was reconnecting
     flush_pending_ws_streams();
 }
@@ -892,6 +898,16 @@ void rouen_mesh_host::process_incoming_notifications() {
     // Deliver notifications outside of lock
     for (const auto& [_, notif] : pending) {
         MESH_INFO_FMT("[MeshNotify] Received incoming notification from '{}': {}", notif.from_client, notif.message);
+
+        // Check for telegram relay prefix
+        if (notif.message.starts_with("[telegram]")) {
+            std::string tg_text = notif.message.substr(10);
+            while (!tg_text.empty() && tg_text.front() == ' ') tg_text.erase(tg_text.begin());
+            auto tg_relay = registrar::try_get<std::function<bool(const std::string&)>>("telegram_relay_message");
+            if (tg_relay) {
+                (*tg_relay)(tg_text);
+            }
+        }
 
         auto notify_fn = registrar::try_get<std::function<void(std::string const&)>>("notify");
         if (notify_fn) {

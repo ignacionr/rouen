@@ -134,6 +134,8 @@ int main(int argc, char* argv[]) {
     std::string mesh_token_str;
     bool execute_upgrade = false;
     std::string upgrade_source;
+    bool notify_telegram = false;
+    bool notify_urgent = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string_view const arg(argv[i]);
@@ -146,6 +148,10 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc && argv[i + 1][0] != '-') {
                 explicit_target = argv[++i];
             }
+        } else if (arg == "--telegram") {
+            notify_telegram = true;
+        } else if (arg == "--urgent") {
+            notify_urgent = true;
         } else if (arg == "--no-speak" || arg == "--silent") {
             spoken = false;
         } else if (arg == "--presence" || arg == "-p") {
@@ -203,6 +209,8 @@ int main(int argc, char* argv[]) {
                       << "Headless CLI & Daemon Options:\n"
                       << "  -d, --daemon, --headless       Run as headless background service (mesh tunnel + REST API, no GUI)\n"
                       << "  -n, --notify <message>         Send a notification routed to user's active presence\n"
+                      << "      --telegram                 Send notification directly to Telegram operator\n"
+                      << "      --urgent                   Urgent priority (alerts locally + pushes to Telegram)\n"
                       << "  -t, --target <client_id>       Specify explicit recipient client ID (optional)\n"
                       << "      --no-speak, --silent       Send notification silently without speech\n"
                       << "  -p, --presence                 Query and display current presence across mesh\n"
@@ -338,6 +346,8 @@ int main(int argc, char* argv[]) {
                         req["target"] = explicit_target;
                     }
                     req["speak"] = spoken;
+                    req["channel"] = notify_telegram ? "telegram" : "auto";
+                    req["urgent"] = notify_urgent;
                     std::string req_json;
                     (void)glz::write_json(req, req_json);
 
@@ -411,22 +421,20 @@ int main(int argc, char* argv[]) {
 
         // Route notification
         auto& ps = rouen::services::presence_service::instance();
-        std::string target = explicit_target.empty() ? ps.get_recommended_notification_target() : explicit_target;
-        bool is_remote_or_gui = connected && !target.empty() && target != mesh_cfg.client_id;
+        rouen::services::notification_options opts{
+            .channel = notify_telegram ? "telegram" : "auto",
+            .urgent = notify_urgent,
+            .spoken = spoken
+        };
 
-        if (is_remote_or_gui) {
-            std::cout << std::format("[Rouen CLI] Routing notification to target '{}' (spoken: {})...\n", target, spoken ? "yes" : "no");
-            bool sent = mesh.send_mesh_notification(target, notify_message, spoken);
-            if (sent) {
-                std::cout << std::format("[Rouen CLI] Successfully delivered notification to '{}'.\n", target);
-                std::this_thread::sleep_for(std::chrono::milliseconds(300));
-            } else {
-                std::cerr << "[Rouen CLI] Failed to deliver over mesh, falling back to local.\n";
-                ps.route_notification(notify_message, ps.get_local_client_id(), spoken);
-            }
+        std::cout << std::format("[Rouen CLI] Routing notification (channel: {}, urgent: {}, spoken: {})...\n",
+                                 opts.channel, opts.urgent ? "yes" : "no", spoken ? "yes" : "no");
+        auto [sent, routed_to] = ps.route_notification(notify_message, explicit_target, opts);
+        if (sent) {
+            std::cout << std::format("[Rouen CLI] Successfully delivered notification to '{}'.\n", routed_to);
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
         } else {
-            std::cout << std::format("[Rouen CLI] Delivering notification locally (spoken: {})...\n", spoken ? "yes" : "no");
-            ps.route_notification(notify_message, ps.get_local_client_id(), spoken);
+            std::cerr << std::format("[Rouen CLI] Notification routing returned: '{}'.\n", routed_to);
         }
 
         mesh.stop();

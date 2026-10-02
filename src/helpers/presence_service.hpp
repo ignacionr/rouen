@@ -19,9 +19,11 @@
 #endif
 
 #include "../hosts/rouen_mesh_host.hpp"
+#include "../models/telegram_presence.hpp"
 #include "../registrar.hpp"
 #include "config_service.hpp"
 #include "debug.hpp"
+#include "fetch.hpp"
 #include "glaze_include.hpp"
 
 namespace rouen::services {
@@ -307,48 +309,203 @@ public:
      * Otherwise publishes to the target's mesh inbox.
      * Returns a pair: {bool success, std::string routed_to_client_id}.
      */
-    std::pair<bool, std::string> route_notification(const std::string& message, const std::string& explicit_target = "", bool spoken = true) {
+    /**
+     * Discover the active Telegram Gateway across the mesh registry.
+     */
+    [[nodiscard]] std::optional<telegram_presence_record> find_active_telegram_gateway() const {
+        auto& mesh = hosts::rouen_mesh_host::instance();
+        auto entries = mesh.get_registry_entries("telegram/presence/");
+        std::optional<telegram_presence_record> best;
+        for (const auto& [k, entry] : entries) {
+            if (entry.value.empty()) continue;
+            telegram_presence_record rec{};
+            if (glz::read_json(rec, entry.value) == glz::error_code::none) {
+                if (rec.status == "active") {
+                    if (!best || rec.last_seen_epoch_ms > best->last_seen_epoch_ms) {
+                        best = rec;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Check if all workstations across the mesh are currently idle.
+     */
+    [[nodiscard]] bool is_all_idle(uint64_t threshold_sec = 300) const {
+        if (!is_locally_idle(threshold_sec)) {
+            return false;
+        }
+        auto presences = get_all_presences();
+        auto now_ms = current_epoch_ms();
+        for (const auto& p : presences) {
+            if (p.client_id.find("-cli-") != std::string::npos) continue;
+            if (p.status == "active") {
+                if (now_ms > p.last_active_epoch_ms && (now_ms - p.last_active_epoch_ms) < threshold_sec * 1000) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Route a notification to an explicit target client or to the recommended target inferred from presence,
+     * with support for Telegram gateways and urgent desktop+telegram escalation.
+     */
+    std::pair<bool, std::string> route_notification(
+        const std::string& message,
+        const std::string& explicit_target,
+        const notification_options& options
+    ) {
         if (message.empty()) {
             return {false, ""};
         }
 
-        std::string target = explicit_target.empty() ? get_recommended_notification_target() : explicit_target;
-        std::string local_id = get_local_client_id();
+        bool alert_desktop = true;
+        bool alert_telegram = false;
 
-        if (target.empty()) {
-            target = local_id;
+        if (options.urgent) {
+            alert_desktop = true;
+            alert_telegram = true;
+        } else if (options.channel == "telegram") {
+            alert_desktop = false;
+            alert_telegram = true;
+        } else if (options.channel == "both") {
+            alert_desktop = true;
+            alert_telegram = true;
+        } else if (options.channel == "desktop") {
+            alert_desktop = true;
+            alert_telegram = false;
+        } else { // "auto"
+            alert_desktop = true;
+            if (is_all_idle()) {
+                alert_telegram = true;
+            }
         }
 
-        if (target == local_id) {
-            auto notify_fn = registrar::try_get<std::function<void(std::string const&)>>("notify");
-            if (notify_fn) {
-                (*notify_fn)(message);
-            } else if (spoken) {
-                std::string safe_message;
-                safe_message.reserve(message.size());
-                for (char c : message) {
-                    if (c == '"' || c == '\\' || c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
-                        safe_message += ' ';
-                    } else {
-                        safe_message += c;
+        bool desktop_ok = false;
+        std::string desktop_target;
+        if (alert_desktop) {
+            std::string target = explicit_target.empty() ? get_recommended_notification_target() : explicit_target;
+            std::string local_id = get_local_client_id();
+
+            if (target.empty()) {
+                target = local_id;
+            }
+
+            if (target == local_id) {
+                auto notify_fn = registrar::try_get<std::function<void(std::string const&)>>("notify");
+                if (notify_fn) {
+                    (*notify_fn)(message);
+                } else if (options.spoken) {
+                    std::string safe_message;
+                    safe_message.reserve(message.size());
+                    for (char c : message) {
+                        if (c == '"' || c == '\\' || c == '`' || c == '$' || c == '(' || c == ')' || c == ';' || c == '&' || c == '|' || c == '\n' || c == '\r') {
+                            safe_message += ' ';
+                        } else {
+                            safe_message += c;
+                        }
+                    }
+#ifdef _WIN32
+                    std::string ps_cmd = std::format("powershell -Command \"Add-Type –AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}');\"", safe_message);
+                    [[maybe_unused]] int r = std::system(ps_cmd.c_str());
+#else
+                    std::string say_path = CONFIG_SERVICE()->get_say_path();
+                    std::string say_cmd = std::format("{} \"{}\"", say_path, safe_message);
+                    [[maybe_unused]] int r = std::system(say_cmd.c_str());
+#endif
+                }
+                desktop_ok = true;
+                desktop_target = local_id;
+            } else {
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                desktop_ok = mesh.send_mesh_notification(target, message, options.spoken);
+                desktop_target = target;
+            }
+        }
+
+        bool telegram_ok = false;
+        std::string telegram_target;
+
+        if (alert_telegram) {
+            // 1. Try local Telegram host first if active
+            auto local_tg_send = registrar::try_get<std::function<bool(const std::string&, int64_t)>>("telegram_send_local");
+            if (local_tg_send) {
+                telegram_ok = (*local_tg_send)(message, options.target_chat_id);
+                if (telegram_ok) {
+                    telegram_target = "telegram:local";
+                }
+            }
+
+            // 2. Discover remote gateway across mesh
+            if (!telegram_ok) {
+                auto gw = find_active_telegram_gateway();
+                if (gw) {
+                    int64_t cid = (options.target_chat_id != 0) ? options.target_chat_id : gw->operator_chat_id;
+                    auto& mesh = hosts::rouen_mesh_host::instance();
+                    uint16_t local_tunnel_port = 0;
+                    for (const auto& r : mesh.get_active_routes()) {
+                        if (r.target_client_id == gw->client_id && r.target_port == gw->local_api_port) {
+                            local_tunnel_port = r.local_port;
+                            break;
+                        }
+                    }
+                    if (local_tunnel_port == 0) {
+                        std::string err;
+                        mesh.open_virtual_route(gw->client_id, gw->local_api_port, err, 18081);
+                        for (const auto& r : mesh.get_active_routes()) {
+                            if (r.target_client_id == gw->client_id && r.target_port == gw->local_api_port) {
+                                local_tunnel_port = r.local_port;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (local_tunnel_port != 0) {
+                        try {
+                            http::fetch client(2);
+                            glz::json_t req_obj;
+                            req_obj["chat_id"] = static_cast<double>(cid);
+                            req_obj["text"] = message;
+                            std::string req_json;
+                            (void)glz::write_json(req_obj, req_json);
+                            std::string url = std::format("http://127.0.0.1:{}/api/telegram/send", local_tunnel_port);
+                            std::string res = client.post(url, req_json, {"Content-Type: application/json"});
+                            if (client.last_http_code() == 200 && res.find("\"success\":true") != std::string::npos) {
+                                telegram_ok = true;
+                                telegram_target = std::format("telegram:{}", gw->client_id);
+                            }
+                        } catch (...) {}
+                    }
+
+                    // Fallback to mesh notification frame with [telegram] prefix
+                    if (!telegram_ok) {
+                        telegram_ok = mesh.send_mesh_notification(gw->client_id, "[telegram] " + message, false);
+                        if (telegram_ok) {
+                            telegram_target = std::format("telegram:mesh_relay:{}", gw->client_id);
+                        }
                     }
                 }
-#ifdef _WIN32
-                std::string ps_cmd = std::format("powershell -Command \"Add-Type –AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{}');\"", safe_message);
-                [[maybe_unused]] int r = std::system(ps_cmd.c_str());
-#else
-                std::string say_path = CONFIG_SERVICE()->get_say_path();
-                std::string say_cmd = std::format("{} \"{}\"", say_path, safe_message);
-                [[maybe_unused]] int r = std::system(say_cmd.c_str());
-#endif
             }
-            return {true, local_id};
         }
 
-        // Deliver over mesh
-        auto& mesh = hosts::rouen_mesh_host::instance();
-        bool ok = mesh.send_mesh_notification(target, message, spoken);
-        return {ok, target};
+        if (alert_telegram && alert_desktop) {
+            return {desktop_ok || telegram_ok, std::format("{}+{}", desktop_target, telegram_target.empty() ? "none" : telegram_target)};
+        } else if (alert_telegram) {
+            return {telegram_ok, telegram_target.empty() ? "telegram:no_gateway" : telegram_target};
+        } else {
+            return {desktop_ok, desktop_target};
+        }
+    }
+
+    std::pair<bool, std::string> route_notification(const std::string& message, const std::string& explicit_target = "", bool spoken = true) {
+        notification_options opts;
+        opts.channel = "auto";
+        opts.spoken = spoken;
+        return route_notification(message, explicit_target, opts);
     }
 
     /**

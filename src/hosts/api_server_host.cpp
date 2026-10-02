@@ -780,6 +780,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/telegram/presence"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_telegram_presence(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else if (mg_match(hm->uri, mg_str("/api/telegram/send"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_telegram_send(c, hm);
@@ -5038,8 +5045,11 @@ std::string api_server_host::handle_telegram_send(struct mg_connection* /*c*/, s
         std::string body(hm->body.buf, hm->body.len);
         telegram_send_request req;
         auto err = glz::read_json(req, body);
+        if (req.chat_id == 0) {
+            req.chat_id = host->get_operator_chat_id();
+        }
         if (err || req.chat_id == 0 || req.text.empty()) {
-            return R"json({"error":"Invalid payload. Requires chat_id and text"})json";
+            return R"json({"error":"Invalid payload. Requires chat_id or configured operator and non-empty text"})json";
         }
 
         bool ok = host->send_manual_message(req.chat_id, req.text);
@@ -5090,6 +5100,56 @@ std::string api_server_host::handle_telegram_simulate(struct mg_connection* /*c*
         } else {
             return R"({"error":"Failed to simulate incoming message"})";
         }
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server_host::handle_telegram_presence(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    try {
+        auto host = telegram_host::get_host();
+        glz::json_t result_json;
+
+        if (host && host->get_status() == telegram_host::Status::Active) {
+            auto loc = host->get_local_presence_record();
+            std::string loc_str;
+            (void)glz::write_json(loc, loc_str);
+            glz::json_t loc_json;
+            (void)glz::read_json(loc_json, loc_str);
+            result_json["local"] = loc_json;
+        } else {
+            result_json["local"] = nullptr;
+        }
+
+        auto active_gw = telegram_host::find_active_gateway();
+        if (active_gw) {
+            std::string gw_str;
+            (void)glz::write_json(*active_gw, gw_str);
+            glz::json_t gw_json;
+            (void)glz::read_json(gw_json, gw_str);
+            result_json["active_gateway"] = gw_json;
+        } else {
+            result_json["active_gateway"] = nullptr;
+        }
+
+        std::vector<telegram_presence_record> all_gws;
+        auto entries = rouen_mesh_host::instance().get_registry_entries("telegram/presence/");
+        for (const auto& [k, v] : entries) {
+            if (v.value.empty()) continue;
+            telegram_presence_record rec{};
+            if (glz::read_json(rec, v.value) == glz::error_code::none) {
+                all_gws.push_back(rec);
+            }
+        }
+        std::string all_str;
+        (void)glz::write_json(all_gws, all_str);
+        glz::json_t all_json;
+        (void)glz::read_json(all_json, all_str);
+        result_json["gateways"] = all_json;
+
+        std::string out_str;
+        (void)glz::write_json(result_json, out_str);
+        return out_str;
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }
@@ -5339,21 +5399,42 @@ std::string api_server_host::handle_presence_touch(struct mg_connection* /*c*/, 
 struct notify_api_request {
     std::string message;
     std::string target;
+    std::string channel{"auto"};
+    bool urgent{false};
     bool speak{true};
+    int64_t chat_id{0};
+
+    struct glaze {
+        using T = notify_api_request;
+        static constexpr auto value = glz::object(
+            "message", &T::message,
+            "target", &T::target,
+            "channel", &T::channel,
+            "urgent", &T::urgent,
+            "speak", &T::speak,
+            "chat_id", &T::chat_id
+        );
+    };
 };
 
 std::string api_server_host::handle_notify(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     std::string body(hm->body.buf, hm->body.len);
     std::string message;
     std::string target;
+    std::string channel = "auto";
+    bool urgent = false;
     bool speak = true;
+    int64_t chat_id = 0;
 
     if (!body.empty()) {
         notify_api_request req{};
         if (glz::read_json(req, body) == glz::error_code::none) {
             message = req.message;
             target = req.target;
+            if (!req.channel.empty()) channel = req.channel;
+            urgent = req.urgent;
             speak = req.speak;
+            chat_id = req.chat_id;
         }
     }
 
@@ -5365,18 +5446,33 @@ std::string api_server_host::handle_notify(struct mg_connection* /*c*/, struct m
         if (mg_http_get_var(&hm->query, "target", buf, sizeof(buf)) > 0) {
             target = buf;
         }
+        if (mg_http_get_var(&hm->query, "channel", buf, sizeof(buf)) > 0) {
+            channel = buf;
+        }
+        if (mg_http_get_var(&hm->query, "urgent", buf, sizeof(buf)) > 0) {
+            urgent = (strcmp(buf, "true") == 0 || strcmp(buf, "1") == 0);
+        }
     }
 
     if (message.empty()) {
         return R"({"error":"Message is required"})";
     }
 
-    auto& ps = rouen::services::presence_service::instance();
-    auto [success, routed_target] = ps.route_notification(message, target, speak);
+    rouen::services::notification_options opts{
+        .channel = channel,
+        .urgent = urgent,
+        .spoken = speak,
+        .target_chat_id = chat_id
+    };
 
-    return std::format(R"({{"success":{},"target":"{}","message":"{}"}})",
+    auto& ps = rouen::services::presence_service::instance();
+    auto [success, routed_target] = ps.route_notification(message, target, opts);
+
+    return std::format(R"({{"success":{},"target":"{}","channel":"{}","urgent":{},"message":"{}"}})",
                        success ? "true" : "false",
                        routed_target,
+                       channel,
+                       urgent ? "true" : "false",
                        message);
 }
 

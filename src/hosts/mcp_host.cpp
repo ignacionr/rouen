@@ -54,6 +54,7 @@
 #include "process_helper.hpp"
 #include "string_helper.hpp"
 #include "fetch.hpp"
+#include "../helpers/presence_service.hpp"
 #include "../registrar.hpp"
 #include "../models/notes/notes_repository.hpp"
 #include "../models/series/series_repository.hpp"
@@ -84,6 +85,18 @@ struct mcp_close_card_params {
         static constexpr auto value = glz::object(
             "index", &T::index,
             "uri", &T::uri
+        );
+    };
+};
+
+struct mcp_notify_operator_telegram_params {
+    std::string message;
+    bool urgent{true};
+    struct glaze {
+        using T = mcp_notify_operator_telegram_params;
+        static constexpr auto value = glz::object(
+            "message", &T::message,
+            "urgent", &T::urgent
         );
     };
 };
@@ -3181,6 +3194,36 @@ mcp_host::mcp_host() {
         },
         "deck"
     );
+    function_definition const notify_operator_telegram_def(
+        "notify_operator_telegram",
+        "Sends an urgent push notification directly to the operator's phone via the Mesh Telegram gateway.",
+        R"mcp({"type":"object","properties":{"message":{"type":"string","description":"Markdown formatted message"},"urgent":{"type":"boolean","description":"Whether notification is urgent","default":true}},"required":["message"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_notify_operator_telegram_params p{};
+                if (glz::read_json(p, params) != glz::error_code::none || p.message.empty()) {
+                    return R"({"status":"error","message":"Invalid parameters. 'message' string is required."})";
+                }
+                rouen::services::notification_options opts{
+                    .channel = "telegram",
+                    .urgent = p.urgent,
+                    .spoken = true
+                };
+                auto [success, target] = rouen::services::presence_service::instance().route_notification(p.message, "", opts);
+                if (success) {
+                    return std::format(R"({{"status":"success","routed_target":"{}","message":"Notification dispatched to operator via Telegram"}})", target);
+                } else {
+                    return std::format(R"({{"status":"error","routed_target":"{}","message":"Failed to dispatch notification via Telegram gateway"}})", target);
+                }
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "system"
+    );
+    register_function("system", notify_operator_telegram_def);
+    register_function("telegram", notify_operator_telegram_def);
+
     register_function("deck", list_card_schemas_def);
 }
 
