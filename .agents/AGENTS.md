@@ -38,8 +38,4 @@
   8. **Push**: Push commit to remote `origin`.
   9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.
 
-## Mesh Infrastructure & Node Roles
-- **Primary / Always-On Node**: The MacMini node (`rouen-desktop-mac` / `Ignacios-Mac-mini.local`) is currently the most stable Rouen node on the mesh. It is always-on and has a reliable, permanent internet connection.
-- **Service Anchoring (e.g. Telegram)**: Long-polling background services and gateway roles (such as the Telegram bot daemon connection) should naturally anchor and run on the MacMini instance. Roaming nodes (such as the MacBook Air) and remote workstations discover and route urgent notifications and alerts through the MacMini gateway via the Rouen Mesh ephemeral registry (`telegram/presence/*`).
-
 
