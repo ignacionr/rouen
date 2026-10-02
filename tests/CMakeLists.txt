@@ -748,6 +748,7 @@ add_executable(test_mcp
     ../src/helpers/ui_automation_explorer.cpp
     ../src/helpers/piped_process.cpp
     ../src/helpers/filetype_handler.cpp
+    ../src/helpers/glass_top_bar.cpp
     ../src/helpers/capture_helper.cpp
     ../external/imguicolortextedit/TextEditor.cpp
     ../src/fonts.cpp

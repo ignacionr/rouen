@@ -652,6 +652,7 @@ namespace ignacionr
                 std::string body = "{";
                 body += std::format("\"model\":\"{}\",", model);
                 body += std::format("\"temperature\":{},", temperature);
+                body += "\"max_tokens\":2048,";
                 body += std::format("\"messages\":{}", serialize_messages(chat_history));
                 
                 if (function_schemas && !function_schemas->empty()) {

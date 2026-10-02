@@ -512,6 +512,7 @@ std::string get_function_category(const rouen::hosts::mcp_host::function_definit
     if (func.name.starts_with("youtube_")) return "youtube";
     if (func.name.starts_with("contacts_")) return "contacts";
     if (func.name == "create_alarm") return "alarm";
+    if (func.name.starts_with("mesh_")) return "mesh";
     return func.card_type;
 }
 
@@ -525,6 +526,11 @@ std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed
         if (name == "contacts" || name == "directory") {
             return std::find(allowed_mcps.begin(), allowed_mcps.end(), "contacts") != allowed_mcps.end() ||
                    std::find(allowed_mcps.begin(), allowed_mcps.end(), "directory") != allowed_mcps.end();
+        }
+        if (name == "mesh") {
+            return std::find(allowed_mcps.begin(), allowed_mcps.end(), "mesh") != allowed_mcps.end() ||
+                   std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end() ||
+                   std::find(allowed_mcps.begin(), allowed_mcps.end(), "system") != allowed_mcps.end();
         }
         return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
     };
@@ -552,6 +558,9 @@ std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed
     }
     if (has_mcp("contacts") || has_mcp("directory")) {
         instr += "\nCONTACTS INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create/update, delete, or import macOS contacts. If the user wants to search contacts, view contact details, save or import contacts, use the `contacts_list`, `contacts_get`, `contacts_save`, `contacts_delete`, or `contacts_import_macos` tools.\n";
+    }
+    if (has_mcp("mesh")) {
+        instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and active status) and `mesh_get_status` (to check cloud relay connectivity, pairing, and latency). When asked about computers or devices on the mesh, network nodes, or mesh status, call `mesh_list_nodes` or `mesh_get_status` directly.\n";
     }
     return instr;
 }
@@ -704,6 +713,11 @@ std::string run_ai_persona_completion(
                 return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "contacts") != target_persona->allowed_mcps.end() ||
                        std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "directory") != target_persona->allowed_mcps.end();
             }
+            if (name == "mesh") {
+                return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "mesh") != target_persona->allowed_mcps.end() ||
+                       std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
+                       std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "system") != target_persona->allowed_mcps.end();
+            }
             return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), name) != target_persona->allowed_mcps.end();
         };
 
@@ -751,9 +765,9 @@ std::string run_ai_persona_completion(
                      llm_config.base_url.find("127.0.0.1") != std::string::npos ||
                      llm_config.base_url.find("localhost") != std::string::npos);
 
-    http::fetch primary_fetcher{is_local ? 90 : 45};
+    http::fetch primary_fetcher{is_local ? 150 : 45};
     if (!is_local) primary_fetcher.set_max_retries(2);
-    else primary_fetcher.set_max_retries(1);
+    else primary_fetcher.set_max_retries(0);
 
     auto do_primary_post = [&primary_fetcher](const std::string& url, const std::string& data, auto hdr) {
         return primary_fetcher.post(url, data, hdr);

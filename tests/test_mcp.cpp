@@ -434,3 +434,31 @@ TEST(MCPTest, ConfiguredLLMToolingIntegration) {
 // Note: Weather MCP tests removed to avoid header dependencies with icons.
 // The weather MCP functions are tested indirectly through the main application
 // and can be verified manually or through integration tests.
+
+TEST(MCPTest, MeshToolsRegisteredAndCallable) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("mesh_list_nodes"));
+    EXPECT_TRUE(mcp.has_function("mesh_get_status"));
+
+    auto functions = mcp.get_available_functions();
+    auto it_list = std::find_if(functions.begin(), functions.end(), [](const auto& f) {
+        return f.name == "mesh_list_nodes";
+    });
+    ASSERT_NE(it_list, functions.end());
+    EXPECT_EQ(it_list->card_type, "mesh");
+
+    auto it_status = std::find_if(functions.begin(), functions.end(), [](const auto& f) {
+        return f.name == "mesh_get_status";
+    });
+    ASSERT_NE(it_status, functions.end());
+    EXPECT_EQ(it_status->card_type, "mesh");
+
+    auto res = mcp.execute_function("mesh_list_nodes", "{}");
+    EXPECT_TRUE(res.success);
+    EXPECT_NE(res.result.find("nodes"), std::string::npos);
+
+    auto status_res = mcp.execute_function("mesh_get_status", "{}");
+    EXPECT_TRUE(status_res.success);
+    EXPECT_NE(status_res.result.find("connected"), std::string::npos);
+}
+

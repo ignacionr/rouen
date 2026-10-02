@@ -3224,8 +3224,140 @@ mcp_host::mcp_host() {
     register_function("system", notify_operator_telegram_def);
     register_function("telegram", notify_operator_telegram_def);
 
+    function_definition mesh_list_nodes_def(
+        "mesh_list_nodes",
+        "Lists all computers, nodes, and devices currently connected or known on the Rouen mesh network, including their hostnames, platforms, client IDs, active/idle status, and last seen timestamps.",
+        R"({"type":"object","properties":{}})",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                auto cfg = mesh.get_config();
+                std::string local_cid = cfg.client_id.empty() ? hosts::rouen_mesh_host::generate_default_client_id() : cfg.client_id;
+
+                auto connected = mesh.get_connected_clients();
+                auto presence_entries = mesh.get_registry_entries("presence/");
+
+                struct mesh_node_view {
+                    std::string client_id;
+                    std::string hostname;
+                    std::string platform;
+                    std::string user;
+                    std::string status;
+                    std::string last_active;
+                    std::string ip_address;
+                    bool is_self{false};
+                };
+
+                std::map<std::string, mesh_node_view> nodes;
+
+                // 1. Add local node
+                auto local_pres = rouen::services::presence_service::instance().get_local_presence();
+                nodes[local_cid] = mesh_node_view{
+                    .client_id = local_cid,
+                    .hostname = local_pres.hostname,
+                    .platform = local_pres.platform,
+                    .user = local_pres.user,
+                    .status = mesh.is_connected() ? local_pres.status : "offline",
+                    .last_active = local_pres.last_active_iso,
+                    .ip_address = "127.0.0.1",
+                    .is_self = true
+                };
+
+                // 2. Add presence records from registry
+                for (const auto& [k, entry] : presence_entries) {
+                    if (k == "presence/last_active") continue;
+                    if (entry.value.empty()) continue;
+                    rouen::services::presence_record rec{};
+                    if (glz::read_json(rec, entry.value) == glz::error_code::none && !rec.client_id.empty()) {
+                        auto& node = nodes[rec.client_id];
+                        node.client_id = rec.client_id;
+                        node.hostname = rec.hostname;
+                        node.platform = rec.platform;
+                        node.user = rec.user;
+                        node.status = rec.status;
+                        node.last_active = rec.last_active_iso;
+                        node.is_self = (rec.client_id == local_cid);
+                    }
+                }
+
+                // 3. Update with active connected client metadata
+                for (const auto& c : connected) {
+                    if (c.client_id.empty()) continue;
+                    auto& node = nodes[c.client_id];
+                    node.client_id = c.client_id;
+                    if (!c.ip_address.empty()) node.ip_address = c.ip_address;
+                    if (node.status.empty() || node.status == "offline") node.status = "connected";
+                    node.is_self = (c.client_id == local_cid);
+                }
+
+                std::vector<glz::json_t> nodes_json;
+                for (const auto& [cid, n] : nodes) {
+                    glz::json_t item;
+                    item["client_id"] = n.client_id;
+                    item["hostname"] = n.hostname.empty() ? cid : n.hostname;
+                    item["platform"] = n.platform.empty() ? "unknown" : n.platform;
+                    item["user"] = n.user;
+                    item["status"] = n.status.empty() ? "connected" : n.status;
+                    item["last_active"] = n.last_active;
+                    if (!n.ip_address.empty()) item["ip_address"] = n.ip_address;
+                    item["is_self"] = n.is_self;
+                    nodes_json.push_back(std::move(item));
+                }
+
+                glz::json_t result;
+                result["mesh_connected"] = mesh.is_connected();
+                result["total_nodes"] = static_cast<double>(nodes_json.size());
+                result["nodes"] = nodes_json;
+
+                std::string out;
+                (void)glz::write_json(result, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"error":"{}"}})", e.what());
+            }
+        },
+        "mesh"
+    );
+    register_function("mesh", mesh_list_nodes_def);
+    register_function("system", mesh_list_nodes_def);
+    register_function("deck", mesh_list_nodes_def);
+
+    function_definition mesh_get_status_def(
+        "mesh_get_status",
+        "Returns the current connection status of this computer to the Rouen cloud relay and mesh network, including pairing state, client ID, ping latency, and active virtual routes.",
+        R"({"type":"object","properties":{}})",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                auto cfg = mesh.get_config();
+                auto routes = mesh.get_active_routes();
+
+                glz::json_t result;
+                result["connected"] = mesh.is_connected();
+                result["paired"] = mesh.is_paired();
+                result["client_id"] = cfg.client_id;
+                result["server_url"] = cfg.server_url;
+                result["auth_mode"] = hosts::rouen_mesh_host::auth_mode_to_string(cfg.auth_mode);
+                result["ping_ms"] = static_cast<double>(mesh.get_ping_ms());
+                result["active_routes_count"] = static_cast<double>(routes.size());
+                result["status_message"] = mesh.get_status_message();
+
+                std::string out;
+                (void)glz::write_json(result, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"error":"{}"}})", e.what());
+            }
+        },
+        "mesh"
+    );
+    register_function("mesh", mesh_get_status_def);
+    register_function("system", mesh_get_status_def);
+    register_function("deck", mesh_get_status_def);
+
     register_function("deck", list_card_schemas_def);
 }
+
 
 void mcp_host::register_function(const std::string& card_type, const function_definition& func) {
     std::lock_guard<std::mutex> const lock(mutex_);

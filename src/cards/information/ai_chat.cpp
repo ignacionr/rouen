@@ -88,6 +88,11 @@ namespace rouen::cards {
                 return std::find(allowed_mcps.begin(), allowed_mcps.end(), "contacts") != allowed_mcps.end() ||
                        std::find(allowed_mcps.begin(), allowed_mcps.end(), "directory") != allowed_mcps.end();
             }
+            if (name == "mesh") {
+                return std::find(allowed_mcps.begin(), allowed_mcps.end(), "mesh") != allowed_mcps.end() ||
+                       std::find(allowed_mcps.begin(), allowed_mcps.end(), "deck") != allowed_mcps.end() ||
+                       std::find(allowed_mcps.begin(), allowed_mcps.end(), "system") != allowed_mcps.end();
+            }
             return std::find(allowed_mcps.begin(), allowed_mcps.end(), name) != allowed_mcps.end();
         };
 
@@ -112,6 +117,9 @@ namespace rouen::cards {
         if (has_mcp("contacts") || has_mcp("directory")) {
             instr += "\nCONTACTS INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create/update, delete, or import macOS contacts. If the user wants to search contacts, view contact details, save or import contacts, use the `contacts_list`, `contacts_get`, `contacts_save`, `contacts_delete`, or `contacts_import_macos` tools.\n";
         }
+        if (has_mcp("mesh")) {
+            instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and active status) and `mesh_get_status` (to check cloud relay connectivity, pairing, and latency). When asked about computers or devices on the mesh, network nodes, or mesh status, call `mesh_list_nodes` or `mesh_get_status` directly.\n";
+        }
         return instr;
     }
 
@@ -123,6 +131,7 @@ namespace rouen::cards {
         if (func.name.starts_with("youtube_")) return "youtube";
         if (func.name.starts_with("contacts_")) return "contacts";
         if (func.name == "create_alarm") return "alarm";
+        if (func.name.starts_with("mesh_")) return "mesh";
         return func.card_type;
     }
 
@@ -1220,6 +1229,11 @@ namespace rouen::cards {
                         return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "contacts") != target_persona->allowed_mcps.end() ||
                                std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "directory") != target_persona->allowed_mcps.end();
                     }
+                    if (cat == "mesh") {
+                        return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "mesh") != target_persona->allowed_mcps.end() ||
+                               std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
+                               std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "system") != target_persona->allowed_mcps.end();
+                    }
                     return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), cat) != target_persona->allowed_mcps.end();
                 };
 
@@ -1362,6 +1376,11 @@ namespace rouen::cards {
                     if (cat == "contacts" || cat == "directory") {
                         return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "contacts") != active_persona.allowed_mcps.end() ||
                                std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "directory") != active_persona.allowed_mcps.end();
+                    }
+                    if (cat == "mesh") {
+                        return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "mesh") != active_persona.allowed_mcps.end() ||
+                               std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end() ||
+                               std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "system") != active_persona.allowed_mcps.end();
                     }
                     return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), cat) != active_persona.allowed_mcps.end();
                 };

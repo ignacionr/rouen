@@ -147,7 +147,7 @@ namespace rouen::helpers {
             Persona default_p;
             default_p.name = "Rouen Assistant";
             default_p.description = "Primary orchestrator persona for Rouen. Coordinates requests by delegating to specialized per-MCP sub-personas.";
-            default_p.allowed_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro"};
+            default_p.allowed_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro", "mesh"};
             default_p.allowed_personas = {"Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
             default_p.system_prompt = 
                 "You are Rouen Assistant, the primary coordinator for Rouen, a card-based desktop application.\n\n"
@@ -286,7 +286,7 @@ namespace rouen::helpers {
             Persona health_p;
             health_p.name = "System Health & Metrics";
             health_p.description = "Gated per-MCP persona monitoring system performance, FPS, and card render metrics.";
-            health_p.allowed_mcps = {"metrics"};
+            health_p.allowed_mcps = {"metrics", "mesh"};
             health_p.system_prompt = "You are System Health & Metrics, monitoring Rouen card render frame rates, slow render counts, and application performance metrics.";
             health_p.llm_config_name = "Local MLX";
             health_p.enable_search = false;
@@ -355,14 +355,28 @@ namespace rouen::helpers {
                     save_personas();
                 }
 
-                // Ensure "Rouen Assistant" includes "contacts" if missing
+                // Ensure "Rouen Assistant" and "System Health & Metrics" include "mesh" and "contacts" if missing
+                bool modified = false;
                 for (auto& p : personas_) {
                     if (p.name == "Rouen Assistant") {
                         if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
                             p.allowed_mcps.push_back("contacts");
-                            save_personas();
+                            modified = true;
+                        }
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back("mesh");
+                            modified = true;
                         }
                     }
+                    if (p.name == "System Health & Metrics") {
+                        if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "mesh") == p.allowed_mcps.end()) {
+                            p.allowed_mcps.push_back("mesh");
+                            modified = true;
+                        }
+                    }
+                }
+                if (modified) {
+                    save_personas();
                 }
             } 
             catch (const std::exception& e) {
