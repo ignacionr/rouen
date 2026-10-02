@@ -24,6 +24,7 @@
 #include "../helpers/debug.hpp"
 #include "../helpers/fetch.hpp"
 #include "../helpers/notify_service.hpp"
+#include "../helpers/presence_service.hpp"
 #include "../registrar.hpp"
 
 namespace rouen::hosts {
@@ -355,6 +356,12 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     refresh_peer_services();
     refresh_server_routes();
     refresh_registry();
+
+    // Re-publish local presence to restore purged ephemeral presence entry on server
+    if (services::presence_service::instance().is_running() &&
+        !services::presence_service::instance().is_cli_client()) {
+        services::presence_service::instance().publish_presence("connect", true);
+    }
 
     // Flush any streams queued while WS was reconnecting
     flush_pending_ws_streams();

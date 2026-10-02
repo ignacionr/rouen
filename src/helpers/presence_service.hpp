@@ -156,17 +156,31 @@ public:
             // Publish per-client record: presence/{client_id}
             mesh.set_registry_value(std::format("presence/{}", local_rec.client_id), rec_json, true);
 
-            // Publish globally tracked last_active record
-            last_active_summary summary{
-                .client_id = local_rec.client_id,
-                .user = local_rec.user,
-                .last_active_epoch_ms = local_rec.last_active_epoch_ms,
-                .last_active_iso = local_rec.last_active_iso,
-                .interaction_type = local_rec.interaction_type
-            };
-            std::string summary_json;
-            if (glz::write_json(summary, summary_json) == glz::error_code::none) {
-                mesh.set_registry_value("presence/last_active", summary_json, true);
+            // Only update presence/last_active if this client is more recent or equal to current last_active,
+            // or if no last_active exists yet
+            bool should_update_last_active = true;
+            auto current_last_active_val = mesh.get_registry_value("presence/last_active");
+            if (current_last_active_val && !current_last_active_val->empty()) {
+                last_active_summary current_summary{};
+                if (glz::read_json(current_summary, *current_last_active_val) == glz::error_code::none) {
+                    if (current_summary.last_active_epoch_ms > local_rec.last_active_epoch_ms) {
+                        should_update_last_active = false;
+                    }
+                }
+            }
+
+            if (should_update_last_active) {
+                last_active_summary summary{
+                    .client_id = local_rec.client_id,
+                    .user = local_rec.user,
+                    .last_active_epoch_ms = local_rec.last_active_epoch_ms,
+                    .last_active_iso = local_rec.last_active_iso,
+                    .interaction_type = local_rec.interaction_type
+                };
+                std::string summary_json;
+                if (glz::write_json(summary, summary_json) == glz::error_code::none) {
+                    mesh.set_registry_value("presence/last_active", summary_json, true);
+                }
             }
         }
 
@@ -208,6 +222,10 @@ public:
 
     [[nodiscard]] static bool is_headless() noexcept {
         return is_headless_.load();
+    }
+
+    [[nodiscard]] bool is_running() const noexcept {
+        return running_.load();
     }
 
     [[nodiscard]] bool is_cli_client() const {
@@ -461,12 +479,25 @@ private:
                 }
             }
 
-            // 2. Periodically refresh mesh registry entries (every 30 seconds)
+            // 2. Periodically refresh mesh registry entries (every 30 seconds) and re-publish presence
             uint64_t ms_since_refresh = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                 now_steady - last_registry_refresh_steady_).count());
             if (ms_since_refresh >= 30000) {
-                hosts::rouen_mesh_host::instance().refresh_registry();
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                mesh.refresh_registry();
                 last_registry_refresh_steady_ = now_steady;
+
+                // Re-publish presence if connected and no publish in the last 60 seconds (prevents desync)
+                uint64_t ms_since_pub = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now_steady - last_published_steady_).count());
+                if (ms_since_pub >= 60000 && mesh.is_connected() && !is_cli_client()) {
+                    std::string itype;
+                    {
+                        std::lock_guard<std::mutex> state_lock(state_mutex_);
+                        itype = last_interaction_type_;
+                    }
+                    publish_presence(itype, true);
+                }
             }
 
             // 3. Transition to idle state if inactive for >= 300 seconds

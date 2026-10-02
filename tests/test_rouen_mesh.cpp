@@ -556,6 +556,51 @@ void test_auto_connect_and_rdp_service_restoration() {
     test_helpers::assert_true(!host.is_rdp_service_exposed(), "RDP service successfully unlisted");
 }
 
+void test_presence_reconnect_and_ephemeral_restoration() {
+    std::cout << "\n--- Testing Presence Reconnect & Ephemeral Registry Restoration ---\n";
+    auto& host = rouen::hosts::rouen_mesh_host::instance();
+    host.clear();
+
+    rouen::hosts::rouen_mesh_host::config cfg{};
+    cfg.client_id = "rouen-test-macbook";
+    host.initialize(cfg);
+
+    auto& ps = rouen::services::presence_service::instance();
+    ps.set_headless(false);
+    ps.start();
+
+    // 1. Record interaction and publish initial presence
+    ps.record_interaction("ui_input");
+    ps.publish_presence("ui_input", true);
+
+    auto local_val = host.get_registry_value("presence/rouen-test-macbook");
+    test_helpers::assert_true(local_val.has_value(), "Local presence entry exists in registry after initial publish");
+
+    // 2. Simulate server purging ephemeral keys upon connection drop (purge_client_entries)
+    host.delete_registry_value("presence/rouen-test-macbook");
+    test_helpers::assert_true(!host.get_registry_value("presence/rouen-test-macbook").has_value(),
+                             "Simulated ephemeral purge removes presence entry on disconnect");
+
+    // 3. Simulate WebSocket reconnection
+    host.on_ws_connected(nullptr);
+
+    // 4. Verify that on_ws_connected restored the purged presence record
+    auto restored_val = host.get_registry_value("presence/rouen-test-macbook");
+    test_helpers::assert_true(restored_val.has_value(),
+                             "on_ws_connected() restores purged ephemeral presence entry in registry");
+
+    if (restored_val.has_value()) {
+        rouen::services::presence_record rec{};
+        auto err = glz::read_json(rec, *restored_val);
+        test_helpers::assert_true(err == glz::error_code::none, "Restored presence record parses valid JSON");
+        test_helpers::assert_string_equal("rouen-test-macbook", rec.client_id, "Restored presence client_id matches");
+    }
+
+    ps.stop();
+    ps.set_headless(true);
+    host.clear();
+}
+
 int main() {
     std::cout << "Rouen Mesh Host Unit Tests\n";
     std::cout << std::string(50, '=') << "\n";
@@ -567,7 +612,16 @@ int main() {
     struct env_restorer {
         std::string content;
         bool exists = false;
+        std::string original_routes;
+        std::string original_services;
         env_restorer() {
+            auto config_svc = CONFIG_SERVICE();
+            if (config_svc) {
+                original_routes = config_svc->get_env("ROUEN_MESH_ROUTES");
+                original_services = config_svc->get_env("ROUEN_CUSTOM_SERVICES");
+                config_svc->set_env_value("ROUEN_MESH_ROUTES", "", false);
+                config_svc->set_env_value("ROUEN_CUSTOM_SERVICES", "", false);
+            }
             if (std::filesystem::exists(".env")) {
                 std::ifstream in(".env");
                 if (in) {
@@ -580,6 +634,11 @@ int main() {
             if (exists) {
                 std::ofstream out(".env");
                 out << content;
+            }
+            auto config_svc = CONFIG_SERVICE();
+            if (config_svc) {
+                config_svc->set_env_value("ROUEN_MESH_ROUTES", original_routes, false);
+                config_svc->set_env_value("ROUEN_CUSTOM_SERVICES", original_services, false);
             }
         }
     } restorer;
@@ -597,6 +656,7 @@ int main() {
         test_pairing_request_validation();
         test_self_healing_resilience();
         test_auto_connect_and_rdp_service_restoration();
+        test_presence_reconnect_and_ephemeral_restoration();
 
         std::cout << "\n" << std::string(50, '=') << "\n";
         std::cout << "✅ All Rouen Mesh Host unit tests passed successfully!\n";

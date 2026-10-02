@@ -26,3 +26,16 @@
 - Never guess or hardcode static LLM model identifiers when configuring or suggesting LLM providers.
 - Always query the LLM backend endpoint (e.g. `GET /v1/models` or `GET /v1beta/models`) to retrieve the list of active available models dynamically.
 
+## Issue & Bug Fix Workflow (Inbox)
+- When addressing bugs or feature requests filed in `./inbox`:
+  1. **Understand**: Read the filed report and trace the affected architecture and code paths.
+  2. **Diagnose**: Pinpoint root causes across affected systems.
+  3. **Setup Unit Test**: Add or expand unit tests in `tests/` covering the bug/feature.
+  4. **Run and Fail**: Run the test to confirm it fails as expected (red).
+  5. **Fix**: Implement the clean, minimal fix.
+  6. **Run and Pass**: Re-run the unit test and verify it passes (green), along with target builds and deployment.
+  7. **Commit**: Create a conventional commit (`fix(...)` or `feat(...)`).
+  8. **Push**: Push commit to remote `origin`.
+  9. **Rename Report**: Rename `inbox/<report>.md` to `inbox/done_<report>.md`.
+
+
