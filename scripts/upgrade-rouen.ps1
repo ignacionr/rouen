@@ -47,6 +47,52 @@ function Write-UpgradeLog {
     } catch {}
 }
 
+function Start-RouenInteractive {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ExePath,
+        [string]$Arguments = "--mesh",
+        [string]$WorkingDirectory = ""
+    )
+    if (-not (Test-Path $ExePath)) {
+        Write-UpgradeLog "Executable not found at: $ExePath" "ERROR"
+        return $null
+    }
+    if (-not $WorkingDirectory) {
+        $WorkingDirectory = Split-Path -Parent $ExePath
+    }
+
+    Write-UpgradeLog "Launching Rouen in interactive desktop session: $ExePath $Arguments"
+
+    # In background or remote sessions (WinRM, SSH, Session 0), direct Start-Process
+    # cannot initialize graphics/DirectX/SDL3 windows. Use a temporary interactive Scheduled Task (/it).
+    $launchedViaSchtasks = $false
+    try {
+        $taskName = "RouenRestart_$([Guid]::NewGuid().ToString().Substring(0,8))"
+        $cmdLine = "`"$ExePath`" $Arguments"
+        $createRes = schtasks.exe /create /tn $taskName /tr $cmdLine /sc once /st 00:00 /it /f 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            schtasks.exe /run /tn $taskName 2>&1 | Out-Null
+            Start-Sleep -Seconds 2
+            schtasks.exe /delete /tn $taskName /f 2>&1 | Out-Null
+            $launchedViaSchtasks = $true
+            Write-UpgradeLog "Triggered interactive Scheduled Task ($taskName)."
+        } else {
+            Write-UpgradeLog "Interactive task creation returned code $LASTEXITCODE; falling back to Start-Process." "WARN"
+        }
+    } catch {
+        Write-UpgradeLog "schtasks attempt failed: $_; falling back to Start-Process." "WARN"
+    }
+
+    if (-not $launchedViaSchtasks) {
+        Start-Process -FilePath $ExePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory
+    }
+
+    Start-Sleep -Seconds 3
+    $proc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+    return $proc
+}
+
 # 2. If running interactively, detach to background process so RDP drop does not kill the updater
 if (-not $Detached) {
     Write-Host ""
@@ -221,14 +267,16 @@ try {
     }
 
     Write-UpgradeLog "Launching updated Rouen binary: $installedExe --mesh"
-    $launchedProc = Start-Process -FilePath $installedExe -ArgumentList "--mesh" -WorkingDirectory $InstallDir -PassThru
+    $verifyProc = Start-RouenInteractive -ExePath $installedExe -Arguments "--mesh" -WorkingDirectory $InstallDir
 
     # 11. Health-check newly launched process
-    Start-Sleep -Seconds 4
-    $verifyProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+    Start-Sleep -Seconds 2
+    if (-not $verifyProc) {
+        $verifyProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
     if ($verifyProc) {
         Write-UpgradeLog "=== UPGRADE SUCCESSFUL! ===" "SUCCESS"
-        Write-UpgradeLog "Rouen process is running healthy (PID: $($verifyProc.Id))." "SUCCESS"
+        Write-UpgradeLog "Rouen process is running healthy (PID: $($verifyProc.Id), Session: $($verifyProc.SessionId))." "SUCCESS"
         Write-UpgradeLog "Mesh network connection and virtual services (RDP) are restored." "SUCCESS"
     } else {
         throw "Newly launched Rouen process failed to stay running after 4 seconds."
@@ -247,11 +295,11 @@ try {
             }
             Write-UpgradeLog "Restored all backup files from $BackupDir." "INFO"
 
-            # Relaunch backup executable
+            # Relaunch backup executable in interactive desktop session
             $oldExe = Join-Path $InstallDir "rouen.exe"
             if (Test-Path $oldExe) {
-                Start-Process -FilePath $oldExe -ArgumentList "--mesh" -WorkingDirectory $InstallDir
-                Write-UpgradeLog "Relaunched backup Rouen instance. Remote access restored." "SUCCESS"
+                $restoredProc = Start-RouenInteractive -ExePath $oldExe -Arguments "--mesh" -WorkingDirectory $InstallDir
+                Write-UpgradeLog "Relaunched backup Rouen instance (PID: $(if ($restoredProc) { $restoredProc.Id } else { 'unknown' })). Remote access restored." "SUCCESS"
             }
         }
     } catch {

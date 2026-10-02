@@ -147,6 +147,10 @@ $WixSource = @"
     
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" Description="Rouen - Modern Productivity Dashboard" />
     
+    <!-- Enable user-mode installation without administrative elevation on policy-managed machines -->
+    <Property Id="ALLUSERS" Value="2" />
+    <Property Id="MSIINSTALLPERUSER" Value="1" />
+    
     <!-- Define the product properties -->
     <Property Id="ARPPRODUCTICON" Value="ProductIcon" />
     <Property Id="ARPHELPLINK" Value="https://github.com/ignaciorodriguez/rouen" />

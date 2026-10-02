@@ -71,6 +71,13 @@ else
     echo "⚠️  InstallScope not set to perUser"
 fi
 
+# Check for dual-purpose properties (ALLUSERS=2 and MSIINSTALLPERUSER=1) to prevent Error 1625
+if grep -q 'Property Id="ALLUSERS" Value="2"' "$wix_file" && grep -q 'Property Id="MSIINSTALLPERUSER" Value="1"' "$wix_file"; then
+    echo "✅ Dual-purpose per-user properties configured (ALLUSERS=2, MSIINSTALLPERUSER=1)"
+else
+    echo "⚠️  Missing dual-purpose properties for policy-managed machines (ALLUSERS=2, MSIINSTALLPERUSER=1)"
+fi
+
 # Check for version placeholder
 if grep -q '\$(var\.Version)' "$wix_file"; then
     echo "✅ Version placeholder found"

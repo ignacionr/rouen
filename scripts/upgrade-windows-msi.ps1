@@ -19,14 +19,23 @@ param(
     [Parameter(Mandatory=$false)]
     [string]$InstallDir = "",
 
+    [Parameter(Mandatory=$false)]
+    [string]$OriginalExePath = "",
+
     [switch]$Detached
 )
 
-# 1. Resolve InstallDir
-if (-not $InstallDir) {
-    $runningProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+# 1. Resolve InstallDir and track original running executable path
+if (-not $OriginalExePath) {
+    $runningProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Where-Object { $_.Path } | Select-Object -First 1
     if ($runningProc -and $runningProc.Path) {
-        $InstallDir = Split-Path -Parent $runningProc.Path
+        $OriginalExePath = $runningProc.Path
+    }
+}
+
+if (-not $InstallDir) {
+    if ($OriginalExePath) {
+        $InstallDir = Split-Path -Parent $OriginalExePath
     } else {
         $defaultMsiPath = Join-Path $env:LOCALAPPDATA "Rouen\Rouen"
         if (Test-Path $defaultMsiPath) {
@@ -49,6 +58,52 @@ function Write-UpgradeLog {
     } catch {}
 }
 
+function Start-RouenInteractive {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$ExePath,
+        [string]$Arguments = "--mesh",
+        [string]$WorkingDirectory = ""
+    )
+    if (-not (Test-Path $ExePath)) {
+        Write-UpgradeLog "Executable not found at: $ExePath" "ERROR"
+        return $null
+    }
+    if (-not $WorkingDirectory) {
+        $WorkingDirectory = Split-Path -Parent $ExePath
+    }
+
+    Write-UpgradeLog "Launching Rouen in interactive desktop session: $ExePath $Arguments"
+
+    # In background or remote sessions (WinRM, SSH, Session 0), direct Start-Process
+    # cannot initialize graphics/DirectX/SDL3 windows. Use a temporary interactive Scheduled Task (/it).
+    $launchedViaSchtasks = $false
+    try {
+        $taskName = "RouenRestart_$([Guid]::NewGuid().ToString().Substring(0,8))"
+        $cmdLine = "`"$ExePath`" $Arguments"
+        $createRes = schtasks.exe /create /tn $taskName /tr $cmdLine /sc once /st 00:00 /it /f 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            schtasks.exe /run /tn $taskName 2>&1 | Out-Null
+            Start-Sleep -Seconds 2
+            schtasks.exe /delete /tn $taskName /f 2>&1 | Out-Null
+            $launchedViaSchtasks = $true
+            Write-UpgradeLog "Triggered interactive Scheduled Task ($taskName)."
+        } else {
+            Write-UpgradeLog "Interactive task creation returned code $LASTEXITCODE; falling back to Start-Process." "WARN"
+        }
+    } catch {
+        Write-UpgradeLog "schtasks attempt failed: $_; falling back to Start-Process." "WARN"
+    }
+
+    if (-not $launchedViaSchtasks) {
+        Start-Process -FilePath $ExePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory
+    }
+
+    Start-Sleep -Seconds 3
+    $proc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+    return $proc
+}
+
 # 2. Detach to background process if running interactively
 if (-not $Detached) {
     Write-Host ""
@@ -57,6 +112,7 @@ if (-not $Detached) {
     Write-Host "========================================================================" -ForegroundColor Cyan
     Write-Host " Target Directory : $InstallDir" -ForegroundColor Yellow
     Write-Host " MSI Package      : $(if ($MsiPath) { $MsiPath } else { 'Latest GitHub Release MSI' })" -ForegroundColor Yellow
+    Write-Host " Original Exe     : $(if ($OriginalExePath) { $OriginalExePath } else { 'None detected' })" -ForegroundColor Yellow
     Write-Host ""
     Write-Host " [NOTICE] MSI upgrade worker will execute as a detached background job." -ForegroundColor Green
     Write-Host "          Because your RDP session is tunneled through Rouen Mesh," -ForegroundColor Yellow
@@ -67,7 +123,7 @@ if (-not $Detached) {
     Write-Host " Spawning detached MSI worker in 2 seconds..." -ForegroundColor Cyan
     Start-Sleep -Seconds 2
 
-    $argsList = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$PSCommandPath`" -MsiPath `"$MsiPath`" -InstallDir `"$InstallDir`" -Detached"
+    $argsList = "-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File `"$PSCommandPath`" -MsiPath `"$MsiPath`" -InstallDir `"$InstallDir`" -OriginalExePath `"$OriginalExePath`" -Detached"
     Start-Process powershell.exe -ArgumentList $argsList -WorkingDirectory $InstallDir
 
     Write-Host " Detached worker launched. Check $LogFile for live progress." -ForegroundColor Green
@@ -146,6 +202,16 @@ try {
     Write-UpgradeLog "Stopping running Rouen instances before MSI execution..."
     $runningProcs = Get-Process -Name "rouen" -ErrorAction SilentlyContinue
     if ($runningProcs) {
+        if (-not $OriginalExePath) {
+            $firstProcWithPath = $runningProcs | Where-Object { $_.Path } | Select-Object -First 1
+            if ($firstProcWithPath) {
+                $OriginalExePath = $firstProcWithPath.Path
+            }
+        }
+        if ($OriginalExePath) {
+            Write-UpgradeLog "Tracked original running executable path: $OriginalExePath"
+        }
+
         $runningProcs | ForEach-Object {
             Write-UpgradeLog "Stopping PID $($_.Id)..."
             Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
@@ -158,10 +224,10 @@ try {
         Start-Sleep -Seconds 1
     }
 
-    # 7. Execute MSI installer silently
+    # 7. Execute MSI installer silently with dual-purpose user-mode properties (ALLUSERS=2 MSIINSTALLPERUSER=1)
     $MsiLogFile = Join-Path $InstallDir "msi-install.log"
-    Write-UpgradeLog "Executing MSI: msiexec.exe /i `"$ActualMsi`" /qn /norestart /l*v `"$MsiLogFile`""
-    $msiProcess = Start-Process msiexec.exe -ArgumentList "/i `"$ActualMsi`" /qn /norestart /l*v `"$MsiLogFile`"" -Wait -PassThru
+    Write-UpgradeLog "Executing MSI: msiexec.exe /i `"$ActualMsi`" ALLUSERS=2 MSIINSTALLPERUSER=1 /qn /norestart /l*v `"$MsiLogFile`""
+    $msiProcess = Start-Process msiexec.exe -ArgumentList "/i `"$ActualMsi`" ALLUSERS=2 MSIINSTALLPERUSER=1 /qn /norestart /l*v `"$MsiLogFile`"" -Wait -PassThru
 
     Write-UpgradeLog "MSI execution finished with exit code: $($msiProcess.ExitCode)"
     if ($msiProcess.ExitCode -ne 0 -and $msiProcess.ExitCode -ne 3010) {
@@ -174,26 +240,32 @@ try {
         Write-UpgradeLog "Restored user .env configuration into target directory."
     }
 
-    # 9. Verify if rouen.exe is running (the MSI LaunchApplication custom action starts it)
-    Start-Sleep -Seconds 4
+    # 9. Verify if rouen.exe is running interactively (the MSI LaunchApplication custom action starts it)
+    Start-Sleep -Seconds 3
     $verifyProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
 
+    # Check if process was started in non-interactive Session 0 (common when msiexec executes via background service/WinRM)
+    if ($verifyProc -and $verifyProc.SessionId -eq 0) {
+        Write-UpgradeLog "MSI auto-launched Rouen in non-interactive Session 0 (PID: $($verifyProc.Id)). Terminating to restart in interactive desktop session..." "WARN"
+        Stop-Process -Id $verifyProc.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        $verifyProc = $null
+    }
+
     if (-not $verifyProc) {
-        Write-UpgradeLog "MSI did not auto-launch Rouen. Manually starting: rouen.exe --mesh..."
+        Write-UpgradeLog "MSI did not auto-launch Rouen in interactive session. Relaunching: rouen.exe --mesh..."
         $installedExe = Join-Path $InstallDir "rouen.exe"
         if (Test-Path $installedExe) {
-            Start-Process -FilePath $installedExe -ArgumentList "--mesh" -WorkingDirectory $InstallDir
-            Start-Sleep -Seconds 4
-            $verifyProc = Get-Process -Name "rouen" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $verifyProc = Start-RouenInteractive -ExePath $installedExe -Arguments "--mesh" -WorkingDirectory $InstallDir
         }
     }
 
     if ($verifyProc) {
         Write-UpgradeLog "=== MSI UPGRADE SUCCESSFUL! ===" "SUCCESS"
-        Write-UpgradeLog "Rouen is running (PID: $($verifyProc.Id))." "SUCCESS"
+        Write-UpgradeLog "Rouen is running (PID: $($verifyProc.Id), Session: $($verifyProc.SessionId))." "SUCCESS"
         Write-UpgradeLog "Mesh connection and services (ws-ir01 RDP on 3389) are restored." "SUCCESS"
     } else {
-        throw "Newly installed Rouen process failed to stay running."
+        throw "Newly installed Rouen process failed to stay running in interactive session."
     }
 
 } catch {
@@ -201,17 +273,39 @@ try {
     Write-UpgradeLog "Initiating automatic rollback to previous version..." "WARN"
 
     try {
+        $restarted = $false
         if ($BackupDir -and (Test-Path $BackupDir)) {
-            Stop-Process -Name "rouen" -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
-            Get-ChildItem -Path $BackupDir -File | ForEach-Object {
-                Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
+            $backupExe = Join-Path $BackupDir "rouen.exe"
+            if (Test-Path $backupExe) {
+                Stop-Process -Name "rouen" -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 1
+                Get-ChildItem -Path $BackupDir -File | ForEach-Object {
+                    Copy-Item -Path $_.FullName -Destination (Join-Path $InstallDir $_.Name) -Force
+                }
+                $oldExe = Join-Path $InstallDir "rouen.exe"
+                if (Test-Path $oldExe) {
+                    $restoredProc = Start-RouenInteractive -ExePath $oldExe -Arguments "--mesh" -WorkingDirectory $InstallDir
+                    if ($restoredProc) {
+                        $restarted = $true
+                        Write-UpgradeLog "Rollback complete: previous version restored into $InstallDir and running (PID: $($restoredProc.Id))." "SUCCESS"
+                    }
+                }
             }
-            $oldExe = Join-Path $InstallDir "rouen.exe"
-            if (Test-Path $oldExe) {
-                Start-Process -FilePath $oldExe -ArgumentList "--mesh" -WorkingDirectory $InstallDir
-                Write-UpgradeLog "Rollback complete. Previous version restored and running." "SUCCESS"
+        }
+
+        # If rollback in $InstallDir did not yield a running process, try the original executable path
+        if (-not $restarted -and $OriginalExePath -and (Test-Path $OriginalExePath)) {
+            Write-UpgradeLog "Restoring execution using original executable path: $OriginalExePath" "WARN"
+            $origDir = Split-Path -Parent $OriginalExePath
+            $restoredProc = Start-RouenInteractive -ExePath $OriginalExePath -Arguments "--mesh" -WorkingDirectory $origDir
+            if ($restoredProc) {
+                $restarted = $true
+                Write-UpgradeLog "Rollback complete: original executable restarted at $OriginalExePath (PID: $($restoredProc.Id))." "SUCCESS"
             }
+        }
+
+        if (-not $restarted) {
+            Write-UpgradeLog "Rollback could not verify a running Rouen process." "ERROR"
         }
     } catch {
         Write-UpgradeLog "CRITICAL: Rollback failed: $_" "ERROR"
