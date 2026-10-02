@@ -361,6 +361,7 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp
     ../src/helpers/image_cache.cpp
+    ../src/helpers/glass_top_bar.cpp
     ../src/models/rss/feed_xml_parser.cpp
     ../src/models/rss/rss_item_repo.cpp
     ../src/fonts.cpp
@@ -638,6 +639,7 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/helpers/filetype_handler.cpp
     ../src/helpers/card_decorations.cpp
     ../src/helpers/capture_helper.cpp
+    ../src/helpers/glass_top_bar.cpp
     ../external/imguicolortextedit/TextEditor.cpp
 )
 if(APPLE)
@@ -751,6 +753,7 @@ add_executable(test_mcp
     ../src/helpers/glass_top_bar.cpp
     ../src/helpers/capture_helper.cpp
     ../external/imguicolortextedit/TextEditor.cpp
+    ../src/helpers/glass_top_bar.cpp
     ../src/fonts.cpp
 )
 if(APPLE)
@@ -1071,6 +1074,7 @@ target_sources(test_quickjs PRIVATE
     ../src/helpers/card_decorations.cpp
     ../src/helpers/capture_helper.cpp
     ../external/imguicolortextedit/TextEditor.cpp
+    ../src/helpers/glass_top_bar.cpp
 )
 if(APPLE)
     target_sources(test_quickjs PRIVATE ../src/helpers/mac_mic_permissions.mm ../src/helpers/app_icon.mm ../src/models/calendar/calendar_fetcher_apple.mm)
