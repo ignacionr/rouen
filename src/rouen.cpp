@@ -40,6 +40,7 @@
 // 2. Libraries used in the project, in alphabetic order
 #include "config_service.hpp"
 #include "hosts/rouen_mesh_host.hpp"
+#include "hosts/telegram_host.hpp"
 #include "media_player.hpp"
 #include "universal_sync_host.hpp"
 
@@ -496,6 +497,12 @@ int main(int argc, char* argv[]) {
             std::cerr << "[Rouen Daemon] Failed to start Mesh host\n";
         }
 
+        // Start Telegram Host (background polling and mesh presence)
+        auto telegram_host = rouen::hosts::telegram_host::get_host();
+        if (telegram_host && !telegram_host->get_bot_token().empty()) {
+            std::cout << "[Rouen Daemon] Telegram host initialized with token\n";
+        }
+
         // Setup termination signal handling
         static std::atomic<bool> s_daemon_running{true};
         auto signal_handler = [](int) {
@@ -520,6 +527,11 @@ int main(int argc, char* argv[]) {
 
         while (s_daemon_running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+
+        if (telegram_host) {
+            std::cout << "[Rouen Daemon] Stopping telegram host presence...\n";
+            telegram_host->unpublish_telegram_presence();
         }
 
         std::cout << "[Rouen Daemon] Stopping mesh host...\n";
@@ -588,6 +600,9 @@ int main(int argc, char* argv[]) {
             std::cerr << "[WARN] Failed to start Rouen Mesh host.\n";
         }
     }
+    
+    // Initialize Telegram Host (starts background polling & mesh presence)
+    auto telegram_host = rouen::hosts::telegram_host::get_host();
     
     // Register the run_command function - non-blocking with incremental output
     registrar::add<std::function<void(std::string const&, std::shared_ptr<std::function<void(std::string)>>)>>(
@@ -709,6 +724,10 @@ int main(int argc, char* argv[]) {
 
     // Stop presence service
     rouen::services::presence_service::instance().stop();
+
+    if (telegram_host) {
+        telegram_host->unpublish_telegram_presence();
+    }
 
     // Stop all media players and video feed host
     media_player::shutdown();

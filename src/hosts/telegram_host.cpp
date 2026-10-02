@@ -1,5 +1,6 @@
 #include "telegram_host.hpp"
 #include "rouen_mesh_host.hpp"
+#include "../helpers/config_service.hpp"
 
 namespace rouen::hosts {
 
@@ -86,6 +87,38 @@ void telegram_host::load_state() {
         }
     } catch (const std::exception& e) {
         std::cerr << "[TelegramHost] Failed to load state: " << e.what() << std::endl;
+    }
+
+    if (bot_token_.empty()) {
+        auto config_service = rouen::helpers::ConfigService::instance();
+        std::string env_token;
+        if (config_service) {
+            env_token = config_service->get_env("TELEGRAM_BOT_TOKEN");
+        }
+        if (env_token.empty()) {
+            const char* env_c = std::getenv("TELEGRAM_BOT_TOKEN");
+            if (env_c) env_token = env_c;
+        }
+        if (!env_token.empty()) {
+            bot_token_ = env_token;
+        }
+    }
+
+    if (operator_chat_id_ == 0) {
+        auto config_service = rouen::helpers::ConfigService::instance();
+        std::string env_chat;
+        if (config_service) {
+            env_chat = config_service->get_env("TELEGRAM_OPERATOR_CHAT_ID");
+        }
+        if (env_chat.empty()) {
+            const char* env_c = std::getenv("TELEGRAM_OPERATOR_CHAT_ID");
+            if (env_c) env_chat = env_c;
+        }
+        if (!env_chat.empty()) {
+            try {
+                operator_chat_id_ = std::stoll(env_chat);
+            } catch (...) {}
+        }
     }
 
     // Default route if empty
@@ -265,15 +298,17 @@ bool telegram_host::validate_token_and_fetch_bot_info() {
         auto err = glz::read_json(json, res_str);
         if (!err && json.contains("ok") && json["ok"].get<bool>()) {
             auto result = json["result"];
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (result.contains("username")) {
-                bot_username_ = result["username"].get<std::string>();
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if (result.contains("username")) {
+                    bot_username_ = result["username"].get<std::string>();
+                }
+                if (result.contains("first_name")) {
+                    bot_first_name_ = result["first_name"].get<std::string>();
+                }
+                status_ = Status::Active;
+                status_message_ = "Connected as @" + bot_username_ + " (" + bot_first_name_ + ")";
             }
-            if (result.contains("first_name")) {
-                bot_first_name_ = result["first_name"].get<std::string>();
-            }
-            status_ = Status::Active;
-            status_message_ = "Connected as @" + bot_username_ + " (" + bot_first_name_ + ")";
             publish_telegram_presence();
             return true;
         } else {
@@ -304,10 +339,12 @@ void telegram_host::poll_loop() {
 
         std::string token;
         int64_t offset = 0;
+        bool has_username = false;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             token = bot_token_;
             offset = last_update_id_;
+            has_username = !bot_username_.empty();
         }
 
         if (token.empty()) {
@@ -315,9 +352,14 @@ void telegram_host::poll_loop() {
             continue;
         }
 
+        if (!has_username || status_.load() != Status::Active) {
+            validate_token_and_fetch_bot_info();
+        }
+
         try {
             std::string url = "https://api.telegram.org/bot" + token + "/getUpdates";
             http::fetch client(35); // 35s timeout for 20s long poll
+            client.set_max_retries(0);
 
             glz::json_t req_body;
             req_body["offset"] = static_cast<double>(offset);
@@ -363,30 +405,45 @@ void telegram_host::process_update(const glz::json_t& update) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         last_update_id_ = std::max(last_update_id_, update_id + 1);
+        save_state();
     }
 
     if (!update.contains("message")) return;
     auto msg_json = update["message"];
-    if (!msg_json.contains("text") || !msg_json.contains("chat") || !msg_json.contains("from")) return;
+    if (!msg_json.contains("chat")) return;
+
+    std::string text;
+    if (msg_json.contains("text")) {
+        text = msg_json["text"].get<std::string>();
+    } else if (msg_json.contains("caption")) {
+        text = msg_json["caption"].get<std::string>();
+    }
+    if (text.empty()) return;
 
     telegram_message msg;
     msg.message_id = msg_json.contains("message_id") ? static_cast<int64_t>(msg_json["message_id"].get<double>()) : 0;
     msg.timestamp = msg_json.contains("date") ? static_cast<int64_t>(msg_json["date"].get<double>()) : std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    msg.text = msg_json["text"].get<std::string>();
+    msg.text = text;
     msg.is_outgoing = false;
 
-    auto from_obj = msg_json["from"];
-    msg.from_id = from_obj.contains("id") ? static_cast<int64_t>(from_obj["id"].get<double>()) : 0;
-    std::string first_name = from_obj.contains("first_name") ? from_obj["first_name"].get<std::string>() : "";
-    std::string last_name = from_obj.contains("last_name") ? from_obj["last_name"].get<std::string>() : "";
-    std::string username = from_obj.contains("username") ? from_obj["username"].get<std::string>() : "";
+    if (msg_json.contains("from")) {
+        auto from_obj = msg_json["from"];
+        msg.from_id = from_obj.contains("id") ? static_cast<int64_t>(from_obj["id"].get<double>()) : 0;
+        std::string first_name = from_obj.contains("first_name") ? from_obj["first_name"].get<std::string>() : "";
+        std::string last_name = from_obj.contains("last_name") ? from_obj["last_name"].get<std::string>() : "";
+        std::string username = from_obj.contains("username") ? from_obj["username"].get<std::string>() : "";
 
-    if (!first_name.empty()) {
-        msg.from_name = first_name + (last_name.empty() ? "" : " " + last_name);
-    } else if (!username.empty()) {
-        msg.from_name = "@" + username;
+        if (!first_name.empty()) {
+            msg.from_name = first_name + (last_name.empty() ? "" : " " + last_name);
+        } else if (!username.empty()) {
+            msg.from_name = "@" + username;
+        } else {
+            msg.from_name = std::to_string(msg.from_id);
+        }
     } else {
-        msg.from_name = std::to_string(msg.from_id);
+        auto chat_obj = msg_json["chat"];
+        msg.from_id = chat_obj.contains("id") ? static_cast<int64_t>(chat_obj["id"].get<double>()) : 0;
+        msg.from_name = "Channel";
     }
 
     auto chat_obj = msg_json["chat"];
@@ -974,6 +1031,7 @@ bool telegram_host::send_telegram_message(int64_t chat_id, const std::string& te
     try {
         std::string url = "https://api.telegram.org/bot" + token + "/sendMessage";
         http::fetch client(15);
+        client.set_max_retries(0);
 
         glz::json_t req_body;
         req_body["chat_id"] = chat_id;
@@ -1045,8 +1103,16 @@ int64_t telegram_host::get_operator_chat_id() const {
     if (operator_chat_id_ != 0) {
         return operator_chat_id_;
     }
-    const char* env_chat = std::getenv("TELEGRAM_OPERATOR_CHAT_ID");
-    if (env_chat && *env_chat) {
+    std::string env_chat;
+    auto config_service = rouen::helpers::ConfigService::instance();
+    if (config_service) {
+        env_chat = config_service->get_env("TELEGRAM_OPERATOR_CHAT_ID");
+    }
+    if (env_chat.empty()) {
+        const char* env_c = std::getenv("TELEGRAM_OPERATOR_CHAT_ID");
+        if (env_c && *env_c) env_chat = env_c;
+    }
+    if (!env_chat.empty()) {
         try {
             return std::stoll(env_chat);
         } catch (...) {}

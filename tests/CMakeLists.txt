@@ -945,6 +945,8 @@ add_test(NAME RouenMeshTest COMMAND test_rouen_mesh)
 add_executable(test_telegram_mesh_notify
     test_telegram_mesh_notify.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/telegram_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/llm_host.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
 )
 target_link_libraries(test_telegram_mesh_notify PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL GTest::gtest GTest::gtest_main)

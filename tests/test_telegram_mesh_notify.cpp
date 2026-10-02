@@ -7,11 +7,22 @@
 
 #include "../src/models/telegram_presence.hpp"
 #include "../src/hosts/rouen_mesh_host.hpp"
+#include "../src/hosts/telegram_host.hpp"
 #include "../src/helpers/presence_service.hpp"
+#include "../src/helpers/config_service.hpp"
 #include "../src/registrar.hpp"
 
 using namespace rouen::hosts;
 using namespace rouen::services;
+
+namespace rouen::hosts {
+    mcp_host::mcp_host() {}
+    void mcp_host::register_function(const std::string&, const function_definition&) {}
+    std::vector<mcp_host::function_definition> mcp_host::get_available_functions() const { return {}; }
+    mcp_host::execution_result mcp_host::execute_function(const std::string&, const std::string&) {
+        return execution_result(false, "", "Not implemented");
+    }
+}
 
 TEST(TelegramMeshNotifyTest, PresenceRecordSerialization) {
     telegram_presence_record rec{
@@ -291,3 +302,41 @@ TEST(TelegramMeshNotifyTest, IdleAutoEscalationToTelegram) {
     auto [success, target] = ps.route_notification("Nightly build finished", "", opts);
     EXPECT_TRUE(success);
 }
+
+TEST(TelegramMeshNotifyTest, TelegramHostStartupAndCallbacks) {
+    auto host = telegram_host::get_host();
+    ASSERT_NE(host, nullptr);
+
+    // Verify registrar has required telegram services registered
+    auto publish_fn = registrar::try_get<std::function<void()>>("publish_telegram_presence");
+    EXPECT_NE(publish_fn, nullptr);
+
+    auto send_fn = registrar::try_get<std::function<bool(const std::string&, int64_t)>>("telegram_send_local");
+    EXPECT_NE(send_fn, nullptr);
+
+    auto relay_fn = registrar::try_get<std::function<bool(const std::string&)>>("telegram_relay_message");
+    EXPECT_NE(relay_fn, nullptr);
+}
+
+TEST(TelegramMeshNotifyTest, TelegramHostEnvConfigFallback) {
+    auto host = telegram_host::get_host();
+    ASSERT_NE(host, nullptr);
+
+#ifdef _WIN32
+    _putenv_s("TELEGRAM_OPERATOR_CHAT_ID", "6885715531");
+#else
+    ::setenv("TELEGRAM_OPERATOR_CHAT_ID", "6885715531", 1);
+#endif
+    EXPECT_NE(host->get_operator_chat_id(), 0);
+}
+
+TEST(TelegramMeshNotifyTest, TelegramHostPublishPresenceNoDeadlock) {
+    auto host = telegram_host::get_host();
+    ASSERT_NE(host, nullptr);
+
+    host->publish_telegram_presence();
+    auto rec = host->get_local_presence_record();
+    EXPECT_FALSE(rec.client_id.empty());
+    EXPECT_FALSE(rec.hostname.empty());
+}
+
