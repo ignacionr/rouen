@@ -65,10 +65,29 @@ namespace rouen::helpers {
         std::string action_performed;
     };
 
+    struct window_screenshot_result {
+        bool success{false};
+        std::string file;
+        uint64_t hwnd{0};
+        std::string title;
+        int width{0};
+        int height{0};
+        std::string message;
+        std::string error;
+    };
+
     class ui_automation_explorer {
     public:
         // Captures/inspects the Accessibility / UI Automation tree for a given process PID
         static ui_automation_result inspect_process(int64_t pid, int max_depth = 6, int max_children_per_node = 100);
+
+        // Captures a screenshot of an external process window or specific window HWND/ID
+        static window_screenshot_result capture_window_screenshot(
+            int64_t pid = 0,
+            uint64_t hwnd = 0,
+            std::string_view title_pattern = "",
+            const std::string& filename = ""
+        );
         
         // Convenience method to directly extract all texts and values from a process's UI controls (e.g. edit boxes)
         static std::vector<ui_element_value_info> extract_process_values(int64_t pid, bool edit_boxes_only = true, int max_depth = 8);

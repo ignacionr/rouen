@@ -965,7 +965,7 @@ target_sources(test_ui_automation_explorer PRIVATE ../src/helpers/ui_automation_
 if(APPLE)
     target_link_libraries(test_ui_automation_explorer PRIVATE "-framework ApplicationServices" "-framework CoreFoundation")
 elseif(WIN32)
-    target_link_libraries(test_ui_automation_explorer PRIVATE ole32 oleaut32 uiautomationcore)
+    target_link_libraries(test_ui_automation_explorer PRIVATE ole32 oleaut32 uiautomationcore gdi32 user32 gdiplus)
 endif()
 
 # Add QuickJS static library for tests if not already defined by main CMakeLists

@@ -5,10 +5,14 @@
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 
 #if defined(__APPLE__)
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
+#include <ImageIO/ImageIO.h>
 #include <libproc.h>
 #elif defined(_WIN32)
 #ifndef NOMINMAX
@@ -17,6 +21,7 @@
 #include <windows.h>
 #include <ole2.h>
 #include <uiautomation.h>
+#include <gdiplus.h>
 #endif
 
 namespace rouen::helpers {
@@ -1332,5 +1337,402 @@ ui_manipulation_result ui_automation_explorer::click_at_coordinates(int64_t pid,
 #endif
     return result;
 }
+
+#if defined(_WIN32)
+static bool write_bmp_file(const std::string& path, int width, int height, const uint8_t* bgra_data) {
+    if (width <= 0 || height <= 0 || !bgra_data) return false;
+    #pragma pack(push, 1)
+    struct BmpHeader {
+        uint16_t bfType{0x4D42};
+        uint32_t bfSize{0};
+        uint16_t bfReserved1{0};
+        uint16_t bfReserved2{0};
+        uint32_t bfOffBits{54};
+        uint32_t biSize{40};
+        int32_t  biWidth{0};
+        int32_t  biHeight{0};
+        uint16_t biPlanes{1};
+        uint16_t biBitCount{32};
+        uint32_t biCompression{0};
+        uint32_t biSizeImage{0};
+        int32_t  biXPelsPerMeter{2835};
+        int32_t  biYPelsPerMeter{2835};
+        uint32_t biClrUsed{0};
+        uint32_t biClrImportant{0};
+    } hdr;
+    #pragma pack(pop)
+
+    hdr.biWidth = width;
+    hdr.biHeight = -height; // top-down DIB
+    hdr.biSizeImage = static_cast<uint32_t>(width * height * 4);
+    hdr.bfSize = sizeof(BmpHeader) + hdr.biSizeImage;
+
+    std::filesystem::path fpath(path);
+    if (fpath.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(fpath.parent_path(), ec);
+    }
+
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs) return false;
+    ofs.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    ofs.write(reinterpret_cast<const char*>(bgra_data), hdr.biSizeImage);
+    return ofs.good();
+}
+
+struct Win32WindowSearchContext {
+    DWORD pid{0};
+    std::string title_pattern;
+    HWND matched_hwnd{NULL};
+    std::string matched_title;
+};
+
+static BOOL CALLBACK EnumWindowsCaptureCallback(HWND hwnd, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<Win32WindowSearchContext*>(lParam);
+    if (!hwnd || !IsWindow(hwnd)) return TRUE;
+
+    DWORD wnd_pid = 0;
+    GetWindowThreadProcessId(hwnd, &wnd_pid);
+    if (ctx->pid > 0 && wnd_pid != ctx->pid) {
+        return TRUE;
+    }
+
+    if (!IsWindowVisible(hwnd)) {
+        return TRUE;
+    }
+
+    RECT r{};
+    GetWindowRect(hwnd, &r);
+    if (r.right - r.left <= 0 || r.bottom - r.top <= 0) {
+        return TRUE;
+    }
+
+    char title_buf[512] = {0};
+    GetWindowTextA(hwnd, title_buf, sizeof(title_buf));
+    std::string title(title_buf);
+
+    if (!ctx->title_pattern.empty()) {
+        auto it = std::search(
+            title.begin(), title.end(),
+            ctx->title_pattern.begin(), ctx->title_pattern.end(),
+            [](char a, char b) {
+                return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+            }
+        );
+        if (it == ctx->title_pattern.end()) {
+            return TRUE;
+        }
+    } else {
+        if (title.empty() && ctx->pid == 0) {
+            return TRUE;
+        }
+    }
+
+    ctx->matched_hwnd = hwnd;
+    ctx->matched_title = title;
+    return FALSE; // stop enum
+}
+
+window_screenshot_result ui_automation_explorer::capture_window_screenshot(
+    int64_t pid,
+    uint64_t hwnd,
+    std::string_view title_pattern,
+    const std::string& filename
+) {
+    window_screenshot_result result;
+    result.file = filename;
+
+    HWND target_hwnd = (hwnd != 0) ? reinterpret_cast<HWND>(hwnd) : NULL;
+    std::string matched_title;
+
+    if (target_hwnd) {
+        if (!IsWindow(target_hwnd)) {
+            result.error = "Specified HWND is not a valid window";
+            return result;
+        }
+        char title_buf[512] = {0};
+        GetWindowTextA(target_hwnd, title_buf, sizeof(title_buf));
+        matched_title = title_buf;
+    } else {
+        Win32WindowSearchContext ctx;
+        ctx.pid = static_cast<DWORD>(pid);
+        ctx.title_pattern = std::string(title_pattern);
+        EnumWindows(EnumWindowsCaptureCallback, reinterpret_cast<LPARAM>(&ctx));
+        if (!ctx.matched_hwnd) {
+            result.error = "Target window not found";
+            return result;
+        }
+        target_hwnd = ctx.matched_hwnd;
+        matched_title = ctx.matched_title;
+    }
+
+    result.hwnd = reinterpret_cast<uint64_t>(target_hwnd);
+    result.title = matched_title;
+
+    RECT rect{};
+    GetWindowRect(target_hwnd, &rect);
+    int width = rect.right - rect.left;
+    int height = rect.bottom - rect.top;
+    if (width <= 0 || height <= 0) {
+        result.error = "Window has zero or invalid dimensions";
+        return result;
+    }
+    result.width = width;
+    result.height = height;
+
+    HDC hdcScreen = GetDC(NULL);
+    if (!hdcScreen) {
+        result.error = "Failed to get screen DC";
+        return result;
+    }
+
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    if (!hdcMem) {
+        ReleaseDC(NULL, hdcScreen);
+        result.error = "Failed to create compatible DC";
+        return result;
+    }
+
+    HBITMAP hbm = CreateCompatibleBitmap(hdcScreen, width, height);
+    if (!hbm) {
+        DeleteDC(hdcMem);
+        ReleaseDC(NULL, hdcScreen);
+        result.error = "Failed to create compatible bitmap";
+        return result;
+    }
+
+    HGDIOBJ hOld = SelectObject(hdcMem, hbm);
+
+    // PW_RENDERFULLCONTENT = 2
+    BOOL pw_ok = PrintWindow(target_hwnd, hdcMem, 2);
+    if (!pw_ok) {
+        pw_ok = PrintWindow(target_hwnd, hdcMem, 0);
+    }
+    if (!pw_ok) {
+        BitBlt(hdcMem, 0, 0, width, height, hdcScreen, rect.left, rect.top, SRCCOPY);
+    }
+
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = width;
+    bi.bmiHeader.biHeight = -height; // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    std::vector<uint8_t> pixels(static_cast<size_t>(width * height * 4));
+    GetDIBits(hdcMem, hbm, 0, static_cast<UINT>(height), pixels.data(), &bi, DIB_RGB_COLORS);
+
+    SelectObject(hdcMem, hOld);
+    DeleteObject(hbm);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+
+    bool saved = false;
+    if (filename.ends_with(".bmp")) {
+        saved = write_bmp_file(filename, width, height, pixels.data());
+    } else {
+        // Try Gdiplus for PNG
+        ULONG_PTR gdiplusToken = 0;
+        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+        if (Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL) == Gdiplus::Ok) {
+            {
+                Gdiplus::Bitmap gdiBmp(width, height, width * 4, PixelFormat32bppARGB, pixels.data());
+                CLSID pngClsid = { 0x557cf406, 0x1a04, 0x11d3, { 0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e } };
+                std::wstring wpath(filename.begin(), filename.end());
+                std::filesystem::path fpath(filename);
+                if (fpath.has_parent_path()) {
+                    std::error_code ec;
+                    std::filesystem::create_directories(fpath.parent_path(), ec);
+                }
+                saved = (gdiBmp.Save(wpath.c_str(), &pngClsid, NULL) == Gdiplus::Ok);
+            }
+            Gdiplus::GdiplusShutdown(gdiplusToken);
+        }
+        if (!saved) {
+            saved = write_bmp_file(filename, width, height, pixels.data());
+        }
+    }
+
+    if (saved) {
+        result.success = true;
+        result.message = "Window snapshot captured successfully";
+    } else {
+        result.error = "Failed to write image file";
+    }
+    return result;
+}
+#elif defined(__APPLE__)
+window_screenshot_result ui_automation_explorer::capture_window_screenshot(
+    int64_t pid,
+    uint64_t hwnd,
+    std::string_view title_pattern,
+    const std::string& filename
+) {
+    window_screenshot_result result;
+    result.file = filename;
+
+    CFArrayRef window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID);
+    if (!window_list) {
+        result.error = "Failed to copy window list";
+        return result;
+    }
+
+    CFIndex count = CFArrayGetCount(window_list);
+    CGWindowID matched_wid = 0;
+    std::string matched_title;
+    int matched_w = 0;
+    int matched_h = 0;
+
+    for (CFIndex i = 0; i < count; ++i) {
+        auto info = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(window_list, i));
+        if (!info) continue;
+
+        CGWindowID wid = 0;
+        auto num_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowNumber));
+        if (num_ref) {
+            CFNumberGetValue(num_ref, kCFNumberSInt32Type, &wid);
+        }
+
+        pid_t wpid = 0;
+        auto pid_ref = static_cast<CFNumberRef>(CFDictionaryGetValue(info, kCGWindowOwnerPID));
+        if (pid_ref) {
+            CFNumberGetValue(pid_ref, kCFNumberIntType, &wpid);
+        }
+
+        std::string wtitle;
+        auto name_ref = static_cast<CFStringRef>(CFDictionaryGetValue(info, kCGWindowName));
+        if (name_ref) {
+            char buf[512] = {0};
+            if (CFStringGetCString(name_ref, buf, sizeof(buf), kCFStringEncodingUTF8)) {
+                wtitle = buf;
+            }
+        }
+
+        int w = 0, h = 0;
+        auto bounds_ref = static_cast<CFDictionaryRef>(CFDictionaryGetValue(info, kCGWindowBounds));
+        if (bounds_ref) {
+            CGRect rect;
+            if (CGRectMakeWithDictionaryRepresentation(bounds_ref, &rect)) {
+                w = static_cast<int>(rect.size.width);
+                h = static_cast<int>(rect.size.height);
+            }
+        }
+
+        if (hwnd != 0) {
+            if (static_cast<uint64_t>(wid) == hwnd) {
+                matched_wid = wid;
+                matched_title = wtitle;
+                matched_w = w;
+                matched_h = h;
+                break;
+            }
+            continue;
+        }
+
+        if (pid > 0 && static_cast<int64_t>(wpid) != pid) {
+            continue;
+        }
+
+        if (!title_pattern.empty()) {
+            auto it = std::search(
+                wtitle.begin(), wtitle.end(),
+                title_pattern.begin(), title_pattern.end(),
+                [](char a, char b) {
+                    return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+                }
+            );
+            if (it == wtitle.end()) {
+                continue;
+            }
+        } else {
+            if (w <= 10 || h <= 10) continue;
+            if (wtitle.empty() && pid <= 0) continue;
+        }
+
+        matched_wid = wid;
+        matched_title = wtitle;
+        matched_w = w;
+        matched_h = h;
+        break;
+    }
+    CFRelease(window_list);
+
+    if (matched_wid == 0) {
+        result.error = "Target window not found";
+        return result;
+    }
+
+    result.hwnd = matched_wid;
+    result.title = matched_title;
+
+    CGImageRef img = CGWindowListCreateImage(
+        CGRectNull,
+        kCGWindowListOptionIncludingWindow,
+        matched_wid,
+        kCGWindowImageBoundsIgnoreFraming | kCGWindowImageNominalResolution
+    );
+
+    if (!img) {
+        result.error = "Failed to capture window image (check screen recording permissions)";
+        return result;
+    }
+
+    size_t img_w = CGImageGetWidth(img);
+    size_t img_h = CGImageGetHeight(img);
+    if (img_w > 0) matched_w = static_cast<int>(img_w);
+    if (img_h > 0) matched_h = static_cast<int>(img_h);
+    result.width = matched_w;
+    result.height = matched_h;
+
+    std::filesystem::path fpath(filename);
+    if (fpath.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(fpath.parent_path(), ec);
+    }
+
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(
+        kCFAllocatorDefault,
+        reinterpret_cast<const UInt8*>(filename.c_str()),
+        static_cast<CFIndex>(filename.size()),
+        false
+    );
+
+    bool saved = false;
+    if (url) {
+        CFStringRef uti = CFSTR("public.png");
+        if (filename.ends_with(".bmp")) {
+            uti = CFSTR("com.microsoft.bmp");
+        }
+        CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, uti, 1, nullptr);
+        if (dest) {
+            CGImageDestinationAddImage(dest, img, nullptr);
+            saved = CGImageDestinationFinalize(dest);
+            CFRelease(dest);
+        }
+        CFRelease(url);
+    }
+    CGImageRelease(img);
+
+    if (saved) {
+        result.success = true;
+        result.message = "Window snapshot captured successfully";
+    } else {
+        result.error = "Failed to write image file";
+    }
+    return result;
+}
+#else
+window_screenshot_result ui_automation_explorer::capture_window_screenshot(
+    int64_t /*pid*/,
+    uint64_t /*hwnd*/,
+    std::string_view /*title_pattern*/,
+    const std::string& /*filename*/
+) {
+    window_screenshot_result result;
+    result.error = "Window screenshot capture is not supported on this platform";
+    return result;
+}
+#endif
 
 } // namespace rouen::helpers

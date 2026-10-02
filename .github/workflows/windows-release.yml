@@ -1149,9 +1149,9 @@ jobs:
           Write-Error "rouen.exe not found at $exe"
           exit 1
         }
-        $helpOutput = & $exe --help 2>&1
-        $helpExit = $LASTEXITCODE
-        Write-Host ($helpOutput -join "`n")
+        $helpProcess = Start-Process -FilePath $exe -ArgumentList "--help" -Wait -PassThru -NoNewWindow
+        $helpExit = $helpProcess.ExitCode
+        Write-Host "rouen.exe --help exited with code $helpExit"
         if ($helpExit -ne 0) {
           Write-Error "rouen.exe --help failed with exit code $helpExit"
           exit 1
@@ -1189,8 +1189,9 @@ jobs:
         }
         Write-Host "✅ ZIP package is clean of forbidden/system/debug DLLs"
         
-        $zipHelpOutput = & $zipExe --help 2>&1
-        $zipHelpExit = $LASTEXITCODE
+        $zipHelpProcess = Start-Process -FilePath $zipExe -ArgumentList "--help" -Wait -PassThru -NoNewWindow
+        $zipHelpExit = $zipHelpProcess.ExitCode
+        Write-Host "Extracted ZIP rouen.exe --help exited with code $zipHelpExit"
         if ($zipHelpExit -ne 0) {
           Write-Error "Extracted ZIP rouen.exe --help failed with exit code $zipHelpExit"
           exit 1
@@ -1215,8 +1216,9 @@ jobs:
           $installedExe = Join-Path $env:LOCALAPPDATA "Rouen\Rouen\rouen.exe"
           if (Test-Path $installedExe) {
             Write-Host "✅ MSI installed rouen.exe at $installedExe"
-            $installedHelp = & $installedExe --help 2>&1
-            $installedHelpExit = $LASTEXITCODE
+            $installedHelpProcess = Start-Process -FilePath $installedExe -ArgumentList "--help" -Wait -PassThru -NoNewWindow
+            $installedHelpExit = $installedHelpProcess.ExitCode
+            Write-Host "Installed rouen.exe --help exited with code $installedHelpExit"
             if ($installedHelpExit -ne 0) {
               Write-Error "Installed rouen.exe --help failed with exit code $installedHelpExit"
               exit 1

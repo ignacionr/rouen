@@ -48,3 +48,19 @@ TEST(UIAutomationExplorerTest, RequestControlValueLookup) {
     auto val = rouen::helpers::ui_automation_explorer::request_control_value(pid, "NonExistentControlId12345");
     EXPECT_FALSE(val.has_value());
 }
+
+TEST(UIAutomationExplorerTest, CaptureWindowScreenshotNonExistentTarget) {
+    auto res = rouen::helpers::ui_automation_explorer::capture_window_screenshot(
+        99999999, 0, "NonExistentWindowPattern_12345", "/tmp/non_existent.png"
+    );
+    EXPECT_FALSE(res.success);
+    EXPECT_EQ(res.error, "Target window not found");
+}
+
+TEST(UIAutomationExplorerTest, CaptureWindowScreenshotInvalidHwnd) {
+    auto res = rouen::helpers::ui_automation_explorer::capture_window_screenshot(
+        0, 9999999999ULL, "", "/tmp/non_existent_hwnd.png"
+    );
+    EXPECT_FALSE(res.success);
+    EXPECT_FALSE(res.error.empty());
+}

@@ -28,6 +28,7 @@
 #include "../../helpers/capture_helper.hpp"
 #include "../../helpers/deferred_operations.hpp"
 #include "../../helpers/platform_utils.hpp"
+#include "../../helpers/ui_automation_explorer.hpp"
 #include "../../registrar.hpp"
 #include "../productivity/editor.hpp"
 #include "factory.hpp"
@@ -467,6 +468,13 @@ public:
         }
 
         if (card_it == cards_.end()) {
+            if (!target.empty() && target != "card" && target != "focused" && target != "selected") {
+                auto ext_res = rouen::helpers::ui_automation_explorer::capture_window_screenshot(0, 0, target, filepath);
+                if (ext_res.success) {
+                    return std::format(R"({{"success":true,"file":"{}","hwnd":{},"title":"{}","width":{},"height":{},"message":"{}"}})",
+                        ext_res.file, ext_res.hwnd, ext_res.title, ext_res.width, ext_res.height, ext_res.message);
+                }
+            }
             return take_card_snapshot("deck", filepath, req_width, req_height);
         }
 

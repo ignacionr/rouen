@@ -9,5 +9,7 @@ export namespace rouen::helpers {
     using rouen::helpers::ui_element_node;
     using rouen::helpers::ui_element_value_info;
     using rouen::helpers::ui_automation_result;
+    using rouen::helpers::ui_manipulation_result;
+    using rouen::helpers::window_screenshot_result;
     using rouen::helpers::ui_automation_explorer;
 }

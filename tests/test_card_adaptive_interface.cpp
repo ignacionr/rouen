@@ -280,6 +280,8 @@ TEST(ProcessApiTests, OpenApiSpecIncludesAttachAndDefinitionEndpoints) {
     EXPECT_NE(spec.find("/api/process/definition"), std::string::npos);
     EXPECT_NE(spec.find("saveProcessDefinition"), std::string::npos);
     EXPECT_NE(spec.find("deleteProcessDefinition"), std::string::npos);
+    EXPECT_NE(spec.find("/api/process/ui/screenshot"), std::string::npos);
+    EXPECT_NE(spec.find("captureProcessWindowScreenshot"), std::string::npos);
 }
 
 TEST(ProcessApiTests, ProcessUIEndpointsValidation) {
@@ -300,6 +302,52 @@ TEST(ProcessApiTests, ProcessUIEndpointsValidation) {
 
     std::string focus_res = rouen::hosts::api_server_host::handle_process_ui_focus(nullptr, &hm_set_val);
     EXPECT_NE(focus_res.find("Valid running process identifier required"), std::string::npos);
+}
+
+TEST(ProcessApiTests, ProcessUIScreenshotEndpointValidation) {
+    // 1. Missing / invalid process or window identifier returns error
+    struct mg_http_message hm_empty {};
+    std::string uri = "/api/process/ui/screenshot";
+    std::string body_empty = R"({})";
+    hm_empty.uri = mg_str_n(uri.data(), uri.size());
+    hm_empty.method = mg_str("POST");
+    hm_empty.body = mg_str_n(body_empty.data(), body_empty.size());
+
+    std::string res_empty = rouen::hosts::api_server_host::handle_process_ui_screenshot(nullptr, &hm_empty);
+    EXPECT_NE(res_empty.find("\"success\":false"), std::string::npos);
+    EXPECT_NE(res_empty.find("required"), std::string::npos);
+
+    // 2. Non-existent PID returns target window not found
+    struct mg_http_message hm_pid {};
+    std::string body_pid = R"({"pid":99999999,"filename":"/tmp/shot_nonexistent.png"})";
+    hm_pid.uri = mg_str_n(uri.data(), uri.size());
+    hm_pid.method = mg_str("POST");
+    hm_pid.body = mg_str_n(body_pid.data(), body_pid.size());
+
+    std::string res_pid = rouen::hosts::api_server_host::handle_process_ui_screenshot(nullptr, &hm_pid);
+    EXPECT_NE(res_pid.find("\"success\":false"), std::string::npos);
+    EXPECT_NE(res_pid.find("Target window not found"), std::string::npos);
+
+    // 3. Hex string HWND format parsing
+    struct mg_http_message hm_hex {};
+    std::string body_hex = R"({"hwnd":"0xdeadbeef","filename":"/tmp/shot_hex.png"})";
+    hm_hex.uri = mg_str_n(uri.data(), uri.size());
+    hm_hex.method = mg_str("POST");
+    hm_hex.body = mg_str_n(body_hex.data(), body_hex.size());
+
+    std::string res_hex = rouen::hosts::api_server_host::handle_process_ui_screenshot(nullptr, &hm_hex);
+    EXPECT_NE(res_hex.find("\"success\":false"), std::string::npos);
+
+    // 4. GET request with query parameters
+    struct mg_http_message hm_get {};
+    std::string query = "pid=99999999&filename=/tmp/shot_get.png";
+    hm_get.uri = mg_str_n(uri.data(), uri.size());
+    hm_get.query = mg_str_n(query.data(), query.size());
+    hm_get.method = mg_str("GET");
+
+    std::string res_get = rouen::hosts::api_server_host::handle_process_ui_screenshot(nullptr, &hm_get);
+    EXPECT_NE(res_get.find("\"success\":false"), std::string::npos);
+    EXPECT_NE(res_get.find("Target window not found"), std::string::npos);
 }
 
 

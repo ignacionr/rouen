@@ -47,6 +47,7 @@ if(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE
         user32
         gdi32
+        gdiplus
         shell32
         ole32
         oleaut32

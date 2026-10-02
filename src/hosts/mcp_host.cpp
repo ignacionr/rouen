@@ -294,6 +294,26 @@ struct mcp_interact_process_ui_params {
     };
 };
 
+struct mcp_capture_process_ui_screenshot_params {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string title_pattern;
+    std::string filename;
+    struct glaze {
+        using T = mcp_capture_process_ui_screenshot_params;
+        static constexpr auto value = glz::object(
+            "run_id", &T::run_id,
+            "definition_id", &T::definition_id,
+            "pid", &T::pid,
+            "hwnd", &T::hwnd,
+            "title_pattern", &T::title_pattern,
+            "filename", &T::filename
+        );
+    };
+};
+
 struct mcp_control_adlib_params {
     std::string command;
     std::string intro_video_path;
@@ -2790,6 +2810,54 @@ mcp_host::mcp_host() {
         "process"
     );
     register_function("process", interact_process_ui_def);
+
+    function_definition const capture_process_ui_screenshot_def(
+        "capture_process_ui_screenshot",
+        "Capture a screenshot of an external orchestrated process window or specific window/HWND.",
+        R"mcp({"type":"object","properties":{"run_id":{"type":"string"},"definition_id":{"type":"integer"},"pid":{"type":"integer"},"hwnd":{"type":"integer","description":"Window HWND handle"},"title_pattern":{"type":"string","description":"Window title substring to match"},"filename":{"type":"string","description":"Output image file path (.png or .bmp)"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_capture_process_ui_screenshot_params req{};
+                if (!params.empty()) (void)glz::read_json(req, params);
+                int64_t pid = 0;
+                if (req.pid > 0 || !req.run_id.empty() || req.definition_id > 0) {
+                    pid = mcp_resolve_process_pid(req.run_id, req.definition_id, req.pid);
+                    if (pid <= 0 && req.hwnd == 0 && req.title_pattern.empty()) {
+                        return R"({"status":"error","message":"Valid running process identifier required"})";
+                    }
+                } else if (req.hwnd == 0 && req.title_pattern.empty()) {
+                    return R"({"status":"error","message":"Valid process identifier or window identifier required"})";
+                }
+                if (req.filename.empty()) {
+                    std::error_code ec;
+                    auto temp_dir = std::filesystem::temp_directory_path(ec);
+                    req.filename = (ec ? std::filesystem::path("process_window.png") : (temp_dir / "process_window.png")).string();
+                }
+                auto res = rouen::helpers::ui_automation_explorer::capture_window_screenshot(
+                    pid, req.hwnd, req.title_pattern, req.filename
+                );
+                glz::json_t root;
+                root["status"] = res.success ? "success" : "error";
+                if (res.success) {
+                    root["file"] = res.file;
+                    root["hwnd"] = res.hwnd;
+                    root["title"] = res.title;
+                    root["width"] = res.width;
+                    root["height"] = res.height;
+                    root["message"] = res.message;
+                } else {
+                    root["message"] = res.error;
+                }
+                std::string out;
+                (void)glz::write_json(root, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "process"
+    );
+    register_function("process", capture_process_ui_screenshot_def);
 
     // 11. AdLib & Cast Controls
     function_definition const get_adlib_status_def(

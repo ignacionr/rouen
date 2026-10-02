@@ -169,6 +169,15 @@ struct process_ui_request {
     float y{0.0f};
 };
 
+struct process_ui_screenshot_request {
+    std::string run_id;
+    int64_t definition_id{0};
+    int64_t pid{0};
+    uint64_t hwnd{0};
+    std::string title_pattern;
+    std::string filename;
+};
+
 namespace rouen::hosts {
 
 api_server_host::api_server_host()
@@ -608,6 +617,13 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
     } else if (mg_match(hm->uri, mg_str("/api/process/ui/focus"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_process_ui_focus(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/process/ui/screenshot"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_process_ui_screenshot(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -2580,6 +2596,138 @@ std::string api_server_host::handle_process_ui_focus(struct mg_connection* /*c*/
     return execute_process_ui_action(req);
 }
 
+static void populate_process_ui_screenshot_request(process_ui_screenshot_request& req, struct mg_http_message* hm) {
+    if (hm->body.len > 0) {
+        std::string body(hm->body.buf, hm->body.len);
+        glz::json_t j{};
+        if (glz::read_json(j, body) == glz::error_code::none) {
+            if (j.contains("run_id") && j["run_id"].is_string()) {
+                req.run_id = j["run_id"].get<std::string>();
+            }
+            if (j.contains("definition_id")) {
+                if (j["definition_id"].is_number()) {
+                    req.definition_id = static_cast<int64_t>(j["definition_id"].get<double>());
+                } else if (j["definition_id"].is_string()) {
+                    try { req.definition_id = std::stoll(j["definition_id"].get<std::string>()); } catch (...) {}
+                }
+            }
+            if (j.contains("pid")) {
+                if (j["pid"].is_number()) {
+                    req.pid = static_cast<int64_t>(j["pid"].get<double>());
+                } else if (j["pid"].is_string()) {
+                    try { req.pid = std::stoll(j["pid"].get<std::string>()); } catch (...) {}
+                }
+            }
+            if (j.contains("hwnd")) {
+                if (j["hwnd"].is_number()) {
+                    req.hwnd = static_cast<uint64_t>(j["hwnd"].get<double>());
+                } else if (j["hwnd"].is_string()) {
+                    std::string hstr = j["hwnd"].get<std::string>();
+                    try {
+                        if (hstr.starts_with("0x") || hstr.starts_with("0X")) {
+                            req.hwnd = std::stoull(hstr, nullptr, 16);
+                        } else {
+                            req.hwnd = std::stoull(hstr, nullptr, 10);
+                        }
+                    } catch (...) {}
+                }
+            }
+            if (j.contains("title_pattern") && j["title_pattern"].is_string()) {
+                req.title_pattern = j["title_pattern"].get<std::string>();
+            } else if (j.contains("target") && j["target"].is_string()) {
+                req.title_pattern = j["target"].get<std::string>();
+            }
+            if (j.contains("filename") && j["filename"].is_string()) {
+                req.filename = j["filename"].get<std::string>();
+            } else if (j.contains("file") && j["file"].is_string()) {
+                req.filename = j["file"].get<std::string>();
+            }
+        }
+    }
+    if (hm->query.len > 0) {
+        std::string val;
+        val = get_query_param(&hm->query, "run_id");
+        if (!val.empty()) req.run_id = val;
+
+        val = get_query_param(&hm->query, "definition_id");
+        if (!val.empty()) {
+            try { req.definition_id = std::stoll(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "pid");
+        if (!val.empty()) {
+            try { req.pid = std::stoll(val); } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "hwnd");
+        if (!val.empty()) {
+            try {
+                if (val.starts_with("0x") || val.starts_with("0X")) {
+                    req.hwnd = std::stoull(val, nullptr, 16);
+                } else {
+                    req.hwnd = std::stoull(val, nullptr, 10);
+                }
+            } catch (...) {}
+        }
+
+        val = get_query_param(&hm->query, "title_pattern");
+        if (!val.empty()) req.title_pattern = val;
+        else {
+            val = get_query_param(&hm->query, "target");
+            if (!val.empty()) req.title_pattern = val;
+        }
+
+        val = get_query_param(&hm->query, "filename");
+        if (!val.empty()) req.filename = val;
+        else {
+            val = get_query_param(&hm->query, "file");
+            if (!val.empty()) req.filename = val;
+        }
+    }
+}
+
+std::string api_server_host::handle_process_ui_screenshot(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    process_ui_screenshot_request req;
+    populate_process_ui_screenshot_request(req, hm);
+
+    int64_t pid = 0;
+    if (req.pid > 0 || !req.run_id.empty() || req.definition_id > 0) {
+        pid = resolve_process_pid(req.run_id, req.definition_id, req.pid);
+        if (pid <= 0 && req.hwnd == 0 && req.title_pattern.empty()) {
+            return R"({"success":false,"error":"Valid running process identifier (run_id, definition_id, or pid) is required"})";
+        }
+    } else if (req.hwnd == 0 && req.title_pattern.empty()) {
+        return R"({"success":false,"error":"Process identifier (run_id, definition_id, pid) or window identifier (hwnd, title_pattern) is required"})";
+    }
+
+    if (req.filename.empty()) {
+        std::error_code ec;
+        auto temp_dir = std::filesystem::temp_directory_path(ec);
+        req.filename = (ec ? std::filesystem::path("process_window.png") : (temp_dir / "process_window.png")).string();
+    }
+
+    auto res = rouen::helpers::ui_automation_explorer::capture_window_screenshot(
+        pid, req.hwnd, req.title_pattern, req.filename
+    );
+
+    glz::json_t root;
+    root["success"] = res.success;
+    if (res.success) {
+        root["file"] = res.file;
+        root["hwnd"] = res.hwnd;
+        root["title"] = res.title;
+        root["width"] = res.width;
+        root["height"] = res.height;
+        root["message"] = res.message.empty() ? "Window snapshot captured successfully" : res.message;
+    } else {
+        root["error"] = res.error.empty() ? "Failed to capture window screenshot" : res.error;
+    }
+
+    std::string out;
+    (void)glz::write_json(root, out);
+    return out;
+}
+
 std::string api_server_host::handle_swagger_ui(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     return R"html(<!DOCTYPE html>
 <html lang="en">
@@ -4147,6 +4295,81 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         }
       }
     },
+    "/api/process/ui/screenshot": {
+      "post": {
+        "tags": ["Process Orchestration & UI Automation"],
+        "summary": "Capture screenshot of an external process window or specific window/HWND",
+        "operationId": "captureProcessWindowScreenshot",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Process run identifier",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "definition_id",
+            "in": "query",
+            "description": "Process definition ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "pid",
+            "in": "query",
+            "description": "Target process ID",
+            "required": false,
+            "schema": {"type": "integer"}
+          },
+          {
+            "name": "hwnd",
+            "in": "query",
+            "description": "Specific window HWND (decimal or hex string)",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "title_pattern",
+            "in": "query",
+            "description": "Window title substring to match",
+            "required": false,
+            "schema": {"type": "string"}
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "description": "Target output path (PNG/BMP)",
+            "required": false,
+            "schema": {"type": "string"}
+          }
+        ],
+        "requestBody": {
+          "description": "Screenshot capture parameters",
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {"type": "string"},
+                  "definition_id": {"type": "integer"},
+                  "pid": {"type": "integer"},
+                  "hwnd": {"type": "integer"},
+                  "title_pattern": {"type": "string"},
+                  "filename": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Window snapshot result"
+          }
+        }
+      }
+    },
     "/api/telegram/status": {
       "get": {
         "tags": ["Telegram Bot Host"],
@@ -5055,7 +5278,7 @@ std::string api_server_host::handle_system_version(struct mg_connection* /*c*/, 
     (void)glz::write_json(local_services, services_json);
 
 #ifndef ROUEN_VERSION
-#define ROUEN_VERSION "1.4.12"
+#define ROUEN_VERSION "1.4.13"
 #endif
 #ifndef COMPILE_GIT_HASH
 #define COMPILE_GIT_HASH "unknown"
