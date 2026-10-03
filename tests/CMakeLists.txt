@@ -753,7 +753,6 @@ add_executable(test_mcp
     ../src/helpers/glass_top_bar.cpp
     ../src/helpers/capture_helper.cpp
     ../external/imguicolortextedit/TextEditor.cpp
-    ../src/helpers/glass_top_bar.cpp
     ../src/fonts.cpp
 )
 if(APPLE)
