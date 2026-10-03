@@ -18,22 +18,22 @@ export namespace rouen::theme {
         std::string name;
         bool draw_card_outline = true;
         
-        std::array<float, 4> window_bg;
-        std::array<float, 4> text;
-        std::array<float, 4> text_disabled;
-        std::array<float, 4> title_bg;
-        std::array<float, 4> title_bg_active;
-        std::array<float, 4> menu_bar_bg;
-        std::array<float, 4> button;
-        std::array<float, 4> button_hovered;
-        std::array<float, 4> button_active;
-        std::array<float, 4> frame_bg;
-        std::array<float, 4> frame_bg_hovered;
-        std::array<float, 4> frame_bg_active;
-        std::array<float, 4> check_mark;
-        std::array<float, 4> slider_grab;
+        std::array<float, 4> window_bg = {};
+        std::array<float, 4> text = {};
+        std::array<float, 4> text_disabled = {};
+        std::array<float, 4> title_bg = {};
+        std::array<float, 4> title_bg_active = {};
+        std::array<float, 4> menu_bar_bg = {};
+        std::array<float, 4> button = {};
+        std::array<float, 4> button_hovered = {};
+        std::array<float, 4> button_active = {};
+        std::array<float, 4> frame_bg = {};
+        std::array<float, 4> frame_bg_hovered = {};
+        std::array<float, 4> frame_bg_active = {};
+        std::array<float, 4> check_mark = {};
+        std::array<float, 4> slider_grab = {};
         
-        std::array<std::array<float, 4>, 16> card_colors;
+        std::array<std::array<float, 4>, 16> card_colors = {};
     };
 
     class theme_manager {

@@ -20,6 +20,7 @@
 
 #include "ai_chat.hpp"
 
+#include "../../helpers/color_utils.hpp"
 #include "../../helpers/cppgpt.hpp"
 #include "../../helpers/fetch.hpp"
 #include "../../helpers/markdown_renderer.hpp"
@@ -455,15 +456,66 @@ namespace rouen::cards {
                 input_buffer_.fill('\0');
                 reclaim_focus_ = true;
             }
-            // Apply custom colors to various UI elements
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // transparent chat area background
-            ImGui::PushStyleColor(ImGuiCol_Separator, ImGui::ColorConvertFloat4ToU32(colors[11]));
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertFloat4ToU32(colors[7]));
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertFloat4ToU32(colors[8]));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertFloat4ToU32(colors[9]));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertFloat4ToU32(colors[10]));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4])); // Default text color (user_text_color)
-            ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.4f, 0.6f, 0.5f))); // Text selection color
+
+            // Detect theme brightness and contrast baseline
+            const ImVec4 win_bg = ImGui::GetStyleColorVec4(ImGuiCol_WindowBg);
+            const float win_luma = rouen::helpers::color::relative_luminance(win_bg);
+            const bool is_dark = (win_luma < 0.5f);
+
+            // --- User Bubble Setup ---
+            ImVec4 raw_accent = get_color(0);
+            if (is_dark && raw_accent.x < 0.08f && raw_accent.y < 0.08f && raw_accent.z < 0.08f) {
+                raw_accent = ImVec4(0.24f, 0.44f, 0.72f, 1.0f);
+            }
+            const ImVec4 user_bg = ImVec4(raw_accent.x, raw_accent.y, raw_accent.z, 0.92f);
+            const ImVec4 user_border = ImVec4(raw_accent.x * 0.85f, raw_accent.y * 0.85f, raw_accent.z * 0.85f, 0.60f);
+            const ImVec4 user_text_vec = rouen::helpers::color::pick_readable_text_color(user_bg);
+            const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(user_bg);
+            const ImU32 user_border_color = ImGui::ColorConvertFloat4ToU32(user_border);
+            const ImU32 user_text_color = ImGui::ColorConvertFloat4ToU32(user_text_vec);
+
+            // --- Assistant Bubble Setup ---
+            ImVec4 assistant_bg;
+            ImVec4 assistant_border;
+            ImVec4 assistant_text_vec;
+            ImVec4 assistant_header_vec;
+            if (is_dark) {
+                assistant_bg = ImVec4(
+                    std::clamp(win_bg.x * 1.35f + 0.07f, 0.16f, 0.26f),
+                    std::clamp(win_bg.y * 1.35f + 0.07f, 0.16f, 0.26f),
+                    std::clamp(win_bg.z * 1.35f + 0.08f, 0.18f, 0.28f),
+                    0.96f
+                );
+                assistant_border = ImVec4(1.0f, 1.0f, 1.0f, 0.14f);
+                assistant_text_vec = ImVec4(0.96f, 0.97f, 0.99f, 1.0f); // Crisp high-contrast off-white
+                assistant_header_vec = ImVec4(
+                    std::clamp(raw_accent.x * 1.1f + 0.15f, 0.80f, 1.0f),
+                    std::clamp(raw_accent.y * 1.1f + 0.10f, 0.70f, 0.95f),
+                    std::clamp(raw_accent.z * 1.1f, 0.35f, 0.85f),
+                    1.0f
+                );
+            } else {
+                assistant_bg = ImVec4(
+                    std::clamp(win_bg.x * 0.93f - 0.03f, 0.82f, 0.95f),
+                    std::clamp(win_bg.y * 0.93f - 0.03f, 0.82f, 0.95f),
+                    std::clamp(win_bg.z * 0.93f - 0.03f, 0.82f, 0.95f),
+                    0.96f
+                );
+                assistant_border = ImVec4(0.0f, 0.0f, 0.0f, 0.14f);
+                assistant_text_vec = ImVec4(0.08f, 0.09f, 0.12f, 1.0f); // Crisp high-contrast dark text
+                assistant_header_vec = ImVec4(0.12f, 0.25f, 0.50f, 1.0f);
+            }
+            const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(assistant_bg);
+            const ImU32 assistant_border_color = ImGui::ColorConvertFloat4ToU32(assistant_border);
+            const ImU32 assistant_text_color = ImGui::ColorConvertFloat4ToU32(assistant_text_vec);
+
+            // --- Debug Bubble Setup ---
+            const ImVec4 debug_bg = is_dark ? ImVec4(0.12f, 0.15f, 0.22f, 0.92f) : ImVec4(0.90f, 0.92f, 0.96f, 0.95f);
+            const ImVec4 debug_border = is_dark ? ImVec4(0.30f, 0.45f, 0.70f, 0.35f) : ImVec4(0.40f, 0.55f, 0.80f, 0.35f);
+            const ImVec4 debug_text_vec = is_dark ? ImVec4(0.75f, 0.85f, 0.98f, 1.0f) : ImVec4(0.10f, 0.20f, 0.40f, 1.0f);
+            const ImU32 debug_bg_color = ImGui::ColorConvertFloat4ToU32(debug_bg);
+            const ImU32 debug_border_color = ImGui::ColorConvertFloat4ToU32(debug_border);
+            const ImU32 debug_text_color = ImGui::ColorConvertFloat4ToU32(debug_text_vec);
             
             // Calculate required space for the footer area
             const float thinking_indicator_height = 0.0f;
@@ -471,7 +523,7 @@ namespace rouen::cards {
             const float footer_height_to_reserve = thinking_indicator_height + input_height + ImGui::GetStyle().ItemSpacing.y;
             
             // Chat area
-            // Begin child with no horizontal scrollbar (use 0 width to auto-size without horizontal scroll)
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // transparent chat area background
             if (ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false)) {
                 // Process any pending responses
                 process_pending_response();
@@ -487,46 +539,8 @@ namespace rouen::cards {
                 
                 // Pre-calculate common values
                 const ImVec2 padding(10.0f, 8.0f);
-                const float bubble_rounding = 5.0f;
-                
-                // Derive readable text colors from current bubble backgrounds.
-                const ImVec4 raw_user_bg = get_color(0);
-                const ImVec4 raw_assistant_bg = get_color(1);
-                const ImVec4 chat_bg = get_color(12);
-                
-                const ImVec4 user_bg = ImVec4(raw_user_bg.x, raw_user_bg.y, raw_user_bg.z, 0.85f);
-                const ImVec4 assistant_bg = ImVec4(raw_assistant_bg.x, raw_assistant_bg.y, raw_assistant_bg.z, 0.55f);
-                
-                const ImU32 user_bg_color = ImGui::ColorConvertFloat4ToU32(user_bg);
-                const ImU32 assistant_bg_color = ImGui::ColorConvertFloat4ToU32(assistant_bg);
-                
-                auto pick_text_color = [](const ImVec4& bg) -> ImU32 {
-                    const float bg_luma = 0.299f * bg.x + 0.587f * bg.y + 0.114f * bg.z;
-                    const ImVec4 dark_text{0.05f, 0.06f, 0.08f, 1.0f};
-                    const ImVec4 light_text{0.96f, 0.97f, 0.99f, 1.0f};
-                    const float dark_luma = 0.299f * dark_text.x + 0.587f * dark_text.y + 0.114f * dark_text.z;
-                    const float light_luma = 0.299f * light_text.x + 0.587f * light_text.y + 0.114f * light_text.z;
-                    const float contrast_dark = (std::max(bg_luma, dark_luma) + 0.05f) / (std::min(bg_luma, dark_luma) + 0.05f);
-                    const float contrast_light = (std::max(bg_luma, light_luma) + 0.05f) / (std::min(bg_luma, light_luma) + 0.05f);
-                    return ImGui::ColorConvertFloat4ToU32(contrast_dark > contrast_light ? dark_text : light_text);
-                };
-                
-                auto blend_colors = [](const ImVec4& src, const ImVec4& dst) -> ImVec4 {
-                    return ImVec4(
-                        src.w * src.x + (1.0f - src.w) * dst.x,
-                        src.w * src.y + (1.0f - src.w) * dst.y,
-                        src.w * src.z + (1.0f - src.w) * dst.z,
-                        1.0f
-                    );
-                };
-                
-                const ImU32 user_text_color = pick_text_color(blend_colors(user_bg, chat_bg));
-                const ImU32 assistant_text_color = pick_text_color(blend_colors(assistant_bg, chat_bg));
-                
-                const ImVec4 debug_bg = ImVec4(0.12f, 0.15f, 0.22f, 0.85f);
-                const ImU32 debug_bg_color = ImGui::ColorConvertFloat4ToU32(debug_bg);
-                const ImU32 debug_text_color = pick_text_color(blend_colors(debug_bg, chat_bg));
-                
+                const float bubble_rounding = 6.0f;
+
                 // Display chat history using cached values
                 // Create a safe snapshot of the chat history for rendering
                 std::vector<std::pair<std::string, std::string>> chat_snapshot;
@@ -547,11 +561,18 @@ namespace rouen::cards {
                     bool const is_user = message.first == "user";
                     bool const is_debug = message.first == "debug";
                     
-                    // Set background color for message bubbles
+                    // Set background and border colors for message bubbles
                     ImU32 bg_color = assistant_bg_color;
-                    if (is_user) bg_color = user_bg_color;
-                    else if (is_debug) bg_color = debug_bg_color;
+                    ImU32 border_color = assistant_border_color;
+                    if (is_user) {
+                        bg_color = user_bg_color;
+                        border_color = user_border_color;
+                    } else if (is_debug) {
+                        bg_color = debug_bg_color;
+                        border_color = debug_border_color;
+                    }
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
+                    ImGui::PushStyleColor(ImGuiCol_Border, border_color);
                     
                     // Position user messages to the right
                     if (is_user) {
@@ -559,9 +580,9 @@ namespace rouen::cards {
                         ImGui::SetCursorPosX(available_width - cache.content_width - 10.0f);
                     }
                     
-                    // Create message bubble with cached size
+                    // Create message bubble with cached size and crisp border
                     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, bubble_rounding);
-                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
                     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
                     
                     // Use pre-calculated child ID
@@ -575,16 +596,18 @@ namespace rouen::cards {
                     else if (is_debug) txt_color = debug_text_color;
                     ImGui::PushStyleColor(ImGuiCol_Text, txt_color);
                     
-                    // Display sender name
+                    // Display sender name with distinguished styling
                     std::string sender_name;
                     if (is_user) {
                         sender_name = "You";
+                        ImGui::Text("%s", sender_name.c_str());
                     } else if (is_debug) {
                         sender_name = "Debug Info";
+                        ImGui::TextColored(debug_text_vec, "%s", sender_name.c_str());
                     } else {
                         sender_name = get_assistant_name();
+                        ImGui::TextColored(assistant_header_vec, "%s", sender_name.c_str());
                     }
-                    ImGui::Text("%s", sender_name.c_str());
                     
                     // Copy button aligned to the right inside the balloon
                     ImGui::SameLine();
@@ -593,7 +616,7 @@ namespace rouen::cards {
                         ImGui::SetCursorPosX(copy_btn_pos_x);
                     }
                     
-                    // Transparent/subtle styling for the copy icon button
+                    // Subtle styling for the copy icon button
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.15f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
@@ -611,7 +634,12 @@ namespace rouen::cards {
                     ImGui::PopStyleVar();
                     ImGui::PopStyleColor(4);
                     
+                    // High-contrast subtle separator
+                    ImVec4 sep_col = is_user ? ImVec4(user_text_vec.x, user_text_vec.y, user_text_vec.z, 0.20f)
+                                             : (is_dark ? ImVec4(1.0f, 1.0f, 1.0f, 0.12f) : ImVec4(0.0f, 0.0f, 0.0f, 0.12f));
+                    ImGui::PushStyleColor(ImGuiCol_Separator, sep_col);
                     ImGui::Separator();
+                    ImGui::PopStyleColor();
                     
                     // Display message content: use Markdown rendering for
                     // assistant replies (which may contain MD formatting),
@@ -660,8 +688,8 @@ namespace rouen::cards {
                     ImGui::PopStyleColor(); // Text color
                     ImGui::EndChild();
                     
-                    ImGui::PopStyleVar(3); // Pop the 3 style vars we pushed
-                    ImGui::PopStyleColor(); // Pop the child bg color
+                    ImGui::PopStyleVar(3); // Pop ChildRounding, ChildBorderSize, WindowPadding
+                    ImGui::PopStyleColor(2); // Pop ChildBg and Border
                     
                     // Add consistent spacing between messages
                     ImGui::Spacing();
@@ -688,8 +716,9 @@ namespace rouen::cards {
                                         padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + 6.0f;
                                         
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, assistant_bg_color);
+                    ImGui::PushStyleColor(ImGuiCol_Border, assistant_border_color);
                     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, bubble_rounding);
-                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.0f);
+                    ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
                     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
                     
                     ImGui::BeginChild("msg_bubble_thinking", 
@@ -699,7 +728,7 @@ namespace rouen::cards {
                     ImGui::PushStyleColor(ImGuiCol_Text, assistant_text_color);
                     
                     std::string const sender_name = get_assistant_name();
-                    ImGui::Text("%s", sender_name.c_str());
+                    ImGui::TextColored(assistant_header_vec, "%s", sender_name.c_str());
                     
                     // Transparent/subtle copy icon spacing alignment (disabled)
                     ImGui::SameLine();
@@ -712,15 +741,17 @@ namespace rouen::cards {
                     ImGui::Button(ICON_MD_CONTENT_COPY);
                     ImGui::PopStyleColor(2);
                     
+                    ImGui::PushStyleColor(ImGuiCol_Separator, is_dark ? ImVec4(1.0f, 1.0f, 1.0f, 0.12f) : ImVec4(0.0f, 0.0f, 0.0f, 0.12f));
                     ImGui::Separator();
+                    ImGui::PopStyleColor();
                     
                     ImGui::Text("%s", cursor_str.c_str());
                     
                     ImGui::PopStyleColor(); // assistant_text_color
                     ImGui::EndChild();
                     
-                    ImGui::PopStyleVar(3);
-                    ImGui::PopStyleColor(); // assistant_bg_color
+                    ImGui::PopStyleVar(3); // Pop ChildRounding, ChildBorderSize, WindowPadding
+                    ImGui::PopStyleColor(2); // Pop ChildBg and Border
                     
                     ImGui::Spacing();
                     ImGui::Spacing();
@@ -732,11 +763,12 @@ namespace rouen::cards {
                 }
             }
             ImGui::EndChild();
+            ImGui::PopStyleColor(); // ImGuiCol_ChildBg for ScrollingRegion
             
             // API key input if not configured
             if (!llm_configured_) {
                 ImGui::Separator();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[4]));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.20f, 1.0f));
                 ImGui::TextWrapped("LLM not configured. Please configure your LLM provider in Settings.");
                 ImGui::PopStyleColor();
                 
@@ -793,6 +825,13 @@ namespace rouen::cards {
                 ImGui::BeginDisabled();
             }
 
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, is_dark ? ImVec4(1.0f, 1.0f, 1.0f, 0.18f) : ImVec4(0.0f, 0.0f, 0.0f, 0.18f));
+            if (is_dark) {
+                // Ensure frame background is a clean dark input box, never pink or bright
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.14f, 0.15f, 0.18f, 1.0f));
+            }
             ImGui::PushItemWidth(-dict_button_width - send_button_width - clear_button_width - ImGui::GetStyle().ItemSpacing.x * 3.0f);
             if (reclaim_focus_) {
                 ImGui::SetKeyboardFocusHere();
@@ -808,6 +847,11 @@ namespace rouen::cards {
                 reclaim_focus_ = true;
             }
             ImGui::PopItemWidth();
+            if (is_dark) {
+                ImGui::PopStyleColor(); // FrameBg
+            }
+            ImGui::PopStyleColor(); // Border
+            ImGui::PopStyleVar(2); // FrameRounding, FrameBorderSize
 
             if (disable_text_input) {
                 ImGui::EndDisabled();
@@ -817,6 +861,7 @@ namespace rouen::cards {
             ImGui::SameLine();
             std::string dict_label;
             ImVec4 dict_normal_col, dict_hover_col, dict_active_col;
+            ImVec4 dict_txt_col = is_dark ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
             bool const disable_dict_button = (dict_state == rouen::hosts::dictation_host::State::Transcribing);
 
             if (dict_state == rouen::hosts::dictation_host::State::Recording) {
@@ -825,29 +870,32 @@ namespace rouen::cards {
                 dict_normal_col = ImVec4(0.85f, 0.18f, 0.18f, 1.0f);
                 dict_hover_col  = ImVec4(0.95f, 0.28f, 0.28f, 1.0f);
                 dict_active_col = ImVec4(0.75f, 0.12f, 0.12f, 1.0f);
+                dict_txt_col = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
             } else if (dict_state == rouen::hosts::dictation_host::State::Transcribing) {
                 // Transcribing state -> Third color (Amber / Gold)
                 dict_label = ICON_MD_HOURGLASS_EMPTY " Processing...";
                 dict_normal_col = ImVec4(0.90f, 0.58f, 0.12f, 1.0f);
                 dict_hover_col  = ImVec4(0.98f, 0.68f, 0.22f, 1.0f);
                 dict_active_col = ImVec4(0.80f, 0.48f, 0.08f, 1.0f);
+                dict_txt_col = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
             } else if (dict_state == rouen::hosts::dictation_host::State::Starting) {
                 // Starting state -> Standard button color (recording process launching...)
                 dict_label = ICON_MD_MIC " Starting...";
-                dict_normal_col = get_color(8);
-                dict_hover_col  = get_color(9);
-                dict_active_col = get_color(10);
+                dict_normal_col = is_dark ? ImVec4(0.24f, 0.27f, 0.34f, 1.0f) : ImVec4(0.80f, 0.82f, 0.86f, 1.0f);
+                dict_hover_col  = is_dark ? ImVec4(0.30f, 0.35f, 0.44f, 1.0f) : ImVec4(0.72f, 0.75f, 0.80f, 1.0f);
+                dict_active_col = is_dark ? ImVec4(0.18f, 0.21f, 0.28f, 1.0f) : ImVec4(0.65f, 0.68f, 0.74f, 1.0f);
             } else {
                 // Idle state -> Standard button color
                 dict_label = ICON_MD_MIC " Dictate";
-                dict_normal_col = get_color(8);
-                dict_hover_col  = get_color(9);
-                dict_active_col = get_color(10);
+                dict_normal_col = is_dark ? ImVec4(0.22f, 0.25f, 0.32f, 1.0f) : ImVec4(0.85f, 0.87f, 0.90f, 1.0f);
+                dict_hover_col  = is_dark ? ImVec4(0.28f, 0.33f, 0.42f, 1.0f) : ImVec4(0.78f, 0.81f, 0.86f, 1.0f);
+                dict_active_col = is_dark ? ImVec4(0.18f, 0.20f, 0.26f, 1.0f) : ImVec4(0.70f, 0.73f, 0.78f, 1.0f);
             }
 
             ImGui::PushStyleColor(ImGuiCol_Button, dict_normal_col);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, dict_hover_col);
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, dict_active_col);
+            ImGui::PushStyleColor(ImGuiCol_Text, dict_txt_col);
 
             if (disable_dict_button) {
                 ImGui::BeginDisabled();
@@ -868,18 +916,23 @@ namespace rouen::cards {
                 ImGui::EndDisabled();
             }
 
-            ImGui::PopStyleColor(3);
+            ImGui::PopStyleColor(4);
 
             if (disable_text_input) {
                 ImGui::BeginDisabled();
             }
             
             ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, user_bg_color);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertFloat4ToU32(ImVec4(user_bg.x * 1.1f, user_bg.y * 1.1f, user_bg.z * 1.1f, 1.0f)));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertFloat4ToU32(ImVec4(user_bg.x * 0.9f, user_bg.y * 0.9f, user_bg.z * 0.9f, 1.0f)));
+            ImGui::PushStyleColor(ImGuiCol_Text, user_text_color);
             if (ImGui::Button("Send", ImVec2(send_button_width, 0)) && !input_text_.empty()) {
                 send_message(input_text_);
                 input_text_.clear();
                 reclaim_focus_ = true;
             }
+            ImGui::PopStyleColor(4);
             
             ImGui::SameLine();
             if (ImGui::Button("Clear", ImVec2(clear_button_width, 0))) {
@@ -898,8 +951,6 @@ namespace rouen::cards {
             if (new_input_text != input_text_) {
                 input_text_ = std::move(new_input_text);
             }
-            
-            ImGui::PopStyleColor(8); // Pop all the colors we pushed at the beginning
         });
     }
 

@@ -70,6 +70,20 @@ namespace rouen::theme {
     void theme_manager::setup_default_themes() {
         themes_.clear();
 
+        auto apply_default_semantic_colors = [](theme_palette& tp) {
+            tp.card_colors[2] = {0.85f, 0.25f, 0.20f, 1.00f};
+            tp.card_colors[3] = {0.30f, 0.70f, 0.35f, 1.00f};
+            tp.card_colors[4] = {0.95f, 0.75f, 0.15f, 1.00f};
+            tp.card_colors[5] = {0.25f, 0.65f, 0.75f, 1.00f};
+            tp.card_colors[6] = {0.70f, 0.40f, 0.80f, 1.00f};
+            tp.card_colors[7] = {0.90f, 0.45f, 0.45f, 1.00f};
+            tp.card_colors[8] = {0.90f, 0.42f, 0.08f, 1.00f};
+            tp.card_colors[9] = {0.50f, 0.45f, 0.40f, 1.00f};
+            for (size_t i = 10; i < 16; ++i) {
+                tp.card_colors[i] = {0.0f, 0.0f, 0.0f, 0.0f};
+            }
+        };
+
         // 1. Amber (Default)
         theme_palette amber;
         amber.name = "Amber";
@@ -90,14 +104,7 @@ namespace rouen::theme {
         amber.slider_grab = {0.95f, 0.58f, 0.10f, 1.00f};
         amber.card_colors[0] = {0.95f, 0.58f, 0.10f, 1.00f};
         amber.card_colors[1] = {0.16f, 0.12f, 0.09f, 0.85f};
-        amber.card_colors[2] = {0.85f, 0.25f, 0.20f, 1.00f};
-        amber.card_colors[3] = {0.30f, 0.70f, 0.35f, 1.00f};
-        amber.card_colors[4] = {0.95f, 0.75f, 0.15f, 1.00f};
-        amber.card_colors[5] = {0.25f, 0.65f, 0.75f, 1.00f};
-        amber.card_colors[6] = {0.70f, 0.40f, 0.80f, 1.00f};
-        amber.card_colors[7] = {0.90f, 0.45f, 0.45f, 1.00f};
-        amber.card_colors[8] = {0.90f, 0.42f, 0.08f, 1.00f};
-        amber.card_colors[9] = {0.50f, 0.45f, 0.40f, 1.00f};
+        apply_default_semantic_colors(amber);
         themes_.push_back(amber);
 
         // 2. Dark
@@ -118,11 +125,12 @@ namespace rouen::theme {
         dark.frame_bg_active = {0.28f, 0.30f, 0.36f, 1.00f};
         dark.check_mark = {0.40f, 0.65f, 1.00f, 1.00f};
         dark.slider_grab = {0.40f, 0.65f, 1.00f, 1.00f};
-        dark.card_colors[0] = {0.0f, 0.0f, 0.0f, 1.0f};
-        dark.card_colors[1] = {0.0f, 0.0f, 0.0f, 0.5f};
+        dark.card_colors[0] = {0.26f, 0.52f, 0.88f, 1.00f};
+        dark.card_colors[1] = {0.18f, 0.22f, 0.28f, 0.85f};
+        apply_default_semantic_colors(dark);
         themes_.push_back(dark);
 
-        // 2. Light
+        // 3. Light
         theme_palette light;
         light.name = "Light";
         light.draw_card_outline = true;
@@ -140,11 +148,12 @@ namespace rouen::theme {
         light.frame_bg_active = {0.70f, 0.73f, 0.80f, 1.00f};
         light.check_mark = {0.20f, 0.45f, 0.85f, 1.00f};
         light.slider_grab = {0.20f, 0.45f, 0.85f, 1.00f};
-        light.card_colors[0] = {0.95f, 0.95f, 0.96f, 1.0f};
-        light.card_colors[1] = {0.85f, 0.85f, 0.88f, 0.8f};
+        light.card_colors[0] = {0.20f, 0.45f, 0.85f, 1.00f};
+        light.card_colors[1] = {0.85f, 0.85f, 0.88f, 0.80f};
+        apply_default_semantic_colors(light);
         themes_.push_back(light);
 
-        // 3. Cyberpunk
+        // 4. Cyberpunk
         theme_palette cyberpunk;
         cyberpunk.name = "Cyberpunk";
         cyberpunk.draw_card_outline = true;
@@ -162,11 +171,12 @@ namespace rouen::theme {
         cyberpunk.frame_bg_active = {0.38f, 0.10f, 0.48f, 1.00f};
         cyberpunk.check_mark = {1.00f, 0.00f, 0.55f, 1.00f};
         cyberpunk.slider_grab = {0.00f, 0.98f, 0.93f, 1.00f};
-        cyberpunk.card_colors[0] = {0.08f, 0.04f, 0.14f, 1.0f};
-        cyberpunk.card_colors[1] = {0.25f, 0.00f, 0.35f, 0.6f};
+        cyberpunk.card_colors[0] = {0.00f, 0.98f, 0.93f, 1.00f};
+        cyberpunk.card_colors[1] = {0.25f, 0.00f, 0.35f, 0.60f};
+        apply_default_semantic_colors(cyberpunk);
         themes_.push_back(cyberpunk);
 
-        // 4. Nord
+        // 5. Nord
         theme_palette nord;
         nord.name = "Nord";
         nord.draw_card_outline = true;
@@ -184,8 +194,9 @@ namespace rouen::theme {
         nord.frame_bg_active = {0.38f, 0.43f, 0.52f, 1.00f};
         nord.check_mark = {0.53f, 0.75f, 0.82f, 1.00f}; // nord8
         nord.slider_grab = {0.53f, 0.75f, 0.82f, 1.00f};
-        nord.card_colors[0] = {0.18f, 0.20f, 0.25f, 1.0f};
-        nord.card_colors[1] = {0.26f, 0.30f, 0.37f, 0.6f};
+        nord.card_colors[0] = {0.53f, 0.75f, 0.82f, 1.00f};
+        nord.card_colors[1] = {0.26f, 0.30f, 0.37f, 0.60f};
+        apply_default_semantic_colors(nord);
         themes_.push_back(nord);
 
         active_theme_index_ = 0;
@@ -321,6 +332,17 @@ namespace rouen::theme {
 
             if (model.active_index < themes_.size()) {
                 active_theme_index_ = model.active_index;
+            }
+
+            // Sanitize loaded card colors to prevent NaN/Inf/out-of-range artifacts
+            for (auto& theme : themes_) {
+                for (auto& col : theme.card_colors) {
+                    for (float& val : col) {
+                        if (std::isnan(val) || std::isinf(val) || val < 0.0f || val > 1.0f) {
+                            val = 0.0f;
+                        }
+                    }
+                }
             }
         }
 

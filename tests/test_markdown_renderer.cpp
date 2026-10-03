@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../src/helpers/adaptive_cards/markdown.hpp"
+#include "../src/helpers/color_utils.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 
 using namespace rouen::helpers::adaptive_cards;
@@ -259,4 +260,67 @@ TEST(MarkdownRenderer, IsTableDelimiterTests) {
     EXPECT_FALSE(is_table_delimiter("Not a delimiter at all"));
     EXPECT_FALSE(is_table_delimiter("|---"));
 }
+
+// ── WCAG Color Contrast & Readability Tests ─────────────────────────────────
+
+TEST(ColorContrast, RelativeLuminanceBounds) {
+    using namespace rouen::helpers::color;
+
+    EXPECT_NEAR(relative_luminance(ImVec4(0.0f, 0.0f, 0.0f, 1.0f)), 0.0f, 0.001f);
+    EXPECT_NEAR(relative_luminance(ImVec4(1.0f, 1.0f, 1.0f, 1.0f)), 1.0f, 0.001f);
+
+    // Mid-gray (sRGB 0.5f) should have relative luminance between 0.2 and 0.25
+    float mid_luma = relative_luminance(ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+    EXPECT_GT(mid_luma, 0.20f);
+    EXPECT_LT(mid_luma, 0.25f);
+}
+
+TEST(ColorContrast, ContrastRatioCalculation) {
+    using namespace rouen::helpers::color;
+
+    ImVec4 black{0.0f, 0.0f, 0.0f, 1.0f};
+    ImVec4 white{1.0f, 1.0f, 1.0f, 1.0f};
+
+    // Black on white is standard 21:1
+    EXPECT_NEAR(contrast_ratio(black, white), 21.0f, 0.05f);
+    EXPECT_NEAR(contrast_ratio(white, black), 21.0f, 0.05f);
+
+    // Identical colors have contrast ratio 1:1
+    EXPECT_NEAR(contrast_ratio(black, black), 1.0f, 0.01f);
+}
+
+TEST(ColorContrast, AssistantBubbleReadabilityExceedsWcagAAA) {
+    using namespace rouen::helpers::color;
+
+    // Dark assistant bubble background (e.g. elevated slate/charcoal)
+    ImVec4 assistant_bg{0.18f, 0.17f, 0.16f, 0.95f};
+    ImVec4 text_color = pick_readable_text_color(assistant_bg);
+
+    // Text must be light
+    EXPECT_GT(text_color.x, 0.8f);
+    EXPECT_GT(text_color.y, 0.8f);
+    EXPECT_GT(text_color.z, 0.8f);
+
+    // Contrast ratio against assistant bubble must exceed WCAG AAA (7:1)
+    float ratio = contrast_ratio(assistant_bg, text_color);
+    EXPECT_GE(ratio, 7.0f);
+}
+
+TEST(ColorContrast, UserBubbleReadabilityExceedsWcagAA) {
+    using namespace rouen::helpers::color;
+
+    // Amber bright accent user bubble
+    ImVec4 amber_user_bg{0.95f, 0.58f, 0.10f, 0.92f};
+    ImVec4 text_color = pick_readable_text_color(amber_user_bg);
+
+    // Text on bright amber must be dark
+    EXPECT_LT(text_color.x, 0.2f);
+    EXPECT_LT(text_color.y, 0.2f);
+    EXPECT_LT(text_color.z, 0.2f);
+
+    // Contrast ratio against amber must exceed WCAG AA (4.5:1)
+    float ratio = contrast_ratio(amber_user_bg, text_color);
+    EXPECT_GE(ratio, 4.5f);
+}
+
 
