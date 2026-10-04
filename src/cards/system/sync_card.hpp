@@ -54,6 +54,7 @@ private:
     bool auto_shutdown_{false};
     bool auto_periodic_{true};
     int periodic_interval_sec_{300};
+    bool force_full_sync_{false};
 
     std::array<char, 512> git_url_buf_{};
     std::array<char, 256> token_buf_{};
@@ -241,6 +242,10 @@ private:
 
         // 2. Control Buttons Section
         ImGui::TextColored(get_color(2), "Operations");
+        if (is_mesh) {
+            ImGui::SameLine();
+            ImGui::Checkbox("Force Full Re-sync (bypass incremental check)", &force_full_sync_);
+        }
 
         bool running = service.is_syncing();
         bool mismatch = service.is_passphrase_mismatch();
@@ -262,9 +267,9 @@ private:
 
         if (ImGui::Button(is_mesh ? "Reconcile In (Pull)" : "Sync In (Pull)")) {
             add_log_entry(is_mesh ? "Pulling registry entries from Mesh..." : "Starting Sync In (pull & import)...");
-            std::thread([this]() {
+            std::thread([this, force = force_full_sync_]() {
                 auto& s = rouen::helpers::UniversalSyncService::instance();
-                s.sync_in();
+                s.sync_in(true, !force);
                 add_log_entry(s.get_status_message());
             }).detach();
         }
@@ -273,9 +278,9 @@ private:
 
         if (ImGui::Button(is_mesh ? "Reconcile Out (Push)" : "Sync Out (Push)")) {
             add_log_entry(is_mesh ? "Publishing encrypted entries to Mesh..." : "Starting Sync Out (export & push)...");
-            std::thread([this]() {
+            std::thread([this, force = force_full_sync_]() {
                 auto& s = rouen::helpers::UniversalSyncService::instance();
-                s.sync_out("Manual sync push");
+                s.sync_out("Manual sync push", !force);
                 add_log_entry(s.get_status_message());
             }).detach();
         }
@@ -284,9 +289,9 @@ private:
 
         if (ImGui::Button("Two-Way Sync")) {
             add_log_entry(is_mesh ? "Starting Mesh Two-Way Reconciliation..." : "Starting full Two-Way Sync...");
-            std::thread([this]() {
+            std::thread([this, force = force_full_sync_]() {
                 auto& s = rouen::helpers::UniversalSyncService::instance();
-                s.sync_twoway("Manual two-way sync");
+                s.sync_twoway("Manual two-way sync", true, !force);
                 add_log_entry(s.get_status_message());
             }).detach();
         }

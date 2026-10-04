@@ -23,9 +23,9 @@ namespace rouen::hosts {
 
         [[nodiscard]] bool is_mesh_sync_active() const;
 
-        bool sync_in(bool import_config = true);
-        bool sync_out(const std::string& commit_message = "Auto-sync update");
-        bool sync_twoway(const std::string& commit_message = "Two-way sync update", bool import_config = true);
+        bool sync_in(bool import_config = true, bool incremental = true);
+        bool sync_out(const std::string& commit_message = "Auto-sync update", bool incremental = true);
+        bool sync_twoway(const std::string& commit_message = "Two-way sync update", bool import_config = true, bool incremental = true);
 
         // Granular real-time sync for single entity mutation
         bool sync_item(std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted = false);

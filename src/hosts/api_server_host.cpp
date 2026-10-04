@@ -5247,7 +5247,8 @@ std::string api_server_host::handle_sync_status(struct mg_connection* /*c*/, str
 
 struct sync_run_req {
     std::string action{"twoway"};
-    bool incremental{false};
+    bool incremental{true};
+    bool full{false};
 };
 
 std::string api_server_host::handle_sync_run(struct mg_connection* /*c*/, struct mg_http_message* hm) {
@@ -5257,13 +5258,17 @@ std::string api_server_host::handle_sync_run(struct mg_connection* /*c*/, struct
     }
 
     std::string action = "twoway";
-    bool incremental = false;
+    bool incremental = true;
     std::string body(hm->body.buf, hm->body.len);
     if (!body.empty()) {
         sync_run_req req{};
         if (glz::read_json(req, body) == glz::error_code::none) {
             if (!req.action.empty()) action = req.action;
-            incremental = req.incremental || action == "incremental";
+            if (req.full || action == "full") {
+                incremental = false;
+            } else {
+                incremental = req.incremental;
+            }
         }
     }
 

@@ -417,9 +417,9 @@ namespace rouen::hosts {
                         if (out.is_open()) {
                             out.write(item->plaintext.data(), static_cast<std::streamsize>(item->plaintext.size()));
                             updated_count++;
-                            published_content_hashes_[rel_path] = std::hash<std::string>{}(item->plaintext);
                         }
                     }
+                    published_content_hashes_[rel_path] = std::hash<std::string>{}(item->plaintext);
                 }
 
                 applied_registry_timestamps_[wire_key] = entry.updated_at_sec;
@@ -550,9 +550,9 @@ namespace rouen::hosts {
         return sync_out_mesh(commit_message, incremental);
     }
 
-    bool UniversalSyncHost::sync_in(bool import_config) {
+    bool UniversalSyncHost::sync_in(bool import_config, bool incremental) {
         if (is_mesh_sync_active()) {
-            return sync_in_mesh(import_config);
+            return sync_in_mesh(import_config, incremental);
         }
 
         std::lock_guard<std::mutex> const lock(mutex_);
@@ -598,9 +598,9 @@ namespace rouen::hosts {
         }
     }
 
-    bool UniversalSyncHost::sync_out(const std::string& commit_message) {
+    bool UniversalSyncHost::sync_out(const std::string& commit_message, bool incremental) {
         if (is_mesh_sync_active()) {
-            return sync_out_mesh(commit_message);
+            return sync_out_mesh(commit_message, incremental);
         }
 
         std::lock_guard<std::mutex> const lock(mutex_);
@@ -657,9 +657,9 @@ namespace rouen::hosts {
         }
     }
 
-    bool UniversalSyncHost::sync_twoway(const std::string& commit_message, bool import_config) {
+    bool UniversalSyncHost::sync_twoway(const std::string& commit_message, bool import_config, bool incremental) {
         if (is_mesh_sync_active()) {
-            return sync_twoway_mesh(commit_message, import_config);
+            return sync_twoway_mesh(commit_message, import_config, incremental);
         }
 
         UNIV_SYNC_INFO("Starting Two-Way Sync process...");
