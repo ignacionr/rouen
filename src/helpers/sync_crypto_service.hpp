@@ -95,6 +95,9 @@ namespace rouen::sync {
         mutable std::mutex mutex_;
         std::string passphrase_;
         std::string salt_;
+        mutable std::string cached_passphrase_;
+        mutable std::string cached_salt_;
+        mutable std::vector<uint8_t> cached_key_;
     };
 
 } // namespace rouen::sync

@@ -46,6 +46,7 @@ namespace rouen::hosts {
         UNIV_SYNC_INFO("Exporting Markdown Notes...");
         models::notes::notes_repository notes_repo;
         notes_repo.export_to_directory(cache_dir / "notes");
+        notes_repo.set_sync_meta("notes_last_sync", models::notes::notes_repository::now_timestamp());
 
         UNIV_SYNC_INFO("Exporting Travel Plans...");
         media::travel::sqliterepo travel_repo(rouen::platform::get_user_data_path("travel.db").string());
@@ -95,6 +96,7 @@ namespace rouen::hosts {
         UNIV_SYNC_INFO("Importing Markdown Notes...");
         models::notes::notes_repository notes_repo;
         notes_repo.import_from_directory(cache_dir / "notes");
+        notes_repo.set_sync_meta("notes_last_sync", models::notes::notes_repository::now_timestamp());
 
         UNIV_SYNC_INFO("Importing Travel Plans...");
         media::travel::sqliterepo travel_repo(rouen::platform::get_user_data_path("travel.db").string());
