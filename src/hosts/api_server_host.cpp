@@ -5214,6 +5214,7 @@ std::string api_server_host::handle_sync_status(struct mg_connection* /*c*/, str
 
     size_t notes_count = is_mesh ? sync.get_mesh_entry_count("notes") : 0;
     size_t contacts_count = is_mesh ? sync.get_mesh_entry_count("contacts") : 0;
+    size_t personas_count = is_mesh ? sync.get_mesh_entry_count("personas") : 0;
     size_t travel_count = is_mesh ? sync.get_mesh_entry_count("travel") : 0;
     size_t rss_count = is_mesh ? sync.get_mesh_entry_count("rss") : 0;
     size_t total_registry = is_mesh ? sync.get_mesh_entry_count() : 0;
@@ -5227,7 +5228,7 @@ std::string api_server_host::handle_sync_status(struct mg_connection* /*c*/, str
     }
 
     return std::format(
-        R"({{"mode":"{}","is_mesh_active":{},"is_syncing":{},"status_message":"{}","e2ee_configured":{},"canary_status":"{}","passphrase_mismatch":{},"periodic_running":{},"periodic_interval_seconds":{},"entries":{{"notes":{},"contacts":{},"travel":{},"rss":{},"total":{}}}}})",
+        R"({{"mode":"{}","is_mesh_active":{},"is_syncing":{},"status_message":"{}","e2ee_configured":{},"canary_status":"{}","passphrase_mismatch":{},"periodic_running":{},"periodic_interval_seconds":{},"entries":{{"notes":{},"contacts":{},"personas":{},"travel":{},"rss":{},"total":{}}}}})",
         is_mesh ? "mesh_persistent_registry" : "legacy_git",
         is_mesh ? "true" : "false",
         sync.is_syncing() ? "true" : "false",
@@ -5239,6 +5240,7 @@ std::string api_server_host::handle_sync_status(struct mg_connection* /*c*/, str
         sync.get_periodic_interval_seconds(),
         notes_count,
         contacts_count,
+        personas_count,
         travel_count,
         rss_count,
         total_registry
