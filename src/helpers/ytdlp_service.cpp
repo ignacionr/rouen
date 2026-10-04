@@ -84,7 +84,11 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         std::string cook_flag = cookie_args.empty() ? "" : (std::string(cookie_args) + " ");
         std::string ua_flag;
         if constexpr (rouen::platform::is_apple) {
-            ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" ";
+            if (cookie_args.find("safari") != std::string::npos) {
+                ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15\" ";
+            } else if (!cookie_args.empty()) {
+                ua_flag = "--user-agent \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\" ";
+            }
         }
         cmd = std::format("\"{}\" --no-warnings {}{}{}{}-g -f \"{}\" \"{}\" 2>&1", ytdl_exe, remote_flag, ua_flag, ext_flag, cook_flag, target_fmt, norm_url);
         std::cerr << "[ytdlp_service Diagnostics] Executing command: " << cmd << '\n';
@@ -182,15 +186,15 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         }
     }
 
-    bool is_auth_err = (resolved.find("Sign in to confirm") != std::string::npos ||
-                        resolved.find("YouTube requires cookies") != std::string::npos ||
-                        resolved.find("cookies are no longer valid") != std::string::npos ||
-                        resolved.find("bot") != std::string::npos ||
-                        resolved.find("HTTP Error 429") != std::string::npos);
+    bool const is_auth_err = (resolved.find("Sign in to confirm") != std::string::npos ||
+                              resolved.find("YouTube requires cookies") != std::string::npos ||
+                              resolved.find("cookies are no longer valid") != std::string::npos ||
+                              resolved.find("bot") != std::string::npos ||
+                              resolved.find("HTTP Error 429") != std::string::npos);
 
     // Auto-healing Pass 1: Refresh cookies
-    if (urls.empty() || is_auth_err) {
-        std::cerr << "[ytdlp_service Diagnostics] Pass 1: Initial attempt failed or auth error detected. Refreshing cookies...\n";
+    if (urls.empty()) {
+        std::cerr << "[ytdlp_service Diagnostics] Pass 1: Initial attempt returned no valid URLs (auth_err=" << is_auth_err << "). Refreshing cookies...\n";
         if (config) {
             config->clear_youtube_cookies();
             if (config->refresh_youtube_cookies()) {
@@ -413,12 +417,9 @@ std::filesystem::path ytdlp_service::fetch_subtitles(
     std::filesystem::path found_file = fetch_sub_file(initial_cargs);
 
     if (found_file.empty()) {
-        if (config) {
-            config->clear_youtube_cookies();
-            if (config->refresh_youtube_cookies()) {
-                std::string const fresh_cookie_args = config->get_ytdlp_cookie_args();
-                found_file = fetch_sub_file(fresh_cookie_args);
-            }
+        std::string const fallback_args = config ? config->get_ytdlp_cookie_args() : "";
+        if (!fallback_args.empty() && fallback_args != initial_cargs) {
+            found_file = fetch_sub_file(fallback_args);
         }
     }
 

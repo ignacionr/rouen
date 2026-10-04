@@ -695,17 +695,13 @@ void ConfigService::clear_youtube_cookies() const {
     std::string const home_dir = home ? home : "";
     if (home_dir.empty()) return;
 
-    std::vector<std::string> const auto_cookie_paths = {
+    std::vector<std::string> const managed_cookie_paths = {
         home_dir + "/.config/rouen/cookies.txt",
-        home_dir + "/Library/Application Support/Rouen/cookies.txt",
-        home_dir + "/Downloads/cookies.txt",
-        home_dir + "/Desktop/cookies.txt",
-        home_dir + "/cookies.txt",
-        home_dir + "/.cookies.txt"
+        home_dir + "/Library/Application Support/Rouen/cookies.txt"
     };
 
     std::error_code ec;
-    for (const auto& path : auto_cookie_paths) {
+    for (const auto& path : managed_cookie_paths) {
         if (std::filesystem::exists(path)) {
             std::filesystem::remove(path, ec);
         }
@@ -733,9 +729,9 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
         };
         for (const auto& path : auto_cookie_paths) {
             if (std::filesystem::exists(path)) {
-                if (std::filesystem::file_size(path) > 0) {
+                if (std::filesystem::file_size(path) > 100) {
                     return std::format("--cookies \"{}\"", path);
-                } else {
+                } else if (path.find(".config/rouen") != std::string::npos || path.find("Application Support/Rouen") != std::string::npos) {
                     std::error_code ec;
                     std::filesystem::remove(path, ec);
                 }
@@ -761,29 +757,17 @@ std::string ConfigService::get_ytdlp_cookie_args() const {
             }
         }
         if (is_valid) {
-            bool can_access_cookies = true;
-            if constexpr (platform::is_apple) {
-                if (home && browser == "safari") {
-                    std::string const safari_cookies = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
-                    FILE* f = fopen(safari_cookies.c_str(), "rb");
-                    if (f) {
-                        fclose(f);
-                    } else {
-                        can_access_cookies = false;
-                    }
-                } else if (home && browser == "chrome") {
-                    std::string const chrome_cookies = home_dir + "/Library/Application Support/Google/Chrome/Default/Cookies";
-                    FILE* f = fopen(chrome_cookies.c_str(), "rb");
-                    if (f) {
-                        fclose(f);
-                    } else {
-                        can_access_cookies = false;
+            if (!home_dir.empty()) {
+                std::string const target_cookie_file = home_dir + "/.config/rouen/cookies.txt";
+                if (!std::filesystem::exists(target_cookie_file) || std::filesystem::file_size(target_cookie_file) < 100) {
+                    if (refresh_youtube_cookies()) {
+                        if (std::filesystem::exists(target_cookie_file) && std::filesystem::file_size(target_cookie_file) > 100) {
+                            return std::format("--cookies \"{}\"", target_cookie_file);
+                        }
                     }
                 }
             }
-            if (can_access_cookies) {
-                return std::format("--cookies-from-browser {}", browser);
-            }
+            return std::format("--cookies-from-browser {}", browser);
         }
     }
 
@@ -798,7 +782,6 @@ bool ConfigService::refresh_youtube_cookies() const {
     std::string const home_dir = home ? home : "";
     if (home_dir.empty()) return false;
 
-    // First purge any existing stale/broken cookies file before attempting browser export
     clear_youtube_cookies();
 
     std::filesystem::path const target_dir = std::filesystem::path(home_dir) / ".config" / "rouen";
@@ -806,23 +789,33 @@ bool ConfigService::refresh_youtube_cookies() const {
     std::filesystem::create_directories(target_dir, ec);
     std::filesystem::path const target_file = target_dir / "cookies.txt";
 
-    static const std::vector<std::string_view> candidate_browsers = {
-        "safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"
-    };
+    std::string configured_browser = get_env("ROUEN_COOKIES_BROWSER");
+    if constexpr (platform::is_apple) {
+        if (configured_browser.empty()) {
+            configured_browser = "safari";
+        }
+    }
+
+    std::vector<std::string> candidate_browsers;
+    if (!configured_browser.empty()) {
+        candidate_browsers.push_back(configured_browser);
+    }
+    for (std::string_view const b : {"safari", "chrome", "firefox", "brave", "edge", "vivaldi", "opera", "chromium"}) {
+        if (b != configured_browser) {
+            candidate_browsers.emplace_back(b);
+        }
+    }
 
     for (const auto& browser : candidate_browsers) {
         bool can_attempt = true;
         if constexpr (rouen::platform::is_apple) {
             if (browser == "safari") {
-                std::string const safari_cookies = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
-                FILE* f = fopen(safari_cookies.c_str(), "rb");
-                if (f) fclose(f);
-                else can_attempt = false;
+                std::string const safari_cookies1 = home_dir + "/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies";
+                std::string const safari_cookies2 = home_dir + "/Library/Cookies/Cookies.binarycookies";
+                can_attempt = std::filesystem::exists(safari_cookies1) || std::filesystem::exists(safari_cookies2);
             } else if (browser == "chrome") {
                 std::string const chrome_cookies = home_dir + "/Library/Application Support/Google/Chrome/Default/Cookies";
-                FILE* f = fopen(chrome_cookies.c_str(), "rb");
-                if (f) fclose(f);
-                else can_attempt = false;
+                can_attempt = std::filesystem::exists(chrome_cookies);
             } else if (browser == "firefox") {
                 can_attempt = std::filesystem::exists(home_dir + "/Library/Application Support/Firefox/Profiles");
             } else if (browser == "brave") {
@@ -841,7 +834,6 @@ bool ConfigService::refresh_youtube_cookies() const {
             continue;
         }
 
-        // Ensure fresh file target for each browser attempt
         if (std::filesystem::exists(target_file)) {
             std::filesystem::remove(target_file, ec);
         }
@@ -850,23 +842,14 @@ bool ConfigService::refresh_youtube_cookies() const {
                                             ytdl_exe, browser, target_file.string());
         ProcessHelper::executeCommand(cmd);
 
-        if (std::filesystem::exists(target_file) && std::filesystem::file_size(target_file) > 100) {
-            std::string const test_cmd = std::format("\"{}\" --no-warnings --cookies \"{}\" --skip-download --socket-timeout 10 \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" 2>&1",
-                                                     ytdl_exe, target_file.string());
-            std::string const test_out = ProcessHelper::executeCommand(test_cmd);
-
-            if (test_out.find("cookies are no longer valid") != std::string::npos ||
-                test_out.find("Sign in to confirm") != std::string::npos ||
-                test_out.find("YouTube requires cookies") != std::string::npos ||
-                test_out.find("bot") != std::string::npos) {
-                std::filesystem::remove(target_file, ec);
-                continue;
+        if (std::filesystem::exists(target_file) && std::filesystem::file_size(target_file) > 200) {
+            std::ifstream f(target_file);
+            std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            if (content.find("youtube.com") != std::string::npos || content.find(".google.com") != std::string::npos) {
+                const_cast<ConfigService*>(this)->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
+                CONFIG_INFO_FMT("Successfully refreshed YouTube cookies from browser: {}", browser);
+                return true;
             }
-
-            // Persist detected working browser configuration
-            const_cast<ConfigService*>(this)->set_env_value("ROUEN_COOKIES_BROWSER", std::string(browser), true);
-            CONFIG_INFO_FMT("Successfully refreshed YouTube cookies from browser: {}", browser);
-            return true;
         }
     }
 
