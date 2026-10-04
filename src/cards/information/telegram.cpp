@@ -241,12 +241,31 @@ void telegram_card::render_chat_sessions_tab() {
 
         ImGui::SameLine();
         float avail_w = ImGui::GetContentRegionAvail().x;
+#if defined(__APPLE__)
+        if (avail_w > 220.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - 215.0f));
+            bool is_voice = host_->is_voice_enabled(active_session.chat_id);
+            if (ImGui::Button(is_voice ? "Voice: ON##vbtn" : "Voice: OFF##vbtn", ImVec2(100.0f, 0))) {
+                host_->set_voice_enabled(active_session.chat_id, !is_voice);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear Context", ImVec2(100.0f, 0))) {
+                host_->clear_session_messages(active_session.chat_id);
+            }
+        } else if (avail_w > 110.0f) {
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - 105.0f));
+            if (ImGui::Button("Clear Context", ImVec2(100.0f, 0))) {
+                host_->clear_session_messages(active_session.chat_id);
+            }
+        }
+#else
         if (avail_w > 110.0f) {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - 105.0f));
             if (ImGui::Button("Clear Context", ImVec2(100.0f, 0))) {
                 host_->clear_session_messages(active_session.chat_id);
             }
         }
+#endif
         ImGui::Separator();
 
         // Messages list child

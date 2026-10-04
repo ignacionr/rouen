@@ -560,7 +560,9 @@ std::string get_modular_mcp_instructions(const std::vector<std::string>& allowed
         instr += "\nCONTACTS INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create/update, delete, or import macOS contacts. If the user wants to search contacts, view contact details, save or import contacts, use the `contacts_list`, `contacts_get`, `contacts_save`, `contacts_delete`, or `contacts_import_macos` tools.\n";
     }
     if (has_mcp("mesh")) {
-        instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and active status) and `mesh_get_status` (to check cloud relay connectivity, pairing, and latency). When asked about computers or devices on the mesh, network nodes, or mesh status, call `mesh_list_nodes` or `mesh_get_status` directly.\n";
+        instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and live connection status), `mesh_get_status` (to check cloud relay connectivity, pairing, and latency), `mesh_open_route` (to open a virtual route tunnel to a remote node), and `mesh_query_remote_api` (to query the Rouen REST API on a remote node via a mesh tunnel).\n"
+                 "- When asked for computers, nodes, or connected clients on the mesh, report only the information specifically requested by the user. Do NOT assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
+                 "- If the user explicitly asks for system information (e.g. operating system/platform, hardware, window state, or running processes) for a remote mesh node: do NOT guess based on client names or unverified metadata. Instead, query the Rouen API on the target system using `mesh_query_remote_api` (or check/open a virtual route to the target node's port 8081) to retrieve live, authoritative system information.\n";
     }
     return instr;
 }
@@ -854,10 +856,70 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
     while (!trimmed_text.empty() && std::isspace(static_cast<unsigned char>(trimmed_text.front()))) trimmed_text.erase(0, 1);
     while (!trimmed_text.empty() && std::isspace(static_cast<unsigned char>(trimmed_text.back()))) trimmed_text.pop_back();
 
-    if (trimmed_text == "/clear" || trimmed_text.starts_with("/clear ")) {
-        clear_session_messages(msg.chat_id);
-        send_telegram_message(msg.chat_id, "🧹 Chat context and conversation history have been cleared.");
-        return;
+    if (trimmed_text.starts_with('/') || trimmed_text.starts_with('-')) {
+        size_t space_pos = trimmed_text.find_first_of(" \t\r\n");
+        std::string cmd = (space_pos == std::string::npos) ? trimmed_text : trimmed_text.substr(0, space_pos);
+        std::string args = (space_pos == std::string::npos) ? "" : trimmed_text.substr(space_pos + 1);
+        while (!args.empty() && std::isspace(static_cast<unsigned char>(args.front()))) args.erase(0, 1);
+        while (!args.empty() && std::isspace(static_cast<unsigned char>(args.back()))) args.pop_back();
+
+        size_t at_pos = cmd.find('@');
+        if (at_pos != std::string::npos) {
+            cmd = cmd.substr(0, at_pos);
+        }
+        std::string lower_cmd = cmd;
+        std::transform(lower_cmd.begin(), lower_cmd.end(), lower_cmd.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        });
+
+        if (lower_cmd == "/clear" || lower_cmd == "-clear") {
+            clear_session_messages(msg.chat_id);
+            send_telegram_message(msg.chat_id, "🧹 Chat context and conversation history have been cleared.");
+            return;
+        }
+
+        if (lower_cmd == "/help" || lower_cmd == "-help") {
+            std::string help_msg =
+                "🤖 Available commands:\n"
+                "• /clear - Clear chat context and conversation history\n"
+                "• /voice [on/off] - Toggle or control voice messages for AI responses (macOS only)\n"
+                "• /help - Show this help message";
+            send_telegram_message(msg.chat_id, help_msg);
+            return;
+        }
+
+        if (lower_cmd == "/voice" || lower_cmd == "-voice") {
+#if !defined(__APPLE__)
+            send_telegram_message(msg.chat_id, "⚠️ Voice messages via macOS TTS are only available on macOS.");
+            return;
+#else
+            std::string lower_args = args;
+            std::transform(lower_args.begin(), lower_args.end(), lower_args.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            });
+
+            bool new_state = false;
+            if (lower_args == "on" || lower_args == "1" || lower_args == "true" || lower_args == "enable") {
+                new_state = true;
+            } else if (lower_args == "off" || lower_args == "0" || lower_args == "false" || lower_args == "disable") {
+                new_state = false;
+            } else if (lower_args.empty()) {
+                new_state = !is_voice_enabled(msg.chat_id);
+            } else {
+                std::string current_status = is_voice_enabled(msg.chat_id) ? "ON" : "OFF";
+                send_telegram_message(msg.chat_id, "Usage: /voice [on/off]\nCurrent status: Voice messages are " + current_status + ".");
+                return;
+            }
+
+            set_voice_enabled(msg.chat_id, new_state);
+            if (new_state) {
+                send_telegram_message(msg.chat_id, "🔊 Voice mode enabled. AI responses will be sent as voice messages.");
+            } else {
+                send_telegram_message(msg.chat_id, "🔇 Voice mode disabled. AI responses will be sent as text only.");
+            }
+            return;
+#endif
+        }
     }
 
     telegram_route matched_route;
@@ -895,6 +957,13 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
     if (matched_route.target_type == 0) { // Fixed message
         if (!matched_route.fixed_message.empty()) {
             send_telegram_message(msg.chat_id, matched_route.fixed_message);
+#if defined(__APPLE__)
+            if (is_voice_enabled(msg.chat_id)) {
+                std::thread([this, cid = msg.chat_id, txt = matched_route.fixed_message]() {
+                    send_voice_reply(cid, txt);
+                }).detach();
+            }
+#endif
         }
     } else if (matched_route.target_type == 1) { // AI Persona
         std::string persona_name = matched_route.persona_name;
@@ -942,6 +1011,11 @@ void telegram_host::route_incoming_message(const telegram_message& msg) {
                     reply = "I processed your request, but no text response was returned. Please try again.";
                 }
                 send_telegram_message(chat_id, reply);
+#if defined(__APPLE__)
+                if (is_voice_enabled(chat_id)) {
+                    send_voice_reply(chat_id, reply);
+                }
+#endif
             } catch (const std::exception& ex) {
                 std::cerr << "[TelegramHost] Thread exception: " << ex.what() << std::endl;
                 send_telegram_message(chat_id, "Error executing request: " + std::string(ex.what()));
@@ -1000,6 +1074,32 @@ bool telegram_host::clear_session_messages(int64_t chat_id) {
         return true;
     }
     return false;
+}
+
+bool telegram_host::is_voice_enabled([[maybe_unused]] int64_t chat_id) const {
+#if defined(__APPLE__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_map_.find(chat_id);
+    if (it != sessions_map_.end()) {
+        return it->second.voice_enabled;
+    }
+    return false;
+#else
+    return false;
+#endif
+}
+
+void telegram_host::set_voice_enabled([[maybe_unused]] int64_t chat_id, [[maybe_unused]] bool enabled) {
+#if defined(__APPLE__)
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto& session = sessions_map_[chat_id];
+    session.chat_id = chat_id;
+    session.voice_enabled = enabled;
+    if (std::find(session_order_.begin(), session_order_.end(), chat_id) == session_order_.end()) {
+        session_order_.push_back(chat_id);
+    }
+    save_state();
+#endif
 }
 
 bool telegram_host::send_telegram_message(int64_t chat_id, const std::string& text, telegram_message* out_msg) {
@@ -1110,6 +1210,187 @@ bool telegram_host::send_telegram_message(int64_t chat_id, const std::string& te
     }
 
     return true;
+}
+
+bool telegram_host::send_telegram_voice(int64_t chat_id, const std::string& audio_path, const std::string& caption, telegram_message* out_msg) {
+    if (audio_path.empty() || !std::filesystem::exists(audio_path)) return false;
+
+    telegram_message msg;
+    msg.message_id = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    msg.chat_id = chat_id;
+    msg.from_id = 0;
+    msg.from_name = bot_username_.empty() ? "Bot" : ("@" + bot_username_);
+    msg.text = caption.empty() ? "🎤 [Voice message]" : ("🎤 " + caption);
+    msg.timestamp = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    msg.is_outgoing = true;
+
+    // Always store message in local session history
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto& session = sessions_map_[chat_id];
+        session.chat_id = chat_id;
+        session.last_message_text = msg.text;
+        session.last_message_time = msg.timestamp;
+        session.messages.push_back(msg);
+
+        auto it = std::find(session_order_.begin(), session_order_.end(), chat_id);
+        if (it != session_order_.end()) {
+            session_order_.erase(it);
+        }
+        session_order_.insert(session_order_.begin(), chat_id);
+
+        save_state();
+    }
+
+    if (out_msg) *out_msg = msg;
+
+    std::string token;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        token = bot_token_;
+    }
+
+    if (token.empty()) return true;
+
+    CURL* curl = curl_easy_init();
+    if (!curl) return false;
+
+    std::string url = "https://api.telegram.org/bot" + token + "/sendVoice";
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+
+    curl_mime* mime = curl_mime_init(curl);
+
+    // chat_id
+    curl_mimepart* part_chat = curl_mime_addpart(mime);
+    curl_mime_name(part_chat, "chat_id");
+    std::string chat_str = std::to_string(chat_id);
+    curl_mime_data(part_chat, chat_str.c_str(), CURL_ZERO_TERMINATED);
+
+    // voice
+    curl_mimepart* part_voice = curl_mime_addpart(mime);
+    curl_mime_name(part_voice, "voice");
+    curl_mime_filedata(part_voice, audio_path.c_str());
+
+    // optional caption
+    if (!caption.empty()) {
+        curl_mimepart* part_caption = curl_mime_addpart(mime);
+        curl_mime_name(part_caption, "caption");
+        curl_mime_data(part_caption, caption.c_str(), CURL_ZERO_TERMINATED);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+
+    std::string res_str;
+    using WriteCallbackType = size_t(*)(char*, size_t, size_t, void*);
+    WriteCallbackType write_cb = [](char* ptr, size_t size, size_t nmemb, void* userdata) -> size_t {
+        auto* s = static_cast<std::string*>(userdata);
+        s->append(ptr, size * nmemb);
+        return size * nmemb;
+    };
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &res_str);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_mime_free(mime);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        std::cerr << "[TelegramHost] send_telegram_voice curl error: " << curl_easy_strerror(res) << std::endl;
+        return false;
+    }
+
+    if (!res_str.empty()) {
+        glz::json_t json;
+        auto err = glz::read_json(json, res_str);
+        if (!err && json.contains("ok") && json["ok"].get<bool>()) {
+            if (json.contains("result") && json["result"].contains("message_id")) {
+                int64_t real_id = static_cast<int64_t>(json["result"]["message_id"].get<double>());
+                std::lock_guard<std::mutex> lock(mutex_);
+                auto& session = sessions_map_[chat_id];
+                if (!session.messages.empty() && session.messages.back().text == msg.text) {
+                    session.messages.back().message_id = real_id;
+                    save_state();
+                }
+            }
+            return true;
+        } else {
+            std::cerr << "[TelegramHost] send_telegram_voice API response error: " << res_str << std::endl;
+        }
+    }
+    return false;
+}
+
+bool telegram_host::send_voice_reply([[maybe_unused]] int64_t chat_id, [[maybe_unused]] const std::string& text) {
+#if !defined(__APPLE__)
+    return false;
+#else
+    if (text.empty()) return false;
+
+    // Clean text: strip URLs
+    std::string clean_text = text;
+    size_t pos = 0;
+    while (true) {
+        pos = clean_text.find("http", pos);
+        if (pos == std::string::npos) break;
+        if (pos + 4 < clean_text.size() && (clean_text.substr(pos, 7) == "http://" || clean_text.substr(pos, 8) == "https://")) {
+            size_t end_pos = pos;
+            while (end_pos < clean_text.size() && !std::isspace(static_cast<unsigned char>(clean_text[end_pos]))) {
+                end_pos++;
+            }
+            clean_text.replace(pos, end_pos - pos, "link");
+            pos += 4;
+        } else {
+            pos += 4;
+        }
+    }
+
+    // Strip markdown formatting symbols so TTS reads clean prose
+    std::string speech_text;
+    speech_text.reserve(clean_text.size());
+    for (char c : clean_text) {
+        if (c == '*' || c == '#' || c == '`' || c == '~' || c == '_') continue;
+        speech_text.push_back(c);
+    }
+
+    auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    std::string base_path = (std::filesystem::temp_directory_path() / std::format("rouen_voice_{}_{}", chat_id, now)).string();
+    std::string txt_path = base_path + ".txt";
+    std::string m4a_path = base_path + ".m4a";
+    std::string ogg_path = base_path + ".ogg";
+
+    {
+        std::ofstream txt_file(txt_path);
+        if (!txt_file.is_open()) return false;
+        txt_file << speech_text;
+    }
+
+    std::string say_bin = rouen::platform::find_executable("say");
+    if (say_bin.empty()) say_bin = "/usr/bin/say";
+    std::string say_cmd = std::format("\"{}\" -f \"{}\" -o \"{}\"", say_bin, txt_path, m4a_path);
+    int say_res = std::system(say_cmd.c_str());
+
+    bool success = false;
+    if (say_res == 0 && std::filesystem::exists(m4a_path) && std::filesystem::file_size(m4a_path) > 0) {
+        std::string send_path = m4a_path;
+        std::string ffmpeg_bin = rouen::platform::find_executable("ffmpeg");
+        if (!ffmpeg_bin.empty()) {
+            std::string ffmpeg_cmd = std::format("\"{}\" -y -i \"{}\" -c:a libopus -b:a 32k -vbr on \"{}\" 2>/dev/null", ffmpeg_bin, m4a_path, ogg_path);
+            int conv_res = std::system(ffmpeg_cmd.c_str());
+            if (conv_res == 0 && std::filesystem::exists(ogg_path) && std::filesystem::file_size(ogg_path) > 0) {
+                send_path = ogg_path;
+            }
+        }
+        success = send_telegram_voice(chat_id, send_path);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(txt_path, ec);
+    std::filesystem::remove(m4a_path, ec);
+    std::filesystem::remove(ogg_path, ec);
+
+    return success;
+#endif
 }
 
 int64_t telegram_host::get_operator_chat_id() const {

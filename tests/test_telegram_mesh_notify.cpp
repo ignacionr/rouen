@@ -340,3 +340,145 @@ TEST(TelegramMeshNotifyTest, TelegramHostPublishPresenceNoDeadlock) {
     EXPECT_FALSE(rec.hostname.empty());
 }
 
+TEST(TelegramMeshNotifyTest, TelegramChatSessionVoiceGlazeSerialization) {
+    telegram_chat_session s{
+        .chat_id = 12345,
+        .user_id = 67890,
+        .user_name = "Alice",
+        .last_message_text = "Hello",
+        .last_message_time = 1700000000,
+        .messages = {},
+        .voice_enabled = true
+    };
+
+    std::string json_str;
+    auto err = glz::write_json(s, json_str);
+    EXPECT_FALSE(err);
+    EXPECT_NE(json_str.find("\"voice_enabled\":true"), std::string::npos);
+
+    telegram_chat_session decoded{};
+    auto read_err = glz::read_json(decoded, json_str);
+    EXPECT_FALSE(read_err);
+    EXPECT_EQ(decoded.chat_id, 12345);
+    EXPECT_TRUE(decoded.voice_enabled);
+
+    // Test default when omitted
+    std::string json_without_voice = R"({"chat_id":99999,"user_id":11111,"user_name":"Bob","last_message_text":"Hi","last_message_time":0,"messages":[]})";
+    telegram_chat_session decoded2{};
+    auto read_err2 = glz::read_json(decoded2, json_without_voice);
+    EXPECT_FALSE(read_err2);
+    EXPECT_FALSE(decoded2.voice_enabled);
+}
+
+TEST(TelegramMeshNotifyTest, TelegramHostCommandsHelpAndClear) {
+    auto host = telegram_host::get_host();
+    ASSERT_NE(host, nullptr);
+    int64_t chat_id = 999111222;
+
+    // Test /help
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/help"));
+    auto sess1 = host->get_session(chat_id);
+    ASSERT_TRUE(sess1.has_value());
+    ASSERT_FALSE(sess1->messages.empty());
+    EXPECT_TRUE(sess1->messages.back().is_outgoing);
+    EXPECT_NE(sess1->messages.back().text.find("Available commands"), std::string::npos);
+    EXPECT_NE(sess1->messages.back().text.find("/clear"), std::string::npos);
+    EXPECT_NE(sess1->messages.back().text.find("/voice"), std::string::npos);
+
+    // Test -help (dash command variant)
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "-help"));
+    auto sess2 = host->get_session(chat_id);
+    ASSERT_TRUE(sess2.has_value());
+    ASSERT_FALSE(sess2->messages.empty());
+    EXPECT_TRUE(sess2->messages.back().is_outgoing);
+    EXPECT_NE(sess2->messages.back().text.find("Available commands"), std::string::npos);
+
+    // Test /clear
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/clear"));
+    auto sess3 = host->get_session(chat_id);
+    ASSERT_TRUE(sess3.has_value());
+    // Context cleared replies with message and stores only the reply
+    ASSERT_FALSE(sess3->messages.empty());
+    EXPECT_TRUE(sess3->messages.back().is_outgoing);
+    EXPECT_NE(sess3->messages.back().text.find("Chat context and conversation history have been cleared"), std::string::npos);
+
+    // Test -clear (dash variant)
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "-clear"));
+    auto sess4 = host->get_session(chat_id);
+    ASSERT_TRUE(sess4.has_value());
+    ASSERT_FALSE(sess4->messages.empty());
+    EXPECT_TRUE(sess4->messages.back().is_outgoing);
+    EXPECT_NE(sess4->messages.back().text.find("Chat context and conversation history have been cleared"), std::string::npos);
+}
+
+TEST(TelegramMeshNotifyTest, TelegramHostCommandsVoice) {
+    auto host = telegram_host::get_host();
+    ASSERT_NE(host, nullptr);
+    int64_t chat_id = 999333444;
+
+#if !defined(__APPLE__)
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice on"));
+    auto sess = host->get_session(chat_id);
+    ASSERT_TRUE(sess.has_value());
+    EXPECT_FALSE(host->is_voice_enabled(chat_id));
+    EXPECT_NE(sess->messages.back().text.find("only available on macOS"), std::string::npos);
+#else
+    // Reset to initially disabled state for hermetic testing
+    host->set_voice_enabled(chat_id, false);
+    EXPECT_FALSE(host->is_voice_enabled(chat_id));
+
+    // /voice on
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice on"));
+    EXPECT_TRUE(host->is_voice_enabled(chat_id));
+    auto sess1 = host->get_session(chat_id);
+    ASSERT_TRUE(sess1.has_value());
+    EXPECT_NE(sess1->messages.back().text.find("Voice mode enabled"), std::string::npos);
+
+    // /voice off
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice off"));
+    EXPECT_FALSE(host->is_voice_enabled(chat_id));
+    auto sess2 = host->get_session(chat_id);
+    ASSERT_TRUE(sess2.has_value());
+    EXPECT_NE(sess2->messages.back().text.find("Voice mode disabled"), std::string::npos);
+
+    // /voice (toggle to on)
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice"));
+    EXPECT_TRUE(host->is_voice_enabled(chat_id));
+    auto sess3 = host->get_session(chat_id);
+    ASSERT_TRUE(sess3.has_value());
+    EXPECT_NE(sess3->messages.back().text.find("Voice mode enabled"), std::string::npos);
+
+    // /voice (toggle to off)
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice"));
+    EXPECT_FALSE(host->is_voice_enabled(chat_id));
+    auto sess4 = host->get_session(chat_id);
+    ASSERT_TRUE(sess4.has_value());
+    EXPECT_NE(sess4->messages.back().text.find("Voice mode disabled"), std::string::npos);
+
+    // Case-insensitive /voice ON
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice ON"));
+    EXPECT_TRUE(host->is_voice_enabled(chat_id));
+
+    // Dash command: -voice off
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "-voice off"));
+    EXPECT_FALSE(host->is_voice_enabled(chat_id));
+
+    // Invalid argument
+    EXPECT_TRUE(host->inject_incoming_message(chat_id, chat_id, "Tester", "/voice unknown_arg"));
+    auto sess5 = host->get_session(chat_id);
+    ASSERT_TRUE(sess5.has_value());
+    EXPECT_NE(sess5->messages.back().text.find("Usage: /voice [on/off]"), std::string::npos);
+
+    // Test send_voice_reply audio file synthesis
+    host->set_voice_enabled(chat_id, true);
+    // send_voice_reply synthesizes speech via say and converts to ogg/m4a, then invokes send_telegram_voice
+    host->send_voice_reply(chat_id, "Hello, this is a test audio response synthesized via local say.");
+    auto sess6 = host->get_session(chat_id);
+    ASSERT_TRUE(sess6.has_value());
+    ASSERT_FALSE(sess6->messages.empty());
+    EXPECT_TRUE(sess6->messages.back().is_outgoing);
+    EXPECT_NE(sess6->messages.back().text.find("Voice message"), std::string::npos);
+#endif
+}
+
+

@@ -119,7 +119,9 @@ namespace rouen::cards {
             instr += "\nCONTACTS INSTRUCTIONS:\nYou have access to tools that can list, retrieve, create/update, delete, or import macOS contacts. If the user wants to search contacts, view contact details, save or import contacts, use the `contacts_list`, `contacts_get`, `contacts_save`, `contacts_delete`, or `contacts_import_macos` tools.\n";
         }
         if (has_mcp("mesh")) {
-            instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and active status) and `mesh_get_status` (to check cloud relay connectivity, pairing, and latency). When asked about computers or devices on the mesh, network nodes, or mesh status, call `mesh_list_nodes` or `mesh_get_status` directly.\n";
+            instr += "\nROUEN MESH INSTRUCTIONS:\nYou have access to Rouen mesh tools: `mesh_list_nodes` (to list connected computers/nodes, hostnames, client IDs, and live connection status), `mesh_get_status` (to check cloud relay connectivity, pairing, and latency), `mesh_open_route` (to open a virtual route tunnel to a remote node), and `mesh_query_remote_api` (to query the Rouen REST API on a remote node via a mesh tunnel).\n"
+                     "- When asked for computers, nodes, or connected clients on the mesh, report only the information specifically requested by the user. Do NOT assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
+                     "- If the user explicitly asks for system information (e.g. operating system/platform, hardware, window state, or running processes) for a remote mesh node: do NOT guess based on client names or unverified metadata. Instead, query the Rouen API on the target system using `mesh_query_remote_api` (or check/open a virtual route to the target node's port 8081) to retrieve live, authoritative system information.\n";
         }
         return instr;
     }

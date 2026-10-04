@@ -1313,7 +1313,7 @@ void rouen_mesh_host::handle_incoming_frame(const mesh::mesh_frame& frame) {
         case mesh::frame_type::CLIENT_LIST_RESP: {
             if (!frame.payload.empty()) {
                 std::vector<mesh::mesh_client_dto> clients;
-                if (glz::read_json(clients, frame.payload) == glz::error_code::none) {
+                if (glz::read<glz::opts{.error_on_unknown_keys = false}>(clients, frame.payload) == glz::error_code::none) {
                     connected_clients_ = std::move(clients);
                 }
             }

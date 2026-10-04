@@ -115,10 +115,10 @@ void test_client_node_discovery_parsing() {
     cfg.client_id = "rouen-macbook-pro";
     host.initialize(cfg);
 
-    // Simulate receiving real JSON payload from rouen-service
+    // Simulate receiving real JSON payload from rouen-service with cluster metadata and extra fields
     std::string json_clients = R"([
-        {"client_id":"rouen-macbook-pro","ip_address":"127.0.0.1","user_agent":"Rouen/1.3","uptime_seconds":3600,"last_ping_ago_seconds":2,"requests_tunneled":10,"bytes_sent":1024,"bytes_received":2048},
-        {"client_id":"remote-peer-alpha","ip_address":"10.0.0.5","user_agent":"Rouen/1.3","uptime_seconds":7200,"last_ping_ago_seconds":1,"requests_tunneled":50,"bytes_sent":8192,"bytes_received":16384}
+        {"client_id":"rouen-macbook-pro","ip_address":"127.0.0.1","user_agent":"Rouen/1.3","connected_at_sec":1791124000,"uptime_seconds":3600,"last_ping_ago_seconds":2,"requests_tunneled":10,"bytes_sent":1024,"bytes_received":2048,"node_id":"s1","extra_future_field":"value"},
+        {"client_id":"remote-peer-alpha","ip_address":"10.0.0.5","user_agent":"Rouen/1.3","connected_at_sec":1791124010,"uptime_seconds":7200,"last_ping_ago_seconds":1,"requests_tunneled":50,"bytes_sent":8192,"bytes_received":16384,"node_id":"s2"}
     ])";
 
     rouen::mesh::mesh_frame resp_frame{
@@ -133,7 +133,16 @@ void test_client_node_discovery_parsing() {
 
     test_helpers::assert_equal(2, clients.size(), "Parsed 2 online connected mesh nodes from JSON payload");
     test_helpers::assert_string_equal("rouen-macbook-pro", clients[0].client_id, "First client_id matches");
+    test_helpers::assert_string_equal("s1", clients[0].node_id, "First client node_id matches");
     test_helpers::assert_string_equal("remote-peer-alpha", clients[1].client_id, "Second client_id matches");
+    test_helpers::assert_string_equal("s2", clients[1].node_id, "Second client node_id matches");
+
+    // Test platform detection
+    rouen::services::presence_record default_prec{};
+    test_helpers::assert_string_equal("unknown", default_prec.platform, "Default presence_record platform is unknown");
+#if defined(__APPLE__)
+    test_helpers::assert_string_equal("macos", rouen::services::presence_service::detect_platform(), "detect_platform returns macos on Apple");
+#endif
 }
 
 void test_handshake_signature_generation() {

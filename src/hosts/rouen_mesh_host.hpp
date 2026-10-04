@@ -212,11 +212,13 @@ struct mesh_client_dto {
     std::string client_id;
     std::string ip_address;
     std::string user_agent;
+    uint64_t connected_at_sec{0};
     uint64_t uptime_seconds{0};
     uint64_t last_ping_ago_seconds{0};
     uint64_t requests_tunneled{0};
     uint64_t bytes_sent{0};
     uint64_t bytes_received{0};
+    std::string node_id;
 };
 
 // Virtual Route Information DTO

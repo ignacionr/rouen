@@ -57,6 +57,7 @@ struct telegram_chat_session {
     std::string last_message_text;
     int64_t last_message_time{0};
     std::vector<telegram_message> messages;
+    bool voice_enabled{false};
 
     struct glaze {
         using T = telegram_chat_session;
@@ -66,7 +67,8 @@ struct telegram_chat_session {
             "user_name", &T::user_name,
             "last_message_text", &T::last_message_text,
             "last_message_time", &T::last_message_time,
-            "messages", &T::messages
+            "messages", &T::messages,
+            "voice_enabled", &T::voice_enabled
         );
     };
 };
@@ -150,6 +152,10 @@ public:
     bool send_manual_message(int64_t chat_id, const std::string& text);
     bool inject_incoming_message(int64_t chat_id, int64_t from_id, const std::string& from_name, const std::string& text);
     bool clear_session_messages(int64_t chat_id);
+    bool is_voice_enabled(int64_t chat_id) const;
+    void set_voice_enabled(int64_t chat_id, bool enabled);
+    bool send_telegram_voice(int64_t chat_id, const std::string& audio_path, const std::string& caption = "", telegram_message* out_msg = nullptr);
+    bool send_voice_reply(int64_t chat_id, const std::string& text);
 
     // Routes Management
     std::vector<telegram_route> get_routes() const;

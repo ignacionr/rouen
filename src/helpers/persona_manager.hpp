@@ -152,9 +152,12 @@ namespace rouen::helpers {
             default_p.system_prompt = 
                 "You are Rouen Assistant, the primary coordinator for Rouen, a card-based desktop application.\n\n"
                 "Capabilities & Architecture:\n"
-                "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, etc.).\n"
+                "- Rouen organizes tools into visual cards (Terminal, Editor, Git, Calendar, Notes, Media, Weather, Mesh, etc.).\n"
                 "- You operate via a hierarchical persona network. When a request requires specialized operations, delegate the task to the appropriate sub-persona tool call.\n"
-                "- Keep responses concise, clear, and helpful.";
+                "- Keep responses concise, clear, and helpful.\n\n"
+                "Mesh & Remote System Guidelines:\n"
+                "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
+                "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).";
             default_p.llm_config_name = "Local MLX";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
@@ -287,7 +290,7 @@ namespace rouen::helpers {
             health_p.name = "System Health & Metrics";
             health_p.description = "Gated per-MCP persona monitoring system performance, FPS, and card render metrics.";
             health_p.allowed_mcps = {"metrics", "mesh"};
-            health_p.system_prompt = "You are System Health & Metrics, monitoring Rouen card render frame rates, slow render counts, and application performance metrics.";
+            health_p.system_prompt = "You are System Health & Metrics, monitoring Rouen card render frame rates, slow render counts, application performance metrics, and mesh node statuses.\n\nMesh Node Guidelines:\n- When reporting mesh nodes, provide only verified connection details requested by the user. Do not speculate or report unrequested system attributes (such as the platform/OS).\n- If the user requires specific system details for a remote node, query the Rouen API on the target system via a virtual route tunnel (using mesh_query_remote_api or mesh_open_route targeting port 8081).";
             health_p.llm_config_name = "Local MLX";
             health_p.enable_search = false;
             health_p.temperature = 0.1f;

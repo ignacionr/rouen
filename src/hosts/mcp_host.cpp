@@ -3226,7 +3226,7 @@ mcp_host::mcp_host() {
 
     function_definition mesh_list_nodes_def(
         "mesh_list_nodes",
-        "Lists all computers, nodes, and devices currently connected or known on the Rouen mesh network, including their hostnames, platforms, client IDs, active/idle status, and last seen timestamps.",
+        "Lists computers, nodes, and devices currently connected or known on the Rouen mesh network, including client IDs, hostnames, and live connection status. Note: If the user requires specific system or platform information for a remote node, query the target node's Rouen REST API via an open mesh virtual route.",
         R"({"type":"object","properties":{}})",
         [](const std::string& /*params*/) -> std::string {
             try {
@@ -3271,8 +3271,14 @@ mcp_host::mcp_host() {
                     if (glz::read_json(rec, entry.value) == glz::error_code::none && !rec.client_id.empty()) {
                         auto& node = nodes[rec.client_id];
                         node.client_id = rec.client_id;
-                        node.hostname = rec.hostname;
-                        node.platform = rec.platform;
+                        // Avoid inheriting false "mac" platforms and hostnames from legacy presence bugs on remote nodes
+                        if (rec.client_id != local_cid && rec.platform == "mac" && rec.hostname == "mac") {
+                            node.platform = "unknown";
+                            node.hostname = rec.client_id;
+                        } else {
+                            node.hostname = rec.hostname;
+                            node.platform = rec.platform;
+                        }
                         node.user = rec.user;
                         node.status = rec.status;
                         node.last_active = rec.last_active_iso;
@@ -3286,7 +3292,7 @@ mcp_host::mcp_host() {
                     auto& node = nodes[c.client_id];
                     node.client_id = c.client_id;
                     if (!c.ip_address.empty()) node.ip_address = c.ip_address;
-                    if (node.status.empty() || node.status == "offline") node.status = "connected";
+                    node.status = "connected";
                     node.is_self = (c.client_id == local_cid);
                 }
 
@@ -3295,7 +3301,11 @@ mcp_host::mcp_host() {
                     glz::json_t item;
                     item["client_id"] = n.client_id;
                     item["hostname"] = n.hostname.empty() ? cid : n.hostname;
-                    item["platform"] = n.platform.empty() ? "unknown" : n.platform;
+                    if (n.is_self) {
+                        item["platform"] = n.platform;
+                    } else if (!n.platform.empty() && n.platform != "unknown" && n.platform != "mac") {
+                        item["platform"] = n.platform;
+                    }
                     item["user"] = n.user;
                     item["status"] = n.status.empty() ? "connected" : n.status;
                     item["last_active"] = n.last_active;
@@ -3354,6 +3364,97 @@ mcp_host::mcp_host() {
     register_function("mesh", mesh_get_status_def);
     register_function("system", mesh_get_status_def);
     register_function("deck", mesh_get_status_def);
+
+    function_definition mesh_open_route_def(
+        "mesh_open_route",
+        "Opens a virtual route (transparent TCP tunnel) to a target Rouen mesh client ID and port (e.g. target_port 8081 for Rouen REST API), allowing local requests to reach the target machine.",
+        R"json({"type":"object","properties":{"target_client_id":{"type":"string","description":"Target mesh client ID (e.g. 'rouen-md-d-ws-ir-01')"},"target_port":{"type":"integer","description":"Target port on remote host (e.g. 8081 for Rouen API)"},"local_port":{"type":"integer","description":"Optional local listening port (0 for automatic allocation)"}},"required":["target_client_id","target_port"]})json",
+        [](const std::string& params) -> std::string {
+            try {
+                glz::json_t p;
+                auto err = glz::read_json(p, params);
+                if (err || !p.is_object()) return R"({"error":"Invalid JSON parameters"})";
+                std::string target_client_id = p.contains("target_client_id") ? p["target_client_id"].get<std::string>() : "";
+                int target_port = p.contains("target_port") ? static_cast<int>(p["target_port"].get<double>()) : 8081;
+                int local_port = p.contains("local_port") ? static_cast<int>(p["local_port"].get<double>()) : 0;
+                if (target_client_id.empty() || target_port <= 0) return R"({"error":"target_client_id and target_port are required"})";
+
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                std::string out_err;
+                bool ok = mesh.open_virtual_route(target_client_id, static_cast<uint16_t>(target_port), out_err, static_cast<uint16_t>(local_port));
+                if (!ok) {
+                    return std::format(R"({{"success":false,"error":"{}"}})", out_err);
+                }
+                uint16_t assigned_port = static_cast<uint16_t>(local_port);
+                for (const auto& r : mesh.get_active_routes()) {
+                    if (r.target_client_id == target_client_id && r.target_port == target_port) {
+                        assigned_port = r.local_port;
+                        break;
+                    }
+                }
+                return std::format(R"({{"success":true,"target_client_id":"{}","target_port":{},"local_port":{},"local_url":"http://127.0.0.1:{}"}})",
+                    target_client_id, target_port, assigned_port, assigned_port);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"error":"{}"}})", e.what());
+            }
+        },
+        "mesh"
+    );
+    register_function("mesh", mesh_open_route_def);
+    register_function("system", mesh_open_route_def);
+    register_function("deck", mesh_open_route_def);
+
+    function_definition mesh_query_remote_api_def(
+        "mesh_query_remote_api",
+        "Queries the Rouen REST API on a remote target mesh client via a virtual route tunnel. Automatically ensures a tunnel to port 8081 is open and executes the HTTP request, returning the remote node's verified live system data.",
+        R"json({"type":"object","properties":{"target_client_id":{"type":"string","description":"Target client ID (e.g. 'rouen-md-d-ws-ir-01')"},"endpoint":{"type":"string","description":"API endpoint to query (e.g. '/api/presence', '/api/window', '/api/openapi.json', '/api/health')"}},"required":["target_client_id","endpoint"]})json",
+        [](const std::string& params) -> std::string {
+            try {
+                glz::json_t p;
+                auto err = glz::read_json(p, params);
+                if (err || !p.is_object()) return R"({"error":"Invalid JSON parameters"})";
+                std::string target_client_id = p.contains("target_client_id") ? p["target_client_id"].get<std::string>() : "";
+                std::string endpoint = p.contains("endpoint") ? p["endpoint"].get<std::string>() : "/api/health";
+                if (target_client_id.empty()) return R"({"error":"target_client_id is required"})";
+
+                auto& mesh = hosts::rouen_mesh_host::instance();
+                uint16_t local_port = 0;
+                for (const auto& r : mesh.get_active_routes()) {
+                    if (r.target_client_id == target_client_id && r.target_port == 8081) {
+                        local_port = r.local_port;
+                        break;
+                    }
+                }
+                if (local_port == 0) {
+                    std::string out_err;
+                    if (!mesh.open_virtual_route(target_client_id, 8081, out_err, 0)) {
+                        return std::format(R"({{"error":"Failed to open virtual route to {}:8081: {}"}})", target_client_id, out_err);
+                    }
+                    for (const auto& r : mesh.get_active_routes()) {
+                        if (r.target_client_id == target_client_id && r.target_port == 8081) {
+                            local_port = r.local_port;
+                            break;
+                        }
+                    }
+                }
+                if (local_port == 0) {
+                    return R"({"error":"Tunnel opened but local listening port was not found"})";
+                }
+
+                std::string norm_endpoint = endpoint.starts_with('/') ? endpoint : ("/" + endpoint);
+                std::string url = std::format("http://127.0.0.1:{}{}", local_port, norm_endpoint);
+                http::fetch fetcher(5);
+                std::string response_body = fetcher(url);
+                return response_body.empty() ? R"({"status":"ok","empty_response":true})" : response_body;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"error":"{}"}})", e.what());
+            }
+        },
+        "mesh"
+    );
+    register_function("mesh", mesh_query_remote_api_def);
+    register_function("system", mesh_query_remote_api_def);
+    register_function("deck", mesh_query_remote_api_def);
 
     register_function("deck", list_card_schemas_def);
 }

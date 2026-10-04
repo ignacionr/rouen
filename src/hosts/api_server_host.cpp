@@ -2878,7 +2878,10 @@ std::string api_server_host::handle_swagger_ui(struct mg_connection* /*c*/, stru
 }
 
 std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
-    return R"json({
+    static const std::string spec = []() {
+        std::string s;
+        s.reserve(70000);
+        s += R"json({
   "openapi": "3.0.3",
   "info": {
     "title": "Rouen REST API",
@@ -3294,7 +3297,8 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         }
       }
     },
-)json" R"json(
+)json";
+        s += R"json(
     "/api/deck/scroll": {
       "get": {
         "tags": ["Deck Navigation"],
@@ -4940,6 +4944,9 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
     }
   }
 })json";
+        return s;
+    }();
+    return spec;
 }
 
 std::string api_server_host::handle_telegram_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {

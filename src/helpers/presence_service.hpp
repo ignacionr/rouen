@@ -16,6 +16,11 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+#else
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 #include "../hosts/rouen_mesh_host.hpp"
@@ -36,7 +41,7 @@ struct presence_record {
     std::string client_id;
     std::string user;
     std::string hostname;
-    std::string platform{"mac"};
+    std::string platform{"unknown"};
     uint64_t last_active_epoch_ms{0};
     std::string last_active_iso;
     std::string interaction_type{"ui"}; // "ui_input", "mouse", "keyboard", "detached_window", "api", "startup"
@@ -199,7 +204,7 @@ public:
             .client_id = get_local_client_id(),
             .user = detect_current_user(),
             .hostname = detect_hostname(),
-            .platform = "mac",
+            .platform = detect_platform(),
             .last_active_epoch_ms = last_interaction_epoch_ms_,
             .last_active_iso = last_interaction_iso_,
             .interaction_type = last_interaction_type_,
@@ -574,15 +579,36 @@ public:
         return std::string(u);
     }
 
+    static std::string detect_platform() {
+#if defined(_WIN32)
+        return "windows";
+#elif defined(__APPLE__)
+        return "macos";
+#elif defined(__linux__)
+        return "linux";
+#else
+        return "unknown";
+#endif
+    }
+
     static std::string detect_hostname() {
-#ifndef _WIN32
+#ifdef _WIN32
+        char buf[256];
+        DWORD size = sizeof(buf);
+        if (GetComputerNameA(buf, &size)) {
+            return std::string(buf);
+        }
+        const char* comp = std::getenv("COMPUTERNAME");
+        if (comp && *comp) return std::string(comp);
+        return "windows-pc";
+#else
         char buf[256];
         if (gethostname(buf, sizeof(buf)) == 0) {
             buf[sizeof(buf) - 1] = '\0';
             return std::string(buf);
         }
+        return "localhost";
 #endif
-        return "mac";
     }
 
     static std::string current_iso_time(std::chrono::system_clock::time_point tp = std::chrono::system_clock::now()) {
