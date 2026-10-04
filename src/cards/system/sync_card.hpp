@@ -231,12 +231,13 @@ private:
             ImGui::TextColored(get_color(2), "Registry Synchronized Items");
             size_t notes_n = service.get_mesh_entry_count("notes");
             size_t contacts_n = service.get_mesh_entry_count("contacts");
+            size_t personas_n = service.get_mesh_entry_count("personas");
             size_t travel_n = service.get_mesh_entry_count("travel");
             size_t rss_n = service.get_mesh_entry_count("rss");
             size_t total_n = service.get_mesh_entry_count();
 
-            ImGui::Text("Notes: %zu  |  Contacts: %zu  |  Travel: %zu  |  RSS: %zu  |  Total Registry: %zu",
-                        notes_n, contacts_n, travel_n, rss_n, total_n);
+            ImGui::Text("Notes: %zu  |  Contacts: %zu  |  Personas: %zu  |  Travel: %zu  |  RSS: %zu  |  Total: %zu",
+                        notes_n, contacts_n, personas_n, travel_n, rss_n, total_n);
             ImGui::Separator();
         }
 

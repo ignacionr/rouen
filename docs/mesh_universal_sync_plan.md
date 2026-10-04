@@ -19,6 +19,7 @@ All data payloads in the Mesh Registry are protected using **Client-Side End-to-
    - Entities are identified individually under the `sync/v1/` prefix:
      - `sync/v1/notes/{slug}`
      - `sync/v1/contacts/{uuid}`
+     - `sync/v1/personas/{slug}`
      - `sync/v1/travel/{slug}`
      - `sync/v1/rss/feeds`
      - `sync/v1/series/{id}`
@@ -66,6 +67,7 @@ All data payloads in the Mesh Registry are protected using **Client-Side End-to-
 
 ### Phase 3: Granular Real-Time Publish Hooks
 - [ ] Wire granular publish hooks into Contact Card & Contacts Repository (`sync_item("contacts", ...)`).
+- [ ] Wire granular publish hooks into Persona Manager & Personas (`sync_item("personas", ...)`).
 - [ ] Wire granular publish hooks into Markdown Notes Card & Repository (`sync_item("notes", ...)`).
 - [ ] Wire granular publish hooks into Travel, RSS, Series, and Objectives mutators.
 

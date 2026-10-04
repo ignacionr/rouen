@@ -7,11 +7,13 @@
 #include <vector>
 #include <stdexcept>
 #include <utility>
+#include <functional>
 
 #include "config_service.hpp"
 #include "cppgpt.hpp"
 #include "gemini_adapter.hpp"
 #include "glaze_include.hpp"
+#include "../registrar.hpp"
 
 namespace rouen::hosts {
 
@@ -288,6 +290,12 @@ namespace rouen::hosts {
             load_configs();
         }
 
+        using sync_hook_t = std::function<void(std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted)>;
+
+        void set_sync_hook(sync_hook_t hook) {
+            sync_hook_ = std::move(hook);
+        }
+
     private:
         LLMConfigManager();
         ~LLMConfigManager() = default;
@@ -298,6 +306,8 @@ namespace rouen::hosts {
 
         std::vector<LLMConfigEntry> configs_;
         std::string default_config_name_{"Default"};
+        mutable sync_hook_t sync_hook_;
+        mutable bool is_sync_suppressed_{false};
     };
 
 } // namespace rouen::hosts

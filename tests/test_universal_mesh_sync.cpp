@@ -8,6 +8,7 @@
 #include "../src/hosts/universal_sync_host.hpp"
 #include "../src/hosts/rouen_mesh_host.hpp"
 #include "../src/helpers/sync_crypto_service.hpp"
+#include "../src/helpers/persona_manager.hpp"
 #include <cassert>
 #include <filesystem>
 #include <fstream>
@@ -199,6 +200,107 @@ void test_incremental_and_periodic_sync() {
     test_helpers::assert_true(!sync.is_periodic_sync_running(), "Periodic sync stopped cleanly");
 }
 
+void test_personas_universal_sync() {
+    std::cout << "\n--- Testing Personas Configurations in Universal Sync ---\n";
+    auto& sync = rouen::hosts::UniversalSyncHost::instance();
+    auto& mesh = rouen::hosts::rouen_mesh_host::instance();
+    auto& crypto = rouen::sync::SyncCryptoService::instance();
+    auto& pm = rouen::helpers::PersonaManager::instance();
+
+    // Ensure mesh is paired and active
+    rouen::hosts::mesh_host_config cfg{};
+    cfg.is_paired = true;
+    cfg.client_id = "test-node-personas";
+    mesh.set_config(cfg);
+    crypto.set_passphrase("PersonaSyncSecretKey456");
+    sync.initialize_canary();
+
+    // 1. Test export_to_directory
+    auto temp_dir = std::filesystem::temp_directory_path() / "test_personas_export";
+    std::filesystem::remove_all(temp_dir);
+    bool exp_ok = pm.export_to_directory(temp_dir);
+    test_helpers::assert_true(exp_ok, "PersonaManager::export_to_directory succeeded");
+    test_helpers::assert_true(std::filesystem::exists(temp_dir / "rouen-assistant.json"), "rouen-assistant.json was exported");
+    test_helpers::assert_true(std::filesystem::exists(temp_dir / "active.json"), "active.json metadata was exported");
+
+    // 2. Test granular sync_item for a custom persona
+    rouen::helpers::Persona custom_p;
+    custom_p.name = "Mesh Specialist";
+    custom_p.description = "Expert in peer-to-peer mesh operations and sync.";
+    custom_p.allowed_mcps = {"mesh", "terminal"};
+    custom_p.system_prompt = "You are Mesh Specialist.";
+    custom_p.llm_config_name = "Local MLX";
+    custom_p.enable_search = false;
+    custom_p.temperature = 0.2f;
+
+    std::string custom_json = glz::write<glz::opts{.prettify = true}>(custom_p).value_or("");
+    bool sync_item_ok = sync.sync_item("personas", "mesh-specialist.json", custom_json, false);
+    test_helpers::assert_true(sync_item_ok, "sync_item succeeded for custom persona");
+
+    // 3. Verify registry contains encrypted persona envelope
+    auto p_val = mesh.get_registry_value("sync/v1/personas/mesh-specialist.json");
+    test_helpers::assert_true(p_val.has_value(), "Registry contains key 'sync/v1/personas/mesh-specialist.json'");
+
+    auto dec_p = crypto.decrypt_envelope(*p_val);
+    test_helpers::assert_true(dec_p.has_value(), "Decrypted persona envelope successfully");
+    test_helpers::assert_string_equal("personas", dec_p->dataset, "Dataset is 'personas'");
+    test_helpers::assert_string_equal("mesh-specialist.json", dec_p->key, "Key is 'mesh-specialist.json'");
+    test_helpers::assert_true(dec_p->plaintext.find("Mesh Specialist") != std::string::npos, "Decrypted plaintext contains 'Mesh Specialist'");
+    test_helpers::assert_true(!dec_p->deleted, "Persona is not deleted");
+
+    // 4. Verify get_mesh_entry_count("personas")
+    size_t personas_count = sync.get_mesh_entry_count("personas");
+    test_helpers::assert_true(personas_count >= 1, "get_mesh_entry_count('personas') >= 1");
+
+    // 5. Test import_from_directory
+    auto import_dir = std::filesystem::temp_directory_path() / "test_personas_import";
+    std::filesystem::remove_all(import_dir);
+    std::filesystem::create_directories(import_dir);
+    {
+        std::ofstream out(import_dir / "mesh-specialist.json");
+        out << custom_json;
+    }
+    bool imp_ok = pm.import_from_directory(import_dir);
+    test_helpers::assert_true(imp_ok, "PersonaManager::import_from_directory succeeded");
+
+    bool found_imported = false;
+    for (const auto& p : pm.get_personas()) {
+        if (p.name == "Mesh Specialist") {
+            found_imported = true;
+            break;
+        }
+    }
+    test_helpers::assert_true(found_imported, "Imported persona was successfully registered in PersonaManager");
+
+    // 6. Test LLM Config Sync under config/llm_configs.json
+    std::string sample_llm_cfg = R"({"default_config_name":"Local MLX","configs":[{"name":"Local MLX","provider":"custom","base_url":"http://localhost:8098/v1","model_name":"mlx-community/Qwen3.5-9B-MLX-4bit"}]})";
+    bool llm_sync_ok = sync.sync_item("config", "llm_configs.json", sample_llm_cfg, false);
+    test_helpers::assert_true(llm_sync_ok, "sync_item succeeded for llm_configs.json");
+
+    auto llm_val = mesh.get_registry_value("sync/v1/config/llm_configs.json");
+    test_helpers::assert_true(llm_val.has_value(), "Registry contains key 'sync/v1/config/llm_configs.json'");
+
+    auto dec_llm = crypto.decrypt_envelope(*llm_val);
+    test_helpers::assert_true(dec_llm.has_value(), "Decrypted llm_configs envelope successfully");
+    test_helpers::assert_string_equal("config", dec_llm->dataset, "Dataset is 'config'");
+    test_helpers::assert_string_equal("llm_configs.json", dec_llm->key, "Key is 'llm_configs.json'");
+
+    // 7. Test Persona Tombstone deletion
+    bool del_p_ok = sync.sync_item("personas", "mesh-specialist.json", "", true);
+    test_helpers::assert_true(del_p_ok, "sync_item successfully published persona tombstone");
+
+    auto tomb_p_val = mesh.get_registry_value("sync/v1/personas/mesh-specialist.json");
+    test_helpers::assert_true(tomb_p_val.has_value(), "Persona tombstone exists in registry");
+
+    auto dec_p_tomb = crypto.decrypt_envelope(*tomb_p_val);
+    test_helpers::assert_true(dec_p_tomb.has_value(), "Decrypted persona tombstone successfully");
+    test_helpers::assert_true(dec_p_tomb->deleted, "Persona tombstone has deleted = true");
+
+    // Clean up temp directories
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::remove_all(import_dir);
+}
+
 int main() {
     std::cout << "========================================\n";
     std::cout << "Starting Universal Mesh Sync Unit Tests\n";
@@ -209,6 +311,7 @@ int main() {
     test_staging_cache_resolution();
     test_canary_safeguards();
     test_incremental_and_periodic_sync();
+    test_personas_universal_sync();
 
     std::cout << "\n🎉 ALL UNIVERSAL MESH SYNC TESTS PASSED!\n";
     return 0;

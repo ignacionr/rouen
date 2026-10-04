@@ -21,6 +21,7 @@
 #include "../models/adaptive_cards/adaptive_cards_repository.hpp"
 #include "../models/contacts/contacts_repository.hpp"
 #include "persona_manager.hpp"
+#include "../registrar.hpp"
 
 #define UNIV_SYNC_ERROR(message) LOG_COMPONENT("UNIV_SYNC", LOG_LEVEL_ERROR, message)
 #define UNIV_SYNC_WARN(message) LOG_COMPONENT("UNIV_SYNC", LOG_LEVEL_WARN, message)
@@ -38,6 +39,7 @@ namespace rouen::hosts {
         std::filesystem::create_directories(cache_dir / "series");
         std::filesystem::create_directories(cache_dir / "adaptive_cards");
         std::filesystem::create_directories(cache_dir / "contacts");
+        std::filesystem::create_directories(cache_dir / "personas");
         std::filesystem::create_directories(cache_dir / "objectives");
         std::filesystem::create_directories(cache_dir / "config");
 
@@ -65,6 +67,9 @@ namespace rouen::hosts {
         models::contacts::contacts_repository contacts_repo(rouen::platform::get_user_data_path("contacts.db").string());
         contacts_repo.export_to_directory(cache_dir / "contacts");
 
+        UNIV_SYNC_INFO("Exporting Personas...");
+        rouen::helpers::PersonaManager::instance().export_to_directory(cache_dir / "personas");
+
         UNIV_SYNC_INFO("Copying Objectives JSON...");
         UniversalSyncHost::copy_file_if_exists(rouen::platform::get_user_data_path("objectives") / "objectives.json",
                                                cache_dir / "objectives" / "objectives.json");
@@ -82,6 +87,8 @@ namespace rouen::hosts {
                                                cache_dir / "config" / "themes.json");
         UniversalSyncHost::copy_file_if_exists(rouen::platform::get_user_config_directory() / "personas.json",
                                                cache_dir / "config" / "personas.json");
+        UniversalSyncHost::copy_file_if_exists(rouen::platform::get_user_config_directory() / "llm_configs.json",
+                                               cache_dir / "config" / "llm_configs.json");
     }
 
     static void import_all_local_datasets(const std::filesystem::path& cache_dir, bool import_config) {
@@ -109,6 +116,9 @@ namespace rouen::hosts {
         models::contacts::contacts_repository contacts_repo(rouen::platform::get_user_data_path("contacts.db").string());
         contacts_repo.import_from_directory(cache_dir / "contacts");
 
+        UNIV_SYNC_INFO("Importing Personas...");
+        bool personas_imported = rouen::helpers::PersonaManager::instance().import_from_directory(cache_dir / "personas");
+
         UNIV_SYNC_INFO("Copying Objectives JSON...");
         UniversalSyncHost::copy_file_if_exists(cache_dir / "objectives" / "objectives.json", 
                                                rouen::platform::get_user_data_path("objectives") / "objectives.json");
@@ -125,15 +135,36 @@ namespace rouen::hosts {
                                                    rouen::platform::get_user_config_directory() / "rouen.ini");
             UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "themes.json", 
                                                    rouen::platform::get_user_config_directory() / "themes.json");
-            UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "personas.json", 
-                                                   rouen::platform::get_user_config_directory() / "personas.json");
-            rouen::helpers::PersonaManager::instance().reload();
+            if (!personas_imported) {
+                UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "personas.json", 
+                                                       rouen::platform::get_user_config_directory() / "personas.json");
+                rouen::helpers::PersonaManager::instance().reload();
+            }
+            UniversalSyncHost::copy_file_if_exists(cache_dir / "config" / "llm_configs.json", 
+                                                   rouen::platform::get_user_config_directory() / "llm_configs.json");
+            auto llm_reload = registrar::try_get<std::function<void()>>("llm_config_reload");
+            if (llm_reload) {
+                (*llm_reload)();
+            }
         } else {
             UNIV_SYNC_INFO("Skipping configuration import to keep local window state");
         }
     }
 
-    UniversalSyncHost::UniversalSyncHost() = default;
+    UniversalSyncHost::UniversalSyncHost() {
+        auto sync_item_fn = std::make_shared<std::function<bool(std::string_view, std::string_view, std::string_view, bool)>>(
+            [this](std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted) {
+                return this->sync_item(dataset, key, content, is_deleted);
+            }
+        );
+        registrar::add("universal_sync_item", sync_item_fn);
+
+        rouen::helpers::PersonaManager::instance().set_sync_hook(
+            [this](std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted) {
+                this->sync_item(dataset, key, content, is_deleted);
+            }
+        );
+    }
 
     UniversalSyncHost::~UniversalSyncHost() {
         stop_periodic_sync();

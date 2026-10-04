@@ -200,6 +200,10 @@ std::string LLMHost::get_api_key_env_name(Provider provider) {
 }
 
 LLMConfigManager::LLMConfigManager() {
+    registrar::add<std::function<void()>>("llm_config_reload", std::make_shared<std::function<void()>>([this]() {
+        this->reload();
+    }));
+
     auto config_dir = rouen::platform::get_user_config_directory();
     config_dir /= "llm_configs.json";
     
@@ -244,6 +248,12 @@ void LLMConfigManager::setup_default_configs() {
 }
 
 void LLMConfigManager::load_configs() {
+    is_sync_suppressed_ = true;
+    struct Guard {
+        bool& flag;
+        ~Guard() { flag = false; }
+    } guard{is_sync_suppressed_};
+
     auto config_path = rouen::platform::get_user_config_directory() / "llm_configs.json";
     if (!std::filesystem::exists(config_path)) {
         setup_default_configs();
@@ -335,6 +345,17 @@ void LLMConfigManager::save_configs() const {
         if (file.is_open()) {
             file << json_str;
             file.close();
+        }
+
+        if (!is_sync_suppressed_) {
+            if (sync_hook_) {
+                sync_hook_("config", "llm_configs.json", json_str, false);
+            } else {
+                auto hook_fn = registrar::try_get<std::function<bool(std::string_view, std::string_view, std::string_view, bool)>>("universal_sync_item");
+                if (hook_fn) {
+                    (*hook_fn)("config", "llm_configs.json", json_str, false);
+                }
+            }
         }
     } catch (const std::exception& e) {
         LOG_COMPONENT("LLMConfigManager", LOG_LEVEL_ERROR, std::string("Error saving LLM configs: ") + e.what());
