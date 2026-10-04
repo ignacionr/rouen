@@ -5639,7 +5639,7 @@ std::string api_server_host::handle_system_version(struct mg_connection* /*c*/, 
     (void)glz::write_json(local_services, services_json);
 
 #ifndef ROUEN_VERSION
-#define ROUEN_VERSION "1.4.16"
+#define ROUEN_VERSION "1.4.17"
 #endif
 #ifndef COMPILE_GIT_HASH
 #define COMPILE_GIT_HASH "unknown"
