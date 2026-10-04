@@ -45,7 +45,7 @@ std::string ytdlp_service::build_format_spec(std::string_view pref_quality) {
     }
 
     return std::format(
-        "bestvideo[height<={0}]+bestaudio/bestvideo[width<={0}]+bestaudio/best[height<={0}][vcodec!=none]/best[width<={0}][vcodec!=none]/bestvideo+bestaudio/best[vcodec!=none]",
+        "bestvideo[protocol^=http][height<={0}]+bestaudio[protocol^=http]/bestvideo[height<={0}]+bestaudio/bestvideo[width<={0}]+bestaudio/best[height<={0}][vcodec!=none]/best[width<={0}][vcodec!=none]/bestvideo+bestaudio/best[vcodec!=none]",
         target_max_h
     );
 }
@@ -110,7 +110,7 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
         bool has_video = false;
         for (const auto& u : test_urls) {
             if (u.find("mime=video") != std::string::npos || u.find("mime%3Dvideo") != std::string::npos ||
-                u.find(".m3u8") != std::string::npos || u.find(".mpd") != std::string::npos || u.find(".mp4") != std::string::npos) {
+                u.find(".mpd") != std::string::npos || u.find(".mp4") != std::string::npos) {
                 has_video = true;
             }
             if (u.find("mime=audio") != std::string::npos || u.find("mime%3Daudio") != std::string::npos || u.find(".m4a") != std::string::npos) {
@@ -118,11 +118,24 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
             }
         }
 
+        // An HLS playlist (.m3u8) paired with a separate WebM audio stream is a known YouTube unauthenticated
+        // throttling artifact (DVR fMP4 chunks without complete moov/init boxes). Only accept .m3u8 if it's the sole URL.
+        if (!has_video) {
+            for (const auto& u : test_urls) {
+                if (u.find(".m3u8") != std::string::npos) {
+                    if (test_urls.size() == 1) {
+                        has_video = true;
+                    }
+                    break;
+                }
+            }
+        }
+
         // If there are multiple URLs (e.g. separate video + audio streams from yt-dlp bestvideo+bestaudio),
-        // as long as at least one URL is not strictly audio, consider it a valid video stream set.
+        // as long as at least one URL is not strictly audio or HLS fragment fallback, consider it a valid video stream set.
         if (!has_video && test_urls.size() >= 2) {
             for (const auto& u : test_urls) {
-                if (u.find("mime=audio") == std::string::npos && u.find("mime%3Daudio") == std::string::npos) {
+                if (u.find("mime=audio") == std::string::npos && u.find("mime%3Daudio") == std::string::npos && u.find(".m3u8") == std::string::npos) {
                     has_video = true;
                     break;
                 }
@@ -131,6 +144,11 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
 
         // Single URL that is audio-only is not a video stream
         if (test_urls.size() == 1 && has_audio_only && !has_video) {
+            return false;
+        }
+
+        // Must contain at least one valid video stream
+        if (!has_video) {
             return false;
         }
 
@@ -143,15 +161,25 @@ ytdlp_stream_result ytdlp_service::resolve_stream_urls(
     };
 
     std::cerr << "[ytdlp_service Diagnostics] Resolving URL: " << norm_url << " (initial_cookie_args: '" << initial_cookie_args << "')\n";
-    auto [urls, resolved] = run_ytdlp_cmd("");
-    if (urls.empty() && !initial_cookie_args.empty()) {
-        std::cerr << "[ytdlp_service Diagnostics] Un-cookied attempt returned no URLs. Trying with configured cookie args...\n";
+    std::vector<std::string> urls;
+    std::string resolved;
+
+    if (!initial_cookie_args.empty()) {
+        std::cerr << "[ytdlp_service Diagnostics] Attempting resolution with configured cookie args...\n";
         std::tie(urls, resolved) = run_ytdlp_cmd(initial_cookie_args);
+        if (!urls.empty() && !urls_are_valid_video(urls)) {
+            std::cerr << "[ytdlp_service Diagnostics] Configured cookie attempt URLs failed validation. Clearing...\n";
+            urls.clear();
+        }
     }
 
-    if (!urls.empty() && !urls_are_valid_video(urls)) {
-        std::cerr << "[ytdlp_service Diagnostics] Initial resolved URLs failed validation (inaccessible or audio-only). Invalidating to trigger auto-healing...\n";
-        urls.clear();
+    if (urls.empty()) {
+        std::cerr << "[ytdlp_service Diagnostics] Attempting un-cookied resolution...\n";
+        std::tie(urls, resolved) = run_ytdlp_cmd("");
+        if (!urls.empty() && !urls_are_valid_video(urls)) {
+            std::cerr << "[ytdlp_service Diagnostics] Un-cookied URLs failed validation. Clearing...\n";
+            urls.clear();
+        }
     }
 
     bool is_auth_err = (resolved.find("Sign in to confirm") != std::string::npos ||

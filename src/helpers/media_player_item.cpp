@@ -368,9 +368,19 @@ bool media_player_item::playMedia(const void* owner) {
                 } else if (!v_url.empty()) {
                     video_target = v_url;
                     audio_target = v_url;
+                } else if (!a_url.empty()) {
+                    video_target.clear();
+                    audio_target = a_url;
                 } else if (!urls_vec.empty()) {
-                    video_target = urls_vec[0];
-                    audio_target = urls_vec[0];
+                    if (urls_vec[0].find("mime=audio") != std::string::npos ||
+                        urls_vec[0].find("mime%3Daudio") != std::string::npos ||
+                        urls_vec[0].find(".m4a") != std::string::npos) {
+                        video_target.clear();
+                        audio_target = urls_vec[0];
+                    } else {
+                        video_target = urls_vec[0];
+                        audio_target = urls_vec[0];
+                    }
                 }
             };
 
@@ -829,6 +839,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
     int dst_h = kHeight;
     int last_src_w = 0;
     int last_src_h = 0;
+    AVPixelFormat last_pix_fmt = AV_PIX_FMT_NONE;
 
     if (video_stream_idx >= 0) {
         const AVCodec* video_codec = avcodec_find_decoder(video_format_ctx->streams[video_stream_idx]->codecpar->codec_id);
@@ -849,6 +860,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 if (video_codec_ctx->width > 0 && video_codec_ctx->height > 0) {
                     last_src_w = video_codec_ctx->width;
                     last_src_h = video_codec_ctx->height;
+                    last_pix_fmt = video_codec_ctx->pix_fmt;
                     compute_target_dimensions(last_src_w, last_src_h, dst_w, dst_h, 1920);
                     video_width.store(dst_w);
                     video_height.store(dst_h);
@@ -857,11 +869,13 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         video_aspect_ratio.store(static_cast<float>(aspect_ratio));
                     }
 
-                    sws_ctx = sws_getContext(
-                        last_src_w, last_src_h, video_codec_ctx->pix_fmt,
-                        dst_w, dst_h, AV_PIX_FMT_RGBA,
-                        SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
-                    );
+                    if (video_codec_ctx->pix_fmt != AV_PIX_FMT_VIDEOTOOLBOX && video_codec_ctx->pix_fmt != AV_PIX_FMT_NONE) {
+                        sws_ctx = sws_getContext(
+                            last_src_w, last_src_h, video_codec_ctx->pix_fmt,
+                            dst_w, dst_h, AV_PIX_FMT_RGBA,
+                            SWS_FAST_BILINEAR, nullptr, nullptr, nullptr
+                        );
+                    }
                 }
             }
         }
@@ -983,7 +997,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                 int const src_w = sw_frame->width > 0 ? sw_frame->width : video_codec_ctx->width;
                 int const src_h = sw_frame->height > 0 ? sw_frame->height : video_codec_ctx->height;
                 if (src_w > 0 && src_h > 0) {
-                    if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                    if (!sws_ctx || last_src_w != src_w || last_src_h != src_h || last_pix_fmt != sw_frame->format) {
                         if (sws_ctx) sws_freeContext(sws_ctx);
                         compute_target_dimensions(src_w, src_h, dst_w, dst_h, 1920);
                         video_width.store(dst_w);
@@ -1000,6 +1014,15 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         );
                         last_src_w = src_w;
                         last_src_h = src_h;
+                        last_pix_fmt = static_cast<AVPixelFormat>(sw_frame->format);
+
+                        int const needed_size = dst_w * dst_h * 4;
+                        if (needed_size > alloc_size) {
+                            av_free(rgba_buffer);
+                            alloc_size = needed_size;
+                            rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(alloc_size)));
+                        }
+                        rgba_frame->linesize[0] = dst_w * 4;
                     }
 
                     if (sws_ctx) {
@@ -1364,7 +1387,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                             int const src_w = sw_frame->width > 0 ? sw_frame->width : video_codec_ctx->width;
                             int const src_h = sw_frame->height > 0 ? sw_frame->height : video_codec_ctx->height;
                             if (src_w > 0 && src_h > 0) {
-                                if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                                if (!sws_ctx || last_src_w != src_w || last_src_h != src_h || last_pix_fmt != sw_frame->format) {
                                     if (sws_ctx) sws_freeContext(sws_ctx);
                                     compute_target_dimensions(src_w, src_h, dst_w, dst_h, 1920);
                                     video_width.store(dst_w);
@@ -1381,6 +1404,15 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                     );
                                     last_src_w = src_w;
                                     last_src_h = src_h;
+                                    last_pix_fmt = static_cast<AVPixelFormat>(sw_frame->format);
+
+                                    int const needed_size = dst_w * dst_h * 4;
+                                    if (needed_size > alloc_size) {
+                                        av_free(rgba_buffer);
+                                        alloc_size = needed_size;
+                                        rgba_buffer = static_cast<uint8_t*>(av_malloc(static_cast<size_t>(alloc_size)));
+                                    }
+                                    rgba_frame->linesize[0] = dst_w * 4;
                                 }
                                 if (sws_ctx) {
                                     double pts_time = 0.0;
@@ -1428,7 +1460,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                         int const src_w = sw_frame->width > 0 ? sw_frame->width : video_codec_ctx->width;
                         int const src_h = sw_frame->height > 0 ? sw_frame->height : video_codec_ctx->height;
                         if (src_w > 0 && src_h > 0) {
-                            if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                            if (!sws_ctx || last_src_w != src_w || last_src_h != src_h || last_pix_fmt != sw_frame->format) {
                                 if (sws_ctx) sws_freeContext(sws_ctx);
                                 compute_target_dimensions(src_w, src_h, dst_w, dst_h, 1920);
                                 video_width.store(dst_w);
@@ -1445,6 +1477,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 );
                                 last_src_w = src_w;
                                 last_src_h = src_h;
+                                last_pix_fmt = static_cast<AVPixelFormat>(sw_frame->format);
 
                                 int const needed_size = dst_w * dst_h * 4;
                                 if (needed_size > alloc_size) {
@@ -1471,7 +1504,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                             }
 
                             double const spk_pts = get_speaker_audio_pts();
-                            bool const is_behind = (audio_clock_initialized.load() && spk_pts > 0.0 && pts_time < (spk_pts - 0.200));
+                            bool const is_behind = (has_presented_first_frame.load() && audio_clock_initialized.load() && spk_pts > 0.0 && pts_time < (spk_pts - 0.200));
 
                             if (!is_behind) {
                                 std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
@@ -1630,7 +1663,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                 int const src_w = sw_frame->width > 0 ? sw_frame->width : video_codec_ctx->width;
                                 int const src_h = sw_frame->height > 0 ? sw_frame->height : video_codec_ctx->height;
                                 if (src_w > 0 && src_h > 0) {
-                                    if (!sws_ctx || last_src_w != src_w || last_src_h != src_h) {
+                                    if (!sws_ctx || last_src_w != src_w || last_src_h != src_h || last_pix_fmt != sw_frame->format) {
                                         if (sws_ctx) sws_freeContext(sws_ctx);
                                         compute_target_dimensions(src_w, src_h, dst_w, dst_h, 1920);
                                         video_width.store(dst_w);
@@ -1647,6 +1680,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                         );
                                         last_src_w = src_w;
                                         last_src_h = src_h;
+                                        last_pix_fmt = static_cast<AVPixelFormat>(sw_frame->format);
 
                                         int const needed_size = dst_w * dst_h * 4;
                                         if (needed_size > alloc_size) {
@@ -1672,7 +1706,7 @@ void media_player_item::decode_loop(std::string video_target, std::string audio_
                                     }
 
                                     double const spk_pts = get_speaker_audio_pts();
-                                    bool const is_behind = (audio_clock_initialized.load() && spk_pts > 0.0 && pts_time < (spk_pts - 0.200));
+                                    bool const is_behind = (has_presented_first_frame.load() && audio_clock_initialized.load() && spk_pts > 0.0 && pts_time < (spk_pts - 0.200));
 
                                     if (!is_behind) {
                                         std::memset(rgba_buffer, 0, static_cast<size_t>(dst_w * dst_h * 4));
