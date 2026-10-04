@@ -94,6 +94,10 @@ namespace rouen::sync {
         }
 
         std::string effective_salt = resolve_effective_salt();
+        if (effective_pass == cached_passphrase_ && effective_salt == cached_salt_ && cached_key_.size() == 32) {
+            return cached_key_;
+        }
+
         std::vector<uint8_t> key(32); // 256 bits
 
         int res = PKCS5_PBKDF2_HMAC(
@@ -111,6 +115,9 @@ namespace rouen::sync {
             return {};
         }
 
+        cached_passphrase_ = effective_pass;
+        cached_salt_ = effective_salt;
+        cached_key_ = key;
         return key;
     }
 
