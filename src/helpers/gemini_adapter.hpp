@@ -202,9 +202,17 @@ namespace rouen::helpers {
                 }
             }
             
-            // Ensure first non-system message is from role 'user' (Gemini API requirement)
-            while (!user_assistant_messages.empty() && user_assistant_messages[0].role != "user" && user_assistant_messages[0].role != "human") {
-                user_assistant_messages.erase(user_assistant_messages.begin());
+            // Ensure first non-system message is from role 'user' (Gemini API requirement) if a user/function message exists
+            bool has_user_msg = std::any_of(user_assistant_messages.begin(), user_assistant_messages.end(), [](const Message& m) {
+                return m.role == "user" || m.role == "human" || m.role == "function";
+            });
+            if (has_user_msg) {
+                while (!user_assistant_messages.empty() && 
+                       user_assistant_messages[0].role != "user" && 
+                       user_assistant_messages[0].role != "human" &&
+                       user_assistant_messages[0].role != "function") {
+                    user_assistant_messages.erase(user_assistant_messages.begin());
+                }
             }
 
             // Prepend system instructions to first user message (or insert as first user message)
@@ -396,8 +404,8 @@ namespace rouen::helpers {
             
             CONFIG_DEBUG("Checking parts");
             if (candidate.content.parts.empty()) {
-                CONFIG_ERROR("No parts found in Gemini candidate content");
-                throw std::runtime_error("Gemini candidate contains no content parts");
+                CONFIG_WARN("No parts found in Gemini candidate content");
+                return "";
             }
             
             CONFIG_DEBUG("Extracting text");
@@ -492,12 +500,15 @@ namespace rouen::helpers {
 
             // Make the HTTP request with candidate model loop
             std::vector<std::string> candidates = {model_name};
-            if (model_name != "gemini-3.6-flash") {
-                candidates.push_back("gemini-3.6-flash");
-            }
-            if (model_name != "gemini-flash-latest") {
-                candidates.push_back("gemini-flash-latest");
-            }
+            auto add_candidate = [&](const std::string& c) {
+                if (std::find(candidates.begin(), candidates.end(), c) == candidates.end()) {
+                    candidates.push_back(c);
+                }
+            };
+            add_candidate("gemini-3.6-flash");
+            add_candidate("gemini-3.5-flash");
+            add_candidate("gemini-2.5-flash-lite");
+            add_candidate("gemini-flash-latest");
 
             std::string response;
             bool request_ok = false;
@@ -519,9 +530,13 @@ namespace rouen::helpers {
                     } catch (const std::exception& e) {
                         last_err = std::current_exception();
                         std::string const err_str = e.what();
+                        if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
+                            CONFIG_WARN_FMT("Model {} quota exhausted (RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                            break;
+                        }
                         if (err_str.find("429") != std::string::npos) {
                             CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
-                            std::this_thread::sleep_for(std::chrono::milliseconds(3000 * (attempt + 1)));
+                            std::this_thread::sleep_for(std::chrono::milliseconds(2000 * (attempt + 1)));
                             continue;
                         }
                         bool const is_retryable = (err_str.find("503") != std::string::npos ||
@@ -627,12 +642,15 @@ namespace rouen::helpers {
 
                 // Make the HTTP request with candidate model loop
                 std::vector<std::string> candidates = {model_name};
-                if (model_name != "gemini-3.6-flash") {
-                    candidates.push_back("gemini-3.6-flash");
-                }
-                if (model_name != "gemini-flash-latest") {
-                    candidates.push_back("gemini-flash-latest");
-                }
+                auto add_candidate = [&](const std::string& c) {
+                    if (std::find(candidates.begin(), candidates.end(), c) == candidates.end()) {
+                        candidates.push_back(c);
+                    }
+                };
+                add_candidate("gemini-3.6-flash");
+                add_candidate("gemini-3.5-flash");
+                add_candidate("gemini-2.5-flash-lite");
+                add_candidate("gemini-flash-latest");
 
                 std::string response;
                 bool request_ok = false;
@@ -654,8 +672,13 @@ namespace rouen::helpers {
                         } catch (const std::exception& e) {
                             last_err = std::current_exception();
                             std::string const err_str = e.what();
-                            if (err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
-                                std::this_thread::sleep_for(std::chrono::seconds(2));
+                            if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
+                                CONFIG_WARN_FMT("Model {} quota exhausted (RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                                break;
+                            }
+                            if (err_str.find("429") != std::string::npos) {
+                                CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(2000 * (attempt + 1)));
                                 continue;
                             }
                             bool const is_retryable = (err_str.find("503") != std::string::npos ||
@@ -741,6 +764,28 @@ namespace rouen::helpers {
                 }
             }
             
+            // Fallback if final_text is empty after function calling
+            if (final_text.empty()) {
+                for (auto it = current_conversation.rbegin(); it != current_conversation.rend(); ++it) {
+                    if (it->role == "model" && !it->content.empty()) {
+                        final_text = it->content;
+                        break;
+                    }
+                }
+                if (final_text.empty()) {
+                    bool executed_func = false;
+                    for (const auto& msg : current_conversation) {
+                        if (msg.role == "function" && !msg.function_responses.empty()) {
+                            executed_func = true;
+                            break;
+                        }
+                    }
+                    if (executed_func) {
+                        final_text = "I have completed the requested operation.";
+                    }
+                }
+            }
+
             // Only add to local conversation if not using external conversation management
             if (!full_conversation) {
                 conversation_.push_back({"assistant", final_text});

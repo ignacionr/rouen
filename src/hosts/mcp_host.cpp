@@ -63,6 +63,7 @@
 #include "../models/calendar/calendar_fetcher.hpp"
 #include "universal_sync_host.hpp"
 #include "persona_manager.hpp"
+#include "../helpers/theme_manager.hpp"
 #include <SDL3/SDL_video.h>
 #include "../cards/information/rss.hpp"
 #include "../cards/interface/card.hpp"
@@ -690,6 +691,34 @@ struct mcp_enable_persona_params {
     int index{-1};
     struct glaze {
         using T = mcp_enable_persona_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "index", &T::index
+        );
+    };
+};
+
+struct mcp_themes_response {
+    std::string status = "success";
+    size_t active_index = 0;
+    std::string active_theme;
+    std::vector<std::string> themes;
+    struct glaze {
+        using T = mcp_themes_response;
+        static constexpr auto value = glz::object(
+            "status", &T::status,
+            "active_index", &T::active_index,
+            "active_theme", &T::active_theme,
+            "themes", &T::themes
+        );
+    };
+};
+
+struct mcp_select_theme_params {
+    std::string name;
+    int index{-1};
+    struct glaze {
+        using T = mcp_select_theme_params;
         static constexpr auto value = glz::object(
             "name", &T::name,
             "index", &T::index
@@ -2058,6 +2087,89 @@ mcp_host::mcp_host() {
     );
     register_function("deck", get_active_persona_def);
     register_function("persona", get_active_persona_def);
+
+    // Theme Management Functions
+    function_definition const list_themes_def(
+        "list_themes",
+        "Lists all available color themes in Rouen (e.g. Amber, Dark, Light, Cyberpunk, Nord) and reports the currently active theme.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto& tm = rouen::theme::theme_manager::get();
+                const auto& themes = tm.get_themes();
+                size_t const active_idx = tm.get_active_theme_index();
+
+                std::vector<std::string> names;
+                names.reserve(themes.size());
+                for (const auto& t : themes) {
+                    names.push_back(t.name);
+                }
+
+                std::string const active_name = (active_idx < themes.size()) ? themes[active_idx].name : "Unknown";
+
+                mcp_themes_response resp;
+                resp.active_index = active_idx;
+                resp.active_theme = active_name;
+                resp.themes = std::move(names);
+
+                std::string out;
+                (void)glz::write_json(resp, out);
+                return out;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", list_themes_def);
+    register_function("theme", list_themes_def);
+
+    function_definition const select_theme_def(
+        "select_theme",
+        "Selects and applies an active color theme in Rouen by name or 0-based index (e.g. 'Amber', 'Dark', 'Light', 'Cyberpunk', 'Nord').",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Name of the theme to apply (e.g. 'Amber', 'Dark', 'Light', 'Cyberpunk', 'Nord')"},"index":{"type":"integer","description":"0-based index of the theme"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                auto& tm = rouen::theme::theme_manager::get();
+                const auto& themes = tm.get_themes();
+
+                mcp_select_theme_params req{};
+                if (!params.empty()) {
+                    (void)glz::read_json(req, params);
+                }
+
+                int target_idx = -1;
+                if (!req.name.empty()) {
+                    std::string const target_lower = ::helpers::StringHelper::to_lower(req.name);
+                    for (size_t i = 0; i < themes.size(); ++i) {
+                        if (::helpers::StringHelper::to_lower(themes[i].name) == target_lower) {
+                            target_idx = static_cast<int>(i);
+                            break;
+                        }
+                    }
+                }
+                if (target_idx < 0 && req.index >= 0 && req.index < static_cast<int>(themes.size())) {
+                    target_idx = req.index;
+                }
+
+                if (target_idx < 0) {
+                    return R"({"status":"error","message":"Theme not found by given name or index"})";
+                }
+
+                tm.select_theme(static_cast<size_t>(target_idx));
+                const auto& active = tm.get_active_theme();
+                return std::format(
+                    R"({{"status":"success","message":"Theme '{}' selected successfully","active_index":{},"active_theme":"{}"}})",
+                    active.name, target_idx, active.name
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "deck"
+    );
+    register_function("deck", select_theme_def);
+    register_function("theme", select_theme_def);
 
     // ----------------------------------------------------
     // REST API Parity MCP Functions

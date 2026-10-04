@@ -462,3 +462,18 @@ TEST(MCPTest, MeshToolsRegisteredAndCallable) {
     EXPECT_NE(status_res.result.find("connected"), std::string::npos);
 }
 
+TEST(MCPTest, ThemeToolsRegisteredAndCallable) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("list_themes"));
+    EXPECT_TRUE(mcp.has_function("select_theme"));
+
+    auto res = mcp.execute_function("list_themes", "{}");
+    EXPECT_TRUE(res.success);
+    EXPECT_NE(res.result.find("themes"), std::string::npos);
+    EXPECT_NE(res.result.find("Amber"), std::string::npos);
+
+    auto sel_res = mcp.execute_function("select_theme", R"({"name":"Amber"})");
+    EXPECT_TRUE(sel_res.success);
+    EXPECT_NE(sel_res.result.find("Amber"), std::string::npos);
+}
+

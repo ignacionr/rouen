@@ -300,7 +300,12 @@ namespace rouen::helpers {
                 }
 
                 // Sync deletions: remove local personas not present in imported list
+                // Never delete core built-in personas like "Rouen Assistant"
                 for (auto it = personas_.begin(); it != personas_.end(); ) {
+                    if (it->name == "Rouen Assistant") {
+                        ++it;
+                        continue;
+                    }
                     bool exists_in_imported = false;
                     for (const auto& imp : imported_personas) {
                         if (imp.name == it->name) {
@@ -546,6 +551,32 @@ namespace rouen::helpers {
                     active_persona_index_ = model.active_index;
                 } else {
                     active_persona_index_ = 0;
+                }
+
+                // Ensure "Rouen Assistant" exists as primary orchestrator
+                bool has_rouen_assistant = false;
+                for (const auto& p : personas_) {
+                    if (p.name == "Rouen Assistant") {
+                        has_rouen_assistant = true;
+                        break;
+                    }
+                }
+                if (!has_rouen_assistant) {
+                    std::vector<Persona> existing = std::move(personas_);
+                    setup_default_personas();
+                    for (auto& ep : existing) {
+                        bool found = false;
+                        for (const auto& dp : personas_) {
+                            if (dp.name == ep.name) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            personas_.push_back(std::move(ep));
+                        }
+                    }
+                    save_personas();
                 }
 
                 // Ensure "Adaptive Card Architect" persona exists

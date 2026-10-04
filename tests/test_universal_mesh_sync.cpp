@@ -273,6 +273,9 @@ void test_personas_universal_sync() {
     }
     test_helpers::assert_true(found_imported, "Imported persona was successfully registered in PersonaManager");
 
+    // Restore original personas from export
+    pm.import_from_directory(temp_dir);
+
     // 6. Test LLM Config Sync under config/test_llm_configs.json
     std::string sample_llm_cfg = R"({"default_config_name":"Gemini Flash","configs":[{"name":"Gemini Flash","provider":"gemini","model_name":"gemini-3.8-flash","base_url":"https://generativelanguage.googleapis.com","api_key":"test_key"},{"name":"Local MLX","provider":"custom","base_url":"http://localhost:8098/v1","model_name":"mlx-community/Qwen3.5-9B-MLX-4bit","api_key":"mlx-local"}]})";
     bool llm_sync_ok = sync.sync_item("config", "test_llm_configs.json", sample_llm_cfg, false);

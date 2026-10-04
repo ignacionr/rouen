@@ -338,4 +338,84 @@ TEST(CppGptTest, MergesSystemInstructionsInFunctionCallingCorrectly) {
     EXPECT_EQ(first_msg["content"].get<std::string>(), "System prompt instruction 1\n\nSystem prompt instruction 2");
 }
 
+TEST(GeminiAdapterTest, FallsBackOnQuotaExhausted) {
+    GeminiAdapter adapter("test_key");
+    std::vector<std::string> requested_urls;
+    auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
+        requested_urls.push_back(url);
+        if (url.find("gemini-3.8-flash") != std::string::npos) {
+            throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit RESOURCE_EXHAUSTED");
+        }
+        return R"({"candidates":[{"content":{"parts":[{"text":"Fallback response successfully received"}]}}]})";
+    };
+
+    auto resp = adapter.sendMessage(
+        "Hello",
+        mock_post,
+        "user",
+        "gemini-3.8-flash"
+    );
+
+    EXPECT_FALSE(resp.choices.empty());
+    EXPECT_EQ(resp.choices[0].message.content, "Fallback response successfully received");
+    ASSERT_GE(requested_urls.size(), 2u);
+    EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
+    EXPECT_NE(requested_urls[1].find("gemini-3.6-flash"), std::string::npos);
+}
+
+TEST(GeminiAdapterTest, FunctionCallingEmptyFinalTextFallback) {
+    GeminiAdapter adapter("test_key");
+    int turn = 0;
+    auto mock_post = [&](const std::string&, const std::string&, auto) -> std::string {
+        turn++;
+        if (turn == 1) {
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "name": "select_theme",
+                                "args": {"name": "Amber"}
+                            }
+                        }]
+                    }
+                }]
+            })";
+        } else {
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": []
+                    }
+                }]
+            })";
+        }
+    };
+
+    auto mock_executor = [](const std::string& name, const std::string&) -> std::string {
+        EXPECT_EQ(name, "select_theme");
+        return R"({"status":"success","message":"Theme 'Amber' selected successfully"})";
+    };
+
+    std::vector<std::string> schemas = {
+        R"({"name":"select_theme","description":"Select theme","parameters":{"type":"object"}})"
+    };
+
+    auto resp = adapter.sendMessageWithFunctionCalling(
+        "Change theme to Amber",
+        mock_post,
+        mock_executor,
+        "user",
+        "gemini-3.6-flash",
+        "",
+        0.5f,
+        nullptr,
+        &schemas
+    );
+
+    EXPECT_FALSE(resp.choices.empty());
+    EXPECT_FALSE(resp.choices[0].message.content.empty());
+    EXPECT_EQ(resp.choices[0].message.content, "I have completed the requested operation.");
+}
+
 
