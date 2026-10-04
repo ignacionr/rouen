@@ -931,7 +931,7 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
         "Access-Control-Allow-Headers: Content-Type, Authorization, Access-Control-Request-Private-Network, Access-Control-Request-Method, *\r\n"
         "Access-Control-Allow-Private-Network: true\r\n"
         "Access-Control-Allow-Credentials: true\r\n";
-    mg_http_reply(c, status_code, cors_headers.c_str(), "%s", response.c_str());
+    mg_http_reply(c, status_code, cors_headers.c_str(), "%.*s", static_cast<int>(response.size()), response.data());
 }
 
 std::string api_server_host::handle_card_creation(struct mg_connection* /*c*/, struct mg_http_message* hm) {

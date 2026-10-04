@@ -25,6 +25,11 @@
 #include "../../helpers/drive_benchmark.hpp"
 #include "../../helpers/card_render_metrics.hpp"
 #include "../../helpers/vu_meter.hpp"
+#include "../../fonts.hpp"
+#include "../../helpers/adaptive_cards/parser.hpp"
+#include "../../helpers/adaptive_cards/renderer.hpp"
+#include "../../helpers/glaze_include.hpp"
+#include "../../helpers/platform_utils.hpp"
 #include "../interface/card.hpp"
 
 namespace rouen::cards {
@@ -303,6 +308,54 @@ struct sysinfo_card : public card {
                 refresh_metrics();
                 last_update = now;
             }
+
+            // View toggle: Native vs Adaptive Card
+            ui.checkbox("Adaptive Card View", &adaptive_view_mode);
+            ui.separator();
+
+            if (adaptive_view_mode) {
+                // Check if benchmark is complete
+                if (benchmark_running && benchmark_future.valid() && 
+                    benchmark_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+                    benchmark_results = benchmark_future.get();
+                    benchmark_running = false;
+                    benchmark_progress = 0.0f;
+                    last_adaptive_parse_time_ = {};
+                }
+
+                auto parse_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_adaptive_parse_time_).count();
+                if (parse_elapsed >= 500 || adaptive_bound_.body.empty()) {
+                    try {
+                        adaptive_bound_ = adaptive_parser_.parse(get_adaptive_card_json());
+                        adaptive_error_.clear();
+                    } catch (const std::exception& e) {
+                        adaptive_error_ = e.what();
+                    }
+                    last_adaptive_parse_time_ = now;
+                }
+
+                if (!adaptive_error_.empty()) {
+                    ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
+                } else {
+                    adaptive_renderer_.render(
+                        adaptive_bound_, adaptive_input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                handle_action(payload);
+                            }
+                        },
+                        helpers::adaptive_cards::render_config{
+                            .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        }
+                    );
+                }
+                return;
+            }
             
             // System uptime information
             long uptime_seconds = get_system_uptime();
@@ -575,6 +628,199 @@ struct sysinfo_card : public card {
         return "sysinfo";
     }
 
+    bool matches_uri(std::string_view uri) const override {
+        return uri == "sysinfo" || uri.starts_with("sysinfo:");
+    }
+
+    void handle_uri(std::string_view uri) override {
+        if (uri == "sysinfo:adaptive") {
+            adaptive_view_mode = true;
+        } else if (uri == "sysinfo" || uri == "sysinfo:native") {
+            adaptive_view_mode = false;
+        }
+    }
+
+    std::string get_adaptive_card_json() const override {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["refreshIntervalMs"] = 1000.0;
+
+        std::vector<glz::json_t> body;
+
+        // Title and subtitle
+        {
+            glz::json_t title;
+            title["type"] = "TextBlock";
+            title["text"] = "🖥️ System Information";
+            title["weight"] = "Bolder";
+            title["size"] = "Large";
+            body.push_back(std::move(title));
+
+            long uptime_seconds = get_system_uptime();
+            long days = uptime_seconds / (60L * 60L * 24L);
+            int hours = static_cast<int>((uptime_seconds / (60L * 60L)) % 24L);
+            int minutes = static_cast<int>((uptime_seconds / 60) % 60);
+            int seconds = static_cast<int>(uptime_seconds % 60);
+
+            glz::json_t sub;
+            sub["type"] = "TextBlock";
+            sub["text"] = std::format("System Uptime: {} days, {}:{:02d}:{:02d}", days, hours, minutes, seconds);
+            sub["isSubtle"] = true;
+            body.push_back(std::move(sub));
+        }
+
+        // Hardware Resources Container
+        {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "emphasis";
+
+            std::vector<glz::json_t> items;
+
+            glz::json_t sec_title;
+            sec_title["type"] = "TextBlock";
+            sec_title["text"] = "Hardware Resources";
+            sec_title["weight"] = "Bolder";
+            sec_title["color"] = "Accent";
+            items.push_back(std::move(sec_title));
+
+            auto [mem_total, mem_used, mem_free] = memory_info;
+            auto [disk_total, disk_used, disk_free] = disk_info;
+
+            std::vector<glz::json_t> facts;
+            facts.push_back(glz::json_t::object_t{{"title", "CPU Load:"}, {"value", std::format("{:.1f}%", cpu_usage)}});
+            facts.push_back(glz::json_t::object_t{{"title", "RAM Usage:"}, {"value", std::format("{:.2f} / {:.2f} GB ({:.1f}%)", mem_used, mem_total, mem_total > 0.0 ? (mem_used / mem_total) * 100.0 : 0.0)}});
+            facts.push_back(glz::json_t::object_t{{"title", "RAM Free:"}, {"value", std::format("{:.2f} GB", mem_free)}});
+            facts.push_back(glz::json_t::object_t{{"title", "Disk Usage:"}, {"value", std::format("{:.2f} / {:.2f} GB ({:.1f}%)", disk_used, disk_total, disk_total > 0.0 ? (disk_used / disk_total) * 100.0 : 0.0)}});
+            facts.push_back(glz::json_t::object_t{{"title", "Disk Free:"}, {"value", std::format("{:.2f} GB", disk_free)}});
+            facts.push_back(glz::json_t::object_t{{"title", "Running Processes:"}, {"value", std::to_string(process_count)}});
+
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            fact_set["facts"] = std::move(facts);
+            items.push_back(std::move(fact_set));
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // Active Card Render Performance
+        {
+            auto card_metrics = rouen::helpers::CardRenderMetrics::instance().get_all_metrics();
+            float total_avg_ms = 0.0f;
+            for (const auto& metric : card_metrics) {
+                total_avg_ms += static_cast<float>(metric.avg_render_ms);
+            }
+
+            glz::json_t container;
+            container["type"] = "Container";
+
+            std::vector<glz::json_t> items;
+            glz::json_t sec_title;
+            sec_title["type"] = "TextBlock";
+            sec_title["text"] = "Active Card Render Performance";
+            sec_title["weight"] = "Bolder";
+            sec_title["color"] = "Accent";
+            items.push_back(std::move(sec_title));
+
+            std::vector<glz::json_t> facts;
+            facts.push_back(glz::json_t::object_t{{"title", "Total Render Time:"}, {"value", std::format("{:.2f} ms", total_avg_ms)}});
+            facts.push_back(glz::json_t::object_t{{"title", "Active Cards Tracked:"}, {"value", std::to_string(card_metrics.size())}});
+
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            fact_set["facts"] = std::move(facts);
+            items.push_back(std::move(fact_set));
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        // Drive Benchmark Section
+        if (benchmark_running || !benchmark_results.empty()) {
+            glz::json_t container;
+            container["type"] = "Container";
+            container["style"] = "emphasis";
+
+            std::vector<glz::json_t> items;
+            glz::json_t sec_title;
+            sec_title["type"] = "TextBlock";
+            sec_title["text"] = "Drive Benchmark";
+            sec_title["weight"] = "Bolder";
+            sec_title["color"] = "Accent";
+            items.push_back(std::move(sec_title));
+
+            if (benchmark_running) {
+                glz::json_t status_tb;
+                status_tb["type"] = "TextBlock";
+                status_tb["text"] = std::format("Benchmarking in progress... ({:.0f}%)", benchmark_progress * 100.0f);
+                items.push_back(std::move(status_tb));
+            } else {
+                std::vector<glz::json_t> facts;
+                for (const auto& res : benchmark_results) {
+                    std::string val = res.success
+                        ? std::format("Write: {:.1f} MB/s | Read: {:.1f} MB/s ({})", res.write_speed_mbps, res.read_speed_mbps, res.get_drive_type())
+                        : "Benchmark Error";
+                    facts.push_back(glz::json_t::object_t{{"title", res.display_name}, {"value", val}});
+                }
+                glz::json_t fact_set;
+                fact_set["type"] = "FactSet";
+                fact_set["facts"] = std::move(facts);
+                items.push_back(std::move(fact_set));
+            }
+
+            container["items"] = std::move(items);
+            body.push_back(std::move(container));
+        }
+
+        card["body"] = std::move(body);
+
+        // Actions
+        std::vector<glz::json_t> actions;
+        {
+            glz::json_t act_refresh;
+            act_refresh["type"] = "Action.Execute";
+            act_refresh["title"] = "Refresh Metrics";
+            act_refresh["verb"] = "refresh";
+            actions.push_back(std::move(act_refresh));
+
+            glz::json_t act_bench;
+            act_bench["type"] = "Action.Execute";
+            act_bench["title"] = benchmark_running ? "Benchmark Running..." : "Run Drive Benchmark";
+            act_bench["verb"] = "run_benchmark";
+            actions.push_back(std::move(act_bench));
+        }
+        card["actions"] = std::move(actions);
+
+        std::string json_str;
+        (void)glz::write_json(card, json_str);
+        return json_str;
+    }
+
+    void handle_action(std::string_view action_json) override {
+        try {
+            glz::json_t action_obj;
+            auto err = glz::read_json(action_obj, std::string(action_json));
+            std::string verb;
+            if (!err && action_obj.contains("verb") && action_obj["verb"].holds<std::string>()) {
+                verb = action_obj["verb"].get<std::string>();
+            } else if (action_json.find("\"run_benchmark\"") != std::string_view::npos) {
+                verb = "run_benchmark";
+            } else if (action_json.find("\"refresh\"") != std::string_view::npos) {
+                verb = "refresh";
+            }
+
+            if (verb == "refresh" || verb == "refresh_metrics") {
+                refresh_metrics();
+                last_adaptive_parse_time_ = {};
+            } else if (verb == "run_benchmark") {
+                start_drive_benchmark();
+                last_adaptive_parse_time_ = {};
+            }
+        } catch (...) {}
+    }
+
     std::vector<card_performance_metric> get_performance_measurements() const override {
         auto [mem_total, mem_used, mem_free] = memory_info;
         metric_cpu_str_ = std::format("{:.1f}%", cpu_usage);
@@ -604,6 +850,14 @@ private:
     mutable std::string metric_cpu_str_;
     mutable std::string metric_ram_str_;
     mutable std::string metric_proc_str_;
+
+    bool adaptive_view_mode{false};
+    mutable helpers::adaptive_cards::parser adaptive_parser_{};
+    mutable helpers::adaptive_cards::renderer adaptive_renderer_{};
+    mutable helpers::adaptive_cards::renderer::input_state adaptive_input_state_{};
+    mutable helpers::adaptive_cards::card_document adaptive_bound_{};
+    mutable std::string adaptive_error_;
+    mutable std::chrono::steady_clock::time_point last_adaptive_parse_time_{};
 };
 
 } // namespace rouen::cards

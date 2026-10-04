@@ -47,9 +47,13 @@ namespace rouen::cards {
             initial_duration = std::chrono::duration_cast<std::chrono::seconds>(target_time - current_time);
             if (initial_duration <= std::chrono::seconds(0)) initial_duration = std::chrono::seconds(1);
             
-            // Parse target time if provided
-            if (!target_time_str.empty()) {
-                parse_time(std::string(target_time_str));
+            // Parse target time if provided (ignoring base URI string "alarm")
+            if (!target_time_str.empty() && target_time_str != "alarm") {
+                std::string param(target_time_str);
+                if (param.starts_with("alarm:")) {
+                    param = param.substr(6);
+                }
+                parse_time(param);
             }
             
             // Format the initial time for display
@@ -61,6 +65,7 @@ namespace rouen::cards {
             long long secs = time_rem.count();
             bool ringing = alarm_active && secs <= 0;
             std::string status = ringing ? "Ringing" : (alarm_active ? "Active" : "Disabled");
+            std::string target_time_display = (time_buffer[0] != '\0') ? std::string(time_buffer) : "00:00";
             return std::format(
                 R"({{
   "type": "AdaptiveCard",
@@ -76,7 +81,7 @@ namespace rouen::cards {
     {{"type": "Action.Execute", "title": "Dismiss", "verb": "dismiss"}}
   ]
 }})",
-                time_buffer, status);
+                target_time_display, status);
         }
 
         void handle_action(std::string_view action_json) override {
@@ -585,7 +590,7 @@ namespace rouen::cards {
             }
 
             // Handle several formats: "HH:MM", "HH:MM:SS", or just "HHMM"
-            int hours = 0, minutes = 0;
+            int hours = -1, minutes = -1;
             
             // Remove any non-digit or non-colon characters
             std::string clean_str;
@@ -802,6 +807,16 @@ namespace rouen::cards {
                 return "alarm:" + std::string(time_buffer);
             }
             return "alarm";
+        }
+
+        bool matches_uri(std::string_view uri) const override {
+            return uri == "alarm" || uri.starts_with("alarm:");
+        }
+
+        void handle_uri(std::string_view uri) override {
+            if (uri.starts_with("alarm:")) {
+                parse_time(std::string(uri.substr(6)));
+            }
         }
 
         std::vector<mcp_function> get_mcp_functions() const override {

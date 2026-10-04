@@ -23,14 +23,22 @@ public:
     // Adds or updates a service of a specific type and key
     template <typename T>
     static void add(const std::string& key, std::shared_ptr<T> service) {
-        std::lock_guard<std::mutex> lock(getMutex());
-        getTypeMap<T>()[key] = service;
+        std::shared_ptr<T> old_service;
+        {
+            std::lock_guard<std::recursive_mutex> lock(getMutex());
+            auto& map = getTypeMap<T>();
+            auto it = map.find(key);
+            if (it != map.end()) {
+                old_service = std::move(it->second);
+            }
+            map[key] = std::move(service);
+        }
     }
 
     // Retrieves a service of a specific type and key
     template <typename T>
     static std::shared_ptr<T> get(const std::string& key) {
-        std::lock_guard<std::mutex> lock(getMutex());
+        std::lock_guard<std::recursive_mutex> lock(getMutex());
 
         auto& typeMap = getTypeMap<T>();
         auto it = typeMap.find(key);
@@ -45,7 +53,7 @@ public:
     // may not be registered yet (e.g. it is only provided once a particular card is instantiated).
     template <typename T>
     static std::shared_ptr<T> try_get(const std::string& key) noexcept {
-        std::lock_guard<std::mutex> lock(getMutex());
+        std::lock_guard<std::recursive_mutex> lock(getMutex());
 
         auto& typeMap = getTypeMap<T>();
         auto it = typeMap.find(key);
@@ -58,7 +66,7 @@ public:
     // Retrieves all keys for a given type
     template <typename T>
     static void keys(std::function<void(std::string const&)> sink) {
-        std::lock_guard<std::mutex> lock(getMutex());
+        std::lock_guard<std::recursive_mutex> lock(getMutex());
 
         auto& typeMap = getTypeMap<T>();
         for (const auto& [key, _] : typeMap) {
@@ -68,7 +76,7 @@ public:
 
     template<typename T>
     static void all(std::function<void(std::string const&, std::shared_ptr<T>)> sink) {
-        std::lock_guard<std::mutex> lock(getMutex());
+        std::lock_guard<std::recursive_mutex> lock(getMutex());
 
         auto& typeMap = getTypeMap<T>();
         for (const auto& [key, p] : typeMap) {
@@ -79,8 +87,16 @@ public:
     // Removes a service from the list
     template <typename T>
     static void remove(std::string const &key) {
-        std::lock_guard<std::mutex> lock(getMutex());
-        getTypeMap<T>().erase(key);
+        std::shared_ptr<T> old_service;
+        {
+            std::lock_guard<std::recursive_mutex> lock(getMutex());
+            auto& map = getTypeMap<T>();
+            auto it = map.find(key);
+            if (it != map.end()) {
+                old_service = std::move(it->second);
+                map.erase(it);
+            }
+        }
     }
 
     class call_fn_str {
@@ -131,8 +147,8 @@ private:
     }
 
     // Provides a reference to the mutex
-    static std::mutex& getMutex() {
-        static std::mutex mutex;
+    static std::recursive_mutex& getMutex() {
+        static std::recursive_mutex mutex;
         return mutex;
     }
 };

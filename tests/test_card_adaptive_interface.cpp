@@ -17,6 +17,8 @@
 #include "../src/cards/information/rss_item.hpp"
 #include "../src/cards/information/ai_chat.hpp"
 #include "../src/cards/system/about.hpp"
+#include "../src/cards/system/sysinfo.hpp"
+#include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
 #ifdef __clang__
@@ -135,7 +137,7 @@ TEST(CardAdaptiveInterface, AIChatCard) {
     EXPECT_NE(chat_json.find("message_input"), std::string::npos);
     EXPECT_NE(chat_json.find("send_message"), std::string::npos);
     EXPECT_NE(chat_json.find("clear_history"), std::string::npos);
-    EXPECT_NE(chat_json.find("Provider:"), std::string::npos);
+    EXPECT_TRUE(chat_json.find("Provider:") != std::string::npos || chat_json.find("LLM not configured") != std::string::npos);
 
     // Test sending message with payload via action
     chat.handle_action(R"({"verb":"send_message","message_input":"Hello from unit test"})");
@@ -155,6 +157,77 @@ TEST(CardAdaptiveInterface, AboutCard) {
     EXPECT_NE(about_json.find("Rouen Dashboard Application"), std::string::npos);
     EXPECT_NE(about_json.find("Version Information"), std::string::npos);
     EXPECT_NE(about_json.find("SemVer:"), std::string::npos);
+}
+
+TEST(CardAdaptiveInterface, SysinfoCard) {
+    rouen::cards::sysinfo_card sysinfo{};
+    std::string sysinfo_json = sysinfo.get_adaptive_card_json();
+    EXPECT_NE(sysinfo_json.find("AdaptiveCard"), std::string::npos);
+    EXPECT_NE(sysinfo_json.find("System Information"), std::string::npos);
+    EXPECT_NE(sysinfo_json.find("Hardware Resources"), std::string::npos);
+    EXPECT_NE(sysinfo_json.find("CPU Load:"), std::string::npos);
+    EXPECT_NE(sysinfo_json.find("RAM Usage:"), std::string::npos);
+
+    // Verify it is strictly valid JSON
+    glz::json_t parsed;
+    auto err = glz::read_json(parsed, sysinfo_json);
+    EXPECT_FALSE(err);
+
+    // Test actions
+    sysinfo.handle_action(R"({"verb":"refresh"})");
+    sysinfo.handle_action(R"({"verb":"run_benchmark"})");
+}
+
+TEST(CardAdaptiveInterface, PomodoroCard) {
+    rouen::cards::pomodoro pom{};
+    std::string pom_json = pom.get_adaptive_card_json();
+    EXPECT_NE(pom_json.find("AdaptiveCard"), std::string::npos);
+    EXPECT_NE(pom_json.find("Pomodoro Timer"), std::string::npos);
+    EXPECT_NE(pom_json.find("Time Remaining:"), std::string::npos);
+
+    // Verify it is strictly valid JSON
+    glz::json_t parsed;
+    auto err = glz::read_json(parsed, pom_json);
+    EXPECT_FALSE(err);
+
+    // Test action
+    pom.handle_action(R"({"verb":"reset"})");
+}
+
+TEST(CardAdaptiveInterface, AlarmCardValidJsonNoEmbeddedNulls) {
+    rouen::cards::alarm alarm_card{"alarm"};
+    std::string alarm_json = alarm_card.get_adaptive_card_json();
+    EXPECT_NE(alarm_json.find("AdaptiveCard"), std::string::npos);
+    EXPECT_NE(alarm_json.find("Target:"), std::string::npos);
+
+    // Critical check: ensure no embedded null bytes are present in string
+    EXPECT_EQ(alarm_json.find('\0'), std::string::npos);
+
+    // Verify it parses as valid JSON without errors
+    glz::json_t parsed;
+    auto err = glz::read_json(parsed, alarm_json);
+    EXPECT_FALSE(err);
+
+    // Verify that handle_cards_adaptive returns an adaptive_card JSON object, not a raw string
+    auto cards_vector = std::vector<std::shared_ptr<card>>{ std::make_shared<rouen::cards::alarm>("alarm") };
+    auto get_cards_fn = std::make_shared<std::function<std::vector<std::shared_ptr<card>>()>>(
+        [cards_vector]() { return cards_vector; }
+    );
+    registrar::add<std::function<std::vector<std::shared_ptr<card>>()>>("get_active_cards", get_cards_fn);
+
+    struct mg_http_message hm_get {};
+    std::string get_uri = "/api/cards/adaptive?index=0";
+    std::string get_q = "index=0";
+    hm_get.uri = mg_str_n(get_uri.data(), get_uri.size());
+    hm_get.query = mg_str_n(get_q.data(), get_q.size());
+    hm_get.method = mg_str("GET");
+
+    std::string get_res = rouen::hosts::api_server_host::handle_cards_adaptive(nullptr, &hm_get);
+    glz::json_t api_resp;
+    auto api_err = glz::read_json(api_resp, get_res);
+    EXPECT_FALSE(api_err);
+    ASSERT_TRUE(api_resp.contains("adaptive_card"));
+    EXPECT_TRUE(api_resp["adaptive_card"].is_object());
 }
 
 

@@ -251,6 +251,66 @@ namespace rouen::cards {
             return "pomodoro";
         }
 
+        bool matches_uri(std::string_view uri) const override {
+            return uri == "pomodoro" || uri.starts_with("pomodoro:");
+        }
+
+        std::string get_adaptive_card_json() const override {
+            auto const now = std::chrono::system_clock::now();
+            bool done = is_done(now);
+            double pct = std::clamp(percentaged_done(now), 0.0, 1.0);
+            long long total_sec = 25 * 60;
+            long long elapsed_sec = std::chrono::duration_cast<std::chrono::seconds>(now - start_time).count();
+            long long remaining_sec = std::max(0LL, total_sec - elapsed_sec);
+            long long rem_min = remaining_sec / 60;
+            long long rem_s = remaining_sec % 60;
+            long long elap_min = elapsed_sec / 60;
+            long long elap_s = elapsed_sec % 60;
+
+            std::string status_str = done ? "Completed" : "Focus Interval";
+            std::string rem_str = std::format("{:02d}:{:02d}", rem_min, rem_s);
+            std::string elap_str = std::format("{:02d}:{:02d}", elap_min, elap_s);
+            std::string pct_str = std::format("{:.0f}%", pct * 100.0);
+
+            return std::format(
+                R"json({{
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "refreshIntervalMs": 1000,
+  "body": [
+    {{"type": "TextBlock", "text": "🍅 Pomodoro Timer", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "Focus Interval (25 minutes)", "isSubtle": true}},
+    {{
+      "type": "Container",
+      "style": "emphasis",
+      "items": [
+        {{"type": "TextBlock", "text": "Session Progress", "weight": "Bolder", "color": "Accent"}},
+        {{
+          "type": "FactSet",
+          "facts": [
+            {{"title": "Status:", "value": "{}"}},
+            {{"title": "Time Remaining:", "value": "{}"}},
+            {{"title": "Time Elapsed:", "value": "{}"}},
+            {{"title": "Completed:", "value": "{}"}}
+          ]
+        }}
+      ]
+    }}
+  ],
+  "actions": [
+    {{"type": "Action.Execute", "title": "Reset / New Session", "verb": "reset"}}
+  ]
+}})json",
+                status_str, rem_str, elap_str, pct_str);
+        }
+
+        void handle_action(std::string_view action_json) override {
+            if (action_json.find("\"reset\"") != std::string_view::npos ||
+                action_json.find("\"start_pomodoro\"") != std::string_view::npos) {
+                reset();
+            }
+        }
+
         bool has_video_overlay() const override { return true; }
 
         void render_video_ui() override {
