@@ -58,6 +58,9 @@ public:
     static std::string handle_swagger_ui(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_openapi_spec(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_sync_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_sync_run(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_sync_item(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_connect(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_disconnect(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_mesh_pair(struct mg_connection* c, struct mg_http_message* hm);

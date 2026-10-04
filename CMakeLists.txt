@@ -656,6 +656,7 @@ target_sources(${PROJECT_NAME}
   src/hosts/rouen_mesh_host.cpp
   src/hosts/git_sync_host.cpp
   src/hosts/universal_sync_host.cpp
+  src/helpers/sync_crypto_service.cpp
   src/hosts/process_host.cpp
   src/hosts/plugin_host.cpp
   src/hosts/quickjs_host.cpp

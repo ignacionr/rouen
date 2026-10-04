@@ -318,6 +318,7 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/hosts/llm_host.cpp
     ../src/hosts/event_bus_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
@@ -389,6 +390,7 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/hosts/llm_host.cpp
     ../src/hosts/event_bus_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/hosts/footprints_host.cpp
@@ -593,6 +595,7 @@ target_sources(test_deck_scrolling PRIVATE
     ../src/hosts/llm_host.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/plugin_host.cpp
     ../src/hosts/quickjs_host.cpp
     ../src/helpers/media_player.cpp
@@ -698,6 +701,7 @@ add_executable(test_mcp
     ../src/hosts/event_bus_host.cpp
     ../src/hosts/mcp_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/rss_host.cpp
     ../src/models/rss/feed_xml_parser.cpp
@@ -945,6 +949,26 @@ add_executable(test_rouen_mesh
 target_link_libraries(test_rouen_mesh PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL)
 add_test(NAME RouenMeshTest COMMAND test_rouen_mesh)
 
+add_executable(test_sync_crypto
+    test_sync_crypto.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/sync_crypto_service.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
+)
+target_link_libraries(test_sync_crypto PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL)
+add_test(NAME SyncCryptoTest COMMAND test_sync_crypto)
+
+add_executable(test_universal_mesh_sync
+    test_universal_mesh_sync.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/universal_sync_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/git_sync_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/sync_crypto_service.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
+)
+target_link_libraries(test_universal_mesh_sync PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL)
+add_test(NAME UniversalMeshSyncTest COMMAND test_universal_mesh_sync)
+
 add_executable(test_telegram_mesh_notify
     test_telegram_mesh_notify.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
@@ -1025,6 +1049,7 @@ target_sources(test_quickjs PRIVATE
     ../src/hosts/llm_host.cpp
     ../src/hosts/git_sync_host.cpp
     ../src/hosts/universal_sync_host.cpp
+    ../src/helpers/sync_crypto_service.cpp
     ../src/hosts/plugin_host.cpp
     ../src/helpers/media_player.cpp
     ../src/helpers/media_player_item.cpp

@@ -503,6 +503,19 @@ int main(int argc, char* argv[]) {
             std::cout << "[Rouen Daemon] Telegram host initialized with token\n";
         }
 
+        // Start periodic Mesh Universal Sync in daemon mode
+        if (rouen::helpers::UniversalSyncService::instance().is_mesh_sync_active()) {
+            std::string interval_str = config_service->get_env("ROUEN_SYNC_PERIODIC_INTERVAL_SEC");
+            uint32_t interval_sec = 300;
+            if (!interval_str.empty()) {
+                try { interval_sec = static_cast<uint32_t>(std::stoul(interval_str)); } catch (...) {}
+            }
+            if (config_service->get_env("ROUEN_SYNC_PERIODIC_ENABLED") != "0") {
+                std::cout << "[Rouen Daemon] Starting periodic background Mesh sync (" << interval_sec << "s interval)...\n";
+                rouen::helpers::UniversalSyncService::instance().start_periodic_sync(interval_sec);
+            }
+        }
+
         // Setup termination signal handling
         static std::atomic<bool> s_daemon_running{true};
         auto signal_handler = [](int) {
@@ -528,6 +541,8 @@ int main(int argc, char* argv[]) {
         while (s_daemon_running.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+
+        rouen::helpers::UniversalSyncService::instance().stop_periodic_sync();
 
         if (telegram_host) {
             std::cout << "[Rouen Daemon] Stopping telegram host presence...\n";
@@ -693,10 +708,28 @@ int main(int argc, char* argv[]) {
         )
     );
     
-    // Run startup synchronization if enabled
-    if (config_service->get_env("ROUEN_SYNC_AUTO_ON_STARTUP") == "1") {
-        std::cout << "[INFO] Auto-pull on startup is enabled. Running Sync In...\n";
+    // Run startup synchronization if enabled (enabled by default in Mesh mode)
+    bool const is_mesh_sync = rouen::helpers::UniversalSyncService::instance().is_mesh_sync_active();
+    bool const auto_startup = is_mesh_sync
+        ? (config_service->get_env("ROUEN_SYNC_AUTO_ON_STARTUP") != "0")
+        : (config_service->get_env("ROUEN_SYNC_AUTO_ON_STARTUP") == "1");
+
+    if (auto_startup) {
+        std::cout << "[INFO] Auto-sync on startup is enabled. Running Sync In...\n";
         rouen::helpers::UniversalSyncService::instance().sync_in();
+    }
+
+    // Start periodic background synchronization in Mesh mode (default: 300s / 5 minutes)
+    if (is_mesh_sync) {
+        std::string interval_str = config_service->get_env("ROUEN_SYNC_PERIODIC_INTERVAL_SEC");
+        uint32_t interval_sec = 300;
+        if (!interval_str.empty()) {
+            try { interval_sec = static_cast<uint32_t>(std::stoul(interval_str)); } catch (...) {}
+        }
+        if (config_service->get_env("ROUEN_SYNC_PERIODIC_ENABLED") != "0") {
+            std::cout << "[INFO] Starting periodic background Mesh sync (" << interval_sec << "s interval)...\n";
+            rouen::helpers::UniversalSyncService::instance().start_periodic_sync(interval_sec);
+        }
     }
     
     // Get the video feed host instance (do not auto-start)
@@ -722,6 +755,9 @@ int main(int argc, char* argv[]) {
     // Run the main loop
     window.run();
 
+    // Stop periodic sync worker before application teardown
+    rouen::helpers::UniversalSyncService::instance().stop_periodic_sync();
+
     // Stop presence service
     rouen::services::presence_service::instance().stop();
 
@@ -733,9 +769,13 @@ int main(int argc, char* argv[]) {
     media_player::shutdown();
     video_feed->stop();
 
-    // Run shutdown synchronization if enabled
-    if (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1") {
-        std::cout << "[INFO] Auto-push on shutdown is enabled. Running Two-Way Sync...\n";
+    // Run shutdown synchronization if enabled (enabled by default in Mesh mode)
+    bool const auto_shutdown = is_mesh_sync
+        ? (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") != "0")
+        : (config_service->get_env("ROUEN_SYNC_AUTO_ON_SHUTDOWN") == "1");
+
+    if (auto_shutdown) {
+        std::cout << "[INFO] Auto-sync on shutdown is enabled. Running Two-Way Sync...\n";
         rouen::helpers::UniversalSyncService::instance().sync_twoway("Auto-sync shutdown update", false);
     }
 

@@ -82,10 +82,12 @@
 #include "../hosts/video_feed_host.hpp"
 #include "../cards/interface/card.hpp"
 #include "../cards/interface/factory.hpp"
-#include "../hosts/process_host.hpp"
 #include "../hosts/event_bus_host.hpp"
+#include "../hosts/process_host.hpp"
 #include "../helpers/ui_automation_explorer.hpp"
 #include "../hosts/telegram_host.hpp"
+#include "../helpers/universal_sync_service.hpp"
+#include "../helpers/sync_crypto_service.hpp"
 
 namespace {
     std::mutex s_sse_mutex;
@@ -798,6 +800,27 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
                mg_match(hm->uri, mg_str("/api/telegram/incoming"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
             response = handle_telegram_simulate(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/sync/status"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_sync_status(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/sync/run"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_sync_run(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/sync/item"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0) {
+            response = handle_sync_item(c, hm);
         } else {
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
@@ -5183,6 +5206,109 @@ struct mesh_open_route_request {
 struct mesh_close_route_request {
     uint32_t route_id{0};
 };
+
+std::string api_server_host::handle_sync_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
+    auto& sync = helpers::UniversalSyncService::instance();
+    bool is_mesh = sync.is_mesh_sync_active();
+    auto& crypto = sync::SyncCryptoService::instance();
+
+    size_t notes_count = is_mesh ? sync.get_mesh_entry_count("notes") : 0;
+    size_t contacts_count = is_mesh ? sync.get_mesh_entry_count("contacts") : 0;
+    size_t travel_count = is_mesh ? sync.get_mesh_entry_count("travel") : 0;
+    size_t rss_count = is_mesh ? sync.get_mesh_entry_count("rss") : 0;
+    size_t total_registry = is_mesh ? sync.get_mesh_entry_count() : 0;
+
+    std::string canary_status = "uninitialized";
+    auto canary = sync.check_canary();
+    if (canary == helpers::UniversalSyncService::CanaryStatus::Valid) {
+        canary_status = "valid";
+    } else if (canary == helpers::UniversalSyncService::CanaryStatus::Mismatch) {
+        canary_status = "mismatch";
+    }
+
+    return std::format(
+        R"({{"mode":"{}","is_mesh_active":{},"is_syncing":{},"status_message":"{}","e2ee_configured":{},"canary_status":"{}","passphrase_mismatch":{},"periodic_running":{},"periodic_interval_seconds":{},"entries":{{"notes":{},"contacts":{},"travel":{},"rss":{},"total":{}}}}})",
+        is_mesh ? "mesh_persistent_registry" : "legacy_git",
+        is_mesh ? "true" : "false",
+        sync.is_syncing() ? "true" : "false",
+        sync.get_status_message(),
+        crypto.is_configured() ? "true" : "false",
+        canary_status,
+        sync.is_passphrase_mismatch() ? "true" : "false",
+        sync.is_periodic_sync_running() ? "true" : "false",
+        sync.get_periodic_interval_seconds(),
+        notes_count,
+        contacts_count,
+        travel_count,
+        rss_count,
+        total_registry
+    );
+}
+
+struct sync_run_req {
+    std::string action{"twoway"};
+    bool incremental{false};
+};
+
+std::string api_server_host::handle_sync_run(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& sync = helpers::UniversalSyncService::instance();
+    if (sync.is_passphrase_mismatch()) {
+        return R"({"success":false,"error":"Passphrase mismatch with Mesh cluster canary. Sync halted to prevent data corruption."})";
+    }
+
+    std::string action = "twoway";
+    bool incremental = false;
+    std::string body(hm->body.buf, hm->body.len);
+    if (!body.empty()) {
+        sync_run_req req{};
+        if (glz::read_json(req, body) == glz::error_code::none) {
+            if (!req.action.empty()) action = req.action;
+            incremental = req.incremental || action == "incremental";
+        }
+    }
+
+    bool started = false;
+    if (action == "sync_in" || action == "in" || action == "pull") {
+        started = sync.is_mesh_sync_active() ? sync.sync_in_mesh(true, incremental) : sync.sync_in();
+    } else if (action == "sync_out" || action == "out" || action == "push") {
+        started = sync.is_mesh_sync_active() ? sync.sync_out_mesh("REST API trigger", incremental) : sync.sync_out("REST API trigger");
+    } else {
+        started = sync.is_mesh_sync_active() ? sync.sync_twoway_mesh("REST API trigger", true, incremental) : sync.sync_twoway("REST API trigger");
+    }
+
+    return std::format(
+        R"({{"success":{},"action":"{}","incremental":{},"status_message":"{}"}})",
+        started ? "true" : "false",
+        action,
+        incremental ? "true" : "false",
+        sync.get_status_message()
+    );
+}
+
+struct sync_item_req {
+    std::string dataset;
+    std::string key;
+    std::string content;
+    bool deleted{false};
+};
+
+std::string api_server_host::handle_sync_item(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    auto& sync = helpers::UniversalSyncService::instance();
+    std::string body(hm->body.buf, hm->body.len);
+    sync_item_req req{};
+    if (glz::read_json(req, body) != glz::error_code::none || req.dataset.empty() || req.key.empty()) {
+        return R"({"error":"Invalid request payload; requires dataset and key"})";
+    }
+
+    bool ok = sync.sync_item(req.dataset, req.key, req.content, req.deleted);
+    return std::format(
+        R"({{"success":{},"dataset":"{}","key":"{}","deleted":{}}})",
+        ok ? "true" : "false",
+        req.dataset,
+        req.key,
+        req.deleted ? "true" : "false"
+    );
+}
 
 std::string api_server_host::handle_mesh_status(struct mg_connection* /*c*/, struct mg_http_message* /*hm*/) {
     auto& host = rouen_mesh_host::instance();
