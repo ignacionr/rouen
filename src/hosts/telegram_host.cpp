@@ -641,7 +641,7 @@ std::string run_ai_persona_completion(
     // Check if preferred LLM config has an API key or is customized
     if (!llm_config.is_configured || (llm_config.api_key.empty() && llm_config.provider != rouen::hosts::LLMHost::Provider::CUSTOM)) {
         // Fallback to active configured API providers
-        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
         for (const auto& f : fallbacks) {
             auto cfg = rouen::hosts::LLMHost::get_current_config(f);
             if (!cfg.api_key.empty()) {
@@ -654,7 +654,7 @@ std::string run_ai_persona_completion(
 
     auto llm_opt = rouen::hosts::LLMHost::create_llm_instance(config_name);
     if (!llm_opt && !config_name.empty()) {
-        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
         for (const auto& f : fallbacks) {
             auto cfg = rouen::hosts::LLMHost::get_current_config(f);
             if (!cfg.api_key.empty()) {
@@ -812,7 +812,7 @@ std::string run_ai_persona_completion(
             return fallback_fetcher.post(url, data, hdr);
         };
 
-        std::vector<std::string> fallbacks = {"Local MLX", "Gemini Flash", "Grok Default", "OpenAI GPT-4"};
+        std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
         for (const auto& f : fallbacks) {
             auto fallback_config = rouen::hosts::LLMHost::get_current_config(f);
             if (fallback_config.api_key.empty()) continue;

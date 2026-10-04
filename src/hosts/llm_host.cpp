@@ -42,6 +42,12 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
     
     const auto* entry = LLMConfigManager::instance().get_config(name);
     if (!entry) {
+        if (LLMConfigManager::instance().ensure_standard_configs()) {
+            LLMConfigManager::instance().save_configs();
+            entry = LLMConfigManager::instance().get_config(name);
+        }
+    }
+    if (!entry) {
         std::string const def_name = LLMConfigManager::instance().get_default_config_name();
         entry = LLMConfigManager::instance().get_config(def_name);
     }
@@ -57,6 +63,9 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
         if (settings.api_key.empty()) {
             ensure_config_service();
             settings.api_key = config_service_->get_env_optional(get_api_key_env_name(settings.provider)).value_or("");
+            if (settings.api_key.empty() && settings.provider == Provider::CUSTOM) {
+                settings.api_key = "mlx-local";
+            }
         }
         if (settings.base_url.empty()) {
             settings.base_url = get_base_url(settings.provider);
@@ -66,7 +75,9 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
         }
     } else {
         ensure_config_service();
-        std::string const provider_str = config_service_->get_env_optional("LLM_PROVIDER").value_or("grok");
+        std::string const provider_str = config_service_->get_env_optional("LLM_PROVIDER").value_or(
+            !config_service_->get_env_optional("GEMINI_API_KEY").value_or("").empty() ? "gemini" : "grok"
+        );
         settings.provider = string_to_provider(provider_str);
         settings.config_name = "Global Env";
         
@@ -89,15 +100,15 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
             case Provider::GEMINI:
                 settings.api_key = config_service_->get_env_optional("GEMINI_API_KEY").value_or("");
                 settings.base_url = "https://generativelanguage.googleapis.com";
-                settings.model_name = "gemini-3.6-flash";
+                settings.model_name = "gemini-3.8-flash";
                 break;
             case Provider::CUSTOM:
                 settings.api_key = config_service_->get_env_optional("LLM_CUSTOM_API_KEY").value_or(
-                    config_service_->get_env_optional("LLM_API_KEY").value_or("local"));
+                    config_service_->get_env_optional("LLM_API_KEY").value_or("mlx-local"));
                 settings.base_url = config_service_->get_env_optional("LLM_CUSTOM_URL").value_or(
                     config_service_->get_env_optional("LLM_BASE_URL").value_or("http://localhost:8098/v1"));
                 settings.model_name = config_service_->get_env_optional("LLM_CUSTOM_MODEL").value_or(
-                    config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen2.5-7B-Instruct-4bit"));
+                    config_service_->get_env_optional("LLM_MODEL").value_or("mlx-community/Qwen3.5-9B-MLX-4bit"));
                 break;
         }
     }
@@ -110,8 +121,22 @@ std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::stri
     auto settings = get_current_config(config_name);
     
     if (settings.api_key.empty()) {
-        LOG_COMPONENT("LLMConfig", LOG_LEVEL_WARN, "Cannot create LLM instance: API key is empty");
-        return std::nullopt;
+        if (settings.provider == Provider::CUSTOM) {
+            settings.api_key = "mlx-local";
+        } else {
+            // Intelligent fallback: try other standard profiles with active configured credentials
+            std::vector<std::string> fallbacks = {"Gemini Flash", "Grok Default", "OpenAI GPT-4", "Local MLX"};
+            for (const auto& f : fallbacks) {
+                if (f == config_name) continue;
+                auto fb_settings = get_current_config(f);
+                if (!fb_settings.api_key.empty() || fb_settings.provider == Provider::CUSTOM) {
+                    LOG_COMPONENT("LLMConfig", LOG_LEVEL_WARN, std::format("LLM config '{}' has empty API key; falling back to '{}'", config_name, f));
+                    return create_llm_instance(f);
+                }
+            }
+            LOG_COMPONENT("LLMConfig", LOG_LEVEL_WARN, "Cannot create LLM instance: API key is empty and no fallback available");
+            return std::nullopt;
+        }
     }
     
     try {
@@ -171,7 +196,7 @@ std::string LLMHost::get_default_model(Provider provider) {
         case Provider::GROK: return "grok-3-latest";
         case Provider::OPENAI: return "gpt-4";
         case Provider::GROQ: return "llama3-8b-8192";
-        case Provider::GEMINI: return "gemini-3.6-flash";
+        case Provider::GEMINI: return "gemini-3.8-flash";
         case Provider::CUSTOM: return "mlx-community/Qwen3.5-9B-MLX-4bit";
     }
     return "grok-3-latest";
@@ -216,35 +241,123 @@ LLMConfigManager::LLMConfigManager() {
 
 void LLMConfigManager::setup_default_configs() {
     configs_.clear();
-    
-    LLMConfigEntry grok_entry;
-    grok_entry.name = "Grok Default";
-    grok_entry.provider = "grok";
-    grok_entry.model_name = "grok-3-latest";
-    configs_.push_back(grok_entry);
-    
-    LLMConfigEntry openai_entry;
-    openai_entry.name = "OpenAI GPT-4";
-    openai_entry.provider = "openai";
-    openai_entry.model_name = "gpt-4";
-    configs_.push_back(openai_entry);
-
-    LLMConfigEntry gemini_entry;
-    gemini_entry.name = "Gemini Flash";
-    gemini_entry.provider = "gemini";
-    gemini_entry.model_name = "gemini-3.6-flash";
-    configs_.push_back(gemini_entry);
-
-    LLMConfigEntry local_mlx_entry;
-    local_mlx_entry.name = "Local MLX";
-    local_mlx_entry.provider = "custom";
-    local_mlx_entry.base_url = "http://localhost:8098/v1";
-    local_mlx_entry.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
-    local_mlx_entry.api_key = "mlx-local";
-    configs_.push_back(local_mlx_entry);
-    
-    default_config_name_ = "Grok Default";
+    ensure_standard_configs();
     save_configs();
+}
+
+bool LLMConfigManager::ensure_standard_configs() {
+    auto config_service = rouen::helpers::ConfigService::instance();
+    bool updated = false;
+
+    bool has_mlx = false;
+    bool has_gemini = false;
+    bool has_grok = false;
+    bool has_openai = false;
+
+    for (auto& cfg : configs_) {
+        if (cfg.name == "Local MLX") {
+            has_mlx = true;
+            if (cfg.model_name != "mlx-community/Qwen3.5-9B-MLX-4bit") {
+                cfg.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
+                updated = true;
+            }
+            if (cfg.api_key.empty()) {
+                cfg.api_key = "mlx-local";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "http://localhost:8098/v1";
+                updated = true;
+            }
+        } else if (cfg.name == "Gemini Flash") {
+            has_gemini = true;
+            if (cfg.model_name == "gemini-2.5-flash" || cfg.model_name.empty()) {
+                cfg.model_name = "gemini-3.8-flash";
+                updated = true;
+            }
+            if (cfg.base_url.empty()) {
+                cfg.base_url = "https://generativelanguage.googleapis.com";
+                updated = true;
+            }
+            if (cfg.api_key.empty() && config_service) {
+                auto env_key = config_service->get_env_optional("GEMINI_API_KEY").value_or("");
+                if (!env_key.empty()) {
+                    cfg.api_key = env_key;
+                    updated = true;
+                }
+            }
+        } else if (cfg.name == "Grok Default") {
+            has_grok = true;
+            if (cfg.api_key.empty() && config_service) {
+                auto env_key = config_service->get_env_optional("GROK_API_KEY").value_or("");
+                if (!env_key.empty()) {
+                    cfg.api_key = env_key;
+                    updated = true;
+                }
+            }
+        } else if (cfg.name == "OpenAI GPT-4") {
+            has_openai = true;
+            if (cfg.api_key.empty() && config_service) {
+                auto env_key = config_service->get_env_optional("OPENAI_API_KEY").value_or("");
+                if (!env_key.empty()) {
+                    cfg.api_key = env_key;
+                    updated = true;
+                }
+            }
+        }
+    }
+
+    if (!has_gemini) {
+        LLMConfigEntry gemini_entry;
+        gemini_entry.name = "Gemini Flash";
+        gemini_entry.provider = "gemini";
+        gemini_entry.model_name = "gemini-3.8-flash";
+        gemini_entry.base_url = "https://generativelanguage.googleapis.com";
+        gemini_entry.api_key = config_service ? config_service->get_env_optional("GEMINI_API_KEY").value_or("") : "";
+        configs_.push_back(gemini_entry);
+        updated = true;
+    }
+
+    if (!has_mlx) {
+        LLMConfigEntry local_mlx_entry;
+        local_mlx_entry.name = "Local MLX";
+        local_mlx_entry.provider = "custom";
+        local_mlx_entry.base_url = "http://localhost:8098/v1";
+        local_mlx_entry.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
+        local_mlx_entry.api_key = "mlx-local";
+        configs_.push_back(local_mlx_entry);
+        updated = true;
+    }
+
+    if (!has_grok) {
+        LLMConfigEntry grok_entry;
+        grok_entry.name = "Grok Default";
+        grok_entry.provider = "grok";
+        grok_entry.model_name = "grok-3-latest";
+        grok_entry.base_url = "https://api.x.ai/v1";
+        grok_entry.api_key = config_service ? config_service->get_env_optional("GROK_API_KEY").value_or("") : "";
+        configs_.push_back(grok_entry);
+        updated = true;
+    }
+
+    if (!has_openai) {
+        LLMConfigEntry openai_entry;
+        openai_entry.name = "OpenAI GPT-4";
+        openai_entry.provider = "openai";
+        openai_entry.model_name = "gpt-4";
+        openai_entry.base_url = "https://api.openai.com/v1";
+        openai_entry.api_key = config_service ? config_service->get_env_optional("OPENAI_API_KEY").value_or("") : "";
+        configs_.push_back(openai_entry);
+        updated = true;
+    }
+
+    // Ensure default config name is valid and points to an existing entry
+    if (default_config_name_.empty() || !get_config(default_config_name_) || default_config_name_ == "Local MLX" || default_config_name_ == "Default") {
+        default_config_name_ = "Gemini Flash";
+        updated = true;
+    }
+
+    return updated;
 }
 
 void LLMConfigManager::load_configs() {
@@ -279,40 +392,7 @@ void LLMConfigManager::load_configs() {
         configs_ = save_model.configs;
         default_config_name_ = save_model.default_config_name;
         
-        bool updated = false;
-        for (auto& cfg : configs_) {
-            if (cfg.model_name == "gemini-3.8-flash" || cfg.model_name == "gemini-3.7-flash" || cfg.model_name == "gemini-3.5-flash" || cfg.model_name == "gemini-2.5-flash") {
-                cfg.model_name = "gemini-3.6-flash";
-                updated = true;
-            }
-            if (cfg.model_name == "mlx-community/Qwen2.5-7B-Instruct-4bit" || (cfg.provider == "custom" && cfg.model_name.find("Qwen2.5") != std::string::npos)) {
-                cfg.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
-                updated = true;
-            }
-        }
-        
-        bool has_mlx = false;
-        for (auto& cfg : configs_) {
-            if (cfg.name == "Local MLX") {
-                has_mlx = true;
-                if (cfg.model_name != "mlx-community/Qwen3.5-9B-MLX-4bit") {
-                    cfg.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
-                    updated = true;
-                }
-                break;
-            }
-        }
-        if (!has_mlx) {
-            LLMConfigEntry local_mlx_entry;
-            local_mlx_entry.name = "Local MLX";
-            local_mlx_entry.provider = "custom";
-            local_mlx_entry.base_url = "http://localhost:8098/v1";
-            local_mlx_entry.model_name = "mlx-community/Qwen3.5-9B-MLX-4bit";
-            local_mlx_entry.api_key = "mlx-local";
-            configs_.push_back(local_mlx_entry);
-            updated = true;
-        }
-        
+        bool updated = ensure_standard_configs();
         if (updated) {
             save_configs();
         }

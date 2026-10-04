@@ -964,6 +964,7 @@ add_executable(test_universal_mesh_sync
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/git_sync_host.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/sync_crypto_service.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/llm_host.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
 )
 target_link_libraries(test_universal_mesh_sync PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL)

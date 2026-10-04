@@ -5255,9 +5255,6 @@ struct sync_run_req {
 
 std::string api_server_host::handle_sync_run(struct mg_connection* /*c*/, struct mg_http_message* hm) {
     auto& sync = helpers::UniversalSyncService::instance();
-    if (sync.is_passphrase_mismatch()) {
-        return R"({"success":false,"error":"Passphrase mismatch with Mesh cluster canary. Sync halted to prevent data corruption."})";
-    }
 
     std::string action = "twoway";
     bool incremental = true;
@@ -5272,6 +5269,19 @@ std::string api_server_host::handle_sync_run(struct mg_connection* /*c*/, struct
                 incremental = req.incremental;
             }
         }
+    }
+
+    if (action == "stop_periodic" || action == "stop" || action == "pause") {
+        sync.stop_periodic_sync();
+        return R"({"success":true,"action":"stop_periodic","status_message":"Periodic sync stopped"})";
+    }
+    if (action == "start_periodic" || action == "start" || action == "resume") {
+        sync.start_periodic_sync();
+        return R"({"success":true,"action":"start_periodic","status_message":"Periodic sync started"})";
+    }
+
+    if (sync.is_passphrase_mismatch()) {
+        return R"({"success":false,"error":"Passphrase mismatch with Mesh cluster canary. Sync halted to prevent data corruption."})";
     }
 
     bool started = false;

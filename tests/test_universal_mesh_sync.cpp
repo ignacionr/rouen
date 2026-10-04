@@ -9,6 +9,7 @@
 #include "../src/hosts/rouen_mesh_host.hpp"
 #include "../src/helpers/sync_crypto_service.hpp"
 #include "../src/helpers/persona_manager.hpp"
+#include "../src/hosts/llm_host.hpp"
 #include <cassert>
 #include <filesystem>
 #include <fstream>
@@ -272,18 +273,18 @@ void test_personas_universal_sync() {
     }
     test_helpers::assert_true(found_imported, "Imported persona was successfully registered in PersonaManager");
 
-    // 6. Test LLM Config Sync under config/llm_configs.json
-    std::string sample_llm_cfg = R"({"default_config_name":"Local MLX","configs":[{"name":"Local MLX","provider":"custom","base_url":"http://localhost:8098/v1","model_name":"mlx-community/Qwen3.5-9B-MLX-4bit"}]})";
-    bool llm_sync_ok = sync.sync_item("config", "llm_configs.json", sample_llm_cfg, false);
-    test_helpers::assert_true(llm_sync_ok, "sync_item succeeded for llm_configs.json");
+    // 6. Test LLM Config Sync under config/test_llm_configs.json
+    std::string sample_llm_cfg = R"({"default_config_name":"Gemini Flash","configs":[{"name":"Gemini Flash","provider":"gemini","model_name":"gemini-3.8-flash","base_url":"https://generativelanguage.googleapis.com","api_key":"test_key"},{"name":"Local MLX","provider":"custom","base_url":"http://localhost:8098/v1","model_name":"mlx-community/Qwen3.5-9B-MLX-4bit","api_key":"mlx-local"}]})";
+    bool llm_sync_ok = sync.sync_item("config", "test_llm_configs.json", sample_llm_cfg, false);
+    test_helpers::assert_true(llm_sync_ok, "sync_item succeeded for test_llm_configs.json");
 
-    auto llm_val = mesh.get_registry_value("sync/v1/config/llm_configs.json");
-    test_helpers::assert_true(llm_val.has_value(), "Registry contains key 'sync/v1/config/llm_configs.json'");
+    auto llm_val = mesh.get_registry_value("sync/v1/config/test_llm_configs.json");
+    test_helpers::assert_true(llm_val.has_value(), "Registry contains key 'sync/v1/config/test_llm_configs.json'");
 
     auto dec_llm = crypto.decrypt_envelope(*llm_val);
     test_helpers::assert_true(dec_llm.has_value(), "Decrypted llm_configs envelope successfully");
     test_helpers::assert_string_equal("config", dec_llm->dataset, "Dataset is 'config'");
-    test_helpers::assert_string_equal("llm_configs.json", dec_llm->key, "Key is 'llm_configs.json'");
+    test_helpers::assert_string_equal("test_llm_configs.json", dec_llm->key, "Key is 'test_llm_configs.json'");
 
     // 7. Test Persona Tombstone deletion
     bool del_p_ok = sync.sync_item("personas", "mesh-specialist.json", "", true);
@@ -301,6 +302,39 @@ void test_personas_universal_sync() {
     std::filesystem::remove_all(import_dir);
 }
 
+void test_persona_llm_config_resolution() {
+    std::cout << "\n--- Testing Persona LLM Config Resolution & Restoration ---\n";
+    auto& lcm = rouen::hosts::LLMConfigManager::instance();
+
+    // 1. Verify standard configs restoration even if an incomplete set is passed
+    lcm.ensure_standard_configs();
+    test_helpers::assert_string_equal("Gemini Flash", lcm.get_default_config_name(), "Default config is Gemini Flash");
+    const auto* gemini_cfg = lcm.get_config("Gemini Flash");
+    test_helpers::assert_true(gemini_cfg != nullptr, "Gemini Flash config exists in LLMConfigManager");
+    if (gemini_cfg) {
+        test_helpers::assert_string_equal("gemini", gemini_cfg->provider, "Gemini Flash provider is 'gemini'");
+        test_helpers::assert_string_equal("gemini-3.8-flash", gemini_cfg->model_name, "Gemini Flash model is 'gemini-3.8-flash'");
+    }
+
+    const auto* mlx_cfg = lcm.get_config("Local MLX");
+    test_helpers::assert_true(mlx_cfg != nullptr, "Local MLX config exists in LLMConfigManager");
+    if (mlx_cfg) {
+        test_helpers::assert_string_equal("custom", mlx_cfg->provider, "Local MLX provider is 'custom'");
+        test_helpers::assert_true(!mlx_cfg->api_key.empty(), "Local MLX has non-empty api_key");
+    }
+
+    // 2. Test get_current_config for Rouen Assistant
+    auto settings = rouen::hosts::LLMHost::get_current_config("Gemini Flash");
+    test_helpers::assert_true(settings.provider == rouen::hosts::LLMHost::Provider::GEMINI, "Resolved Gemini provider");
+    test_helpers::assert_string_equal("gemini-3.8-flash", settings.model_name, "Model name is 'gemini-3.8-flash'");
+
+    // 3. Test Local MLX settings resolution
+    auto mlx_settings = rouen::hosts::LLMHost::get_current_config("Local MLX");
+    test_helpers::assert_true(mlx_settings.provider == rouen::hosts::LLMHost::Provider::CUSTOM, "Local MLX provider is CUSTOM");
+    test_helpers::assert_true(mlx_settings.is_configured, "Local MLX is configured");
+    test_helpers::assert_true(!mlx_settings.api_key.empty(), "Local MLX settings api_key is not empty");
+}
+
 int main() {
     std::cout << "========================================\n";
     std::cout << "Starting Universal Mesh Sync Unit Tests\n";
@@ -312,6 +346,7 @@ int main() {
     test_canary_safeguards();
     test_incremental_and_periodic_sync();
     test_personas_universal_sync();
+    test_persona_llm_config_resolution();
 
     std::cout << "\n🎉 ALL UNIVERSAL MESH SYNC TESTS PASSED!\n";
     return 0;

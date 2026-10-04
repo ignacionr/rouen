@@ -372,7 +372,7 @@ namespace rouen::helpers {
                 "Mesh & Remote System Guidelines:\n"
                 "- When asked for connected clients or nodes on the mesh, report only what the user specifically asked for. Never assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                 "- If the user requires additional system information (such as operating system/platform, hardware, or internal system state) of a remote mesh computer, use the Rouen API on the target system to retrieve live, accurate information. Check for an existing virtual route / tunnel into that target client (or create one using mesh_open_route targeting remote Rouen API port 8081), and query the target system's live API (or use mesh_query_remote_api).";
-            default_p.llm_config_name = "Local MLX";
+            default_p.llm_config_name = "Gemini Flash";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             personas_.push_back(default_p);
@@ -383,7 +383,7 @@ namespace rouen::helpers {
             dev_arch.allowed_mcps = {"editor", "deck"};
             dev_arch.allowed_personas = {"Terminal Specialist", "Git & GitHub Specialist", "Adaptive Card Architect"};
             dev_arch.system_prompt = "You are Code & Git Architect, leading software development and system operations in Rouen.";
-            dev_arch.llm_config_name = "Local MLX";
+            dev_arch.llm_config_name = "Gemini Flash";
             dev_arch.enable_search = false;
             dev_arch.temperature = 0.2f;
             personas_.push_back(dev_arch);
@@ -394,7 +394,7 @@ namespace rouen::helpers {
             prod_lead.allowed_mcps = {"deck"};
             prod_lead.allowed_personas = {"Schedule & Timekeeper", "Directory & Address Book", "Archiver of all data"};
             prod_lead.system_prompt = "You are Personal Productivity Lead, orchestrating personal organization, time management, and note archives in Rouen.";
-            prod_lead.llm_config_name = "Local MLX";
+            prod_lead.llm_config_name = "Gemini Flash";
             prod_lead.enable_search = false;
             prod_lead.temperature = 0.3f;
             personas_.push_back(prod_lead);
@@ -405,7 +405,7 @@ namespace rouen::helpers {
             media_dir.allowed_mcps = {"deck"};
             media_dir.allowed_personas = {"Media & Stream Director", "Google", "Archiver of all data"};
             media_dir.system_prompt = "You are Media & Knowledge Director, managing media consumption, news feeds, and external research.";
-            media_dir.llm_config_name = "Local MLX";
+            media_dir.llm_config_name = "Gemini Flash";
             media_dir.enable_search = false;
             media_dir.temperature = 0.4f;
             personas_.push_back(media_dir);
@@ -415,7 +415,7 @@ namespace rouen::helpers {
             term_p.description = "Gated per-MCP persona dedicated strictly to running system terminal commands.";
             term_p.allowed_mcps = {"terminal"};
             term_p.system_prompt = "You are Terminal Specialist, a minimal, command-line focused utility agent.";
-            term_p.llm_config_name = "Local MLX";
+            term_p.llm_config_name = "Gemini Flash";
             term_p.enable_search = false;
             term_p.temperature = 0.1f;
             personas_.push_back(term_p);
@@ -425,7 +425,7 @@ namespace rouen::helpers {
             edit_p.description = "Gated per-MCP persona dedicated strictly to inspecting and editing files.";
             edit_p.allowed_mcps = {"editor"};
             edit_p.system_prompt = "You are Editor Specialist, responsible for reading, writing, and editing files safely.";
-            edit_p.llm_config_name = "Local MLX";
+            edit_p.llm_config_name = "Gemini Flash";
             edit_p.enable_search = false;
             edit_p.temperature = 0.1f;
             personas_.push_back(edit_p);
@@ -435,7 +435,7 @@ namespace rouen::helpers {
             adaptive_p.description = "Gated per-MCP persona specialized in designing and rendering rich Adaptive Cards.";
             adaptive_p.allowed_mcps = {"deck", "adaptive_card"};
             adaptive_p.system_prompt = "You are Adaptive Card Architect, a specialized UI/UX design expert persona in Rouen.";
-            adaptive_p.llm_config_name = "Local MLX";
+            adaptive_p.llm_config_name = "Gemini Flash";
             adaptive_p.enable_search = false;
             adaptive_p.temperature = 0.3f;
             personas_.push_back(adaptive_p);
@@ -445,7 +445,7 @@ namespace rouen::helpers {
             git_p.description = "Gated per-MCP persona dedicated to Git repositories, branches, commits, GitHub issues, PRs, and CI.";
             git_p.allowed_mcps = {"git", "github"};
             git_p.system_prompt = "You are Git & GitHub Specialist, managing version control and repository workflows.";
-            git_p.llm_config_name = "Local MLX";
+            git_p.llm_config_name = "Gemini Flash";
             git_p.enable_search = false;
             git_p.temperature = 0.2f;
             personas_.push_back(git_p);
@@ -455,7 +455,7 @@ namespace rouen::helpers {
             archive_p.description = "Gated per-MCP librarian persona managing notes, knowledge archiving, and cross-references.";
             archive_p.allowed_mcps = {"notes"};
             archive_p.system_prompt = "As the Archiver of All Data, you serve as Rouen's precision librarian, safeguarding information across sessions.";
-            archive_p.llm_config_name = "Local MLX";
+            archive_p.llm_config_name = "Gemini Flash";
             archive_p.enable_search = false;
             archive_p.temperature = 0.0f;
             personas_.push_back(archive_p);
@@ -465,7 +465,7 @@ namespace rouen::helpers {
             dir_p.description = "Gated per-MCP persona managing contacts, user directory, and macOS address book integration.";
             dir_p.allowed_mcps = {"contacts", "directory"};
             dir_p.system_prompt = "You are Directory & Address Book, managing contact cards and user directory entries in Rouen.";
-            dir_p.llm_config_name = "Local MLX";
+            dir_p.llm_config_name = "Gemini Flash";
             dir_p.enable_search = false;
             dir_p.temperature = 0.2f;
             personas_.push_back(dir_p);
@@ -475,7 +475,7 @@ namespace rouen::helpers {
             time_p.description = "Gated per-MCP persona managing schedule events, focus timers, and alarms.";
             time_p.allowed_mcps = {"calendar", "alarm", "pomodoro"};
             time_p.system_prompt = "You are Schedule & Timekeeper, managing calendar events, reminders, Pomodoro focus intervals, and alarms in Rouen.";
-            time_p.llm_config_name = "Local MLX";
+            time_p.llm_config_name = "Gemini Flash";
             time_p.enable_search = false;
             time_p.temperature = 0.2f;
             personas_.push_back(time_p);
@@ -485,7 +485,7 @@ namespace rouen::helpers {
             stream_p.description = "Gated per-MCP persona managing video playback, media casting, news RSS feeds, and Wikipedia summaries.";
             stream_p.allowed_mcps = {"youtube", "cast", "media", "rss", "wikipedia"};
             stream_p.system_prompt = "You are Media & Stream Director, controlling media playback, YouTube video searches, casting feeds, RSS news items, and Wikipedia article lookups.";
-            stream_p.llm_config_name = "Local MLX";
+            stream_p.llm_config_name = "Gemini Flash";
             stream_p.enable_search = false;
             stream_p.temperature = 0.3f;
             personas_.push_back(stream_p);
@@ -495,7 +495,7 @@ namespace rouen::helpers {
             fin_p.description = "Gated per-MCP persona dedicated to crypto market analytics, ticker stats, and account assets.";
             fin_p.allowed_mcps = {"bybit"};
             fin_p.system_prompt = "You are Financial Analyst, inspecting market datasets, Bybit crypto tickers, orderbook depth, and asset balances.";
-            fin_p.llm_config_name = "Local MLX";
+            fin_p.llm_config_name = "Gemini Flash";
             fin_p.enable_search = false;
             fin_p.temperature = 0.2f;
             personas_.push_back(fin_p);
@@ -505,7 +505,7 @@ namespace rouen::helpers {
             health_p.description = "Gated per-MCP persona monitoring system performance, FPS, and card render metrics.";
             health_p.allowed_mcps = {"metrics", "mesh"};
             health_p.system_prompt = "You are System Health & Metrics, monitoring Rouen card render frame rates, slow render counts, application performance metrics, and mesh node statuses.\n\nMesh Node Guidelines:\n- When reporting mesh nodes, provide only verified connection details requested by the user. Do not speculate or report unrequested system attributes (such as the platform/OS).\n- If the user requires specific system details for a remote node, query the Rouen API on the target system via a virtual route tunnel (using mesh_query_remote_api or mesh_open_route targeting port 8081).";
-            health_p.llm_config_name = "Local MLX";
+            health_p.llm_config_name = "Gemini Flash";
             health_p.enable_search = false;
             health_p.temperature = 0.1f;
             personas_.push_back(health_p);
@@ -579,8 +579,13 @@ namespace rouen::helpers {
                 }
 
                 // Ensure "Rouen Assistant" and "System Health & Metrics" include "mesh" and "contacts" if missing
+                // and migrate legacy Local MLX or Default personas to Gemini Flash
                 bool modified = false;
                 for (auto& p : personas_) {
+                    if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {
+                        p.llm_config_name = "Gemini Flash";
+                        modified = true;
+                    }
                     if (p.name == "Rouen Assistant") {
                         if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
                             p.allowed_mcps.push_back("contacts");

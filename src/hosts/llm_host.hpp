@@ -290,6 +290,9 @@ namespace rouen::hosts {
             load_configs();
         }
 
+        bool ensure_standard_configs();
+        void save_configs() const;
+
         using sync_hook_t = std::function<void(std::string_view dataset, std::string_view key, std::string_view content, bool is_deleted)>;
 
         void set_sync_hook(sync_hook_t hook) {
@@ -302,10 +305,9 @@ namespace rouen::hosts {
 
         void setup_default_configs();
         void load_configs();
-        void save_configs() const;
 
         std::vector<LLMConfigEntry> configs_;
-        std::string default_config_name_{"Default"};
+        std::string default_config_name_{"Gemini Flash"};
         mutable sync_hook_t sync_hook_;
         mutable bool is_sync_suppressed_{false};
     };

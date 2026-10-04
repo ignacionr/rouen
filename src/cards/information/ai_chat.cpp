@@ -1395,7 +1395,22 @@ namespace rouen::cards {
     }
 
     void ai_chat::send_message(const std::string& message) {
-        if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
+        if (message.empty() || waiting_for_response_.load()) {
+            return;
+        }
+        
+        if (!llm_configured_ || !llm_instance_) {
+            refresh_llm_config();
+        }
+        
+        if (!llm_configured_ || !llm_instance_) {
+            std::lock_guard<std::mutex> const lock(chat_history_mutex_);
+            chat_history_.emplace_back("user", message);
+            chat_history_.emplace_back("assistant", "Error: LLM service is not configured or could not be initialized for active persona (" + 
+                                                   helpers::PersonaManager::instance().get_active_persona().name + "). Please verify LLM configuration in Settings.");
+            message_cache_.emplace_back();
+            message_cache_.emplace_back();
+            layout_dirty_ = true;
             return;
         }
         
@@ -1412,7 +1427,13 @@ namespace rouen::cards {
     }
 
     void ai_chat::send_message_to_llm_with_functions(const std::string& message) {
-        if (message.empty() || waiting_for_response_.load() || !llm_configured_ || !llm_instance_) {
+        if (message.empty() || waiting_for_response_.load()) {
+            return;
+        }
+        if (!llm_configured_ || !llm_instance_) {
+            refresh_llm_config();
+        }
+        if (!llm_configured_ || !llm_instance_) {
             return;
         }
 
@@ -1594,9 +1615,9 @@ namespace rouen::cards {
                     } catch (const std::exception& primary_err) {
                         std::string const err_str = primary_err.what();
                         if ((err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) &&
-                            helpers::LLMConfig::is_configured("Local MLX")) {
-                            LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, "Primary LLM rate limited (429). Falling back to Local MLX...");
-                            auto fallback_llm_opt = helpers::LLMConfig::create_llm_instance("Local MLX");
+                            helpers::LLMConfig::is_configured("Grok Default")) {
+                            LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, "Primary LLM rate limited (429). Falling back to Grok Default...");
+                            auto fallback_llm_opt = helpers::LLMConfig::create_llm_instance("Grok Default");
                             if (fallback_llm_opt) {
                                 auto& fallback_llm = *fallback_llm_opt;
                                 fallback_llm.add_instructions(time_instr);
@@ -1611,14 +1632,14 @@ namespace rouen::cards {
                                             message,
                                             [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
                                                 if (log_requests) {
-                                                    std::cerr << "[Local MLX Request] URL: " << url << "\n[Local MLX Body]: " << body << "\n";
+                                                    std::cerr << "[Grok Request] URL: " << url << "\n[Grok Body]: " << body << "\n";
                                                 }
                                                 return fetcher->post(url, body, header_setter);
                                             },
                                             [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
                                                 return execute_function_with_debug(func_name, func_args_json, 1);
                                             },
-                                            "user", "mlx-community/Qwen3.5-9B-MLX-4bit", "", active_persona.temperature, &conversation_for_llm, &function_schemas
+                                            "user", "grok-3-latest", "", active_persona.temperature, &conversation_for_llm, &function_schemas
                                         );
                                     }
                                 }
