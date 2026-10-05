@@ -356,6 +356,7 @@ namespace rouen::cards {
 
             std::optional<std::filesystem::path> pending_nav;
 
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
             const bool ctrl_or_cmd = ImGui::GetIO().KeySuper || ImGui::GetIO().KeyCtrl;
             if (ImGui::Selectable(ICON_MD_ARROW_UPWARD " ..")) {
                 auto entry = path_.parent_path();
