@@ -21,6 +21,7 @@ namespace rouen::helpers {
         std::string name;
         glz::json_t args; // Use glz::json_t to dynamically parse any JSON structure
         std::string id;
+        std::string thoughtSignature;
     };
 
     struct GeminiPart {
@@ -74,7 +75,9 @@ struct glz::meta<rouen::helpers::GeminiFunctionCall> {
     static constexpr auto value = object(
         "name", &T::name,
         "args", &T::args,
-        "id", &T::id
+        "id", &T::id,
+        "thoughtSignature", &T::thoughtSignature,
+        "thought_signature", &T::thoughtSignature
     );
 };
 
@@ -505,9 +508,12 @@ namespace rouen::helpers {
                     candidates.push_back(c);
                 }
             };
+            add_candidate("gemini-3-flash-preview");
+            add_candidate("gemini-3.1-flash-lite");
+            add_candidate("gemini-flash-lite-latest");
+            add_candidate("gemini-2.5-flash-lite");
             add_candidate("gemini-3.6-flash");
             add_candidate("gemini-3.5-flash");
-            add_candidate("gemini-2.5-flash-lite");
             add_candidate("gemini-flash-latest");
 
             std::string response;
@@ -530,14 +536,11 @@ namespace rouen::helpers {
                     } catch (const std::exception& e) {
                         last_err = std::current_exception();
                         std::string const err_str = e.what();
-                        if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
-                            CONFIG_WARN_FMT("Model {} quota exhausted (RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                        if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
+                            err_str.find("quota") != std::string::npos || 
+                            err_str.find("429") != std::string::npos) {
+                            CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), trying next candidate...", try_model);
                             break;
-                        }
-                        if (err_str.find("429") != std::string::npos) {
-                            CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
-                            std::this_thread::sleep_for(std::chrono::milliseconds(2000 * (attempt + 1)));
-                            continue;
                         }
                         bool const is_retryable = (err_str.find("503") != std::string::npos ||
                                                    err_str.find("404") != std::string::npos ||
@@ -647,9 +650,12 @@ namespace rouen::helpers {
                         candidates.push_back(c);
                     }
                 };
+                add_candidate("gemini-3-flash-preview");
+                add_candidate("gemini-3.1-flash-lite");
+                add_candidate("gemini-flash-lite-latest");
+                add_candidate("gemini-2.5-flash-lite");
                 add_candidate("gemini-3.6-flash");
                 add_candidate("gemini-3.5-flash");
-                add_candidate("gemini-2.5-flash-lite");
                 add_candidate("gemini-flash-latest");
 
                 std::string response;
@@ -672,14 +678,11 @@ namespace rouen::helpers {
                         } catch (const std::exception& e) {
                             last_err = std::current_exception();
                             std::string const err_str = e.what();
-                            if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
-                                CONFIG_WARN_FMT("Model {} quota exhausted (RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                            if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
+                                err_str.find("quota") != std::string::npos || 
+                                err_str.find("429") != std::string::npos) {
+                                CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), trying next candidate...", try_model);
                                 break;
-                            }
-                            if (err_str.find("429") != std::string::npos) {
-                                CONFIG_WARN_FMT("Model {} rate limited (429), attempt {}/3, backing off...", try_model, attempt + 1);
-                                std::this_thread::sleep_for(std::chrono::milliseconds(2000 * (attempt + 1)));
-                                continue;
                             }
                             bool const is_retryable = (err_str.find("503") != std::string::npos ||
                                                        err_str.find("404") != std::string::npos ||
@@ -722,7 +725,8 @@ namespace rouen::helpers {
                             args_json = "{}";
                         }
                         
-                        current_calls.push_back({fc.name, args_json, fc.id, part.thoughtSignature});
+                        std::string sig = !part.thoughtSignature.empty() ? part.thoughtSignature : fc.thoughtSignature;
+                        current_calls.push_back({fc.name, args_json, fc.id, sig});
                     }
                     if (!part.text.empty()) {
                         turn_text += part.text;

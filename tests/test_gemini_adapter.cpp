@@ -22,6 +22,7 @@
 // 3. Glaze and project headers before macro definitions
 #include "../src/helpers/glaze_include.hpp"
 #include "../src/helpers/config_service.hpp"
+#include "../src/helpers/process_helper.hpp"
 
 // 4. Define private public with warning suppression for whitebox test access
 #ifdef __clang__
@@ -70,7 +71,7 @@ TEST(GeminiAdapterTest, SerializesFunctionCallCorrectly) {
     GeminiAdapter::Message msg;
     msg.role = "model";
     msg.content = "I need to run a command.";
-    msg.function_calls.push_back({"run_local_command", "{\"command\":\"git status\"}", ""});
+    msg.function_calls.push_back({"run_local_command", "{\"command\":\"git status\"}", "", ""});
     conversation.push_back(msg);
     
     std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
@@ -360,7 +361,7 @@ TEST(GeminiAdapterTest, FallsBackOnQuotaExhausted) {
     EXPECT_EQ(resp.choices[0].message.content, "Fallback response successfully received");
     ASSERT_GE(requested_urls.size(), 2u);
     EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
-    EXPECT_NE(requested_urls[1].find("gemini-3.6-flash"), std::string::npos);
+    EXPECT_NE(requested_urls[1].find("gemini-3-flash-preview"), std::string::npos);
 }
 
 TEST(GeminiAdapterTest, FunctionCallingEmptyFinalTextFallback) {
@@ -416,6 +417,66 @@ TEST(GeminiAdapterTest, FunctionCallingEmptyFinalTextFallback) {
     EXPECT_FALSE(resp.choices.empty());
     EXPECT_FALSE(resp.choices[0].message.content.empty());
     EXPECT_EQ(resp.choices[0].message.content, "I have completed the requested operation.");
+}
+
+TEST(ProcessHelperTest, ExpandsTildeCorrectly) {
+    const char* home = std::getenv("HOME");
+    ASSERT_NE(home, nullptr);
+    std::string expected = std::string(home) + "/src/rouen";
+    EXPECT_EQ(ProcessHelper::expandTilde("~/src/rouen"), expected);
+    EXPECT_EQ(ProcessHelper::expandTilde("~"), std::string(home));
+    EXPECT_EQ(ProcessHelper::expandTilde("/var/log"), "/var/log");
+    EXPECT_EQ(ProcessHelper::expandTilde(""), "");
+}
+
+TEST(GeminiAdapterTest, SerializesThoughtSignatureInFunctionCall) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    
+    GeminiAdapter::Message msg;
+    msg.role = "model";
+    msg.function_calls.push_back({"run_local_command", "{\"command\":\"agy --version\"}", "call_123", "SIG_ABC_123"});
+    conversation.push_back(msg);
+    
+    std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    auto contents = doc["contents"];
+    ASSERT_EQ(contents.size(), 1u);
+    auto parts = contents[0]["parts"];
+    ASSERT_EQ(parts.size(), 1u);
+    
+    EXPECT_TRUE(parts[0].contains("thoughtSignature"));
+    EXPECT_EQ(parts[0]["thoughtSignature"].get<std::string>(), "SIG_ABC_123");
+}
+
+TEST(GeminiAdapterTest, FallsBackToGemini3FlashPreviewOn429) {
+    GeminiAdapter adapter("test_key");
+    std::vector<std::string> requested_urls;
+
+    auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
+        requested_urls.push_back(url);
+        if (url.find("gemini-3.6-flash") != std::string::npos) {
+            throw std::runtime_error("HTTP error 429");
+        }
+        return R"({"candidates":[{"content":{"parts":[{"text":"Fallback from gemini-3-flash-preview"}]}}]})";
+    };
+
+    auto resp = adapter.sendMessage(
+        "Hello",
+        mock_post,
+        "user",
+        "gemini-3.6-flash"
+    );
+
+    EXPECT_FALSE(resp.choices.empty());
+    EXPECT_EQ(resp.choices[0].message.content, "Fallback from gemini-3-flash-preview");
+    ASSERT_GE(requested_urls.size(), 2u);
+    EXPECT_NE(requested_urls[0].find("gemini-3.6-flash"), std::string::npos);
+    EXPECT_NE(requested_urls[1].find("gemini-3-flash-preview"), std::string::npos);
 }
 
 

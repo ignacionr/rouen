@@ -8,6 +8,7 @@
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
+#include <cstdlib>
 #include "debug.hpp"
 #include "platform_utils.hpp"
 
@@ -53,6 +54,22 @@ namespace ProcessHelper {
     }
     
     /**
+     * Expand leading tilde (~) in directory paths using HOME environment variable.
+     */
+    inline std::string expandTilde(std::string_view path) {
+        if (path.empty()) return "";
+        if (path == "~") {
+            const char* home = std::getenv("HOME");
+            return home ? std::string(home) : std::string(path);
+        }
+        if (path.starts_with("~/")) {
+            const char* home = std::getenv("HOME");
+            return home ? (std::string(home) + std::string(path.substr(1))) : std::string(path);
+        }
+        return std::string(path);
+    }
+
+    /**
      * Execute a command in a specific directory and return its output
      * 
      * @param directory The directory to execute the command in
@@ -60,7 +77,8 @@ namespace ProcessHelper {
      * @return The command output as a string, empty string if failed
      */
     inline std::string executeCommandInDirectory(const std::string& directory, const std::string& command) {
-        std::string fullCommand = "cd \"" + directory + "\" && " + command;
+        std::string expandedDir = expandTilde(directory);
+        std::string fullCommand = "cd \"" + expandedDir + "\" && " + command;
         return executeCommand(fullCommand);
     }
 
