@@ -23,6 +23,7 @@
 using FPDF_DOCUMENT = void*;
 #endif
 
+#include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/sdl_compat.hpp"
@@ -298,7 +299,7 @@ private:
 
         if (is_valid_) {
             // Navigation controls
-            if (ImGui::Button("◀ Prev") || (ImGui::IsKeyPressed(ImGuiKey_PageUp) && ImGui::IsWindowFocused())) {
+            if (ImGui::Button(ICON_MD_CHEVRON_LEFT " Prev") || (ImGui::IsKeyPressed(ImGuiKey_PageUp) && ImGui::IsWindowFocused())) {
                 if (current_page_ > 0) {
                     current_page_--;
                     texture_needs_update_ = true;
@@ -309,7 +310,7 @@ private:
             ImGui::Text("Page %d of %d", current_page_ + 1, page_count_);
             ImGui::SameLine();
 
-            if (ImGui::Button("Next ▶") || (ImGui::IsKeyPressed(ImGuiKey_PageDown) && ImGui::IsWindowFocused())) {
+            if (ImGui::Button("Next " ICON_MD_CHEVRON_RIGHT) || (ImGui::IsKeyPressed(ImGuiKey_PageDown) && ImGui::IsWindowFocused())) {
                 if (current_page_ < page_count_ - 1) {
                     current_page_++;
                     texture_needs_update_ = true;
@@ -342,7 +343,7 @@ private:
                 texture_needs_update_ = true;
             }
             ImGui::SameLine();
-            if (ImGui::Button("↻ Rotate")) {
+            if (ImGui::Button(ICON_MD_ROTATE_RIGHT " Rotate")) {
                 rotation_ = (rotation_ + 1) % 4;
                 texture_needs_update_ = true;
             }
