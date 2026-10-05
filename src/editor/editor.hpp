@@ -469,6 +469,12 @@ private:
                     if (ImGui::MenuItem("Show Whitespaces", nullptr, &showWhitespaces)) {
                         textEditor->setShowWhitespaces(showWhitespaces);
                     }
+                    const std::string& src = textEditor->getSourceFile();
+                    if (endsWithCaseInsensitive(src, ".md") || endsWithCaseInsensitive(src, ".markdown")) {
+                        if (ImGui::MenuItem("View in Markdown Viewer")) {
+                            "create_card"_sfn(std::format("markdown:{}", src));
+                        }
+                    }
                 }
                 
                 ImGui::EndMenu();

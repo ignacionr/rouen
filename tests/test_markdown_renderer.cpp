@@ -7,6 +7,7 @@
 
 #include "../src/helpers/adaptive_cards/markdown.hpp"
 #include "../src/helpers/color_utils.hpp"
+#include "../src/helpers/filetype_handler.hpp"
 #include "../src/helpers/markdown_renderer.hpp"
 
 using namespace rouen::helpers::adaptive_cards;
@@ -321,6 +322,54 @@ TEST(ColorContrast, UserBubbleReadabilityExceedsWcagAA) {
     // Contrast ratio against amber must exceed WCAG AA (4.5:1)
     float ratio = contrast_ratio(amber_user_bg, text_color);
     EXPECT_GE(ratio, 4.5f);
+}
+
+// ===========================================================================
+// Tests for Markdown File Association and Viewer URL Resolution
+// ===========================================================================
+
+TEST(MarkdownFiletype, PlainClickDoesNotResolveToViewerCard) {
+    // When clicked without Ctrl / Cmd held, .md and .markdown files must return nullopt
+    // so that FileSystem card defaults to opening the text editor as-is.
+    auto& handler = rouen::helpers::FiletypeHandler::instance();
+    auto res_md = handler.resolve("/path/to/README.md", false);
+    EXPECT_FALSE(res_md.has_value());
+
+    auto res_markdown = handler.resolve("/path/to/notes.markdown", false);
+    EXPECT_FALSE(res_markdown.has_value());
+}
+
+TEST(MarkdownFiletype, CtrlClickResolvesToMarkdownViewerCard) {
+    // When clicked with Ctrl / Cmd held, .md and .markdown files must resolve to
+    // "markdown:<path>" so that the viewer card is opened.
+    auto& handler = rouen::helpers::FiletypeHandler::instance();
+    auto res_md = handler.resolve("/path/to/README.md", true);
+    ASSERT_TRUE(res_md.has_value());
+    EXPECT_EQ(*res_md, "markdown:/path/to/README.md");
+
+    auto res_markdown = handler.resolve("/path/to/notes.markdown", true);
+    ASSERT_TRUE(res_markdown.has_value());
+    EXPECT_EQ(*res_markdown, "markdown:/path/to/notes.markdown");
+}
+
+TEST(MarkdownFiletype, NonMarkdownFilesAreNotAffected) {
+    auto& handler = rouen::helpers::FiletypeHandler::instance();
+    auto res_cpp = handler.resolve("/path/to/main.cpp", true);
+    EXPECT_FALSE(res_cpp.has_value());
+
+    auto res_txt = handler.resolve("/path/to/notes.txt", true);
+    EXPECT_FALSE(res_txt.has_value());
+}
+
+TEST(MarkdownViewer, RelativeLinkResolution) {
+    std::filesystem::path current_doc = "/workspace/project/docs/guide.md";
+    std::filesystem::path relative_link = "architecture.md";
+    std::filesystem::path target = (current_doc.parent_path() / relative_link).lexically_normal();
+    EXPECT_EQ(target.string(), "/workspace/project/docs/architecture.md");
+
+    std::filesystem::path parent_link = "../README.md";
+    std::filesystem::path parent_target = (current_doc.parent_path() / parent_link).lexically_normal();
+    EXPECT_EQ(parent_target.string(), "/workspace/project/README.md");
 }
 
 

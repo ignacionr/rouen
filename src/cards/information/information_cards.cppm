@@ -43,10 +43,12 @@ module;
 #include "cards/information/weather.hpp"
 #include "cards/information/travel_plan.hpp"
 #include "cards/information/solar_system.hpp"
+#include "cards/information/markdown_viewer.hpp"
 
 export module rouen.cards.information;
 
 export namespace rouen::cards::information {
     using rouen::cards::ai_chat;
     using rouen::cards::rss;
+    using rouen::cards::markdown_viewer;
 }

@@ -173,9 +173,11 @@ namespace rouen::cards {
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[9]));
         }
 
+        const bool ctrl_or_cmd = ImGui::GetIO().KeySuper || ImGui::GetIO().KeyCtrl;
+
         if (ImGui::Selectable(display_label.c_str())) {
             if (entry.is_directory()) {
-                if (ImGui::GetIO().KeyCtrl) {
+                if (ctrl_or_cmd) {
                     if (ImGui::GetIO().KeyShift) {
                         "create_card"_sfn(std::format("terminal:{}", entry.path().string()));
                     } else {
@@ -185,7 +187,7 @@ namespace rouen::cards {
                     nav_target = entry.path();
                 }
             } else {
-                auto uri = helpers::FiletypeHandler::instance().resolve(entry.path(), ImGui::GetIO().KeyCtrl);
+                auto uri = helpers::FiletypeHandler::instance().resolve(entry.path(), ctrl_or_cmd);
                 if (uri.has_value()) {
                     "create_card"_sfn(uri.value());
                 } else {
@@ -193,6 +195,48 @@ namespace rouen::cards {
                 }
             }
         }
+
+        if (ImGui::BeginPopupContextItem()) {
+            if (entry.is_directory()) {
+                if (ImGui::MenuItem(ICON_MD_FOLDER_OPEN " Open")) {
+                    nav_target = entry.path();
+                }
+                if (ImGui::MenuItem(ICON_MD_TAB " Open in New Card")) {
+                    "create_card"_sfn(std::format("dir:{}", entry.path().string()));
+                }
+                if (ImGui::MenuItem(ICON_MD_TERMINAL " Open in Terminal")) {
+                    "create_card"_sfn(std::format("terminal:{}", entry.path().string()));
+                }
+            } else {
+                std::string const ext = to_lower(entry.path().extension().string());
+                const bool is_md = (ext == ".md" || ext == ".markdown");
+
+                if (is_md) {
+                    if (ImGui::MenuItem(ICON_MD_VISIBILITY " View Markdown", "Ctrl/Cmd+Click")) {
+                        "create_card"_sfn(std::format("markdown:{}", entry.path().string()));
+                    }
+                    if (ImGui::MenuItem(ICON_MD_EDIT " Edit in Text Editor", "Click")) {
+                        "edit"_sfn(entry.path().string());
+                    }
+                } else {
+                    if (ImGui::MenuItem(ICON_MD_EDIT " Edit in Text Editor")) {
+                        "edit"_sfn(entry.path().string());
+                    }
+                    auto card_uri = helpers::FiletypeHandler::instance().resolve(entry.path(), true);
+                    if (card_uri.has_value()) {
+                        if (ImGui::MenuItem(ICON_MD_OPEN_IN_NEW " Open with Card", "Ctrl/Cmd+Click")) {
+                            "create_card"_sfn(card_uri.value());
+                        }
+                    }
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_MD_CONTENT_COPY " Copy Path")) {
+                ImGui::SetClipboardText(entry.path().string().c_str());
+            }
+            ImGui::EndPopup();
+        }
+
         ImGui::PopStyleColor();
         return nav_target;
     }
@@ -312,14 +356,27 @@ namespace rouen::cards {
 
             std::optional<std::filesystem::path> pending_nav;
 
-            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
+            const bool ctrl_or_cmd = ImGui::GetIO().KeySuper || ImGui::GetIO().KeyCtrl;
             if (ImGui::Selectable(ICON_MD_ARROW_UPWARD " ..")) {
                 auto entry = path_.parent_path();
-                if (ImGui::GetIO().KeyCtrl) {
+                if (ctrl_or_cmd) {
                     "create_card"_sfn(std::format("dir:{}", entry.string()));
                 } else {
                     pending_nav = entry;
                 }
+            }
+            if (ImGui::BeginPopupContextItem("parent_dir_ctx")) {
+                auto entry = path_.parent_path();
+                if (ImGui::MenuItem(ICON_MD_FOLDER_OPEN " Open")) {
+                    pending_nav = entry;
+                }
+                if (ImGui::MenuItem(ICON_MD_TAB " Open in New Card")) {
+                    "create_card"_sfn(std::format("dir:{}", entry.string()));
+                }
+                if (ImGui::MenuItem(ICON_MD_TERMINAL " Open in Terminal")) {
+                    "create_card"_sfn(std::format("terminal:{}", entry.string()));
+                }
+                ImGui::EndPopup();
             }
             ImGui::PopStyleColor();
 

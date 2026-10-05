@@ -203,6 +203,7 @@ public:
     bool isShowingWhitespaces() const { return text_editor_.IsShowingWhitespaces(); }
     void setShowWhitespaces(bool show) { text_editor_.SetShowWhitespaces(show); }
     std::string getText() const { return text_editor_.GetText(); }
+    const std::string& getSourceFile() const { return source_file_; }
 
 private:
     std::string source_file_;

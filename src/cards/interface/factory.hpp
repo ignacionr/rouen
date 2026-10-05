@@ -40,6 +40,7 @@
 #include "../information/contact_card.hpp"
 #include "../information/mail/mail.hpp"
 #include "../information/markdown_notes.hpp"
+#include "../information/markdown_viewer.hpp"
 #include "../information/pdf_viewer.hpp"
 #include "../information/image_viewer.hpp"
 #include "../information/rss.hpp"
@@ -510,6 +511,15 @@ namespace rouen::cards {
                         card->set_renderer(renderer);
                     }
                     return card;
+                });
+
+                // Register the Markdown viewer card
+                instance.emplace("markdown", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<markdown_viewer>(uri);
+                });
+
+                instance.emplace("md", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<markdown_viewer>(uri);
                 });
 
                 // Register the Media player card

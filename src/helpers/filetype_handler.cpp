@@ -46,6 +46,7 @@ namespace rouen::helpers {
                            "image:{}", false});
         rules_.push_back({".mp4,.mkv,.avi,.mov,.webm,.mp3,.wav,.aac,.flac,.ogg,.m4a,.wma,.m4v,.mpg,.mpeg,.3gp,.opus",
                            "media:{}", false});
+        rules_.push_back({".md,.markdown", "markdown:{}", true});
         save_rules();
     }
 
@@ -77,6 +78,20 @@ namespace rouen::helpers {
             rules_ = save_model.rules;
             if (rules_.empty()) {
                 setup_default_rules();
+            } else {
+                bool has_md = false;
+                for (const auto& r : rules_) {
+                    if (r.match.find(".md") != std::string::npos ||
+                        r.uri_format.starts_with("markdown:") ||
+                        r.uri_format.starts_with("md:")) {
+                        has_md = true;
+                        break;
+                    }
+                }
+                if (!has_md) {
+                    rules_.push_back({".md,.markdown", "markdown:{}", true});
+                    save_rules();
+                }
             }
         } catch (const std::exception& e) {
             LOG_COMPONENT("FiletypeHandler", LOG_LEVEL_ERROR, std::string("Error loading filetype rules: ") + e.what());

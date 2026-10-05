@@ -141,6 +141,7 @@ target_sources(rouen_test_modules
     ../src/helpers/tag_manager.cppm
     ../src/helpers/theme_manager.cppm
     ../src/helpers/dynamic_library.cppm
+    ../src/helpers/filetype_handler.cppm
 )
 
 target_sources(rouen_test_modules
@@ -153,6 +154,7 @@ target_sources(rouen_test_modules
     ../src/helpers/tag_manager.cpp
     ../src/helpers/theme_manager.cpp
     ../src/helpers/dynamic_library.cpp
+    ../src/helpers/filetype_handler.cpp
 )
 
 target_include_directories(rouen_test_modules PUBLIC
