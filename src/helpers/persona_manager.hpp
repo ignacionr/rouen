@@ -128,6 +128,16 @@ namespace rouen::helpers {
             }
         }
 
+        bool select_persona_by_name(std::string_view name) {
+            for (size_t i = 0; i < personas_.size(); ++i) {
+                if (personas_[i].name == name) {
+                    select_persona(i);
+                    return true;
+                }
+            }
+            return false;
+        }
+
         void add_persona(const Persona& persona) {
             personas_.push_back(persona);
             save_personas();

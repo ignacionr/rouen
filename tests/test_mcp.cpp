@@ -9,6 +9,7 @@
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/helpers/llm_config.hpp"
 #include "../src/helpers/fetch.hpp"
+#include "../src/helpers/syntax_checker.hpp"
 #include "../src/registrar.hpp"
 
 // Forward declarations to avoid including weather.hpp with its icon dependencies
@@ -841,4 +842,138 @@ TEST(MCPTest, ThemeToolsRegisteredAndCallable) {
     EXPECT_TRUE(sel_res.success);
     EXPECT_NE(sel_res.result.find("Amber"), std::string::npos);
 }
+
+TEST(MCPTest, RealAIFixWithAIDispatchLoop) {
+    CONFIG_SERVICE()->load_env_file();
+
+    if (!LLMConfig::is_configured()) {
+        GTEST_SKIP() << "Configured LLM is not available (API key not set). Skipping live AI quick-fix test.";
+    }
+
+    auto llm_opt = LLMConfig::create_llm_instance();
+    ASSERT_TRUE(llm_opt.has_value());
+    auto& llm = *llm_opt;
+
+    std::string test_fix_path = "/tmp/test_quick_fix_ai.cpp";
+    std::filesystem::remove(test_fix_path);
+
+    // Create file with syntax error (missing semicolon)
+    {
+        std::ofstream out(test_fix_path);
+        out << "int calculate_square(int n) {\n    return n * n\n}\n";
+    }
+
+    // Verify initial syntax check detects error
+    auto initial_check = rouen::helpers::SyntaxChecker::instance().check_file(test_fix_path);
+    EXPECT_FALSE(initial_check.success);
+    EXPECT_GT(initial_check.error_count, 0u);
+
+    mcp_service mcp;
+    std::vector<std::string> function_schemas;
+    for (const auto& func : mcp.get_available_functions()) {
+        if (func.name == "code_apply_patch" || func.name == "code_read_file") {
+            std::string schema = std::format(
+                "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
+                func.name,
+                func.description.empty() ? "Operation" : func.description,
+                func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
+            );
+            function_schemas.push_back(schema);
+        }
+    }
+    ASSERT_GE(function_schemas.size(), 1u);
+
+    bool patch_called = false;
+    auto function_executor = [&](const std::string& name, const std::string& args_json) -> std::string {
+        if (name == "code_apply_patch") {
+            patch_called = true;
+        }
+        auto res = mcp.execute_function(name, args_json);
+        return res.success ? res.result : "Error: " + res.error_message;
+    };
+
+    auto settings = LLMConfig::get_current_config();
+    std::string model_name = settings.model_name;
+
+    if (settings.provider == LLMConfig::Provider::GEMINI) {
+        try {
+            http::fetch fetcher(10);
+            std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", settings.api_key);
+            std::string resp_json = fetcher(url);
+            if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
+                model_name = "gemini-3.1-flash-lite";
+            } else if (resp_json.find("gemini-flash-lite-latest") != std::string::npos) {
+                model_name = "gemini-flash-lite-latest";
+            } else if (resp_json.find("gemini-2.5-flash-lite") != std::string::npos) {
+                model_name = "gemini-2.5-flash-lite";
+            }
+        } catch (...) {}
+    }
+
+    auto fetcher = std::make_shared<http::fetch>(30);
+    std::vector<std::pair<std::string, std::string>> conversation;
+
+    std::string prompt = std::format(
+        "Please investigate and fix the compiler diagnostic in `test_quick_fix_ai.cpp`:\n\n"
+        "- **Target File**: `{}`\n"
+        "- **Line**: 2, **Column**: 17\n"
+        "- **Severity**: error\n"
+        "- **Compiler Diagnostic**: `expected ';' after return statement`\n\n"
+        "**Surrounding Code Context (Lines around 2)**:\n"
+        "```cpp\n"
+        "   1 | int calculate_square(int n) {{\n"
+        "   2 |     return n * n\n"
+        "   3 | }}\n"
+        "```\n\n"
+        "Please inspect the issue, explain the fix concisely, and apply the correction using `code_apply_patch`.\n"
+        "After applying the patch, verify the fix using `code_check_syntax`.",
+        test_fix_path
+    );
+
+    ignacionr::ChatCompletion chat_completion;
+    try {
+        if (settings.provider == LLMConfig::Provider::GEMINI) {
+            auto& gemini_adapter = *std::get<std::unique_ptr<GeminiAdapter>>(llm.instance_);
+            chat_completion = gemini_adapter.sendMessageWithFunctionCalling(
+                prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        } else {
+            auto& cppgpt_adapter = *std::get<std::unique_ptr<ignacionr::cppgpt>>(llm.instance_);
+            chat_completion = cppgpt_adapter.sendMessageWithFunctionCalling(
+                prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        }
+    } catch (const std::exception& e) {
+        GTEST_SKIP() << "Live LLM request failed: " << e.what();
+    }
+
+    EXPECT_TRUE(patch_called) << "The AI agent should have called code_apply_patch to fix the error.";
+
+    auto final_check = rouen::helpers::SyntaxChecker::instance().check_file(test_fix_path);
+    EXPECT_TRUE(final_check.success) << "File should compile cleanly after AI fix: " << final_check.raw_output;
+    EXPECT_EQ(final_check.error_count, 0u);
+
+    std::filesystem::remove(test_fix_path);
+}
+
 

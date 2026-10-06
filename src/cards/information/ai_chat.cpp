@@ -195,6 +195,21 @@ namespace rouen::cards {
         mcp_service_ = registrar::get<helpers::mcp_service>("mcp_service");
         
         populate_persona_buffers(helpers::PersonaManager::instance().get_active_persona_index());
+
+        registrar::add<std::function<void(const std::string&)>>(
+            "ai_chat_send_message",
+            std::make_shared<std::function<void(const std::string&)>>(
+                [this](const std::string& msg) {
+                    this->send_message(msg);
+                }
+            )
+        );
+    }
+
+    ai_chat::~ai_chat() {
+        try {
+            registrar::remove<std::function<void(const std::string&)>>("ai_chat_send_message");
+        } catch (...) {}
     }
 
     void ai_chat::render_llm_controls() {

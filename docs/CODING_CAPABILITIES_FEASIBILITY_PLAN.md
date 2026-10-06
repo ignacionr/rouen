@@ -241,18 +241,28 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ---
 
-### Phase 5: Editor Diagnostic Actions & Quick-Fix (Planned)
+### Phase 5: Editor Diagnostic Actions & Quick-Fix (Completed)
 * **Objective**: Provide seamless in-editor error navigation and one-click AI quick-fix actions directly within Rouen's editor card.
-* **Tasks**:
-  1. **Inline Diagnostic Tooltips & Gutter Indicators**:
-     - Render warning/error icons in the editor gutter on lines reported by `SyntaxChecker`.
-     - Show rich hover tooltips with formatted compiler diagnostic messages and severity.
-  2. **"Fix with AI" Quick-Action**:
-     - Offer a one-click *"Fix with AI"* button in the gutter context menu and diagnostic hover tooltip.
-     - Clicking packages the diagnostic message, file path, line number, and surrounding code window into a prompt directed to the active AI chat card.
-  3. **Diagnostic Navigation & Status Pill**:
-     - Add interactive click handlers to the editor footer diagnostic pill (`2 errors, 1 warning`) to cycle through errors or open a quick diagnostic jump drawer.
-* **Outcome**: Developers can navigate errors instantly and trigger targeted AI repairs with a single click.
+* **Implemented Components**:
+  1. **Enhanced Editor Gutter & Hover Tooltips**:
+     - Visual red circular badges drawn in the gutter for lines with compiler diagnostics in [`external/imguicolortextedit/TextEditor.cpp`](file:///Users/ignaciorodriguez/src/rouen/external/imguicolortextedit/TextEditor.cpp).
+     - Rich hover tooltips with severity icon (`🔴 Error at line X:`), word-wrapped compiler message, and actionable shortcut hint (`💡 Right-click, press Alt+Enter, or click the footer pill to Fix with AI`).
+     - Made `ScreenPosToCoordinates` public in [`external/imguicolortextedit/TextEditor.h`](file:///Users/ignaciorodriguez/src/rouen/external/imguicolortextedit/TextEditor.h) to enable exact mouse-coordinate line targeting.
+  2. **In-Editor Context Menu & Diagnostics Drawer**:
+     - Right-click context menu in [`src/editor/text_editor.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/editor/text_editor.hpp) detecting the clicked line: offers prominent `⚡ Fix with AI (Line X)` action, issue copy option, `Check Syntax Now` (`F7`), `Next Issue` (`F4`), `Previous Issue` (`Shift+F4`), and drawer toggle (`Cmd+E`).
+     - Interactive collapsible **Diagnostics Drawer** showing a comprehensive breakdown of all compiler diagnostics with clickable `Ln X:Y` jump buttons and dedicated `⚡ Fix with AI` actions per row.
+  3. **Diagnostic Status Pill & Navigation Bar**:
+     - Rounded status pills rendered in both the editor footer and top menu bar header (`✓ Clean`, `⟳ Checking...`, `🔴 X err, Y warn`).
+     - Quick arrow navigation (`▲` / `▼`) cycling through errors with automatic line jumping and scrolling into view (`jumpToNextDiagnostic`, `jumpToPrevDiagnostic`).
+     - Contextual `[ ⚡ Fix with AI ]` status bar action when cursor rests on an error line.
+  4. **AI Quick-Fix Dispatch Bridge**:
+     - Automatically packages file path, line number, column, severity, exact diagnostic message, and formatted surrounding code window into a prompt.
+     - Selects the `Code & Git Architect` persona via `PersonaManager::select_persona_by_name`.
+     - Automatically routes prompt to an active `ai_chat` card via `ai_chat_send_message` registrar hook or creates a new card if none is open.
+  5. **Verified Unit & Live AI Tests**:
+     - [`tests/test_editor_diagnostics.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_editor_diagnostics.cpp): 100% pass on diagnostics storage, cursor clamping, cyclic navigation, surrounding code extraction, prompt formatting, and registrar dispatch.
+     - [`tests/test_mcp.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_mcp.cpp) (`MCPTest.RealAIFixWithAIDispatchLoop`): Verified live end-to-end AI repair loop with Google Gemini API receiving an editor quick-fix prompt, executing `code_apply_patch`, and verifying clean compiler syntax (`0 syntax errors`).
+* **Outcome**: Full in-editor quick-fix workflow is operational. Developers can pinpoint errors, navigate diagnostics, and invoke AI repairs with one click.
 
 ---
 
@@ -297,13 +307,14 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ## 6. Summary & Recommended First Action
 
-Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly aligned** with the existing architecture. Four of the seven vertical phases are now fully implemented and verified with live AI unit tests:
+Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly aligned** with the existing architecture. Five of the seven vertical phases are now fully implemented and verified with live AI unit tests:
 
 1. **Phase 1**: Toolchain discovery & fast `-fsyntax-only` / `/Zs` compiler execution.
 2. **Phase 2**: Editor error markers and MCP syntax checking bridge.
 3. **Phase 3**: SQLite FTS5 trigram code indexing and C++ symbol lookups.
 4. **Phase 4**: Autonomous code editor tools (`read_file`, `write_file`, `apply_patch`), immediate self-correction loop, and specialized personas.
+5. **Phase 5**: Editor diagnostic actions, gutter icons, rich hover tooltips, collapsible diagnostics drawer, status pill, and one-click "Fix with AI" dispatch.
 
 **Recommended Next Step**:
-Proceed with **Phase 5: Editor Diagnostic Actions & Quick-Fix** to introduce gutter hover tooltips, "Fix with AI" contextual actions, and diagnostic jump navigation into Rouen's editor card.
+Proceed with **Phase 6: Visual Diff & Staging Card** to build the interactive visual diff viewer with per-chunk Accept/Discard controls and rollback buffers.
 

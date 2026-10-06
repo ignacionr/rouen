@@ -18,7 +18,7 @@ namespace rouen::cards {
     class ai_chat : public card {
     public:
         ai_chat(std::string_view initial_query = "");
-        ~ai_chat() override = default;
+        ~ai_chat() override;
 
         bool render() override;
         std::string get_uri() const override;

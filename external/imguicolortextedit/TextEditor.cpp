@@ -943,15 +943,25 @@ void TextEditor::Render()
 				auto end = ImVec2(lineStartScreenPos.x + contentSize.x + 2.0f * scrollX, lineStartScreenPos.y + mCharAdvance.y);
 				drawList->AddRectFilled(start, end, mPalette[(int)PaletteIndex::ErrorMarker]);
 
+				// Prominent gutter error indicator badge
+				float const dotX = lineStartScreenPos.x + 6.0f;
+				float const dotY = lineStartScreenPos.y + mCharAdvance.y * 0.5f;
+				drawList->AddCircleFilled(ImVec2(dotX, dotY), 4.0f, IM_COL32(239, 68, 68, 255));
+				drawList->AddCircle(ImVec2(dotX, dotY), 4.0f, IM_COL32(255, 255, 255, 180), 12, 1.0f);
+
 				if (ImGui::IsMouseHoveringRect(lineStartScreenPos, end))
 				{
 					ImGui::BeginTooltip();
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-					ImGui::Text("Error at line %d:", errorIt->first);
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
+					ImGui::Text("🔴 Error at line %d:", errorIt->first);
 					ImGui::PopStyleColor();
 					ImGui::Separator();
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.2f, 1.0f));
-					ImGui::Text("%s", errorIt->second.c_str());
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.9f, 1.0f));
+					ImGui::TextWrapped("%s", errorIt->second.c_str());
+					ImGui::PopStyleColor();
+					ImGui::Spacing();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+					ImGui::TextDisabled("💡 Right-click, press Alt+Enter, or click the footer pill to Fix with AI");
 					ImGui::PopStyleColor();
 					ImGui::EndTooltip();
 				}

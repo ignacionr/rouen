@@ -1012,6 +1012,10 @@ add_executable(test_code_editor
 target_link_libraries(test_code_editor PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME CodeEditorTest COMMAND test_code_editor)
 
+add_gtest_executable(test_editor_diagnostics test_editor_diagnostics.cpp)
+target_sources(test_editor_diagnostics PRIVATE ../src/fonts.cpp)
+target_link_libraries(test_editor_diagnostics PRIVATE imcolortextedit ${SDL3_LIBRARIES})
+
 # Set output directory for test executables
 set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

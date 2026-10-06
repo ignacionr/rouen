@@ -105,6 +105,34 @@ public:
                 [this]() { return getText(); }
             )
         );
+
+        registrar::add<std::function<void(int)>>(
+            "editor_jump_to_line",
+            std::make_shared<std::function<void(int)>>(
+                [this](int line) { jumpToLine(line); }
+            )
+        );
+
+        registrar::add<std::function<void(int)>>(
+            "editor_fix_with_ai",
+            std::make_shared<std::function<void(int)>>(
+                [this](int line) { triggerFixWithAI(line); }
+            )
+        );
+
+        registrar::add<std::function<void()>>(
+            "editor_check_syntax",
+            std::make_shared<std::function<void()>>(
+                [this]() { runSyntaxCheckAsync(); }
+            )
+        );
+
+        registrar::add<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>(
+            "editor_set_diagnostics",
+            std::make_shared<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>(
+                [this](const std::vector<rouen::helpers::Diagnostic>& diags) { setDiagnostics(diags); }
+            )
+        );
     }
     
     virtual ~Editor() {
@@ -118,6 +146,10 @@ public:
             registrar::remove<std::function<void()>>("editor_clear_error_markers");
             registrar::remove<std::function<std::string()>>("editor_get_active_file");
             registrar::remove<std::function<std::string()>>("editor_get_text");
+            registrar::remove<std::function<void(int)>>("editor_jump_to_line");
+            registrar::remove<std::function<void(int)>>("editor_fix_with_ai");
+            registrar::remove<std::function<void()>>("editor_check_syntax");
+            registrar::remove<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>("editor_set_diagnostics");
         } catch (...) {}
     }
 
@@ -257,6 +289,48 @@ public:
             return text_editor_->getErrorMarkers();
         }
         return empty_markers;
+    }
+
+    void setDiagnostics(const std::vector<rouen::helpers::Diagnostic>& diags) {
+        if (text_editor_) {
+            text_editor_->setDiagnostics(diags);
+        }
+    }
+
+    void jumpToLine(int line) {
+        if (text_editor_) {
+            text_editor_->jumpToLine(line);
+        }
+    }
+
+    void triggerFixWithAI(int line) {
+        if (text_editor_) {
+            text_editor_->triggerFixWithAI(line);
+        }
+    }
+
+    void runSyntaxCheckAsync() {
+        if (text_editor_) {
+            text_editor_->runSyntaxCheckAsync();
+        }
+    }
+
+    void jumpToNextDiagnostic() {
+        if (text_editor_) {
+            text_editor_->jumpToNextDiagnostic();
+        }
+    }
+
+    void jumpToPrevDiagnostic() {
+        if (text_editor_) {
+            text_editor_->jumpToPrevDiagnostic();
+        }
+    }
+
+    void toggleDiagnosticsDrawer() {
+        if (text_editor_) {
+            text_editor_->toggleDiagnosticsDrawer();
+        }
     }
 
 
@@ -538,15 +612,70 @@ private:
                 
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Tools")) {
+                TextEditor* textEditor = dynamic_cast<TextEditor*>(active_editor_);
+                bool hasTextEditor = textEditor != nullptr;
+
+                if (ImGui::MenuItem("Check Syntax", "F7", nullptr, hasTextEditor)) {
+                    if (textEditor) textEditor->runSyntaxCheckAsync();
+                }
+                if (ImGui::MenuItem("Next Issue", "F4", nullptr, hasTextEditor && !textEditor->getDiagnostics().empty())) {
+                    if (textEditor) textEditor->jumpToNextDiagnostic();
+                }
+                if (ImGui::MenuItem("Previous Issue", "Shift+F4", nullptr, hasTextEditor && !textEditor->getDiagnostics().empty())) {
+                    if (textEditor) textEditor->jumpToPrevDiagnostic();
+                }
+                if (ImGui::MenuItem("Fix with AI", "Alt+Enter", nullptr, hasTextEditor)) {
+                    if (textEditor) textEditor->triggerFixWithAI(textEditor->getCurrentLine());
+                }
+                ImGui::Separator();
+                if (hasTextEditor) {
+                    bool drawer_open = textEditor->isDiagnosticsDrawerOpen();
+                    if (ImGui::MenuItem("Diagnostics Drawer", "Cmd+E", &drawer_open)) {
+                        textEditor->toggleDiagnosticsDrawer();
+                    }
+                }
+                ImGui::EndMenu();
+            }
             
-            // Display file path / modification status in the menu bar (right-aligned)
+            // Display diagnostics and file modification status in the menu bar (right-aligned)
             if (active_editor_ && !active_editor_->empty()) {
                 TextEditor* textEditor = dynamic_cast<TextEditor*>(active_editor_);
-                
-                float menuWidth = ImGui::GetWindowWidth() - 150.0f;
-                ImGui::SameLine(menuWidth);
-                
                 if (textEditor) {
+                    float right_section_w = 260.0f;
+                    float right_pos = std::max(ImGui::GetCursorPosX() + 10.0f, ImGui::GetWindowWidth() - right_section_w);
+                    ImGui::SameLine(right_pos);
+
+                    // Status Pill
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
+                    if (textEditor->isCheckingSyntax()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.85f, 1.0f, 1.0f));
+                        ImGui::TextDisabled("⟳ Checking...");
+                        ImGui::PopStyleColor();
+                    } else if (textEditor->getDiagnostics().empty()) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
+                        ImGui::Text("✓ Clean");
+                        ImGui::PopStyleColor();
+                    } else {
+                        int errs = textEditor->getErrorsCount();
+                        int warns = textEditor->getWarningsCount();
+                        std::string badge = std::format("{} {}e, {}w", (errs > 0 ? "🔴" : "🟡"), errs, warns);
+                        if (ImGui::SmallButton(badge.c_str())) {
+                            textEditor->toggleDiagnosticsDrawer();
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Click to toggle diagnostics drawer (%zu total)", textEditor->getDiagnostics().size());
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("▲")) textEditor->jumpToPrevDiagnostic();
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Previous Issue (Shift+F4)");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("▼")) textEditor->jumpToNextDiagnostic();
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next Issue (F4)");
+                    }
+                    ImGui::PopStyleVar();
+
+                    ImGui::SameLine();
                     if (textEditor->isModified()) {
                         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "* Modified");
                     } else {
