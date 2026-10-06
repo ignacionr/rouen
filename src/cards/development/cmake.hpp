@@ -28,6 +28,7 @@ namespace rouen::cards {
         void read_cmake_file();
         bool run_cmake_action(const std::string& action, const std::string& explanation);
         void cancel_running_action();
+        void handle_action(std::string_view action_json) override;
 
         // Phase 7 Actions
         void check_syntax();

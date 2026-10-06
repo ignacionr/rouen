@@ -205,10 +205,11 @@ public:
     /**
      * Lookup compilation entry for a given file.
      */
-    std::optional<CompileCommandEntry> get_compile_command(const std::string& file_path) {
+    std::optional<CompileCommandEntry> get_compile_command(const std::string& file_path, const std::string& workspace_dir = "") {
         std::lock_guard<std::mutex> lock(mutex_);
         if (compile_commands_.empty()) {
-            std::string cc_path = find_compile_commands("");
+            std::string search_dir = !workspace_dir.empty() ? workspace_dir : std::filesystem::path(file_path).parent_path().string();
+            std::string cc_path = find_compile_commands(search_dir);
             if (!cc_path.empty()) {
                 load_compile_commands_locked(cc_path);
             }
@@ -243,7 +244,7 @@ public:
      * Supports Clang & GCC (-fsyntax-only) and MSVC (/Zs).
      */
     std::string extract_syntax_command(const std::string& file_path, const std::string& workspace_dir = "") {
-        auto entry_opt = get_compile_command(file_path);
+        auto entry_opt = get_compile_command(file_path, workspace_dir);
         if (entry_opt.has_value()) {
             const auto& entry = *entry_opt;
             std::string cmd = entry.command;
@@ -288,20 +289,34 @@ public:
             }
         }
 
-        // Fallback: construct standard default C++20 command
+        // Fallback: construct standard default C++ command
         std::string compiler = cached_toolchain_.cpp_compiler.empty() ? "clang++" : cached_toolchain_.cpp_compiler;
         std::string root = workspace_dir.empty() ? std::filesystem::current_path().string() : workspace_dir;
 
+        // Auto-detect C++ standard (check CMakeLists.txt or default to C++23 if supported)
+        std::string cpp_std = "c++20";
+        std::filesystem::path cmakelists = std::filesystem::path(root) / "CMakeLists.txt";
+        if (!std::filesystem::exists(cmakelists)) {
+            cmakelists = std::filesystem::path(file_path).parent_path() / "CMakeLists.txt";
+        }
+        if (std::filesystem::exists(cmakelists)) {
+            std::ifstream cfile(cmakelists);
+            std::string content((std::istreambuf_iterator<char>(cfile)), std::istreambuf_iterator<char>());
+            if (content.find("23") != std::string::npos || content.find("c++23") != std::string::npos || content.find("CXX_STANDARD 23") != std::string::npos) {
+                cpp_std = "c++23";
+            }
+        }
+
         if (compiler == "cl") {
             return std::format(
-                "cl.exe /nologo /Zs /std:c++20 /EHsc /I\"{}\" /I\"{}/src\" /I\"{}/external\" \"{}\"",
-                root, root, root, file_path
+                "cl.exe /nologo /Zs /std:{} /EHsc /I\"{}\" /I\"{}/src\" /I\"{}/external\" \"{}\"",
+                (cpp_std == "c++23" ? "c++latest" : "c++20"), root, root, root, file_path
             );
         }
 
         std::string fallback_cmd = std::format(
-            "{} -fsyntax-only -std=c++20 -I\"{}\" -I\"{}/src\" -I\"{}/external\" \"{}\"",
-            compiler, root, root, root, file_path
+            "{} -fsyntax-only -std={} -I\"{}\" -I\"{}/src\" -I\"{}/external\" \"{}\"",
+            compiler, cpp_std, root, root, root, file_path
         );
 
         return fallback_cmd;

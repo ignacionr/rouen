@@ -44,8 +44,14 @@ namespace rouen::cards {
         name(std::format("CMake: {}", std::filesystem::path(path_).string()));
         width = 540.0f;
 
-        // Default to 'build' subdirectory
-        build_dir_ = std::filesystem::path(path_).parent_path() / "build";
+        // Handle directory vs file path
+        std::filesystem::path p(path_);
+        if (std::filesystem::is_directory(p)) {
+            build_dir_ = p / "build";
+            path_ = (p / "CMakeLists.txt").string();
+        } else {
+            build_dir_ = p.parent_path() / "build";
+        }
 
         // Try to read the CMakeLists.txt file to extract project info
         read_cmake_file();
@@ -130,12 +136,12 @@ namespace rouen::cards {
             if (!std::filesystem::exists(build_dir_)) {
                 std::filesystem::create_directories(build_dir_);
             }
-            cmd = std::format("cd {} && {} -B . -S {}", 
+            cmd = std::format("cd {} && {} -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -B . -S {}", 
                 build_dir_.string(), 
                 cmake_path,
                 std::filesystem::path(path_).parent_path().string());
         } else if (action == "build") {
-            cmd = std::format("cd {} && {} --build .", build_dir_.string(), cmake_path);
+            cmd = std::format("cd {} && {} --build . -j2", build_dir_.string(), cmake_path);
         } else if (action == "clean") {
             cmd = std::format("cd {} && {} --build . --target clean", build_dir_.string(), cmake_path);
         } else if (action == "install") {
@@ -143,7 +149,7 @@ namespace rouen::cards {
         } else if (action == "open_dir") {
             cmd = platform::open_file(build_dir_.string());
         } else if (action == "rebuild") {
-            cmd = std::format("cd {} && {} --build . --target clean && {} --build .", 
+            cmd = std::format("cd {} && {} --build . --target clean && {} --build . -j2", 
                 build_dir_.string(), cmake_path, cmake_path);
         } else {
             return false;
@@ -264,6 +270,10 @@ namespace rouen::cards {
         if (target_file.empty()) {
             try {
                 for (const auto& entry : std::filesystem::recursive_directory_iterator(project_dir)) {
+                    std::string const entry_path = entry.path().string();
+                    if (entry_path.find("/build/") != std::string::npos || entry_path.find("/build") != std::string::npos || entry_path.find("/.") != std::string::npos) {
+                        continue;
+                    }
                     if (entry.is_regular_file()) {
                         auto ext = entry.path().extension().string();
                         if (ext == ".cpp" || ext == ".cc" || ext == ".cxx" || ext == ".cppm") {
@@ -685,6 +695,21 @@ namespace rouen::cards {
                 ImGui::EndChild();
             }
         });
+    }
+
+    void cmake_card::handle_action(std::string_view action_json) {
+        std::string act(action_json);
+        if (act.find("check_syntax") != std::string::npos) {
+            check_syntax();
+        } else if (act.find("configure") != std::string::npos) {
+            run_cmake_action("configure", "Configuring project");
+        } else if (act.find("build") != std::string::npos) {
+            run_cmake_action("build", "Building project");
+        } else if (act.find("clean") != std::string::npos) {
+            run_cmake_action("clean", "Cleaning project");
+        } else if (act.find("conventional_commit") != std::string::npos) {
+            generate_conventional_commit();
+        }
     }
 
 } // namespace rouen::cards
