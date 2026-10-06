@@ -75,8 +75,144 @@
 #include "../helpers/ui_automation_explorer.hpp"
 #include "../hosts/process_host.hpp"
 #include "../hosts/video_feed_host.hpp"
+#include "../helpers/toolchain_service.hpp"
+#include "../helpers/syntax_checker.hpp"
+#include "../helpers/code_indexer.hpp"
+#include "../helpers/code_editor_service.hpp"
 
 namespace rouen::hosts {
+
+struct mcp_code_discover_toolchain_params {
+    std::string workspace_path;
+    struct glaze {
+        using T = mcp_code_discover_toolchain_params;
+        static constexpr auto value = glz::object(
+            "workspace_path", &T::workspace_path
+        );
+    };
+};
+
+struct mcp_code_check_syntax_params {
+    std::string file_path;
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_check_syntax_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_code_clear_diagnostics_params {
+    std::string file_path;
+    struct glaze {
+        using T = mcp_code_clear_diagnostics_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path
+        );
+    };
+};
+
+struct mcp_code_search_params {
+    std::string query;
+    int max_results{50};
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_search_params;
+        static constexpr auto value = glz::object(
+            "query", &T::query,
+            "max_results", &T::max_results,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_code_find_symbol_params {
+    std::string name;
+    std::string kind;
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_find_symbol_params;
+        static constexpr auto value = glz::object(
+            "name", &T::name,
+            "kind", &T::kind,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_code_index_workspace_params {
+    std::string workspace_dir;
+    bool force{false};
+    struct glaze {
+        using T = mcp_code_index_workspace_params;
+        static constexpr auto value = glz::object(
+            "workspace_dir", &T::workspace_dir,
+            "force", &T::force
+        );
+    };
+};
+
+struct mcp_code_read_file_params {
+    std::string file_path;
+    std::string path;
+    int start_line{1};
+    int end_line{0};
+    bool show_line_numbers{true};
+    struct glaze {
+        using T = mcp_code_read_file_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "path", &T::path,
+            "start_line", &T::start_line,
+            "end_line", &T::end_line,
+            "show_line_numbers", &T::show_line_numbers
+        );
+    };
+};
+
+struct mcp_code_write_file_params {
+    std::string file_path;
+    std::string path;
+    std::string content;
+    bool overwrite{false};
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_write_file_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "path", &T::path,
+            "content", &T::content,
+            "overwrite", &T::overwrite,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_code_apply_patch_params {
+    std::string file_path;
+    std::string path;
+    std::string target_content;
+    std::string replacement_content;
+    int start_line{1};
+    int end_line{0};
+    bool allow_multiple{false};
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_apply_patch_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "path", &T::path,
+            "target_content", &T::target_content,
+            "replacement_content", &T::replacement_content,
+            "start_line", &T::start_line,
+            "end_line", &T::end_line,
+            "allow_multiple", &T::allow_multiple,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
 
 struct mcp_close_card_params {
     int index{-1};
@@ -1252,6 +1388,250 @@ mcp_host::mcp_host() {
     );
     
     register_function("editor", edit_file_def);
+
+    // Register code_discover_toolchain function
+    function_definition const code_discover_toolchain_def(
+        "code_discover_toolchain",
+        "Discover available C/C++ compilers, build tools (ninja/cmake), linters, Nix development environment, and compile_commands.json in the workspace.",
+        R"mcp({"type":"object","properties":{"workspace_path":{"type":"string","description":"Optional root path of the project workspace. If omitted, current directory is used."}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_discover_toolchain_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                auto tc = helpers::ToolchainService::instance().discover_toolchain(req.workspace_path);
+                std::string buffer;
+                static_cast<void>(glz::write_json(tc, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_discover_toolchain_def);
+    register_function("terminal", code_discover_toolchain_def);
+
+    // Register code_check_syntax function
+    function_definition const code_check_syntax_def(
+        "code_check_syntax",
+        "Fast non-linking syntax and type verification for source code files (C/C++ using -fsyntax-only, Python using py_compile, JavaScript using node --check, Shell using bash -n). Automatically parses errors and updates open editor card markers in real time.",
+        R"mcp({"type":"object","properties":{"file_path":{"type":"string","description":"Path to the source file to check"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["file_path"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing file_path parameter"})";
+                }
+                mcp_code_check_syntax_params req{};
+                auto err = glz::read_json(req, params);
+                if (err || req.file_path.empty()) {
+                    return R"({"status":"error","message":"Invalid parameters. Expected {\"file_path\":\"...\"}"})";
+                }
+
+                auto result = helpers::SyntaxChecker::instance().check_file(req.file_path, req.workspace_dir);
+                std::string buffer;
+                static_cast<void>(glz::write_json(result, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_check_syntax_def);
+    register_function("terminal", code_check_syntax_def);
+
+    // Register code_clear_diagnostics function
+    function_definition const code_clear_diagnostics_def(
+        "code_clear_diagnostics",
+        "Clear all active visual error markers and diagnostics from the open text editor.",
+        R"mcp({"type":"object","properties":{"file_path":{"type":"string","description":"Optional file path to verify before clearing"}},"required":[]})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto clear_fn = registrar::get<std::function<void()>>("editor_clear_error_markers");
+                if (clear_fn && *clear_fn) {
+                    (*clear_fn)();
+                    return R"({"status":"success","message":"Editor error markers cleared."})";
+                }
+                return R"({"status":"info","message":"Editor service not active."})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_clear_diagnostics_def);
+    register_function("terminal", code_clear_diagnostics_def);
+
+    // Register code_search function
+    function_definition const code_search_def(
+        "code_search",
+        "Fast full-text codebase search across C++ and CMake source files using SQLite FTS5 trigrams. Returns matching files, exact line numbers, and snippets.",
+        R"mcp({"type":"object","properties":{"query":{"type":"string","description":"Text query, symbol name, or substring to search for"},"max_results":{"type":"integer","description":"Maximum number of results to return (default 50)"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["query"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing parameters. Expected {\"query\":\"...\"}"})";
+                }
+                mcp_code_search_params req{};
+                auto err = glz::read_json(req, params);
+                if (err || req.query.empty()) {
+                    return R"({"status":"error","message":"Invalid parameters. Expected non-empty 'query' field."})";
+                }
+
+                auto matches = helpers::CodeIndexer::instance().search(req.query, static_cast<size_t>(req.max_results > 0 ? req.max_results : 50));
+                std::string buffer;
+                static_cast<void>(glz::write_json(matches, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_search_def);
+    register_function("terminal", code_search_def);
+
+    // Register code_find_symbol function
+    function_definition const code_find_symbol_def(
+        "code_find_symbol",
+        "Search indexed C++ symbol table for class, struct, function, enum, or macro definitions and declarations. Supports wildcards like 'Render*'.",
+        R"mcp({"type":"object","properties":{"name":{"type":"string","description":"Exact symbol name or wildcard pattern (e.g. 'SetErrorMarkers' or 'Render*')"},"kind":{"type":"string","description":"Optional kind filter: 'class', 'struct', 'function', 'enum', 'namespace', 'macro', 'alias'"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["name"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                if (params.empty()) {
+                    return R"({"status":"error","message":"Missing parameters. Expected {\"name\":\"...\"}"})";
+                }
+                mcp_code_find_symbol_params req{};
+                auto err = glz::read_json(req, params);
+                if (err || req.name.empty()) {
+                    return R"({"status":"error","message":"Invalid parameters. Expected non-empty 'name' field."})";
+                }
+
+                auto symbols = helpers::CodeIndexer::instance().find_symbol(req.name, req.kind);
+                std::string buffer;
+                static_cast<void>(glz::write_json(symbols, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_find_symbol_def);
+    register_function("terminal", code_find_symbol_def);
+
+    // Register code_index_workspace function
+    function_definition const code_index_workspace_def(
+        "code_index_workspace",
+        "Scan and index the workspace directory into the local SQLite FTS5 code and symbol database. Incremental updates skip unmodified files.",
+        R"mcp({"type":"object","properties":{"workspace_dir":{"type":"string","description":"Optional workspace root directory. Defaults to current directory."},"force":{"type":"boolean","description":"Force re-indexing all files regardless of modification timestamp"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_index_workspace_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                auto stats = helpers::CodeIndexer::instance().index_workspace(req.workspace_dir, req.force);
+                std::string buffer;
+                static_cast<void>(glz::write_json(stats, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_index_workspace_def);
+    register_function("terminal", code_index_workspace_def);
+
+    // Register code_read_file function
+    function_definition const code_read_file_def(
+        "code_read_file",
+        "Read a line-bounded slice or full content of a file with line numbers. Inspect files before applying targeted patches.",
+        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"start_line":{"type":"integer","description":"1-based start line (default: 1)"},"end_line":{"type":"integer","description":"1-based end line (default: read to end or 2000 lines)"},"show_line_numbers":{"type":"boolean","description":"Include line numbers (default: true)"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_read_file_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                std::string p = !req.path.empty() ? req.path : req.file_path;
+                if (p.empty()) {
+                    return R"({"status":"error","message":"Missing required file path."})";
+                }
+                auto res = helpers::CodeEditorService::instance().read_file(p, req.start_line, req.end_line, req.show_line_numbers);
+                std::string buffer;
+                static_cast<void>(glz::write_json(res, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_read_file_def);
+    register_function("terminal", code_read_file_def);
+
+    // Register code_write_file function
+    function_definition const code_write_file_def(
+        "code_write_file",
+        "Write or overwrite a full file with automated syntax verification and index update. Creates directories as needed.",
+        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"Target file path"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"content":{"type":"string","description":"Full text content to write"},"overwrite":{"type":"boolean","description":"Allow overwriting existing file (default: false)"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["content"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_write_file_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                std::string p = !req.path.empty() ? req.path : req.file_path;
+                if (p.empty()) {
+                    return R"({"status":"error","message":"Missing required file path."})";
+                }
+                auto res = helpers::CodeEditorService::instance().write_file(p, req.content, req.overwrite, req.workspace_dir);
+                std::string buffer;
+                static_cast<void>(glz::write_json(res, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_write_file_def);
+    register_function("terminal", code_write_file_def);
+
+    // Register code_apply_patch function
+    function_definition const code_apply_patch_def(
+        "code_apply_patch",
+        "Surgically replace a unique contiguous block of code in a file. Automatically invokes compiler syntax checks and returns diagnostic errors if syntax is broken, enabling the self-correction loop.",
+        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"Target file path"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"target_content":{"type":"string","description":"Exact character sequence to be replaced (including leading whitespace and newlines)"},"replacement_content":{"type":"string","description":"Replacement text to substitute in place of target_content"},"start_line":{"type":"integer","description":"Optional 1-based start line to constrain search range"},"end_line":{"type":"integer","description":"Optional 1-based end line to constrain search range"},"allow_multiple":{"type":"boolean","description":"Allow replacing multiple occurrences if found (default: false)"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["target_content","replacement_content"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_apply_patch_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                std::string p = !req.path.empty() ? req.path : req.file_path;
+                if (p.empty()) {
+                    return R"({"status":"error","message":"Missing required file path."})";
+                }
+                auto res = helpers::CodeEditorService::instance().apply_patch(
+                    p, req.target_content, req.replacement_content,
+                    req.start_line, req.end_line, req.allow_multiple, req.workspace_dir
+                );
+                std::string buffer;
+                static_cast<void>(glz::write_json(res, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_apply_patch_def);
+    register_function("terminal", code_apply_patch_def);
 
     // Register YouTube search videos function
     function_definition const youtube_search_def(

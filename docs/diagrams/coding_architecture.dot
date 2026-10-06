@@ -1,0 +1,91 @@
+digraph RouenCodingArchitecture {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_ui {
+        label="Rouen UI Layer";
+        color="#3b82f6";
+        style=filled;
+        fillcolor="#eff6ff";
+
+        editor_card [label="TextEditor Card\n(ImGuiColorTextEdit & Error Markers)", fillcolor="#bfdbfe"];
+        chat_card [label="AI Chat Card\n(Code & Git Architect Persona)", fillcolor="#bfdbfe"];
+        cmake_card [label="CMake & Git Cards\n(Ninja -j2 & Diff Inspector)", fillcolor="#bfdbfe"];
+    }
+
+    subgraph cluster_mcp {
+        label="Rouen MCP Host (Coding Tool Suite)";
+        color="#f59e0b";
+        style=filled;
+        fillcolor="#fffbeb";
+
+        mcp_syntax [label="code_check_syntax\n(Fast -fsyntax-only / /Zs verification)", fillcolor="#fde68a"];
+        mcp_toolchain [label="code_discover_toolchain\n(Nix, CMake, Ninja, Clang, GCC)", fillcolor="#fde68a"];
+        mcp_clear [label="code_clear_diagnostics\n(Reset visual markers)", fillcolor="#fde68a"];
+        mcp_patch [label="code_apply_patch\n(Atomic chunk search & replace)", fillcolor="#fde68a"];
+        mcp_search [label="code_search & find_symbol\n(SQLite FTS5 trigrams & symbols)", fillcolor="#fde68a"];
+        mcp_build [label="code_run_build_target\n(Ninja -j2 build action runner)", fillcolor="#fde68a"];
+    }
+
+    subgraph cluster_diagnostics {
+        label="Diagnostics & Compiler Feedback Loop";
+        color="#10b981";
+        style=filled;
+        fillcolor="#ecfdf5";
+
+        syntax_checker [label="SyntaxChecker Service\n(syntax_checker.hpp)\n- Sub-second non-linking checks\n- Nix develop auto-wrapping", fillcolor="#a7f3d0"];
+        diag_parser [label="Diagnostic Parser\n(GCC, Clang, AppleClang, MSVC)\n- Extracts file, line, col, severity, msg", fillcolor="#a7f3d0"];
+        error_bridge [label="Error Marker Bridge\n(registrar 'editor_set_error_markers')\n- 1-based line mapping & squiggles", fillcolor="#a7f3d0"];
+    }
+
+    subgraph cluster_toolchain {
+        label="Toolchain & Compilation Database";
+        color="#8b5cf6";
+        style=filled;
+        fillcolor="#f5f3ff";
+
+        toolchain_svc [label="ToolchainService\n(toolchain_service.hpp)\n- Probes Clang, GCC, MSVC, Ninja, CMake\n- Platform detection (macOS, Linux, Windows)", fillcolor="#ddd6fe"];
+        comp_db [label="Compilation Database\n(compile_commands.json)\n- Extracts exact -I, -D, -std=c++20 flags", fillcolor="#ddd6fe"];
+        nix_wrapper [label="Nix Environment Detector\n(flake.nix & shell.nix)\n- Wraps commands with 'nix develop'", fillcolor="#ddd6fe"];
+    }
+
+    subgraph cluster_indexing {
+        label="Zero-Daemon Code Indexing (Phase 3)";
+        color="#06b6d4";
+        style=filled;
+        fillcolor="#ecfeff";
+
+        fts5_index [label="SQLite FTS5 Code Index\n(sqlite.hpp & code_fts)\n- Trigram full-text search (<30 MB RAM)", fillcolor="#a5f3fc"];
+        symbol_graph [label="Relational Symbol Table\n(symbols: definitions, structs, classes)", fillcolor="#a5f3fc"];
+        dirty_cache [label="mtime Invalidation Cache\n(Incremental file update tracking)", fillcolor="#a5f3fc"];
+    }
+
+    // Wiring flows
+    chat_card -> mcp_syntax [label="Invokes syntax verify"];
+    chat_card -> mcp_patch [label="Applies code edit"];
+    chat_card -> mcp_toolchain [label="Inspects environment"];
+    chat_card -> mcp_search [label="Codebase queries"];
+    chat_card -> mcp_build [label="Runs target build"];
+
+    mcp_toolchain -> toolchain_svc;
+    mcp_syntax -> syntax_checker;
+    mcp_clear -> error_bridge;
+    mcp_patch -> editor_card [label="Updates active buffer"];
+    mcp_search -> fts5_index;
+    mcp_build -> cmake_card;
+
+    syntax_checker -> toolchain_svc [label="Queries flags"];
+    toolchain_svc -> comp_db [label="Parses JSON"];
+    toolchain_svc -> nix_wrapper [label="Checks flake.nix"];
+
+    syntax_checker -> diag_parser [label="Stderr stream"];
+    diag_parser -> error_bridge [label="std::vector<Diagnostic>"];
+    error_bridge -> editor_card [label="SetErrorMarkers()"];
+    diag_parser -> chat_card [style=dashed, label="Self-correction feedback"];
+
+    fts5_index -> dirty_cache;
+    symbol_graph -> dirty_cache;
+}

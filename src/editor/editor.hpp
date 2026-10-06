@@ -77,6 +77,34 @@ public:
                 }
             )
         );
+
+        registrar::add<std::function<void(const std::map<int, std::string>&)>>(
+            "editor_set_error_markers",
+            std::make_shared<std::function<void(const std::map<int, std::string>&)>>(
+                [this](const std::map<int, std::string>& markers) { setErrorMarkers(markers); }
+            )
+        );
+
+        registrar::add<std::function<void()>>(
+            "editor_clear_error_markers",
+            std::make_shared<std::function<void()>>(
+                [this]() { clearErrorMarkers(); }
+            )
+        );
+
+        registrar::add<std::function<std::string()>>(
+            "editor_get_active_file",
+            std::make_shared<std::function<std::string()>>(
+                [this]() { return getActiveFile(); }
+            )
+        );
+
+        registrar::add<std::function<std::string()>>(
+            "editor_get_text",
+            std::make_shared<std::function<std::string()>>(
+                [this]() { return getText(); }
+            )
+        );
     }
     
     virtual ~Editor() {
@@ -86,6 +114,10 @@ public:
             registrar::remove<std::function<bool()>>("is_editor_empty");
             registrar::remove<std::function<std::string(const std::string&, int, int)>>("editor_save_snapshot");
             registrar::remove<std::function<std::string(const std::string&, const std::string&, int, int)>>("take_screenshot");
+            registrar::remove<std::function<void(const std::map<int, std::string>&)>>("editor_set_error_markers");
+            registrar::remove<std::function<void()>>("editor_clear_error_markers");
+            registrar::remove<std::function<std::string()>>("editor_get_active_file");
+            registrar::remove<std::function<std::string()>>("editor_get_text");
         } catch (...) {}
     }
 
@@ -198,6 +230,33 @@ public:
             return text_editor_->getText();
         }
         return "";
+    }
+
+    std::string getActiveFile() const {
+        if (text_editor_) {
+            return text_editor_->getSourceFile();
+        }
+        return "";
+    }
+
+    void setErrorMarkers(const ::TextEditor::ErrorMarkers& markers) {
+        if (text_editor_) {
+            text_editor_->setErrorMarkers(markers);
+        }
+    }
+
+    void clearErrorMarkers() {
+        if (text_editor_) {
+            text_editor_->clearErrorMarkers();
+        }
+    }
+
+    const ::TextEditor::ErrorMarkers& getErrorMarkers() const {
+        static const ::TextEditor::ErrorMarkers empty_markers;
+        if (text_editor_) {
+            return text_editor_->getErrorMarkers();
+        }
+        return empty_markers;
     }
 
 

@@ -204,6 +204,9 @@ public:
     void setShowWhitespaces(bool show) { text_editor_.SetShowWhitespaces(show); }
     std::string getText() const { return text_editor_.GetText(); }
     const std::string& getSourceFile() const { return source_file_; }
+    void setErrorMarkers(const ::TextEditor::ErrorMarkers& markers) { text_editor_.SetErrorMarkers(markers); }
+    void clearErrorMarkers() { text_editor_.SetErrorMarkers({}); }
+    const ::TextEditor::ErrorMarkers& getErrorMarkers() const { return text_editor_.GetErrorMarkers(); }
 
 private:
     std::string source_file_;

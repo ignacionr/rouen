@@ -271,7 +271,7 @@ bool LLMConfigManager::ensure_standard_configs() {
             }
         } else if (cfg.name == "Gemini Flash") {
             has_gemini = true;
-            if (cfg.model_name == "gemini-2.5-flash" || cfg.model_name.empty()) {
+            if (cfg.model_name == "gemini-2.5-flash" || cfg.model_name == "gemini-3.6-flash" || cfg.model_name.empty()) {
                 cfg.model_name = "gemini-3.8-flash";
                 updated = true;
             }

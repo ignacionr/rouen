@@ -1,0 +1,49 @@
+digraph RouenCodingPersonas {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    user [label="User / Operator\n(Developer Prompt)", shape=ellipse, fillcolor="#fed7aa", style=filled, color="#f97316"];
+
+    subgraph cluster_tier1 {
+        label="Tier 1: General Orchestrator";
+        color="#3b82f6";
+        style=filled;
+        fillcolor="#eff6ff";
+
+        rouen_assistant [label="Rouen Assistant\n- Task triage & routing\n- General workspace coordination", fillcolor="#bfdbfe"];
+    }
+
+    subgraph cluster_tier2 {
+        label="Tier 2: Engineering Lead";
+        color="#f59e0b";
+        style=filled;
+        fillcolor="#fffbeb";
+
+        code_architect [label="Code & Git Architect\n- Architecture planning & code review\n- Multi-file plan synthesis & verification\n- Enforces strict -j2 build safety rules", fillcolor="#fde68a"];
+    }
+
+    subgraph cluster_tier3 {
+        label="Tier 3: Specialized Coding Sub-Agents";
+        color="#10b981";
+        style=filled;
+        fillcolor="#ecfdf5";
+
+        editor_specialist [label="Editor Specialist\n- Precise file inspection & diffs\n- Atomic chunk patching (code_apply_patch)\n- Automated syntax checks on save", fillcolor="#a7f3d0"];
+        search_specialist [label="Code Search Specialist\n- SQLite FTS5 trigram queries\n- Symbol declaration & definition lookup\n- File reference tracking", fillcolor="#a7f3d0"];
+        build_specialist [label="Build & Test Specialist\n- CMake configuration & Ninja execution\n- Strict -j2 parallel job enforcement\n- Test suite runner & failure diagnostics", fillcolor="#a7f3d0"];
+        terminal_specialist [label="Terminal Specialist\n- Nix flake / shell environments\n- Git branch management & commits\n- Raw CLI diagnostics & utilities", fillcolor="#a7f3d0"];
+    }
+
+    user -> rouen_assistant;
+    rouen_assistant -> code_architect [label="Coding & build tasks"];
+    code_architect -> editor_specialist [label="File reads & patches"];
+    code_architect -> search_specialist [label="Symbol & code searches"];
+    code_architect -> build_specialist [label="Builds & test runs"];
+    code_architect -> terminal_specialist [label="Nix & git operations"];
+
+    editor_specialist -> code_architect [label="Syntax verification feedback", style=dashed];
+    build_specialist -> code_architect [label="Compiler error logs", style=dashed];
+}

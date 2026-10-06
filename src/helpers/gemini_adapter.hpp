@@ -508,13 +508,13 @@ namespace rouen::helpers {
                     candidates.push_back(c);
                 }
             };
-            add_candidate("gemini-3-flash-preview");
             add_candidate("gemini-3.1-flash-lite");
             add_candidate("gemini-flash-lite-latest");
             add_candidate("gemini-2.5-flash-lite");
             add_candidate("gemini-3.6-flash");
             add_candidate("gemini-3.5-flash");
             add_candidate("gemini-flash-latest");
+            add_candidate("gemini-3-flash-preview");
 
             std::string response;
             bool request_ok = false;
@@ -650,13 +650,13 @@ namespace rouen::helpers {
                         candidates.push_back(c);
                     }
                 };
-                add_candidate("gemini-3-flash-preview");
                 add_candidate("gemini-3.1-flash-lite");
                 add_candidate("gemini-flash-lite-latest");
                 add_candidate("gemini-2.5-flash-lite");
                 add_candidate("gemini-3.6-flash");
                 add_candidate("gemini-3.5-flash");
                 add_candidate("gemini-flash-latest");
+                add_candidate("gemini-3-flash-preview");
 
                 std::string response;
                 bool request_ok = false;

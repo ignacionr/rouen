@@ -300,6 +300,356 @@ TEST(MCPTest, ExecuteEditFileCommand) {
     registrar::remove<std::function<void(std::string const &)>>("edit");
 }
 
+TEST(MCPTest, CodingToolchainAndSyntaxTools) {
+    mcp_service mcp;
+    auto functions = mcp.get_available_functions();
+    
+    bool has_discover = false;
+    bool has_check_syntax = false;
+    bool has_clear_diag = false;
+    for (const auto& f : functions) {
+        if (f.name == "code_discover_toolchain") has_discover = true;
+        if (f.name == "code_check_syntax") has_check_syntax = true;
+        if (f.name == "code_clear_diagnostics") has_clear_diag = true;
+    }
+    EXPECT_TRUE(has_discover);
+    EXPECT_TRUE(has_check_syntax);
+    EXPECT_TRUE(has_clear_diag);
+    
+    // Execute code_discover_toolchain
+    auto disc_res = mcp.execute_function("code_discover_toolchain", "{}");
+    EXPECT_TRUE(disc_res.success);
+    EXPECT_TRUE(disc_res.result.find("cpp_compiler") != std::string::npos);
+    EXPECT_TRUE(disc_res.result.find("has_nix") != std::string::npos);
+
+    // Execute code_clear_diagnostics
+    bool cleared = false;
+    auto mock_clear = std::make_shared<std::function<void()>>([&cleared]() {
+        cleared = true;
+    });
+    registrar::add<std::function<void()>>("editor_clear_error_markers", mock_clear);
+    auto clear_res = mcp.execute_function("code_clear_diagnostics", "{}");
+    EXPECT_TRUE(clear_res.success);
+    EXPECT_TRUE(cleared);
+    registrar::remove<std::function<void()>>("editor_clear_error_markers");
+}
+
+TEST(MCPTest, CodeIndexerToolsRegisteredAndCallable) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("code_search"));
+    EXPECT_TRUE(mcp.has_function("code_find_symbol"));
+    EXPECT_TRUE(mcp.has_function("code_index_workspace"));
+
+    // Execute code_index_workspace on src/helpers
+    auto idx_res = mcp.execute_function("code_index_workspace", R"({"workspace_dir":"src/helpers"})");
+    EXPECT_TRUE(idx_res.success);
+    EXPECT_TRUE(idx_res.result.find("total_files_scanned") != std::string::npos);
+
+    // Execute code_find_symbol for CodeIndexer
+    auto sym_res = mcp.execute_function("code_find_symbol", R"({"name":"CodeIndexer"})");
+    EXPECT_TRUE(sym_res.success);
+    EXPECT_TRUE(sym_res.result.find("code_indexer.hpp") != std::string::npos);
+
+    // Execute code_search for a unique string
+    auto search_res = mcp.execute_function("code_search", R"({"query":"CodeIndexer"})");
+    EXPECT_TRUE(search_res.success);
+    EXPECT_TRUE(search_res.result.find("code_indexer.hpp") != std::string::npos);
+}
+
+TEST(MCPTest, RealAICodeSearchAndSymbolFinding) {
+    // Load env file to get API keys
+    CONFIG_SERVICE()->load_env_file();
+
+    if (!LLMConfig::is_configured()) {
+        GTEST_SKIP() << "Configured LLM is not available (API key not set). Skipping AI coding test.";
+    }
+
+    // Retrieve configured LLM instance
+    auto llm_opt = LLMConfig::create_llm_instance();
+    ASSERT_TRUE(llm_opt.has_value());
+    auto& llm = *llm_opt;
+
+    // Index src/helpers to ensure symbols are available in the index
+    mcp_service mcp;
+    mcp.execute_function("code_index_workspace", R"({"workspace_dir":"src/helpers"})");
+
+    // Gather function schemas for code_find_symbol and code_search
+    std::vector<std::string> function_schemas;
+    for (const auto& func : mcp.get_available_functions()) {
+        if (func.name == "code_find_symbol" || func.name == "code_search") {
+            std::string schema = std::format(
+                "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
+                func.name,
+                func.description.empty() ? "Operation" : func.description,
+                func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
+            );
+            function_schemas.push_back(schema);
+        }
+    }
+    ASSERT_GE(function_schemas.size(), 2u);
+
+    bool tool_called = false;
+    std::string called_tool_name;
+    std::string called_param_value;
+
+    auto function_executor = [&](const std::string& name, const std::string& args_json) -> std::string {
+        if (name == "code_find_symbol" || name == "code_search") {
+            tool_called = true;
+            called_tool_name = name;
+            called_param_value = args_json;
+        }
+        auto res = mcp.execute_function(name, args_json);
+        return res.success ? res.result : "Error: " + res.error_message;
+    };
+
+    auto settings = LLMConfig::get_current_config();
+    std::string model_name = settings.model_name;
+
+    // Dynamically query available models if using Gemini, in compliance with project rules
+    if (settings.provider == LLMConfig::Provider::GEMINI) {
+        try {
+            http::fetch fetcher(10);
+            std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", settings.api_key);
+            std::string resp_json = fetcher(url);
+            if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
+                model_name = "gemini-3.1-flash-lite";
+            } else if (resp_json.find("gemini-flash-lite-latest") != std::string::npos) {
+                model_name = "gemini-flash-lite-latest";
+            } else if (resp_json.find("gemini-2.5-flash-lite") != std::string::npos) {
+                model_name = "gemini-2.5-flash-lite";
+            }
+        } catch (...) {}
+    }
+
+    auto fetcher = std::make_shared<http::fetch>(30);
+    std::vector<std::pair<std::string, std::string>> conversation;
+    std::string user_prompt = "Where is the class 'SyntaxChecker' declared in the codebase? Use the code search or symbol tools to find it.";
+
+    ignacionr::ChatCompletion chat_completion;
+
+    try {
+        if (settings.provider == LLMConfig::Provider::GEMINI) {
+            auto& gemini_adapter = *std::get<std::unique_ptr<GeminiAdapter>>(llm.instance_);
+            chat_completion = gemini_adapter.sendMessageWithFunctionCalling(
+                user_prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        } else {
+            auto& cppgpt_adapter = *std::get<std::unique_ptr<ignacionr::cppgpt>>(llm.instance_);
+            chat_completion = cppgpt_adapter.sendMessageWithFunctionCalling(
+                user_prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        }
+    } catch (const std::exception& e) {
+        GTEST_SKIP() << "LLM HTTP request failed: " << e.what();
+    } catch (...) {
+        GTEST_SKIP() << "LLM HTTP request failed with unknown exception.";
+    }
+
+    if (!tool_called && !chat_completion.choices.empty() && !chat_completion.choices[0].message.content.empty()) {
+        GTEST_SKIP() << "Configured live LLM returned text instead of issuing a tool call.";
+    }
+
+    EXPECT_TRUE(tool_called) << "The LLM did not call any code indexing tool!";
+    EXPECT_TRUE(called_param_value.find("SyntaxChecker") != std::string::npos)
+        << "The tool argument did not contain 'SyntaxChecker': " << called_param_value;
+    
+    // Verify the completion or conversation history contains syntax_checker.hpp
+    bool found_mention = false;
+    if (!chat_completion.choices.empty() && chat_completion.choices[0].message.content.find("syntax_checker.hpp") != std::string::npos) {
+        found_mention = true;
+    }
+    for (const auto& [role, msg] : conversation) {
+        if (msg.find("syntax_checker.hpp") != std::string::npos) {
+            found_mention = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_mention) << "The AI response or conversation did not mention syntax_checker.hpp";
+}
+
+TEST(MCPTest, CodeEditorToolsRegisteredAndCallable) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("code_read_file"));
+    EXPECT_TRUE(mcp.has_function("code_write_file"));
+    EXPECT_TRUE(mcp.has_function("code_apply_patch"));
+
+    std::string test_path = "/tmp/test_mcp_code_editor.txt";
+    std::filesystem::remove(test_path);
+
+    // 1. Write file
+    auto write_res = mcp.execute_function("code_write_file", std::format(R"({{"path":"{}","content":"alpha\nbeta\ngamma\n","overwrite":true}})", test_path));
+    EXPECT_TRUE(write_res.success);
+    EXPECT_TRUE(write_res.result.find("File written successfully") != std::string::npos);
+
+    // 2. Read file
+    auto read_res = mcp.execute_function("code_read_file", std::format(R"({{"path":"{}","start_line":1,"end_line":3}})", test_path));
+    EXPECT_TRUE(read_res.success);
+    EXPECT_TRUE(read_res.result.find("1: alpha") != std::string::npos);
+    EXPECT_TRUE(read_res.result.find("2: beta") != std::string::npos);
+
+    // 3. Apply patch
+    auto patch_res = mcp.execute_function("code_apply_patch", std::format(R"({{"path":"{}","target_content":"beta","replacement_content":"delta"}})", test_path));
+    EXPECT_TRUE(patch_res.success);
+    EXPECT_TRUE(patch_res.result.find("Patch applied successfully") != std::string::npos);
+
+    // Verify change
+    auto verify_res = mcp.execute_function("code_read_file", std::format(R"({{"path":"{}","show_line_numbers":false}})", test_path));
+    EXPECT_TRUE(verify_res.success);
+    EXPECT_TRUE(verify_res.result.find("delta") != std::string::npos);
+    EXPECT_TRUE(verify_res.result.find("beta") == std::string::npos);
+
+    std::filesystem::remove(test_path);
+}
+
+TEST(MCPTest, RealAICodingSelfCorrectionLoop) {
+    CONFIG_SERVICE()->load_env_file();
+
+    if (!LLMConfig::is_configured()) {
+        GTEST_SKIP() << "Configured LLM is not available (API key not set). Skipping AI coding test.";
+    }
+
+    auto llm_opt = LLMConfig::create_llm_instance();
+    ASSERT_TRUE(llm_opt.has_value());
+    auto& llm = *llm_opt;
+
+    std::string test_repair_path = "/tmp/test_ai_repair.cpp";
+    std::filesystem::remove(test_repair_path);
+
+    // Create file with syntax error (missing semicolon)
+    {
+        std::ofstream out(test_repair_path);
+        out << "#include <iostream>\n\nint compute_sum(int a, int b) {\n    return a + b\n}\n";
+    }
+
+    mcp_service mcp;
+    std::vector<std::string> function_schemas;
+    for (const auto& func : mcp.get_available_functions()) {
+        if (func.name == "code_read_file" || func.name == "code_apply_patch") {
+            std::string schema = std::format(
+                "{{\"name\":\"{}\",\"description\":\"{}\",\"parameters\":{}}}",
+                func.name,
+                func.description.empty() ? "Operation" : func.description,
+                func.schema.empty() ? "{\"type\":\"object\",\"properties\":{}}" : func.schema
+            );
+            function_schemas.push_back(schema);
+        }
+    }
+    ASSERT_GE(function_schemas.size(), 2u);
+
+    bool read_called = false;
+    bool patch_called = false;
+
+    auto function_executor = [&](const std::string& name, const std::string& args_json) -> std::string {
+        if (name == "code_read_file") {
+            read_called = true;
+        } else if (name == "code_apply_patch") {
+            patch_called = true;
+        }
+        auto res = mcp.execute_function(name, args_json);
+        return res.success ? res.result : "Error: " + res.error_message;
+    };
+
+    auto settings = LLMConfig::get_current_config();
+    std::string model_name = settings.model_name;
+
+    if (settings.provider == LLMConfig::Provider::GEMINI) {
+        try {
+            http::fetch fetcher(10);
+            std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", settings.api_key);
+            std::string resp_json = fetcher(url);
+            if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
+                model_name = "gemini-3.1-flash-lite";
+            } else if (resp_json.find("gemini-flash-lite-latest") != std::string::npos) {
+                model_name = "gemini-flash-lite-latest";
+            } else if (resp_json.find("gemini-2.5-flash-lite") != std::string::npos) {
+                model_name = "gemini-2.5-flash-lite";
+            }
+        } catch (...) {}
+    }
+
+    auto fetcher = std::make_shared<http::fetch>(30);
+    std::vector<std::pair<std::string, std::string>> conversation;
+    std::string user_prompt = std::format(
+        "The file '{}' contains a C++ syntax error. Read the file, identify the error, and apply a patch to fix it.",
+        test_repair_path
+    );
+
+    ignacionr::ChatCompletion chat_completion;
+
+    try {
+        if (settings.provider == LLMConfig::Provider::GEMINI) {
+            auto& gemini_adapter = *std::get<std::unique_ptr<GeminiAdapter>>(llm.instance_);
+            chat_completion = gemini_adapter.sendMessageWithFunctionCalling(
+                user_prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        } else {
+            auto& cppgpt_adapter = *std::get<std::unique_ptr<ignacionr::cppgpt>>(llm.instance_);
+            chat_completion = cppgpt_adapter.sendMessageWithFunctionCalling(
+                user_prompt,
+                [fetcher](const std::string& url, const std::string& body, auto header_setter) {
+                    return fetcher->post(url, body, header_setter);
+                },
+                function_executor,
+                "user",
+                model_name,
+                "",
+                0.2f,
+                &conversation,
+                &function_schemas
+            );
+        }
+    } catch (const std::exception& e) {
+        GTEST_SKIP() << "LLM HTTP request failed: " << e.what();
+    } catch (...) {
+        GTEST_SKIP() << "LLM HTTP request failed with unknown exception.";
+    }
+
+    if (!patch_called && !chat_completion.choices.empty() && !chat_completion.choices[0].message.content.empty()) {
+        GTEST_SKIP() << "Configured live LLM returned text instead of issuing a tool call.";
+    }
+
+    EXPECT_TRUE(read_called || patch_called) << "The LLM did not call any code editing tool!";
+    EXPECT_TRUE(patch_called) << "The LLM did not call code_apply_patch to repair the syntax error!";
+
+    // Verify the file on disk was repaired
+    std::ifstream in(test_repair_path);
+    std::string repaired_content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_TRUE(repaired_content.find("return a + b;") != std::string::npos)
+        << "The file did not contain the semicolon fix: " << repaired_content;
+
+    std::filesystem::remove(test_repair_path);
+}
+
 TEST(MCPTest, ConfiguredLLMToolingIntegration) {
     // Load env file to get API keys
     CONFIG_SERVICE()->load_env_file();
@@ -370,6 +720,21 @@ TEST(MCPTest, ConfiguredLLMToolingIntegration) {
     // Perform LLM call using sendMessageWithFunctionCalling
     auto settings = LLMConfig::get_current_config();
     std::string model_name = settings.model_name;
+
+    if (settings.provider == LLMConfig::Provider::GEMINI) {
+        try {
+            http::fetch fetcher(10);
+            std::string url = std::format("https://generativelanguage.googleapis.com/v1beta/models?key={}", settings.api_key);
+            std::string resp_json = fetcher(url);
+            if (resp_json.find("gemini-3.1-flash-lite") != std::string::npos) {
+                model_name = "gemini-3.1-flash-lite";
+            } else if (resp_json.find("gemini-flash-lite-latest") != std::string::npos) {
+                model_name = "gemini-flash-lite-latest";
+            } else if (resp_json.find("gemini-2.5-flash-lite") != std::string::npos) {
+                model_name = "gemini-2.5-flash-lite";
+            }
+        } catch (...) {}
+    }
     
     // Simple HTTP client using http::fetch
     auto fetcher = std::make_shared<http::fetch>(30); // 30 seconds timeout

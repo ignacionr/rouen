@@ -994,8 +994,26 @@ add_executable(test_series_repository
 target_link_libraries(test_series_repository PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME SeriesRepositoryTest COMMAND test_series_repository)
 
+add_executable(test_syntax_checker
+    test_syntax_checker.cpp
+)
+target_link_libraries(test_syntax_checker PRIVATE rouen_test_modules)
+add_test(NAME SyntaxCheckerTest COMMAND test_syntax_checker)
+
+add_executable(test_code_indexer
+    test_code_indexer.cpp
+)
+target_link_libraries(test_code_indexer PRIVATE rouen_test_modules SQLite::SQLite3)
+add_test(NAME CodeIndexerTest COMMAND test_code_indexer)
+
+add_executable(test_code_editor
+    test_code_editor.cpp
+)
+target_link_libraries(test_code_editor PRIVATE rouen_test_modules SQLite::SQLite3)
+add_test(NAME CodeEditorTest COMMAND test_code_editor)
+
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

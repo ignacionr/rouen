@@ -1,0 +1,22 @@
+digraph RouenCodingRoadmap {
+    rankdir=LR;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    p1 [label="Phase 1: Toolchain & Fast Syntax\n(Completed)\n- ToolchainService (Clang/GCC/MSVC)\n- compile_commands.json parsing\n- -fsyntax-only / /Zs execution\n- Structured diagnostic parser", fillcolor="#bbf7d0", color="#16a34a", penwidth=2.0];
+    p2 [label="Phase 2: Editor Markers & MCP\n(Completed)\n- TextEditor::SetErrorMarkers\n- registrar editor helpers\n- code_check_syntax MCP tool\n- code_discover_toolchain MCP tool", fillcolor="#bbf7d0", color="#16a34a", penwidth=2.0];
+    p3 [label="Phase 3: Code Indexing & Symbols\n(Completed)\n- SQLite FTS5 trigram virtual table\n- C++ symbol extraction & invalidation\n- code_search, code_find_symbol, code_index_workspace\n- Live Gemini AI interaction tests passed", fillcolor="#bbf7d0", color="#16a34a", penwidth=2.0];
+    p4 [label="Phase 4: Agent Patching & Loop\n(Completed)\n- code_read_file, code_write_file, code_apply_patch\n- Line bounds & ambiguity protection\n- Immediate syntax check self-correction\n- Live Gemini AI repair test passed", fillcolor="#bbf7d0", color="#16a34a", penwidth=2.0];
+    p5 [label="Phase 5: Editor Quick-Fix UI\n(Planned)\n- 'Fix with AI' gutter action & tooltip\n- Jump to file:line on diagnostic click\n- Editor footer diagnostic status pill\n- In-editor error navigation", fillcolor="#fed7aa", color="#ea580c"];
+    p6 [label="Phase 6: Visual Diff Card\n(Planned)\n- Unified & side-by-side diff review\n- Per-chunk Accept / Discard controls\n- Git index staging integration\n- In-memory rollback & undo buffers", fillcolor="#e9d5ff", color="#9333ea"];
+    p7 [label="Phase 7: CMake & Workflow\n(Planned)\n- 'Check Syntax Only' button in CMake card\n- 1-click build error triage to AI\n- AI conventional commit generator\n- Cross-platform ninja/nix integration", fillcolor="#fbcfe8", color="#db2777"];
+
+    p1 -> p2 [label="Diagnostic stream"];
+    p2 -> p3 [label="Editor ready"];
+    p3 -> p4 [label="Search enabled"];
+    p4 -> p5 [label="Diagnostic actions"];
+    p5 -> p6 [label="Diff staging"];
+    p6 -> p7 [label="Workflow & build"];
+}
