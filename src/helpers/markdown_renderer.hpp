@@ -21,6 +21,7 @@ struct markdown_render_config {
     ImFont* font_bold{nullptr};
     ImFont* font_italic{nullptr};
     ImFont* font_code{nullptr};
+    std::function<void(const std::string& alt, const std::string& url)> render_image_cb{};
 };
 
 // ---------------------------------------------------------------------------
@@ -92,6 +93,24 @@ inline void render_inline_markdown(
             }
             if (ImGui::IsItemClicked() && !span.url.empty() && open_url_cb) {
                 open_url_cb(span.url);
+            }
+            break;
+        }
+        case span_kind::image: {
+            if (config.render_image_cb) {
+                config.render_image_cb(span.text, span.url);
+            } else {
+                constexpr ImVec4 img_badge_color{0.45f, 0.75f, 0.95f, 1.0f};
+                ImGui::PushStyleColor(ImGuiCol_Text, img_badge_color);
+                ImGui::Text("[%s]", span.text.empty() ? "Image" : span.text.c_str());
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Image: %s", span.url.c_str());
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                }
+                if (ImGui::IsItemClicked() && !span.url.empty() && open_url_cb) {
+                    open_url_cb(span.url);
+                }
             }
             break;
         }

@@ -6,12 +6,12 @@
 
 namespace rouen::helpers::adaptive_cards {
 
-enum class span_kind { normal, bold, italic, code, link };
+enum class span_kind { normal, bold, italic, code, link, image };
 
 struct text_span {
     span_kind kind{span_kind::normal};
     std::string text;
-    std::string url; // only populated for span_kind::link
+    std::string url; // populated for span_kind::link and span_kind::image
 };
 
 // Removes backslash escape characters, turning e.g. "\*" into "*" and "\_" into "_".
@@ -139,6 +139,33 @@ struct text_span {
                 result.push_back({span_kind::code, std::string(input.substr(i + 1, close - i - 1)), {}});
                 i = close + 1;
                 continue;
+            }
+        }
+
+        // Image: ![label](url) - must be checked before link '['
+        if (input[i] == '!' && i + 1 < input.size() && input[i + 1] == '[') {
+            const auto label_end = find_unescaped(input, ']', i + 2);
+            if (label_end != std::string_view::npos
+                && label_end + 1 < input.size()
+                && input[label_end + 1] == '(') {
+                const auto url_end = find_unescaped(input, ')', label_end + 2);
+                if (url_end != std::string_view::npos) {
+                    flush_normal();
+                    std::string raw_url = unescape_markdown(input.substr(label_end + 2, url_end - label_end - 2));
+                    while (!raw_url.empty() && std::isspace(static_cast<unsigned char>(raw_url.front()))) raw_url.erase(raw_url.begin());
+                    while (!raw_url.empty() && std::isspace(static_cast<unsigned char>(raw_url.back()))) raw_url.pop_back();
+                    auto space_pos = raw_url.find_first_of(" \t");
+                    if (space_pos != std::string::npos) {
+                        raw_url = raw_url.substr(0, space_pos);
+                    }
+                    result.push_back({
+                        span_kind::image,
+                        unescape_markdown(input.substr(i + 2, label_end - i - 2)),
+                        std::move(raw_url)
+                    });
+                    i = url_end + 1;
+                    continue;
+                }
             }
         }
 

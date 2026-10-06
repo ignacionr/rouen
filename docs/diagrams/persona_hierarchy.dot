@@ -1,0 +1,64 @@
+digraph RouenPersonaHierarchy {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_tier1 {
+        label="Tier 1: Primary Orchestrator (Active Default)";
+        color="#dc2626";
+        style=filled;
+        fillcolor="#fef2f2";
+
+        ra [label="Rouen Assistant (index: 6)\nTemp: 0.7 | Model: Gemini Flash\nAllowed MCPs: deck, persona, calendar, notes, terminal, git, editor, mesh...\nCoordinates user requests & delegates to Tier 2 leads", fillcolor="#fecaca", shape=box, style="filled,bold"];
+    }
+
+    subgraph cluster_tier2 {
+        label="Tier 2: Domain Group Leads & Analysts";
+        color="#d97706";
+        style=filled;
+        fillcolor="#fffbeb";
+
+        cga [label="Code & Git Architect\nTemp: 0.2 | MCPs: editor, deck\nCoordinates development & system ops", fillcolor="#fde68a"];
+        ppl [label="Personal Productivity Lead\nTemp: 0.3 | MCPs: deck\nCoordinates personal tasks & archives", fillcolor="#fde68a"];
+        mkd [label="Media & Knowledge Director\nTemp: 0.4 | MCPs: deck\nCoordinates media playback & research", fillcolor="#fde68a"];
+        fa [label="Financial Analyst\nTemp: 0.2 | MCPs: bybit\nCrypto tickers, orderbook & assets", fillcolor="#fde68a"];
+        shm [label="System Health & Metrics\nTemp: 0.1 | MCPs: metrics, mesh\nFPS, render times & mesh statuses", fillcolor="#fde68a"];
+    }
+
+    subgraph cluster_tier3 {
+        label="Tier 3: Gated Leaf Specialists (Deterministic Execution)";
+        color="#2563eb";
+        style=filled;
+        fillcolor="#eff6ff";
+
+        ts [label="Terminal Specialist\nTemp: 0.1 | MCPs: terminal", fillcolor="#bfdbfe"];
+        es [label="Editor Specialist\nTemp: 0.1 | MCPs: editor", fillcolor="#bfdbfe"];
+        ggs [label="Git & GitHub Specialist\nTemp: 0.2 | MCPs: git, github", fillcolor="#bfdbfe"];
+        aca [label="Adaptive Card Architect\nTemp: 0.3 | MCPs: deck, adaptive_card", fillcolor="#bfdbfe"];
+        st [label="Schedule & Timekeeper\nTemp: 0.2 | MCPs: calendar, alarm, pomodoro", fillcolor="#bfdbfe"];
+        dab [label="Directory & Address Book\nTemp: 0.2 | MCPs: contacts, directory", fillcolor="#bfdbfe"];
+        aod [label="Archiver of all data\nTemp: 0.0 | MCPs: notes", fillcolor="#bfdbfe"];
+        msd [label="Media & Stream Director\nTemp: 0.3 | MCPs: youtube, cast, media, rss, wikipedia", fillcolor="#bfdbfe"];
+        ms [label="Mesh Specialist\nTemp: 0.2 | MCPs: mesh, terminal", fillcolor="#bfdbfe"];
+    }
+
+    ra -> cga [label="call_persona_code_git_architect"];
+    ra -> ppl [label="call_persona_personal_productivity_lead"];
+    ra -> mkd [label="call_persona_media_knowledge_director"];
+    ra -> fa [label="call_persona_financial_analyst"];
+    ra -> shm [label="call_persona_system_health_metrics"];
+
+    cga -> ts [label="call_persona_terminal_specialist"];
+    cga -> ggs [label="call_persona_git_github_specialist"];
+    cga -> aca [label="call_persona_adaptive_card_architect"];
+    cga -> es [label="direct file edit"];
+
+    ppl -> st [label="call_persona_schedule_timekeeper"];
+    ppl -> dab [label="call_persona_directory_address_book"];
+    ppl -> aod [label="call_persona_archiver_of_all_data"];
+
+    mkd -> msd [label="call_persona_media_stream_director"];
+    mkd -> aod [label="call_persona_archiver_of_all_data"];
+}

@@ -7,18 +7,25 @@
 #include <format>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
+#include <unordered_map>
 
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../fonts.hpp"
 #include "../../helpers/filetype_handler.hpp"
+#include "../../helpers/image_cache.hpp"
 #include "../../helpers/imgui_include.hpp"
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/string_helper.hpp"
+#include "../../helpers/texture_helper.hpp"
+#include "../../helpers/texture_utils.hpp"
 #include "../../registrar.hpp"
 #include "../interface/card.hpp"
 
@@ -44,6 +51,10 @@ public:
         }
     }
 
+    ~markdown_viewer() override {
+        clear_image_cache();
+    }
+
     [[nodiscard]] std::string get_uri() const override {
         return std::format("markdown:{}", path_.string());
     }
@@ -62,6 +73,7 @@ public:
     }
 
     void load_file(const std::string& filepath) {
+        clear_image_cache();
         path_ = std::filesystem::path(filepath);
         name(path_.filename().empty() ? "Markdown Viewer" : path_.filename().string());
 
@@ -158,6 +170,9 @@ public:
                         .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
                         .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
                         .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono),
+                        .render_image_cb = [this](const std::string& alt, const std::string& url) {
+                            render_image(alt, url);
+                        },
                     };
                     rouen::helpers::render_markdown_block(
                         content_,
@@ -278,6 +293,160 @@ private:
         // Fallback: try opening as generic system URL
         rouen::platform::open_url(url);
     }
+
+    void render_image(const std::string& alt, const std::string& url) {
+        if (url.empty()) return;
+
+        auto it = image_textures_.find(url);
+        if (it == image_textures_.end()) {
+            cached_image_entry entry{};
+
+            if (url.starts_with("http://") || url.starts_with("https://")) {
+                if (!remote_image_cache_) {
+                    auto cache_dir = (rouen::platform::get_user_data_path() / "images").string();
+                    auto db_path = (rouen::platform::get_user_data_path("image_cache.db", true)).string();
+                    remote_image_cache_ = std::make_shared<::helpers::ImageCache>(db_path, cache_dir, 30);
+                }
+                int w = 0, h = 0;
+                if (remote_image_cache_->isCached(url, w, h)) {
+                    entry.texture = remote_image_cache_->getTexture(TextureHelper::g_gpu_device, url, w, h);
+                    entry.width = w;
+                    entry.height = h;
+                    entry.loaded = (entry.texture != nullptr);
+                } else {
+                    std::lock_guard<std::mutex> lock(image_download_mutex_);
+                    if (!pending_image_downloads_.contains(url)) {
+                        pending_image_downloads_.insert(url);
+                        std::thread([this, url]() {
+                            try {
+                                if (remote_image_cache_) {
+                                    remote_image_cache_->downloadAndCache(url);
+                                }
+                            } catch (...) {}
+                            std::lock_guard<std::mutex> lock2(image_download_mutex_);
+                            pending_image_downloads_.erase(url);
+                        }).detach();
+                    }
+                }
+            } else {
+                std::string clean_path = url;
+                if (clean_path.starts_with("file://")) {
+                    clean_path = clean_path.substr(7);
+                }
+                std::filesystem::path p(clean_path);
+                std::filesystem::path target;
+                if (p.is_absolute()) {
+                    target = p;
+                } else if (!path_.empty()) {
+                    target = (path_.parent_path() / p).lexically_normal();
+                } else {
+                    target = p.lexically_normal();
+                }
+
+                std::error_code ec;
+                if (std::filesystem::exists(target, ec)) {
+                    int w = 0, h = 0;
+                    entry.texture = TextureHelper::loadTextureFromFile(
+                        TextureHelper::g_gpu_device,
+                        target.string().c_str(),
+                        w, h
+                    );
+                    entry.width = w;
+                    entry.height = h;
+                    entry.loaded = (entry.texture != nullptr);
+                    entry.load_failed = !entry.loaded;
+                } else {
+                    entry.loaded = false;
+                    entry.load_failed = true;
+                }
+            }
+
+            auto [ins, _] = image_textures_.emplace(url, entry);
+            it = ins;
+        }
+
+        // Retry check for remote image that might have just finished caching
+        if (!it->second.loaded && !it->second.load_failed && remote_image_cache_ &&
+            (url.starts_with("http://") || url.starts_with("https://"))) {
+            int w = 0, h = 0;
+            if (remote_image_cache_->isCached(url, w, h)) {
+                it->second.texture = remote_image_cache_->getTexture(TextureHelper::g_gpu_device, url, w, h);
+                it->second.width = w;
+                it->second.height = h;
+                it->second.loaded = (it->second.texture != nullptr);
+            }
+        }
+
+        if (it->second.loaded && it->second.texture) {
+            float const avail_w = ImGui::GetContentRegionAvail().x;
+            float const orig_w = static_cast<float>(it->second.width);
+            float const orig_h = static_cast<float>(it->second.height);
+
+            float draw_w = orig_w;
+            float draw_h = orig_h;
+            if (avail_w > 10.0f && orig_w > avail_w) {
+                float const scale = avail_w / orig_w;
+                draw_w = avail_w;
+                draw_h = orig_h * scale;
+            }
+
+            ImGui::Spacing();
+            ImTextureID const tex_id = rouen::helpers::texture_id_cast(it->second.texture);
+            ImGui::Image(tex_id, ImVec2(draw_w, draw_h));
+
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s (Click to open)", alt.empty() ? url.c_str() : alt.c_str());
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            }
+            if (ImGui::IsItemClicked()) {
+                handle_link_click(url);
+            }
+
+            if (!alt.empty()) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.60f, 0.65f, 1.0f));
+                ImGui::TextDisabled("▲ %s", alt.c_str());
+                ImGui::PopStyleColor();
+            }
+            ImGui::Spacing();
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
+            if (it->second.load_failed) {
+                ImGui::TextDisabled("[Image not found: %s]", url.c_str());
+            } else {
+                ImGui::TextDisabled("[Loading image: %s...]", url.c_str());
+            }
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Image target: %s", url.c_str());
+            }
+            if (ImGui::IsItemClicked()) {
+                handle_link_click(url);
+            }
+        }
+    }
+
+    void clear_image_cache() {
+        for (auto& [url, img] : image_textures_) {
+            if (img.texture) {
+                TextureHelper::destroyTexture(img.texture);
+                img.texture = nullptr;
+            }
+        }
+        image_textures_.clear();
+    }
+
+    struct cached_image_entry {
+        RouenGPUTexture* texture{nullptr};
+        int width{0};
+        int height{0};
+        bool loaded{false};
+        bool load_failed{false};
+    };
+    std::unordered_map<std::string, cached_image_entry> image_textures_;
+    std::shared_ptr<::helpers::ImageCache> remote_image_cache_;
+    std::set<std::string> pending_image_downloads_;
+    std::mutex image_download_mutex_;
 
     std::filesystem::path path_;
     std::string content_;

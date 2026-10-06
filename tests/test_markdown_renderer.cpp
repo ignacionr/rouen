@@ -372,4 +372,44 @@ TEST(MarkdownViewer, RelativeLinkResolution) {
     EXPECT_EQ(parent_target.string(), "/workspace/project/README.md");
 }
 
+TEST(MarkdownRenderer, ImageSpanIsParsed) {
+    const auto spans = parse_inline_markdown("![Rouen Architecture](diagrams/rouen_architecture.png)");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::image);
+    EXPECT_EQ(spans[0].text, "Rouen Architecture");
+    EXPECT_EQ(spans[0].url, "diagrams/rouen_architecture.png");
+}
+
+TEST(MarkdownRenderer, ImageSpanWithTitle) {
+    const auto spans = parse_inline_markdown("![Flow](diagrams/flow.png \"Diagram Title\")");
+    ASSERT_EQ(spans.size(), 1U);
+    EXPECT_EQ(spans[0].kind, span_kind::image);
+    EXPECT_EQ(spans[0].text, "Flow");
+    EXPECT_EQ(spans[0].url, "diagrams/flow.png");
+}
+
+TEST(MarkdownRenderer, ImageDoesNotBreakStandardLinks) {
+    const auto spans = parse_inline_markdown("[Click here](https://example.com) and ![embedded](img.png)");
+    ASSERT_EQ(spans.size(), 3U);
+    EXPECT_EQ(spans[0].kind, span_kind::link);
+    EXPECT_EQ(spans[0].text, "Click here");
+    EXPECT_EQ(spans[0].url, "https://example.com");
+    EXPECT_EQ(spans[1].kind, span_kind::normal);
+    EXPECT_EQ(spans[2].kind, span_kind::image);
+    EXPECT_EQ(spans[2].text, "embedded");
+    EXPECT_EQ(spans[2].url, "img.png");
+}
+
+TEST(MarkdownRenderer, StripMarkdownWithImages) {
+    EXPECT_EQ(strip_markdown("![Alt Text](diagrams/test.png)"), "Alt Text");
+}
+
+TEST(MarkdownViewer, ImageRelativePathResolution) {
+    std::filesystem::path current_doc = "/Users/ignaciorodriguez/src/rouen/docs/AI.md";
+    std::filesystem::path image_rel = "diagrams/ai_architecture.png";
+    std::filesystem::path target = (current_doc.parent_path() / image_rel).lexically_normal();
+    EXPECT_EQ(target.string(), "/Users/ignaciorodriguez/src/rouen/docs/diagrams/ai_architecture.png");
+}
+
+
 

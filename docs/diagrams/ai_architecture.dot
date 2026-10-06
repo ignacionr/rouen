@@ -1,0 +1,87 @@
+digraph RouenAIArchitecture {
+    rankdir=TB;
+    fontname="Helvetica";
+    fontsize=12;
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=9];
+
+    subgraph cluster_triggers {
+        label="User Channels & Triggers";
+        color="#3b82f6";
+        style=filled;
+        fillcolor="#eff6ff";
+
+        chat_card [label="AI Chat Card\n(ai_chat.hpp / ai_chat.cpp)", fillcolor="#bfdbfe"];
+        telegram_host [label="Telegram Bot Host\n(telegram_host.hpp)", fillcolor="#bfdbfe"];
+        term_cmd [label="Terminal Shell Generator\n(terminal_commands.cpp)", fillcolor="#bfdbfe"];
+        helpers [label="Productivity Helpers\n(Email, Chess, RSS)", fillcolor="#bfdbfe"];
+    }
+
+    subgraph cluster_core {
+        label="Rouen AI Core & Persona Network";
+        color="#f59e0b";
+        style=filled;
+        fillcolor="#fffbeb";
+
+        persona_mgr [label="Persona Manager\n(persona_manager.hpp)\n- Hierarchical Delegation\n- Tool Gating & Prompt Injection", fillcolor="#fde68a"];
+        llm_host [label="LLM Host & Config Manager\n(llm_host.hpp)\n- Multi-profile management\n- Quota & credential fallback", fillcolor="#fde68a"];
+        mcp_host [label="MCP Host Registry\n(mcp_host.hpp)\n- Function calling schemas\n- Multi-category dispatching", fillcolor="#fde68a"];
+    }
+
+    subgraph cluster_models {
+        label="Configured LLM Backends";
+        color="#10b981";
+        style=filled;
+        fillcolor="#ecfdf5";
+
+        gemini [label="Google Gemini API\n(gemini-3.8-flash)", fillcolor="#a7f3d0"];
+        grok [label="xAI Grok API\n(grok-3-latest)", fillcolor="#a7f3d0"];
+        openai [label="OpenAI API\n(gpt-4)", fillcolor="#a7f3d0"];
+        groq [label="Groq API\n(llama3-8b-8192)", fillcolor="#a7f3d0"];
+        local_mlx [label="Local MLX Server\n(Qwen3.5-9B-MLX-4bit)", fillcolor="#a7f3d0"];
+    }
+
+    subgraph cluster_tools {
+        label="MCP Tool Execution Targets";
+        color="#8b5cf6";
+        style=filled;
+        fillcolor="#f5f3ff";
+
+        system_ops [label="Built-in System Tools\n(Terminal, Editor, Deck, Notes,\nContacts, Process UI Automation)", fillcolor="#ddd6fe"];
+        active_cards [label="Dynamic Active Cards\n(Git, Weather, Calendar,\nPomodoro, Solar System, etc.)", fillcolor="#ddd6fe"];
+        mesh_tunnels [label="Mesh Virtual Routes\n(Remote Rouen API on Port 8081)", fillcolor="#ddd6fe"];
+    }
+
+    subgraph cluster_sync {
+        label="Multi-Device Synchronization";
+        color="#06b6d4";
+        style=filled;
+        fillcolor="#ecfeff";
+
+        uni_sync [label="Universal Sync Host\n(universal_sync_host.hpp)\ncache/personas/*.json & active.json", fillcolor="#a5f3fc"];
+    }
+
+    chat_card -> persona_mgr [label="User messages"];
+    telegram_host -> persona_mgr [label="Remote Telegram messages"];
+    term_cmd -> llm_host [label="Natural language query"];
+    helpers -> llm_host [label="Document / PGN analysis"];
+
+    persona_mgr -> llm_host [label="Bound config & prompt"];
+    persona_mgr -> mcp_host [label="Filter by allowed_mcps"];
+
+    llm_host -> gemini [label="Gemini Adapter"];
+    llm_host -> grok [label="CppGPT Adapter"];
+    llm_host -> openai [label="CppGPT Adapter"];
+    llm_host -> groq [label="CppGPT Adapter"];
+    llm_host -> local_mlx [label="HTTP (Local MLX)"];
+
+    chat_card -> mcp_host [label="Function calls"];
+    telegram_host -> mcp_host [label="Function calls"];
+
+    mcp_host -> system_ops [label="Executes built-in"];
+    mcp_host -> active_cards [label="Executes dynamic"];
+    mcp_host -> mesh_tunnels [label="mesh_query_remote_api"];
+
+    persona_mgr -> uni_sync [label="export_to_directory()"];
+    uni_sync -> persona_mgr [label="import_from_directory()"];
+}
