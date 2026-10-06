@@ -1,0 +1,109 @@
+digraph RouenMSVCArchitecture {
+    graph [
+        rankdir=TB,
+        bgcolor="#1E1E24",
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=14,
+        fontcolor="#FFFFFF",
+        pad="0.5",
+        nodesep="0.6",
+        ranksep="0.7",
+        splines=true
+    ];
+    node [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=11,
+        fontcolor="#FFFFFF",
+        style="filled,rounded",
+        shape=box,
+        margin="0.25,0.15",
+        penwidth=1.5
+    ];
+    edge [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=9,
+        fontcolor="#A0A0B0",
+        color="#5C6370",
+        penwidth=1.8,
+        arrowsize=0.8
+    ];
+
+    // Subgraph: User Interface Layer
+    subgraph cluster_ui {
+        label = "Developer Interface (Rouen Deck on Windows 11 & REST API)";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#61AFEF";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        deck [label="Rouen Windows Host\n(SDL3 DirectX/OpenGL & ImGui 1.91 Deck)", fillcolor="#21252B", color="#61AFEF"];
+        ai_chat [label="AI Chat Card\n• Code & Git Architect Persona\n• Conversational Intent Understanding\n• Autonomous Tool Dispatch", fillcolor="#353B45", color="#98C379"];
+        adaptive_card [label="Adaptive Card Engine\n• Rich UI Architecture & Spec Display\n• Task Priority & Monadic Overview", fillcolor="#353B45", color="#E5C07B"];
+        editor_card [label="Text Editor Card\n• C++23 Syntax Highlighting & Line Numbers\n• Margin Error Markers & Line Highlighting\n• Diagnostics Drawer & [⚡ Fix with AI]\n• Clean State & Diff Verification", fillcolor="#353B45", color="#C678DD"];
+        rest_api [label="Embedded REST API (:8081)\n• /api/cards/action & /api/editor\n• Headless CI/CD & Automated Triage", fillcolor="#21252B", color="#56B6C2"];
+    }
+
+    // Subgraph: Rouen AI & MCP Subsystem
+    subgraph cluster_ai_core {
+        label = "Rouen AI & Code MCP Subsystem";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#98C379";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        mcp_host [label="MCP Host & Service Registry\n• Tool Resolution & Dispatch\n• Dynamic Model Discovery (Gemini, Grok, MLX)\n• Low Temperature (0.1) & Strict Schemas", fillcolor="#3E4451", color="#98C379"];
+        code_tools [label="Code MCP Suite (14 Native Tools)\n• code_check_syntax  • code_apply_patch\n• code_read_file     • code_write_file\n• code_find_symbol   • code_search\n• code_undo / redo   • code_generate_conventional_commit", fillcolor="#31363F", color="#61AFEF"];
+    }
+
+    // Subgraph: 100% Microsoft Visual C++ Toolchain
+    subgraph cluster_msvc {
+        label = "Microsoft Toolchain (Visual Studio 2026 Community)";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#E5C07B";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        msbuild [label="MSBuild 18.9+ (amd64)\n• Cpp23TaskRunner.vcxproj\n• PlatformToolset: v145\n• Concurrency Control: /m:2", fillcolor="#353B45", color="#E5C07B"];
+        cl_compiler [label="MSVC Compiler (CL.exe v14.51+)\n• /std:c++latest /permissive-\n• /diagnostics:column /sdl /Zi\n• Whole Program Optimization (/GL)", fillcolor="#31363F", color="#E06C75"];
+        msvc_linker [label="MSVC Linker (link.exe)\n• Link-Time Code Generation (/LTCG)\n• Windows Subsystem: Console\n• Output: Cpp23TaskRunner.exe", fillcolor="#31363F", color="#98C379"];
+    }
+
+    // Subgraph: Modern C++23 Runtime & Target
+    subgraph cluster_runtime {
+        label = "Compiled Modern C++23 Application";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#56B6C2";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        cpp23_target [label="Cpp23TaskRunner.exe\n• Thread-Safe std::priority_queue\n• std::condition_variable_any & std::jthread\n• Monadic std::expected (and_then / or_else)", fillcolor="#21252B", color="#56B6C2"];
+    }
+
+    // Wiring edges
+    deck -> ai_chat [label="embeds card"];
+    deck -> adaptive_card [label="renders spec"];
+    deck -> editor_card [label="docks editor"];
+    rest_api -> ai_chat [label="dispatches actions"];
+    rest_api -> editor_card [label="controls viewport"];
+
+    ai_chat -> mcp_host [label="executes tools"];
+    mcp_host -> code_tools [label="dispatches"];
+
+    code_tools -> editor_card [label="loads code & markers", color="#C678DD"];
+    code_tools -> msbuild [label="invokes build", color="#E5C07B"];
+
+    msbuild -> cl_compiler [label="compiles sources", color="#E5C07B"];
+    cl_compiler -> msvc_linker [label="object files & LTCG", color="#E06C75"];
+    msvc_linker -> cpp23_target [label="generates binary", color="#98C379"];
+
+    cl_compiler -> editor_card [label="column diagnostics (error C2100)", color="#E06C75", style="dashed"];
+    editor_card -> ai_chat [label="[⚡ Fix with AI] trigger", color="#C678DD"];
+}

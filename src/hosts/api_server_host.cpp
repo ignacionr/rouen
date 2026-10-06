@@ -5876,21 +5876,21 @@ std::string api_server_host::handle_editor_action(struct mg_connection* /*c*/, s
     try {
         std::string action;
         int target_line = -1;
+        glz::json_t doc;
 
-        if (hm->query.len > 0) {
+        if (hm->body.len > 0) {
+            std::string body(hm->body.buf, hm->body.len);
+            if (!glz::read_json(doc, body)) {
+                if (doc.contains("action") && doc["action"].holds<std::string>()) action = doc["action"].get<std::string>();
+                if (doc.contains("line") && doc["line"].holds<double>()) target_line = static_cast<int>(doc["line"].get<double>());
+            }
+        }
+
+        if (action.empty() && hm->query.len > 0) {
             action = get_query_param(&hm->query, "action");
             std::string line_s = get_query_param(&hm->query, "line");
             if (!line_s.empty()) {
                 try { target_line = std::stoi(line_s); } catch (...) {}
-            }
-        }
-
-        if (action.empty() && hm->body.len > 0) {
-            std::string body(hm->body.buf, hm->body.len);
-            glz::json_t doc;
-            if (!glz::read_json(doc, body)) {
-                if (doc.contains("action") && doc["action"].holds<std::string>()) action = doc["action"].get<std::string>();
-                if (doc.contains("line") && doc["line"].holds<double>()) target_line = static_cast<int>(doc["line"].get<double>());
             }
         }
 
@@ -5914,13 +5914,32 @@ std::string api_server_host::handle_editor_action(struct mg_connection* /*c*/, s
             auto show_fn = registrar::get<std::function<void(bool)>>("editor_show_drawer");
             if (show_fn && *show_fn) (*show_fn)(false);
             return R"({"success":true,"message":"Closed diagnostics drawer"})";
+        } else if (action == "set_error" || action == "set_marker") {
+            int line = target_line > 0 ? target_line : 1;
+            std::string msg = "Compiler error";
+            if (doc.contains("message") && doc["message"].holds<std::string>()) msg = doc["message"].get<std::string>();
+            auto set_markers_fn = registrar::get<std::function<void(const std::map<int, std::string>&)>>("editor_set_error_markers");
+            if (set_markers_fn && *set_markers_fn) {
+                (*set_markers_fn)({{line, msg}});
+            }
+            auto set_diags_fn = registrar::get<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>("editor_set_diagnostics");
+            if (set_diags_fn && *set_diags_fn) {
+                rouen::helpers::Diagnostic d;
+                d.line = line;
+                d.severity = "error";
+                d.message = msg;
+                (*set_diags_fn)({d});
+            }
+            auto show_fn = registrar::get<std::function<void(bool)>>("editor_show_drawer");
+            if (show_fn && *show_fn) (*show_fn)(true);
+            return R"({"success":true,"message":"Set editor error marker and opened drawer"})";
         } else if (action == "close" || action == "clear") {
             auto clear_fn = registrar::get<std::function<void()>>("clear_editor");
             if (clear_fn && *clear_fn) (*clear_fn)();
             return R"({"success":true,"message":"Cleared editor"})";
         }
 
-        return R"({"error":"Unknown action. Supported: check_syntax, fix_ai, toggle_drawer, open_drawer, close_drawer, close"})";
+        return R"({"error":"Unknown action. Supported: check_syntax, fix_ai, toggle_drawer, open_drawer, close_drawer, set_error, close"})";
     } catch (const std::exception& e) {
         return std::format(R"({{"error":"{}"}})", e.what());
     }

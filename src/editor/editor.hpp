@@ -208,7 +208,25 @@ public:
             auto temp_dir = std::filesystem::temp_directory_path(ec);
             target_path = (ec ? std::filesystem::path("snapshot.png") : (temp_dir / "snapshot.png")).string();
         }
-        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        target_path = std::filesystem::path(target_path).make_preferred().string();
+        bool saved = false;
+        if (target_path.ends_with(".bmp")) {
+            saved = SDL_SaveBMP(surface, target_path.c_str());
+        } else {
+            saved = IMG_SavePNG(surface, target_path.c_str());
+            if (!saved) {
+                std::string bmp_path = target_path;
+                if (bmp_path.ends_with(".png")) {
+                    bmp_path = bmp_path.substr(0, bmp_path.length() - 4) + ".bmp";
+                } else {
+                    bmp_path += ".bmp";
+                }
+                if (SDL_SaveBMP(surface, bmp_path.c_str())) {
+                    saved = true;
+                    target_path = bmp_path;
+                }
+            }
+        }
         SDL_DestroySurface(surface);
         TextureHelper::destroyTexture(snapshot_texture);
 
@@ -216,7 +234,7 @@ public:
             return std::format(R"({{"success":true,"message":"Application snapshot saved","file":"{}","width":{},"height":{}}})",
                 target_path, capture_w, capture_h);
         } else {
-            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+            return std::format(R"({{"success":false,"error":"Failed to save snapshot: {}"}})", SDL_GetError());
         }
     }
 
@@ -246,7 +264,7 @@ public:
         }
 
         SDL_Surface* surface = rouen::helpers::download_gpu_texture(
-            device, snapshot_texture, width, height
+            device, snapshot_texture, capture_w, capture_h
         );
 
         if (!surface) {
@@ -260,15 +278,33 @@ public:
             auto temp_dir = std::filesystem::temp_directory_path(ec);
             target_path = (ec ? std::filesystem::path("editor_snapshot.png") : (temp_dir / "editor_snapshot.png")).string();
         }
-        bool saved = IMG_SavePNG(surface, target_path.c_str());
+        target_path = std::filesystem::path(target_path).make_preferred().string();
+        bool saved = false;
+        if (target_path.ends_with(".bmp")) {
+            saved = SDL_SaveBMP(surface, target_path.c_str());
+        } else {
+            saved = IMG_SavePNG(surface, target_path.c_str());
+            if (!saved) {
+                std::string bmp_path = target_path;
+                if (bmp_path.ends_with(".png")) {
+                    bmp_path = bmp_path.substr(0, bmp_path.length() - 4) + ".bmp";
+                } else {
+                    bmp_path += ".bmp";
+                }
+                if (SDL_SaveBMP(surface, bmp_path.c_str())) {
+                    saved = true;
+                    target_path = bmp_path;
+                }
+            }
+        }
         SDL_DestroySurface(surface);
         TextureHelper::destroyTexture(snapshot_texture);
 
         if (saved) {
             return std::format(R"({{"success":true,"message":"Editor snapshot saved","file":"{}","width":{},"height":{}}})",
-                target_path, width, height);
+                target_path, capture_w, capture_h);
         } else {
-            return std::format(R"({{"success":false,"error":"Failed to save PNG: {}"}})", SDL_GetError());
+            return std::format(R"({{"success":false,"error":"Failed to save snapshot: {}"}})", SDL_GetError());
         }
     }
 

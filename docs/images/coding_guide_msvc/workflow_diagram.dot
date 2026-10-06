@@ -1,0 +1,62 @@
+digraph RouenMSVCWorkflow {
+    graph [
+        rankdir=TB,
+        bgcolor="#1E1E24",
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=14,
+        fontcolor="#FFFFFF",
+        pad="0.5",
+        nodesep="0.6",
+        ranksep="0.6",
+        splines=true
+    ];
+    node [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=11,
+        fontcolor="#FFFFFF",
+        style="filled,rounded",
+        shape=box,
+        margin="0.25,0.15",
+        penwidth=1.5
+    ];
+    edge [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=9,
+        fontcolor="#A0A0B0",
+        color="#5C6370",
+        penwidth=1.8,
+        arrowsize=0.8
+    ];
+
+    // Nodes
+    start [label="Developer Intent\n'Create modern C++23 task runner on Windows\nwith priority queue and monadic expected'", shape=ellipse, fillcolor="#2C313A", color="#61AFEF"];
+    
+    ai_scaffold [label="1. Autonomous Scaffolding\n• Cpp23TaskRunner.vcxproj (PlatformToolset v145)\n• task_runner.hpp (WinTaskRunner, std::expected)\n• main.cpp (worker thread & priority tasks)", fillcolor="#353B45", color="#98C379"];
+    
+    msbuild_1 [label="2. MSBuild Compilation (/m:2)\ncl.exe /std:c++latest /diagnostics:column\nStructured diagnostic output", fillcolor="#353B45", color="#E5C07B"];
+    
+    msvc_defect [label="3. Compiler Diagnostics Caught\nerror C2100: you cannot dereference\nan operand of type 'int' (main.cpp:35)", fillcolor="#4C2D35", color="#E06C75"];
+    
+    editor_triage [label="4. Visual In-Editor Triage\n• Red gutter indicator & line highlight\n• Diagnostics drawer opened\n• One-click [⚡ Fix with AI] button", fillcolor="#353B45", color="#C678DD"];
+    
+    ai_patch [label="5. Surgical Self-Healing Patch\nRouen AI analyzes exact column diagnostic,\nremoves illegal dereference '*', and applies\nsurgical in-memory patch", fillcolor="#353B45", color="#56B6C2"];
+    
+    editor_clean [label="6. In-Editor Status Verification\n• Error cleared\n• Status bar updates to '✓ Clean'\n• Diagnostics drawer closes", fillcolor="#21252B", color="#98C379"];
+    
+    msbuild_2 [label="7. MSBuild Release Build\ncl.exe & link.exe (/LTCG)\n0 Warnings, 0 Errors", fillcolor="#21252B", color="#98C379"];
+    
+    runtime_exec [label="8. Binary Execution Verified\nCpp23TaskRunner.exe\nCritical -> High -> Normal -> Low\nAll tasks execute in strict priority order", shape=component, fillcolor="#21252B", color="#56B6C2"];
+    
+    commit [label="9. AI Conventional Commit\nfeat(runner): implement C++23 Windows task runner\nwith priority queue and monadic expected", shape=ellipse, fillcolor="#2C313A", color="#98C379"];
+
+    // Flow edges
+    start -> ai_scaffold [label="conversational prompt"];
+    ai_scaffold -> msbuild_1 [label="runs MSBuild"];
+    msbuild_1 -> msvc_defect [label="detects error C2100", color="#E06C75"];
+    msvc_defect -> editor_triage [label="populates drawer & gutter", color="#E06C75"];
+    editor_triage -> ai_patch [label="clicks [⚡ Fix with AI] or sends prompt", color="#C678DD"];
+    ai_patch -> editor_clean [label="reloads clean source", color="#56B6C2"];
+    editor_clean -> msbuild_2 [label="triggers recompile", color="#98C379"];
+    msbuild_2 -> runtime_exec [label="produces binary", color="#98C379"];
+    runtime_exec -> commit [label="synthesizes git commit", color="#61AFEF"];
+}

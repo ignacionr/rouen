@@ -373,8 +373,10 @@ public:
 #endif
                 float const scaled_min_height = card::min_card_height;
                 float const num_rows = static_cast<float>(std::max<size_t>(layout.rows.size(), 1));
+                bool const has_editor = !editor_.empty();
                 float const available_h = std::max(static_cast<float>(h) - title_bar_h, scaled_min_height);
-                float const row_height = std::max(available_h / num_rows, scaled_min_height);
+                float const cards_total_h = has_editor ? std::min(available_h * 0.48f, 360.0f) : available_h;
+                float const row_height = std::max(cards_total_h / num_rows, scaled_min_height);
                 float y = title_bar_h;
                 int req_fps = 0;
 
