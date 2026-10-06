@@ -713,6 +713,20 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
+    } else if (mg_match(hm->uri, mg_str("/api/editor/open"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_editor_open(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
+    } else if (mg_match(hm->uri, mg_str("/api/editor/action"), nullptr)) {
+        if (mg_strcmp(hm->method, mg_str("POST")) == 0 || mg_strcmp(hm->method, mg_str("GET")) == 0) {
+            response = handle_editor_action(c, hm);
+        } else {
+            status_code = 405;
+            response = R"({"error":"Method not allowed"})";
+        }
     } else if (mg_match(hm->uri, mg_str("/api/adlib/status"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_adlib_status(c, hm);
@@ -1694,6 +1708,12 @@ std::string api_server_host::handle_screenshot(struct mg_connection* /*c*/, stru
 
         if (req.target.empty()) {
             req.target = "deck";
+        }
+        if (req.width <= 0) {
+            req.width = (req.target == "deck") ? 1600 : 1200;
+        }
+        if (req.height <= 0) {
+            req.height = (req.target == "deck") ? 900 : 800;
         }
         if (req.filename.empty()) {
             std::error_code ec;
@@ -5781,6 +5801,129 @@ std::string api_server_host::handle_system_upgrade(struct mg_connection* /*c*/, 
         R"({{"status":"upgrading","message":"Upgrade initiated in detached background process. Rouen will shut down, upgrade binaries, and automatically reconnect to mesh and restore services in a few seconds.","script":"{}","install_dir":"{}"}})",
         script_path, exe_dir
     );
+}
+
+std::string api_server_host::handle_editor_open(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        std::string file_path;
+        int target_line = -1;
+        bool open_drawer = false;
+
+        if (hm->query.len > 0) {
+            file_path = get_query_param(&hm->query, "path");
+            if (file_path.empty()) file_path = get_query_param(&hm->query, "file");
+            std::string line_s = get_query_param(&hm->query, "line");
+            if (!line_s.empty()) {
+                try { target_line = std::stoi(line_s); } catch (...) {}
+            }
+            std::string drawer_s = get_query_param(&hm->query, "drawer");
+            if (drawer_s == "1" || drawer_s == "true") open_drawer = true;
+        }
+
+        if (file_path.empty() && hm->body.len > 0) {
+            std::string body(hm->body.buf, hm->body.len);
+            glz::json_t doc;
+            if (!glz::read_json(doc, body)) {
+                if (doc.contains("path") && doc["path"].holds<std::string>()) file_path = doc["path"].get<std::string>();
+                else if (doc.contains("file") && doc["file"].holds<std::string>()) file_path = doc["file"].get<std::string>();
+                if (doc.contains("line") && doc["line"].holds<double>()) target_line = static_cast<int>(doc["line"].get<double>());
+                if (doc.contains("drawer") && doc["drawer"].holds<bool>()) open_drawer = doc["drawer"].get<bool>();
+            }
+        }
+
+        if (file_path.empty()) {
+            return R"({"error":"Missing path parameter"})";
+        }
+
+        auto edit_fn = registrar::get<std::function<void(std::string const&)>>("edit");
+        if (!edit_fn || !*edit_fn) {
+            return R"({"error":"Editor service not available"})";
+        }
+
+        (*edit_fn)(file_path);
+
+        // Run syntax check on the file so error markers and diagnostics are populated
+        auto syntax_res = helpers::SyntaxChecker::instance().check_file(file_path);
+        auto set_diags_fn = registrar::get<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>("editor_set_diagnostics");
+        if (set_diags_fn && *set_diags_fn) {
+            (*set_diags_fn)(syntax_res.diagnostics);
+        }
+
+        auto markers = helpers::SyntaxChecker::to_error_markers(syntax_res.diagnostics, file_path);
+        auto set_markers_fn = registrar::get<std::function<void(const std::map<int, std::string>&)>>("editor_set_error_markers");
+        if (set_markers_fn && *set_markers_fn) {
+            (*set_markers_fn)(markers);
+        }
+
+        if (target_line > 0) {
+            auto jump_fn = registrar::get<std::function<void(int)>>("editor_jump_to_line");
+            if (jump_fn && *jump_fn) (*jump_fn)(target_line);
+        }
+
+        if (open_drawer) {
+            auto show_drawer_fn = registrar::get<std::function<void(bool)>>("editor_show_drawer");
+            if (show_drawer_fn && *show_drawer_fn) (*show_drawer_fn)(true);
+        }
+
+        return std::format(R"({{"success":true,"message":"Opened file in editor","file":"{}","diagnostics_count":{}}})",
+            file_path, syntax_res.diagnostics.size());
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
+}
+
+std::string api_server_host::handle_editor_action(struct mg_connection* /*c*/, struct mg_http_message* hm) {
+    try {
+        std::string action;
+        int target_line = -1;
+
+        if (hm->query.len > 0) {
+            action = get_query_param(&hm->query, "action");
+            std::string line_s = get_query_param(&hm->query, "line");
+            if (!line_s.empty()) {
+                try { target_line = std::stoi(line_s); } catch (...) {}
+            }
+        }
+
+        if (action.empty() && hm->body.len > 0) {
+            std::string body(hm->body.buf, hm->body.len);
+            glz::json_t doc;
+            if (!glz::read_json(doc, body)) {
+                if (doc.contains("action") && doc["action"].holds<std::string>()) action = doc["action"].get<std::string>();
+                if (doc.contains("line") && doc["line"].holds<double>()) target_line = static_cast<int>(doc["line"].get<double>());
+            }
+        }
+
+        if (action == "check_syntax") {
+            auto check_fn = registrar::get<std::function<void()>>("editor_check_syntax");
+            if (check_fn && *check_fn) (*check_fn)();
+            return R"({"success":true,"message":"Triggered editor syntax check"})";
+        } else if (action == "fix_ai") {
+            auto fix_fn = registrar::get<std::function<void(int)>>("editor_fix_with_ai");
+            if (fix_fn && *fix_fn) (*fix_fn)(target_line > 0 ? target_line : 1);
+            return R"({"success":true,"message":"Triggered Fix with AI from editor"})";
+        } else if (action == "toggle_drawer") {
+            auto toggle_fn = registrar::get<std::function<void()>>("editor_toggle_drawer");
+            if (toggle_fn && *toggle_fn) (*toggle_fn)();
+            return R"({"success":true,"message":"Toggled diagnostics drawer"})";
+        } else if (action == "open_drawer") {
+            auto show_fn = registrar::get<std::function<void(bool)>>("editor_show_drawer");
+            if (show_fn && *show_fn) (*show_fn)(true);
+            return R"({"success":true,"message":"Opened diagnostics drawer"})";
+        } else if (action == "close_drawer") {
+            auto show_fn = registrar::get<std::function<void(bool)>>("editor_show_drawer");
+            if (show_fn && *show_fn) (*show_fn)(false);
+            return R"({"success":true,"message":"Closed diagnostics drawer"})";
+        } else if (action == "close" || action == "clear") {
+            auto clear_fn = registrar::get<std::function<void()>>("clear_editor");
+            if (clear_fn && *clear_fn) (*clear_fn)();
+            return R"({"success":true,"message":"Cleared editor"})";
+        }
+
+        return R"({"error":"Unknown action. Supported: check_syntax, fix_ai, toggle_drawer, open_drawer, close_drawer, close"})";
+    } catch (const std::exception& e) {
+        return std::format(R"({{"error":"{}"}})", e.what());
+    }
 }
 
 } // namespace rouen::hosts

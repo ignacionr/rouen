@@ -1,58 +1,118 @@
-#include "task_queue.hpp"
-#include <print>
+#include <iostream>
+#include <coroutine>
+#include <queue>
+#include <vector>
+#include <optional>
+#include <expected>
+#include <functional>
+#include <variant>
+#include <concepts>
 #include <thread>
 #include <chrono>
-#include <string>
 
-struct Task {
+namespace task_queue {
+
+// Monadic error types
+enum class TaskError {
+    Cancelled,
+    Timeout,
+    ExecutionFailed,
+    QueueClosed
+};
+
+template<typename T>
+using Result = std::expected<T, TaskError>;
+
+// Priority levels
+enum class Priority {
+    Low = 0,
+    Normal = 1,
+    High = 2,
+    Critical = 3
+};
+
+struct TaskItem {
     int id;
-    std::string description;
+    Priority priority;
+    std::function<void()> callback;
 
-    void execute() const {
-        std::println("[Task {}] Executing: {}", id, description);
+    // Higher priority comes first
+    bool operator<(const TaskItem& other) const {
+        return static_cast<int>(priority) < static_cast<int>(other.priority);
     }
 };
 
+class PriorityTaskQueue {
+private:
+    std::priority_queue<TaskItem> queue_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    bool closed_ = false;
+    int next_id_ = 1;
+
+public:
+    PriorityTaskQueue() = default;
+    ~PriorityTaskQueue() {
+        close();
+    }
+
+    Result<int> push(Priority p, std::function<void()> cb) {
+        std::unique_lock lock(mutex_);
+        if (closed_) {
+            return std::unexpected(TaskError::QueueClosed);
+        }
+        int id = next_id_++;
+        queue_.push(TaskItem{id, p, std::move(cb)});
+        cv_.notify_one();
+        return id;
+    }
+
+    Result<TaskItem> pop() {
+        std::unique_lock lock(mutex_);
+        cv_.wait(lock, [this] { return !queue_.empty() || closed_; });
+        
+        if (queue_.empty() && closed_) {
+            return std::unexpected(TaskError::QueueClosed);
+        }
+
+        auto item = std::move(const_cast<TaskItem&>(queue_.top()));
+        queue_.pop();
+        return item;
+    }
+
+    void close() {
+        std::unique_lock lock(mutex_);
+        closed_ = true;
+        cv_.notify_all();
+    }
+};
+
+} // namespace task_queue
+
 int main() {
-    std::println("=== Modern C++23 Task Queue Demo ===");
+    using namespace task_queue;
+    std::cout << "[C++23 Task Queue] Initializing priority queue with monadic error handling...\n";
 
-    TaskQueue<Task> queue;
+    PriorityTaskQueue queue;
 
-    // Producer thread
-    std::jthread producer([&queue] {
-        for (int i = 1; i <= 3; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            Task t{i, std::format("Data processing job #{}", i)};
-            std::println("[Producer] Pushing task {}: {}", t.id, t.description);
-            queue.push(t);
-        }
-    });
+    // Push tasks with varying priorities
+    auto r1 = queue.push(Priority::Normal, [] { std::cout << "Executing Normal task #1\n"; });
+    auto r2 = queue.push(Priority::Critical, [] { std::cout << "Executing CRITICAL task #2\n"; });
+    auto r3 = queue.push(Priority::Low, [] { std::cout << "Executing Low priority task #3\n"; });
 
-    // Consumer thread using std::expected monadic operations
-    std::jthread consumer([&queue] {
-        for (int i = 0; i < 3; ++i) {
-            auto result = queue.pop_for(std::chrono::seconds(2));
-            
-            // Demonstrate C++23 std::expected monadic .and_then() / .transform() or simple check
-            result
-                .and_then([](Task task) -> std::expected<Task, TaskError> {
-                    std::println("[Consumer] Successfully popped task ID {}", task.id);
-                    return task;
-                })
-                .transform([](Task task) {
-                    task.execute();
-                    return task;
-                })
-                .or_else([](TaskError err) {
-                    std::println("[Consumer] Failed to pop task with error code: {}", static_cast<int>(err));
-                    return std::expected<Task, TaskError>{std::unexpected(err)};
-                });
-        }
-    });
+    if (r1 && r2 && r3) {
+        std::cout << "Successfully queued tasks with IDs: " << *r1 << ", " << *r2 << ", " << *r3 << "\n";
+    }
 
-    producer.join();
-    consumer.join();
+    queue.close();
 
-    std::println("=== Task Queue Demo Completed Successfully ===");
+    // Consume tasks
+    while (auto task_res = queue.pop()) {
+        auto& task = *task_res;
+        std::cout << "Popped task ID " << task.id << " with priority " << static_cast<int>(task.priority) << "\n";
+        task.callback();
+    }
+
+    std::cout << "[C++23 Task Queue] Completed successfully.\n";
     return 0;
 }

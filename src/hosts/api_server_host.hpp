@@ -95,6 +95,8 @@ public:
     static std::string handle_system_upgrade(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_version(struct mg_connection* c, struct mg_http_message* hm);
     static std::string handle_system_upgrade_status(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_editor_open(struct mg_connection* c, struct mg_http_message* hm);
+    static std::string handle_editor_action(struct mg_connection* c, struct mg_http_message* hm);
 
 private:
     void server_loop();

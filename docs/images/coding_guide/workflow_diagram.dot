@@ -1,0 +1,123 @@
+digraph RouenWorkflow {
+    graph [
+        rankdir=TB,
+        bgcolor="#1E1E24",
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=14,
+        fontcolor="#FFFFFF",
+        pad="0.5",
+        nodesep="0.5",
+        ranksep="0.6",
+        splines=true
+    ];
+    node [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=11,
+        fontcolor="#FFFFFF",
+        style="filled,rounded",
+        shape=box,
+        margin="0.25,0.15",
+        penwidth=1.5
+    ];
+    edge [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=9,
+        fontcolor="#ABB2BF",
+        color="#5C6370",
+        penwidth=1.8,
+        arrowsize=0.8
+    ];
+
+    // Step 1: Input / Intent
+    subgraph cluster_input {
+        label = "1. Developer Intent & Interaction";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#61AFEF";
+        fontsize = 12;
+        style = "rounded,filled";
+        margin = 12;
+
+        natural_prompt [label="Natural Language Prompt\ne.g., 'Build a C++23 task queue with std::expected'\n(No MCP tools or technical syntax quoted!)", fillcolor="#353B45", color="#61AFEF"];
+        ui_actions [label="One-Click Deck Buttons\n• [Check Syntax Only]  • [⚡ Fix with AI]\n• [Conventional Commit]  • [Build (-j2)]", fillcolor="#353B45", color="#98C379"];
+    }
+
+    // Step 2: Rouen AI Reasoning
+    subgraph cluster_ai {
+        label = "2. Rouen AI Autonomous Orchestration";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#98C379";
+        fontsize = 12;
+        style = "rounded,filled";
+        margin = 12;
+
+        ai_reasoning [label="Code & Git Architect Persona\n• Interprets user intent & standards (C++20/C++23)\n• Autonomously selects appropriate MCP tools\n• Low temperature (0.1) for surgical accuracy", fillcolor="#3E4451", color="#98C379"];
+        tool_dispatch [label="Autonomous Tool Invocation\n• code_write_file / code_apply_patch\n• code_find_symbol / code_search\n• code_generate_conventional_commit", fillcolor="#31363F", color="#61AFEF"];
+    }
+
+    // Step 3: Editor & Syntax Verification
+    subgraph cluster_verification {
+        label = "3. In-Editor Display & Zero-Cost Verification";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#E5C07B";
+        fontsize = 12;
+        style = "rounded,filled";
+        margin = 12;
+
+        editor_display [label="Text Editor Card\n• Real-time Syntax Highlighting\n• Red Margin Markers & Line Highlights\n• Status Bar: 'Ln X, Col Y | ✓ Clean / ⚠ Errors'", fillcolor="#31363F", color="#C678DD"];
+        syntax_engine [label="Fast Compiler Syntax Check\n• Clang/GCC: -fsyntax-only\n• MSVC: /Zs /nologo\n• Sub-second verification without linking", fillcolor="#31363F", color="#E5C07B"];
+    }
+
+    // Step 4: Decision & Triage
+    syntax_decision [label="Compiler Errors\nDetected?", shape=diamond, fillcolor="#21252B", color="#E5C07B", fontcolor="#FFFFFF"];
+
+    subgraph cluster_triage {
+        label = "Diagnostics & Autonomous Self-Correction";
+        color = "#E06C75";
+        bgcolor = "#2C2226";
+        fontcolor = "#E06C75";
+        fontsize = 12;
+        style = "rounded,filled";
+        margin = 12;
+
+        drawer [label="Diagnostics Drawer & Tree\n• Red error badges & compiler messages\n• Click to jump directly to error line\n• 1-Click [⚡ Fix with AI] button", fillcolor="#3A282D", color="#E06C75"];
+        auto_loop [label="Self-Correction Feedback Loop\n• code_apply_patch automatically runs compiler\n• Compiler errors returned in tool result\n• AI immediately iterates until 0 errors", fillcolor="#3A282D", color="#E5C07B"];
+    }
+
+    // Step 5: Build & Commit
+    subgraph cluster_delivery {
+        label = "4. Verified Build & Conventional Commit";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#98C379";
+        fontsize = 12;
+        style = "rounded,filled";
+        margin = 12;
+
+        safe_build [label="Safe Parallel Build\n• Ninja / Make / MSVC\n• STRICTLY limited to -j2\n• Guaranteed RAM safety (<16GB)", fillcolor="#31363F", color="#98C379"];
+        conventional_commit [label="AI Conventional Commit Modal\n• Analyzes workspace git diff\n• Synthesizes structured feat/fix message\n• 1-Click [✓ Stage & Commit]", fillcolor="#31363F", color="#56B6C2"];
+    }
+
+    // Edges
+    natural_prompt -> ai_reasoning;
+    ui_actions -> syntax_engine [label="Check Syntax", color="#E5C07B"];
+    ui_actions -> ai_reasoning [label="[⚡ Fix with AI]", color="#98C379"];
+    ui_actions -> safe_build [label="Build", color="#98C379"];
+    ui_actions -> conventional_commit [label="Conventional Commit", color="#56B6C2"];
+
+    ai_reasoning -> tool_dispatch;
+    tool_dispatch -> editor_display [label="updates buffer", color="#C678DD"];
+    tool_dispatch -> syntax_engine [label="triggers check", color="#E5C07B"];
+
+    editor_display -> syntax_engine;
+    syntax_engine -> syntax_decision;
+
+    syntax_decision -> drawer [label="Yes (Errors)", color="#E06C75"];
+    drawer -> auto_loop;
+    auto_loop -> ai_reasoning [label="Feeds compiler errors back to AI", color="#E06C75"];
+
+    syntax_decision -> safe_build [label="No (0 Errors)", color="#98C379"];
+    safe_build -> conventional_commit [label="Tests & Executable Pass", color="#98C379"];
+}

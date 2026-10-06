@@ -182,8 +182,13 @@ namespace rouen::fonts {
                 DEBUG_WARN("Failed to load Material Icons font file. Icons may not render correctly.");
             }
 
-            // Merge NotoSansSymbols-Regular.ttf if available
+            // Merge system symbol fonts (Apple Symbols, Arial Unicode, Segoe UI Symbol, DejaVu Sans, Noto Sans Symbols)
             std::vector<std::string> symbol_font_names = {
+                "Apple Symbols.ttf",
+                "Arial Unicode.ttf",
+                "SegoeUISymbol.ttf",
+                "segoeui.ttf",
+                "DejaVuSans.ttf",
                 "NotoSansSymbols-Regular.ttf",
                 "NotoSansSymbols-Regular.otf"
             };
@@ -193,7 +198,7 @@ namespace rouen::fonts {
                 sym_config.MergeMode = true;
                 sym_config.PixelSnapH = true;
                 static const ImWchar sym_ranges[] = { 0x2000, 0x2BFF, 0 };
-                DEBUG_INFO(std::format("Loading Noto Sans Symbols font from: {}", symbol_font_path.string()));
+                DEBUG_INFO(std::format("Loading symbols font from: {}", symbol_font_path.string()));
                 io_fonts->AddFontFromFileTTF(symbol_font_path.string().c_str(), icon_size, &sym_config, sym_ranges);
             }
         }

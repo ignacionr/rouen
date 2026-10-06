@@ -17,6 +17,7 @@
 #include "../../registrar.hpp"
 #include "../../helpers/debug.hpp" // Add debug header
 #include "travel_plan.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 namespace rouen::cards {
 
@@ -326,7 +327,7 @@ public:
             
             // Calendar button
             ImGui::SameLine();
-            if (ImGui::Button("📅##start_date")) {
+            if (ImGui::Button(ICON_MD_CALENDAR_TODAY "##start_date")) {
                 open_start_date_picker = true;
             }
             if (ImGui::IsItemHovered()) {
@@ -365,7 +366,7 @@ public:
             
             // Calendar button
             ImGui::SameLine();
-            if (ImGui::Button("📅##end_date")) {
+            if (ImGui::Button(ICON_MD_CALENDAR_TODAY "##end_date")) {
                 open_end_date_picker = true;
             }
             if (ImGui::IsItemHovered()) {

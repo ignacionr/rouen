@@ -22,6 +22,7 @@
 #endif
 
 #include "../../helpers/imgui_include.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/drive_benchmark.hpp"
 #include "../../helpers/card_render_metrics.hpp"
 #include "../../helpers/vu_meter.hpp"
@@ -652,7 +653,7 @@ struct sysinfo_card : public card {
         {
             glz::json_t title;
             title["type"] = "TextBlock";
-            title["text"] = "🖥️ System Information";
+            title["text"] = ICON_MD_COMPUTER " System Information";
             title["weight"] = "Bolder";
             title["size"] = "Large";
             body.push_back(std::move(title));

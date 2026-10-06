@@ -10,6 +10,7 @@
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/string_helper.hpp"
 #include "../../models/git_process_helper.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 namespace rouen::cards {
 
@@ -217,13 +218,13 @@ bool diff_card::apply_to_disk() {
         if (current_staged_id_.empty()) return false;
         bool ok = editor.apply_staged_edit(current_staged_id_, true);
         if (ok) {
-            status_message_ = "✓ Applied accepted chunks to disk. Automated syntax check passed.";
+            status_message_ = ICON_MD_CHECK " Applied accepted chunks to disk. Automated syntax check passed.";
             status_message_is_error_ = false;
             status_message_timer_ = 5.0f;
             load_staged_edit(0);
             return true;
         } else {
-            status_message_ = "🔴 Failed to apply staged edit to disk.";
+            status_message_ = ICON_MD_ERROR " Failed to apply staged edit to disk.";
             status_message_is_error_ = true;
             status_message_timer_ = 6.0f;
             return false;
@@ -239,17 +240,17 @@ bool diff_card::apply_to_disk() {
         auto write_res = editor.write_file(file_path_, final_content, true);
         if (write_res.success) {
             if (write_res.syntax_check_passed) {
-                status_message_ = std::format("✓ Changes applied to disk. Syntax check passed with 0 errors.");
+                status_message_ = std::format(ICON_MD_CHECK " Changes applied to disk. Syntax check passed with 0 errors.");
                 status_message_is_error_ = false;
             } else {
-                status_message_ = std::format("⚠️ Applied to disk, but compiler reported {} error(s).", write_res.error_count);
+                status_message_ = std::format(ICON_MD_WARNING " Applied to disk, but compiler reported {} error(s).", write_res.error_count);
                 status_message_is_error_ = true;
             }
             status_message_timer_ = 5.0f;
             load_file_vs_head(file_path_);
             return true;
         } else {
-            status_message_ = "🔴 Failed writing changes to disk.";
+            status_message_ = ICON_MD_ERROR " Failed writing changes to disk.";
             status_message_is_error_ = true;
             status_message_timer_ = 6.0f;
             return false;
@@ -276,7 +277,7 @@ bool diff_card::render() {
         if (!diff_.has_changes) {
             ImGui::Spacing();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
-            ImGui::Text("✓ File is clean. No differences found between base and proposed content.");
+            ImGui::Text(ICON_MD_CHECK " File is clean. No differences found between base and proposed content.");
             ImGui::PopStyleColor();
             ImGui::Spacing();
             return;
@@ -299,7 +300,7 @@ void diff_card::render_toolbar() {
     // Source buttons
     auto& editor = rouen::helpers::CodeEditorService::instance();
     auto staged_list = editor.get_staged_edits();
-    std::string staged_btn = std::format("🤖 Staged AI ({})", staged_list.size());
+    std::string staged_btn = std::format(ICON_MD_SMART_TOY " Staged AI ({})", staged_list.size());
 
     bool is_staged = (source_mode_ == DiffSource::StagedAI);
     if (is_staged) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.75f, 1.0f));
@@ -311,7 +312,7 @@ void diff_card::render_toolbar() {
     ImGui::SameLine();
     bool is_git = (source_mode_ == DiffSource::GitHead);
     if (is_git) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.75f, 1.0f));
-    if (ImGui::Button("🌿 Git vs HEAD")) {
+    if (ImGui::Button(ICON_MD_CALL_SPLIT " Git vs HEAD")) {
         refresh_sources();
         if (!git_modified_files_.empty()) {
             load_file_vs_head(git_modified_files_[0]);
@@ -324,14 +325,14 @@ void diff_card::render_toolbar() {
     // Mode Toggle (Right aligned)
     ImGui::SameLine(avail_w - 180.0f);
     if (view_mode_ == DiffViewMode::SideBySide) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.75f, 1.0f));
-    if (ImGui::SmallButton("◫ Split")) {
+    if (ImGui::SmallButton(ICON_MD_COMPARE " Split")) {
         view_mode_ = DiffViewMode::SideBySide;
     }
     if (view_mode_ == DiffViewMode::SideBySide) ImGui::PopStyleColor();
 
     ImGui::SameLine();
     if (view_mode_ == DiffViewMode::Unified) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.75f, 1.0f));
-    if (ImGui::SmallButton("☰ Unified")) {
+    if (ImGui::SmallButton(ICON_MD_VIEW_STREAM " Unified")) {
         view_mode_ = DiffViewMode::Unified;
     }
     if (view_mode_ == DiffViewMode::Unified) ImGui::PopStyleColor();
@@ -339,7 +340,7 @@ void diff_card::render_toolbar() {
     // History Toggle
     ImGui::SameLine();
     auto history = editor.get_history();
-    std::string hist_label = std::format("⏱ History ({})", history.size());
+    std::string hist_label = std::format(ICON_MD_HISTORY " History ({})", history.size());
     if (show_history_drawer_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.35f, 0.45f, 1.0f));
     if (ImGui::SmallButton(hist_label.c_str())) {
         show_history_drawer_ = !show_history_drawer_;
@@ -391,14 +392,14 @@ void diff_card::render_toolbar() {
     // Row 3: Bulk Actions & Apply to Disk
     ImGui::SameLine(avail_w - 320.0f);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.35f, 0.2f, 0.8f));
-    if (ImGui::SmallButton("✓ Accept All")) {
+    if (ImGui::SmallButton(ICON_MD_CHECK " Accept All")) {
         accept_all();
     }
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.18f, 0.18f, 0.8f));
-    if (ImGui::SmallButton("✗ Discard All")) {
+    if (ImGui::SmallButton(ICON_MD_CLOSE " Discard All")) {
         discard_all();
     }
     ImGui::PopStyleColor();
@@ -406,7 +407,7 @@ void diff_card::render_toolbar() {
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.3f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.6f, 0.35f, 1.0f));
-    if (ImGui::SmallButton("💾 Apply to Disk")) {
+    if (ImGui::SmallButton(ICON_MD_SAVE " Apply to Disk")) {
         apply_to_disk();
     }
     ImGui::PopStyleColor(2);
@@ -448,9 +449,9 @@ void diff_card::render_side_by_side() {
         // Status badge
         ImGui::SameLine();
         if (chunk.status == rouen::helpers::ChunkStatus::Accepted) {
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "[ACCEPTED ✓]");
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "[ACCEPTED " ICON_MD_CHECK "]");
         } else if (chunk.status == rouen::helpers::ChunkStatus::Discarded) {
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[DISCARDED ✗]");
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[DISCARDED " ICON_MD_CLOSE "]");
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "[PENDING]");
         }
@@ -458,20 +459,20 @@ void diff_card::render_side_by_side() {
         // Per-chunk controls (right aligned)
         ImGui::SameLine(avail_w - 180.0f);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.35f, 0.15f, 0.8f));
-        if (ImGui::SmallButton("✓ Accept")) {
+        if (ImGui::SmallButton(ICON_MD_CHECK " Accept")) {
             accept_chunk(chunk.id);
         }
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.15f, 0.15f, 0.8f));
-        if (ImGui::SmallButton("✗ Discard")) {
+        if (ImGui::SmallButton(ICON_MD_CLOSE " Discard")) {
             discard_chunk(chunk.id);
         }
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
-        if (ImGui::SmallButton("↺ Reset")) {
+        if (ImGui::SmallButton(ICON_MD_REFRESH " Reset")) {
             reset_chunk(chunk.id);
         }
 
@@ -559,9 +560,9 @@ void diff_card::render_unified() {
         // Status badge
         ImGui::SameLine();
         if (chunk.status == rouen::helpers::ChunkStatus::Accepted) {
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "[ACCEPTED ✓]");
+            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "[ACCEPTED " ICON_MD_CHECK "]");
         } else if (chunk.status == rouen::helpers::ChunkStatus::Discarded) {
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[DISCARDED ✗]");
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "[DISCARDED " ICON_MD_CLOSE "]");
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "[PENDING]");
         }
@@ -569,20 +570,20 @@ void diff_card::render_unified() {
         // Action buttons
         ImGui::SameLine(avail_w - 180.0f);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.35f, 0.15f, 0.8f));
-        if (ImGui::SmallButton("✓ Accept")) {
+        if (ImGui::SmallButton(ICON_MD_CHECK " Accept")) {
             accept_chunk(chunk.id);
         }
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.15f, 0.15f, 0.8f));
-        if (ImGui::SmallButton("✗ Discard")) {
+        if (ImGui::SmallButton(ICON_MD_CLOSE " Discard")) {
             discard_chunk(chunk.id);
         }
         ImGui::PopStyleColor();
 
         ImGui::SameLine();
-        if (ImGui::SmallButton("↺ Reset")) {
+        if (ImGui::SmallButton(ICON_MD_REFRESH " Reset")) {
             reset_chunk(chunk.id);
         }
 

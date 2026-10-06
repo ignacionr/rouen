@@ -1055,7 +1055,7 @@ void git::render_conventional_commit_modal() {
     if (!show_commit_dialog_) return;
 
     ImGui::Separator();
-    ImGui::TextColored(colors[0], "🤖 AI Conventional Commit Review");
+    ImGui::TextColored(colors[0], ICON_MD_SMART_TOY " AI Conventional Commit Review");
 
     if (ai_request_pending) {
         ImGui::TextColored(colors[4], "Synthesizing Conventional Commit message... |");
@@ -1078,19 +1078,19 @@ void git::render_conventional_commit_modal() {
 
     ImGui::InputTextMultiline("##GitCommitMsg", commit_message_buf_, sizeof(commit_message_buf_), ImVec2(-1, 90));
 
-    if (ImGui::Button("💾 Stage & Commit")) {
+    if (ImGui::Button(ICON_MD_SAVE " Stage & Commit")) {
         commit_with_reviewed_message();
     }
     ImGui::SameLine();
-    if (ImGui::Button("📋 Copy")) {
+    if (ImGui::Button(ICON_MD_CONTENT_COPY " Copy")) {
         ImGui::SetClipboardText(commit_message_buf_);
     }
     ImGui::SameLine();
-    if (ImGui::Button("↺ Regenerate")) {
+    if (ImGui::Button(ICON_MD_REFRESH " Regenerate")) {
         open_conventional_commit_dialog();
     }
     ImGui::SameLine();
-    if (ImGui::Button("✗ Cancel")) {
+    if (ImGui::Button(ICON_MD_CANCEL " Cancel")) {
         show_commit_dialog_ = false;
     }
 }

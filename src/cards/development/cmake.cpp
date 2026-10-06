@@ -26,6 +26,7 @@
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/syntax_checker.hpp"
 #include "../../helpers/conventional_commit.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 #include "../../registrar.hpp"
 
 namespace rouen::cards {
@@ -536,11 +537,11 @@ namespace rouen::cards {
                 ImGui::TextColored(colors[4], "Checking syntax... |");
             } else if (syntax_result_.has_value()) {
                 if (syntax_result_->success) {
-                    ImGui::TextColored(colors[3], "✓ Syntax Check Passed (0 errors, %zu warnings) for %s",
+                    ImGui::TextColored(colors[3], ICON_MD_CHECK " Syntax Check Passed (0 errors, %zu warnings) for %s",
                         syntax_result_->warning_count,
                         std::filesystem::path(syntax_result_->file_path).filename().string().c_str());
                 } else {
-                    ImGui::TextColored(colors[2], "✗ Syntax Check Failed (%zu errors, %zu warnings) for %s",
+                    ImGui::TextColored(colors[2], ICON_MD_CLOSE " Syntax Check Failed (%zu errors, %zu warnings) for %s",
                         syntax_result_->error_count,
                         syntax_result_->warning_count,
                         std::filesystem::path(syntax_result_->file_path).filename().string().c_str());
@@ -561,7 +562,7 @@ namespace rouen::cards {
                                 if (jump_fn && *jump_fn) (*jump_fn)(d.line);
                             }
                             ImGui::SameLine();
-                            if (ImGui::SmallButton("Fix with AI")) {
+                            if (ImGui::SmallButton(ICON_MD_AUTO_AWESOME " Fix with AI")) {
                                 triage_build_error_with_ai(d);
                             }
                             ImGui::PopID();
@@ -573,7 +574,7 @@ namespace rouen::cards {
             // Build Failure Triage Panel
             if (!build_diagnostics_.empty()) {
                 ImGui::Separator();
-                ImGui::TextColored(colors[2], "⚡ Build Failure Triage (%zu issues detected)", build_diagnostics_.size());
+                ImGui::TextColored(colors[2], ICON_MD_WARNING " Build Failure Triage (%zu issues detected)", build_diagnostics_.size());
                 if (!triage_ai_feedback_.empty()) {
                     ImGui::TextColored(colors[3], "%s", triage_ai_feedback_.c_str());
                 }
@@ -597,7 +598,7 @@ namespace rouen::cards {
                         if (jump_fn && *jump_fn) (*jump_fn)(d.line);
                     }
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("⚡ Investigate & Fix with AI")) {
+                    if (ImGui::SmallButton(ICON_MD_AUTO_AWESOME " Investigate & Fix with AI")) {
                         triage_build_error_with_ai(d);
                     }
                     ImGui::Separator();
@@ -609,7 +610,7 @@ namespace rouen::cards {
             // AI Conventional Commit Review Section
             if (show_commit_dialog_) {
                 ImGui::Separator();
-                ImGui::TextColored(colors[0], "🤖 AI Conventional Commit Review");
+                ImGui::TextColored(colors[0], ICON_MD_SMART_TOY " AI Conventional Commit Review");
                 if (is_generating_commit_) {
                     ImGui::TextColored(colors[4], "Analyzing git diff & synthesizing Conventional Commit... |");
                 } else {
@@ -629,19 +630,19 @@ namespace rouen::cards {
 
                     ImGui::InputTextMultiline("##CommitMsg", commit_message_buf_, sizeof(commit_message_buf_), ImVec2(-1, 90));
 
-                    if (ImGui::Button("💾 Stage & Commit")) {
+                    if (ImGui::Button(ICON_MD_SAVE " Stage & Commit")) {
                         commit_with_conventional_message();
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button("📋 Copy")) {
+                    if (ImGui::Button(ICON_MD_CONTENT_COPY " Copy")) {
                         ImGui::SetClipboardText(commit_message_buf_);
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button("↺ Regenerate")) {
+                    if (ImGui::Button(ICON_MD_REFRESH " Regenerate")) {
                         generate_conventional_commit();
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button("✗ Cancel")) {
+                    if (ImGui::Button(ICON_MD_CANCEL " Cancel")) {
                         show_commit_dialog_ = false;
                     }
                 }

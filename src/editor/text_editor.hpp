@@ -22,6 +22,7 @@
 #include "../helpers/syntax_checker.hpp"
 #include "../helpers/persona_manager.hpp"
 #include "../helpers/string_helper.hpp"
+#include "../../external/IconsMaterialDesign.h"
 #include "../registrar.hpp"
 
 namespace rouen {
@@ -199,6 +200,7 @@ public:
     bool isCheckingSyntax() const { return is_checking_syntax_; }
     bool isDiagnosticsDrawerOpen() const { return show_diagnostics_drawer_; }
     void toggleDiagnosticsDrawer() { show_diagnostics_drawer_ = !show_diagnostics_drawer_; }
+    void showDiagnosticsDrawer(bool show) { show_diagnostics_drawer_ = show; }
 
     void jumpToLine(int line) {
         if (line < 1) line = 1;
@@ -575,11 +577,11 @@ private:
             ImGui::PopStyleColor();
 
             ImGui::SameLine();
-            if (ImGui::SmallButton("⟳ Re-check")) {
+            if (ImGui::SmallButton(ICON_MD_REFRESH " Re-check")) {
                 runSyntaxCheckAsync();
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton("Close [X]")) {
+            if (ImGui::SmallButton(ICON_MD_CLOSE " Close")) {
                 show_diagnostics_drawer_ = false;
             }
 
@@ -587,7 +589,7 @@ private:
 
             if (diagnostics_.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.85f, 0.4f, 1.0f));
-                ImGui::Text("✓ No compiler diagnostics reported.");
+                ImGui::Text(ICON_MD_CHECK " No compiler diagnostics reported.");
                 ImGui::PopStyleColor();
             } else {
                 for (size_t i = 0; i < diagnostics_.size(); ++i) {
@@ -625,7 +627,7 @@ private:
                     ImGui::SameLine(ImGui::GetWindowWidth() - 110.0f);
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.32f, 0.48f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.42f, 0.64f, 1.0f));
-                    if (ImGui::SmallButton("⚡ Fix with AI")) {
+                    if (ImGui::SmallButton(ICON_MD_AUTO_AWESOME " Fix with AI")) {
                         jumpToLine(d.line);
                         triggerFixWithAI(d.line);
                     }
@@ -654,12 +656,12 @@ private:
         if (is_checking_syntax_) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.3f, 0.4f, 0.7f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.85f, 1.0f, 1.0f));
-            ImGui::SmallButton("⟳ Checking...");
+            ImGui::SmallButton(ICON_MD_REFRESH " Checking...");
             ImGui::PopStyleColor(2);
         } else if (diagnostics_.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.3f, 0.15f, 0.6f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
-            if (ImGui::SmallButton("✓ Clean")) {
+            if (ImGui::SmallButton(ICON_MD_CHECK " Clean")) {
                 runSyntaxCheckAsync();
             }
             ImGui::PopStyleColor(2);
@@ -674,7 +676,7 @@ private:
             ImGui::PushStyleColor(ImGuiCol_Button, btn_col);
             ImGui::PushStyleColor(ImGuiCol_Text, txt_col);
             std::string pill_label = std::format("{} {} err, {} warn", 
-                (errors_count_ > 0 ? "🔴" : "🟡"), errors_count_, warnings_count_);
+                (errors_count_ > 0 ? ICON_MD_ERROR : ICON_MD_WARNING), errors_count_, warnings_count_);
             if (ImGui::SmallButton(pill_label.c_str())) {
                 toggleDiagnosticsDrawer();
             }
@@ -685,13 +687,13 @@ private:
 
             // Quick navigation buttons
             ImGui::SameLine();
-            if (ImGui::SmallButton("▲##prev_diag")) {
+            if (ImGui::SmallButton(ICON_MD_ARROW_DROP_UP "##prev_diag")) {
                 jumpToPrevDiagnostic();
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Previous Issue (Shift+F4)");
 
             ImGui::SameLine();
-            if (ImGui::SmallButton("▼##next_diag")) {
+            if (ImGui::SmallButton(ICON_MD_ARROW_DROP_DOWN "##next_diag")) {
                 jumpToNextDiagnostic();
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next Issue (F4)");
@@ -708,7 +710,7 @@ private:
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.7f, 0.9f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.55f, 0.85f, 1.0f));
-                if (ImGui::SmallButton("⚡ Fix with AI")) {
+                if (ImGui::SmallButton(ICON_MD_AUTO_AWESOME " Fix with AI")) {
                     triggerFixWithAI(cur_line);
                 }
                 ImGui::PopStyleColor(2);

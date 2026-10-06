@@ -278,7 +278,7 @@ namespace rouen::cards {
   "version": "1.5",
   "refreshIntervalMs": 1000,
   "body": [
-    {{"type": "TextBlock", "text": "🍅 Pomodoro Timer", "weight": "Bolder", "size": "Large"}},
+    {{"type": "TextBlock", "text": "{} Pomodoro Timer", "weight": "Bolder", "size": "Large"}},
     {{"type": "TextBlock", "text": "Focus Interval (25 minutes)", "isSubtle": true}},
     {{
       "type": "Container",
@@ -301,7 +301,7 @@ namespace rouen::cards {
     {{"type": "Action.Execute", "title": "Reset / New Session", "verb": "reset"}}
   ]
 }})json",
-                status_str, rem_str, elap_str, pct_str);
+                ICON_MD_TIMER, status_str, rem_str, elap_str, pct_str);
         }
 
         void handle_action(std::string_view action_json) override {

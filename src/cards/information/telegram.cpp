@@ -3,6 +3,7 @@
 #include "../../helpers/markdown_renderer.hpp"
 #include "../../helpers/platform_utils.hpp"
 #include "../../helpers/presence_service.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 
 #include <cctype>
 
@@ -80,7 +81,7 @@ void telegram_card::render_content() {
     auto active_gw = rouen::hosts::telegram_host::find_active_gateway();
     if (status != rouen::hosts::telegram_host::Status::Active && active_gw.has_value()) {
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.4f, 1.0f), "| 🟢 Mesh Relay Active: @%s (via %s)",
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.4f, 1.0f), "| " ICON_MD_CHECK_CIRCLE " Mesh Relay Active: @%s (via %s)",
                            active_gw->bot_username.c_str(), active_gw->client_id.c_str());
         ImGui::SameLine();
         if (ImGui::SmallButton("Send Test Notification")) {

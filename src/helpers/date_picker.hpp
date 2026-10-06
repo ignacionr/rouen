@@ -1,6 +1,7 @@
 #pragma once
 
 #include "./imgui_include.hpp"
+#include "../../external/IconsMaterialDesign.h"
 #include <string>
 #include <chrono>
 #include <ctime>
@@ -279,7 +280,7 @@ public:
         
         // Calendar button
         ImGui::SameLine();
-        if (ImGui::Button(std::string("📅##" + std::string(popup_id)).c_str())) {
+        if (ImGui::Button(std::string(ICON_MD_CALENDAR_TODAY "##" + std::string(popup_id)).c_str())) {
             if (open_picker) *open_picker = true;
             else ImGui::OpenPopup(popup_id);
         }

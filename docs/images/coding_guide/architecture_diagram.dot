@@ -1,0 +1,113 @@
+digraph RouenArchitecture {
+    graph [
+        rankdir=TB,
+        bgcolor="#1E1E24",
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=14,
+        fontcolor="#FFFFFF",
+        pad="0.5",
+        nodesep="0.6",
+        ranksep="0.7",
+        splines=true
+    ];
+    node [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=11,
+        fontcolor="#FFFFFF",
+        style="filled,rounded",
+        shape=box,
+        margin="0.25,0.15",
+        penwidth=1.5
+    ];
+    edge [
+        fontname="Helvetica, Arial, sans-serif",
+        fontsize=9,
+        fontcolor="#A0A0B0",
+        color="#5C6370",
+        penwidth=1.8,
+        arrowsize=0.8
+    ];
+
+    // Subgraph: User Interface Layer
+    subgraph cluster_ui {
+        label = "Developer Interface (Rouen Deck Cards & REST API)";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#61AFEF";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        deck [label="Rouen ImGui/SDL Deck\n(Card Docking & Viewport Engine)", fillcolor="#21252B", color="#61AFEF"];
+        ai_chat [label="AI Chat Card\n• Code & Git Architect Persona\n• Streaming Responses & Markdown\n• Auto Tool Execution", fillcolor="#353B45", color="#98C379"];
+        cmake_card [label="CMake Card\n• Ninja / Makefile Orchestration\n• Check Syntax Only (-fsyntax-only)\n• Diagnostic Tree & [Fix with AI]\n• Conventional Commit Modal", fillcolor="#353B45", color="#E5C07B"];
+        editor_card [label="Text Editor Card\n• Syntax Highlighting & Line Numbers\n• Margin Error Markers & Highlights\n• Diagnostics Drawer & [⚡ Fix with AI]\n• Surgical Undo/Redo & Diff View", fillcolor="#353B45", color="#C678DD"];
+        rest_api [label="Embedded REST API (:8081)\n• /api/cards/action & /api/editor\n• Headless Scripting & Screenshots", fillcolor="#21252B", color="#56B6C2"];
+    }
+
+    // Subgraph: Rouen AI & MCP Host
+    subgraph cluster_ai_core {
+        label = "Rouen AI & MCP Subsystem";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#98C379";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        mcp_host [label="MCP Host & Service Registry\n• Tool Resolution & Dispatch\n• Dynamic Model Discovery (Gemini, Grok, MLX)\n• Low Temperature (0.1) & Strict Schemas", fillcolor="#3E4451", color="#98C379"];
+        code_tools [label="Code MCP Suite (14 Native Tools)\n• code_check_syntax  • code_apply_patch\n• code_read_file     • code_write_file\n• code_find_symbol   • code_search\n• code_undo / redo   • code_generate_conventional_commit", fillcolor="#31363F", color="#61AFEF"];
+    }
+
+    // Subgraph: Backend Core Services
+    subgraph cluster_services {
+        label = "Rouen Backend Core Services";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#E5C07B";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        editor_svc [label="CodeEditorService\n• In-Memory Surgical Patch Engine\n• Undo / Redo Patch History Stack\n• Automatic Syntax Feedback Loop", fillcolor="#31363F", color="#C678DD"];
+        indexer_svc [label="CodeIndexer\n• Trigram Fast Text Index\n• AST / Symbol Definition Index", fillcolor="#31363F", color="#56B6C2"];
+        toolchain_svc [label="ToolchainService & SyntaxChecker\n• Compiler Discovery (Clang, GCC, MSVC)\n• C++ Standard Auto-Detection (C++20/C++23)\n• Structured Diagnostic Parser", fillcolor="#31363F", color="#E5C07B"];
+    }
+
+    // Subgraph: Execution & Toolchains
+    subgraph cluster_execution {
+        label = "System Toolchains & Workspace";
+        color = "#3E4451";
+        bgcolor = "#282C34";
+        fontcolor = "#E06C75";
+        fontsize = 13;
+        style = "rounded,filled";
+        margin = 16;
+
+        compilers [label="Local Compilers\n• Apple Clang / LLVM clang++\n• GNU GCC / g++\n• MSVC cl.exe\n• Nix Env (nix develop)", fillcolor="#21252B", color="#E06C75"];
+        workspace_fs [label="Workspace Project Files\n• CMakeLists.txt & Source Files (.cpp / .hpp)\n• compile_commands.json & Git Repository", fillcolor="#21252B", color="#ABB2BF"];
+    }
+
+    // Connections
+    deck -> ai_chat;
+    deck -> cmake_card;
+    deck -> editor_card;
+    rest_api -> deck;
+
+    ai_chat -> mcp_host [label="requests tool execution", color="#98C379"];
+    cmake_card -> ai_chat [label="[Fix with AI] sends context", color="#E5C07B"];
+    editor_card -> ai_chat [label="[⚡ Fix with AI] sends line context", color="#C678DD"];
+    cmake_card -> toolchain_svc [label="syntax check & build", color="#E5C07B"];
+    editor_card -> toolchain_svc [label="syntax diagnostics", color="#C678DD"];
+
+    mcp_host -> code_tools [color="#98C379"];
+    code_tools -> editor_svc [label="patch, read, write", color="#61AFEF"];
+    code_tools -> indexer_svc [label="index, find symbol", color="#61AFEF"];
+    code_tools -> toolchain_svc [label="check_syntax", color="#61AFEF"];
+
+    editor_svc -> toolchain_svc [label="auto syntax feedback", color="#C678DD"];
+    editor_svc -> workspace_fs [label="writes files", color="#ABB2BF"];
+    toolchain_svc -> compilers [label="-fsyntax-only / /Zs", color="#E06C75"];
+    compilers -> workspace_fs [label="compiles & links (-j2)", color="#E06C75"];
+    indexer_svc -> workspace_fs [label="scans symbols", color="#56B6C2"];
+}

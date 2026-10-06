@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include "../../../external/IconsMaterialDesign.h"
 
 // Implementation of converter class
 
@@ -203,7 +204,7 @@ void converter::render_numeric_converter() {
     // Reverse units button
     ImGui::Spacing();
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - 120.0f) * 0.5f); // Center the button
-    if (ImGui::Button("🔄 Reverse Units", ImVec2(120.0f, 0))) {
+    if (ImGui::Button(ICON_MD_SYNC_ALT " Reverse Units", ImVec2(120.0f, 0))) {
         reverse_units();
     }
     
@@ -334,7 +335,7 @@ void converter::render_encoding_converter() {
     // Reverse units button
     ImGui::Spacing();
     ImGui::SetCursorPosX((ImGui::GetWindowWidth() - 120.0f) * 0.5f); // Center the button
-    if (ImGui::Button("🔄 Reverse Units", ImVec2(120.0f, 0))) {
+    if (ImGui::Button(ICON_MD_SYNC_ALT " Reverse Units", ImVec2(120.0f, 0))) {
         reverse_units();
     }
     

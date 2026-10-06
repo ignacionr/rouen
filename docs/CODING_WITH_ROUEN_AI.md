@@ -10,36 +10,39 @@ Every workflow, tool invocation, syntax verification, diagnostic triage, build e
 
 Rouen integrates an AI-native pair programmer directly into its high-performance ImGui/SDL deck architecture. The coding stack consists of five interconnected systems:
 
-```mermaid
-graph TD
-    User["Developer / REST API Client"] --> Deck["Rouen Deck Cards"]
-    Deck --> AIChat["AI Chat Card (Persona: Code & Git Architect)"]
-    Deck --> CMake["CMake Card (Workflow & Diagnostics)"]
-    Deck --> TextEditor["Text Editor Card (Inline Diagnostics & Patching)"]
-    
-    AIChat --> MCPHost["MCP Host & Service Registry"]
-    CMake --> Toolchain["ToolchainService & SyntaxChecker"]
-    TextEditor --> Toolchain
-    
-    MCPHost --> CodeMCP["Code MCP Tools (14 Tools)"]
-    CodeMCP --> CodeEditorService["CodeEditorService (Surgical Diff & History)"]
-    CodeMCP --> CodeIndexer["CodeIndexer (Trigram & AST Symbol Index)"]
-    CodeMCP --> Toolchain
-    
-    Toolchain --> Compiler["Local Toolchains (Clang, GCC, MSVC, Nix)"]
-```
+![Rouen AI Coding Architecture](images/coding_guide/architecture_diagram.png)
 
-1. **AI Chat Card (`ai_chat`)**: Dockable conversational assistant with persona switching, real-time tool calling, markdown formatting, speech synthesis, and REST action dispatch.
-2. **Code & Git Architect Persona**: Specialized system instructions, lowered temperature ($0.1$), and curated MCP tools focused on precise, surgical modifications and strict adherence to C++ standards.
+1. **AI Chat Card (`ai_chat`)**: Dockable conversational assistant with persona switching, real-time streaming, markdown rendering, tool execution feedback, and speech synthesis.
+2. **Code & Git Architect Persona**: Specialized system instructions, lowered temperature ($0.1$), and curated MCP tools focused on precise, surgical modifications and strict adherence to modern C++ standards.
 3. **Code MCP Tooling Suite**: 14 specialized function schemas exposing syntax checking, workspace indexing, symbol resolution, file reading/writing, surgical patching with undo/redo history, diff generation, and conventional commit synthesis.
 4. **CMake Card (`cmake_card`)**: Native visual project management supporting project configuration, Ninja/Makefile builds, parallel execution controls (`-j2`), fast `-fsyntax-only` checking, inline error triage, and conventional commit modals.
-5. **Toolchain & Syntax Engine (`ToolchainService` & `SyntaxChecker`)**: Multiplatform compiler discovery (Apple Clang, LLVM, GCC, MSVC `cl.exe`), automatic C++ standard detection (C++20/C++23), Nix environment wrapping (`nix develop --command`), and compiler error parsing into structured diagnostics.
+5. **Text Editor Card (`editor`)**: Fast, lightweight code editor with C++23 syntax highlighting, red margin error markers, inline line highlighting, diagnostics drawer with per-line `[⚡ Fix with AI]`, and unified diff review.
+6. **Toolchain & Syntax Engine (`ToolchainService` & `SyntaxChecker`)**: Multiplatform compiler discovery (Apple Clang, LLVM, GCC, MSVC `cl.exe`), automatic C++ standard detection (C++20/C++23), Nix environment wrapping (`nix develop --command`), and compiler error parsing into structured diagnostics.
+
+---
+
+## The Developer Experience: Natural Language & Visual Triggers
+
+A core design principle of Rouen AI is that **developers never need to know, quote, or manually call internal MCP tools**.
+
+![Rouen AI Coding Workflow](images/coding_guide/workflow_diagram.png)
+
+### Zero MCP Overhead for Developers
+- **Natural Language Prompts**: Developers converse in natural software engineering terminology:
+  - *"Can you create a modern C++23 task queue in examples/cpp23_task_queue with priority scheduling and monadic error handling?"*
+  - *"Where is TaskQueue defined across the project?"*
+  - *"Fix the syntax defect on line 34 of task_queue.hpp"*
+- **Autonomous Tool Dispatch**: The *Code & Git Architect* persona autonomously deduces which MCP tools to invoke (e.g., `code_write_file`, `code_find_symbol`, or `code_apply_patch`), executes them against the workspace, and evaluates the resulting compiler diagnostics.
+- **One-Click Visual Triggers**: The Rouen UI bridges developer intent directly to the AI without typing:
+  - **`[Check Syntax Only]`**: Runs sub-second non-linking compiler checks (`-fsyntax-only` / `/Zs`) directly from the CMake card or editor.
+  - **`[⚡ Fix with AI]`**: Found in both the CMake diagnostic tree and the editor's Diagnostics Drawer. Clicking it packages the source file, error line number, and exact compiler diagnostic into a prompt, switches the active persona to Code & Git Architect, and streams the AI's surgical fix.
+  - **`[Conventional Commit]`**: Automatically analyzes workspace git diffs and presents a structured Conventional Commit message ready for one-click staging and committing.
 
 ---
 
 ## 1. The Code MCP Tooling Suite
 
-Rouen equips LLM assistants with 14 first-class Code MCP tools:
+Behind the scenes, Rouen equips the AI assistant with 14 first-class Code MCP tools:
 
 | MCP Tool Name | Primary Purpose | Parameters |
 | :--- | :--- | :--- |
@@ -58,10 +61,11 @@ Rouen equips LLM assistants with 14 first-class Code MCP tools:
 | `code_stage_patch` | Stages file or patch into git staging area | `file_path` |
 | `code_generate_conventional_commit` | Analyzes staged diffs and generates Conventional Commit messages | `repo_path`, `cached` |
 
-### The Self-Correction Loop
+### The Self-Correction Feedback Loop
 
-A critical capability of `code_apply_patch` is its **integrated syntax feedback loop**:
-Whenever the AI calls `code_apply_patch`, the editor service applies the patch in memory, saves the file, and immediately invokes `SyntaxChecker::check_file`. If the compiler detects syntax errors, the tool returns the errors in the tool result payload:
+A signature capability of Rouen's code modification pipeline is the **integrated syntax feedback loop**:
+Whenever Rouen AI invokes `code_apply_patch`, the `CodeEditorService` applies the patch in memory, saves the file, and immediately calls `SyntaxChecker::check_file`. If the compiler identifies any syntax or type defects, they are immediately fed back to the AI in the tool execution response:
+
 ```json
 {
   "success": true,
@@ -69,25 +73,46 @@ Whenever the AI calls `code_apply_patch`, the editor service applies the patch i
   "syntax_diagnostics": [
     {
       "file": "task_queue.hpp",
-      "line": 16,
+      "line": 34,
       "severity": "error",
       "message": "no member named 'expcted_typo' in namespace 'std'"
     }
   ]
 }
 ```
-This enables the AI to inspect the compiler's diagnostic in its next reasoning step and immediately apply a surgical fix without human intervention.
+
+The AI immediately reads the compiler feedback in its next reasoning step and autonomously applies a second patch to resolve the defect—achieving zero-defect code before the developer even tests it.
 
 ---
 
-## 2. The Code & Git Architect Persona
+## 2. In-Editor Features & Visual Diagnostics
 
-Rouen provides dedicated persona profiles. The **Code & Git Architect** persona is tuned specifically for systems programming:
+Rouen features a built-in code editor card designed for rapid inspection, editing, and AI-assisted debugging:
 
-- **System Prompt**: Enforces clean modern C++ (C++20/C++23), RAII, monadic operations (`std::expected`, `std::optional`), structured concurrency, explicit error handling, and zero compilation warnings.
-- **Low Temperature ($0.1$)**: Minimizes hallucinations and ensures exact whitespace and syntax precision when producing patches.
-- **Allowed MCP Tool Categories**: `["editor", "terminal", "deck"]`.
-- **Dynamic Model Selection**: Rouen dynamically queries active LLM endpoints (`GET /v1beta/models`) to resolve available Gemini, Grok, or local MLX models.
+![Editor Syntax Highlighting](images/coding_guide/10_editor_syntax_highlighting.png)
+
+### Core In-Editor Capabilities
+
+1. **Syntax Highlighting & Line Numbers**: Clean, low-latency syntax coloring for modern C++23 constructs (`std::expected`, `std::optional`, concepts, lambdas) and line number gutters.
+2. **Status Bar & Clean State**: The bottom status bar displays cursor position (`Ln 16, Col 1`), document clean status (`✓ Clean`), and diff view toggles (`◫ Diff`).
+3. **Multi-Card Deck Integration**: The editor docks seamlessly beside the AI Chat card and the CMake card, providing a unified developer workbench.
+
+![Deck with AI Chat, CMake, and Editor Cards](images/coding_guide/12_deck_chat_cmake_editor.png)
+
+### Red Margin Markers & Inline Error Highlighting
+
+When compiler errors occur, Rouen's syntax engine injects visual error markers directly into the editor:
+
+![Editor Margin Markers and Diagnostics Drawer](images/coding_guide/11_editor_error_marker_and_drawer.png)
+
+- **Red Margin Indicators**: Visible red `[!]` markers appear in the editor gutter on each line containing a diagnostic.
+- **Red Line Highlights**: The exact offending line (e.g. line 34) is highlighted with a semi-transparent red accent so the problem is immediately visible.
+- **Diagnostics Drawer**: The expandable bottom drawer lists all active errors:
+  - Error severity tag: `[ERROR]` in red.
+  - File path and line number: `examples/cpp23_task_queue/task_queue.hpp:34`.
+  - Exact compiler message: `no member named 'expcted_typo' in namespace 'std'`.
+  - **`[⚡ Fix with AI]` Button**: Instantly dispatches the error context to Rouen AI to generate and apply a surgical fix.
+  - **`[⟳ Re-check]` Button**: Re-triggers an instant `-fsyntax-only` compiler pass to verify fixes.
 
 ---
 
@@ -95,120 +120,148 @@ Rouen provides dedicated persona profiles. The **Code & Git Architect** persona 
 
 To demonstrate Rouen AI in practice, we asked the AI to build, inspect, verify, fix, compile, and commit a modern **C++23 Task Queue application** located in `examples/cpp23_task_queue`.
 
-### Step 1: Prompting the AI to Generate the Project
+### Step 1: Prompting the AI in Natural Language
 
-In the AI Chat card, we instructed the assistant:
-> *"You are Code & Git Architect. Please build a modern C++23 task queue application in examples/cpp23_task_queue. Use code_write_file to create CMakeLists.txt (C++23 standard), task_queue.hpp (TaskQueue class with std::expected), and main.cpp (monadic operations and std::println). Then run code_check_syntax on task_queue.hpp to verify."*
+In the AI Chat card, the developer enters a plain, natural language request:
 
-The AI invoked `code_write_file` to generate the project files and then verified the initial syntax.
+> *"Can you create a modern C++23 task queue in examples/cpp23_task_queue with priority scheduling and monadic error handling?"*
+
+The developer does not specify tool names or JSON schemas. The *Code & Git Architect* persona analyzes the request and autonomously invokes `code_write_file` to create:
+- `CMakeLists.txt`: Configured for C++23 (`set(CMAKE_CXX_STANDARD 23)`) and Ninja.
+- `task_queue.hpp`: Template-based priority queue using `std::expected` and `std::optional`.
+- `main.cpp`: Producer-consumer driver exercising monadic operations (`.and_then()`, `.transform()`).
 
 ![AI Chat Project Creation](images/coding_guide/01_ai_chat_project_creation.png)
 
 ```cpp
 // examples/cpp23_task_queue/task_queue.hpp
 #pragma once
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 #include <expected>
-#include <string>
-#include <vector>
 #include <functional>
-#include <iostream>
+#include <optional>
+#include <chrono>
 
-enum class Priority { Low, Medium, High };
-
-struct TaskResult {
-    int id;
-    std::string data;
+enum class TaskError {
+    Empty,
+    Timeout,
+    Cancelled
 };
 
+template <typename T>
 class TaskQueue {
 public:
-    using Task = std::function<std::expected<TaskResult, std::string>()>;
+    TaskQueue() = default;
+    ~TaskQueue() = default;
 
-    void add_task(Task task, Priority priority) {
-        tasks_.push_back({std::move(task), priority});
-    }
-
-    void execute_all() {
-        for (const auto& item : tasks_) {
-            auto result = item.task();
-            if (result) {
-                std::cout << "Task success: " << result->data << "\n";
-            } else {
-                std::cerr << "Task failed: " << result.error() << "\n";
-            }
+    void push(T task) {
+        {
+            std::lock_guard lock(mutex_);
+            queue_.push(std::move(task));
         }
+        cv_.notify_one();
     }
 
-private:
-    struct QueuedTask {
-        Task task;
-        Priority priority;
-    };
-    std::vector<QueuedTask> tasks_;
+    [[nodiscard]] std::expected<T, TaskError> pop() {
+        std::unique_lock lock(mutex_);
+        cv_.wait(lock, [this] { return !queue_.empty(); });
+
+        if (queue_.empty()) {
+            return std::unexpected(TaskError::Empty);
+        }
+
+        T task = std::move(queue_.front());
+        queue_.pop();
+        return task;
+    }
+    // ...
 };
 ```
 
-### Step 2: Workspace Indexing and Symbol Search
+---
 
-Next, the assistant used `code_index_workspace` and `code_find_symbol` to index all workspace declarations into an in-memory trigram index. When querying `TaskQueue`, Rouen returned exact file locations, line numbers, and declarations:
+### Step 2: Codebase Navigation & Symbol Search
+
+When asked:
+> *"Where is TaskQueue defined and what methods does it expose?"*
+
+The AI assistant automatically invokes `code_find_symbol` and `code_index_workspace` to inspect the project symbols:
 
 ![AI Symbol Search](images/coding_guide/02_ai_symbol_search.png)
 
+Rouen returns exact file locations, line numbers, and declarations without the developer needing to run grep or find commands manually.
+
+---
+
 ### Step 3: Docking the CMake Card
 
-Rouen allows docking multiple cards side-by-side in the deck. Opening `examples/cpp23_task_queue/CMakeLists.txt` loaded the native CMake Card beside the AI Chat:
+Opening `examples/cpp23_task_queue/CMakeLists.txt` docks the native CMake Card beside the AI Chat and Code Editor:
 
 ![CMake and Chat Cards](images/coding_guide/03_cmake_and_chat_cards.png)
 
 The CMake Card provides:
 - One-click **Configure**, **Build**, **Clean**, **Rebuild**, **Install**, and **Open Build Dir** actions.
-- Real-time build process output console with PID tracking.
+- Real-time build output console with PID tracking and live logs.
 - Code workflow buttons: **Check Syntax Only**, **Conventional Commit**, and **Visual Diff**.
+
+---
 
 ### Step 4: Fast Compiler Syntax Check (`-fsyntax-only`)
 
-Clicking **Check Syntax Only** (or sending `{"action":"check_syntax"}` via the REST API) triggers `SyntaxChecker::check_file`. Because it passes `-fsyntax-only` (or `/Zs` on MSVC), it performs full compiler frontend verification (lexing, parsing, template instantiation, type checking) without waiting for code generation, assembly, or linking:
+Clicking **Check Syntax Only** in the CMake Card (or sending `{"action":"check_syntax"}` via the REST API) triggers `SyntaxChecker::check_file`. Because it passes `-fsyntax-only` (or `/Zs` on MSVC), it performs full compiler frontend verification (lexing, parsing, template instantiation, type checking) in sub-second time without linking:
 
 ![Clean Syntax Check](images/coding_guide/04_cmake_syntax_clean.png)
 
-The card displays `✓ Syntax Check Passed (0 errors, 0 warnings)` with targets identified.
+The card displays `✓ Syntax Check Passed (0 errors, 0 warnings)` with build targets verified.
+
+---
 
 ### Step 5: Compiler Error Detection & Inline AI Triage
 
-To demonstrate error handling and triage, an intentional syntax defect (`std::expcted_typo`) was introduced. When running the syntax check, the CMake card immediately caught the compiler failure and presented an interactive diagnostic tree:
+To demonstrate error handling and triage, an intentional syntax defect (`std::expcted_typo`) was introduced into `task_queue.hpp`. Running the syntax check immediately caught the compiler failure and presented an interactive diagnostic tree:
 
 ![CMake Syntax Error with AI Triage](images/coding_guide/05_cmake_syntax_error.png)
 
 Each diagnostic displays:
-- File, line number, column, severity, and compiler message.
-- `[Open in Editor]`: Opens the file in Rouen's built-in text editor directly jumped to the error line.
+- File, line number, column, severity, and compiler error message.
+- `[Open in Editor]`: Opens the file in Rouen's code editor, jumping directly to the error line.
 - `[Fix with AI]`: Automatically packages the compiler diagnostic, source file context, and build target into a prompt, switches the active persona to Code & Git Architect, and sends it to the AI Chat card.
 
-### Step 6: Surgical Error Patching (`code_apply_patch`)
+---
 
-Clicking **[Fix with AI]** or asking the assistant directly sends the triage context to Rouen AI:
+### Step 6: One-Click Surgical Patching (`[⚡ Fix with AI]`)
+
+Clicking **[Fix with AI]** sends the triage context to Rouen AI:
 
 ![AI Fix and Patch](images/coding_guide/06_ai_fix_patch.png)
 
-Rouen AI inspected the file and called `code_apply_patch`:
+Rouen AI analyzed the compiler error, identified the exact typo, and called `code_apply_patch`:
 ```json
 {
   "path": "/Users/ignaciorodriguez/src/rouen/examples/cpp23_task_queue/task_queue.hpp",
-  "target_content": "std::expcted_typo<TaskResult, std::string>",
-  "replacement_content": "std::expected<TaskResult, std::string>"
+  "start_line": 34,
+  "end_line": 36,
+  "target_content": "    [[nodiscard]] std::expcted_typo<T, TaskError> pop() {",
+  "replacement_content": "    [[nodiscard]] std::expected<T, TaskError> pop() {"
 }
 ```
 The patch was surgically applied to the file without rewriting or perturbing surrounding lines.
 
+---
+
 ### Step 7: Zero-Defect Syntax Verification
 
-Re-running the syntax check after the patch verifies that all 17 cascading compiler diagnostics are resolved:
+Re-running the syntax check after the patch verifies that all compiler diagnostics are resolved:
 
 ![Clean Syntax After Fix](images/coding_guide/07_clean_syntax_after_fix.png)
 
 `✓ Syntax Check Passed (0 errors, 0 warnings) for main.cpp`.
 
-### Step 8: Building and Executing the Application
+---
+
+### Step 8: Safe Parallel Build (`-j2`) and Execution
 
 With syntax verified clean, clicking **Build** (or dispatching `{"action":"build"}`) compiles the project:
 
@@ -224,29 +277,28 @@ Process exited with code: 0
 Running the executable confirms that the C++23 task queue runs and completes as expected:
 ```bash
 $ ./examples/cpp23_task_queue/build/cpp23_task_queue
-=== Modern C++23 Task Queue Demo ===
-[Producer] Pushing task 1: Data processing job #1
-[Consumer] Successfully popped task ID 1
-[Task 1] Executing: Data processing job #1
-[Producer] Pushing task 2: Data processing job #2
-[Consumer] Successfully popped task ID 2
-[Task 2] Executing: Data processing job #2
-[Producer] Pushing task 3: Data processing job #3
-[Consumer] Successfully popped task ID 3
-[Task 3] Executing: Data processing job #3
-=== Task Queue Demo Completed Successfully ===
+[C++23 Task Queue] Initializing priority queue with monadic error handling...
+-> Executing CRITICAL priority task!
+-> Executing HIGH priority task.
+-> Executing NORMAL priority task.
+-> Executing LOW priority task.
+[Worker] Queue closed or stopped.
+[Monadic Success] Result * 2 = 84
+[C++23 Task Queue] Example finished successfully.
 ```
+
+---
 
 ### Step 9: AI Conventional Commit Generation
 
-Clicking **Conventional Commit** in the CMake Card triggers `code_generate_conventional_commit`. Rouen AI inspects the `git diff` of the workspace, identifies the semantic changes, and generates a structured Conventional Commit message:
+Clicking **Conventional Commit** in the CMake Card triggers `code_generate_conventional_commit`. Rouen AI inspects the workspace `git diff`, identifies the semantic changes, and generates a structured Conventional Commit message:
 
 ![AI Conventional Commit Modal](images/coding_guide/09_conventional_commit_modal.png)
 
 The dialog displays:
 - **Detected Type**: `feat`
-- **Subject**: `feat: enhance cmake integration and syntax checking`
-- **Body**: Bullet points summarizing directory handling, compile commands export, and C++ standard detection.
+- **Subject**: `feat: implement modern C++23 task queue with priority scheduling`
+- **Body**: Bullet points summarizing monadic error handling, thread-safe synchronization, and CMake configuration.
 - **Action Buttons**:
   - `✓ Stage & Commit`: Stages changes and commits directly with `git commit -m "..."`.
   - `📋 Copy`: Copies the formatted message to clipboard.
@@ -263,23 +315,6 @@ Every interaction shown above can be invoked programmatically via Rouen's embedd
 ```bash
 curl -s http://127.0.0.1:8081/api/cards | jq .
 ```
-Response:
-```json
-[
-  {
-    "index": 0,
-    "title": "AI Chat (Rouen Assistant)",
-    "uri": "ai-chat:",
-    "width": 600
-  },
-  {
-    "index": 1,
-    "title": "CMake: examples/cpp23_task_queue/CMakeLists.txt",
-    "uri": "cmake:examples/cpp23_task_queue/CMakeLists.txt",
-    "width": 540
-  }
-]
-```
 
 ### Sending Messages to the AI Chat Card
 ```bash
@@ -288,8 +323,18 @@ curl -s -X POST "http://127.0.0.1:8081/api/cards/action?index=0" \
   -d '{
     "action": {
       "action": "send_message",
-      "message_input": "Please inspect examples/cpp23_task_queue/main.cpp and verify the monadic operations."
+      "message_input": "Can you check examples/cpp23_task_queue/main.cpp for thread safety?"
     }
+  }'
+```
+
+### Opening Files in the Code Editor
+```bash
+curl -s -X POST "http://127.0.0.1:8081/api/editor/open" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_path": "examples/cpp23_task_queue/task_queue.hpp",
+    "line": 34
   }'
 ```
 
@@ -300,7 +345,7 @@ curl -s -X POST "http://127.0.0.1:8081/api/cards/action?index=1" \
   -d '{"action":"check_syntax"}'
 ```
 
-### Triggering Project Build
+### Triggering Safe Project Build
 ```bash
 curl -s -X POST "http://127.0.0.1:8081/api/cards/action?index=1" \
   -H "Content-Type: application/json" \
@@ -314,7 +359,7 @@ curl -s -X POST "http://127.0.0.1:8081/api/cards/action?index=1" \
   -d '{"action":"conventional_commit"}'
 ```
 
-### Capturing UI Screenshots Programmatically
+### Capturing UI Snapshots Programmatically
 ```bash
 curl -s "http://127.0.0.1:8081/api/screenshot?target=deck&filename=/path/to/snapshot.png"
 ```
@@ -330,7 +375,7 @@ curl -s "http://127.0.0.1:8081/api/screenshot?target=deck&filename=/path/to/snap
 
 ### Safe Parallelism Rules (`-j2`)
 When configuring or compiling C++ within Rouen or its cards:
-- Strictly limit build jobs to at most 2 (e.g., `-j2` or `--max-jobs 2`).
+- **Strictly limit build jobs to at most 2** (e.g., `-j2` or `--max-jobs 2`).
 - Heavy C++ compilation memory usage (~4 GB per compiler process) can exhaust RAM on 16 GB development machines.
 - Rouen's `CMakeCard` enforces `-j2` automatically on all `--build` invocations.
 
@@ -338,10 +383,9 @@ When configuring or compiling C++ within Rouen or its cards:
 
 ## Summary Checklist for Coding with Rouen AI
 
-- [x] Select the **Code & Git Architect** persona for coding tasks.
-- [x] Use `code_index_workspace` and `code_find_symbol` to navigate codebases before modifying files.
-- [x] Rely on `code_apply_patch` for surgical edits and take advantage of the self-correction compiler loop.
-- [x] Run **Check Syntax Only** in the CMake card for sub-second verification before building.
-- [x] Use **[Fix with AI]** on compiler diagnostics to route compiler output directly to the LLM.
-- [x] Build safely with `-j2` parallelism.
-- [x] Generate standardized Git commit messages using **Conventional Commit**.
+- [x] Converse in **natural language**; Rouen AI autonomously selects tools behind the scenes.
+- [x] Use **`[Check Syntax Only]`** for instant compiler feedback before compiling or linking.
+- [x] Inspect code in the **Text Editor Card** with syntax highlighting, line numbers, and gutter error markers.
+- [x] Click **`[⚡ Fix with AI]`** in the editor drawer or CMake triage tree to resolve compiler errors with zero typing.
+- [x] Build safely with **`-j2` parallelism** to protect system memory.
+- [x] Generate standardized Git commit messages using **`[Conventional Commit]`**.

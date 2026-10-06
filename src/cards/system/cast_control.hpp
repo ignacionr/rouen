@@ -10,6 +10,7 @@
 #include "../../helpers/platform_utils.hpp"
 #include "../../hosts/video_feed_host.hpp"
 #include "../../registrar.hpp"
+#include "../../../external/IconsMaterialDesign.h"
 #include "../interface/card.hpp"
 
 #ifndef _WIN32
@@ -51,7 +52,7 @@ private:
         bool starting = host->is_starting();
 
         // Status Header
-        ui.text_colored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "📹 ROUEN CAST & VIDEO FEED");
+        ui.text_colored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), ICON_MD_VIDEOCAM " ROUEN CAST & VIDEO FEED");
         ui.separator();
         ui.spacing();
 

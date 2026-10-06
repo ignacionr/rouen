@@ -227,11 +227,11 @@ namespace rouen::cards {
             ImGui::SameLine();
             if (settings.is_configured) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f)); // Green
-                ImGui::Text("✓ Configured");
+                ImGui::Text(ICON_MD_CHECK " Configured");
                 ImGui::PopStyleColor();
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.2f, 1.0f)); // Red
-                ImGui::Text("✗ Not Configured");
+                ImGui::Text(ICON_MD_CLOSE " Not Configured");
                 ImGui::PopStyleColor();
             }
             
@@ -1006,11 +1006,11 @@ namespace rouen::cards {
             auto settings = helpers::LLMConfig::get_current_config();
             std::string config_text;
             if (settings.is_configured) {
-                config_text = std::format("Provider: {} | Model: {} | ✓ Configured",
+                config_text = std::format("Provider: {} | Model: {} | " ICON_MD_CHECK " Configured",
                     helpers::LLMConfig::provider_to_string(settings.provider),
                     settings.model_name);
             } else {
-                config_text = "⚠ LLM not configured";
+                config_text = ICON_MD_WARNING " LLM not configured";
             }
             glz::json_t config_block;
             config_block["type"] = "TextBlock";
@@ -1206,7 +1206,7 @@ namespace rouen::cards {
     std::string ai_chat::execute_function_with_debug(const std::string& function_name, const std::string& args_json, int depth) {
         if (debug_mode_) {
             std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-            chat_history_.emplace_back("debug", std::format("🔧 **Tool Call**: `{}` (depth: {})\n\nArguments:\n```json\n{}\n```", function_name, depth, args_json));
+            chat_history_.emplace_back("debug", std::format(ICON_MD_BUILD " **Tool Call**: `{}` (depth: {})\n\nArguments:\n```json\n{}\n```", function_name, depth, args_json));
             message_cache_.emplace_back();
             layout_dirty_ = true;
             scroll_to_bottom_.store(true);
@@ -1228,7 +1228,7 @@ namespace rouen::cards {
 
         if (debug_mode_) {
             std::lock_guard<std::mutex> const lock(chat_history_mutex_);
-            chat_history_.emplace_back("debug", std::format("📤 **Tool Result**: `{}`\n\n```\n{}\n```", function_name, result));
+            chat_history_.emplace_back("debug", std::format(ICON_MD_OUTBOX " **Tool Result**: `{}`\n\n```\n{}\n```", function_name, result));
             message_cache_.emplace_back();
             layout_dirty_ = true;
             scroll_to_bottom_.store(true);

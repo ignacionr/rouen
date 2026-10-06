@@ -558,13 +558,13 @@ public:
         auto forecast_opt = const_cast<weather&>(*this).weather_host->getForecast();
 
         auto get_emoji = [](std::string_view main_cond) -> const char* {
-            if (main_cond == "Clear") return "☀️";
-            if (main_cond == "Clouds") return "🌤️";
-            if (main_cond == "Rain" || main_cond == "Drizzle") return "🌧️";
-            if (main_cond == "Thunderstorm") return "🌩️";
-            if (main_cond == "Snow") return "❄️";
-            if (main_cond == "Mist" || main_cond == "Fog" || main_cond == "Haze") return "🌫️";
-            return "🌡️";
+            if (main_cond == "Clear") return ICON_MD_WB_SUNNY;
+            if (main_cond == "Clouds") return ICON_MD_CLOUD;
+            if (main_cond == "Rain" || main_cond == "Drizzle") return ICON_MD_GRAIN;
+            if (main_cond == "Thunderstorm") return ICON_MD_FLASH_ON;
+            if (main_cond == "Snow") return ICON_MD_AC_UNIT;
+            if (main_cond == "Mist" || main_cond == "Fog" || main_cond == "Haze") return ICON_MD_CLOUD_QUEUE;
+            return ICON_MD_THERMOSTAT;
         };
 
         // 1. Header Container
@@ -698,7 +698,7 @@ public:
 
             glz::json_t f_heading;
             f_heading["type"] = "TextBlock";
-            f_heading["text"] = "📅 5-Period Forecast";
+            f_heading["text"] = ICON_MD_CALENDAR_TODAY " 5-Period Forecast";
             f_heading["weight"] = "Bolder";
             f_heading["size"] = "Medium";
             f_items.push_back(std::move(f_heading));
@@ -786,14 +786,14 @@ public:
             {
                 glz::json_t search_act;
                 search_act["type"] = "Action.Execute";
-                search_act["title"] = "🔍 Search City";
+                search_act["title"] = ICON_MD_SEARCH " Search City";
                 search_act["verb"] = "change_location";
                 actions.push_back(std::move(search_act));
             }
             {
                 glz::json_t refresh_act;
                 refresh_act["type"] = "Action.Execute";
-                refresh_act["title"] = "🔄 Refresh";
+                refresh_act["title"] = ICON_MD_REFRESH " Refresh";
                 refresh_act["verb"] = "refresh";
                 actions.push_back(std::move(refresh_act));
             }

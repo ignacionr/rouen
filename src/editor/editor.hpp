@@ -18,6 +18,7 @@
 #include "editor_interface.hpp"
 #include "text_editor.hpp"
 #include "image_editor.hpp"
+#include "../../external/IconsMaterialDesign.h"
 
 namespace rouen {
 namespace editor {
@@ -133,6 +134,20 @@ public:
                 [this](const std::vector<rouen::helpers::Diagnostic>& diags) { setDiagnostics(diags); }
             )
         );
+
+        registrar::add<std::function<void(bool)>>(
+            "editor_show_drawer",
+            std::make_shared<std::function<void(bool)>>(
+                [this](bool show) { setDiagnosticsDrawer(show); }
+            )
+        );
+
+        registrar::add<std::function<void()>>(
+            "editor_toggle_drawer",
+            std::make_shared<std::function<void()>>(
+                [this]() { toggleDiagnosticsDrawer(); }
+            )
+        );
     }
     
     virtual ~Editor() {
@@ -150,6 +165,8 @@ public:
             registrar::remove<std::function<void(int)>>("editor_fix_with_ai");
             registrar::remove<std::function<void()>>("editor_check_syntax");
             registrar::remove<std::function<void(const std::vector<rouen::helpers::Diagnostic>&)>>("editor_set_diagnostics");
+            registrar::remove<std::function<void(bool)>>("editor_show_drawer");
+            registrar::remove<std::function<void()>>("editor_toggle_drawer");
         } catch (...) {}
     }
 
@@ -204,6 +221,8 @@ public:
     }
 
     std::string take_snapshot(const std::string& filepath, int width = 800, int height = 600) {
+        int capture_w = (width > 0) ? width : 1200;
+        int capture_h = (height > 0) ? height : 800;
         SDL_GPUDevice* device = nullptr;
         try {
             auto device_ptr = registrar::get<SDL_GPUDevice*>("main_gpu_device");
@@ -212,14 +231,14 @@ public:
             }
         } catch (...) {}
 
-        auto render_fn = [this, width, height]() {
+        auto render_fn = [this, capture_w, capture_h]() {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(ImVec2(static_cast<float>(width), static_cast<float>(height)));
+            ImGui::SetNextWindowSize(ImVec2(static_cast<float>(capture_w), static_cast<float>(capture_h)));
             this->render();
         };
 
         RouenGPUTexture* snapshot_texture = rouen::helpers::capture_imgui(
-            width, height, render_fn, device
+            capture_w, capture_h, render_fn, device
         );
 
         if (!snapshot_texture) {
@@ -330,6 +349,12 @@ public:
     void toggleDiagnosticsDrawer() {
         if (text_editor_) {
             text_editor_->toggleDiagnosticsDrawer();
+        }
+    }
+
+    void setDiagnosticsDrawer(bool show) {
+        if (text_editor_) {
+            text_editor_->showDiagnosticsDrawer(show);
         }
     }
 
@@ -674,16 +699,16 @@ private:
                     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 12.0f);
                     if (textEditor->isCheckingSyntax()) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.85f, 1.0f, 1.0f));
-                        ImGui::TextDisabled("⟳ Checking...");
+                        ImGui::TextDisabled(ICON_MD_REFRESH " Checking...");
                         ImGui::PopStyleColor();
                     } else if (textEditor->getDiagnostics().empty()) {
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f));
-                        ImGui::Text("✓ Clean");
+                        ImGui::Text(ICON_MD_CHECK " Clean");
                         ImGui::PopStyleColor();
                     } else {
                         int errs = textEditor->getErrorsCount();
                         int warns = textEditor->getWarningsCount();
-                        std::string badge = std::format("{} {}e, {}w", (errs > 0 ? "🔴" : "🟡"), errs, warns);
+                        std::string badge = std::format("{} {}e, {}w", (errs > 0 ? ICON_MD_ERROR : ICON_MD_WARNING), errs, warns);
                         if (ImGui::SmallButton(badge.c_str())) {
                             textEditor->toggleDiagnosticsDrawer();
                         }
@@ -691,15 +716,15 @@ private:
                             ImGui::SetTooltip("Click to toggle diagnostics drawer (%zu total)", textEditor->getDiagnostics().size());
                         }
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("▲")) textEditor->jumpToPrevDiagnostic();
+                        if (ImGui::SmallButton(ICON_MD_ARROW_DROP_UP)) textEditor->jumpToPrevDiagnostic();
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Previous Issue (Shift+F4)");
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("▼")) textEditor->jumpToNextDiagnostic();
+                        if (ImGui::SmallButton(ICON_MD_ARROW_DROP_DOWN)) textEditor->jumpToNextDiagnostic();
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next Issue (F4)");
                     }
 
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("◫ Diff")) {
+                    if (ImGui::SmallButton(ICON_MD_COMPARE " Diff")) {
                         if (!textEditor->getSourceFile().empty()) {
                             "create_card"_sfn(std::format("diff:{}", textEditor->getSourceFile()));
                         } else {
