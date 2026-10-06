@@ -357,6 +357,7 @@ namespace rouen::cards {
                     {"Git", []() { "create_card"_sfn("git"); }},
                     {"GitHub", []() { "create_card"_sfn("github"); }},
                     {"CMake", []() { "create_card"_sfn("cmake:" + std::filesystem::current_path().string() + "/CMakeLists.txt"); }},
+                    {"Visual C++ Project", []() { "create_card"_sfn("vcxproj:" + std::filesystem::current_path().string()); }},
                     {"API Documentation (Swagger)", []() { rouen::platform::open_url("http://localhost:8081/swagger"); }},
                     {"Root Directory", []() { "create_card"_sfn("dir:/"); }},
                     {"Home Directory", []() { "create_card"_sfn("dir:$HOME"); }}

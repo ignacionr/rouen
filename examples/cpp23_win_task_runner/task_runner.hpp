@@ -67,7 +67,7 @@ private:
 
             // Execute task and handle monadically
             auto result = task.action();
-            result
+            (void)result
                 .and_then([&task](const std::string& val) -> std::expected<void, ErrorCode> {
                     std::cout << "[Task " << task.id << " (" << task.name << ")] Succeeded: " << val << "\n";
                     return {};

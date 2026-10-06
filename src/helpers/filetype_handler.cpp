@@ -40,6 +40,7 @@ namespace rouen::helpers {
     void FiletypeHandler::setup_default_rules() {
         rules_.clear();
         rules_.push_back({"CMakeLists.txt", "cmake:{}", true});
+        rules_.push_back({".vcxproj,.sln", "vcxproj:{}", true});
         rules_.push_back({".pdf,.PDF", "pdf:{}", false});
         rules_.push_back({".png,.jpg,.jpeg,.bmp,.gif,.webp,.tif,.tiff,.tga,.avif,.jxl,.svg,.ico,.cur,"
                            ".pnm,.pbm,.pgm,.ppm,.xpm,.xcf,.qoi,.lbm,.pcx",

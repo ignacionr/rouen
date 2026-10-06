@@ -29,6 +29,7 @@
 #include "../../helpers/media_player.hpp"
 #include "../../hosts/video_feed_host.hpp"
 #include "../development/cmake.hpp"
+#include "../development/vcproject_card.hpp"
 #include "../development/diff_card.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/git.hpp"
@@ -171,6 +172,18 @@ namespace rouen::cards {
                 
                 instance.emplace("cmake", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<cmake_card>(uri);
+                });
+
+                instance.emplace("vcproject", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<vcproject_card>(uri);
+                });
+
+                instance.emplace("vcxproj", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<vcproject_card>(uri);
+                });
+
+                instance.emplace("vc", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<vcproject_card>(uri);
                 });
                 
                 instance.emplace("pomodoro", [](std::string_view, SDL_Renderer*) {

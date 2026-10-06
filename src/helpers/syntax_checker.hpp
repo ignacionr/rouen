@@ -82,9 +82,9 @@ public:
 
         // Regex 2: MSVC format
         // Example: C:\path\file.cpp(42,15): error C2065: 'x': undeclared identifier
-        // Example: file.cpp(42): error C2065: ...
+        // Example: 1>C:\path\file.cpp(42,15): error C2065: ...
         static const std::regex msvc_regex(
-            R"(^(.+?)\((\d+)(?:,(\d+))?\):\s*(fatal error|error|warning|note)\s+([A-Za-z0-9]+:\s*.+)$)",
+            R"(^(?:\d+>\s*)?(.+?)\((\d+)(?:,(\d+))?\):\s*(fatal error|error|warning|note)\s+([A-Za-z0-9]+:\s*.+)$)",
             std::regex::optimize
         );
 

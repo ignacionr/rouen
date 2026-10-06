@@ -332,6 +332,7 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/media/chess_com_integration.cpp
     ../src/cards/media/media_companion.cpp
     ../src/cards/development/cmake.cpp
+    ../src/cards/development/vcproject_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
     ../src/cards/development/github/github_card.cpp
@@ -404,6 +405,7 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/cards/media/chess_com_integration.cpp
     ../src/cards/media/media_companion.cpp
     ../src/cards/development/cmake.cpp
+    ../src/cards/development/vcproject_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
     ../src/cards/development/github/github_card.cpp
@@ -1023,9 +1025,13 @@ add_gtest_executable(test_cmake_workflow test_cmake_workflow.cpp)
 target_sources(test_cmake_workflow PRIVATE ../src/hosts/llm_host.cpp)
 target_link_libraries(test_cmake_workflow PRIVATE rouen_test_modules SQLite::SQLite3 CURL::libcurl)
 
+add_gtest_executable(test_vcproject_workflow test_vcproject_workflow.cpp)
+target_sources(test_vcproject_workflow PRIVATE ../src/hosts/llm_host.cpp)
+target_link_libraries(test_vcproject_workflow PRIVATE rouen_test_modules SQLite::SQLite3 CURL::libcurl)
+
 
 # Set output directory for test executables
-set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor test_diff_engine test_cmake_workflow PROPERTIES
+set_target_properties(test_bybit_currency_fix test_example_math test_notes_repository_legacy test_series_repository test_rss_watermark test_syntax_checker test_code_indexer test_code_editor test_diff_engine test_cmake_workflow test_vcproject_workflow PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
 

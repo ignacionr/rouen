@@ -674,6 +674,7 @@ target_sources(${PROJECT_NAME}
   src/helpers/ui_automation_explorer.cpp
   src/cards/interface/card.cpp
   src/cards/development/cmake.cpp
+  src/cards/development/vcproject_card.cpp
   src/cards/development/fs-directory.cpp
   src/cards/development/git.cpp
   src/cards/development/git_overlay.cpp
