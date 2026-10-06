@@ -32,6 +32,7 @@
 #include "llm_host.hpp"
 #include "models/git.hpp"
 #include "models/git_process_helper.hpp"
+#include "../../helpers/conventional_commit.hpp"
 
 namespace {
     ImColor getStatusColor(rouen::models::GitRepoStatus status) {
@@ -549,9 +550,16 @@ void git::render_selected() {
     }
 
     ImGui::SameLine();
+    if (ImGui::SmallButton("Conventional Commit")) {
+        open_conventional_commit_dialog();
+    }
+
+    ImGui::SameLine();
     if (ImGui::SmallButton("Commit All")) {
         commit_all_with_ai_message();
     }
+
+    render_conventional_commit_modal();
 
     if (!current_commit_msg.empty()) {
         ImGui::Separator();
@@ -970,48 +978,121 @@ void git::prepend_action_result(const std::string& action_name, const std::strin
 }
 
 std::string git::generate_ai_commit_message(const std::string& staged_context, const std::string& repo_path) {
-    if (!rouen::helpers::LLMConfig::is_configured()) {
-        return {};
+    return rouen::helpers::ConventionalCommitGenerator::generate_commit_message(staged_context, "", repo_path);
+}
+
+void git::open_conventional_commit_dialog() {
+    if (ai_request_pending) return;
+    if (selected_repo.empty()) return;
+
+    ai_request_pending = true;
+    show_commit_dialog_ = true;
+    {
+        std::lock_guard<std::mutex> const lock(state_mutex);
+        ai_status_cue = "Generating AI Conventional Commit message...";
     }
 
-    auto llm_instance = rouen::helpers::LLMConfig::create_llm_instance();
-    if (!llm_instance) {
-        return {};
+    std::string const repo = selected_repo;
+
+    std::thread([this, repo]() {
+        std::string status_output = git_model->getGitStatus(repo);
+        std::string staged_context = git_model->getCachedDiff(repo);
+        if (staged_context.empty() || staged_context.find("---DIFF---") == std::string::npos) {
+            std::string const git_path = CONFIG_SERVICE()->get_git_path();
+            staged_context = rouen::models::GitProcessHelper::executeCommandInDirectory(
+                repo,
+                git_path + " diff --cached"
+            );
+            if (staged_context.empty()) {
+                staged_context = rouen::models::GitProcessHelper::executeCommandInDirectory(
+                    repo,
+                    git_path + " diff"
+                );
+            }
+        }
+
+        std::string msg = rouen::helpers::ConventionalCommitGenerator::generate_commit_message(
+            staged_context, status_output, repo
+        );
+
+        if (msg.empty()) {
+            msg = "chore: update repository files";
+        }
+
+        {
+            std::lock_guard<std::mutex> const lock(state_mutex);
+            std::strncpy(commit_message_buf_, msg.c_str(), sizeof(commit_message_buf_) - 1);
+            commit_message_buf_[sizeof(commit_message_buf_) - 1] = '\0';
+        }
+
+        ai_request_pending = false;
+    }).detach();
+}
+
+void git::commit_with_reviewed_message() {
+    std::string msg;
+    {
+        std::lock_guard<std::mutex> const lock(state_mutex);
+        msg = commit_message_buf_;
     }
 
-    auto settings = rouen::helpers::LLMConfig::get_current_config();
-    auto fetcher = std::make_shared<http::fetch>();
-
-    llm_instance->add_instructions(
-        "You are an expert software engineer writing git commit messages. "
-        "Return ONLY a commit message ready to pass to `git commit`. "
-        "Use imperative mood, be specific, and keep the first line under 72 characters. "
-        "If additional detail is helpful, include a blank line followed by concise bullet points. "
-        "Do not wrap the message in quotes or markdown."
-    );
-
-    std::string const prompt = std::format(
-        "Repository: {}\n\n"
-        "Write a git commit message for these staged changes.\n\n"
-        "Staged context:\n{}\n",
-        repo_path,
-        staged_context
-    );
-
-    auto response = llm_instance->sendMessage(
-        prompt,
-        [fetcher](const std::string& url, const std::string& data, auto header_client) {
-            return fetcher->post(url, data, header_client);
-        },
-        "user",
-        settings.model_name
-    );
-
-    if (response.choices.empty() || response.choices[0].message.content.empty()) {
-        return {};
+    if (msg.empty() || selected_repo.empty()) {
+        return;
     }
 
-    return trim_copy(response.choices[0].message.content);
+    std::string const repo = selected_repo;
+    git_model->gitAddAll(repo);
+    std::string result = git_model->gitCommit(repo, msg);
+    {
+        std::lock_guard<std::mutex> const lock(state_mutex);
+        last_commit_message = msg;
+        show_commit_dialog_ = false;
+    }
+    prepend_action_result("Conventional Commit", result);
+}
+
+void git::render_conventional_commit_modal() {
+    if (!show_commit_dialog_) return;
+
+    ImGui::Separator();
+    ImGui::TextColored(colors[0], "🤖 AI Conventional Commit Review");
+
+    if (ai_request_pending) {
+        ImGui::TextColored(colors[4], "Synthesizing Conventional Commit message... |");
+        return;
+    }
+
+    auto parsed = rouen::helpers::ConventionalCommitGenerator::parse_conventional_commit(commit_message_buf_);
+    ImGui::Text("Type: ");
+    ImGui::SameLine();
+    ImGui::TextColored(parsed.is_valid ? colors[3] : colors[4], "%s", 
+        parsed.type.empty() ? "(none)" : parsed.type.c_str());
+    if (!parsed.scope.empty()) {
+        ImGui::SameLine();
+        ImGui::Text("Scope: (%s)", parsed.scope.c_str());
+    }
+    if (parsed.is_breaking) {
+        ImGui::SameLine();
+        ImGui::TextColored(colors[2], "[BREAKING CHANGE]");
+    }
+
+    ImGui::InputTextMultiline("##GitCommitMsg", commit_message_buf_, sizeof(commit_message_buf_), ImVec2(-1, 90));
+
+    if (ImGui::Button("💾 Stage & Commit")) {
+        commit_with_reviewed_message();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("📋 Copy")) {
+        ImGui::SetClipboardText(commit_message_buf_);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("↺ Regenerate")) {
+        open_conventional_commit_dialog();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("✗ Cancel")) {
+        show_commit_dialog_ = false;
+    }
 }
 
 void git::generate_ai_summary() {

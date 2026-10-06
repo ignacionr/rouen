@@ -79,8 +79,23 @@
 #include "../helpers/syntax_checker.hpp"
 #include "../helpers/code_indexer.hpp"
 #include "../helpers/code_editor_service.hpp"
+#include "../helpers/conventional_commit.hpp"
 
 namespace rouen::hosts {
+
+struct mcp_code_generate_conventional_commit_params {
+    std::string diff_context;
+    std::string status_context;
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_code_generate_conventional_commit_params;
+        static constexpr auto value = glz::object(
+            "diff_context", &T::diff_context,
+            "status_context", &T::status_context,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
 
 struct mcp_code_discover_toolchain_params {
     std::string workspace_path;
@@ -1794,6 +1809,49 @@ mcp_host::mcp_host() {
     );
     register_function("editor", code_stage_patch_def);
     register_function("terminal", code_stage_patch_def);
+
+    // Register code_generate_conventional_commit function
+    function_definition const code_generate_commit_def(
+        "code_generate_conventional_commit",
+        "Generate a standardized commit message following the Conventional Commits 1.0.0 specification (e.g. feat(...), fix(...), refactor(...)) based on git diff and status context.",
+        R"mcp({"type":"object","properties":{"diff_context":{"type":"string","description":"Optional git diff or code changes to summarize"},"status_context":{"type":"string","description":"Optional git status summary"},"workspace_dir":{"type":"string","description":"Optional workspace directory path"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_generate_conventional_commit_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+
+                std::string diff = req.diff_context;
+                std::string status = req.status_context;
+                std::string ws = req.workspace_dir.empty() ? "." : req.workspace_dir;
+
+                if (diff.empty()) {
+                    std::string git_path = CONFIG_SERVICE()->get_git_path();
+                    diff = models::GitProcessHelper::executeCommandInDirectory(ws, git_path + " diff --cached");
+                    if (diff.empty()) {
+                        diff = models::GitProcessHelper::executeCommandInDirectory(ws, git_path + " diff");
+                    }
+                }
+                if (status.empty()) {
+                    std::string git_path = CONFIG_SERVICE()->get_git_path();
+                    status = models::GitProcessHelper::executeCommandInDirectory(ws, git_path + " status --short");
+                }
+
+                std::string msg = helpers::ConventionalCommitGenerator::generate_commit_message(diff, status, ws);
+                auto parsed = helpers::ConventionalCommitGenerator::parse_conventional_commit(msg);
+
+                std::string buffer;
+                static_cast<void>(glz::write_json(parsed, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_generate_commit_def);
+    register_function("terminal", code_generate_commit_def);
 
 
     // Register YouTube search videos function

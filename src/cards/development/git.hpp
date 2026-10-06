@@ -66,6 +66,12 @@ struct git : public card {
 
     static std::string extract_github_repo_name(const std::string& remote_url);
 
+    bool show_commit_dialog_{false};
+    char commit_message_buf_[2048] = "";
+    void open_conventional_commit_dialog();
+    void commit_with_reviewed_message();
+    void render_conventional_commit_modal();
+
 private:
     void prepend_action_result(const std::string& action_name, const std::string& command_output);
     std::string generate_ai_commit_message(const std::string& staged_context, const std::string& repo_path);

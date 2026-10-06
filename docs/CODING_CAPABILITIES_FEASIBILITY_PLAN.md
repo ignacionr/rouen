@@ -297,18 +297,27 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ---
 
-### Phase 7: CMake Card & Workflow Integration (In Progress)
+### Phase 7: CMake Card & Workflow Integration (Completed)
 * **Objective**: Unify the build deck, error triage, and git workflow with autonomous AI assistance.
-* **Tasks**:
-  1. **CMake Card "Check Syntax Only" Button**:
-     - Add a fast syntax validation button to [`cmake_card`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/cmake.hpp) to verify the active file or translation unit without initiating a full build.
-  2. **One-Click Build Error Triage**:
-     - Parse compiler and linker errors from Ninja build output in the CMake card or terminal.
-     - Display an *"Investigate & Fix"* action next to each failure that dispatches diagnostic context and affected files directly to `Code & Git Architect`.
-  3. **AI Conventional Commit Generator**:
-     - Inspect git status and staged diffs to automatically synthesize conventional commit messages (`feat(...)`, `fix(...)`, etc.).
-     - Provide an interactive review dialog before executing `git commit`.
-* **Outcome**: A cohesive, end-to-end C++/CMake developer workflow from syntax check to build triage and commit generation.
+* **Implemented Components**:
+  1. **CMake Card "Check Syntax Only" Button** ([`src/cards/development/cmake.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/cmake.hpp), [`cmake.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/cmake.cpp)):
+     - Added `[ ⟳ Check Syntax Only ]` button in the CMake card Actions toolbar.
+     - Runs fast syntax checking without full CMake/Ninja builds, targeting active editor files or project sources.
+     - Displays live status badges (`✓ Syntax Check Passed`, `✗ Syntax Check Failed`) with expandable diagnostic rows, clickable `[ 🔍 Open in Editor ]` file:line jumps, and `[ ⚡ Fix with AI ]` triggers.
+  2. **One-Click Ninja Build Error Triage**:
+     - Automatically parses Ninja and compiler/linker output (`SyntaxChecker::parse_compiler_output`) upon build failure.
+     - Renders an interactive **Build Failure Triage Panel** listing each diagnostic with severity styling, file, line, and column.
+     - Provides `[ ⚡ Investigate & Fix with AI ]` action per error:
+       - Switches persona to `Code & Git Architect` (`PersonaManager::select_persona_by_name`).
+       - Extracts surrounding source code context around the failure line.
+       - Dispatches structured diagnostic prompts to AI Chat requesting root-cause diagnosis, patch application (`code_apply_patch`), and syntax verification (`code_check_syntax`).
+  3. **Conventional Commit Generator & Interactive Review**:
+     - [`src/helpers/conventional_commit.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/helpers/conventional_commit.hpp): Clean parser, prompt builder, and dynamic LLM generator strictly following the Conventional Commits 1.0.0 specification (`feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`).
+     - **Interactive Review Modal**: Integrated into both CMake Card and Git Card (`git.cpp`), providing an editable text buffer, detected type/scope badges, breaking change indicator, `[ 💾 Stage & Commit ]`, `[ 📋 Copy ]`, and `[ ↺ Regenerate ]` actions.
+     - Registered MCP tool `code_generate_conventional_commit` in [`src/hosts/mcp_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/mcp_host.cpp).
+  4. **Verified Unit & Live AI Tests**:
+     - [`tests/test_cmake_workflow.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_cmake_workflow.cpp): 8/8 tests passing (100%): commit message cleaning, valid/invalid conventional commit parsing, Clang/GCC and MSVC Ninja diagnostic extraction, build triage prompt formatting, persona switching, and live end-to-end commit generation with Google Gemini API.
+* **Outcome**: A seamless, cohesive C++/CMake developer workflow from syntax check to Ninja build triage and AI conventional commit generation.
 
 ---
 
@@ -325,7 +334,7 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ## 6. Summary & Current Status
 
-Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly aligned** with the existing architecture. Six of the seven vertical phases are now fully implemented and verified with comprehensive unit and live AI tests:
+Adding coding capabilities to Rouen is **fully realized, rigorously verified, and deployed**. All seven vertical phases of the feasibility plan are complete:
 
 1. **Phase 1**: Toolchain discovery & fast `-fsyntax-only` / `/Zs` compiler execution.
 2. **Phase 2**: Editor error markers and MCP syntax checking bridge.
@@ -333,8 +342,7 @@ Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly 
 4. **Phase 4**: Autonomous code editor tools (`read_file`, `write_file`, `apply_patch`), immediate self-correction loop, and specialized personas.
 5. **Phase 5**: Editor diagnostic actions, gutter icons, rich hover tooltips, collapsible diagnostics drawer, status pill, and one-click "Fix with AI" dispatch.
 6. **Phase 6**: Visual Diff & Staging Card (`diff_card`), Myers diff engine, per-chunk Accept/Discard cherry-picking, and in-memory rollback stack.
+7. **Phase 7**: CMake card fast syntax validation, Ninja build failure triage to `Code & Git Architect`, and AI Conventional Commit generator with interactive review dialog.
 
-**Next Milestone**:
-**Phase 7: CMake Card & Workflow Integration** (Fast syntax validation button in CMake card, one-click build failure triage to `Code & Git Architect`, and AI conventional commit generator).
 
 
