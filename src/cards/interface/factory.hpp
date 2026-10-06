@@ -29,6 +29,7 @@
 #include "../../helpers/media_player.hpp"
 #include "../../hosts/video_feed_host.hpp"
 #include "../development/cmake.hpp"
+#include "../development/diff_card.hpp"
 #include "../development/fs-directory.hpp"
 #include "../development/git.hpp"
 #include "../development/github.hpp"
@@ -146,6 +147,10 @@ namespace rouen::cards {
                 // Add card factories
                 instance.emplace("git", [](std::string_view uri, SDL_Renderer*) {
                     return std::make_shared<git>(uri);
+                });
+
+                instance.emplace("diff", [](std::string_view uri, SDL_Renderer*) {
+                    return std::make_shared<rouen::cards::diff_card>(uri);
                 });
 
                 instance.emplace("github", [](std::string_view uri, SDL_Renderer*) {

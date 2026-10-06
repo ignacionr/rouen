@@ -214,6 +214,20 @@ struct mcp_code_apply_patch_params {
     };
 };
 
+struct mcp_code_diff_params {
+    std::string file_path;
+    std::string old_content;
+    std::string new_content;
+    struct glaze {
+        using T = mcp_code_diff_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "old_content", &T::old_content,
+            "new_content", &T::new_content
+        );
+    };
+};
+
 struct mcp_close_card_params {
     int index{-1};
     std::string uri;
@@ -1632,6 +1646,155 @@ mcp_host::mcp_host() {
     );
     register_function("editor", code_apply_patch_def);
     register_function("terminal", code_apply_patch_def);
+
+    // Register code_undo function
+    function_definition const code_undo_def(
+        "code_undo",
+        "Undo the most recent file edit applied by AI or editor. Reverts disk content and updates index.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                bool ok = helpers::CodeEditorService::instance().undo();
+                return ok ? R"({"status":"success","message":"Last edit undone successfully."})"
+                          : R"({"status":"error","message":"No edits available in undo stack."})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_undo_def);
+    register_function("terminal", code_undo_def);
+
+    // Register code_redo function
+    function_definition const code_redo_def(
+        "code_redo",
+        "Redo the most recently undone file edit. Re-applies content to disk and updates index.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                bool ok = helpers::CodeEditorService::instance().redo();
+                return ok ? R"({"status":"success","message":"Last undone edit redone successfully."})"
+                          : R"({"status":"error","message":"No edits available in redo stack."})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_redo_def);
+    register_function("terminal", code_redo_def);
+
+    // Register code_get_history function
+    function_definition const code_get_history_def(
+        "code_get_history",
+        "Retrieve recent file edit history and undo stack entries with timestamps, descriptions, and compiler syntax status.",
+        R"mcp({"type":"object","properties":{}})mcp",
+        [](const std::string& /*params*/) -> std::string {
+            try {
+                auto history = helpers::CodeEditorService::instance().get_history();
+                std::string buffer;
+                static_cast<void>(glz::write_json(history, buffer));
+                return buffer;
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_get_history_def);
+    register_function("terminal", code_get_history_def);
+
+    // Register code_diff function
+    function_definition const code_diff_def(
+        "code_diff",
+        "Generate a structured unified diff comparing proposed edits against original content or comparing a file against Git HEAD.",
+        R"mcp({"type":"object","properties":{"file_path":{"type":"string","description":"Target file path to compare against Git HEAD or staging"},"old_content":{"type":"string","description":"Optional base content for arbitrary comparison"},"new_content":{"type":"string","description":"Optional modified content for arbitrary comparison"}}})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_diff_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                if (!req.old_content.empty() || !req.new_content.empty()) {
+                    auto diff = helpers::DiffEngine::compute_diff(req.old_content, req.new_content, "old", "new");
+                    std::string unified = helpers::DiffEngine::to_unified_diff(diff);
+                    return std::format(R"({{"has_changes":{},"additions":{},"deletions":{},"diff":{}}})",
+                        diff.has_changes ? "true" : "false", diff.total_additions, diff.total_deletions,
+                        glz::write_json(unified).value_or("\"\""));
+                }
+                if (!req.file_path.empty()) {
+                    std::string resolved = ProcessHelper::expandTilde(req.file_path);
+                    if (!std::filesystem::exists(resolved)) {
+                        return R"({"status":"error","message":"File does not exist."})";
+                    }
+                    std::ifstream f(resolved, std::ios::binary);
+                    std::ostringstream ss;
+                    ss << f.rdbuf();
+                    std::string disk_content = ss.str();
+
+                    // Compare with HEAD
+                    std::string git_path = CONFIG_SERVICE()->get_git_path();
+                    std::string head_cmd = std::format("{} show HEAD:\"{}\"", git_path, resolved);
+                    std::string head_content = models::GitProcessHelper::executeCommandInDirectory(".", head_cmd);
+                    if (head_content.starts_with("fatal:")) head_content.clear();
+
+                    auto diff = helpers::DiffEngine::compute_diff(head_content, disk_content, resolved, resolved);
+                    std::string unified = helpers::DiffEngine::to_unified_diff(diff);
+                    return std::format(R"({{"has_changes":{},"additions":{},"deletions":{},"diff":{}}})",
+                        diff.has_changes ? "true" : "false", diff.total_additions, diff.total_deletions,
+                        glz::write_json(unified).value_or("\"\""));
+                }
+                return R"({"status":"error","message":"Provide file_path or old_content/new_content."})";
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_diff_def);
+    register_function("terminal", code_diff_def);
+
+    // Register code_stage_patch function
+    function_definition const code_stage_patch_def(
+        "code_stage_patch",
+        "Stage a proposed patch into the Visual Diff & Staging Card without immediately modifying disk. Allows developers to review side-by-side diffs and accept/discard individual hunks.",
+        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"Target file path"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"target_content":{"type":"string","description":"Exact character sequence to be replaced"},"replacement_content":{"type":"string","description":"Replacement text"},"start_line":{"type":"integer","description":"Optional 1-based start line"},"end_line":{"type":"integer","description":"Optional 1-based end line"},"allow_multiple":{"type":"boolean","description":"Allow replacing multiple occurrences"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":["target_content","replacement_content"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_code_apply_patch_params req{};
+                if (!params.empty()) {
+                    static_cast<void>(glz::read_json(req, params));
+                }
+                std::string p = !req.path.empty() ? req.path : req.file_path;
+                if (p.empty()) {
+                    return R"({"status":"error","message":"Missing required file path."})";
+                }
+                std::string staged_id = helpers::CodeEditorService::instance().stage_patch(
+                    p, req.target_content, req.replacement_content,
+                    req.start_line, req.end_line, req.allow_multiple, req.workspace_dir
+                );
+                if (staged_id.empty()) {
+                    return R"({"status":"error","message":"Failed to stage patch: target content not found or file does not exist."})";
+                }
+                // Also open or notify diff card
+                try {
+                    auto create_card_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                    if (create_card_fn && *create_card_fn) {
+                        (*create_card_fn)("diff:staged");
+                    }
+                } catch (...) {}
+
+                return std::format(R"({{"status":"staged","staged_id":"{}","message":"Patch staged in Visual Diff Card for developer review."}})", staged_id);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "editor"
+    );
+    register_function("editor", code_stage_patch_def);
+    register_function("terminal", code_stage_patch_def);
+
 
     // Register YouTube search videos function
     function_definition const youtube_search_def(

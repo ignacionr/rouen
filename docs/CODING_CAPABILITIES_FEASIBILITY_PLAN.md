@@ -266,20 +266,38 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ---
 
-### Phase 6: Visual Diff & Staging Card (Planned)
+### Phase 6: Visual Diff & Staging Card (Completed)
 * **Objective**: Deliver a safety review buffer with visual side-by-side / unified diffs and chunk-level staging before code changes touch disk or git.
-* **Tasks**:
-  1. **Visual Diff Review Card**:
-     - Implement unified and side-by-side color-coded diff view comparing proposed modifications against disk or git HEAD.
-  2. **Chunk-Level Review Controls**:
-     - Provide per-chunk *"Accept Chunk"* and *"Discard Chunk"* buttons, giving developers granular control over AI edits.
-  3. **In-Memory Rollback & Undo Buffer**:
-     - Maintain an undo history stack for AI-applied patches, allowing one-click rollback of previous edits without requiring git CLI commands.
-* **Outcome**: Developers maintain complete visibility and control over AI code changes with chunk-level cherry-picking.
+* **Implemented Components**:
+  1. **Myers Diff Engine & Chunk Builder** ([`src/helpers/diff_engine.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/helpers/diff_engine.hpp)):
+     - High-performance, dependency-free C++20 Myers Shortest Edit Script (SES) algorithm comparing arbitrary strings or files line by line.
+     - Configurable context hunk builder grouping modifications into hunks (`@@ -old,count +new,count @@`) with automatic boundary detection.
+     - Unified diff formatter and parser supporting roundtrip git diff compatibility.
+     - Selective hunk applier: applies only accepted hunks in reverse line order to eliminate coordinate drift while preserving rejected hunks.
+  2. **Visual Diff Review Card** ([`src/cards/development/diff_card.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/diff_card.hpp), [`diff_card.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/diff_card.cpp)):
+     - **Side-by-Side (Split) View**: Synchronized two-column comparison highlighting deletions in red and additions in green with aligned placeholders.
+     - **Unified View**: Single-column diff view with dual line numbers (`Old#`, `New#`), type markers, and background color coding.
+     - **Source Selection**: Switch between staged AI edits (`diff:staged`), Git working tree vs `HEAD` (`diff:<path>`), or custom file comparisons.
+  3. **Chunk-Level Review Controls & Staging**:
+     - Per-chunk interactive action buttons: `[ ✓ Accept ]`, `[ ✗ Discard ]`, and `[ ↺ Reset ]` with live status badges (`[PENDING]`, `[ACCEPTED ✓]`, `[DISCARDED ✗]`).
+     - Bulk actions: `[ ✓ Accept All ]`, `[ ✗ Discard All ]`, and `[ 💾 Apply Accepted to Disk ]` with immediate compiler syntax validation.
+     - In-memory staging buffer in `CodeEditorService` allowing AI to stage patches for developer review prior to disk mutation.
+  4. **In-Memory Rollback & Undo Stack**:
+     - Comprehensive edit history tracking with timestamps, file paths, diff statistics (`+N -M`), and compiler syntax status.
+     - Dedicated **History Drawer** in `diff_card` with `[ ↺ Rollback ]` for any past edit, plus top-level `[ ↶ Undo Last ]` and `[ ↷ Redo ]`.
+     - Registered global registrar hooks (`code_editor_undo`, `code_editor_redo`, `code_editor_can_undo`, `code_editor_can_redo`).
+  5. **IDE & MCP Integration**:
+     - Registered `diff` in [`factory.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/interface/factory.hpp) and exported in [`development_cards.cppm`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/development_cards.cppm).
+     - Added `Review Diff (Git HEAD)` (`Cmd+D`), `Staging & Visual Diff Buffer` (`Cmd+Shift+D`), and `◫ Diff` pill button to [`editor.hpp`](file:///Users/ignaciorodriguez/src/rouen/src/editor/editor.hpp).
+     - Added `Visual Diff` action button to [`git.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/cards/development/git.cpp).
+     - Registered MCP tools: `code_undo`, `code_redo`, `code_get_history`, `code_diff`, `code_stage_patch` in [`mcp_host.cpp`](file:///Users/ignaciorodriguez/src/rouen/src/hosts/mcp_host.cpp).
+  6. **Verified Unit Tests**:
+     - [`tests/test_diff_engine.cpp`](file:///Users/ignaciorodriguez/src/rouen/tests/test_diff_engine.cpp): 100% pass across 8 tests (identical content, simple edits, pure additions/deletions, multiple hunk separation, selective chunk application, unified diff roundtrip, in-memory undo/redo stack, and staging buffer).
+* **Outcome**: Full visual diff and safety review buffer is live. Developers have chunk-level control over proposed AI edits and instant rollback capabilities.
 
 ---
 
-### Phase 7: CMake Card & Workflow Integration (Planned)
+### Phase 7: CMake Card & Workflow Integration (In Progress)
 * **Objective**: Unify the build deck, error triage, and git workflow with autonomous AI assistance.
 * **Tasks**:
   1. **CMake Card "Check Syntax Only" Button**:
@@ -305,16 +323,18 @@ We recommend executing this roadmap in **7 modular vertical slices**, ensuring f
 
 ---
 
-## 6. Summary & Recommended First Action
+## 6. Summary & Current Status
 
-Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly aligned** with the existing architecture. Five of the seven vertical phases are now fully implemented and verified with live AI unit tests:
+Adding coding capabilities to Rouen is **highly feasible, low risk, and cleanly aligned** with the existing architecture. Six of the seven vertical phases are now fully implemented and verified with comprehensive unit and live AI tests:
 
 1. **Phase 1**: Toolchain discovery & fast `-fsyntax-only` / `/Zs` compiler execution.
 2. **Phase 2**: Editor error markers and MCP syntax checking bridge.
 3. **Phase 3**: SQLite FTS5 trigram code indexing and C++ symbol lookups.
 4. **Phase 4**: Autonomous code editor tools (`read_file`, `write_file`, `apply_patch`), immediate self-correction loop, and specialized personas.
 5. **Phase 5**: Editor diagnostic actions, gutter icons, rich hover tooltips, collapsible diagnostics drawer, status pill, and one-click "Fix with AI" dispatch.
+6. **Phase 6**: Visual Diff & Staging Card (`diff_card`), Myers diff engine, per-chunk Accept/Discard cherry-picking, and in-memory rollback stack.
 
-**Recommended Next Step**:
-Proceed with **Phase 6: Visual Diff & Staging Card** to build the interactive visual diff viewer with per-chunk Accept/Discard controls and rollback buffers.
+**Next Milestone**:
+**Phase 7: CMake Card & Workflow Integration** (Fast syntax validation button in CMake card, one-click build failure triage to `Code & Git Architect`, and AI conventional commit generator).
+
 

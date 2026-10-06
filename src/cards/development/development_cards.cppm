@@ -38,6 +38,7 @@ module;
 #include <vector>
 
 #include "cards/development/cmake.hpp"
+#include "cards/development/diff_card.hpp"
 #include "cards/development/fs-directory.hpp"
 #include "cards/development/git.hpp"
 #include "cards/development/git_overlay.hpp"
@@ -47,6 +48,8 @@ export module rouen.cards.development;
 
 export namespace rouen::cards::development {
     using rouen::cards::cmake_card;
+    using rouen::cards::diff_card;
     using rouen::cards::fs_directory;
     using ::git;
 }
+

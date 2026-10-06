@@ -635,6 +635,30 @@ private:
                         textEditor->toggleDiagnosticsDrawer();
                     }
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Review Diff (Git HEAD)", "Cmd+D", nullptr, hasTextEditor)) {
+                    if (textEditor && !textEditor->getSourceFile().empty()) {
+                        "create_card"_sfn(std::format("diff:{}", textEditor->getSourceFile()));
+                    } else {
+                        "create_card"_sfn("diff");
+                    }
+                }
+                if (ImGui::MenuItem("Staging & Visual Diff Buffer", "Cmd+Shift+D", nullptr)) {
+                    "create_card"_sfn("diff:staged");
+                }
+                auto undo_fn = registrar::try_get<std::function<bool()>>("code_editor_undo");
+                auto can_undo_fn = registrar::try_get<std::function<bool()>>("code_editor_can_undo");
+                bool can_undo_val = (can_undo_fn && *can_undo_fn && (*can_undo_fn)());
+                if (ImGui::MenuItem("Undo Last Code Edit", "Cmd+Z (Disk)", nullptr, can_undo_val)) {
+                    if (undo_fn && *undo_fn) (*undo_fn)();
+                }
+
+                auto redo_fn = registrar::try_get<std::function<bool()>>("code_editor_redo");
+                auto can_redo_fn = registrar::try_get<std::function<bool()>>("code_editor_can_redo");
+                bool can_redo_val = (can_redo_fn && *can_redo_fn && (*can_redo_fn)());
+                if (ImGui::MenuItem("Redo Last Code Edit", "Cmd+Y (Disk)", nullptr, can_redo_val)) {
+                    if (redo_fn && *redo_fn) (*redo_fn)();
+                }
                 ImGui::EndMenu();
             }
             
@@ -642,7 +666,7 @@ private:
             if (active_editor_ && !active_editor_->empty()) {
                 TextEditor* textEditor = dynamic_cast<TextEditor*>(active_editor_);
                 if (textEditor) {
-                    float right_section_w = 260.0f;
+                    float right_section_w = 320.0f;
                     float right_pos = std::max(ImGui::GetCursorPosX() + 10.0f, ImGui::GetWindowWidth() - right_section_w);
                     ImGui::SameLine(right_pos);
 
@@ -673,6 +697,17 @@ private:
                         if (ImGui::SmallButton("▼")) textEditor->jumpToNextDiagnostic();
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next Issue (F4)");
                     }
+
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("◫ Diff")) {
+                        if (!textEditor->getSourceFile().empty()) {
+                            "create_card"_sfn(std::format("diff:{}", textEditor->getSourceFile()));
+                        } else {
+                            "create_card"_sfn("diff");
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Review visual diff with Git HEAD (Cmd+D)");
+
                     ImGui::PopStyleVar();
 
                     ImGui::SameLine();

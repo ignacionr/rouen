@@ -544,6 +544,11 @@ void git::render_selected() {
     }
 
     ImGui::SameLine();
+    if (ImGui::SmallButton("Visual Diff")) {
+        "create_card"_sfn(std::format("diff:{}", selected_repo));
+    }
+
+    ImGui::SameLine();
     if (ImGui::SmallButton("Commit All")) {
         commit_all_with_ai_message();
     }
