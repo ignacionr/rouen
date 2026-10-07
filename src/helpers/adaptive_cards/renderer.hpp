@@ -419,9 +419,23 @@ private:
 
                 ImGui::EndGroup();
 
-                if (!node.selectAction.type.empty() && ImGui::IsItemClicked()) {
-                    if (node.selectAction.type == "Action.OpenUrl" && !node.selectAction.url.empty()) {
-                        callbacks.open_url(node.selectAction.url);
+                if (!node.selectAction.type.empty()) {
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                        ImVec2 const min = ImGui::GetItemRectMin();
+                        ImVec2 const max = ImGui::GetItemRectMax();
+                        ImGui::GetWindowDrawList()->AddRect(min, max, ImGui::GetColorU32(ImGuiCol_HeaderHovered), 2.0f);
+                    }
+                    if (ImGui::IsItemClicked()) {
+                        if (node.selectAction.type == "Action.OpenUrl" && !node.selectAction.url.empty()) {
+                            callbacks.open_url(node.selectAction.url);
+                        } else if (node.selectAction.type == "Action.Execute") {
+                            callbacks.on_submit(std::format(
+                                "{{\"verb\":\"{}\",\"data\":{}}}", node.selectAction.verb,
+                                build_action_data_payload(state, node.selectAction.data)));
+                        } else if (node.selectAction.type == "Action.Submit") {
+                            callbacks.on_submit(build_action_data_payload(state, node.selectAction.data));
+                        }
                     }
                 }
                 ImGui::PopID();

@@ -15,6 +15,7 @@
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/filetype_handler.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../helpers/platform_utils.hpp"
 
 #include "../information/image_viewer.hpp"
@@ -71,6 +72,255 @@ namespace rouen::cards {
 
     std::string fs_directory::get_uri() const {
         return std::format("dir:{}", path_.string());
+    }
+
+    bool fs_directory::matches_uri(std::string_view uri) const {
+        if (uri == "dir") return true;
+        if (uri.starts_with("dir:")) {
+            std::string_view req = uri.substr(4);
+            return req.empty() || path_.string() == req;
+        }
+        return get_uri() == uri;
+    }
+
+    namespace {
+        [[nodiscard]] std::string format_file_size(uintmax_t bytes) {
+            constexpr double KB = 1024.0;
+            constexpr double MB = KB * 1024.0;
+            constexpr double GB = MB * 1024.0;
+
+            double const b = static_cast<double>(bytes);
+            if (b >= GB) {
+                return std::format("{:.2f} GB", b / GB);
+            }
+            if (b >= MB) {
+                return std::format("{:.1f} MB", b / MB);
+            }
+            if (b >= KB) {
+                return std::format("{:.1f} KB", b / KB);
+            }
+            return std::format("{} B", bytes);
+        }
+    } // namespace
+
+    std::string fs_directory::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Header with current directory path
+        {
+            glz::json_t header;
+            header["type"] = "TextBlock";
+            header["text"] = std::format("📁 {}", path_.string());
+            header["weight"] = "Bolder";
+            header["size"] = "Medium";
+            header["color"] = "Accent";
+            header["wrap"] = true;
+            body.push_back(std::move(header));
+        }
+
+        // Subtitle with stats
+        size_t dir_count = 0;
+        size_t file_count = 0;
+        for (const auto& entry : cached_entries_) {
+            std::error_code ec;
+            if (entry.is_directory(ec)) dir_count++;
+            else if (entry.is_regular_file(ec)) file_count++;
+        }
+
+        {
+            glz::json_t sub;
+            sub["type"] = "TextBlock";
+            std::string meta = std::format("{} folder{}, {} file{}",
+                dir_count, dir_count == 1 ? "" : "s",
+                file_count, file_count == 1 ? "" : "s");
+            if (is_git_repo_) {
+                meta += " • Git Repository";
+            }
+            sub["text"] = meta;
+            sub["isSubtle"] = true;
+            sub["size"] = "Small";
+            body.push_back(std::move(sub));
+        }
+
+        // 2. Navigation toolbar: Up, Refresh
+        {
+            glz::json_t act_set;
+            act_set["type"] = "ActionSet";
+            std::vector<glz::json_t> acts;
+
+            if (path_.has_parent_path() && path_.parent_path() != path_) {
+                glz::json_t up_act;
+                up_act["type"] = "Action.Execute";
+                up_act["title"] = "⬆️ Up (..)";
+                up_act["verb"] = "cd";
+                up_act["data"] = glz::json_t::object_t{{"path", path_.parent_path().string()}};
+                acts.push_back(std::move(up_act));
+            }
+
+            glz::json_t ref_act;
+            ref_act["type"] = "Action.Execute";
+            ref_act["title"] = "🔄 Refresh";
+            ref_act["verb"] = "refresh";
+            acts.push_back(std::move(ref_act));
+
+            act_set["actions"] = std::move(acts);
+            body.push_back(std::move(act_set));
+        }
+
+        // 3. Entries listing
+        std::error_code ec;
+        if (!std::filesystem::exists(path_, ec)) {
+            glz::json_t err_text;
+            err_text["type"] = "TextBlock";
+            err_text["text"] = "⚠️ Directory does not exist or is inaccessible";
+            err_text["color"] = "Attention";
+            body.push_back(std::move(err_text));
+        } else if (cached_entries_.empty()) {
+            glz::json_t empty_text;
+            empty_text["type"] = "TextBlock";
+            empty_text["text"] = "(Empty directory)";
+            empty_text["isSubtle"] = true;
+            body.push_back(std::move(empty_text));
+        } else {
+            // Sort: directories first, then files
+            std::vector<std::filesystem::directory_entry> sorted_entries = cached_entries_;
+            std::sort(sorted_entries.begin(), sorted_entries.end(), [](const auto& a, const auto& b) {
+                std::error_code ec1, ec2;
+                bool a_dir = a.is_directory(ec1);
+                bool b_dir = b.is_directory(ec2);
+                if (a_dir != b_dir) return a_dir > b_dir;
+                return a.path().filename().string() < b.path().filename().string();
+            });
+
+            constexpr size_t max_card_entries = 150;
+            size_t const count = std::min(sorted_entries.size(), max_card_entries);
+
+            for (size_t i = 0; i < count; ++i) {
+                const auto& entry = sorted_entries[i];
+                std::error_code entry_ec;
+                bool is_dir = entry.is_directory(entry_ec);
+                std::string const filename = entry.path().filename().string();
+
+                glz::json_t item_container;
+                item_container["type"] = "Container";
+
+                if (is_dir) {
+                    glz::json_t act;
+                    act["type"] = "Action.Execute";
+                    act["verb"] = "cd";
+                    act["data"] = glz::json_t::object_t{{"path", entry.path().string()}};
+                    item_container["selectAction"] = std::move(act);
+                }
+
+                glz::json_t col_set;
+                col_set["type"] = "ColumnSet";
+                std::vector<glz::json_t> cols;
+
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "stretch";
+                    std::vector<glz::json_t> col_items;
+                    glz::json_t text;
+                    text["type"] = "TextBlock";
+                    text["text"] = std::format("{} {}", is_dir ? "📁" : "📄", filename);
+                    if (is_dir) {
+                        text["color"] = "Accent";
+                    }
+                    col_items.push_back(std::move(text));
+                    col["items"] = std::move(col_items);
+                    cols.push_back(std::move(col));
+                }
+
+                {
+                    glz::json_t col;
+                    col["type"] = "Column";
+                    col["width"] = "auto";
+                    std::vector<glz::json_t> col_items;
+                    glz::json_t text;
+                    text["type"] = "TextBlock";
+                    if (is_dir) {
+                        text["text"] = "<DIR>";
+                    } else {
+                        std::error_code sz_ec;
+                        uintmax_t sz = entry.file_size(sz_ec);
+                        text["text"] = sz_ec ? "" : format_file_size(sz);
+                    }
+                    text["isSubtle"] = true;
+                    col_items.push_back(std::move(text));
+                    col["items"] = std::move(col_items);
+                    cols.push_back(std::move(col));
+                }
+
+                col_set["columns"] = std::move(cols);
+                item_container["items"] = std::vector<glz::json_t>{std::move(col_set)};
+                body.push_back(std::move(item_container));
+            }
+
+            if (sorted_entries.size() > max_card_entries) {
+                glz::json_t more_text;
+                more_text["type"] = "TextBlock";
+                more_text["text"] = std::format("... and {} more items", sorted_entries.size() - max_card_entries);
+                more_text["isSubtle"] = true;
+                body.push_back(std::move(more_text));
+            }
+        }
+
+        card["body"] = std::move(body);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
+    void fs_directory::handle_action(std::string_view action_json) {
+        try {
+            glz::json_t payload;
+            auto err = glz::read_json(payload, std::string(action_json));
+            if (err) return;
+
+            std::string verb;
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
+            }
+
+            glz::json_t data = payload.contains("data") ? payload["data"] : payload;
+
+            if (verb == "cd" || verb == "navigate") {
+                if (data.contains("path") && data["path"].holds<std::string>()) {
+                    std::filesystem::path new_path = data["path"].get<std::string>();
+                    std::error_code ec;
+                    if (std::filesystem::is_directory(new_path, ec)) {
+                        path_ = new_path;
+                        name(path_.string());
+                        filter_.clear();
+                        last_rejected_char_ = '\0';
+                        search_active_ = false;
+                        search_results_.clear();
+                        refresh_cache();
+                    }
+                }
+            } else if (verb == "up") {
+                if (path_.has_parent_path() && path_.parent_path() != path_) {
+                    path_ = path_.parent_path();
+                    name(path_.string());
+                    filter_.clear();
+                    last_rejected_char_ = '\0';
+                    search_active_ = false;
+                    search_results_.clear();
+                    refresh_cache();
+                }
+            } else if (verb == "refresh") {
+                refresh_cache();
+            }
+        } catch (...) {}
     }
 
     std::string fs_directory::to_lower(std::string_view s) {

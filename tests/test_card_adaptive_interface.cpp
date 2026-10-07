@@ -576,6 +576,49 @@ TEST(CardAdaptiveInterface, FsDirectoryFilterLookaheadAndRejection) {
     std::filesystem::remove_all(temp_dir);
 }
 
+TEST(CardAdaptiveInterface, FsDirectoryAdaptiveCardJsonAndActions) {
+    auto temp_dir = std::filesystem::temp_directory_path() / "rouen_test_fs_adaptive";
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::create_directories(temp_dir / "subdir");
+
+    {
+        std::ofstream(temp_dir / "test.txt") << "hello world";
+        std::ofstream(temp_dir / "subdir" / "nested.txt") << "nested content";
+    }
+
+    rouen::cards::fs_directory dir{temp_dir.string()};
+
+    // URI matching
+    EXPECT_TRUE(dir.matches_uri("dir"));
+    EXPECT_TRUE(dir.matches_uri("dir:"));
+    EXPECT_TRUE(dir.matches_uri(std::format("dir:{}", temp_dir.string())));
+
+    // JSON generation
+    std::string card_json = dir.get_adaptive_card_json();
+    EXPECT_FALSE(card_json.empty());
+
+    glz::json_t parsed;
+    auto err = glz::read_json(parsed, card_json);
+    EXPECT_FALSE(err);
+    EXPECT_EQ(parsed["type"].get<std::string>(), "AdaptiveCard");
+    EXPECT_TRUE(card_json.find("subdir") != std::string::npos);
+    EXPECT_TRUE(card_json.find("test.txt") != std::string::npos);
+
+    // Action handling: navigate down into subdir
+    std::string cd_action = std::format(R"({{"verb":"cd","data":{{"path":"{}"}}}})", (temp_dir / "subdir").string());
+    dir.handle_action(cd_action);
+    EXPECT_EQ(dir.get_uri(), std::format("dir:{}", (temp_dir / "subdir").string()));
+
+    std::string sub_json = dir.get_adaptive_card_json();
+    EXPECT_TRUE(sub_json.find("nested.txt") != std::string::npos);
+
+    // Action handling: navigate up
+    dir.handle_action(R"({"verb":"up"})");
+    EXPECT_EQ(dir.get_uri(), std::format("dir:{}", temp_dir.string()));
+
+    std::filesystem::remove_all(temp_dir);
+}
+
 TEST(GitCardTest, AISummaryStateAndMarkdownSeparation) {
     ::git git_card{};
 

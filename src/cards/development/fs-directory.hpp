@@ -18,6 +18,10 @@ namespace rouen::cards {
         explicit fs_directory(std::string_view path);
 
         [[nodiscard]] std::string get_uri() const override;
+        [[nodiscard]] bool matches_uri(std::string_view uri) const override;
+        [[nodiscard]] std::string get_adaptive_card_json() const override;
+        void handle_action(std::string_view action_json) override;
+
         void receive_keystrokes();
         bool render() override;
 
