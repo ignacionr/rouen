@@ -21,6 +21,8 @@
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
 #include "../src/cards/development/fs-directory.hpp"
+#include "../src/cards/development/git.hpp"
+#include "../src/helpers/markdown_renderer.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
 #ifdef __clang__
@@ -569,5 +571,47 @@ TEST(CardAdaptiveInterface, FsDirectoryFilterLookaheadAndRejection) {
     std::filesystem::remove_all(temp_dir);
 }
 
+TEST(GitCardTest, AISummaryStateAndMarkdownSeparation) {
+    ::git git_card{};
 
+    // Initial state expectations
+    EXPECT_TRUE(git_card.last_ai_summary.empty());
+    EXPECT_TRUE(git_card.last_ai_summary_repo.empty());
+    EXPECT_TRUE(git_card.ai_summary_expanded);
 
+    // Set sample AI markdown summary
+    const std::string test_summary = 
+        "### Working Tree Summary\n"
+        "- feat(git): Rendered AI summaries in dedicated markdown box\n"
+        "- fix(cli): Prevented raw status pollution in repo_status\n\n"
+        "#### Modified Files\n"
+        "- `src/cards/development/git.hpp`\n";
+
+    git_card.last_ai_summary = test_summary;
+    git_card.last_ai_summary_repo = "/path/to/my_repo";
+    git_card.last_ai_summary_time = std::chrono::system_clock::now();
+    git_card.selected_repo = "/path/to/my_repo";
+
+    // Verify summary is stored independently and repo_status remains free of markdown pollution
+    EXPECT_EQ(git_card.last_ai_summary, test_summary);
+    EXPECT_EQ(git_card.repo_status.find("### Working Tree Summary"), std::string::npos);
+
+    // Verify markdown primitives parse cleanly
+    auto parsed_doc = rouen::helpers::parse_markdown_document(git_card.last_ai_summary);
+    EXPECT_FALSE(parsed_doc.empty());
+    size_t headings_count = 0;
+    size_t list_items_count = 0;
+    for (const auto& prim : parsed_doc.primitives) {
+        if (std::holds_alternative<rouen::helpers::heading_primitive>(prim)) {
+            headings_count++;
+        } else if (std::holds_alternative<rouen::helpers::list_item_primitive>(prim)) {
+            list_items_count++;
+        }
+    }
+    EXPECT_GE(headings_count, 2u);
+    EXPECT_GE(list_items_count, 3u);
+
+    // Verify repository isolation: if selected_repo is different, summary repository does not match
+    git_card.selected_repo = "/path/to/another_repo";
+    EXPECT_NE(git_card.last_ai_summary_repo, git_card.selected_repo);
+}

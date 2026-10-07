@@ -554,6 +554,30 @@ struct markdown_document {
             });
             continue;
         }
+        if (line.starts_with("#### ")) {
+            doc.primitives.push_back(heading_primitive{
+                .level = 4,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(5)),
+                .plain_text = strip_markdown(line.substr(5))
+            });
+            continue;
+        }
+        if (line.starts_with("##### ")) {
+            doc.primitives.push_back(heading_primitive{
+                .level = 5,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(6)),
+                .plain_text = strip_markdown(line.substr(6))
+            });
+            continue;
+        }
+        if (line.starts_with("###### ")) {
+            doc.primitives.push_back(heading_primitive{
+                .level = 6,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(7)),
+                .plain_text = strip_markdown(line.substr(7))
+            });
+            continue;
+        }
 
         // ── Blockquote ────────────────────────────────────────────────────
         if (line.starts_with("> ")) {
@@ -644,7 +668,7 @@ inline void render_markdown_document(
                     ImGui::Separator();
                 } else if (item.level == 2) {
                     ImGui::SeparatorText(item.plain_text.c_str());
-                } else if (item.level == 3) {
+                } else if (item.level >= 3) {
                     if (config.font_bold) ImGui::PushFont(config.font_bold);
                     render_flowing_markdown(item.spans, default_color, config, -1.0f, open_url_cb);
                     if (config.font_bold) ImGui::PopFont();

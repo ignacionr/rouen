@@ -33,6 +33,8 @@
 #include "models/git.hpp"
 #include "models/git_process_helper.hpp"
 #include "../../helpers/conventional_commit.hpp"
+#include "../../fonts.hpp"
+#include "../../helpers/markdown_renderer.hpp"
 
 namespace {
     ImColor getStatusColor(rouen::models::GitRepoStatus status) {
@@ -482,6 +484,98 @@ void git::render_ai_busy_cue() {
     ImGui::Spacing();
 }
 
+void git::render_ai_summary_box() {
+    std::string summary;
+    std::chrono::system_clock::time_point timestamp;
+    std::string summary_repo;
+    bool const pending = ai_request_pending.load();
+    std::string cue;
+
+    {
+        std::lock_guard<std::mutex> const lock(state_mutex);
+        summary = last_ai_summary;
+        timestamp = last_ai_summary_time;
+        summary_repo = last_ai_summary_repo;
+        cue = ai_status_cue;
+    }
+
+    // If summary belongs to another repository, suppress it
+    if (summary_repo != selected_repo && !summary.empty()) {
+        return;
+    }
+
+    // Loading State
+    if (pending) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
+        ImGui::Text("%s  %s", ICON_MD_SYNC, cue.empty() ? "Generating AI summary..." : cue.c_str());
+        ImGui::PopStyleColor();
+        return;
+    }
+
+    if (summary.empty()) {
+        return;
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // Format header title with local time
+    std::time_t const t_c = std::chrono::system_clock::to_time_t(timestamp);
+    std::tm const tm_val = *std::localtime(&t_c);
+    std::string const time_str = std::format("{:02d}:{:02d}:{:02d}", tm_val.tm_hour, tm_val.tm_min, tm_val.tm_sec);
+    std::string const header_label = std::format("{} AI Summary ({})###GitAISummaryHeader", ICON_MD_AUTO_AWESOME, time_str);
+
+    ImGuiTreeNodeFlags const tree_flags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanAvailWidth;
+    bool const open = ImGui::CollapsingHeader(header_label.c_str(), &ai_summary_expanded, tree_flags);
+
+    if (open) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.09f, 0.12f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 8.0f));
+
+        float const avail_height = std::clamp(ImGui::GetContentRegionAvail().y * 0.45f, 140.0f, 280.0f);
+
+        if (ImGui::BeginChild("GitAISummaryBox", ImVec2(0.0f, avail_height), true, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+            // Top action bar
+            if (ImGui::SmallButton(ICON_MD_CONTENT_COPY " Copy Markdown")) {
+                ImGui::SetClipboardText(summary.c_str());
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_MD_REFRESH " Regenerate")) {
+                generate_ai_summary();
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_MD_CLEAR " Clear")) {
+                std::lock_guard<std::mutex> const lock(state_mutex);
+                last_ai_summary.clear();
+            }
+
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // Render Markdown primitives
+            const rouen::helpers::markdown_render_config md_config{
+                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono),
+            };
+
+            rouen::helpers::render_markdown_block(
+                summary,
+                md_config,
+                [](const std::string& url) {
+                    rouen::platform::open_url(url);
+                }
+            );
+        }
+        ImGui::EndChild();
+
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+    }
+}
+
 void git::render_selected() {
     std::string current_status;
     std::string current_commit_msg;
@@ -560,6 +654,7 @@ void git::render_selected() {
     }
 
     render_conventional_commit_modal();
+    render_ai_summary_box();
 
     if (!current_commit_msg.empty()) {
         ImGui::Separator();
@@ -1169,7 +1264,14 @@ void git::generate_ai_summary() {
             summary_result = std::format("Error generating AI summary: {}", e.what());
         }
 
-        prepend_action_result("AI Summary", summary_result);
+        {
+            std::lock_guard<std::mutex> const lock(state_mutex);
+            last_ai_summary = summary_result;
+            last_ai_summary_time = std::chrono::system_clock::now();
+            last_ai_summary_repo = repo;
+            ai_status_cue.clear();
+        }
+        prepend_action_result("AI Summary", "Summary generated successfully.");
         ai_request_pending = false;
     }).detach();
 }

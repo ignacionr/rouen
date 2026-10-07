@@ -33,6 +33,12 @@ struct git : public card {
     punch_card_info punch_card_data_;
     git_overlay_state overlay_state_;
 
+    // AI Summary State
+    std::string last_ai_summary;
+    std::chrono::system_clock::time_point last_ai_summary_time{};
+    std::string last_ai_summary_repo;
+    bool ai_summary_expanded{true};
+
     explicit git(std::string_view repo_path = "");
 
     [[nodiscard]] std::string get_uri() const override;
@@ -55,6 +61,7 @@ struct git : public card {
     bool updateRepoStatus();
 
     void render_ai_busy_cue();
+    void render_ai_summary_box();
     void render_selected();
     void render_index();
     void render_github_status_indicator();
