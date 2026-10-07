@@ -324,7 +324,7 @@ private:
             return {ImGuiTableColumnFlags_WidthStretch, 1.0f};
         }
         if (lower == "auto") {
-            return {ImGuiTableColumnFlags_WidthFixed, 0.0f};
+            return {ImGuiTableColumnFlags_None, 0.0f};
         }
         if (lower.ends_with("px")) {
             try {

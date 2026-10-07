@@ -115,7 +115,7 @@ namespace rouen::cards {
         {
             glz::json_t header;
             header["type"] = "TextBlock";
-            header["text"] = std::format("📁 {}", path_.string());
+            header["text"] = std::format(ICON_MD_FOLDER " {}", path_.string());
             header["weight"] = "Bolder";
             header["size"] = "Medium";
             header["color"] = "Accent";
@@ -156,7 +156,7 @@ namespace rouen::cards {
             if (path_.has_parent_path() && path_.parent_path() != path_) {
                 glz::json_t up_act;
                 up_act["type"] = "Action.Execute";
-                up_act["title"] = "⬆️ Up (..)";
+                up_act["title"] = ICON_MD_ARROW_UPWARD " Up (..)";
                 up_act["verb"] = "cd";
                 up_act["data"] = glz::json_t::object_t{{"path", path_.parent_path().string()}};
                 acts.push_back(std::move(up_act));
@@ -164,7 +164,7 @@ namespace rouen::cards {
 
             glz::json_t ref_act;
             ref_act["type"] = "Action.Execute";
-            ref_act["title"] = "🔄 Refresh";
+            ref_act["title"] = ICON_MD_REFRESH " Refresh";
             ref_act["verb"] = "refresh";
             acts.push_back(std::move(ref_act));
 
@@ -177,7 +177,7 @@ namespace rouen::cards {
         if (!std::filesystem::exists(path_, ec)) {
             glz::json_t err_text;
             err_text["type"] = "TextBlock";
-            err_text["text"] = "⚠️ Directory does not exist or is inaccessible";
+            err_text["text"] = ICON_MD_WARNING " Directory does not exist or is inaccessible";
             err_text["color"] = "Attention";
             body.push_back(std::move(err_text));
         } else if (cached_entries_.empty()) {
@@ -228,7 +228,7 @@ namespace rouen::cards {
                     std::vector<glz::json_t> col_items;
                     glz::json_t text;
                     text["type"] = "TextBlock";
-                    text["text"] = std::format("{} {}", is_dir ? "📁" : "📄", filename);
+                    text["text"] = std::format("{} {}", is_dir ? ICON_MD_FOLDER : ICON_MD_DESCRIPTION, filename);
                     if (is_dir) {
                         text["color"] = "Accent";
                     }
@@ -240,7 +240,7 @@ namespace rouen::cards {
                 {
                     glz::json_t col;
                     col["type"] = "Column";
-                    col["width"] = "auto";
+                    col["width"] = "80px";
                     std::vector<glz::json_t> col_items;
                     glz::json_t text;
                     text["type"] = "TextBlock";
@@ -252,6 +252,7 @@ namespace rouen::cards {
                         text["text"] = sz_ec ? "" : format_file_size(sz);
                     }
                     text["isSubtle"] = true;
+                    text["horizontalAlignment"] = "Right";
                     col_items.push_back(std::move(text));
                     col["items"] = std::move(col_items);
                     cols.push_back(std::move(col));
