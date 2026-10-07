@@ -25,11 +25,222 @@ struct markdown_render_config {
 };
 
 // ---------------------------------------------------------------------------
+// Word token and flow layout engine for inline Markdown
+// ---------------------------------------------------------------------------
+struct word_token {
+    adaptive_cards::span_kind kind{adaptive_cards::span_kind::normal};
+    std::string_view text;
+    std::string_view url;
+    bool has_trailing_space{false};
+    bool is_hard_break{false};
+};
+
+[[nodiscard]] inline std::vector<word_token> tokenize_spans_into_words(
+    const std::vector<adaptive_cards::text_span>& spans
+) {
+    std::vector<word_token> tokens;
+    
+    for (const auto& span : spans) {
+        if (span.kind == adaptive_cards::span_kind::image) {
+            tokens.push_back({
+                .kind = span.kind,
+                .text = span.text,
+                .url = span.url,
+                .has_trailing_space = false,
+                .is_hard_break = false
+            });
+            continue;
+        }
+
+        std::string_view sv = span.text;
+
+        // If span starts with whitespace and tokens exist, record trailing space on previous token
+        if (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+            if (!tokens.empty()) {
+                tokens.back().has_trailing_space = true;
+            }
+            while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+                if (sv.front() == '\n' && !tokens.empty()) {
+                    tokens.back().is_hard_break = true;
+                }
+                sv.remove_prefix(1);
+            }
+        }
+
+        while (!sv.empty()) {
+            std::size_t word_end = 0;
+            while (word_end < sv.size() && !std::isspace(static_cast<unsigned char>(sv[word_end]))) {
+                if (sv[word_end] == '\\' && word_end + 1 < sv.size() && sv[word_end + 1] == '\n') {
+                    break;
+                }
+                ++word_end;
+            }
+
+            if (word_end > 0) {
+                std::string_view word = sv.substr(0, word_end);
+                sv.remove_prefix(word_end);
+
+                bool has_space = false;
+                bool is_hard = false;
+
+                while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+                    if (sv.front() == '\n') {
+                        is_hard = true;
+                    }
+                    has_space = true;
+                    sv.remove_prefix(1);
+                }
+
+                if (!sv.empty() && sv.front() == '\\' && sv.size() > 1 && sv[1] == '\n') {
+                    is_hard = true;
+                    has_space = true;
+                    sv.remove_prefix(2);
+                }
+
+                tokens.push_back({
+                    .kind = span.kind,
+                    .text = word,
+                    .url = span.url,
+                    .has_trailing_space = has_space,
+                    .is_hard_break = is_hard
+                });
+            } else if (!sv.empty() && sv.front() == '\\' && sv.size() > 1 && sv[1] == '\n') {
+                if (!tokens.empty()) {
+                    tokens.back().is_hard_break = true;
+                }
+                sv.remove_prefix(2);
+            } else {
+                while (!sv.empty() && std::isspace(static_cast<unsigned char>(sv.front()))) {
+                    if (sv.front() == '\n' && !tokens.empty()) {
+                        tokens.back().is_hard_break = true;
+                    }
+                    sv.remove_prefix(1);
+                }
+            }
+        }
+    }
+    return tokens;
+}
+
+inline void render_flowing_markdown(
+    const std::vector<adaptive_cards::text_span>& spans,
+    const ImVec4& base_color,
+    const markdown_render_config& config,
+    float indent_x = -1.0f,
+    const std::function<void(const std::string&)>& open_url_cb = {}
+) {
+    if (spans.empty()) return;
+
+    if (spans.size() == 1 && spans[0].kind == adaptive_cards::span_kind::normal && indent_x < 0.0f) {
+        ImGui::PushStyleColor(ImGuiCol_Text, base_color);
+        ImGui::TextWrapped("%s", spans[0].text.c_str());
+        ImGui::PopStyleColor();
+        return;
+    }
+
+    const float start_pos_x = (indent_x >= 0.0f) ? indent_x : ImGui::GetCursorPosX();
+    const float avail_width = ImGui::GetContentRegionAvail().x;
+    const float wrap_pos_x  = start_pos_x + avail_width;
+
+    const auto tokens = tokenize_spans_into_words(spans);
+    if (tokens.empty()) return;
+
+    bool is_line_start = (indent_x < 0.0f);
+
+    for (const auto& tok : tokens) {
+        if (tok.kind == adaptive_cards::span_kind::image) {
+            if (config.render_image_cb) {
+                config.render_image_cb(std::string(tok.text), std::string(tok.url));
+            } else {
+                constexpr ImVec4 img_badge_color{0.45f, 0.75f, 0.95f, 1.0f};
+                ImGui::PushStyleColor(ImGuiCol_Text, img_badge_color);
+                ImGui::Text("[%.*s]", static_cast<int>(tok.text.size()), tok.text.data());
+                ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Image: %.*s", static_cast<int>(tok.url.size()), tok.url.data());
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                }
+                if (ImGui::IsItemClicked() && !tok.url.empty() && open_url_cb) {
+                    open_url_cb(std::string(tok.url));
+                }
+            }
+            is_line_start = false;
+            continue;
+        }
+
+        ImFont* font = nullptr;
+        ImVec4 color = base_color;
+
+        switch (tok.kind) {
+        case adaptive_cards::span_kind::bold:
+            font = config.font_bold;
+            break;
+        case adaptive_cards::span_kind::italic:
+            font = config.font_italic;
+            break;
+        case adaptive_cards::span_kind::code:
+            font = config.font_code;
+            color = ImVec4{0.50f, 0.90f, 0.70f, 1.0f};
+            break;
+        case adaptive_cards::span_kind::link:
+            color = ImVec4{0.35f, 0.65f, 1.0f, 1.0f};
+            break;
+        case adaptive_cards::span_kind::normal:
+        case adaptive_cards::span_kind::image:
+        default:
+            break;
+        }
+
+        if (!font) font = ImGui::GetFont();
+
+        const float font_size = font->FontSize;
+        const float word_w = font->CalcTextSizeA(font_size, FLT_MAX, -1.0f, tok.text.data(), tok.text.data() + tok.text.size()).x;
+        const float space_w = font->CalcTextSizeA(font_size, FLT_MAX, -1.0f, " ", nullptr).x;
+
+        const float current_x = ImGui::GetCursorPosX();
+
+        // Check if word causes an overflow past the wrap boundary
+        if (!is_line_start && (current_x + word_w > wrap_pos_x)) {
+            ImGui::NewLine();
+            ImGui::SetCursorPosX(start_pos_x);
+            is_line_start = true;
+        }
+
+        if (!is_line_start) {
+            ImGui::SameLine(0.0f, space_w);
+        }
+
+        if (font != ImGui::GetFont()) ImGui::PushFont(font);
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextUnformatted(tok.text.data(), tok.text.data() + tok.text.size());
+        ImGui::PopStyleColor();
+        if (font != ImGui::GetFont()) ImGui::PopFont();
+
+        if (tok.kind == adaptive_cards::span_kind::link) {
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%.*s", static_cast<int>(tok.url.size()), tok.url.data());
+                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            }
+            if (ImGui::IsItemClicked() && !tok.url.empty() && open_url_cb) {
+                open_url_cb(std::string(tok.url));
+            }
+        }
+
+        is_line_start = false;
+
+        if (tok.is_hard_break) {
+            ImGui::NewLine();
+            ImGui::SetCursorPosX(start_pos_x);
+            is_line_start = true;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // render_inline_markdown
 //
-// Parses and renders a single line of inline Markdown using PushFont/PopFont
-// for bold, italic, and code spans. Links show a tooltip and fire open_url_cb
-// on click (if provided). base_color is applied to all non-code, non-link spans.
+// Parses and renders a single line of inline Markdown with word-level flow
+// wrapping across multiple styled spans (bold, italic, code, links, images).
 // ---------------------------------------------------------------------------
 inline void render_inline_markdown(
     std::string_view text,
@@ -39,83 +250,7 @@ inline void render_inline_markdown(
 ) {
     using namespace adaptive_cards;
     const auto spans = parse_inline_markdown(text);
-
-    // Fast path: single plain-text span → standard wrapping text.
-    if (spans.size() == 1 && spans[0].kind == span_kind::normal) {
-        ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-        ImGui::TextWrapped("%s", spans[0].text.c_str());
-        ImGui::PopStyleColor();
-        return;
-    }
-
-    bool first = true;
-    for (const auto& span : spans) {
-        if (!first) ImGui::SameLine(0.0f, 0.0f);
-        first = false;
-
-        switch (span.kind) {
-        case span_kind::normal:
-            ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-            ImGui::TextUnformatted(span.text.c_str());
-            ImGui::PopStyleColor();
-            break;
-        case span_kind::bold:
-            if (config.font_bold) ImGui::PushFont(config.font_bold);
-            ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-            ImGui::TextUnformatted(span.text.c_str());
-            ImGui::PopStyleColor();
-            if (config.font_bold) ImGui::PopFont();
-            break;
-        case span_kind::italic:
-            if (config.font_italic) ImGui::PushFont(config.font_italic);
-            ImGui::PushStyleColor(ImGuiCol_Text, base_color);
-            ImGui::TextUnformatted(span.text.c_str());
-            ImGui::PopStyleColor();
-            if (config.font_italic) ImGui::PopFont();
-            break;
-        case span_kind::code: {
-            if (config.font_code) ImGui::PushFont(config.font_code);
-            constexpr ImVec4 code_color{0.50f, 0.90f, 0.70f, 1.0f};
-            ImGui::PushStyleColor(ImGuiCol_Text, code_color);
-            ImGui::TextUnformatted(span.text.c_str());
-            ImGui::PopStyleColor();
-            if (config.font_code) ImGui::PopFont();
-            break;
-        }
-        case span_kind::link: {
-            constexpr ImVec4 link_color{0.35f, 0.65f, 1.0f, 1.0f};
-            ImGui::PushStyleColor(ImGuiCol_Text, link_color);
-            ImGui::TextUnformatted(span.text.c_str());
-            ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", span.url.c_str());
-                ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-            }
-            if (ImGui::IsItemClicked() && !span.url.empty() && open_url_cb) {
-                open_url_cb(span.url);
-            }
-            break;
-        }
-        case span_kind::image: {
-            if (config.render_image_cb) {
-                config.render_image_cb(span.text, span.url);
-            } else {
-                constexpr ImVec4 img_badge_color{0.45f, 0.75f, 0.95f, 1.0f};
-                ImGui::PushStyleColor(ImGuiCol_Text, img_badge_color);
-                ImGui::Text("[%s]", span.text.empty() ? "Image" : span.text.c_str());
-                ImGui::PopStyleColor();
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Image: %s", span.url.c_str());
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                }
-                if (ImGui::IsItemClicked() && !span.url.empty() && open_url_cb) {
-                    open_url_cb(span.url);
-                }
-            }
-            break;
-        }
-        }
-    }
+    render_flowing_markdown(spans, base_color, config, -1.0f, open_url_cb);
 }
 
 // Helpers for parsing markdown tables
@@ -221,7 +356,7 @@ inline void render_markdown_block(
         if (in_code_block) {
             if (config.font_code) ImGui::PushFont(config.font_code);
             ImGui::PushStyleColor(ImGuiCol_Text, code_color);
-            ImGui::TextUnformatted(line.c_str());
+            ImGui::TextWrapped("%s", line.c_str());
             ImGui::PopStyleColor();
             if (config.font_code) ImGui::PopFont();
             continue;
@@ -354,7 +489,9 @@ inline void render_markdown_block(
         // ── Blockquote ────────────────────────────────────────────────────
         if (line.starts_with("> ")) {
             ImGui::Indent();
-            render_inline_markdown(std::string_view{line}.substr(2), dim_color, config, open_url_cb);
+            const float indent_x = ImGui::GetCursorPosX();
+            const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(2));
+            render_flowing_markdown(spans, dim_color, config, indent_x, open_url_cb);
             ImGui::Unindent();
             continue;
         }
@@ -363,7 +500,9 @@ inline void render_markdown_block(
         if (line.starts_with("- ") || line.starts_with("* ")) {
             ImGui::Bullet();
             ImGui::SameLine();
-            render_inline_markdown(std::string_view{line}.substr(2), default_color, config, open_url_cb);
+            const float text_col_x = ImGui::GetCursorPosX();
+            const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(2));
+            render_flowing_markdown(spans, default_color, config, text_col_x, open_url_cb);
             continue;
         }
 
@@ -378,7 +517,9 @@ inline void render_markdown_block(
                 if (all_digits) {
                     ImGui::Bullet();
                     ImGui::SameLine();
-                    render_inline_markdown(std::string_view{line}.substr(dot + 2), default_color, config, open_url_cb);
+                    const float text_col_x = ImGui::GetCursorPosX();
+                    const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(dot + 2));
+                    render_flowing_markdown(spans, default_color, config, text_col_x, open_url_cb);
                     continue;
                 }
             }

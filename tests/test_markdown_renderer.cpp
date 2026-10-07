@@ -411,5 +411,81 @@ TEST(MarkdownViewer, ImageRelativePathResolution) {
     EXPECT_EQ(target.string(), "/Users/ignaciorodriguez/src/rouen/docs/diagrams/ai_architecture.png");
 }
 
+TEST(MarkdownRenderer, WordTokenizationPreservesFormatting) {
+    using namespace rouen::helpers;
+    using namespace rouen::helpers::adaptive_cards;
+    const auto spans = parse_inline_markdown("**bold** text with `code`");
+    const auto words = tokenize_spans_into_words(spans);
+    ASSERT_GE(words.size(), 4U);
+    EXPECT_EQ(words[0].kind, span_kind::bold);
+    EXPECT_EQ(words[0].text, "bold");
+    EXPECT_TRUE(words[0].has_trailing_space);
+    EXPECT_EQ(words[1].kind, span_kind::normal);
+    EXPECT_EQ(words[1].text, "text");
+    EXPECT_TRUE(words[1].has_trailing_space);
+    EXPECT_EQ(words[2].kind, span_kind::normal);
+    EXPECT_EQ(words[2].text, "with");
+    EXPECT_TRUE(words[2].has_trailing_space);
+    EXPECT_EQ(words[3].kind, span_kind::code);
+    EXPECT_EQ(words[3].text, "code");
+    EXPECT_FALSE(words[3].has_trailing_space);
+}
+
+TEST(MarkdownRenderer, WordTokenizationExtractsLinks) {
+    using namespace rouen::helpers;
+    using namespace rouen::helpers::adaptive_cards;
+    const auto spans = parse_inline_markdown("Visit [Rouen](https://github.com/ignacionr/rouen) today");
+    const auto words = tokenize_spans_into_words(spans);
+    ASSERT_EQ(words.size(), 3U);
+    EXPECT_EQ(words[0].text, "Visit");
+    EXPECT_TRUE(words[0].has_trailing_space);
+    EXPECT_EQ(words[1].kind, span_kind::link);
+    EXPECT_EQ(words[1].text, "Rouen");
+    EXPECT_EQ(words[1].url, "https://github.com/ignacionr/rouen");
+    EXPECT_TRUE(words[1].has_trailing_space);
+    EXPECT_EQ(words[2].text, "today");
+    EXPECT_FALSE(words[2].has_trailing_space);
+}
+
+TEST(MarkdownRenderer, HardLineBreaksAreRecognized) {
+    using namespace rouen::helpers;
+    using namespace rouen::helpers::adaptive_cards;
+    const auto spans = parse_inline_markdown("First line  \nSecond line\\\nThird line");
+    const auto words = tokenize_spans_into_words(spans);
+    ASSERT_GE(words.size(), 6U);
+    EXPECT_EQ(words[0].text, "First");
+    EXPECT_EQ(words[1].text, "line");
+    EXPECT_TRUE(words[1].is_hard_break);
+    EXPECT_EQ(words[2].text, "Second");
+    EXPECT_EQ(words[3].text, "line");
+    EXPECT_TRUE(words[3].is_hard_break);
+    EXPECT_EQ(words[4].text, "Third");
+    EXPECT_EQ(words[5].text, "line");
+    EXPECT_FALSE(words[5].is_hard_break);
+}
+
+TEST(MarkdownRenderer, WrappingCalculationFitsAvailableWidth) {
+    using namespace rouen::helpers;
+    using namespace rouen::helpers::adaptive_cards;
+    const auto spans = parse_inline_markdown("A very long sentence with multiple words that definitely needs wrapping across lines");
+    const auto words = tokenize_spans_into_words(spans);
+    EXPECT_EQ(words.size(), 13U);
+    
+    // Simulate wrapping with character budget 20 per line
+    float current_x = 0.0f;
+    float max_w = 20.0f;
+    int line_count = 1;
+    for (const auto& w : words) {
+        float word_w = static_cast<float>(w.text.size());
+        if (current_x + word_w > max_w && current_x > 0.0f) {
+            line_count++;
+            current_x = 0.0f;
+        }
+        current_x += word_w + (w.has_trailing_space ? 1.0f : 0.0f);
+    }
+    EXPECT_GT(line_count, 3);
+}
+
+
 
 
