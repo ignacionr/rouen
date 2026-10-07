@@ -20,6 +20,7 @@
 #include "../src/cards/system/sysinfo.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
 #include "../src/cards/development/vcproject_card.hpp"
+#include "../src/cards/development/fs-directory.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
 #ifdef __clang__
@@ -511,5 +512,62 @@ TEST(CardAdaptiveInterface, VCProjectCard) {
     // 3. Test handle_action with direct string verbs
     vc_card.handle_action("check_syntax");
 }
+
+TEST(CardAdaptiveInterface, FsDirectoryFilterLookaheadAndRejection) {
+    auto temp_dir = std::filesystem::temp_directory_path() / "rouen_test_fs_filter";
+    std::filesystem::remove_all(temp_dir);
+    std::filesystem::create_directories(temp_dir);
+
+    // Create test files: alpha.txt, beta.cpp, document.pdf
+    {
+        std::ofstream(temp_dir / "alpha.txt") << "content";
+        std::ofstream(temp_dir / "beta.cpp") << "content";
+        std::ofstream(temp_dir / "document.pdf") << "content";
+    }
+
+    rouen::cards::fs_directory dir{temp_dir.string()};
+    EXPECT_EQ(dir.get_filter(), "");
+    EXPECT_EQ(dir.count_matches(""), 3u);
+
+    // Typing 'a' matches alpha.txt -> accepted
+    EXPECT_TRUE(dir.process_filter_char('a'));
+    EXPECT_EQ(dir.get_filter(), "a");
+    EXPECT_EQ(dir.count_matches(dir.get_filter()), 1u);
+
+    // Typing 'l' matches alpha.txt -> accepted ("al")
+    EXPECT_TRUE(dir.process_filter_char('l'));
+    EXPECT_EQ(dir.get_filter(), "al");
+
+    // Typing 'z' matches 0 files -> rejected! Filter remains "al"
+    EXPECT_FALSE(dir.process_filter_char('z'));
+    EXPECT_EQ(dir.get_filter(), "al");
+    EXPECT_EQ(dir.get_last_rejected_char(), 'z');
+
+    // Typing another invalid character 'x' -> rejected! Filter still "al"
+    EXPECT_FALSE(dir.process_filter_char('x'));
+    EXPECT_EQ(dir.get_filter(), "al");
+    EXPECT_EQ(dir.get_last_rejected_char(), 'x');
+
+    // Typing valid character 'p' -> accepted ("alp")
+    EXPECT_TRUE(dir.process_filter_char('p'));
+    EXPECT_EQ(dir.get_filter(), "alp");
+
+    // Backspace pops one character
+    EXPECT_TRUE(dir.process_filter_char('\b'));
+    EXPECT_EQ(dir.get_filter(), "al");
+
+    // Escape clears filter and resets rejection
+    EXPECT_TRUE(dir.process_filter_char('\033'));
+    EXPECT_EQ(dir.get_filter(), "");
+    EXPECT_EQ(dir.get_last_rejected_char(), '\0');
+
+    // Case-insensitivity: typing 'B' matches beta.cpp
+    EXPECT_TRUE(dir.process_filter_char('B'));
+    EXPECT_EQ(dir.get_filter(), "B");
+    EXPECT_EQ(dir.count_matches(dir.get_filter()), 1u);
+
+    std::filesystem::remove_all(temp_dir);
+}
+
 
 

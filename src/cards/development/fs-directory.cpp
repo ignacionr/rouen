@@ -15,6 +15,7 @@
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../helpers/config_service.hpp"
 #include "../../helpers/filetype_handler.hpp"
+#include "../../helpers/platform_utils.hpp"
 
 #include "../information/image_viewer.hpp"
 #include "../media/media_card.hpp"
@@ -241,6 +242,67 @@ namespace rouen::cards {
         return nav_target;
     }
 
+    bool fs_directory::matches_filter(const std::filesystem::directory_entry& entry, std::string_view filter) const {
+        if (filter.empty()) {
+            return true;
+        }
+        std::string const filename = entry.path().filename().string();
+        if (filter.size() > filename.size()) {
+            return false;
+        }
+        auto const filter_lower = to_lower(filter);
+        auto const prefix_lower = to_lower(std::string_view(filename.data(), filter.size()));
+        return prefix_lower == filter_lower;
+    }
+
+    bool fs_directory::has_any_match(std::string_view filter) const {
+        if (filter.empty()) {
+            return true;
+        }
+        return std::any_of(cached_entries_.begin(), cached_entries_.end(), [this, filter](const auto& entry) {
+            return matches_filter(entry, filter);
+        });
+    }
+
+    size_t fs_directory::count_matches(std::string_view filter) const {
+        if (filter.empty()) {
+            return cached_entries_.size();
+        }
+        return static_cast<size_t>(std::count_if(cached_entries_.begin(), cached_entries_.end(), [this, filter](const auto& entry) {
+            return matches_filter(entry, filter);
+        }));
+    }
+
+    bool fs_directory::process_filter_char(char c) {
+        if (c == '\b') {
+            if (!filter_.empty()) {
+                filter_.pop_back();
+            }
+            return true;
+        } else if (c == '\n' || c == '\033' || c == '\r') {
+            filter_.clear();
+            last_rejected_char_ = '\0';
+            return true;
+        } else if (c == '\t') {
+            return true; // ignore tab navigation
+        } else if (static_cast<unsigned char>(c) >= 32 && static_cast<unsigned char>(c) <= 126) {
+            std::string candidate = filter_;
+            candidate += c;
+
+            if (has_any_match(candidate)) {
+                filter_ = std::move(candidate);
+                last_rejected_char_ = '\0';
+                return true;
+            } else {
+                rouen::platform::system_beep();
+                last_rejected_char_ = c;
+                last_rejected_keystroke_time_ = std::chrono::steady_clock::now();
+                return false;
+            }
+        }
+        return false;
+    }
+
     void fs_directory::receive_keystrokes() {
         const bool ctrl_or_cmd = ImGui::GetIO().KeySuper || ImGui::GetIO().KeyCtrl;
         if (ImGui::IsWindowFocused() && ctrl_or_cmd && ImGui::IsKeyPressed(ImGuiKey_F)) {
@@ -274,17 +336,7 @@ namespace rouen::cards {
         }
 
         for (char const c : "keystrokes"_fns()) {
-            if (c == '\b') {
-                if (!filter_.empty()) {
-                    filter_.pop_back();
-                }
-            } else if (c == '\n' || c == '\033' || c == '\r') {
-                filter_.clear();
-            } else if (c == '\t') {
-                // ignore
-            } else {
-                filter_ += c;
-            }
+            process_filter_char(c);
         }
     }
 
@@ -354,6 +406,43 @@ namespace rouen::cards {
                 ImGui::Separator();
             }
 
+            if (!filter_.empty() || last_rejected_char_ != '\0') {
+                auto const elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - last_rejected_keystroke_time_
+                ).count();
+                bool const show_rejection = (last_rejected_char_ != '\0' && elapsed_ms < 1200);
+
+                size_t const match_count = count_matches(filter_);
+
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, show_rejection 
+                    ? ImVec4(0.35f, 0.12f, 0.12f, 0.60f)  // Subtle red tint on error
+                    : ImVec4(0.18f, 0.22f, 0.28f, 0.60f)); // Normal filter badge bg
+
+                if (ImGui::BeginChild("##active_filter_bar", ImVec2(0.0f, 28.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar)) {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::Text("%s Filter: \"%s\"", ICON_MD_FILTER_LIST, filter_.c_str());
+                    
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(%zu %s)", match_count, match_count == 1 ? "match" : "matches");
+
+                    if (show_rejection) {
+                        ImGui::SameLine();
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.45f, 1.0f));
+                        ImGui::Text("- '%c' rejected (0 matches)", last_rejected_char_);
+                        ImGui::PopStyleColor();
+                    }
+
+                    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60.0f);
+                    if (ImGui::SmallButton(ICON_MD_CLOSE " Clear")) {
+                        filter_.clear();
+                        last_rejected_char_ = '\0';
+                    }
+                }
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+
             std::optional<std::filesystem::path> pending_nav;
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(colors[5]));
@@ -396,7 +485,7 @@ namespace rouen::cards {
                     }
                 } else {
                     for (const auto& entry : cached_entries_) {
-                        if (filter_.empty() || entry.path().filename().string().starts_with(filter_)) {
+                        if (matches_filter(entry, filter_)) {
                             std::string const prefix = entry.is_directory() ? ICON_MD_FOLDER " " : ICON_MD_DESCRIPTION " ";
                             auto nav = render_entry(entry, prefix + entry.path().filename().string());
                             if (nav.has_value()) {
@@ -412,6 +501,7 @@ namespace rouen::cards {
                 path_ = pending_nav.value();
                 name(path_.string());
                 filter_.clear();
+                last_rejected_char_ = '\0';
                 search_active_ = false;
                 search_results_.clear();
                 refresh_cache();

@@ -133,6 +133,35 @@ namespace rouen::platform
     }
 
     /**
+     * Emits an audible system error alert / warning beep with 120ms debouncing.
+     */
+    inline void system_beep() {
+        static std::atomic<int64_t> last_beep_ms{0};
+        auto const now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()
+        ).count();
+
+        int64_t prev = last_beep_ms.load(std::memory_order_relaxed);
+        if (now_ms - prev < 120) {
+            return;
+        }
+        if (!last_beep_ms.compare_exchange_strong(prev, now_ms, std::memory_order_relaxed)) {
+            return;
+        }
+
+#if defined(__APPLE__)
+        std::fputc('\a', stderr);
+        std::fflush(stderr);
+#elif defined(_WIN32)
+        ::MessageBeep(MB_ICONWARNING);
+#else
+        std::fputc('\a', stderr);
+        std::fflush(stderr);
+#endif
+    }
+
+
+    /**
      * Opens a file or URL with the default system application
      * Uses 'open' on macOS and 'xdg-open' on Linux
      *
