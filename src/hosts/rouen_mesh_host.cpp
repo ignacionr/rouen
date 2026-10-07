@@ -268,6 +268,14 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
         MESH_TRACE("[MeshWS] MG_EV_OPEN: Connection object created.");
     } else if (ev == MG_EV_CONNECT) {
         MESH_TRACE("[MeshWS] MG_EV_CONNECT: TCP Socket connected.");
+        std::string server_url = host->get_config().server_url;
+        if (mg_url_is_ssl(server_url.c_str())) {
+            struct mg_tls_opts opts{};
+            struct mg_str host_str = mg_url_host(server_url.c_str());
+            opts.name = host_str;
+            opts.ca = mg_str_n(nullptr, 0);
+            mg_tls_init(c, &opts);
+        }
     } else if (ev == MG_EV_WS_OPEN) {
         MESH_INFO("[MeshWS] MG_EV_WS_OPEN: WebSocket Handshake complete!");
         host->on_ws_connected(c);
@@ -302,10 +310,10 @@ static void mg_mesh_event_handler(struct mg_connection* c, int ev, void* ev_data
                 disconnect_reason = "Unauthorized (401) - Handshake authentication failed";
             }
         }
-        host->on_ws_disconnected(disconnect_reason);
+        host->on_ws_disconnected(c, disconnect_reason);
     } else if (ev == MG_EV_CLOSE) {
         MESH_DEBUG("[MeshWS] MG_EV_CLOSE triggered");
-        host->on_ws_disconnected("Connection closed");
+        host->on_ws_disconnected(c, "Connection closed");
     }
 }
 
@@ -373,8 +381,12 @@ void rouen_mesh_host::on_ws_connected(struct mg_connection* c) {
     flush_pending_ws_streams();
 }
 
-void rouen_mesh_host::on_ws_disconnected(const std::string& reason) {
+void rouen_mesh_host::on_ws_disconnected(struct mg_connection* c, const std::string& reason) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (c != nullptr && active_ws_conn_ != nullptr && c != active_ws_conn_) {
+        MESH_DEBUG_FMT("[MeshWS] Ignoring disconnect from stale connection {:p} (active is {:p})", static_cast<void*>(c), static_cast<void*>(active_ws_conn_));
+        return;
+    }
     connected_.store(false);
     active_ws_conn_ = nullptr;
     status_message_ = "Disconnected: " + reason;
@@ -605,16 +617,13 @@ void rouen_mesh_host::worker_loop() {
                 }
 
                 MESH_DEBUG_FMT("[MeshWS] Attempting WebSocket connection to: {}", target_url);
-                active_conn = mg_ws_connect(&mgr, target_url.c_str(), mg_mesh_event_handler, this, nullptr);
                 if (active_conn) {
-                    if (mg_url_is_ssl(target_url.c_str())) {
-                        struct mg_tls_opts opts{};
-                        struct mg_str host_str = mg_url_host(target_url.c_str());
-                        opts.name = host_str;
-                        opts.ca = mg_str_n(nullptr, 0);
-                        mg_tls_init(active_conn, &opts);
-                    }
-                } else {
+                    active_conn->fn_data = nullptr;
+                    active_conn->is_closing = 1;
+                    active_conn = nullptr;
+                }
+                active_conn = mg_ws_connect(&mgr, target_url.c_str(), mg_mesh_event_handler, this, nullptr);
+                if (!active_conn) {
                     std::lock_guard<std::recursive_mutex> lock(mutex_);
                     status_message_ = "Failed to initiate connection to " + target_url;
                     MESH_WARN_FMT("[MeshWS] mg_ws_connect returned NULL for {}", target_url);

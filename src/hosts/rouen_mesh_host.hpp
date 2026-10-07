@@ -376,7 +376,8 @@ public:
 
     // WebSocket connection event handlers
     void on_ws_connected(struct mg_connection* c);
-    void on_ws_disconnected(const std::string& reason = "Disconnected from rouen-service");
+    void on_ws_disconnected(struct mg_connection* c, const std::string& reason = "Disconnected from rouen-service");
+    void on_ws_disconnected(const std::string& reason = "Disconnected from rouen-service") { on_ws_disconnected(nullptr, reason); }
 
     // Frame transmission helper
     void send_frame_over_ws(mesh::frame_type type, uint16_t flags, uint32_t route_id, std::string_view payload);

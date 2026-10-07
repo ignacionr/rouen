@@ -12579,12 +12579,27 @@ static void ssl_keylog_cb(const SSL *ssl, const char *line) {
 }
 #endif
 
+static BIO_METHOD *s_mg_bio_meth = NULL;
+
+static BIO_METHOD *mg_get_bio_method(void) {
+  if (s_mg_bio_meth == NULL) {
+#if MG_TLS == MG_TLS_WOLFSSL
+    s_mg_bio_meth = BIO_meth_new(0, "bio_mg");
+#else
+    s_mg_bio_meth = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "bio_mg");
+#endif
+    BIO_meth_set_write(s_mg_bio_meth, mg_bio_write);
+    BIO_meth_set_read(s_mg_bio_meth, mg_bio_read);
+    BIO_meth_set_ctrl(s_mg_bio_meth, mg_bio_ctrl);
+  }
+  return s_mg_bio_meth;
+}
+
 void mg_tls_free(struct mg_connection *c) {
   struct mg_tls *tls = (struct mg_tls *) c->tls;
   if (tls == NULL) return;
   SSL_free(tls->ssl);
   SSL_CTX_free(tls->ctx);
-  BIO_meth_free(tls->bm);
   free(tls);
   c->tls = NULL;
 }
@@ -12686,14 +12701,7 @@ void mg_tls_init(struct mg_connection *c, const struct mg_tls_opts *opts) {
     free(s);
   }
 #endif
-#if MG_TLS == MG_TLS_WOLFSSL
-  tls->bm = BIO_meth_new(0, "bio_mg");
-#else
-  tls->bm = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "bio_mg");
-#endif
-  BIO_meth_set_write(tls->bm, mg_bio_write);
-  BIO_meth_set_read(tls->bm, mg_bio_read);
-  BIO_meth_set_ctrl(tls->bm, mg_bio_ctrl);
+  tls->bm = mg_get_bio_method();
 
   bio = BIO_new(tls->bm);
   BIO_set_data(bio, c);
@@ -12711,7 +12719,9 @@ fail:
 }
 
 void mg_tls_handshake(struct mg_connection *c) {
+  if (c == NULL || c->tls == NULL) return;
   struct mg_tls *tls = (struct mg_tls *) c->tls;
+  if (tls->ssl == NULL) return;
   int rc = c->is_client ? SSL_connect(tls->ssl) : SSL_accept(tls->ssl);
   if (rc == 1) {
     MG_DEBUG(("%lu success", c->id));
