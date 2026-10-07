@@ -413,21 +413,11 @@ private:
                 render_image(node, id, texture_provider);
             } else if (node.type == "Container") {
                 ImGui::PushID(id.c_str());
-                if (node.style == "emphasis" || node.style == "accent") {
-                    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetColorU32(ImGuiCol_FrameBg));
-                    ImGui::BeginChild(id.c_str(), ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
-                } else {
-                    ImGui::BeginGroup();
-                }
+                ImGui::BeginGroup();
 
                 render_elements(node.items, id, state, callbacks, config, texture_provider);
 
-                if (node.style == "emphasis" || node.style == "accent") {
-                    ImGui::EndChild();
-                    ImGui::PopStyleColor();
-                } else {
-                    ImGui::EndGroup();
-                }
+                ImGui::EndGroup();
 
                 if (!node.selectAction.type.empty() && ImGui::IsItemClicked()) {
                     if (node.selectAction.type == "Action.OpenUrl" && !node.selectAction.url.empty()) {
@@ -595,7 +585,17 @@ private:
         if (node.facts.empty()) {
             return;
         }
-        if (ImGui::BeginTable(scope.c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
+
+        float max_title_w = 0.0f;
+        for (const auto& pair : node.facts) {
+            max_title_w = std::max(max_title_w, ImGui::CalcTextSize(pair.title.c_str()).x);
+        }
+        max_title_w += ImGui::GetStyle().ItemSpacing.x * 2.0f;
+
+        if (ImGui::BeginTable(scope.c_str(), 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp)) {
+            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthFixed, max_title_w);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
             for (std::size_t idx = 0; idx < node.facts.size(); ++idx) {
                 const auto& pair = node.facts[idx];
                 ImGui::TableNextRow();
