@@ -21,6 +21,7 @@
 // 3. All other includes
 #include "../../helpers/glaze_include.hpp"
 #include "card.hpp"
+#include "mesh_card_proxy.hpp"
 #include "menu.hpp"
 #include "plugin_registry.hpp"
 #include "../../helpers/platform_utils.hpp"
@@ -100,6 +101,16 @@ namespace rouen::cards {
         using factory_t = std::function<card::ptr(std::string_view, SDL_Renderer*)>;
 
         static card::ptr create_card(std::string_view uri, SDL_Renderer* renderer) {
+            if (uri.starts_with('[')) {
+                auto parsed = parse_mesh_uri(uri);
+                if (parsed) {
+                    if (parsed->is_navigator) {
+                        return std::make_shared<mesh_node_navigator>(parsed->client_id);
+                    }
+                    return std::make_shared<mesh_card_proxy>(parsed->client_id, parsed->target_card_uri);
+                }
+            }
+
             std::string_view schema;
             std::string_view locator;
     
@@ -115,7 +126,7 @@ namespace rouen::cards {
                 std::cout << "[CARD_FACTORY][WARN] Unknown card type: " << schema << ", skipping" << std::endl;
                 return nullptr;
             }
-            auto card_ptr = factory_it->second(std::string(locator), renderer);
+            auto card_ptr = factory_it->second(locator, renderer);
             if (!card_ptr) {
                 std::cout << "[CARD_FACTORY][WARN] Failed to create card: " << schema << ", skipping" << std::endl;
                 return nullptr;
@@ -266,12 +277,22 @@ namespace rouen::cards {
                     return std::make_shared<sync_card>();
                 });
 
-                instance.emplace("mesh", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<mesh_card>();
+                instance.emplace("mesh", [](std::string_view locator, SDL_Renderer*) -> card::ptr {
+                    if (locator.empty()) {
+                        return std::make_shared<mesh_card>();
+                    }
+                    auto parsed = parse_mesh_uri(std::format("mesh:{}", locator));
+                    if (!parsed || parsed->is_mesh_console) {
+                        return std::make_shared<mesh_card>();
+                    }
+                    if (parsed->is_navigator) {
+                        return std::make_shared<mesh_node_navigator>(parsed->client_id);
+                    }
+                    return std::make_shared<mesh_card_proxy>(parsed->client_id, parsed->target_card_uri);
                 });
 
-                instance.emplace("rouen_mesh", [](std::string_view, SDL_Renderer*) {
-                    return std::make_shared<mesh_card>();
+                instance.emplace("rouen_mesh", [](std::string_view locator, SDL_Renderer* renderer) -> card::ptr {
+                    return dictionary().at("mesh")(locator, renderer);
                 });
 
                 instance.emplace("cast-control", [](std::string_view, SDL_Renderer*) {

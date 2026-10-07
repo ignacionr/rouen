@@ -19,6 +19,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../registrar.hpp"
 #include "card.hpp"
+#include "mesh_card_proxy.hpp"
 #include "plugin_registry.hpp"
 
 namespace rouen::cards {
@@ -200,8 +201,42 @@ namespace rouen::cards {
                     
                     // If no items match the filter, show a message
                     if (filtered_items.empty()) {
-                        ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
-                        ui.text_colored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Press Enter to open it as a card URI (e.g. dir:C:\\)");
+                        auto mesh_info = parse_mesh_uri(search_text);
+                        if (mesh_info && !mesh_info->client_id.empty()) {
+                            ui.text_colored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), std::format("🌐 Rouen Mesh Node: {}", mesh_info->client_id));
+                            if (!mesh_info->target_card_uri.empty()) {
+                                ui.text_colored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), std::format("Target Card: {}", mesh_info->target_card_uri));
+                            }
+                            ui.spacing();
+                            if (ImGui::Button("🚀 Launch Remote Card")) {
+                                "create_card"_sfn(search_text);
+                                search_buffer[0] = '\0';
+                                should_close_ = true;
+                            }
+                            ImGui::SameLine();
+                            if (ImGui::Button("🌐 Open Node Navigator")) {
+                                "create_card"_sfn(std::format("mesh://{}", mesh_info->client_id));
+                                search_buffer[0] = '\0';
+                                should_close_ = true;
+                            }
+
+                            auto cached_schemas = peer_schemas_cache::instance().filter_schemas(mesh_info->client_id, mesh_info->target_card_uri);
+                            if (!cached_schemas.empty()) {
+                                ui.separator();
+                                ui.text_colored(ImVec4(0.9f, 0.9f, 0.5f, 1.0f), std::format("Available schemes on {}:", mesh_info->client_id));
+                                for (const auto& s : cached_schemas) {
+                                    std::string btn_label = std::format("• Launch {}", s);
+                                    if (ImGui::Button(btn_label.c_str())) {
+                                        "create_card"_sfn(std::format("mesh://{}/{}", mesh_info->client_id, s));
+                                        search_buffer[0] = '\0';
+                                        should_close_ = true;
+                                    }
+                                }
+                            }
+                        } else {
+                            ui.text_colored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No applications match your search");
+                            ui.text_colored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Press Enter to open it as a card URI (e.g. dir:C:\\, mesh://ws-ir-01/sysinfo)");
+                        }
                     }
                     else {
                         // Render filtered items
@@ -421,6 +456,7 @@ namespace rouen::cards {
                     {"Notifications", []() { "create_card"_sfn("notifications"); }},
                     {"Settings", []() { "create_card"_sfn("settings"); }},
                     {"Universal Sync", []() { "create_card"_sfn("sync"); }},
+                    {"Rouen Mesh", []() { "create_card"_sfn("mesh"); }},
                     {"Theme Settings", []() { "create_card"_sfn("theme"); }},
                     {"Terminal", []() { "create_card"_sfn("terminal"); }},
                     {"Environment Variables", []() { "create_card"_sfn("envvars"); }},

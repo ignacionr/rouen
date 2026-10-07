@@ -986,6 +986,30 @@ add_executable(test_telegram_mesh_notify
 target_link_libraries(test_telegram_mesh_notify PRIVATE rouen_test_modules OpenSSL::Crypto OpenSSL::SSL GTest::gtest GTest::gtest_main)
 add_test(NAME TelegramMeshNotifyTest COMMAND test_telegram_mesh_notify)
 
+add_executable(test_mesh_remote_card
+    test_mesh_remote_card.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/hosts/rouen_mesh_host.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/mongoose-7.15/mongoose.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/cards/interface/card.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/theme_manager.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/glass_top_bar.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/helpers/card_decorations.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/fonts.cpp
+)
+target_link_libraries(test_mesh_remote_card PRIVATE 
+    rouen_test_modules 
+    OpenSSL::Crypto 
+    OpenSSL::SSL 
+    GTest::gtest 
+    GTest::gtest_main 
+    CURL::libcurl
+    ${SDL3_LIBRARIES}
+)
+if(APPLE)
+    target_link_libraries(test_mesh_remote_card PRIVATE "-framework Foundation" "-framework ApplicationServices" "-framework Cocoa")
+endif()
+add_test(NAME MeshRemoteCardTest COMMAND test_mesh_remote_card)
+
 add_executable(test_notes_repository_legacy
     test_notes_repository_legacy.cpp
 )
