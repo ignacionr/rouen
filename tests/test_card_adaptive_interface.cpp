@@ -620,3 +620,33 @@ TEST(GitCardTest, AISummaryStateAndMarkdownSeparation) {
     git_card.selected_repo = "/path/to/another_repo";
     EXPECT_NE(git_card.last_ai_summary_repo, git_card.selected_repo);
 }
+
+TEST(ApiServerHost, SchemasAndSchemesEndpointReturnsAllRegisteredSchemes) {
+    // 1. Query registered schemas via api_server_host
+    std::string json_schemas = rouen::hosts::api_server_host::handle_schemas_request(nullptr, nullptr);
+    EXPECT_FALSE(json_schemas.empty());
+    EXPECT_NE(json_schemas.find(R"("git")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("ai_chat")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("sysinfo")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("weather")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("alarm")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("footprints")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("terminal")"), std::string::npos);
+    EXPECT_NE(json_schemas.find(R"("cmake")"), std::string::npos);
+
+    // Verify parsed JSON array size is comprehensive (> 40 card schemes registered)
+    glz::json_t parsed;
+    auto err = glz::read_json(parsed, json_schemas);
+    EXPECT_FALSE(err);
+    ASSERT_TRUE(parsed.is_array());
+    EXPECT_GT(parsed.get_array().size(), 40u);
+
+    // 2. Verify OpenAPI spec documents both /api/schemas and /api/schemes
+    std::string spec = rouen::hosts::api_server_host::handle_openapi_spec(nullptr, nullptr);
+    EXPECT_NE(spec.find("/api/schemas"), std::string::npos);
+    EXPECT_NE(spec.find("getSchemas"), std::string::npos);
+    EXPECT_NE(spec.find("/api/schemes"), std::string::npos);
+    EXPECT_NE(spec.find("getSchemes"), std::string::npos);
+}
+
+

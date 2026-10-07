@@ -486,7 +486,8 @@ void api_server_host::handle_request(struct mg_connection* c, struct mg_http_mes
             status_code = 405;
             response = R"({"error":"Method not allowed"})";
         }
-    } else if (mg_match(hm->uri, mg_str("/api/schemas"), nullptr)) {
+    } else if (mg_match(hm->uri, mg_str("/api/schemas"), nullptr) ||
+               mg_match(hm->uri, mg_str("/api/schemes"), nullptr)) {
         if (mg_strcmp(hm->method, mg_str("GET")) == 0) {
             response = handle_schemas_request(c, hm);
         } else {
@@ -3011,6 +3012,26 @@ std::string api_server_host::handle_openapi_spec(struct mg_connection* /*c*/, st
         "tags": ["System & Health"],
         "summary": "List all registered card schemas and URIs",
         "operationId": "getSchemas",
+        "responses": {
+          "200": {
+            "description": "List of available card URIs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/schemes": {
+      "get": {
+        "tags": ["System & Health"],
+        "summary": "List all registered card schemes and URIs (alias for /api/schemas)",
+        "operationId": "getSchemes",
         "responses": {
           "200": {
             "description": "List of available card URIs",
