@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "imgui_include.hpp"
@@ -304,38 +305,109 @@ inline bool is_table_delimiter(std::string_view line) {
 }
 
 // ---------------------------------------------------------------------------
-// render_markdown_block
-//
-// Renders a full Markdown document with both block-level and inline support:
-//
-//   Block:  # H1  ## H2  ### H3  --- separator  - * bullets  1. numbered
-//           > blockquote  ``` ... ``` code fence  (empty line = spacing)
-//           | ... | tables
-//   Inline: **bold**  *italic*  `code`  [link](url)
-//
-// Headings use font_bold (if available) and visual hierarchy via colors and
-// ImGui::SeparatorText / ImGui::Separator. Code fences use font_code.
+// In-Memory Primitive Representation & AST Caching for Markdown
 // ---------------------------------------------------------------------------
-inline void render_markdown_block(
-    std::string_view markdown_text,
-    const markdown_render_config& config,
-    const std::function<void(const std::string&)>& open_url_cb = {}
-) {
-    using namespace adaptive_cards;
 
-    const ImVec4 default_color  = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-    constexpr ImVec4 h1_color   = {0.85f, 0.70f, 0.30f, 1.0f};
-    constexpr ImVec4 dim_color  = {0.60f, 0.60f, 0.60f, 1.0f};
-    constexpr ImVec4 code_color = {0.50f, 0.90f, 0.70f, 1.0f};
+struct heading_primitive {
+    int level{1};
+    std::vector<adaptive_cards::text_span> spans;
+    std::string plain_text;
+};
+
+struct paragraph_primitive {
+    std::vector<adaptive_cards::text_span> spans;
+};
+
+struct list_item_primitive {
+    bool is_ordered{false};
+    std::string marker;
+    int indent_level{0};
+    std::vector<adaptive_cards::text_span> spans;
+};
+
+struct blockquote_primitive {
+    int indent_level{1};
+    std::vector<adaptive_cards::text_span> spans;
+};
+
+struct code_block_primitive {
+    std::string language;
+    std::vector<std::string> lines;
+};
+
+struct table_primitive {
+    int table_columns{0};
+    std::string table_id;
+    std::vector<float> column_weights;
+    std::vector<std::string> headers;
+    std::vector<std::vector<std::string>> rows;
+};
+
+struct separator_primitive {};
+
+struct spacing_primitive {};
+
+using markdown_primitive = std::variant<
+    heading_primitive,
+    paragraph_primitive,
+    list_item_primitive,
+    blockquote_primitive,
+    code_block_primitive,
+    table_primitive,
+    separator_primitive,
+    spacing_primitive
+>;
+
+struct markdown_document {
+    std::vector<markdown_primitive> primitives;
+    int line_count{0};
+    int word_count{0};
+    size_t byte_size{0};
+    uint64_t content_hash{0};
+
+    [[nodiscard]] bool empty() const noexcept {
+        return primitives.empty();
+    }
+
+    void clear() {
+        primitives.clear();
+        line_count = 0;
+        word_count = 0;
+        byte_size = 0;
+        content_hash = 0;
+    }
+};
+
+[[nodiscard]] inline markdown_document parse_markdown_document(std::string_view markdown_text) {
+    using namespace adaptive_cards;
+    markdown_document doc;
+    doc.byte_size = markdown_text.size();
+
+    if (markdown_text.empty()) {
+        return doc;
+    }
 
     std::istringstream stream{std::string(markdown_text)};
     std::string line;
     std::string leftover_line;
     bool has_leftover_line = false;
     bool in_code_block = false;
-    
+    std::string code_language;
+    std::vector<std::string> code_lines;
+
     std::string pending_header_line;
     bool has_pending_header = false;
+
+    // Count words in full text
+    bool in_word = false;
+    for (char c : markdown_text) {
+        if (std::isspace(static_cast<unsigned char>(c))) {
+            in_word = false;
+        } else if (!in_word) {
+            in_word = true;
+            doc.word_count++;
+        }
+    }
 
     while (true) {
         if (has_leftover_line) {
@@ -346,19 +418,28 @@ inline void render_markdown_block(
                 break;
             }
         }
+        doc.line_count++;
 
         // ── Code fence toggle ──────────────────────────────────────────────
         if (line.starts_with("```")) {
-            in_code_block = !in_code_block;
+            if (in_code_block) {
+                doc.primitives.push_back(code_block_primitive{
+                    .language = std::move(code_language),
+                    .lines = std::move(code_lines)
+                });
+                code_language.clear();
+                code_lines.clear();
+                in_code_block = false;
+            } else {
+                in_code_block = true;
+                code_language = line.size() > 3 ? line.substr(3) : "";
+                code_lines.clear();
+            }
             continue;
         }
 
         if (in_code_block) {
-            if (config.font_code) ImGui::PushFont(config.font_code);
-            ImGui::PushStyleColor(ImGuiCol_Text, code_color);
-            ImGui::TextWrapped("%s", line.c_str());
-            ImGui::PopStyleColor();
-            if (config.font_code) ImGui::PopFont();
+            code_lines.push_back(line);
             continue;
         }
 
@@ -367,20 +448,18 @@ inline void render_markdown_block(
             if (is_table_delimiter(line)) {
                 auto header_cells = split_table_row(pending_header_line);
                 int table_columns = static_cast<int>(header_cells.size());
-                
-                // Read ahead to collect all data rows belonging to this table
+
                 std::vector<std::vector<std::string>> table_rows;
-                table_rows.push_back(header_cells);
-                
                 std::string next_line;
                 while (std::getline(stream, next_line)) {
+                    doc.line_count++;
                     std::string_view trimmed_next = next_line;
                     while (!trimmed_next.empty() && std::isspace(static_cast<unsigned char>(trimmed_next.front()))) {
                         trimmed_next.remove_prefix(1);
                     }
                     if (trimmed_next.starts_with('|')) {
                         if (is_table_delimiter(next_line)) {
-                            continue; // skip duplicate delimiter lines
+                            continue;
                         }
                         table_rows.push_back(split_table_row(next_line));
                     } else {
@@ -389,9 +468,13 @@ inline void render_markdown_block(
                         break;
                     }
                 }
-                
-                // Calculate max text length per column to compute proportions
+
                 std::vector<size_t> max_lens(static_cast<size_t>(table_columns), 0);
+                for (size_t col = 0; col < static_cast<size_t>(table_columns); ++col) {
+                    if (col < header_cells.size()) {
+                        max_lens[col] = std::max(max_lens[col], header_cells[col].length());
+                    }
+                }
                 for (const auto& row : table_rows) {
                     for (int col = 0; col < table_columns; ++col) {
                         if (static_cast<size_t>(col) < row.size()) {
@@ -399,51 +482,31 @@ inline void render_markdown_block(
                         }
                     }
                 }
-                
-                // Generate unique table ID
+
+                std::vector<float> weights(static_cast<size_t>(table_columns));
+                for (int col = 0; col < table_columns; ++col) {
+                    float max_len = static_cast<float>(max_lens[static_cast<size_t>(col)]);
+                    weights[static_cast<size_t>(col)] = std::clamp(std::sqrt(max_len), 1.0f, 10.0f);
+                }
+
                 static int table_id_counter = 0;
                 std::string table_id = "markdown_table_" + std::to_string(++table_id_counter);
-                
-                if (ImGui::BeginTable(table_id.c_str(), table_columns, 
-                                      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
-                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
-                    
-                    // Set up columns with dynamic stretch weights based on content length
-                    for (int col = 0; col < table_columns; ++col) {
-                        float max_len = static_cast<float>(max_lens[static_cast<size_t>(col)]);
-                        float weight = std::clamp(std::sqrt(max_len), 1.0f, 10.0f);
-                        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch, weight);
-                    }
-                    
-                    // Render headers
-                    ImGui::TableNextRow();
-                    for (int col = 0; col < table_columns; ++col) {
-                        ImGui::TableSetColumnIndex(col);
-                        if (config.font_bold) ImGui::PushFont(config.font_bold);
-                        render_inline_markdown(table_rows[0][static_cast<size_t>(col)], default_color, config, open_url_cb);
-                        if (config.font_bold) ImGui::PopFont();
-                    }
-                    
-                    // Render rows
-                    for (size_t r = 1; r < table_rows.size(); ++r) {
-                        ImGui::TableNextRow();
-                        for (int col = 0; col < table_columns; ++col) {
-                            ImGui::TableSetColumnIndex(col);
-                            if (static_cast<size_t>(col) < table_rows[r].size()) {
-                                render_inline_markdown(table_rows[r][static_cast<size_t>(col)], default_color, config, open_url_cb);
-                            }
-                        }
-                    }
-                    
-                    ImGui::EndTable();
-                }
-                
+
+                doc.primitives.push_back(table_primitive{
+                    .table_columns = table_columns,
+                    .table_id = std::move(table_id),
+                    .column_weights = std::move(weights),
+                    .headers = std::move(header_cells),
+                    .rows = std::move(table_rows)
+                });
+
                 has_pending_header = false;
                 pending_header_line.clear();
                 continue;
             } else {
-                // Not a table! Flush the pending header first as a paragraph
-                render_inline_markdown(pending_header_line, default_color, config, open_url_cb);
+                doc.primitives.push_back(paragraph_primitive{
+                    .spans = parse_inline_markdown(pending_header_line)
+                });
                 has_pending_header = false;
                 pending_header_line.clear();
             }
@@ -453,7 +516,7 @@ inline void render_markdown_block(
         while (!trimmed_line.empty() && std::isspace(static_cast<unsigned char>(trimmed_line.front()))) {
             trimmed_line.remove_prefix(1);
         }
-        
+
         if (trimmed_line.starts_with('|')) {
             pending_header_line = line;
             has_pending_header = true;
@@ -462,47 +525,53 @@ inline void render_markdown_block(
 
         // ── Horizontal rule ───────────────────────────────────────────────
         if (line == "---" || line == "***" || line == "___") {
-            ImGui::Separator();
+            doc.primitives.push_back(separator_primitive{});
             continue;
         }
 
         // ── Headings ──────────────────────────────────────────────────────
         if (line.starts_with("# ")) {
-            if (config.font_bold) ImGui::PushFont(config.font_bold);
-            render_inline_markdown(std::string_view{line}.substr(2), h1_color, config, open_url_cb);
-            if (config.font_bold) ImGui::PopFont();
-            ImGui::Separator();
+            doc.primitives.push_back(heading_primitive{
+                .level = 1,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(2)),
+                .plain_text = strip_markdown(line.substr(2))
+            });
             continue;
         }
         if (line.starts_with("## ")) {
-            // SeparatorText renders best with plain text; strip inline markers.
-            ImGui::SeparatorText(strip_markdown(line.substr(3)).c_str());
+            doc.primitives.push_back(heading_primitive{
+                .level = 2,
+                .spans = {},
+                .plain_text = strip_markdown(line.substr(3))
+            });
             continue;
         }
         if (line.starts_with("### ")) {
-            if (config.font_bold) ImGui::PushFont(config.font_bold);
-            render_inline_markdown(std::string_view{line}.substr(4), default_color, config, open_url_cb);
-            if (config.font_bold) ImGui::PopFont();
+            doc.primitives.push_back(heading_primitive{
+                .level = 3,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(4)),
+                .plain_text = strip_markdown(line.substr(4))
+            });
             continue;
         }
 
         // ── Blockquote ────────────────────────────────────────────────────
         if (line.starts_with("> ")) {
-            ImGui::Indent();
-            const float indent_x = ImGui::GetCursorPosX();
-            const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(2));
-            render_flowing_markdown(spans, dim_color, config, indent_x, open_url_cb);
-            ImGui::Unindent();
+            doc.primitives.push_back(blockquote_primitive{
+                .indent_level = 1,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(2))
+            });
             continue;
         }
 
         // ── Unordered bullet list ─────────────────────────────────────────
         if (line.starts_with("- ") || line.starts_with("* ")) {
-            ImGui::Bullet();
-            ImGui::SameLine();
-            const float text_col_x = ImGui::GetCursorPosX();
-            const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(2));
-            render_flowing_markdown(spans, default_color, config, text_col_x, open_url_cb);
+            doc.primitives.push_back(list_item_primitive{
+                .is_ordered = false,
+                .marker = "-",
+                .indent_level = 0,
+                .spans = parse_inline_markdown(std::string_view{line}.substr(2))
+            });
             continue;
         }
 
@@ -515,11 +584,12 @@ inline void render_markdown_block(
                     if (line[i] < '0' || line[i] > '9') { all_digits = false; break; }
                 }
                 if (all_digits) {
-                    ImGui::Bullet();
-                    ImGui::SameLine();
-                    const float text_col_x = ImGui::GetCursorPosX();
-                    const auto spans = adaptive_cards::parse_inline_markdown(std::string_view{line}.substr(dot + 2));
-                    render_flowing_markdown(spans, default_color, config, text_col_x, open_url_cb);
+                    doc.primitives.push_back(list_item_primitive{
+                        .is_ordered = true,
+                        .marker = line.substr(0, dot + 1),
+                        .indent_level = 0,
+                        .spans = parse_inline_markdown(std::string_view{line}.substr(dot + 2))
+                    });
                     continue;
                 }
             }
@@ -527,18 +597,127 @@ inline void render_markdown_block(
 
         // ── Empty line → vertical spacing ────────────────────────────────
         if (line.empty()) {
-            ImGui::Spacing();
+            doc.primitives.push_back(spacing_primitive{});
             continue;
         }
 
         // ── Regular paragraph ─────────────────────────────────────────────
-        render_inline_markdown(line, default_color, config, open_url_cb);
+        doc.primitives.push_back(paragraph_primitive{
+            .spans = parse_inline_markdown(line)
+        });
     }
-    
-    // Clean up any remaining open blocks at EOF
+
+    if (in_code_block) {
+        doc.primitives.push_back(code_block_primitive{
+            .language = std::move(code_language),
+            .lines = std::move(code_lines)
+        });
+    }
+
     if (has_pending_header) {
-        render_inline_markdown(pending_header_line, default_color, config, open_url_cb);
+        doc.primitives.push_back(paragraph_primitive{
+            .spans = parse_inline_markdown(pending_header_line)
+        });
     }
+
+    return doc;
+}
+
+inline void render_markdown_document(
+    const markdown_document& doc,
+    const markdown_render_config& config,
+    const std::function<void(const std::string&)>& open_url_cb = {}
+) {
+    const ImVec4 default_color  = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+    constexpr ImVec4 h1_color   = {0.85f, 0.70f, 0.30f, 1.0f};
+    constexpr ImVec4 dim_color  = {0.60f, 0.60f, 0.60f, 1.0f};
+    constexpr ImVec4 code_color = {0.50f, 0.90f, 0.70f, 1.0f};
+
+    for (const auto& prim : doc.primitives) {
+        std::visit([&](const auto& item) {
+            using T = std::decay_t<decltype(item)>;
+            if constexpr (std::is_same_v<T, heading_primitive>) {
+                if (item.level == 1) {
+                    if (config.font_bold) ImGui::PushFont(config.font_bold);
+                    render_flowing_markdown(item.spans, h1_color, config, -1.0f, open_url_cb);
+                    if (config.font_bold) ImGui::PopFont();
+                    ImGui::Separator();
+                } else if (item.level == 2) {
+                    ImGui::SeparatorText(item.plain_text.c_str());
+                } else if (item.level == 3) {
+                    if (config.font_bold) ImGui::PushFont(config.font_bold);
+                    render_flowing_markdown(item.spans, default_color, config, -1.0f, open_url_cb);
+                    if (config.font_bold) ImGui::PopFont();
+                }
+            } else if constexpr (std::is_same_v<T, paragraph_primitive>) {
+                render_flowing_markdown(item.spans, default_color, config, -1.0f, open_url_cb);
+            } else if constexpr (std::is_same_v<T, list_item_primitive>) {
+                ImGui::Bullet();
+                ImGui::SameLine();
+                const float text_col_x = ImGui::GetCursorPosX();
+                render_flowing_markdown(item.spans, default_color, config, text_col_x, open_url_cb);
+            } else if constexpr (std::is_same_v<T, blockquote_primitive>) {
+                ImGui::Indent();
+                const float indent_x = ImGui::GetCursorPosX();
+                render_flowing_markdown(item.spans, dim_color, config, indent_x, open_url_cb);
+                ImGui::Unindent();
+            } else if constexpr (std::is_same_v<T, code_block_primitive>) {
+                if (config.font_code) ImGui::PushFont(config.font_code);
+                ImGui::PushStyleColor(ImGuiCol_Text, code_color);
+                for (const auto& code_line : item.lines) {
+                    ImGui::TextWrapped("%s", code_line.c_str());
+                }
+                ImGui::PopStyleColor();
+                if (config.font_code) ImGui::PopFont();
+            } else if constexpr (std::is_same_v<T, table_primitive>) {
+                if (ImGui::BeginTable(item.table_id.c_str(), item.table_columns, 
+                                      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
+                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+                    for (int col = 0; col < item.table_columns; ++col) {
+                        float weight = col < static_cast<int>(item.column_weights.size()) ? item.column_weights[static_cast<size_t>(col)] : 1.0f;
+                        ImGui::TableSetupColumn(nullptr, ImGuiTableColumnFlags_WidthStretch, weight);
+                    }
+                    ImGui::TableNextRow();
+                    for (int col = 0; col < item.table_columns; ++col) {
+                        ImGui::TableSetColumnIndex(col);
+                        if (config.font_bold) ImGui::PushFont(config.font_bold);
+                        if (static_cast<size_t>(col) < item.headers.size()) {
+                            render_inline_markdown(item.headers[static_cast<size_t>(col)], default_color, config, open_url_cb);
+                        }
+                        if (config.font_bold) ImGui::PopFont();
+                    }
+                    for (const auto& row : item.rows) {
+                        ImGui::TableNextRow();
+                        for (int col = 0; col < item.table_columns; ++col) {
+                            ImGui::TableSetColumnIndex(col);
+                            if (static_cast<size_t>(col) < row.size()) {
+                                render_inline_markdown(row[static_cast<size_t>(col)], default_color, config, open_url_cb);
+                            }
+                        }
+                    }
+                    ImGui::EndTable();
+                }
+            } else if constexpr (std::is_same_v<T, separator_primitive>) {
+                ImGui::Separator();
+            } else if constexpr (std::is_same_v<T, spacing_primitive>) {
+                ImGui::Spacing();
+            }
+        }, prim);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// render_markdown_block
+//
+// Backward-compatible wrapper that parses and renders a Markdown document.
+// ---------------------------------------------------------------------------
+inline void render_markdown_block(
+    std::string_view markdown_text,
+    const markdown_render_config& config,
+    const std::function<void(const std::string&)>& open_url_cb = {}
+) {
+    const markdown_document doc = parse_markdown_document(markdown_text);
+    render_markdown_document(doc, config, open_url_cb);
 }
 
 } // namespace rouen::helpers

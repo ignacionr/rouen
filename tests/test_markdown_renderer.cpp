@@ -486,6 +486,66 @@ TEST(MarkdownRenderer, WrappingCalculationFitsAvailableWidth) {
     EXPECT_GT(line_count, 3);
 }
 
+TEST(MarkdownRenderer, ParseDocumentPrimitives) {
+    using namespace rouen::helpers;
+    const std::string doc_text = 
+        "# Title\n"
+        "## Section\n"
+        "> Quote line\n"
+        "- Bullet item\n"
+        "1. Numbered item\n"
+        "```cpp\n"
+        "int x = 42;\n"
+        "```\n"
+        "| Name | Age |\n"
+        "| --- | --- |\n"
+        "| Alice | 30 |\n"
+        "Paragraph text.\n";
+
+    const auto doc = parse_markdown_document(doc_text);
+    EXPECT_FALSE(doc.empty());
+    EXPECT_GT(doc.line_count, 0);
+    EXPECT_GT(doc.word_count, 0);
+    EXPECT_EQ(doc.byte_size, doc_text.size());
+
+    bool has_h1 = false;
+    bool has_h2 = false;
+    bool has_quote = false;
+    bool has_list = false;
+    bool has_code = false;
+    bool has_table = false;
+    bool has_para = false;
+
+    for (const auto& prim : doc.primitives) {
+        if (std::holds_alternative<heading_primitive>(prim)) {
+            const auto& h = std::get<heading_primitive>(prim);
+            if (h.level == 1) has_h1 = true;
+            if (h.level == 2) has_h2 = true;
+        } else if (std::holds_alternative<blockquote_primitive>(prim)) {
+            has_quote = true;
+        } else if (std::holds_alternative<list_item_primitive>(prim)) {
+            has_list = true;
+        } else if (std::holds_alternative<code_block_primitive>(prim)) {
+            has_code = true;
+            EXPECT_EQ(std::get<code_block_primitive>(prim).lines.size(), 1U);
+        } else if (std::holds_alternative<table_primitive>(prim)) {
+            has_table = true;
+            EXPECT_EQ(std::get<table_primitive>(prim).table_columns, 2);
+            EXPECT_EQ(std::get<table_primitive>(prim).rows.size(), 1U);
+        } else if (std::holds_alternative<paragraph_primitive>(prim)) {
+            has_para = true;
+        }
+    }
+
+    EXPECT_TRUE(has_h1);
+    EXPECT_TRUE(has_h2);
+    EXPECT_TRUE(has_quote);
+    EXPECT_TRUE(has_list);
+    EXPECT_TRUE(has_code);
+    EXPECT_TRUE(has_table);
+    EXPECT_TRUE(has_para);
+}
+
 
 
 

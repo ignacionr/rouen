@@ -109,20 +109,9 @@ public:
         last_write_time_ = std::filesystem::last_write_time(path_, ec);
         last_check_time_ = std::chrono::steady_clock::now();
 
-        // Calculate statistics
-        line_count_ = 0;
-        word_count_ = 0;
-        bool in_word = false;
-        for (char c : content_) {
-            if (c == '\n') ++line_count_;
-            if (std::isspace(static_cast<unsigned char>(c))) {
-                in_word = false;
-            } else if (!in_word) {
-                in_word = true;
-                ++word_count_;
-            }
-        }
-        if (!content_.empty() && content_.back() != '\n') ++line_count_;
+        parsed_document_ = rouen::helpers::parse_markdown_document(content_);
+        line_count_ = parsed_document_.line_count;
+        word_count_ = parsed_document_.word_count;
 
         auto bytes = std::filesystem::file_size(path_, ec);
         if (!ec) {
@@ -163,7 +152,7 @@ public:
             }
 
             if (ImGui::BeginChild("MarkdownViewerContent", ImVec2(0.0f, 0.0f), true)) {
-                if (content_.empty()) {
+                if (parsed_document_.empty()) {
                     ImGui::TextDisabled("(Empty document)");
                 } else {
                     const rouen::helpers::markdown_render_config md_config{
@@ -174,8 +163,8 @@ public:
                             render_image(alt, url);
                         },
                     };
-                    rouen::helpers::render_markdown_block(
-                        content_,
+                    rouen::helpers::render_markdown_document(
+                        parsed_document_,
                         md_config,
                         [this](const std::string& url) {
                             handle_link_click(url);
@@ -450,6 +439,7 @@ private:
 
     std::filesystem::path path_;
     std::string content_;
+    rouen::helpers::markdown_document parsed_document_;
     std::string size_str_;
     int line_count_{0};
     int word_count_{0};
