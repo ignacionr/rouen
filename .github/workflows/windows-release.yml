@@ -895,7 +895,7 @@ jobs:
         if (-not $rawTag) { $rawTag = "${{ github.ref_name }}" }
         $cleanSemVer = $rawTag -replace '^v', ''
         if ($cleanSemVer -notmatch '^\d+\.\d+\.\d+') {
-          $cleanSemVer = "1.4.17"
+          $cleanSemVer = "1.4.18"
         }
         $version = "$cleanSemVer.0"
         
