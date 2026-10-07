@@ -29,6 +29,13 @@ namespace rouen::cards {
         static std::string get_assistant_name();
         static void maybe_speak_reply(const std::string& text);
 
+        [[nodiscard]] uint32_t get_internal_turn_count() const noexcept {
+            return internal_turn_count_.load(std::memory_order_relaxed);
+        }
+        void set_internal_turn_count(uint32_t count) noexcept {
+            internal_turn_count_.store(count, std::memory_order_relaxed);
+        }
+
     private:
         struct MessageCache {
             float bubble_height{0.0f};
@@ -73,6 +80,7 @@ namespace rouen::cards {
         
         std::optional<std::future<void>> pending_response_{};
         std::atomic<bool> waiting_for_response_{false};
+        std::atomic<uint32_t> internal_turn_count_{0};
         std::atomic<bool> clear_input_on_response_{false};
         std::mutex chat_history_mutex_;
         

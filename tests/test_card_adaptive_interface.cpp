@@ -153,6 +153,11 @@ TEST(CardAdaptiveInterface, AIChatCard) {
     chat.handle_action(R"({"verb":"clear_history"})");
     chat_json = chat.get_adaptive_card_json();
     EXPECT_EQ(chat_json.find("Hello from unit test"), std::string::npos);
+
+    // Test internal turn count telemetry
+    EXPECT_EQ(chat.get_internal_turn_count(), 0u);
+    chat.set_internal_turn_count(3);
+    EXPECT_EQ(chat.get_internal_turn_count(), 3u);
 }
 
 TEST(CardAdaptiveInterface, AboutCard) {

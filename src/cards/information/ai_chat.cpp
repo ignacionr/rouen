@@ -727,8 +727,13 @@ namespace rouen::cards {
                     bool const show_cursor = (static_cast<int>(time * 2.0f) % 2) == 0;
                     std::string const cursor_str = show_cursor ? ">" : " ";
                     
-                    // Bubble dimensions - 1 line of message height
-                    float const content_width = std::clamp(32.0f + padding.x * 2.0f + 24.0f, min_width, max_width);
+                    uint32_t const turns = internal_turn_count_.load(std::memory_order_relaxed);
+                    std::string const dots_str(turns, '.');
+                    std::string const indicator_str = cursor_str + dots_str;
+                    
+                    // Bubble dimensions - 1 line of message height with dynamic width
+                    float const text_w = ImGui::CalcTextSize(indicator_str.c_str()).x;
+                    float const content_width = std::clamp(text_w + padding.x * 2.0f + 24.0f, min_width, max_width);
                     float const bubble_height = line_height + separator_height + line_height + 
                                         padding.y * 2.0f + ImGui::GetStyle().ItemSpacing.y + 6.0f;
                                         
@@ -762,7 +767,15 @@ namespace rouen::cards {
                     ImGui::Separator();
                     ImGui::PopStyleColor();
                     
-                    ImGui::Text("%s", cursor_str.c_str());
+                    ImGui::Text("%s", indicator_str.c_str());
+                    if (ImGui::IsItemHovered()) {
+                        if (turns == 0) {
+                            ImGui::SetTooltip("AI is thinking...");
+                        } else {
+                            ImGui::SetTooltip("AI is thinking... (%u internal %s completed)",
+                                              turns, turns == 1 ? "turn" : "turns");
+                        }
+                    }
                     
                     ImGui::PopStyleColor(); // assistant_text_color
                     ImGui::EndChild();
@@ -1100,7 +1113,12 @@ namespace rouen::cards {
             {
                 glz::json_t indicator;
                 indicator["type"] = "TextBlock";
-                indicator["text"] = "typing...";
+                uint32_t const turns = internal_turn_count_.load(std::memory_order_relaxed);
+                std::string text = "typing...";
+                if (turns > 0) {
+                    text = std::format("typing... ({})", std::string(turns, '.'));
+                }
+                indicator["text"] = std::move(text);
                 indicator["isSubtle"] = true;
                 indicator["spacing"] = "None";
                 thinking_items.push_back(std::move(indicator));
@@ -1371,7 +1389,9 @@ namespace rouen::cards {
                         return response;
                     },
                     [this, depth](const std::string& func_name, const std::string& func_args_json) -> std::string {
-                        return execute_function_with_debug(func_name, func_args_json, depth + 1);
+                        std::string res = execute_function_with_debug(func_name, func_args_json, depth + 1);
+                        internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
+                        return res;
                     },
                     "user", model_name, search_mode_str, target_persona->temperature, nullptr, &function_schemas
                 );
@@ -1551,6 +1571,7 @@ namespace rouen::cards {
             layout_dirty_ = true;
             
             waiting_for_response_.store(true);
+            internal_turn_count_.store(0, std::memory_order_relaxed);
             scroll_to_bottom_.store(true);
             
             // Determine model and search mode before launching the thread (thread-safe capture)
@@ -1622,7 +1643,9 @@ namespace rouen::cards {
                                     return response;
                                 },
                                 [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
-                                    return execute_function_with_debug(func_name, func_args_json, 1);
+                                    std::string res = execute_function_with_debug(func_name, func_args_json, 1);
+                                    internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
+                                    return res;
                                 },
                                 "user", active_model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas
                             );
@@ -1652,7 +1675,9 @@ namespace rouen::cards {
                                                 return fetcher->post(url, body, header_setter);
                                             },
                                             [this](const std::string& func_name, const std::string& func_args_json) -> std::string {
-                                                return execute_function_with_debug(func_name, func_args_json, 1);
+                                                std::string res = execute_function_with_debug(func_name, func_args_json, 1);
+                                                internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
+                                                return res;
                                             },
                                             "user", "grok-3-latest", "", active_persona.temperature, &conversation_for_llm, &function_schemas
                                         );
@@ -1725,6 +1750,7 @@ namespace rouen::cards {
             
             scroll_to_bottom_.store(true);
             waiting_for_response_.store(true);
+            internal_turn_count_.store(0, std::memory_order_relaxed);
             
             // Create shared context for the async operation to ensure memory safety
             auto async_context = std::make_shared<AsyncRequestContext>();
