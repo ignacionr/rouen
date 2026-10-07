@@ -19,6 +19,7 @@
 #include "../src/cards/system/about.hpp"
 #include "../src/cards/system/sysinfo.hpp"
 #include "../src/cards/productivity/pomodoro.hpp"
+#include "../src/cards/development/vcproject_card.hpp"
 #include "../src/hosts/api_server_host.hpp"
 
 #ifdef __clang__
@@ -473,6 +474,42 @@ TEST(ProcessApiTests, ProcessUIWindowScopingAndWin32Actions) {
 
     std::string res_values = rouen::hosts::api_server_host::handle_process_ui_values(nullptr, &hm_values);
     EXPECT_NE(res_values.find("values"), std::string::npos);
+}
+
+TEST(CardAdaptiveInterface, VCProjectCard) {
+    std::string proj_path = "examples/cpp23_win_task_runner/Cpp23TaskRunner.vcxproj";
+    if (!std::filesystem::exists(proj_path)) {
+        proj_path = "../examples/cpp23_win_task_runner/Cpp23TaskRunner.vcxproj";
+    }
+
+    rouen::cards::vcproject_card vc_card{proj_path};
+
+    // 1. Verify Adaptive Card JSON schema
+    std::string card_json = vc_card.get_adaptive_card_json();
+    EXPECT_NE(card_json.find("AdaptiveCard"), std::string::npos);
+    EXPECT_NE(card_json.find("Visual Studio Project"), std::string::npos);
+    EXPECT_NE(card_json.find("FactSet"), std::string::npos);
+    EXPECT_NE(card_json.find("Action.Execute"), std::string::npos);
+    EXPECT_NE(card_json.find("build"), std::string::npos);
+    EXPECT_NE(card_json.find("rebuild"), std::string::npos);
+
+    // Verify it parses as valid JSON via glaze
+    glz::json_t doc;
+    auto err = glz::read_json(doc, card_json);
+    EXPECT_FALSE(err);
+    EXPECT_EQ(doc["type"].get<std::string>(), "AdaptiveCard");
+    EXPECT_EQ(doc["version"].get<std::string>(), "1.5");
+
+    // 2. Test handle_action with Adaptive Card Execute payloads
+    vc_card.handle_action(R"({"verb":"set_config","data":{"selected_config":"Debug"}})");
+    std::string debug_card_json = vc_card.get_adaptive_card_json();
+    EXPECT_NE(debug_card_json.find("Debug"), std::string::npos);
+
+    vc_card.handle_action(R"({"verb":"set_platform","data":{"selected_platform":"x64"}})");
+    vc_card.handle_action(R"({"verb":"select_stack","data":{"selected_stack":"0"}})");
+
+    // 3. Test handle_action with direct string verbs
+    vc_card.handle_action("check_syntax");
 }
 
 

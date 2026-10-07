@@ -333,6 +333,7 @@ target_sources(test_adaptive_process_card PRIVATE
     ../src/cards/media/media_companion.cpp
     ../src/cards/development/cmake.cpp
     ../src/cards/development/vcproject_card.cpp
+    ../src/cards/development/diff_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
     ../src/cards/development/github/github_card.cpp
@@ -406,6 +407,7 @@ target_sources(test_card_adaptive_interface PRIVATE
     ../src/cards/media/media_companion.cpp
     ../src/cards/development/cmake.cpp
     ../src/cards/development/vcproject_card.cpp
+    ../src/cards/development/diff_card.cpp
     ../src/cards/development/fs-directory.cpp
     ../src/cards/development/git.cpp
     ../src/cards/development/github/github_card.cpp

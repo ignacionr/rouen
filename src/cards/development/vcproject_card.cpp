@@ -25,6 +25,7 @@
 #include "../../helpers/process_helper.hpp"
 #include "../../helpers/syntax_checker.hpp"
 #include "../../helpers/conventional_commit.hpp"
+#include "../../helpers/glaze_include.hpp"
 #include "../../../external/IconsMaterialDesign.h"
 #include "../../registrar.hpp"
 
@@ -760,27 +761,443 @@ namespace rouen::cards {
         });
     }
 
+    std::string vcproject_card::get_adaptive_card_json() const {
+        glz::json_t card;
+        card["type"] = "AdaptiveCard";
+        card["version"] = "1.5";
+        card["schema"] = "http://adaptivecards.io/schemas/adaptive-card.json";
+
+        std::vector<glz::json_t> body;
+
+        // 1. Title & Path Header
+        {
+            glz::json_t header;
+            header["type"] = "TextBlock";
+            header["text"] = std::format("Visual Studio Project: {}", 
+                proj_info_.project_name.empty() ? "VC Project" : proj_info_.project_name);
+            header["weight"] = "Bolder";
+            header["size"] = "Large";
+            header["color"] = "Accent";
+            body.push_back(std::move(header));
+        }
+
+        {
+            glz::json_t sub;
+            sub["type"] = "TextBlock";
+            sub["text"] = path_;
+            sub["isSubtle"] = true;
+            sub["size"] = "Small";
+            sub["wrap"] = true;
+            body.push_back(std::move(sub));
+        }
+
+        // 2. Metadata FactSet
+        {
+            glz::json_t fact_set;
+            fact_set["type"] = "FactSet";
+            std::vector<glz::json_t> facts;
+
+            auto add_fact = [&facts](const std::string& title, const std::string& value) {
+                if (!value.empty()) {
+                    glz::json_t f;
+                    f["title"] = title;
+                    f["value"] = value;
+                    facts.push_back(std::move(f));
+                }
+            };
+
+            add_fact("Toolset", proj_info_.platform_toolset.empty() ? "Default" : proj_info_.platform_toolset);
+            add_fact("C++ Standard", proj_info_.language_standard.empty() ? "Default" : proj_info_.language_standard);
+
+            std::string current_cfg = (!proj_info_.configurations.empty() && selected_config_idx_ >= 0 && static_cast<size_t>(selected_config_idx_) < proj_info_.configurations.size())
+                ? proj_info_.configurations[static_cast<size_t>(selected_config_idx_)] : "Release";
+            std::string current_plat = (!proj_info_.platforms.empty() && selected_platform_idx_ >= 0 && static_cast<size_t>(selected_platform_idx_) < proj_info_.platforms.size())
+                ? proj_info_.platforms[static_cast<size_t>(selected_platform_idx_)] : "x64";
+            add_fact("Configuration", current_cfg);
+            add_fact("Platform", current_plat);
+
+            if (!installations_.empty() && selected_stack_idx_ >= 0 && static_cast<size_t>(selected_stack_idx_) < installations_.size()) {
+                add_fact("VS Stack", installations_[static_cast<size_t>(selected_stack_idx_)].display_name);
+            }
+
+            if (!proj_info_.target_path.empty()) {
+                add_fact("Output Target", proj_info_.target_path);
+            }
+
+            if (cmd_running_) {
+                add_fact("Status", std::format("Running: {}", last_action_.empty() ? "Operation in progress" : last_action_));
+            } else if (!last_action_.empty()) {
+                add_fact("Last Action", last_action_);
+            }
+
+            fact_set["facts"] = std::move(facts);
+            body.push_back(std::move(fact_set));
+        }
+
+        // 3. Interactive Inputs: Configuration & Platform Choices
+        if (proj_info_.configurations.size() > 1 || proj_info_.platforms.size() > 1 || installations_.size() > 1) {
+            glz::json_t input_col_set;
+            input_col_set["type"] = "ColumnSet";
+            std::vector<glz::json_t> cols;
+
+            // Configuration Choice
+            if (proj_info_.configurations.size() > 1) {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> col_items;
+
+                glz::json_t label;
+                label["type"] = "TextBlock";
+                label["text"] = "Configuration";
+                label["weight"] = "Bolder";
+                label["size"] = "Small";
+                col_items.push_back(std::move(label));
+
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "selected_config";
+                choice_set["value"] = (selected_config_idx_ >= 0 && static_cast<size_t>(selected_config_idx_) < proj_info_.configurations.size())
+                    ? proj_info_.configurations[static_cast<size_t>(selected_config_idx_)] : proj_info_.configurations[0];
+                std::vector<glz::json_t> choices;
+                for (const auto& c : proj_info_.configurations) {
+                    glz::json_t ch;
+                    ch["title"] = c;
+                    ch["value"] = c;
+                    choices.push_back(std::move(ch));
+                }
+                choice_set["choices"] = std::move(choices);
+                col_items.push_back(std::move(choice_set));
+                col["items"] = std::move(col_items);
+                cols.push_back(std::move(col));
+            }
+
+            // Platform Choice
+            if (proj_info_.platforms.size() > 1) {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> col_items;
+
+                glz::json_t label;
+                label["type"] = "TextBlock";
+                label["text"] = "Platform";
+                label["weight"] = "Bolder";
+                label["size"] = "Small";
+                col_items.push_back(std::move(label));
+
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "selected_platform";
+                choice_set["value"] = (selected_platform_idx_ >= 0 && static_cast<size_t>(selected_platform_idx_) < proj_info_.platforms.size())
+                    ? proj_info_.platforms[static_cast<size_t>(selected_platform_idx_)] : proj_info_.platforms[0];
+                std::vector<glz::json_t> choices;
+                for (const auto& p : proj_info_.platforms) {
+                    glz::json_t ch;
+                    ch["title"] = p;
+                    ch["value"] = p;
+                    choices.push_back(std::move(ch));
+                }
+                choice_set["choices"] = std::move(choices);
+                col_items.push_back(std::move(choice_set));
+                col["items"] = std::move(col_items);
+                cols.push_back(std::move(col));
+            }
+
+            // Visual Studio Stack Choice (if multiple VS installations)
+            if (installations_.size() > 1) {
+                glz::json_t col;
+                col["type"] = "Column";
+                col["width"] = "stretch";
+                std::vector<glz::json_t> col_items;
+
+                glz::json_t label;
+                label["type"] = "TextBlock";
+                label["text"] = "VS Stack";
+                label["weight"] = "Bolder";
+                label["size"] = "Small";
+                col_items.push_back(std::move(label));
+
+                glz::json_t choice_set;
+                choice_set["type"] = "Input.ChoiceSet";
+                choice_set["id"] = "selected_stack";
+                choice_set["value"] = std::to_string(selected_stack_idx_);
+                std::vector<glz::json_t> choices;
+                for (size_t i = 0; i < installations_.size(); ++i) {
+                    glz::json_t ch;
+                    ch["title"] = std::format("{} ({})", installations_[i].display_name, installations_[i].toolset);
+                    ch["value"] = std::to_string(i);
+                    choices.push_back(std::move(ch));
+                }
+                choice_set["choices"] = std::move(choices);
+                col_items.push_back(std::move(choice_set));
+                col["items"] = std::move(col_items);
+                cols.push_back(std::move(col));
+            }
+
+            input_col_set["columns"] = std::move(cols);
+            body.push_back(std::move(input_col_set));
+        }
+
+        // 4. Source Files Summary
+        if (!proj_info_.source_files.empty() || !proj_info_.header_files.empty()) {
+            glz::json_t src_container;
+            src_container["type"] = "Container";
+            src_container["separator"] = true;
+            std::vector<glz::json_t> src_items;
+
+            glz::json_t src_title;
+            src_title["type"] = "TextBlock";
+            src_title["text"] = std::format("Project Files ({} sources, {} headers)", 
+                proj_info_.source_files.size(), proj_info_.header_files.size());
+            src_title["weight"] = "Bolder";
+            src_title["size"] = "Medium";
+            src_items.push_back(std::move(src_title));
+
+            std::string file_list_str;
+            for (const auto& s : proj_info_.source_files) {
+                if (!file_list_str.empty()) file_list_str += ", ";
+                file_list_str += s;
+            }
+            for (const auto& h : proj_info_.header_files) {
+                if (!file_list_str.empty()) file_list_str += ", ";
+                file_list_str += h;
+            }
+            glz::json_t file_list;
+            file_list["type"] = "TextBlock";
+            file_list["text"] = file_list_str;
+            file_list["isSubtle"] = true;
+            file_list["size"] = "Small";
+            file_list["wrap"] = true;
+            src_items.push_back(std::move(file_list));
+
+            src_container["items"] = std::move(src_items);
+            body.push_back(std::move(src_container));
+        }
+
+        // 5. Build Diagnostics / AI Triage
+        if (!build_diagnostics_.empty()) {
+            glz::json_t diag_container;
+            diag_container["type"] = "Container";
+            diag_container["style"] = "attention";
+            diag_container["separator"] = true;
+            std::vector<glz::json_t> diag_items;
+
+            glz::json_t diag_title;
+            diag_title["type"] = "TextBlock";
+            diag_title["text"] = std::format("Build Diagnostics ({} issues detected)", build_diagnostics_.size());
+            diag_title["weight"] = "Bolder";
+            diag_title["size"] = "Medium";
+            diag_title["color"] = "Attention";
+            diag_items.push_back(std::move(diag_title));
+
+            for (size_t i = 0; i < std::min<size_t>(build_diagnostics_.size(), 10); ++i) {
+                const auto& d = build_diagnostics_[i];
+                glz::json_t item;
+                item["type"] = "TextBlock";
+                item["text"] = std::format("[{}] {}:{}:{} - {}", 
+                    d.severity, std::filesystem::path(d.file).filename().string(), d.line, d.column, d.message);
+                item["wrap"] = true;
+                item["size"] = "Small";
+                if (d.severity == "error" || d.severity == "fatal error") {
+                    item["color"] = "Attention";
+                } else if (d.severity == "warning") {
+                    item["color"] = "Warning";
+                }
+                diag_items.push_back(std::move(item));
+            }
+
+            diag_container["items"] = std::move(diag_items);
+            body.push_back(std::move(diag_container));
+        }
+
+        // 6. Output Console Snippet
+        if (!last_output_.empty()) {
+            glz::json_t out_container;
+            out_container["type"] = "Container";
+            out_container["separator"] = true;
+            std::vector<glz::json_t> out_items;
+
+            glz::json_t out_title;
+            out_title["type"] = "TextBlock";
+            out_title["text"] = "MSBuild Output";
+            out_title["weight"] = "Bolder";
+            out_title["size"] = "Medium";
+            out_items.push_back(std::move(out_title));
+
+            std::string out_snippet = last_output_;
+            size_t newline_count = 0;
+            size_t rpos = out_snippet.size();
+            while (rpos > 0 && newline_count < 25) {
+                --rpos;
+                if (out_snippet[rpos] == '\n') ++newline_count;
+            }
+            if (rpos > 0) {
+                out_snippet = "...\n" + out_snippet.substr(rpos + 1);
+            }
+
+            glz::json_t out_block;
+            out_block["type"] = "TextBlock";
+            out_block["text"] = out_snippet;
+            out_block["fontType"] = "Monospace";
+            out_block["wrap"] = true;
+            out_block["size"] = "Small";
+            out_items.push_back(std::move(out_block));
+
+            out_container["items"] = std::move(out_items);
+            body.push_back(std::move(out_container));
+        }
+
+        card["body"] = std::move(body);
+
+        // 7. Actions Bar
+        std::vector<glz::json_t> actions;
+        auto add_action = [&actions](const std::string& title, const std::string& verb, const glz::json_t& data = nullptr) {
+            glz::json_t a;
+            a["type"] = "Action.Execute";
+            a["title"] = title;
+            a["verb"] = verb;
+            if (!data.holds<std::nullptr_t>()) {
+                a["data"] = data;
+            }
+            actions.push_back(std::move(a));
+        };
+
+        if (cmd_running_) {
+            add_action("Cancel Operation", "cancel");
+        } else {
+            add_action("Build", "build");
+            add_action("Rebuild", "rebuild");
+            add_action("Clean", "clean");
+            add_action("Run", "run");
+            add_action("Check Syntax", "check_syntax");
+            add_action("Commit Changes", "conventional_commit");
+
+            if (!build_diagnostics_.empty()) {
+                const auto& d = build_diagnostics_.front();
+                glz::json_t fix_data;
+                fix_data["diag_index"] = 0.0;
+                fix_data["file"] = d.file;
+                fix_data["line"] = static_cast<double>(d.line);
+                fix_data["message"] = d.message;
+                add_action("⚡ Fix with AI", "fix_ai", fix_data);
+            }
+        }
+
+        card["actions"] = std::move(actions);
+
+        std::string out;
+        static_cast<void>(glz::write_json(card, out));
+        return out;
+    }
+
     void vcproject_card::handle_action(std::string_view action_json) {
         std::string act(action_json);
-        if (act.find("check_syntax") != std::string::npos) {
-            check_syntax();
-        } else if (act.find("build") != std::string::npos) {
-            run_msbuild_action("build", "Building project");
-        } else if (act.find("rebuild") != std::string::npos) {
-            run_msbuild_action("rebuild", "Rebuilding project");
-        } else if (act.find("clean") != std::string::npos) {
-            run_msbuild_action("clean", "Cleaning project");
-        } else if (act.find("run") != std::string::npos) {
-            run_msbuild_action("run", "Executing binary");
-        } else if (act.find("conventional_commit") != std::string::npos) {
-            generate_conventional_commit();
-        } else if (act.find("select_stack") != std::string::npos) {
-            glz::json_t payload;
-            if (auto err = glz::read_json(payload, act); !err) {
-                if (payload.contains("index") && payload["index"].holds<double>()) {
-                    select_stack(static_cast<size_t>(payload["index"].get<double>()));
-                }
+        std::string verb;
+        glz::json_t payload;
+        bool is_json = !glz::read_json(payload, act);
+
+        if (is_json) {
+            if (payload.contains("verb") && payload["verb"].holds<std::string>()) {
+                verb = payload["verb"].get<std::string>();
+            } else if (payload.contains("action") && payload["action"].holds<std::string>()) {
+                verb = payload["action"].get<std::string>();
             }
+
+            // Extract input data if present (e.g. from Input.ChoiceSet or action.data)
+            glz::json_t data = payload.contains("data") ? payload["data"] : payload;
+
+            // Handle configuration choice update if supplied
+            if (data.contains("selected_config") && data["selected_config"].holds<std::string>()) {
+                set_configuration(data["selected_config"].get<std::string>());
+            } else if (data.contains("config") && data["config"].holds<std::string>()) {
+                set_configuration(data["config"].get<std::string>());
+            }
+
+            // Handle platform choice update if supplied
+            if (data.contains("selected_platform") && data["selected_platform"].holds<std::string>()) {
+                set_platform(data["selected_platform"].get<std::string>());
+            } else if (data.contains("platform") && data["platform"].holds<std::string>()) {
+                set_platform(data["platform"].get<std::string>());
+            }
+
+            // Handle stack selection if supplied
+            if (data.contains("selected_stack")) {
+                if (data["selected_stack"].holds<std::string>()) {
+                    try { select_stack(static_cast<size_t>(std::stoul(data["selected_stack"].get<std::string>()))); } catch (...) {}
+                } else if (data["selected_stack"].holds<double>()) {
+                    select_stack(static_cast<size_t>(data["selected_stack"].get<double>()));
+                }
+            } else if (data.contains("stack_index") && data["stack_index"].holds<double>()) {
+                select_stack(static_cast<size_t>(data["stack_index"].get<double>()));
+            } else if (data.contains("index") && data["index"].holds<double>()) {
+                select_stack(static_cast<size_t>(data["index"].get<double>()));
+            }
+
+            // Specific action verbs
+            if (verb == "open_editor") {
+                std::string file;
+                int line = 1;
+                if (data.contains("file") && data["file"].holds<std::string>()) file = data["file"].get<std::string>();
+                if (data.contains("line") && data["line"].holds<double>()) line = static_cast<int>(data["line"].get<double>());
+                if (!file.empty()) {
+                    std::string full_path = file;
+                    if (!std::filesystem::path(full_path).is_absolute()) {
+                        full_path = (std::filesystem::path(project_dir_) / full_path).string();
+                    }
+                    "edit"_sfn(full_path);
+                    auto jump_fn = registrar::get<std::function<void(int)>>("editor_jump_to_line");
+                    if (jump_fn && *jump_fn) (*jump_fn)(line);
+                }
+                return;
+            }
+
+            if (verb == "fix_ai") {
+                rouen::helpers::Diagnostic d;
+                if (data.contains("diag_index") && data["diag_index"].holds<double>()) {
+                    size_t idx = static_cast<size_t>(data["diag_index"].get<double>());
+                    if (idx < build_diagnostics_.size()) {
+                        triage_build_error_with_ai(build_diagnostics_[idx]);
+                        return;
+                    }
+                }
+                if (data.contains("file") && data["file"].holds<std::string>()) d.file = data["file"].get<std::string>();
+                if (data.contains("line") && data["line"].holds<double>()) d.line = static_cast<int>(data["line"].get<double>());
+                if (data.contains("message") && data["message"].holds<std::string>()) d.message = data["message"].get<std::string>();
+                if (data.contains("severity") && data["severity"].holds<std::string>()) d.severity = data["severity"].get<std::string>();
+                else d.severity = "error";
+
+                if (!d.file.empty()) {
+                    triage_build_error_with_ai(d);
+                } else if (!build_diagnostics_.empty()) {
+                    triage_build_error_with_ai(build_diagnostics_.front());
+                }
+                return;
+            }
+
+            if (verb == "cancel") {
+                cancel_running_action();
+                return;
+            }
+        }
+
+        // Substring / direct match for standard actions
+        if (verb == "check_syntax" || act.find("check_syntax") != std::string::npos) {
+            check_syntax();
+        } else if (verb == "rebuild" || act.find("rebuild") != std::string::npos) {
+            run_msbuild_action("rebuild", "Rebuilding project");
+        } else if (verb == "clean" || act.find("clean") != std::string::npos) {
+            run_msbuild_action("clean", "Cleaning project");
+        } else if (verb == "build" || act.find("build") != std::string::npos) {
+            run_msbuild_action("build", "Building project");
+        } else if (verb == "run" || act.find("run") != std::string::npos) {
+            run_msbuild_action("run", "Executing binary");
+        } else if (verb == "open_dir" || act.find("open_dir") != std::string::npos) {
+            run_msbuild_action("open_dir", "Opening project folder");
+        } else if (verb == "conventional_commit" || act.find("conventional_commit") != std::string::npos) {
+            generate_conventional_commit();
+        } else if (verb == "cancel" || act.find("cancel") != std::string::npos) {
+            cancel_running_action();
         }
     }
 

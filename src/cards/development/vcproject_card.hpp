@@ -26,10 +26,13 @@ namespace rouen::cards {
         [[nodiscard]] std::string get_uri() const override;
         bool render() override;
 
+        // Adaptive Cards Support
+        [[nodiscard]] std::string get_adaptive_card_json() const override;
+        void handle_action(std::string_view action_json) override;
+
         void read_project();
         bool run_msbuild_action(const std::string& action, const std::string& explanation);
         void cancel_running_action();
-        void handle_action(std::string_view action_json) override;
 
         // Code Workflow Actions
         void check_syntax();
