@@ -758,7 +758,7 @@ struct timeval {
 #endif
 
 #ifndef MG_MAX_RECV_SIZE
-#define MG_MAX_RECV_SIZE (3UL * 1024UL * 1024UL)  // Maximum recv IO buffer size
+#define MG_MAX_RECV_SIZE (64UL * 1024UL * 1024UL)  // Maximum recv IO buffer size
 #endif
 
 #ifndef MG_DATA_SIZE

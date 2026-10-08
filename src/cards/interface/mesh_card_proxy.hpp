@@ -412,7 +412,7 @@ public:
         std::lock_guard<std::mutex> lock(proxy_mutex_);
         auto routes = rouen::hosts::rouen_mesh_host::instance().get_active_routes();
         for (const auto& r : routes) {
-            if (r.target_client_id == target_client_id_ && r.target_port == 8081 && r.local_port != 0 && r.status.starts_with("listening")) {
+            if (r.target_client_id == target_client_id_ && r.target_port == 8081 && r.local_port != 0) {
                 local_proxy_url_ = std::format("http://127.0.0.1:{}", r.local_port);
                 active_route_id_ = r.route_id;
                 return;
@@ -422,7 +422,7 @@ public:
         if (rouen::hosts::rouen_mesh_host::instance().open_virtual_route(target_client_id_, 8081, err, 0, false)) {
             auto updated_routes = rouen::hosts::rouen_mesh_host::instance().get_active_routes();
             for (const auto& r : updated_routes) {
-                if (r.target_client_id == target_client_id_ && r.target_port == 8081 && r.local_port != 0 && r.status.starts_with("listening")) {
+                if (r.target_client_id == target_client_id_ && r.target_port == 8081 && r.local_port != 0) {
                     local_proxy_url_ = std::format("http://127.0.0.1:{}", r.local_port);
                     active_route_id_ = r.route_id;
                     return;
