@@ -248,3 +248,77 @@ TEST(MeshRemoteCardTest, NodeNavigatorMode) {
     EXPECT_FALSE(nav.matches_uri("mesh://ws-02"));
     EXPECT_FALSE(nav.matches_uri("mesh://ws-01/sysinfo"));
 }
+
+// 10. Tall Adaptive Card Parsing and Input Preservation Test
+TEST(MeshRemoteCardTest, TallAdaptiveCardParsingAndInputPreservationTest) {
+    mesh_card_proxy proxy("ws-01", "tall_card", false);
+
+    // Construct a tall adaptive card JSON containing 50 TextBlocks, FactSets, Inputs, and Actions
+    std::string tall_json = R"({
+        "type": "AdaptiveCard",
+        "version": "1.5",
+        "body": [
+)";
+    for (int i = 0; i < 50; ++i) {
+        tall_json += std::format(R"({{ "type": "TextBlock", "text": "Line item row #{}" }},)", i);
+    }
+    tall_json += R"({
+        "type": "FactSet",
+        "facts": [
+            { "title": "Node Host", "value": "ws-ir-01" },
+            { "title": "Memory Total", "value": "64 GB" },
+            { "title": "OS", "value": "Windows 11 Enterprise" }
+        ]
+    },
+    {
+        "type": "Input.Text",
+        "id": "node_command",
+        "placeholder": "Enter command..."
+    },
+    {
+        "type": "Input.Toggle",
+        "id": "dry_run",
+        "title": "Dry run mode",
+        "value": "false"
+    }
+    ],
+    "actions": [
+        {
+            "type": "Action.Submit",
+            "title": "Run Remote Command",
+            "data": { "action": "execute_node_cmd" }
+        },
+        {
+            "type": "Action.OpenUrl",
+            "title": "Open Docs",
+            "url": "https://rouen.app/docs"
+        }
+    ]
+    })";
+
+    bool updated = proxy.update_adaptive_json_if_changed(tall_json);
+    EXPECT_TRUE(updated);
+
+    const auto& doc = proxy.get_bound_document();
+    // 50 TextBlocks + 1 FactSet + 1 Input.Text + 1 Input.Toggle = 53 elements in body
+    EXPECT_EQ(doc.body.size(), 53);
+    EXPECT_EQ(doc.actions.size(), 2);
+
+    // Simulate user editing input state in UI
+    proxy.get_input_state().text_values["node_command"] = "Get-Process";
+    proxy.get_input_state().toggle_values["dry_run"] = true;
+
+    // Simulate next refresh cycle with identical JSON: must NOT re-parse or clobber user input state
+    bool updated_again = proxy.update_adaptive_json_if_changed(tall_json);
+    EXPECT_FALSE(updated_again);
+
+    EXPECT_EQ(proxy.get_input_state().text_values["node_command"], "Get-Process");
+    EXPECT_EQ(proxy.get_input_state().toggle_values["dry_run"], true);
+
+    // Verify action JSON building with user input state
+    std::string action_payload = R"({"action":"execute_node_cmd","command":"Get-Process","dry_run":true})";
+    std::string req_json = build_action_request_json("tall_card", action_payload);
+    EXPECT_NE(req_json.find("\"uri\":\"tall_card\""), std::string::npos);
+    EXPECT_NE(req_json.find("execute_node_cmd"), std::string::npos);
+    EXPECT_NE(req_json.find("Get-Process"), std::string::npos);
+}

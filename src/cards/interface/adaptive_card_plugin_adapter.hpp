@@ -44,20 +44,23 @@ namespace rouen::cards {
                     ImGui::TextColored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, "%s", error_.c_str());
                     return;
                 }
-                renderer_.render(
-                    bound_, input_state_,
-                    helpers::adaptive_cards::renderer::action_callbacks{
-                        .open_url = [this](std::string const& url) {
-                            static_cast<void>(rouen::platform::open_url(url));
-                            impl_->on_open_url(url);
-                        },
-                        .on_submit = [this](std::string const& payload) {
-                            impl_->on_submit(payload);
-                        }},
-                    helpers::adaptive_cards::render_config{
-                        .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
-                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
-                        .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)});
+                if (ImGui::BeginChild("##adaptive_plugin_content_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                    renderer_.render(
+                        bound_, input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [this](std::string const& url) {
+                                static_cast<void>(rouen::platform::open_url(url));
+                                impl_->on_open_url(url);
+                            },
+                            .on_submit = [this](std::string const& payload) {
+                                impl_->on_submit(payload);
+                            }},
+                        helpers::adaptive_cards::render_config{
+                            .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)});
+                }
+                ImGui::EndChild();
             });
         }
 

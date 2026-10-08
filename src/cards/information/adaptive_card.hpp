@@ -171,32 +171,35 @@ public:
 
             if (ImGui::BeginTabBar("AdaptiveCardTabs")) {
                 if (ImGui::BeginTabItem("Rendered")) {
-                    renderer_.render(bound_, input_state_,
-                        helpers::adaptive_cards::renderer::action_callbacks{
-                            .open_url = [this](const std::string& url) {
-                                last_opened_url_ = url;
-                                static_cast<void>(rouen::platform::open_url(url));
+                    if (ImGui::BeginChild("##adaptive_card_rendered_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                        renderer_.render(bound_, input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [this](const std::string& url) {
+                                    last_opened_url_ = url;
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    last_submit_payload_ = payload;
+                                }
                             },
-                            .on_submit = [this](const std::string& payload) {
-                                last_submit_payload_ = payload;
+                            helpers::adaptive_cards::render_config{
+                                .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                            },
+                            [this](const std::string& url, int& w, int& h) {
+                                return get_image_texture(url, w, h);
                             }
-                        },
-                        helpers::adaptive_cards::render_config{
-                            .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
-                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
-                            .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
-                        },
-                        [this](const std::string& url, int& w, int& h) {
-                            return get_image_texture(url, w, h);
+                        );
+                        if (!last_opened_url_.empty()) {
+                            ImGui::Separator();
+                            ImGui::TextWrapped("Last opened URL: %s", last_opened_url_.c_str());
                         }
-                    );
-                    if (!last_opened_url_.empty()) {
-                        ImGui::Separator();
-                        ImGui::TextWrapped("Last opened URL: %s", last_opened_url_.c_str());
+                        if (!last_submit_payload_.empty()) {
+                            ImGui::TextWrapped("Last submit payload: %s", last_submit_payload_.c_str());
+                        }
                     }
-                    if (!last_submit_payload_.empty()) {
-                        ImGui::TextWrapped("Last submit payload: %s", last_submit_payload_.c_str());
-                    }
+                    ImGui::EndChild();
                     ImGui::EndTabItem();
                 }
 

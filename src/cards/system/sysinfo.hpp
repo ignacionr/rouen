@@ -338,22 +338,25 @@ struct sysinfo_card : public card {
                 if (!adaptive_error_.empty()) {
                     ui.text_colored(ImVec4{1.0f, 0.4f, 0.4f, 1.0f}, adaptive_error_);
                 } else {
-                    adaptive_renderer_.render(
-                        adaptive_bound_, adaptive_input_state_,
-                        helpers::adaptive_cards::renderer::action_callbacks{
-                            .open_url = [](const std::string& url) {
-                                static_cast<void>(rouen::platform::open_url(url));
+                    if (ImGui::BeginChild("##sysinfo_adaptive_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                        adaptive_renderer_.render(
+                            adaptive_bound_, adaptive_input_state_,
+                            helpers::adaptive_cards::renderer::action_callbacks{
+                                .open_url = [](const std::string& url) {
+                                    static_cast<void>(rouen::platform::open_url(url));
+                                },
+                                .on_submit = [this](const std::string& payload) {
+                                    handle_action(payload);
+                                }
                             },
-                            .on_submit = [this](const std::string& payload) {
-                                handle_action(payload);
+                            helpers::adaptive_cards::render_config{
+                                .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                                .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                                .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
                             }
-                        },
-                        helpers::adaptive_cards::render_config{
-                            .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
-                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
-                            .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
-                        }
-                    );
+                        );
+                    }
+                    ImGui::EndChild();
                 }
                 return;
             }

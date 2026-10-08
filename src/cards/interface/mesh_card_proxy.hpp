@@ -368,6 +368,19 @@ public:
         }
     }
 
+    [[nodiscard]] const helpers::adaptive_cards::card_document& get_bound_document() const {
+        std::lock_guard<std::mutex> lock(proxy_mutex_);
+        return bound_doc_;
+    }
+
+    [[nodiscard]] const helpers::adaptive_cards::renderer::input_state& get_input_state() const {
+        return input_state_;
+    }
+
+    [[nodiscard]] helpers::adaptive_cards::renderer::input_state& get_input_state() {
+        return input_state_;
+    }
+
     bool render() override {
         return render_window([this]() {
             render_status_header();
@@ -389,27 +402,30 @@ public:
             }
 
             std::lock_guard<std::mutex> lock(proxy_mutex_);
-            if (!bound_doc_.body.empty()) {
-                renderer_.render(
-                    bound_doc_,
-                    input_state_,
-                    helpers::adaptive_cards::renderer::action_callbacks{
-                        .open_url = [](const std::string& url) {
-                            rouen::platform::open_url(url);
+            if (!bound_doc_.body.empty() || !bound_doc_.actions.empty()) {
+                if (ImGui::BeginChild("##mesh_card_content_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                    renderer_.render(
+                        bound_doc_,
+                        input_state_,
+                        helpers::adaptive_cards::renderer::action_callbacks{
+                            .open_url = [](const std::string& url) {
+                                rouen::platform::open_url(url);
+                            },
+                            .on_submit = [this](const std::string& payload) {
+                                dispatch_action_async(payload);
+                            }
                         },
-                        .on_submit = [this](const std::string& payload) {
-                            dispatch_action_async(payload);
+                        helpers::adaptive_cards::render_config{
+                            .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                            .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                            .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
+                        },
+                        [](const std::string&, int&, int&) -> RouenGPUTexture* {
+                            return nullptr;
                         }
-                    },
-                    helpers::adaptive_cards::render_config{
-                        .font_bold = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
-                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
-                        .font_code = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
-                    },
-                    [](const std::string&, int&, int&) -> RouenGPUTexture* {
-                        return nullptr;
-                    }
-                );
+                    );
+                }
+                ImGui::EndChild();
             } else {
                 ImGui::TextDisabled("Waiting for remote card definition...");
             }
@@ -763,24 +779,27 @@ private:
                     ImGui::Spacing();
                     ImGui::TextDisabled("No active cards reported on %s.", target_client_id_.c_str());
                 } else {
-                    ImGui::Spacing();
-                    for (const auto& c : active_cards_) {
-                        ImGui::PushID(c.index);
-                        ImGui::BeginGroup();
-                        ImGui::TextColored(ImVec4(0.9f, 0.9f, 1.0f, 1.0f), "#%d  %s", c.index, c.title.c_str());
-                        ImGui::TextDisabled("URI: %s", c.uri.c_str());
-                        ImGui::EndGroup();
+                    if (ImGui::BeginChild("##remote_active_cards_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                        ImGui::Spacing();
+                        for (const auto& c : active_cards_) {
+                            ImGui::PushID(c.index);
+                            ImGui::BeginGroup();
+                            ImGui::TextColored(ImVec4(0.9f, 0.9f, 1.0f, 1.0f), "#%d  %s", c.index, c.title.c_str());
+                            ImGui::TextDisabled("URI: %s", c.uri.c_str());
+                            ImGui::EndGroup();
 
-                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 140.0f);
-                        if (ImGui::Button("Mirror to Local Deck")) {
-                            auto create_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                            if (create_fn && *create_fn) {
-                                (*create_fn)(std::format("mesh://{}/{}", target_client_id_, c.uri));
+                            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 140.0f);
+                            if (ImGui::Button("Mirror to Local Deck")) {
+                                auto create_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                                if (create_fn && *create_fn) {
+                                    (*create_fn)(std::format("mesh://{}/{}", target_client_id_, c.uri));
+                                }
                             }
+                            ImGui::Separator();
+                            ImGui::PopID();
                         }
-                        ImGui::Separator();
-                        ImGui::PopID();
                     }
+                    ImGui::EndChild();
                 }
                 ImGui::EndTabItem();
             }
@@ -814,23 +833,26 @@ private:
                 ImGui::InputTextWithHint("##filter_schemas", "Filter schemas...", filter_buf, sizeof(filter_buf));
                 ImGui::Spacing();
 
-                auto filtered = peer_schemas_cache::instance().filter_schemas(target_client_id_, filter_buf);
-                if (filtered.empty()) {
-                    ImGui::TextDisabled("No schemes match the filter.");
-                } else {
-                    for (const auto& s : filtered) {
-                        ImGui::PushID(s.c_str());
-                        ImGui::Text("• %s", s.c_str());
-                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 70.0f);
-                        if (ImGui::Button("Launch")) {
-                            auto create_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
-                            if (create_fn && *create_fn) {
-                                (*create_fn)(std::format("mesh://{}/{}", target_client_id_, s));
+                if (ImGui::BeginChild("##remote_schemes_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                    auto filtered = peer_schemas_cache::instance().filter_schemas(target_client_id_, filter_buf);
+                    if (filtered.empty()) {
+                        ImGui::TextDisabled("No schemes match the filter.");
+                    } else {
+                        for (const auto& s : filtered) {
+                            ImGui::PushID(s.c_str());
+                            ImGui::Text("• %s", s.c_str());
+                            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 70.0f);
+                            if (ImGui::Button("Launch")) {
+                                auto create_fn = registrar::get<std::function<void(std::string const&)>>("create_card");
+                                if (create_fn && *create_fn) {
+                                    (*create_fn)(std::format("mesh://{}/{}", target_client_id_, s));
+                                }
                             }
+                            ImGui::PopID();
                         }
-                        ImGui::PopID();
                     }
                 }
+                ImGui::EndChild();
 
                 ImGui::EndTabItem();
             }

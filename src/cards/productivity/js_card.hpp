@@ -87,23 +87,26 @@ function onRender() {
                 eval_render();
             }
 
-            renderer_.render(
-                bound_,
-                input_state_,
-                helpers::adaptive_cards::renderer::action_callbacks{
-                    .open_url = [](const std::string& url) {
-                        static_cast<void>(rouen::platform::open_url(url));
+            if (ImGui::BeginChild("##js_card_content_scroll", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_NavFlattened)) {
+                renderer_.render(
+                    bound_,
+                    input_state_,
+                    helpers::adaptive_cards::renderer::action_callbacks{
+                        .open_url = [](const std::string& url) {
+                            static_cast<void>(rouen::platform::open_url(url));
+                        },
+                        .on_submit = [this](const std::string& payload) {
+                            handle_submit(payload);
+                        }
                     },
-                    .on_submit = [this](const std::string& payload) {
-                        handle_submit(payload);
+                    helpers::adaptive_cards::render_config{
+                        .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
+                        .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
+                        .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
                     }
-                },
-                helpers::adaptive_cards::render_config{
-                    .font_bold   = rouen::fonts::get_font(rouen::fonts::FontType::Bold),
-                    .font_italic = rouen::fonts::get_font(rouen::fonts::FontType::Italic),
-                    .font_code   = rouen::fonts::get_font(rouen::fonts::FontType::Mono)
-                }
-            );
+                );
+            }
+            ImGui::EndChild();
         });
     }
 
