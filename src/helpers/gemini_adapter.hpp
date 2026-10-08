@@ -142,6 +142,7 @@ namespace rouen::helpers {
     private:
         std::string api_key_;
         std::string model_;
+        std::string thinking_level_{};
         std::vector<Message> conversation_;
         static inline std::mutex global_rate_limit_mutex_;
         static inline std::chrono::steady_clock::time_point global_last_request_time_{};
@@ -182,12 +183,23 @@ namespace rouen::helpers {
             return escaped;
         }
 
-        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, bool enable_search = false) const {
-            return build_gemini_request(conversation, temperature, {}, enable_search);
+        std::string build_gemini_request(
+            const std::vector<Message>& conversation,
+            [[maybe_unused]] float temperature = 0.45f,
+            bool enable_search = false,
+            std::string_view thinking_level = ""
+        ) const {
+            return build_gemini_request(conversation, temperature, {}, enable_search, thinking_level);
         }
 
         // Enhanced method with function calling support
-        std::string build_gemini_request(const std::vector<Message>& conversation, float temperature, const std::vector<std::string>& function_schemas, bool enable_search = false) const {
+        std::string build_gemini_request(
+            const std::vector<Message>& conversation,
+            [[maybe_unused]] float temperature,
+            const std::vector<std::string>& function_schemas,
+            bool enable_search = false,
+            std::string_view thinking_level = ""
+        ) const {
             std::string json = "{\"contents\":[";
             
             // Merge system messages and convert to Gemini format
@@ -283,7 +295,12 @@ namespace rouen::helpers {
                 json += "]}";
             }
             
-            json += std::format("],\"generationConfig\":{{\"temperature\":{},\"maxOutputTokens\":4096}}", temperature);
+            std::string const eff_thinking = !thinking_level.empty() ? std::string(thinking_level) : thinking_level_;
+            json += "],\"generationConfig\":{\"maxOutputTokens\":4096";
+            if (!eff_thinking.empty()) {
+                json += std::format(",\"thinking_level\":\"{}\"", eff_thinking);
+            }
+            json += "}";
             
             // Add tools if search or function calling is enabled
             if (enable_search || !function_schemas.empty()) {
@@ -315,8 +332,12 @@ namespace rouen::helpers {
         }
 
         // Backward compatibility method that uses local conversation_
-        std::string build_gemini_request(float temperature, bool enable_search = false) const {
-            return build_gemini_request(conversation_, temperature, enable_search);
+        std::string build_gemini_request(
+            [[maybe_unused]] float temperature = 0.45f,
+            bool enable_search = false,
+            std::string_view thinking_level = ""
+        ) const {
+            return build_gemini_request(conversation_, temperature, enable_search, thinking_level);
         }
 
         // Parse Gemini response and return the full response structure for function call handling
@@ -430,13 +451,23 @@ namespace rouen::helpers {
         }
 
     public:
-        GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "") 
-            : api_key_(trim(api_key)), model_("gemini-3.6-flash") {
+        GeminiAdapter(const std::string& api_key, [[maybe_unused]] const std::string& base_url = "", std::string thinking_level = "") 
+            : api_key_(trim(api_key)), model_("gemini-3.8-flash"), thinking_level_(std::move(thinking_level)) {
             CONFIG_DEBUG_FMT("Created Gemini adapter with API key: {}...", api_key_.empty() ? "" : api_key_.substr(0, std::min(size_t(8), api_key_.length())));
         }
 
+        void set_thinking_level(std::string_view level) {
+            thinking_level_ = std::string(level);
+        }
+
+        [[nodiscard]] const std::string& get_thinking_level() const noexcept {
+            return thinking_level_;
+        }
+
         GeminiAdapter new_conversation() const {
-            return GeminiAdapter(api_key_);
+            auto adapter = GeminiAdapter(api_key_, "", thinking_level_);
+            adapter.model_ = model_;
+            return adapter;
         }
 
         void add_instructions(std::string_view instructions, std::string_view role = "system") {
@@ -453,11 +484,12 @@ namespace rouen::helpers {
             std::string_view message, 
             DoPostFunc do_post, 
             std::string_view role = "user", 
-            std::string_view model = "gemini-3.6-flash", 
+            std::string_view model = "gemini-3.8-flash", 
             std::string_view search_mode = {},
-            float temperature = 0.45f,
+            [[maybe_unused]] float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
-            const std::vector<std::string>* function_schemas = nullptr
+            const std::vector<std::string>* function_schemas = nullptr,
+            std::string_view thinking_level = ""
         ) {
             wait_min_time();
             
@@ -489,8 +521,8 @@ namespace rouen::helpers {
             bool enable_search = (search_mode == "on");
             // Build Gemini API request using current_conversation and function schemas
             std::string request_body = function_schemas ? 
-                build_gemini_request(current_conversation, temperature, *function_schemas, enable_search) :
-                build_gemini_request(current_conversation, temperature, enable_search);
+                build_gemini_request(current_conversation, temperature, *function_schemas, enable_search, thinking_level) :
+                build_gemini_request(current_conversation, temperature, enable_search, thinking_level);
 
             // Use the provided model or default
             std::string model_name = model.empty() ? model_ : std::string(model);
@@ -508,6 +540,7 @@ namespace rouen::helpers {
                     candidates.push_back(c);
                 }
             };
+            add_candidate("gemini-3.8-flash");
             add_candidate("gemini-3.1-flash-lite");
             add_candidate("gemini-flash-lite-latest");
             add_candidate("gemini-2.5-flash-lite");
@@ -585,11 +618,12 @@ namespace rouen::helpers {
             DoPostFunc do_post, 
             std::function<std::string(const std::string&, const std::string&)> function_executor,
             std::string_view role = "user", 
-            std::string_view model = "gemini-3.6-flash", 
+            std::string_view model = "gemini-3.8-flash", 
             std::string_view search_mode = {},
-            float temperature = 0.45f,
+            [[maybe_unused]] float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
-            const std::vector<std::string>* function_schemas = nullptr
+            const std::vector<std::string>* function_schemas = nullptr,
+            std::string_view thinking_level = ""
         ) {
             wait_min_time();
             
@@ -638,8 +672,8 @@ namespace rouen::helpers {
                 
                 // Build Gemini API request using current_conversation and function schemas
                 std::string request_body = function_schemas ? 
-                    build_gemini_request(current_conversation, temperature, *function_schemas, enable_search) :
-                    build_gemini_request(current_conversation, temperature, enable_search);
+                    build_gemini_request(current_conversation, temperature, *function_schemas, enable_search, thinking_level) :
+                    build_gemini_request(current_conversation, temperature, enable_search, thinking_level);
 
                 CONFIG_DEBUG_FMT("Sending Gemini request (iteration {}) to: {}", iterations, url);
 
@@ -650,6 +684,7 @@ namespace rouen::helpers {
                         candidates.push_back(c);
                     }
                 };
+                add_candidate("gemini-3.8-flash");
                 add_candidate("gemini-3.1-flash-lite");
                 add_candidate("gemini-flash-lite-latest");
                 add_candidate("gemini-2.5-flash-lite");

@@ -677,6 +677,7 @@ std::string run_ai_persona_completion(
     std::strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S (%A)", &now_tm);
     std::string time_instr = std::format("The current local date and time is: {}. Use this to understand relative dates like 'today', 'tomorrow', 'this week', etc.", time_buf);
 
+    llm_opt->set_thinking_level(target_persona->get_effective_thinking_level());
     llm_opt->add_instructions(time_instr, "system");
     llm_opt->add_instructions(target_persona->system_prompt, "system");
 
@@ -819,6 +820,7 @@ std::string run_ai_persona_completion(
 
             auto fallback_llm_opt = rouen::hosts::LLMHost::create_llm_instance(f);
             if (fallback_llm_opt) {
+                fallback_llm_opt->set_thinking_level(target_persona->get_effective_thinking_level());
                 fallback_llm_opt->add_instructions(time_instr, "system");
                 fallback_llm_opt->add_instructions(target_persona->system_prompt, "system");
                 if (!modular_instr.empty()) fallback_llm_opt->add_instructions(modular_instr, "system");

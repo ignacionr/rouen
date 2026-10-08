@@ -39,11 +39,12 @@ namespace rouen::hosts {
             std::string model_name{};
             bool is_configured{false};
             std::string config_name{};
+            std::string thinking_level{};
             
             LLMSettings() = default;
-            LLMSettings(Provider p, std::string key, std::string url, std::string model, bool configured, std::string name = "")
+            LLMSettings(Provider p, std::string key, std::string url, std::string model, bool configured, std::string name = "", std::string thinking = "")
                 : provider(p), api_key(std::move(key)), base_url(std::move(url)), 
-                  model_name(std::move(model)), is_configured(configured), config_name(std::move(name)) {}
+                  model_name(std::move(model)), is_configured(configured), config_name(std::move(name)), thinking_level(std::move(thinking)) {}
         };
 
         class LLMInstanceBase {
@@ -98,6 +99,14 @@ namespace rouen::hosts {
                 }, instance_);
             }
             
+            void set_thinking_level(std::string_view level) {
+                if (auto* adapter = std::get_if<std::unique_ptr<rouen::helpers::GeminiAdapter>>(&instance_)) {
+                    if (*adapter && !level.empty()) {
+                        (*adapter)->set_thinking_level(level);
+                    }
+                }
+            }
+
             template<typename DoPostFunc>
             ignacionr::ChatCompletion sendMessage(
                 std::string_view message,
@@ -106,11 +115,16 @@ namespace rouen::hosts {
                 std::string_view model = "",
                 std::string_view search_mode = {},
                 float temperature = 0.45f,
-                const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr
+                const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
+                std::string_view thinking_level = ""
             ) {
                 return std::visit([&](auto& ptr) -> ignacionr::ChatCompletion {
                     if (!ptr) throw std::runtime_error("Null LLM instance access");
-                    return ptr->sendMessage(message, std::forward<DoPostFunc>(do_post), role, model, search_mode, temperature, full_conversation);
+                    if constexpr (std::is_same_v<std::decay_t<decltype(*ptr)>, rouen::helpers::GeminiAdapter>) {
+                        return ptr->sendMessage(message, std::forward<DoPostFunc>(do_post), role, model, search_mode, temperature, full_conversation, nullptr, thinking_level);
+                    } else {
+                        return ptr->sendMessage(message, std::forward<DoPostFunc>(do_post), role, model, search_mode, temperature, full_conversation);
+                    }
                 }, instance_);
             }
 
@@ -124,16 +138,26 @@ namespace rouen::hosts {
                 std::string_view search_mode = {},
                 float temperature = 0.45f,
                 const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
-                const std::vector<std::string>* function_schemas = nullptr
+                const std::vector<std::string>* function_schemas = nullptr,
+                std::string_view thinking_level = ""
             ) {
                 return std::visit([&](auto& ptr) -> ignacionr::ChatCompletion {
                     if (!ptr) throw std::runtime_error("Null LLM instance access");
-                    return ptr->sendMessageWithFunctionCalling(
-                        message,
-                        std::forward<DoPostFunc>(do_post),
-                        std::forward<ExecFunc>(function_executor),
-                        role, model, search_mode, temperature, full_conversation, function_schemas
-                    );
+                    if constexpr (std::is_same_v<std::decay_t<decltype(*ptr)>, rouen::helpers::GeminiAdapter>) {
+                        return ptr->sendMessageWithFunctionCalling(
+                            message,
+                            std::forward<DoPostFunc>(do_post),
+                            std::forward<ExecFunc>(function_executor),
+                            role, model, search_mode, temperature, full_conversation, function_schemas, thinking_level
+                        );
+                    } else {
+                        return ptr->sendMessageWithFunctionCalling(
+                            message,
+                            std::forward<DoPostFunc>(do_post),
+                            std::forward<ExecFunc>(function_executor),
+                            role, model, search_mode, temperature, full_conversation, function_schemas
+                        );
+                    }
                 }, instance_);
             }
             
@@ -197,6 +221,7 @@ namespace rouen::hosts {
         std::string api_key{};
         std::string base_url{};
         std::string model_name{};
+        std::string thinking_level{};
 
         struct glaze {
             using T = LLMConfigEntry;
@@ -205,7 +230,8 @@ namespace rouen::hosts {
                 "provider", &T::provider,
                 "api_key", &T::api_key,
                 "base_url", &T::base_url,
-                "model_name", &T::model_name
+                "model_name", &T::model_name,
+                "thinking_level", &T::thinking_level
             );
         };
     };

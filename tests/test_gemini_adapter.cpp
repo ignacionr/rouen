@@ -64,6 +64,63 @@ TEST(GeminiAdapterTest, SerializesTextMessageCorrectly) {
     EXPECT_EQ(parts[0]["text"].get<std::string>(), "Hello Gemini");
 }
 
+TEST(GeminiAdapterTest, SerializesGenerationConfigWithoutTemperature) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    conversation.emplace_back("user", "Hello Gemini");
+    
+    std::string request = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    ASSERT_TRUE(doc.contains("generationConfig"));
+    auto gen_config = doc["generationConfig"];
+    EXPECT_TRUE(gen_config.contains("maxOutputTokens"));
+    EXPECT_EQ(gen_config["maxOutputTokens"].get<double>(), 4096.0);
+    
+    // Ensure deprecated parameters are completely omitted
+    EXPECT_FALSE(gen_config.contains("temperature"));
+    EXPECT_FALSE(gen_config.contains("top_p"));
+    EXPECT_FALSE(gen_config.contains("top_k"));
+    EXPECT_FALSE(gen_config.contains("thinking_budget"));
+}
+
+TEST(GeminiAdapterTest, SerializesThinkingLevelWhenSpecified) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    conversation.emplace_back("user", "Hello Gemini");
+    
+    // When thinking_level is set on adapter
+    adapter.set_thinking_level("high");
+    EXPECT_EQ(adapter.get_thinking_level(), "high");
+    std::string request_high = adapter.build_gemini_request(conversation, 0.5f, false);
+    
+    glz::json_t doc_high;
+    auto err_high = glz::read_json(doc_high, request_high);
+    ASSERT_FALSE(err_high) << glz::format_error(err_high, request_high);
+    ASSERT_TRUE(doc_high.contains("generationConfig"));
+    EXPECT_TRUE(doc_high["generationConfig"].contains("thinking_level"));
+    EXPECT_EQ(doc_high["generationConfig"]["thinking_level"].get<std::string>(), "high");
+    EXPECT_FALSE(doc_high["generationConfig"].contains("temperature"));
+
+    // When thinking_level is explicitly passed to build_gemini_request
+    std::string request_override = adapter.build_gemini_request(conversation, 0.5f, false, "minimal");
+    glz::json_t doc_override;
+    auto err_override = glz::read_json(doc_override, request_override);
+    ASSERT_FALSE(err_override) << glz::format_error(err_override, request_override);
+    EXPECT_EQ(doc_override["generationConfig"]["thinking_level"].get<std::string>(), "minimal");
+
+    // When thinking_level is cleared/empty
+    adapter.set_thinking_level("");
+    std::string request_empty = adapter.build_gemini_request(conversation, 0.5f, false);
+    glz::json_t doc_empty;
+    auto err_empty = glz::read_json(doc_empty, request_empty);
+    ASSERT_FALSE(err_empty) << glz::format_error(err_empty, request_empty);
+    EXPECT_FALSE(doc_empty["generationConfig"].contains("thinking_level"));
+}
+
 TEST(GeminiAdapterTest, SerializesFunctionCallCorrectly) {
     GeminiAdapter adapter("dummy_api_key");
     std::vector<GeminiAdapter::Message> conversation;
@@ -361,7 +418,7 @@ TEST(GeminiAdapterTest, FallsBackOnQuotaExhausted) {
     EXPECT_EQ(resp.choices[0].message.content, "Fallback response successfully received");
     ASSERT_GE(requested_urls.size(), 2u);
     EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
-    EXPECT_NE(requested_urls[1].find("gemini-3-flash-preview"), std::string::npos);
+    EXPECT_NE(requested_urls[1].find("gemini-3.1-flash-lite"), std::string::npos);
 }
 
 TEST(GeminiAdapterTest, FunctionCallingEmptyFinalTextFallback) {
@@ -459,8 +516,8 @@ TEST(GeminiAdapterTest, FallsBackToGemini3FlashPreviewOn429) {
 
     auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
         requested_urls.push_back(url);
-        if (url.find("gemini-3.6-flash") != std::string::npos) {
-            throw std::runtime_error("HTTP error 429");
+        if (url.find("gemini-3-flash-preview") == std::string::npos) {
+            throw std::runtime_error("HTTP error 429: Resource exhausted");
         }
         return R"({"candidates":[{"content":{"parts":[{"text":"Fallback from gemini-3-flash-preview"}]}}]})";
     };
@@ -476,7 +533,47 @@ TEST(GeminiAdapterTest, FallsBackToGemini3FlashPreviewOn429) {
     EXPECT_EQ(resp.choices[0].message.content, "Fallback from gemini-3-flash-preview");
     ASSERT_GE(requested_urls.size(), 2u);
     EXPECT_NE(requested_urls[0].find("gemini-3.6-flash"), std::string::npos);
-    EXPECT_NE(requested_urls[1].find("gemini-3-flash-preview"), std::string::npos);
+    EXPECT_NE(requested_urls.back().find("gemini-3-flash-preview"), std::string::npos);
+}
+
+#include "../src/helpers/persona_manager.hpp"
+
+TEST(PersonaManagerTest, ThinkingLevelConfigurationAndDefaults) {
+    auto& pm = PersonaManager::instance();
+    const auto& personas = pm.get_personas();
+    ASSERT_FALSE(personas.empty());
+
+    const Persona* dev_arch = nullptr;
+    const Persona* default_p = nullptr;
+    const Persona* term_p = nullptr;
+    for (const auto& p : personas) {
+        if (p.name == "Code & Git Architect") dev_arch = &p;
+        else if (p.name == "Rouen Assistant") default_p = &p;
+        else if (p.name == "Terminal Specialist") term_p = &p;
+    }
+
+    if (dev_arch) {
+        EXPECT_EQ(dev_arch->get_effective_thinking_level(), "low");
+    }
+    if (default_p) {
+        EXPECT_EQ(default_p->get_effective_thinking_level(), "high");
+    }
+    if (term_p) {
+        EXPECT_EQ(term_p->get_effective_thinking_level(), "minimal");
+    }
+
+    // Verify mapping when thinking_level is empty
+    Persona legacy_code;
+    legacy_code.temperature = 0.1f;
+    EXPECT_EQ(legacy_code.get_effective_thinking_level(), "minimal");
+
+    Persona legacy_dev;
+    legacy_dev.temperature = 0.2f;
+    EXPECT_EQ(legacy_dev.get_effective_thinking_level(), "low");
+
+    Persona legacy_chat;
+    legacy_chat.temperature = 0.7f;
+    EXPECT_EQ(legacy_chat.get_effective_thinking_level(), "high");
 }
 
 

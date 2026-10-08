@@ -59,6 +59,7 @@ LLMHost::LLMSettings LLMHost::get_current_config(const std::string& config_name)
         settings.base_url = entry->base_url;
         settings.api_key = entry->api_key;
         settings.config_name = entry->name;
+        settings.thinking_level = entry->thinking_level;
         
         if (settings.api_key.empty()) {
             ensure_config_service();
@@ -142,6 +143,14 @@ std::optional<LLMHost::LLMInstance> LLMHost::create_llm_instance(const std::stri
     try {
         if (settings.provider == Provider::GEMINI) {
             auto adapter = std::make_unique<rouen::helpers::GeminiAdapter>(settings.api_key, settings.model_name);
+            std::string thinking = settings.thinking_level;
+            if (thinking.empty()) {
+                auto& pm = rouen::helpers::PersonaManager::instance();
+                thinking = pm.get_active_persona().get_effective_thinking_level();
+            }
+            if (!thinking.empty()) {
+                adapter->set_thinking_level(thinking);
+            }
             return LLMInstance(std::move(adapter));
         }
         auto cppgpt = std::make_unique<ignacionr::cppgpt>(

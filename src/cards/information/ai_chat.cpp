@@ -1605,6 +1605,7 @@ namespace rouen::cards {
 
                     // Set system instructions based on persona and its allowed MCPs
                     auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+                    local_llm.set_thinking_level(active_persona.get_effective_thinking_level());
                     local_llm.add_instructions(active_persona.system_prompt);
                     
                     std::string const modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
@@ -1779,6 +1780,7 @@ namespace rouen::cards {
             
             // Add persona instructions
             auto& active_persona = helpers::PersonaManager::instance().get_active_persona();
+            async_llm_instance->set_thinking_level(active_persona.get_effective_thinking_level());
             async_llm_instance->add_instructions(active_persona.system_prompt);
             std::string const modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
             if (!modular_instr.empty()) {

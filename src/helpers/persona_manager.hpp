@@ -24,6 +24,17 @@ namespace rouen::helpers {
         bool enable_search{false};
         std::vector<std::string> allowed_personas;
         float temperature{0.7f};
+        std::string thinking_level{};
+
+        [[nodiscard]] std::string get_effective_thinking_level() const {
+            if (!thinking_level.empty()) {
+                return thinking_level;
+            }
+            if (temperature <= 0.15f) return "minimal";
+            if (temperature <= 0.35f) return "low";
+            if (temperature >= 0.7f) return "high";
+            return "medium";
+        }
 
         struct glaze {
             using T = Persona;
@@ -35,7 +46,8 @@ namespace rouen::helpers {
                 "llm_config_name", &T::llm_config_name,
                 "enable_search", &T::enable_search,
                 "allowed_personas", &T::allowed_personas,
-                "temperature", &T::temperature
+                "temperature", &T::temperature,
+                "thinking_level", &T::thinking_level
             );
         };
     };
@@ -116,7 +128,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high"};
             return fallback;
         }
 
@@ -390,6 +402,7 @@ namespace rouen::helpers {
             default_p.llm_config_name = "Gemini Flash";
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
+            default_p.thinking_level = "high";
             personas_.push_back(default_p);
             
             Persona dev_arch;
@@ -408,6 +421,7 @@ namespace rouen::helpers {
             dev_arch.llm_config_name = "Gemini Flash";
             dev_arch.enable_search = false;
             dev_arch.temperature = 0.2f;
+            dev_arch.thinking_level = "low";
             personas_.push_back(dev_arch);
 
             Persona prod_lead;
@@ -419,6 +433,7 @@ namespace rouen::helpers {
             prod_lead.llm_config_name = "Gemini Flash";
             prod_lead.enable_search = false;
             prod_lead.temperature = 0.3f;
+            prod_lead.thinking_level = "low";
             personas_.push_back(prod_lead);
 
             Persona media_dir;
@@ -430,6 +445,7 @@ namespace rouen::helpers {
             media_dir.llm_config_name = "Gemini Flash";
             media_dir.enable_search = false;
             media_dir.temperature = 0.4f;
+            media_dir.thinking_level = "high";
             personas_.push_back(media_dir);
 
             Persona term_p;
@@ -440,6 +456,7 @@ namespace rouen::helpers {
             term_p.llm_config_name = "Gemini Flash";
             term_p.enable_search = false;
             term_p.temperature = 0.1f;
+            term_p.thinking_level = "minimal";
             personas_.push_back(term_p);
 
             Persona edit_p;
@@ -457,6 +474,7 @@ namespace rouen::helpers {
             edit_p.llm_config_name = "Gemini Flash";
             edit_p.enable_search = false;
             edit_p.temperature = 0.1f;
+            edit_p.thinking_level = "low";
             personas_.push_back(edit_p);
 
             Persona adaptive_p;
@@ -467,6 +485,7 @@ namespace rouen::helpers {
             adaptive_p.llm_config_name = "Gemini Flash";
             adaptive_p.enable_search = false;
             adaptive_p.temperature = 0.3f;
+            adaptive_p.thinking_level = "low";
             personas_.push_back(adaptive_p);
 
             Persona git_p;
@@ -477,6 +496,7 @@ namespace rouen::helpers {
             git_p.llm_config_name = "Gemini Flash";
             git_p.enable_search = false;
             git_p.temperature = 0.2f;
+            git_p.thinking_level = "low";
             personas_.push_back(git_p);
 
             Persona archive_p;
@@ -487,6 +507,7 @@ namespace rouen::helpers {
             archive_p.llm_config_name = "Gemini Flash";
             archive_p.enable_search = false;
             archive_p.temperature = 0.0f;
+            archive_p.thinking_level = "minimal";
             personas_.push_back(archive_p);
 
             Persona dir_p;
@@ -497,6 +518,7 @@ namespace rouen::helpers {
             dir_p.llm_config_name = "Gemini Flash";
             dir_p.enable_search = false;
             dir_p.temperature = 0.2f;
+            dir_p.thinking_level = "minimal";
             personas_.push_back(dir_p);
 
             Persona time_p;
@@ -507,6 +529,7 @@ namespace rouen::helpers {
             time_p.llm_config_name = "Gemini Flash";
             time_p.enable_search = false;
             time_p.temperature = 0.2f;
+            time_p.thinking_level = "minimal";
             personas_.push_back(time_p);
 
             Persona stream_p;
@@ -517,6 +540,7 @@ namespace rouen::helpers {
             stream_p.llm_config_name = "Gemini Flash";
             stream_p.enable_search = false;
             stream_p.temperature = 0.3f;
+            stream_p.thinking_level = "low";
             personas_.push_back(stream_p);
 
             Persona fin_p;
@@ -527,6 +551,7 @@ namespace rouen::helpers {
             fin_p.llm_config_name = "Gemini Flash";
             fin_p.enable_search = false;
             fin_p.temperature = 0.2f;
+            fin_p.thinking_level = "low";
             personas_.push_back(fin_p);
 
             Persona health_p;
@@ -537,6 +562,7 @@ namespace rouen::helpers {
             health_p.llm_config_name = "Gemini Flash";
             health_p.enable_search = false;
             health_p.temperature = 0.1f;
+            health_p.thinking_level = "minimal";
             personas_.push_back(health_p);
         }
 
