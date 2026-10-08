@@ -1852,6 +1852,7 @@ mcp_host::mcp_host() {
     );
     register_function("editor", code_generate_commit_def);
     register_function("terminal", code_generate_commit_def);
+    register_function("git", code_generate_commit_def);
 
 
     // Register YouTube search videos function

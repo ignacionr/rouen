@@ -389,7 +389,7 @@ namespace rouen::helpers {
             default_p.name = "Rouen Assistant";
             default_p.description = "Primary orchestrator persona for Rouen. Coordinates requests by delegating to specialized per-MCP sub-personas.";
             default_p.allowed_mcps = {"deck", "persona", "calendar", "notes", "contacts", "terminal", "git", "editor", "rss", "wikipedia", "youtube", "alarm", "pomodoro", "mesh"};
-            default_p.allowed_personas = {"Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
+            default_p.allowed_personas = {"Autonomous Engineer", "Code & Git Architect", "Personal Productivity Lead", "Media & Knowledge Director", "Financial Analyst", "System Health & Metrics"};
             default_p.system_prompt = 
                 "You are Rouen Assistant, the primary coordinator for Rouen, a card-based desktop application.\n\n"
                 "Capabilities & Architecture:\n"
@@ -404,6 +404,35 @@ namespace rouen::helpers {
             default_p.temperature = 0.7f;
             default_p.thinking_level = "high";
             personas_.push_back(default_p);
+
+            Persona eng_p;
+            eng_p.name = "Autonomous Engineer";
+            eng_p.description = "Full-lifecycle autonomous software engineer capable of researching code, writing tests, applying surgical patches, compiling targets (-j2), and processing inbox issues.";
+            eng_p.allowed_mcps = {"editor", "terminal", "git", "deck", "adaptive_card"};
+            eng_p.allowed_personas = {}; // Direct zero-hop execution, no nested delegation needed
+            eng_p.llm_config_name = "Gemini Flash";
+            eng_p.enable_search = false;
+            eng_p.temperature = 0.1f;
+            eng_p.thinking_level = "high";
+            eng_p.system_prompt = 
+                "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
+                "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
+                "Available Direct Tools:\n"
+                "- 'code_read_file': Read target files with line bounds before editing.\n"
+                "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
+                "- 'code_write_file': Create new files or tests.\n"
+                "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
+                "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
+                "Mandatory Engineering Protocol (TDD & Verification):\n"
+                "1. Read the specification and locate target files.\n"
+                "2. Add or update unit tests under tests/.\n"
+                "3. Run tests using run_local_command to confirm initial failure (Red).\n"
+                "4. Apply surgical fixes with code_apply_patch.\n"
+                "5. Re-run tests to confirm they pass (Green).\n"
+                "6. Build targets adhering strictly to '-j2' (e.g., 'nix develop --command cmake --build build --target rouen -j2').\n"
+                "7. Commit, push, and rename inbox entries as specified in project rules.\n"
+                "8. Always announce completion via 'say'.";
+            personas_.push_back(eng_p);
             
             Persona dev_arch;
             dev_arch.name = "Code & Git Architect";
@@ -659,6 +688,47 @@ namespace rouen::helpers {
                     save_personas();
                 }
 
+                // Ensure "Autonomous Engineer" persona exists
+                bool has_eng_persona = false;
+                for (const auto& p : personas_) {
+                    if (p.name == "Autonomous Engineer") {
+                        has_eng_persona = true;
+                        break;
+                    }
+                }
+                if (!has_eng_persona) {
+                    Persona eng_p;
+                    eng_p.name = "Autonomous Engineer";
+                    eng_p.description = "Full-lifecycle autonomous software engineer capable of researching code, writing tests, applying surgical patches, compiling targets (-j2), and processing inbox issues.";
+                    eng_p.allowed_mcps = {"editor", "terminal", "git", "deck", "adaptive_card"};
+                    eng_p.allowed_personas = {};
+                    eng_p.llm_config_name = "Gemini Flash";
+                    eng_p.enable_search = false;
+                    eng_p.temperature = 0.1f;
+                    eng_p.thinking_level = "high";
+                    eng_p.system_prompt = 
+                        "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
+                        "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
+                        "Available Direct Tools:\n"
+                        "- 'code_read_file': Read target files with line bounds before editing.\n"
+                        "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
+                        "- 'code_write_file': Create new files or tests.\n"
+                        "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
+                        "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
+                        "Mandatory Engineering Protocol (TDD & Verification):\n"
+                        "1. Read the specification and locate target files.\n"
+                        "2. Add or update unit tests under tests/.\n"
+                        "3. Run tests using run_local_command to confirm initial failure (Red).\n"
+                        "4. Apply surgical fixes with code_apply_patch.\n"
+                        "5. Re-run tests to confirm they pass (Green).\n"
+                        "6. Build targets adhering strictly to '-j2' (e.g., 'nix develop --command cmake --build build --target rouen -j2').\n"
+                        "7. Commit, push, and rename inbox entries as specified in project rules.\n"
+                        "8. Always announce completion via 'say'.";
+
+                    personas_.push_back(eng_p);
+                    save_personas();
+                }
+
                 // Ensure "Rouen Assistant" and "System Health & Metrics" include "mesh" and "contacts" if missing
                 // and migrate legacy Local MLX or Default personas to Gemini Flash
                 bool modified = false;
@@ -668,6 +738,10 @@ namespace rouen::helpers {
                         modified = true;
                     }
                     if (p.name == "Rouen Assistant") {
+                        if (std::find(p.allowed_personas.begin(), p.allowed_personas.end(), "Autonomous Engineer") == p.allowed_personas.end()) {
+                            p.allowed_personas.insert(p.allowed_personas.begin(), "Autonomous Engineer");
+                            modified = true;
+                        }
                         if (std::find(p.allowed_mcps.begin(), p.allowed_mcps.end(), "contacts") == p.allowed_mcps.end()) {
                             p.allowed_mcps.push_back("contacts");
                             modified = true;

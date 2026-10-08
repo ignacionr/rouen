@@ -576,4 +576,83 @@ TEST(PersonaManagerTest, ThinkingLevelConfigurationAndDefaults) {
     EXPECT_EQ(legacy_chat.get_effective_thinking_level(), "high");
 }
 
+TEST(PersonaManagerTest, AutonomousEngineerPersonaRegistrationAndMCPs) {
+    auto& pm = PersonaManager::instance();
+    const auto& personas = pm.get_personas();
+    
+    const Persona* eng_p = nullptr;
+    const Persona* assistant_p = nullptr;
+    for (const auto& p : personas) {
+        if (p.name == "Autonomous Engineer") {
+            eng_p = &p;
+        } else if (p.name == "Rouen Assistant") {
+            assistant_p = &p;
+        }
+    }
+
+    ASSERT_NE(eng_p, nullptr) << "Autonomous Engineer persona must be registered in PersonaManager";
+    EXPECT_EQ(eng_p->get_effective_thinking_level(), "high");
+    EXPECT_FLOAT_EQ(eng_p->temperature, 0.1f);
+    EXPECT_TRUE(eng_p->allowed_personas.empty());
+
+    // Verify allowed MCPs include editor, terminal, git, deck, adaptive_card
+    std::vector<std::string> expected_mcps = {"editor", "terminal", "git", "deck", "adaptive_card"};
+    for (const auto& mcp : expected_mcps) {
+        EXPECT_NE(std::find(eng_p->allowed_mcps.begin(), eng_p->allowed_mcps.end(), mcp), eng_p->allowed_mcps.end())
+            << "Autonomous Engineer must have allowed_mcp: " << mcp;
+    }
+
+    // Verify system prompt enforces TDD and -j2 parallelism
+    EXPECT_NE(eng_p->system_prompt.find("-j2"), std::string::npos);
+    EXPECT_NE(eng_p->system_prompt.find("code_read_file"), std::string::npos);
+    EXPECT_NE(eng_p->system_prompt.find("code_apply_patch"), std::string::npos);
+    EXPECT_NE(eng_p->system_prompt.find("run_local_command"), std::string::npos);
+
+    // Verify Rouen Assistant delegates directly to Autonomous Engineer
+    ASSERT_NE(assistant_p, nullptr);
+    EXPECT_NE(std::find(assistant_p->allowed_personas.begin(), assistant_p->allowed_personas.end(), "Autonomous Engineer"), assistant_p->allowed_personas.end())
+        << "Rouen Assistant must have Autonomous Engineer in allowed_personas";
+}
+
+TEST(PersonaManagerTest, AutonomousEngineerToolFilteringAndCategorization) {
+    auto& pm = PersonaManager::instance();
+    const Persona* eng_p = nullptr;
+    for (const auto& p : pm.get_personas()) {
+        if (p.name == "Autonomous Engineer") {
+            eng_p = &p;
+            break;
+        }
+    }
+    ASSERT_NE(eng_p, nullptr);
+
+    // Simulate AIChat tool categorization & MCP matching
+    auto categorize = [](std::string_view func_name, std::string_view card_type) -> std::string {
+        if (func_name == "run_local_command") return "terminal";
+        if (func_name == "edit_file") return "editor";
+        if (func_name.starts_with("code_")) {
+            if (func_name == "code_generate_conventional_commit") return "git";
+            return "editor";
+        }
+        return std::string(card_type);
+    };
+
+    auto allows_tool = [&](const Persona& persona, std::string_view func_name, std::string_view card_type) -> bool {
+        std::string cat = categorize(func_name, card_type);
+        if (cat == "git" || cat == "github") {
+            return std::find(persona.allowed_mcps.begin(), persona.allowed_mcps.end(), "git") != persona.allowed_mcps.end() ||
+                   std::find(persona.allowed_mcps.begin(), persona.allowed_mcps.end(), "github") != persona.allowed_mcps.end() ||
+                   std::find(persona.allowed_mcps.begin(), persona.allowed_mcps.end(), "editor") != persona.allowed_mcps.end();
+        }
+        return std::find(persona.allowed_mcps.begin(), persona.allowed_mcps.end(), cat) != persona.allowed_mcps.end();
+    };
+
+    // Autonomous Engineer must allow all core tools simultaneously without multi-hop delegation
+    EXPECT_TRUE(allows_tool(*eng_p, "run_local_command", "terminal"));
+    EXPECT_TRUE(allows_tool(*eng_p, "code_read_file", "editor"));
+    EXPECT_TRUE(allows_tool(*eng_p, "code_apply_patch", "editor"));
+    EXPECT_TRUE(allows_tool(*eng_p, "code_write_file", "editor"));
+    EXPECT_TRUE(allows_tool(*eng_p, "code_generate_conventional_commit", "editor"));
+    EXPECT_TRUE(allows_tool(*eng_p, "create_card", "deck"));
+}
+
 

@@ -123,12 +123,22 @@ namespace rouen::cards {
                      "- When asked for computers, nodes, or connected clients on the mesh, report only the information specifically requested by the user. Do NOT assume, guess, or report unrequested system attributes (such as the operating system or platform).\n"
                      "- If the user explicitly asks for system information (e.g. operating system/platform, hardware, window state, or running processes) for a remote mesh node: do NOT guess based on client names or unverified metadata. Instead, query the Rouen API on the target system using `mesh_query_remote_api` (or check/open a virtual route to the target node's port 8081) to retrieve live, authoritative system information.\n";
         }
+        if (has_mcp("editor")) {
+            instr += "\nCODE EDITOR INSTRUCTIONS:\nYou have direct access to codebase navigation and editing tools:\n- Use `code_read_file` (with start_line and end_line bounds) to inspect code before modifying it.\n- Use `code_apply_patch` for surgical replacements. Ensure exact indentation and contiguous line matching.\n- Use `code_write_file` to create new files or tests.\n- Review syntax diagnostics returned automatically by code modification tools to self-correct any compilation issues.\n";
+        }
+        if (has_mcp("git")) {
+            instr += "\nGIT & VERSION CONTROL INSTRUCTIONS:\nYou have access to version control tools: use `code_generate_conventional_commit` to produce standardized Conventional Commits based on git diff and status context.\n";
+        }
         return instr;
     }
 
     std::string get_function_category(const helpers::mcp_service::function_definition& func) {
         if (func.name == "run_local_command") return "terminal";
         if (func.name == "edit_file") return "editor";
+        if (func.name.starts_with("code_")) {
+            if (func.name == "code_generate_conventional_commit") return "git";
+            return "editor";
+        }
         if (func.name == "create_card" || func.name == "create_number_series_card" || func.name == "create_adaptive_card" || func.name == "list_adaptive_cards" || func.name == "get_adaptive_card" || func.name == "list_themes" || func.name == "select_theme") return "deck";
         if (func.name.starts_with("wikipedia_")) return "wikipedia";
         if (func.name.starts_with("youtube_")) return "youtube";
@@ -278,6 +288,29 @@ namespace rouen::cards {
                         }
                     }
                     ImGui::EndCombo();
+                }
+
+                // Quick-switch button for Autonomous Engineer
+                ImGui::SameLine();
+                bool const is_eng = (personas[active_idx].name == "Autonomous Engineer");
+                if (is_eng) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.30f, 1.0f));
+                }
+                if (ImGui::Button(ICON_MD_TERMINAL " Engineer")) {
+                    for (size_t i = 0; i < personas.size(); ++i) {
+                        if (personas[i].name == "Autonomous Engineer") {
+                            pm.select_persona(i);
+                            populate_persona_buffers(i);
+                            refresh_llm_config();
+                            break;
+                        }
+                    }
+                }
+                if (is_eng) {
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Quick-switch to Autonomous Software Engineer persona");
                 }
             }
             
@@ -1320,6 +1353,11 @@ namespace rouen::cards {
                                std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "deck") != target_persona->allowed_mcps.end() ||
                                std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "system") != target_persona->allowed_mcps.end();
                     }
+                    if (cat == "git" || cat == "github") {
+                        return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "git") != target_persona->allowed_mcps.end() ||
+                               std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "github") != target_persona->allowed_mcps.end() ||
+                               std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), "editor") != target_persona->allowed_mcps.end();
+                    }
                     return std::find(target_persona->allowed_mcps.begin(), target_persona->allowed_mcps.end(), cat) != target_persona->allowed_mcps.end();
                 };
 
@@ -1490,6 +1528,11 @@ namespace rouen::cards {
                         return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "mesh") != active_persona.allowed_mcps.end() ||
                                std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "deck") != active_persona.allowed_mcps.end() ||
                                std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "system") != active_persona.allowed_mcps.end();
+                    }
+                    if (cat == "git" || cat == "github") {
+                        return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "git") != active_persona.allowed_mcps.end() ||
+                               std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "github") != active_persona.allowed_mcps.end() ||
+                               std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), "editor") != active_persona.allowed_mcps.end();
                     }
                     return std::find(active_persona.allowed_mcps.begin(), active_persona.allowed_mcps.end(), cat) != active_persona.allowed_mcps.end();
                 };
