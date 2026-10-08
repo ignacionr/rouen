@@ -10,6 +10,7 @@
 #include "../src/helpers/llm_config.hpp"
 #include "../src/helpers/fetch.hpp"
 #include "../src/helpers/syntax_checker.hpp"
+#include "../src/cards/information/ai_chat.hpp"
 #include "../src/registrar.hpp"
 
 // Forward declarations to avoid including weather.hpp with its icon dependencies
@@ -1033,6 +1034,23 @@ TEST(MCPTest, UpdateInboxItemLifecycle) {
     EXPECT_TRUE(content.find("Completed all steps successfully.") != std::string::npos);
 
     std::filesystem::remove_all(temp_dir);
+}
+
+TEST(MCPTest, LiveToolActivityTracking) {
+    rouen::cards::ai_chat::LiveToolActivity act;
+    act.tool_name = "run_unit_tests";
+    act.summary = "test_workspace_rules";
+    act.start_time = std::chrono::steady_clock::now();
+    act.is_running = true;
+
+    EXPECT_EQ(act.tool_name, "run_unit_tests");
+    EXPECT_EQ(act.summary, "test_workspace_rules");
+    EXPECT_TRUE(act.is_running);
+
+    act.is_running = false;
+    act.duration_ms = 45;
+    EXPECT_FALSE(act.is_running);
+    EXPECT_EQ(act.duration_ms, 45);
 }
 
 

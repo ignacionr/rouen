@@ -69,6 +69,28 @@ namespace rouen::cards {
         return clean;
     }
 
+    std::string summarize_tool_args([[maybe_unused]] const std::string& func_name, const std::string& args_json) {
+        if (args_json.empty() || args_json == "{}") return "";
+        try {
+            glz::json_t doc;
+            if (!glz::read_json(doc, args_json)) {
+                for (const char* key : {"target_test", "file_path", "path", "target", "query", "command", "status", "message"}) {
+                    if (doc.contains(key) && doc[key].holds<std::string>()) {
+                        std::string val = doc[key].get<std::string>();
+                        if (val.size() > 40) {
+                            val = val.substr(0, 37) + "...";
+                        }
+                        return val;
+                    }
+                }
+            }
+        } catch (...) {}
+        if (args_json.size() > 30) {
+            return args_json.substr(0, 27) + "...";
+        }
+        return args_json;
+    }
+
     const helpers::Persona* find_persona_by_sanitized_name(const std::string& sanitized_name) {
         const auto& personas = helpers::PersonaManager::instance().get_personas();
         for (const auto& p : personas) {
@@ -130,12 +152,22 @@ namespace rouen::cards {
         if (has_mcp("git")) {
             instr += "\nGIT & VERSION CONTROL INSTRUCTIONS:\nYou have access to version control tools: use `code_generate_conventional_commit` to produce standardized Conventional Commits based on git diff and status context.\n";
         }
+        if (has_mcp("terminal") || has_mcp("editor")) {
+            instr += "\nENGINEERING LIFECYCLE & INBOX AUTOMATION INSTRUCTIONS:\n"
+                     "You have direct access to automated engineering tools:\n"
+                     "- `run_unit_tests`: Run CTest or specific test binaries (e.g. `test_markdown_renderer`, `test_mcp`, `test_gemini_adapter`). You MUST invoke this tool to verify test suites instead of guessing or simulating test results. Always report the exact exit code, duration, passed/failed test counts, and error output.\n"
+                     "- `build_and_deploy`: Safely compile targets using Ninja with strict -j2 parallelism, deploy to ~/Applications/Rouen.app, preserve .env, and ad-hoc sign.\n"
+                     "- `update_inbox_item`: Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections). Never fake inbox updates; always invoke this tool.\n"
+                     "- `announce_completion`: Announce completion using macOS speech.\n"
+                     "CRITICAL VERIFICATION RULE:\n"
+                     "When asked to carry out an inbox item, process the inbox, run tests, or build the application, NEVER return generic conversational claims. You MUST execute the actual tools (`run_unit_tests`, `build_and_deploy`, `update_inbox_item`, `run_local_command`), inspect the results, and report detailed, factual execution outputs including exit codes and test names.\n";
+        }
         return instr;
     }
 
     std::string get_function_category(const helpers::mcp_service::function_definition& func) {
-        if (func.name == "run_local_command") return "terminal";
-        if (func.name == "edit_file") return "editor";
+        if (func.name == "run_local_command" || func.name == "run_unit_tests" || func.name == "build_and_deploy" || func.name == "announce_completion") return "terminal";
+        if (func.name == "edit_file" || func.name == "update_inbox_item") return "editor";
         if (func.name.starts_with("code_")) {
             if (func.name == "code_generate_conventional_commit") return "git";
             return "editor";
@@ -810,12 +842,42 @@ namespace rouen::cards {
                                               turns, turns == 1 ? "turn" : "turns");
                         }
                     }
-                    
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton(ICON_MD_STOP " Stop")) {
+                        cancel_execution_.store(true);
+                    }
+
                     ImGui::PopStyleColor(); // assistant_text_color
                     ImGui::EndChild();
                     
                     ImGui::PopStyleVar(3); // Pop ChildRounding, ChildBorderSize, WindowPadding
                     ImGui::PopStyleColor(2); // Pop ChildBg and Border
+
+                    // Stream active and recent tool activities
+                    {
+                        std::vector<LiveToolActivity> activities_copy;
+                        {
+                            std::lock_guard<std::mutex> const lock(active_tools_mutex_);
+                            activities_copy.assign(active_tool_activities_.begin(), active_tool_activities_.end());
+                        }
+
+                        if (!activities_copy.empty()) {
+                            ImGui::Spacing();
+                            for (const auto& act : activities_copy) {
+                                std::string summary_str = act.summary.empty() ? "" : (" " + act.summary);
+                                if (act.is_running) {
+                                    float const t = static_cast<float>(ImGui::GetTime());
+                                    int const pulse = static_cast<int>(t * 4.0f) % 4;
+                                    const char* spinner = (pulse == 0 ? "/" : (pulse == 1 ? "-" : (pulse == 2 ? "\\" : "|")));
+                                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - act.start_time).count();
+                                    float elapsed_s = static_cast<float>(elapsed_ms) / 1000.0f;
+                                    ImGui::TextColored(ImVec4(0.2f, 0.7f, 1.0f, 1.0f), " %s [%s]%s (%.1fs)", spinner, act.tool_name.c_str(), summary_str.c_str(), static_cast<double>(elapsed_s));
+                                } else {
+                                    ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.3f, 1.0f), " " ICON_MD_CHECK " [%s]%s (%dms)", act.tool_name.c_str(), summary_str.c_str(), act.duration_ms);
+                                }
+                            }
+                        }
+                    }
                     
                     ImGui::Spacing();
                     ImGui::Spacing();
@@ -1026,7 +1088,7 @@ namespace rouen::cards {
     }
 
     std::string ai_chat::get_adaptive_card_json() const {
-        std::lock_guard<std::mutex> const lock(const_cast<std::mutex&>(chat_history_mutex_));
+        std::lock_guard<std::mutex> const lock(chat_history_mutex_);
         int refresh_ms = waiting_for_response_ ? 500 : 0;
 
         // Build the card using glz::json_t for safe JSON construction
@@ -1157,6 +1219,31 @@ namespace rouen::cards {
                 indicator["spacing"] = "None";
                 thinking_items.push_back(std::move(indicator));
             }
+
+            // Stream active and recent tool activities in Adaptive Card
+            std::vector<LiveToolActivity> activities_copy;
+            {
+                std::lock_guard<std::mutex> const tools_lock(active_tools_mutex_);
+                activities_copy.assign(active_tool_activities_.begin(), active_tool_activities_.end());
+            }
+
+            for (const auto& act : activities_copy) {
+                glz::json_t act_block;
+                act_block["type"] = "TextBlock";
+                std::string summary_str = act.summary.empty() ? "" : (" (" + act.summary + ")");
+                if (act.is_running) {
+                    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - act.start_time).count();
+                    float elapsed_s = static_cast<float>(elapsed_ms) / 1000.0f;
+                    act_block["text"] = std::format("⏳ [{}] {}{:.1f}s", act.tool_name, summary_str, elapsed_s);
+                } else {
+                    act_block["text"] = std::format("✓ [{}] {}{}ms", act.tool_name, summary_str, act.duration_ms);
+                }
+                act_block["size"] = "Small";
+                act_block["isSubtle"] = true;
+                act_block["spacing"] = "None";
+                thinking_items.push_back(std::move(act_block));
+            }
+
             thinking["items"] = std::move(thinking_items);
             body.push_back(std::move(thinking));
         }
@@ -1256,6 +1343,23 @@ namespace rouen::cards {
     }
 
     std::string ai_chat::execute_function_with_debug(const std::string& function_name, const std::string& args_json, int depth) {
+        if (cancel_execution_.load()) {
+            return "Error: Execution cancelled by user.";
+        }
+
+        size_t activity_idx = 0;
+        {
+            std::lock_guard<std::mutex> const lock(active_tools_mutex_);
+            LiveToolActivity act;
+            act.tool_name = function_name;
+            act.summary = summarize_tool_args(function_name, args_json);
+            act.start_time = std::chrono::steady_clock::now();
+            act.is_running = true;
+            active_tool_activities_.push_back(std::move(act));
+            activity_idx = active_tool_activities_.size() - 1;
+            layout_dirty_ = true;
+        }
+
         if (debug_mode_) {
             std::lock_guard<std::mutex> const lock(chat_history_mutex_);
             chat_history_.emplace_back("debug", std::format(ICON_MD_BUILD " **Tool Call**: `{}` (depth: {})\n\nArguments:\n```json\n{}\n```", function_name, depth, args_json));
@@ -1265,7 +1369,9 @@ namespace rouen::cards {
         }
 
         std::string result;
-        if (function_name.starts_with("call_persona_")) {
+        if (cancel_execution_.load()) {
+            result = "Error: Execution cancelled by user.";
+        } else if (function_name.starts_with("call_persona_")) {
             result = execute_persona_call(function_name, args_json, depth);
         } else if (mcp_service_) {
             try {
@@ -1276,6 +1382,16 @@ namespace rouen::cards {
             }
         } else {
             result = "Error: MCP service not available";
+        }
+
+        {
+            std::lock_guard<std::mutex> const lock(active_tools_mutex_);
+            if (activity_idx < active_tool_activities_.size()) {
+                auto& act = active_tool_activities_[activity_idx];
+                act.is_running = false;
+                act.duration_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - act.start_time).count());
+            }
+            layout_dirty_ = true;
         }
 
         if (debug_mode_) {
@@ -1624,6 +1740,11 @@ namespace rouen::cards {
             waiting_for_response_.store(true);
             internal_turn_count_.store(0, std::memory_order_relaxed);
             scroll_to_bottom_.store(true);
+            cancel_execution_.store(false);
+            {
+                std::lock_guard<std::mutex> const lock(active_tools_mutex_);
+                active_tool_activities_.clear();
+            }
             
             // Determine model and search mode before launching the thread (thread-safe capture)
             std::string model_name = current_llm_settings_.model_name;
@@ -1816,6 +1937,11 @@ namespace rouen::cards {
             scroll_to_bottom_.store(true);
             waiting_for_response_.store(true);
             internal_turn_count_.store(0, std::memory_order_relaxed);
+            cancel_execution_.store(false);
+            {
+                std::lock_guard<std::mutex> const lock(active_tools_mutex_);
+                active_tool_activities_.clear();
+            }
             
             // Create shared context for the async operation to ensure memory safety
             auto async_context = std::make_shared<AsyncRequestContext>();

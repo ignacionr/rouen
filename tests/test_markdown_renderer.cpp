@@ -546,6 +546,100 @@ TEST(MarkdownRenderer, ParseDocumentPrimitives) {
     EXPECT_TRUE(has_para);
 }
 
+TEST(MarkdownRenderer, FontStackBalanceDuringRender) {
+    ImGuiContext* ctx = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1000.0f, 1000.0f);
+    
+    ImFontConfig cfg;
+    ImFont* font_bold = io.Fonts->AddFontDefault(&cfg);
+    ImFont* font_mono = io.Fonts->AddFontDefault(&cfg);
+    unsigned char* tex_pixels;
+    int tex_w, tex_h;
+    io.Fonts->GetTexDataAsRGBA32(&tex_pixels, &tex_w, &tex_h);
+    
+    ImGui::NewFrame();
+    
+    ImGui::Begin("TestWindow");
+    ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false);
+    ImGui::BeginChild("msg_bubble_0", ImVec2(300, 100), true);
+    
+    rouen::helpers::markdown_render_config md_cfg{
+        .font_bold = font_bold,
+        .font_italic = nullptr,
+        .font_code = font_mono
+    };
 
+    std::vector<std::string> test_cases = {
+        "# Heading 1",
+        "## Heading 2",
+        "### Heading 3 with **bold** and `code`",
+        "**Resolution Summary:**",
+        "The inbox item `inbox/2026-10-08-feat-ai-mcp-engineering-and-inbox-tools.md` has been successfully updated to status **done**.",
+        "> Blockquote line with *italic*",
+        "- List item with [link](https://example.com)",
+        "```json\n{\"test\": true}\n```",
+        "| A | B |\n|---|---|\n| 1 | 2 |"
+    };
 
+    for (const auto& tc : test_cases) {
+        rouen::helpers::render_markdown_block(tc, md_cfg);
+    }
+    
+    ImGui::EndChild();
+    ImGui::EndChild();
+    ImGui::End();
+    
+    ImGui::Render();
+    ImGui::DestroyContext(ctx);
+}
+
+TEST(MarkdownRenderer, ImGuiFontGuardRAII) {
+    ImGuiContext* ctx = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1000.0f, 1000.0f);
+
+    ImFontConfig cfg1;
+    ImFont* base_font = io.Fonts->AddFontDefault(&cfg1);
+    ImFontConfig cfg2;
+    ImFont* custom_font = io.Fonts->AddFontDefault(&cfg2);
+    unsigned char* tex_pixels;
+    int tex_w, tex_h;
+    io.Fonts->GetTexDataAsRGBA32(&tex_pixels, &tex_w, &tex_h);
+
+    ImGui::NewFrame();
+    ImGui::Begin("TestGuardWindow");
+
+    ImFont* initial_font = ImGui::GetFont();
+    EXPECT_EQ(initial_font, base_font);
+    EXPECT_NE(custom_font, base_font);
+
+    // 1. Guard with null font does nothing
+    {
+        rouen::helpers::imgui_font_guard guard(nullptr);
+        EXPECT_FALSE(guard.pushed);
+        EXPECT_EQ(ImGui::GetFont(), initial_font);
+    }
+    EXPECT_EQ(ImGui::GetFont(), initial_font);
+
+    // 2. Guard with current font does not push duplicate
+    {
+        rouen::helpers::imgui_font_guard guard(initial_font);
+        EXPECT_FALSE(guard.pushed);
+        EXPECT_EQ(ImGui::GetFont(), initial_font);
+    }
+    EXPECT_EQ(ImGui::GetFont(), initial_font);
+
+    // 3. Guard with different font pushes and pops on exit
+    {
+        rouen::helpers::imgui_font_guard guard(custom_font);
+        EXPECT_TRUE(guard.pushed);
+        EXPECT_EQ(ImGui::GetFont(), custom_font);
+    }
+    EXPECT_EQ(ImGui::GetFont(), initial_font);
+
+    ImGui::End();
+    ImGui::Render();
+    ImGui::DestroyContext(ctx);
+}
 

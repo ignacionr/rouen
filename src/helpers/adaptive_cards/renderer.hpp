@@ -271,20 +271,18 @@ private:
             if (font_scale != 1.0f) {
                 ImGui::SetWindowFontScale(font_scale);
             }
-            if (run.bold && config.font_bold) {
-                ImGui::PushFont(config.font_bold);
-            } else if (run.italic && config.font_italic) {
-                ImGui::PushFont(config.font_italic);
-            }
+            {
+                ImFont* run_font = nullptr;
+                if (run.bold && config.font_bold) {
+                    run_font = config.font_bold;
+                } else if (run.italic && config.font_italic) {
+                    run_font = config.font_italic;
+                }
+                imgui_font_guard font_guard(run_font);
 
-            ImGui::PushStyleColor(ImGuiCol_Text, color);
-            ImGui::TextUnformatted(run.text.c_str());
-            ImGui::PopStyleColor();
-
-            if (run.bold && config.font_bold) {
-                ImGui::PopFont();
-            } else if (run.italic && config.font_italic) {
-                ImGui::PopFont();
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextUnformatted(run.text.c_str());
+                ImGui::PopStyleColor();
             }
             if (font_scale != 1.0f) {
                 ImGui::SetWindowFontScale(1.0f);
@@ -724,21 +722,17 @@ private:
         if (apply_font_scale) {
             ImGui::SetWindowFontScale(font_scale);
         }
-        if (is_bold && config.font_bold) {
-            ImGui::PushFont(config.font_bold);
-        }
+        {
+            imgui_font_guard font_guard(is_bold ? config.font_bold : nullptr);
 
-        if (!node.horizontalAlignment.empty() && node.horizontalAlignment != "Left" && node.horizontalAlignment != "left") {
-            const std::string plain_text = strip_markdown(node.text);
-            float text_width = ImGui::CalcTextSize(plain_text.c_str()).x * font_scale;
-            align_cursor(text_width, node.horizontalAlignment);
-        }
+            if (!node.horizontalAlignment.empty() && node.horizontalAlignment != "Left" && node.horizontalAlignment != "left") {
+                const std::string plain_text = strip_markdown(node.text);
+                float text_width = ImGui::CalcTextSize(plain_text.c_str()).x * font_scale;
+                align_cursor(text_width, node.horizontalAlignment);
+            }
 
-        // Delegate to the shared inline markdown renderer.
-        rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
-
-        if (is_bold && config.font_bold) {
-            ImGui::PopFont();
+            // Delegate to the shared inline markdown renderer.
+            rouen::helpers::render_inline_markdown(node.text, color, config, callbacks.open_url);
         }
         if (apply_font_scale) {
             ImGui::SetWindowFontScale(1.0f);

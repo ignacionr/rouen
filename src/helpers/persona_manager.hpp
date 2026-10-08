@@ -429,17 +429,22 @@ namespace rouen::helpers {
                 "- 'code_read_file': Read target files with line bounds before editing.\n"
                 "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
                 "- 'code_write_file': Create new files or tests.\n"
+                "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
+                "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
+                "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
+                "- 'announce_completion': Announce completion using macOS speech.\n"
                 "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
                 "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
                 "Mandatory Engineering Protocol (TDD & Verification):\n"
                 "1. Read the specification and locate target files.\n"
                 "2. Add or update unit tests under tests/.\n"
-                "3. Run tests using run_local_command to confirm initial failure (Red).\n"
+                "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
                 "4. Apply surgical fixes with code_apply_patch.\n"
-                "5. Re-run tests to confirm they pass (Green).\n"
-                "6. Build targets adhering strictly to '-j2' (e.g., 'nix develop --command cmake --build build --target rouen -j2').\n"
-                "7. Commit, push, and rename inbox entries as specified in project rules.\n"
-                "8. Always announce completion via 'say'.";
+                "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
+                "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
+                "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
+                "8. Always announce completion via announce_completion.\n"
+                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
             personas_.push_back(eng_p);
             
             Persona dev_arch;
@@ -725,17 +730,22 @@ namespace rouen::helpers {
                         "- 'code_read_file': Read target files with line bounds before editing.\n"
                         "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
                         "- 'code_write_file': Create new files or tests.\n"
+                        "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
+                        "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
+                        "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
+                        "- 'announce_completion': Announce completion using macOS speech.\n"
                         "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
                         "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
                         "Mandatory Engineering Protocol (TDD & Verification):\n"
                         "1. Read the specification and locate target files.\n"
                         "2. Add or update unit tests under tests/.\n"
-                        "3. Run tests using run_local_command to confirm initial failure (Red).\n"
+                        "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
                         "4. Apply surgical fixes with code_apply_patch.\n"
-                        "5. Re-run tests to confirm they pass (Green).\n"
-                        "6. Build targets adhering strictly to '-j2' (e.g., 'nix develop --command cmake --build build --target rouen -j2').\n"
-                        "7. Commit, push, and rename inbox entries as specified in project rules.\n"
-                        "8. Always announce completion via 'say'.";
+                        "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
+                        "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
+                        "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
+                        "8. Always announce completion via announce_completion.\n"
+                        "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
 
                     personas_.push_back(eng_p);
                     save_personas();
@@ -745,6 +755,34 @@ namespace rouen::helpers {
                 // and migrate legacy Local MLX or Default personas to Gemini Flash, upgrading engineering limits
                 bool modified = false;
                 for (auto& p : personas_) {
+                    if (p.name == "Autonomous Engineer") {
+                        if (p.system_prompt.find("run_unit_tests") == std::string::npos) {
+                            p.system_prompt = 
+                                "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
+                                "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
+                                "Available Direct Tools:\n"
+                                "- 'code_read_file': Read target files with line bounds before editing.\n"
+                                "- 'code_apply_patch': Surgically edit code and inspect automated compiler syntax feedback.\n"
+                                "- 'code_write_file': Create new files or tests.\n"
+                                "- 'run_unit_tests': Execute CTest or specific test binaries and report exact exit codes, counts, and output.\n"
+                                "- 'build_and_deploy': Safely compile targets using Ninja with strict -j2 parallelism, deploy, and code sign.\n"
+                                "- 'update_inbox_item': Update status or rename items in ./inbox (e.g. mark done, in_progress, or append sections).\n"
+                                "- 'announce_completion': Announce completion using macOS speech.\n"
+                                "- 'run_local_command': Execute shell commands, Ninja builds, and tests.\n"
+                                "- 'code_generate_conventional_commit': Generate standard feat(...) or fix(...) commit messages.\n\n"
+                                "Mandatory Engineering Protocol (TDD & Verification):\n"
+                                "1. Read the specification and locate target files.\n"
+                                "2. Add or update unit tests under tests/.\n"
+                                "3. Run tests using run_unit_tests to confirm initial failure (Red).\n"
+                                "4. Apply surgical fixes with code_apply_patch.\n"
+                                "5. Re-run tests with run_unit_tests to confirm they pass (Green).\n"
+                                "6. Build targets adhering strictly to '-j2' with build_and_deploy.\n"
+                                "7. Commit, push, and mark inbox entries done using update_inbox_item.\n"
+                                "8. Always announce completion via announce_completion.\n"
+                                "CRITICAL: Never fake or simulate test execution or inbox status. Always invoke the real tools and report factual results.";
+                            modified = true;
+                        }
+                    }
                     if (p.max_tool_iterations <= 0) {
                         p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 50 : 10;
                         modified = true;

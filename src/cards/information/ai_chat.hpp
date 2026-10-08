@@ -36,6 +36,14 @@ namespace rouen::cards {
             internal_turn_count_.store(count, std::memory_order_relaxed);
         }
 
+        struct LiveToolActivity {
+            std::string tool_name;
+            std::string summary;
+            std::chrono::steady_clock::time_point start_time;
+            bool is_running{true};
+            int duration_ms{0};
+        };
+
     private:
         struct MessageCache {
             float bubble_height{0.0f};
@@ -78,11 +86,15 @@ namespace rouen::cards {
         std::deque<std::pair<std::string, std::string>> chat_history_{};
         std::deque<MessageCache> message_cache_{};
         
+
         std::optional<std::future<void>> pending_response_{};
         std::atomic<bool> waiting_for_response_{false};
         std::atomic<uint32_t> internal_turn_count_{0};
         std::atomic<bool> clear_input_on_response_{false};
-        std::mutex chat_history_mutex_;
+        std::atomic<bool> cancel_execution_{false};
+        mutable std::mutex active_tools_mutex_;
+        std::deque<LiveToolActivity> active_tool_activities_;
+        mutable std::mutex chat_history_mutex_;
         
         std::mutex dictation_mutex_;
         std::optional<std::string> pending_dictation_result_{std::nullopt};

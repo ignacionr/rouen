@@ -25,6 +25,40 @@ struct markdown_render_config {
     std::function<void(const std::string& alt, const std::string& url)> render_image_cb{};
 };
 
+// RAII scope guard to ensure ImGui font stack balance regardless of control-flow branch or early exit
+struct imgui_font_guard {
+    bool pushed{false};
+
+    explicit imgui_font_guard(ImFont* font) {
+        if (font && font != ImGui::GetFont()) {
+            ImGui::PushFont(font);
+            pushed = true;
+        }
+    }
+
+    ~imgui_font_guard() {
+        if (pushed) {
+            ImGui::PopFont();
+        }
+    }
+
+    imgui_font_guard(const imgui_font_guard&) = delete;
+    imgui_font_guard& operator=(const imgui_font_guard&) = delete;
+
+    imgui_font_guard(imgui_font_guard&& other) noexcept : pushed(other.pushed) {
+        other.pushed = false;
+    }
+
+    imgui_font_guard& operator=(imgui_font_guard&& other) noexcept {
+        if (this != &other) {
+            if (pushed) ImGui::PopFont();
+            pushed = other.pushed;
+            other.pushed = false;
+        }
+        return *this;
+    }
+};
+
 // ---------------------------------------------------------------------------
 // Word token and flow layout engine for inline Markdown
 // ---------------------------------------------------------------------------
@@ -211,12 +245,12 @@ inline void render_flowing_markdown(
             ImGui::SameLine(0.0f, space_w);
         }
 
-        bool const font_pushed = (font && font != ImGui::GetFont());
-        if (font_pushed) ImGui::PushFont(font);
-        ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::TextUnformatted(tok.text.data(), tok.text.data() + tok.text.size());
-        ImGui::PopStyleColor();
-        if (font_pushed) ImGui::PopFont();
+        {
+            imgui_font_guard font_guard(font);
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextUnformatted(tok.text.data(), tok.text.data() + tok.text.size());
+            ImGui::PopStyleColor();
+        }
 
         if (tok.kind == adaptive_cards::span_kind::link) {
             if (ImGui::IsItemHovered()) {
@@ -663,16 +697,14 @@ inline void render_markdown_document(
             using T = std::decay_t<decltype(item)>;
             if constexpr (std::is_same_v<T, heading_primitive>) {
                 if (item.level == 1) {
-                    if (config.font_bold) ImGui::PushFont(config.font_bold);
+                    imgui_font_guard font_guard(config.font_bold);
                     render_flowing_markdown(item.spans, h1_color, config, -1.0f, open_url_cb);
-                    if (config.font_bold) ImGui::PopFont();
                     ImGui::Separator();
                 } else if (item.level == 2) {
                     ImGui::SeparatorText(item.plain_text.c_str());
                 } else if (item.level >= 3) {
-                    if (config.font_bold) ImGui::PushFont(config.font_bold);
+                    imgui_font_guard font_guard(config.font_bold);
                     render_flowing_markdown(item.spans, default_color, config, -1.0f, open_url_cb);
-                    if (config.font_bold) ImGui::PopFont();
                 }
             } else if constexpr (std::is_same_v<T, paragraph_primitive>) {
                 render_flowing_markdown(item.spans, default_color, config, -1.0f, open_url_cb);
@@ -687,13 +719,12 @@ inline void render_markdown_document(
                 render_flowing_markdown(item.spans, dim_color, config, indent_x, open_url_cb);
                 ImGui::Unindent();
             } else if constexpr (std::is_same_v<T, code_block_primitive>) {
-                if (config.font_code) ImGui::PushFont(config.font_code);
+                imgui_font_guard font_guard(config.font_code);
                 ImGui::PushStyleColor(ImGuiCol_Text, code_color);
                 for (const auto& code_line : item.lines) {
                     ImGui::TextWrapped("%s", code_line.c_str());
                 }
                 ImGui::PopStyleColor();
-                if (config.font_code) ImGui::PopFont();
             } else if constexpr (std::is_same_v<T, table_primitive>) {
                 if (ImGui::BeginTable(item.table_id.c_str(), item.table_columns, 
                                       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | 
@@ -705,11 +736,10 @@ inline void render_markdown_document(
                     ImGui::TableNextRow();
                     for (int col = 0; col < item.table_columns; ++col) {
                         ImGui::TableSetColumnIndex(col);
-                        if (config.font_bold) ImGui::PushFont(config.font_bold);
                         if (static_cast<size_t>(col) < item.headers.size()) {
+                            imgui_font_guard font_guard(config.font_bold);
                             render_inline_markdown(item.headers[static_cast<size_t>(col)], default_color, config, open_url_cb);
                         }
-                        if (config.font_bold) ImGui::PopFont();
                     }
                     for (const auto& row : item.rows) {
                         ImGui::TableNextRow();
