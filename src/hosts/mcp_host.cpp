@@ -83,6 +83,64 @@
 
 namespace rouen::hosts {
 
+struct mcp_run_unit_tests_params {
+    std::string target_test;
+    std::string filter;
+    int timeout_seconds{120};
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_run_unit_tests_params;
+        static constexpr auto value = glz::object(
+            "target_test", &T::target_test,
+            "filter", &T::filter,
+            "timeout_seconds", &T::timeout_seconds,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_build_and_deploy_params {
+    std::string target{"rouen"};
+    bool quick_build{true};
+    bool deploy{true};
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_build_and_deploy_params;
+        static constexpr auto value = glz::object(
+            "target", &T::target,
+            "quick_build", &T::quick_build,
+            "deploy", &T::deploy,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_update_inbox_item_params {
+    std::string file_path;
+    std::string status;
+    std::string resolution_summary;
+    std::string workspace_dir;
+    struct glaze {
+        using T = mcp_update_inbox_item_params;
+        static constexpr auto value = glz::object(
+            "file_path", &T::file_path,
+            "status", &T::status,
+            "resolution_summary", &T::resolution_summary,
+            "workspace_dir", &T::workspace_dir
+        );
+    };
+};
+
+struct mcp_announce_completion_params {
+    std::string message;
+    struct glaze {
+        using T = mcp_announce_completion_params;
+        static constexpr auto value = glz::object(
+            "message", &T::message
+        );
+    };
+};
+
 struct mcp_code_generate_conventional_commit_params {
     std::string diff_context;
     std::string status_context;
@@ -1865,6 +1923,256 @@ mcp_host::mcp_host() {
     register_function("editor", code_generate_commit_def);
     register_function("terminal", code_generate_commit_def);
     register_function("git", code_generate_commit_def);
+
+    // Register Engineering Lifecycle MCP Tools
+    function_definition const run_unit_tests_def(
+        "run_unit_tests",
+        "Executes the test suite under tests/ or a specific test target binary, returning exit code, execution time, and parsed test results.",
+        R"mcp({"type":"object","properties":{"target_test":{"type":"string","description":"Specific test binary name (e.g. test_workspace_rules, test_gemini_adapter) or empty to run ctest"},"filter":{"type":"string","description":"Optional test filter pattern (passed to --gtest_filter or ctest -R)"},"timeout_seconds":{"type":"integer","description":"Timeout in seconds (default: 120)"},"workspace_dir":{"type":"string","description":"Workspace directory root"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_run_unit_tests_params p{};
+                if (!params.empty()) {
+                    auto err = glz::read_json(p, params);
+                    if (err) {
+                        return R"({"status":"error","message":"Invalid JSON parameters for run_unit_tests"})";
+                    }
+                }
+                std::string ws = p.workspace_dir;
+                if (ws.empty()) {
+                    ws = helpers::CodeEditorService::instance().get_default_workspace();
+                }
+                if (ws.empty()) {
+                    try { ws = std::filesystem::current_path().string(); } catch (...) {}
+                }
+
+                std::string cmd;
+                if (p.target_test.empty()) {
+                    cmd = "ctest --test-dir build --output-on-failure";
+                    if (!p.filter.empty()) {
+                        cmd += " -R \"" + p.filter + "\"";
+                    }
+                } else {
+                    cmd = "./build/tests/" + p.target_test;
+                    if (!p.filter.empty()) {
+                        cmd += " --gtest_filter=\"" + p.filter + "\"";
+                    }
+                }
+
+                int timeout = p.timeout_seconds > 0 ? p.timeout_seconds : 120;
+                auto start_time = std::chrono::steady_clock::now();
+                auto res = ProcessHelper::executeCommandWithTimeout(cmd, ws, std::chrono::seconds(timeout));
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count();
+
+                bool success = (res.exit_code == 0 && !res.timed_out);
+                std::string escaped_output;
+                static_cast<void>(glz::write_json(res.output, escaped_output));
+
+                return std::format(
+                    R"({{"status":"{}","success":{},"exit_code":{},"timed_out":{},"duration_ms":{},"output":{}}})",
+                    success ? "success" : "failed",
+                    success ? "true" : "false",
+                    res.exit_code,
+                    res.timed_out ? "true" : "false",
+                    duration,
+                    escaped_output
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "terminal"
+    );
+    register_function("terminal", run_unit_tests_def);
+    register_function("editor", run_unit_tests_def);
+
+    function_definition const build_and_deploy_def(
+        "build_and_deploy",
+        "Compiles a target using Ninja with strict -j2 parallelism, and if deploying rouen on macOS, preserves .env in Contents/Resources/.env and ad-hoc signs with designated requirement com.rouen.app.",
+        R"mcp({"type":"object","properties":{"target":{"type":"string","description":"Target binary name (default: rouen)"},"quick_build":{"type":"boolean","description":"Use ninja quick build (default: true)"},"deploy":{"type":"boolean","description":"Deploy to ~/Applications/Rouen.app and code sign if target is rouen (default: true)"},"workspace_dir":{"type":"string","description":"Workspace directory root"}},"required":[]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_build_and_deploy_params p{};
+                if (!params.empty()) {
+                    auto err = glz::read_json(p, params);
+                    if (err) {
+                        return R"({"status":"error","message":"Invalid JSON parameters for build_and_deploy"})";
+                    }
+                }
+                if (p.target.empty()) p.target = "rouen";
+
+                std::string ws = p.workspace_dir;
+                if (ws.empty()) {
+                    ws = helpers::CodeEditorService::instance().get_default_workspace();
+                }
+                if (ws.empty()) {
+                    try { ws = std::filesystem::current_path().string(); } catch (...) {}
+                }
+
+                // Strict -j2 parallelism enforced
+                std::string build_cmd = "nix develop --command cmake --build build --target " + p.target + " -j2";
+                auto build_res = ProcessHelper::executeCommandWithTimeout(build_cmd, ws, std::chrono::seconds(600));
+
+                bool success = (build_res.exit_code == 0 && !build_res.timed_out);
+                bool deployed = false;
+                std::string deploy_output;
+
+                if (success && p.deploy && p.target == "rouen" && !rouen::platform::is_windows) {
+                    std::string deploy_cmd = R"(cp build/rouen.app/Contents/MacOS/rouen $HOME/Applications/Rouen.app/Contents/MacOS/rouen && ([ ! -f $HOME/Applications/Rouen.app/Contents/MacOS/.env ] || cp $HOME/Applications/Rouen.app/Contents/MacOS/.env $HOME/Applications/Rouen.app/Contents/Resources/.env) && rm -f $HOME/Applications/Rouen.app/Contents/MacOS/.env $HOME/Applications/Rouen.app/Contents/MacOS/.rouen-wrapped && chmod +x $HOME/Applications/Rouen.app/Contents/MacOS/libpdfium.dylib 2>/dev/null || true && codesign --force --sign - $HOME/Applications/Rouen.app/Contents/MacOS/libpdfium.dylib && codesign --force --sign - --requirements '=designated => identifier "com.rouen.app"' $HOME/Applications/Rouen.app/Contents/MacOS/rouen)";
+                    auto dep_res = ProcessHelper::executeCommandWithTimeout(deploy_cmd, ws, std::chrono::seconds(60));
+                    deployed = (dep_res.exit_code == 0);
+                    deploy_output = dep_res.output;
+                }
+
+                std::string escaped_build_out, escaped_deploy_out;
+                static_cast<void>(glz::write_json(build_res.output, escaped_build_out));
+                static_cast<void>(glz::write_json(deploy_output, escaped_deploy_out));
+
+                return std::format(
+                    R"({{"status":"{}","success":{},"exit_code":{},"deployed":{},"build_output":{},"deploy_output":{}}})",
+                    success ? "success" : "failed",
+                    success ? "true" : "false",
+                    build_res.exit_code,
+                    deployed ? "true" : "false",
+                    escaped_build_out,
+                    escaped_deploy_out
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "terminal"
+    );
+    register_function("terminal", build_and_deploy_def);
+    register_function("editor", build_and_deploy_def);
+
+    function_definition const update_inbox_item_def(
+        "update_inbox_item",
+        "Updates an inbox report status header, appends Resolution & Outcome Summary, and renames the file according to inbox/README.md conventions (done_<slug>.md).",
+        R"mcp({"type":"object","properties":{"file_path":{"type":"string","description":"Relative or absolute path to the inbox markdown file"},"status":{"type":"string","description":"Lifecycle status: done, in-progress, awaiting-answer, or rejected"},"resolution_summary":{"type":"string","description":"Summary details to append under Resolution & Outcome Summary"},"workspace_dir":{"type":"string","description":"Workspace directory root"}},"required":["file_path","status"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_update_inbox_item_params p{};
+                auto err = glz::read_json(p, params);
+                if (err || p.file_path.empty() || p.status.empty()) {
+                    return R"({"status":"error","message":"file_path and status parameters are required"})";
+                }
+
+                std::string resolved = helpers::CodeEditorService::instance().resolve_path(p.file_path, p.workspace_dir);
+                if (resolved.empty() || !std::filesystem::exists(resolved)) {
+                    return std::format(R"({{"status":"error","message":"File not found: {}"}})", p.file_path);
+                }
+
+                std::ifstream in(resolved);
+                if (!in.is_open()) {
+                    return std::format(R"({{"status":"error","message":"Failed to read file: {}"}})", resolved);
+                }
+                std::stringstream buffer;
+                buffer << in.rdbuf();
+                in.close();
+                std::string content = buffer.str();
+
+                // Format status
+                std::string status_lower = p.status;
+                std::transform(status_lower.begin(), status_lower.end(), status_lower.begin(), ::tolower);
+                std::string display_status = "Open";
+                if (status_lower == "done") display_status = "Done";
+                else if (status_lower == "in-progress" || status_lower == "in_progress") display_status = "In Progress";
+                else if (status_lower == "awaiting-answer" || status_lower == "awaiting_answer") display_status = "Awaiting Answer";
+                else if (status_lower == "rejected") display_status = "Rejected";
+
+                // Update Status header
+                size_t status_pos = content.find("**Status**:");
+                if (status_pos != std::string::npos) {
+                    size_t line_end = content.find('\n', status_pos);
+                    std::string new_status_line = "**Status**: " + display_status;
+                    if (display_status == "Done" || display_status == "Rejected") {
+                        auto now = std::chrono::system_clock::now();
+                        auto now_time_t = std::chrono::system_clock::to_time_t(now);
+                        std::tm const now_tm = *std::localtime(&now_time_t);
+                        char date_buf[32];
+                        std::strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &now_tm);
+                        new_status_line += "  \n**Resolution Date**: " + std::string(date_buf);
+                    }
+                    content.replace(status_pos, (line_end == std::string::npos ? content.size() - status_pos : line_end - status_pos), new_status_line);
+                }
+
+                // Append resolution summary if provided
+                if (!p.resolution_summary.empty()) {
+                    if (content.find("## Resolution & Outcome Summary") == std::string::npos) {
+                        content += "\n\n---\n\n## Resolution & Outcome Summary\n\n" + p.resolution_summary + "\n";
+                    } else {
+                        content += "\n" + p.resolution_summary + "\n";
+                    }
+                }
+
+                // Write file back
+                {
+                    std::ofstream out(resolved);
+                    if (!out.is_open()) {
+                        return std::format(R"({{"status":"error","message":"Failed to write updated file: {}"}})", resolved);
+                    }
+                    out << content;
+                }
+
+                std::filesystem::path current_path(resolved);
+                std::filesystem::path new_path = current_path;
+
+                if (display_status == "Done") {
+                    std::string filename = current_path.filename().string();
+                    if (!filename.starts_with("done_")) {
+                        new_path = current_path.parent_path() / ("done_" + filename);
+                        std::error_code ec;
+                        std::filesystem::rename(current_path, new_path, ec);
+                        if (ec) {
+                            new_path = current_path;
+                        }
+                    }
+                }
+
+                return std::format(
+                    R"({{"status":"success","original_path":"{}","new_path":"{}","updated_status":"{}"}})",
+                    resolved, new_path.string(), display_status
+                );
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "terminal"
+    );
+    register_function("terminal", update_inbox_item_def);
+    register_function("editor", update_inbox_item_def);
+
+    function_definition const announce_completion_def(
+        "announce_completion",
+        "Speaks a completion announcement using macOS say command without robotic -v flags, or desktop notification.",
+        R"mcp({"type":"object","properties":{"message":{"type":"string","description":"Phrase to announce (e.g. 'Build succeeded and unit tests passed')"}},"required":["message"]})mcp",
+        [](const std::string& params) -> std::string {
+            try {
+                mcp_announce_completion_params p{};
+                auto err = glz::read_json(p, params);
+                if (err || p.message.empty()) {
+                    return R"({"status":"error","message":"message parameter is required"})";
+                }
+
+                if (!rouen::platform::is_windows) {
+                    std::string clean_msg = p.message;
+                    std::string escaped;
+                    for (char c : clean_msg) {
+                        if (c == '"' || c == '\\' || c == '$' || c == '`') escaped.push_back('\\');
+                        escaped.push_back(c);
+                    }
+                    ProcessHelper::executeCommand("say \"" + escaped + "\" &");
+                }
+                return std::format(R"({{"status":"success","message":"{}"}})", p.message);
+            } catch (const std::exception& e) {
+                return std::format(R"({{"status":"error","message":"{}"}})", e.what());
+            }
+        },
+        "terminal"
+    );
+    register_function("terminal", announce_completion_def);
+    register_function("editor", announce_completion_def);
 
 
     // Register YouTube search videos function

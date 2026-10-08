@@ -976,4 +976,63 @@ TEST(MCPTest, RealAIFixWithAIDispatchLoop) {
     std::filesystem::remove(test_fix_path);
 }
 
+TEST(MCPTest, ProcessHelperExecuteWithTimeout) {
+    // Normal command
+    auto res1 = ProcessHelper::executeCommandWithTimeout("echo 'hello from test'");
+    EXPECT_EQ(res1.exit_code, 0);
+    EXPECT_FALSE(res1.timed_out);
+    EXPECT_TRUE(res1.output.find("hello from test") != std::string::npos);
+
+    // Timeout command
+    auto res2 = ProcessHelper::executeCommandWithTimeout("sleep 3", "", std::chrono::seconds(1));
+    EXPECT_TRUE(res2.timed_out);
+
+    // Truncation check
+    auto res3 = ProcessHelper::executeCommandWithTimeout("yes 'abcdefghijklmnopqrstuvwxyz' | head -n 5000", "", std::chrono::seconds(5), 1024);
+    EXPECT_LE(res3.output.size(), 2048u);
+    EXPECT_TRUE(res3.output.find("truncated") != std::string::npos);
+}
+
+TEST(MCPTest, EngineeringToolsRegistered) {
+    mcp_service mcp;
+    EXPECT_TRUE(mcp.has_function("run_unit_tests"));
+    EXPECT_TRUE(mcp.has_function("build_and_deploy"));
+    EXPECT_TRUE(mcp.has_function("update_inbox_item"));
+    EXPECT_TRUE(mcp.has_function("announce_completion"));
+}
+
+TEST(MCPTest, UpdateInboxItemLifecycle) {
+    mcp_service mcp;
+    std::filesystem::path temp_dir = std::filesystem::temp_directory_path() / "rouen_inbox_test";
+    std::filesystem::create_directories(temp_dir);
+    std::filesystem::path test_inbox_file = temp_dir / "2026-10-08-feat-sample-test.md";
+
+    {
+        std::ofstream out(test_inbox_file);
+        out << "# Feature: Sample Test\n\n**Status**: Open\n\n## 1. Description\nSome description.\n";
+    }
+
+    std::string params = std::format(
+        "{{\"file_path\":\"{}\",\"status\":\"done\",\"resolution_summary\":\"Completed all steps successfully.\"}}",
+        test_inbox_file.string()
+    );
+
+    auto exec_res = mcp.execute_function("update_inbox_item", params);
+    EXPECT_TRUE(exec_res.success) << "Execution error: " << exec_res.error_message;
+
+    std::filesystem::path expected_done_file = temp_dir / "done_2026-10-08-feat-sample-test.md";
+    EXPECT_TRUE(std::filesystem::exists(expected_done_file));
+
+    std::ifstream in(expected_done_file);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    std::string content = buf.str();
+
+    EXPECT_TRUE(content.find("**Status**: Done") != std::string::npos);
+    EXPECT_TRUE(content.find("## Resolution & Outcome Summary") != std::string::npos);
+    EXPECT_TRUE(content.find("Completed all steps successfully.") != std::string::npos);
+
+    std::filesystem::remove_all(temp_dir);
+}
+
 
