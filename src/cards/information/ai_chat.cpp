@@ -1431,7 +1431,10 @@ namespace rouen::cards {
                         internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
                         return res;
                     },
-                    "user", model_name, search_mode_str, target_persona->temperature, nullptr, &function_schemas
+                    "user", model_name, search_mode_str, target_persona->temperature, nullptr, &function_schemas,
+                    target_persona->get_effective_thinking_level(),
+                    target_persona->max_tool_iterations,
+                    target_persona->max_output_tokens
                 );
             }, target_llm.instance_);
 
@@ -1691,7 +1694,10 @@ namespace rouen::cards {
                                     internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
                                     return res;
                                 },
-                                "user", active_model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas
+                                "user", active_model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas,
+                                active_persona.get_effective_thinking_level(),
+                                active_persona.max_tool_iterations,
+                                active_persona.max_output_tokens
                             );
                         }, local_llm.instance_);
                     } catch (const std::exception& primary_err) {
@@ -1723,7 +1729,10 @@ namespace rouen::cards {
                                                 internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
                                                 return res;
                                             },
-                                            "user", "grok-3-latest", "", active_persona.temperature, &conversation_for_llm, &function_schemas
+                                            "user", "grok-3-latest", "", active_persona.temperature, &conversation_for_llm, &function_schemas,
+                                            active_persona.get_effective_thinking_level(),
+                                            active_persona.max_tool_iterations,
+                                            active_persona.max_output_tokens
                                         );
                                     }
                                 }

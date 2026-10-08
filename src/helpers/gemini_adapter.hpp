@@ -143,10 +143,17 @@ namespace rouen::helpers {
         std::string api_key_;
         std::string model_;
         std::string thinking_level_{};
+        int max_output_tokens_{4096};
         std::vector<Message> conversation_;
         static inline std::mutex global_rate_limit_mutex_;
         static inline std::chrono::steady_clock::time_point global_last_request_time_{};
         static constexpr auto min_request_interval_ = std::chrono::milliseconds(1500);
+
+    public:
+        void set_max_output_tokens(int tokens) { max_output_tokens_ = tokens; }
+        [[nodiscard]] int get_max_output_tokens() const { return max_output_tokens_; }
+
+    private:
 
         void wait_min_time() {
             std::lock_guard<std::mutex> lock(global_rate_limit_mutex_);
@@ -187,9 +194,10 @@ namespace rouen::helpers {
             const std::vector<Message>& conversation,
             [[maybe_unused]] float temperature = 0.45f,
             bool enable_search = false,
-            std::string_view thinking_level = ""
+            std::string_view thinking_level = "",
+            int max_output_tokens = 0
         ) const {
-            return build_gemini_request(conversation, temperature, {}, enable_search, thinking_level);
+            return build_gemini_request(conversation, temperature, {}, enable_search, thinking_level, max_output_tokens);
         }
 
         // Enhanced method with function calling support
@@ -198,7 +206,8 @@ namespace rouen::helpers {
             [[maybe_unused]] float temperature,
             const std::vector<std::string>& function_schemas,
             bool enable_search = false,
-            std::string_view thinking_level = ""
+            std::string_view thinking_level = "",
+            int max_output_tokens = 0
         ) const {
             std::string json = "{\"contents\":[";
             
@@ -295,8 +304,9 @@ namespace rouen::helpers {
                 json += "]}";
             }
             
+            int const eff_tokens = max_output_tokens > 0 ? max_output_tokens : max_output_tokens_;
             std::string const eff_thinking = !thinking_level.empty() ? std::string(thinking_level) : thinking_level_;
-            json += "],\"generationConfig\":{\"maxOutputTokens\":4096";
+            json += std::format("],\"generationConfig\":{{\"maxOutputTokens\":{}", eff_tokens);
             if (!eff_thinking.empty() && eff_thinking != "off") {
                 int budget = -1;
                 if (eff_thinking == "minimal") budget = 512;
@@ -637,7 +647,9 @@ namespace rouen::helpers {
             [[maybe_unused]] float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
             const std::vector<std::string>* function_schemas = nullptr,
-            std::string_view thinking_level = ""
+            std::string_view thinking_level = "",
+            int max_iterations = 25,
+            int max_output_tokens = 8192
         ) {
             wait_min_time();
             
@@ -678,16 +690,16 @@ namespace rouen::helpers {
             std::string final_text;
             bool keep_calling = true;
             int iterations = 0;
-            const int max_iterations = 5; // Prevent infinite loops
+            const int eff_max_iterations = max_iterations > 0 ? max_iterations : 25;
             
-            while (keep_calling && iterations < max_iterations) {
+            while (keep_calling && iterations < eff_max_iterations) {
                 iterations++;
                 wait_min_time();
                 
                 // Build Gemini API request using current_conversation and function schemas
                 std::string request_body = function_schemas ? 
-                    build_gemini_request(current_conversation, temperature, *function_schemas, enable_search, thinking_level) :
-                    build_gemini_request(current_conversation, temperature, enable_search, thinking_level);
+                    build_gemini_request(current_conversation, temperature, *function_schemas, enable_search, thinking_level, max_output_tokens) :
+                    build_gemini_request(current_conversation, temperature, enable_search, thinking_level, max_output_tokens);
 
                 CONFIG_DEBUG_FMT("Sending Gemini request (iteration {}) to: {}", iterations, url);
 
@@ -817,6 +829,29 @@ namespace rouen::helpers {
                 }
             }
             
+            // If the loop finished due to hitting the iteration limit while still calling tools,
+            // execute a final synthesis turn without tools so the model synthesizes its findings.
+            if (keep_calling && iterations >= eff_max_iterations && final_text.empty()) {
+                CONFIG_WARN_FMT("Reached max_iterations ({}), requesting final synthesis without tools...", eff_max_iterations);
+                try {
+                    wait_min_time();
+                    std::string synth_req = build_gemini_request(current_conversation, temperature, enable_search, thinking_level, max_output_tokens);
+                    std::string synth_res = do_post(url, synth_req, [](auto header_setter) {
+                        header_setter("Content-Type: application/json");
+                    });
+                    auto synth_data = parse_gemini_response_full(synth_res);
+                    if (!synth_data.candidates.empty()) {
+                        for (const auto& part : synth_data.candidates[0].content.parts) {
+                            if (!part.text.empty()) {
+                                final_text += part.text;
+                            }
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    CONFIG_WARN_FMT("Final synthesis turn error: {}", e.what());
+                }
+            }
+
             // Fallback if final_text is empty after function calling
             if (final_text.empty()) {
                 for (auto it = current_conversation.rbegin(); it != current_conversation.rend(); ++it) {

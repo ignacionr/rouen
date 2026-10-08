@@ -658,4 +658,191 @@ TEST(PersonaManagerTest, AutonomousEngineerToolFilteringAndCategorization) {
     EXPECT_TRUE(allows_tool(*eng_p, "create_card", "deck"));
 }
 
+TEST(GeminiAdapterTest, ConfigurableMaxOutputTokensInRequest) {
+    GeminiAdapter adapter("dummy_api_key");
+    std::vector<GeminiAdapter::Message> conversation;
+    conversation.emplace_back("user", "Write a large C++ file");
+    
+    // Test with explicit max_output_tokens = 16384
+    std::string request = adapter.build_gemini_request(conversation, 0.2f, false, "high", 16384);
+    
+    glz::json_t doc;
+    auto err = glz::read_json(doc, request);
+    ASSERT_FALSE(err) << glz::format_error(err, request);
+    
+    ASSERT_TRUE(doc.contains("generationConfig"));
+    auto gen_config = doc["generationConfig"];
+    EXPECT_TRUE(gen_config.contains("maxOutputTokens"));
+    EXPECT_EQ(gen_config["maxOutputTokens"].get<double>(), 16384.0);
+}
+
+TEST(GeminiAdapterTest, SupportsConfigurableLoopDepthBeyondDefault) {
+    GeminiAdapter adapter("dummy_api_key");
+    int turn = 0;
+    
+    // Simulate 7 consecutive tool calls followed by final answer on turn 8
+    auto mock_post = [&](const std::string&, const std::string&, auto) -> std::string {
+        turn++;
+        if (turn <= 7) {
+            return std::format(R"({{
+                "candidates": [{{
+                    "content": {{
+                        "parts": [{{
+                            "functionCall": {{
+                                "name": "step_tool",
+                                "args": {{"step": {}}}
+                            }}
+                        }}]
+                    }}
+                }}]
+            }})", turn);
+        } else {
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": "Completed all 7 autonomous steps successfully."
+                        }]
+                    }
+                }]
+            })";
+        }
+    };
+
+    int executed_steps = 0;
+    auto mock_executor = [&](const std::string& name, const std::string&) -> std::string {
+        EXPECT_EQ(name, "step_tool");
+        executed_steps++;
+        return std::format(R"({{"status":"success","step":{}}})", executed_steps);
+    };
+
+    std::vector<std::string> schemas = {
+        R"({"name":"step_tool","description":"Perform step","parameters":{"type":"object"}})"
+    };
+
+    // Configure max_iterations = 10 (exceeding the old hardcoded 5)
+    auto resp = adapter.sendMessageWithFunctionCalling(
+        "Execute 7 steps",
+        mock_post,
+        mock_executor,
+        "user",
+        "gemini-3.8-flash",
+        "",
+        0.2f,
+        nullptr,
+        &schemas,
+        "high",
+        10,
+        16384
+    );
+
+    EXPECT_EQ(executed_steps, 7);
+    EXPECT_EQ(turn, 8);
+    EXPECT_FALSE(resp.choices.empty());
+    EXPECT_EQ(resp.choices[0].message.content, "Completed all 7 autonomous steps successfully.");
+}
+
+TEST(GeminiAdapterTest, SynthesizesResponseWhenMaxIterationsReached) {
+    GeminiAdapter adapter("dummy_api_key");
+    int turn = 0;
+    bool received_synthesis_call = false;
+
+    auto mock_post = [&](const std::string&, const std::string& body, auto) -> std::string {
+        turn++;
+        if (turn <= 2) {
+            // Turns 1 & 2: model attempts tool calls
+            return std::format(R"({{
+                "candidates": [{{
+                    "content": {{
+                        "parts": [{{
+                            "functionCall": {{
+                                "name": "step_tool",
+                                "args": {{"step": {}}}
+                            }}
+                        }}]
+                    }}
+                }}]
+            }})", turn);
+        } else {
+            // Turn 3: Final synthesis turn! Must NOT have tools in the request
+            glz::json_t req_doc;
+            auto err = glz::read_json(req_doc, body);
+            if (!err) {
+                // Verified tools are omitted so model cannot call more tools
+                EXPECT_FALSE(req_doc.contains("tools"));
+            }
+            received_synthesis_call = true;
+            return R"({
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "text": "Autonomous report: steps 1 and 2 completed with verified status."
+                        }]
+                    }
+                }]
+            })";
+        }
+    };
+
+    int executed_steps = 0;
+    auto mock_executor = [&](const std::string&, const std::string&) -> std::string {
+        executed_steps++;
+        return std::format(R"({{"status":"success","step":{}}})", executed_steps);
+    };
+
+    std::vector<std::string> schemas = {
+        R"({"name":"step_tool","description":"Perform step","parameters":{"type":"object"}})"
+    };
+
+    // Configure max_iterations = 2 to trigger turn ceiling
+    auto resp = adapter.sendMessageWithFunctionCalling(
+        "Execute 2 steps and stop",
+        mock_post,
+        mock_executor,
+        "user",
+        "gemini-3.8-flash",
+        "",
+        0.2f,
+        nullptr,
+        &schemas,
+        "high",
+        2,
+        8192
+    );
+
+    EXPECT_EQ(executed_steps, 2);
+    EXPECT_TRUE(received_synthesis_call);
+    EXPECT_FALSE(resp.choices.empty());
+    // Crucial: Must NOT return generic "I have completed the requested operation."
+    EXPECT_NE(resp.choices[0].message.content, "I have completed the requested operation.");
+    EXPECT_EQ(resp.choices[0].message.content, "Autonomous report: steps 1 and 2 completed with verified status.");
+}
+
+TEST(PersonaManagerTest, AutonomousEngineerExtendedIterationsAndTokens) {
+    auto& pm = PersonaManager::instance();
+    const Persona* eng_p = nullptr;
+    const Persona* arch_p = nullptr;
+    const Persona* def_p = nullptr;
+
+    for (const auto& p : pm.get_personas()) {
+        if (p.name == "Autonomous Engineer") eng_p = &p;
+        else if (p.name == "Code & Git Architect") arch_p = &p;
+        else if (p.name == "Rouen Assistant") def_p = &p;
+    }
+
+    ASSERT_NE(eng_p, nullptr);
+    ASSERT_NE(arch_p, nullptr);
+    ASSERT_NE(def_p, nullptr);
+
+    EXPECT_EQ(eng_p->max_tool_iterations, 50);
+    EXPECT_EQ(eng_p->max_output_tokens, 16384);
+
+    EXPECT_EQ(arch_p->max_tool_iterations, 50);
+    EXPECT_EQ(arch_p->max_output_tokens, 16384);
+
+    EXPECT_EQ(def_p->max_tool_iterations, 10);
+    EXPECT_EQ(def_p->max_output_tokens, 8192);
+}
+
+
 

@@ -25,6 +25,8 @@ namespace rouen::helpers {
         std::vector<std::string> allowed_personas;
         float temperature{0.7f};
         std::string thinking_level{};
+        int max_tool_iterations{10};
+        int max_output_tokens{8192};
 
         [[nodiscard]] std::string get_effective_thinking_level() const {
             if (!thinking_level.empty()) {
@@ -47,7 +49,9 @@ namespace rouen::helpers {
                 "enable_search", &T::enable_search,
                 "allowed_personas", &T::allowed_personas,
                 "temperature", &T::temperature,
-                "thinking_level", &T::thinking_level
+                "thinking_level", &T::thinking_level,
+                "max_tool_iterations", &T::max_tool_iterations,
+                "max_output_tokens", &T::max_output_tokens
             );
         };
     };
@@ -128,7 +132,7 @@ namespace rouen::helpers {
             if (active_persona_index_ < personas_.size()) {
                 return personas_[active_persona_index_];
             }
-            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high"};
+            static Persona fallback{"Default Assistant", "Fallback persona", {"terminal", "editor", "deck", "adaptive_card", "wikipedia", "youtube", "git", "calendar", "weather", "alarm", "pomodoro", "notes", "contacts"}, "You are a helpful assistant.", "Default", false, {}, 0.7f, "high", 10, 8192};
             return fallback;
         }
 
@@ -403,6 +407,8 @@ namespace rouen::helpers {
             default_p.enable_search = false;
             default_p.temperature = 0.7f;
             default_p.thinking_level = "high";
+            default_p.max_tool_iterations = 10;
+            default_p.max_output_tokens = 8192;
             personas_.push_back(default_p);
 
             Persona eng_p;
@@ -414,6 +420,8 @@ namespace rouen::helpers {
             eng_p.enable_search = false;
             eng_p.temperature = 0.1f;
             eng_p.thinking_level = "high";
+            eng_p.max_tool_iterations = 50;
+            eng_p.max_output_tokens = 16384;
             eng_p.system_prompt = 
                 "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
                 "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
@@ -451,6 +459,8 @@ namespace rouen::helpers {
             dev_arch.enable_search = false;
             dev_arch.temperature = 0.2f;
             dev_arch.thinking_level = "low";
+            dev_arch.max_tool_iterations = 50;
+            dev_arch.max_output_tokens = 16384;
             personas_.push_back(dev_arch);
 
             Persona prod_lead;
@@ -706,6 +716,8 @@ namespace rouen::helpers {
                     eng_p.enable_search = false;
                     eng_p.temperature = 0.1f;
                     eng_p.thinking_level = "high";
+                    eng_p.max_tool_iterations = 50;
+                    eng_p.max_output_tokens = 16384;
                     eng_p.system_prompt = 
                         "You are Autonomous Engineer, a staff-level software engineer inside Rouen.\n"
                         "You autonomously implement features, fix bugs, and process ./inbox specifications end-to-end.\n\n"
@@ -730,9 +742,25 @@ namespace rouen::helpers {
                 }
 
                 // Ensure "Rouen Assistant" and "System Health & Metrics" include "mesh" and "contacts" if missing
-                // and migrate legacy Local MLX or Default personas to Gemini Flash
+                // and migrate legacy Local MLX or Default personas to Gemini Flash, upgrading engineering limits
                 bool modified = false;
                 for (auto& p : personas_) {
+                    if (p.max_tool_iterations <= 0) {
+                        p.max_tool_iterations = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 50 : 10;
+                        modified = true;
+                    }
+                    if (p.max_output_tokens <= 0) {
+                        p.max_output_tokens = (p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") ? 16384 : 8192;
+                        modified = true;
+                    }
+                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_tool_iterations < 50) {
+                        p.max_tool_iterations = 50;
+                        modified = true;
+                    }
+                    if ((p.name == "Autonomous Engineer" || p.name == "Code & Git Architect") && p.max_output_tokens < 16384) {
+                        p.max_output_tokens = 16384;
+                        modified = true;
+                    }
                     if (p.llm_config_name == "Local MLX" || p.llm_config_name == "Default" || p.llm_config_name.empty()) {
                         p.llm_config_name = "Gemini Flash";
                         modified = true;

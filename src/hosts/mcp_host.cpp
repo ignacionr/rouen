@@ -175,6 +175,7 @@ struct mcp_code_read_file_params {
     int start_line{1};
     int end_line{0};
     bool show_line_numbers{true};
+    std::string workspace_dir;
     struct glaze {
         using T = mcp_code_read_file_params;
         static constexpr auto value = glz::object(
@@ -182,7 +183,8 @@ struct mcp_code_read_file_params {
             "path", &T::path,
             "start_line", &T::start_line,
             "end_line", &T::end_line,
-            "show_line_numbers", &T::show_line_numbers
+            "show_line_numbers", &T::show_line_numbers,
+            "workspace_dir", &T::workspace_dir
         );
     };
 };
@@ -1154,10 +1156,20 @@ mcp_host::mcp_host() {
                 return R"(Error: Invalid params. Expected JSON: {"command":"...","working_directory":"optional"}.)";
             }
 
+            std::string work_dir = request.working_directory;
+            if (work_dir.empty()) {
+                try {
+                    auto cwd = std::filesystem::current_path();
+                    if (cwd == "/" || cwd == "C:\\" || cwd == "c:\\") {
+                        work_dir = helpers::CodeEditorService::instance().get_default_workspace();
+                    }
+                } catch (...) {}
+            }
+
             const std::string command_with_stderr = request.command + " 2>&1";
             std::string output;
-            if (!request.working_directory.empty()) {
-                output = ProcessHelper::executeCommandInDirectory(request.working_directory, command_with_stderr);
+            if (!work_dir.empty()) {
+                output = ProcessHelper::executeCommandInDirectory(work_dir, command_with_stderr);
             } else {
                 output = ProcessHelper::executeCommand(command_with_stderr);
             }
@@ -1579,7 +1591,7 @@ mcp_host::mcp_host() {
     function_definition const code_read_file_def(
         "code_read_file",
         "Read a line-bounded slice or full content of a file with line numbers. Inspect files before applying targeted patches.",
-        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"start_line":{"type":"integer","description":"1-based start line (default: 1)"},"end_line":{"type":"integer","description":"1-based end line (default: read to end or 2000 lines)"},"show_line_numbers":{"type":"boolean","description":"Include line numbers (default: true)"}},"required":[]})mcp",
+        R"mcp({"type":"object","properties":{"path":{"type":"string","description":"File path to read"},"file_path":{"type":"string","description":"Alternative parameter name for path"},"start_line":{"type":"integer","description":"1-based start line (default: 1)"},"end_line":{"type":"integer","description":"1-based end line (default: read to end or 2000 lines)"},"show_line_numbers":{"type":"boolean","description":"Include line numbers (default: true)"},"workspace_dir":{"type":"string","description":"Optional workspace directory"}},"required":[]})mcp",
         [](const std::string& params) -> std::string {
             try {
                 mcp_code_read_file_params req{};
@@ -1590,7 +1602,7 @@ mcp_host::mcp_host() {
                 if (p.empty()) {
                     return R"({"status":"error","message":"Missing required file path."})";
                 }
-                auto res = helpers::CodeEditorService::instance().read_file(p, req.start_line, req.end_line, req.show_line_numbers);
+                auto res = helpers::CodeEditorService::instance().read_file(p, req.start_line, req.end_line, req.show_line_numbers, req.workspace_dir);
                 std::string buffer;
                 static_cast<void>(glz::write_json(res, buffer));
                 return buffer;

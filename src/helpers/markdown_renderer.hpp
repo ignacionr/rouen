@@ -211,11 +211,12 @@ inline void render_flowing_markdown(
             ImGui::SameLine(0.0f, space_w);
         }
 
-        if (font != ImGui::GetFont()) ImGui::PushFont(font);
+        bool const font_pushed = (font && font != ImGui::GetFont());
+        if (font_pushed) ImGui::PushFont(font);
         ImGui::PushStyleColor(ImGuiCol_Text, color);
         ImGui::TextUnformatted(tok.text.data(), tok.text.data() + tok.text.size());
         ImGui::PopStyleColor();
-        if (font != ImGui::GetFont()) ImGui::PopFont();
+        if (font_pushed) ImGui::PopFont();
 
         if (tok.kind == adaptive_cards::span_kind::link) {
             if (ImGui::IsItemHovered()) {

@@ -535,7 +535,10 @@ namespace ignacionr
             [[maybe_unused]] std::string_view search_mode = {},
             float temperature = 0.45f,
             const std::vector<std::pair<std::string, std::string>>* full_conversation = nullptr,
-            const std::vector<std::string>* function_schemas = nullptr
+            const std::vector<std::string>* function_schemas = nullptr,
+            [[maybe_unused]] std::string_view thinking_level = "",
+            int max_iterations = 25,
+            int max_tokens = 8192
         ) {
             wait_min_time();
             
@@ -644,15 +647,16 @@ namespace ignacionr
             std::string final_text;
             bool keep_calling = true;
             int iterations = 0;
-            const int max_iterations = 10;
+            const int eff_max_iterations = max_iterations > 0 ? max_iterations : 25;
+            const int eff_max_tokens = max_tokens > 0 ? max_tokens : 8192;
             
-            while (keep_calling && iterations < max_iterations) {
+            while (keep_calling && iterations < eff_max_iterations) {
                 iterations++;
                 
                 std::string body = "{";
                 body += std::format("\"model\":\"{}\",", model);
                 body += std::format("\"temperature\":{},", temperature);
-                body += "\"max_tokens\":2048,";
+                body += std::format("\"max_tokens\":{},", eff_max_tokens);
                 body += std::format("\"messages\":{}", serialize_messages(chat_history));
                 
                 if (function_schemas && !function_schemas->empty()) {
@@ -722,7 +726,29 @@ namespace ignacionr
             }
             
             // If the loop finished and final_text is still empty (e.g. because we hit the max iterations),
-            // fallback to the last assistant message content in the conversation history
+            // execute a final synthesis turn without tools so the model synthesizes its findings
+            if (keep_calling && iterations >= eff_max_iterations && final_text.empty()) {
+                try {
+                    std::string synth_body = "{";
+                    synth_body += std::format("\"model\":\"{}\",", model);
+                    synth_body += std::format("\"temperature\":{},", temperature);
+                    synth_body += std::format("\"max_tokens\":{},", eff_max_tokens);
+                    synth_body += std::format("\"messages\":{}", serialize_messages(chat_history));
+                    synth_body += "}";
+                    auto r = do_post(url, synth_body, [this](auto header_setter){
+                        header_setter("Authorization: Bearer " + api_key_);
+                        header_setter("Content-Type: application/json");
+                    });
+                    OpenAIChatCompletion synth_response;
+                    if (!glz::read<glz::opts{.error_on_unknown_keys=false}>(synth_response, r)) {
+                        if (!synth_response.choices.empty()) {
+                            final_text = synth_response.choices[0].message.get_text();
+                        }
+                    }
+                } catch (...) {}
+            }
+
+            // Fallback to the last assistant message content in the conversation history
             if (final_text.empty()) {
                 for (auto it = chat_history.rbegin(); it != chat_history.rend(); ++it) {
                     if (it->role == "assistant" && !it->content.empty()) {

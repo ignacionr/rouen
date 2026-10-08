@@ -136,6 +136,64 @@ public:
         return s_instance;
     }
 
+    [[nodiscard]] std::string get_default_workspace() const {
+        const char* env_ws = std::getenv("ROUEN_WORKSPACE");
+        if (!env_ws) env_ws = std::getenv("DEVELOPMENT_SRC_DIR");
+        if (!env_ws) env_ws = std::getenv("GIT_SCAN_ROOT");
+        if (env_ws && *env_ws && std::filesystem::exists(env_ws)) {
+            return env_ws;
+        }
+        const char* home = std::getenv("HOME");
+        if (home && *home) {
+            std::filesystem::path const hp(home);
+            std::vector<std::filesystem::path> const candidates = {
+                hp / "src" / "rouen",
+                hp / "Development" / "rouen",
+                hp / "Projects" / "rouen"
+            };
+            for (const auto& c : candidates) {
+                if (std::filesystem::exists(c)) {
+                    return c.string();
+                }
+            }
+        }
+        try {
+            auto cwd = std::filesystem::current_path();
+            if (cwd != "/" && cwd != "C:\\" && cwd != "c:\\") {
+                return cwd.string();
+            }
+        } catch (...) {}
+        return "";
+    }
+
+    [[nodiscard]] std::string resolve_path(const std::string& path, const std::string& workspace_dir = "") const {
+        std::string expanded = ProcessHelper::expandTilde(path);
+        std::filesystem::path p(expanded);
+        if (p.is_absolute() && std::filesystem::exists(p)) {
+            return expanded;
+        }
+        if (!workspace_dir.empty()) {
+            std::filesystem::path ws(ProcessHelper::expandTilde(workspace_dir));
+            auto candidate = ws / expanded;
+            if (std::filesystem::exists(candidate)) {
+                return candidate.string();
+            }
+        }
+        if (std::filesystem::exists(p)) {
+            return expanded;
+        }
+        if (!p.is_absolute()) {
+            std::string def_ws = get_default_workspace();
+            if (!def_ws.empty()) {
+                auto candidate = std::filesystem::path(def_ws) / expanded;
+                if (std::filesystem::exists(candidate)) {
+                    return candidate.string();
+                }
+            }
+        }
+        return expanded;
+    }
+
     /**
      * Read a line-bounded chunk of a file with optional 1-based line numbers.
      */
@@ -143,11 +201,12 @@ public:
         const std::string& path,
         int start_line = 1,
         int end_line = -1,
-        bool show_line_numbers = true
+        bool show_line_numbers = true,
+        const std::string& workspace_dir = ""
     ) {
         std::lock_guard<std::mutex> lock(mutex_);
         ReadFileResult result;
-        std::string resolved = ProcessHelper::expandTilde(path);
+        std::string resolved = resolve_path(path, workspace_dir);
         result.file_path = resolved;
 
         if (!std::filesystem::exists(resolved)) {
@@ -217,7 +276,13 @@ public:
     ) {
         std::lock_guard<std::mutex> lock(mutex_);
         WriteFileResult result;
-        std::string resolved = ProcessHelper::expandTilde(path);
+        std::string resolved = resolve_path(path, workspace_dir);
+        if (!std::filesystem::path(resolved).is_absolute() && !std::filesystem::exists(resolved)) {
+            std::string def_ws = !workspace_dir.empty() ? workspace_dir : get_default_workspace();
+            if (!def_ws.empty()) {
+                resolved = (std::filesystem::path(def_ws) / resolved).string();
+            }
+        }
         result.file_path = resolved;
 
         std::filesystem::path p(resolved);
@@ -307,7 +372,7 @@ public:
     ) {
         std::lock_guard<std::mutex> lock(mutex_);
         ApplyPatchResult result;
-        std::string resolved = ProcessHelper::expandTilde(path);
+        std::string resolved = resolve_path(path, workspace_dir);
         result.file_path = resolved;
 
         if (target_content.empty()) {
@@ -583,7 +648,7 @@ public:
         const std::string& description = "AI Staged Patch"
     ) {
         std::lock_guard<std::mutex> lock(mutex_);
-        std::string resolved = ProcessHelper::expandTilde(path);
+        std::string resolved = resolve_path(path, workspace_dir);
         if (!std::filesystem::exists(resolved)) return "";
 
         std::ifstream file(resolved, std::ios::binary);

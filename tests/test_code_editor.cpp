@@ -176,6 +176,21 @@ void test_self_correction_syntax_feedback() {
     std::filesystem::remove(test_cpp);
 }
 
+void test_resolve_path() {
+    std::cout << "\n--- Testing CodeEditorService::resolve_path & relative resolution ---\n";
+    auto& editor = rouen::helpers::CodeEditorService::instance();
+
+    // Verify resolving relative file inside current repo
+    std::string rel_path = "CMakeLists.txt";
+    std::string resolved = editor.resolve_path(rel_path);
+    test_helpers::assert_true(std::filesystem::exists(resolved), "Resolved CMakeLists.txt exists");
+
+    // Verify reading relative file
+    auto res = editor.read_file(rel_path, 1, 5);
+    test_helpers::assert_true(res.success, "read_file with relative path succeeded");
+    test_helpers::assert_true(!res.content.empty(), "Content is not empty");
+}
+
 int main() {
     std::cout << "========================================\n";
     std::cout << "Starting Code Editor Service Unit Tests \n";
@@ -185,6 +200,7 @@ int main() {
     test_write_file();
     test_apply_patch();
     test_self_correction_syntax_feedback();
+    test_resolve_path();
 
     std::cout << "\n🎉 ALL CODE EDITOR SERVICE TESTS PASSED!\n";
     return 0;
