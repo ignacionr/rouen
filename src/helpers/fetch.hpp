@@ -384,8 +384,8 @@ public:
             }
             
             if (http_code >= 400) {
-                HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
-                throw std::runtime_error("HTTP error " + std::to_string(http_code));
+                HTTP_ERROR_FMT("HTTP error: {} ({}) - {}", http_code, url, response);
+                throw std::runtime_error("HTTP error " + std::to_string(http_code) + (!response.empty() ? ": " + response : ""));
             }
             
             // Only log response size if we're using our internal response string
@@ -493,8 +493,8 @@ public:
             }
             
             if (http_code >= 400) {
-                HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
-                throw std::runtime_error("HTTP error " + std::to_string(http_code));
+                HTTP_ERROR_FMT("HTTP error: {} ({}) - {}", http_code, url, response);
+                throw std::runtime_error("HTTP error " + std::to_string(http_code) + (!response.empty() ? ": " + response : ""));
             }
             
             // Only log response size if we're using our internal response string
@@ -603,8 +603,8 @@ public:
             }
             
             if (http_code >= 400) {
-                HTTP_ERROR_FMT("HTTP error: {} ({})", http_code, url);
-                throw std::runtime_error("HTTP error " + std::to_string(http_code));
+                HTTP_ERROR_FMT("HTTP error: {} ({}) - {}", http_code, url, response);
+                throw std::runtime_error("HTTP error " + std::to_string(http_code) + (!response.empty() ? ": " + response : ""));
             }
             
             // Only log response size if we're using our internal response string
@@ -729,7 +729,7 @@ public:
                     HTTP_DEBUG_FMT("Server error response body: {}", response.empty() ? "(empty)" : response.substr(0, 500));
                 }
                 
-                throw std::runtime_error("HTTP error " + std::to_string(http_code));
+                throw std::runtime_error("HTTP error " + std::to_string(http_code) + (!response.empty() ? ": " + response : ""));
             }
             
             // Only log response size if we're using our internal response string
@@ -837,8 +837,8 @@ public:
             }
             
             if (response_code >= 400) {
-                HTTP_ERROR_FMT("HTTP error: {} ({})", response_code, url);
-                throw std::runtime_error("HTTP error " + std::to_string(response_code));
+                HTTP_ERROR_FMT("HTTP error: {} ({}) - {}", response_code, url, response);
+                throw std::runtime_error("HTTP error " + std::to_string(response_code) + (!response.empty() ? ": " + response : ""));
             }
             
             HTTP_INFO_FMT("Putting to URL: {}", url);

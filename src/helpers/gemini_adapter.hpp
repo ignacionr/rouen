@@ -297,8 +297,22 @@ namespace rouen::helpers {
             
             std::string const eff_thinking = !thinking_level.empty() ? std::string(thinking_level) : thinking_level_;
             json += "],\"generationConfig\":{\"maxOutputTokens\":4096";
-            if (!eff_thinking.empty()) {
-                json += std::format(",\"thinking_level\":\"{}\"", eff_thinking);
+            if (!eff_thinking.empty() && eff_thinking != "off") {
+                int budget = -1;
+                if (eff_thinking == "minimal") budget = 512;
+                else if (eff_thinking == "low") budget = 1024;
+                else if (eff_thinking == "medium") budget = 2048;
+                else if (eff_thinking == "high") budget = 4096;
+                else {
+                    try {
+                        budget = std::stoi(eff_thinking);
+                    } catch (...) {
+                        budget = -1;
+                    }
+                }
+                if (budget != 0) {
+                    json += std::format(",\"thinkingConfig\":{{\"thinkingBudget\":{}}}", budget);
+                }
             }
             json += "}";
             

@@ -101,8 +101,9 @@ TEST(GeminiAdapterTest, SerializesThinkingLevelWhenSpecified) {
     auto err_high = glz::read_json(doc_high, request_high);
     ASSERT_FALSE(err_high) << glz::format_error(err_high, request_high);
     ASSERT_TRUE(doc_high.contains("generationConfig"));
-    EXPECT_TRUE(doc_high["generationConfig"].contains("thinking_level"));
-    EXPECT_EQ(doc_high["generationConfig"]["thinking_level"].get<std::string>(), "high");
+    EXPECT_TRUE(doc_high["generationConfig"].contains("thinkingConfig"));
+    EXPECT_EQ(doc_high["generationConfig"]["thinkingConfig"]["thinkingBudget"].get<double>(), 4096.0);
+    EXPECT_FALSE(doc_high["generationConfig"].contains("thinking_level"));
     EXPECT_FALSE(doc_high["generationConfig"].contains("temperature"));
 
     // When thinking_level is explicitly passed to build_gemini_request
@@ -110,7 +111,8 @@ TEST(GeminiAdapterTest, SerializesThinkingLevelWhenSpecified) {
     glz::json_t doc_override;
     auto err_override = glz::read_json(doc_override, request_override);
     ASSERT_FALSE(err_override) << glz::format_error(err_override, request_override);
-    EXPECT_EQ(doc_override["generationConfig"]["thinking_level"].get<std::string>(), "minimal");
+    EXPECT_TRUE(doc_override["generationConfig"].contains("thinkingConfig"));
+    EXPECT_EQ(doc_override["generationConfig"]["thinkingConfig"]["thinkingBudget"].get<double>(), 512.0);
 
     // When thinking_level is cleared/empty
     adapter.set_thinking_level("");
@@ -118,6 +120,7 @@ TEST(GeminiAdapterTest, SerializesThinkingLevelWhenSpecified) {
     glz::json_t doc_empty;
     auto err_empty = glz::read_json(doc_empty, request_empty);
     ASSERT_FALSE(err_empty) << glz::format_error(err_empty, request_empty);
+    EXPECT_FALSE(doc_empty["generationConfig"].contains("thinkingConfig"));
     EXPECT_FALSE(doc_empty["generationConfig"].contains("thinking_level"));
 }
 
