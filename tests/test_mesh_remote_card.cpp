@@ -187,6 +187,20 @@ TEST(MeshRemoteCardTest, ActionDispatchTest) {
     EXPECT_NE(req_json.find("\"refresh\""), std::string::npos);
 }
 
+// 7b. Create Card Request Test: Verify proper JSON escaping for paths with backslashes
+TEST(MeshRemoteCardTest, CreateCardRequestJsonTest) {
+    std::string path_uri = "dir:C:\\WINDOWS\\system32";
+    std::string req_json = build_create_card_request_json(path_uri);
+
+    glz::json_t doc;
+    auto err = glz::read_json(doc, req_json);
+    EXPECT_EQ(err, glz::error_code::none);
+    EXPECT_TRUE(doc.holds<glz::json_t::object_t>());
+    auto& obj = doc.get<glz::json_t::object_t>();
+    ASSERT_TRUE(obj.find("uri") != obj.end());
+    EXPECT_EQ(obj["uri"].get<std::string>(), "dir:C:\\WINDOWS\\system32");
+}
+
 // 8. JSON Diff Preservation Test: Verify unchanged JSON skips layout rebuild
 TEST(MeshRemoteCardTest, JsonDiffPreservationTest) {
     mesh_card_proxy proxy("ws-01", "sysinfo", false);

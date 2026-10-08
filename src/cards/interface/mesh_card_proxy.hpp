@@ -284,6 +284,14 @@ inline std::string build_action_request_json(const std::string& target_uri, cons
     return out;
 }
 
+inline std::string build_create_card_request_json(const std::string& target_uri) {
+    glz::json_t body;
+    body["uri"] = target_uri;
+    std::string out;
+    (void)glz::write_json(body, out);
+    return out;
+}
+
 // 5. Remote Card Status
 enum class remote_card_status {
     connecting,
@@ -482,7 +490,7 @@ private:
                 // If remote deck doesn't have the card open, spawn it via POST /api/cards
                 if (obj.find("error") != obj.end()) {
                     std::string create_url = std::format("{}/api/cards", local_proxy_url_);
-                    std::string create_body = std::format(R"({{"uri":"{}"}})", target_card_uri_);
+                    std::string create_body = build_create_card_request_json(target_card_uri_);
                     try {
                         client.post(create_url, create_body, {{"Content-Type", "application/json"}});
                         resp = client(url);
