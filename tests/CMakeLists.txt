@@ -1040,6 +1040,12 @@ add_executable(test_code_editor
 target_link_libraries(test_code_editor PRIVATE rouen_test_modules SQLite::SQLite3)
 add_test(NAME CodeEditorTest COMMAND test_code_editor)
 
+add_executable(test_workspace_rules
+    test_workspace_rules.cpp
+)
+target_link_libraries(test_workspace_rules PRIVATE rouen_test_modules SQLite::SQLite3)
+add_test(NAME WorkspaceRulesTest COMMAND test_workspace_rules)
+
 add_gtest_executable(test_editor_diagnostics test_editor_diagnostics.cpp)
 target_sources(test_editor_diagnostics PRIVATE ../src/fonts.cpp)
 target_link_libraries(test_editor_diagnostics PRIVATE imcolortextedit ${SDL3_LIBRARIES})

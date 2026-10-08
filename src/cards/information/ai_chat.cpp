@@ -28,6 +28,7 @@
 #include "../../helpers/string_helper.hpp"
 #include "../../helpers/notify_service.hpp"
 #include "../../helpers/persona_manager.hpp"
+#include "../../helpers/workspace_rules.hpp"
 #include "../../helpers/debug.hpp"
 #include "../../fonts.hpp"
 #include "../../registrar.hpp"
@@ -1335,6 +1336,10 @@ namespace rouen::cards {
         if (!modular_instr.empty()) {
             target_llm.add_instructions(modular_instr);
         }
+        std::string const ws_rules = helpers::load_workspace_rules("", args.message);
+        if (!ws_rules.empty()) {
+            target_llm.add_instructions(ws_rules);
+        }
 
         std::vector<std::string> function_schemas;
         if (mcp_service_) {
@@ -1658,6 +1663,10 @@ namespace rouen::cards {
                     if (!modular_instr.empty()) {
                         local_llm.add_instructions(modular_instr);
                     }
+                    std::string const ws_rules = helpers::load_workspace_rules("", message);
+                    if (!ws_rules.empty()) {
+                        local_llm.add_instructions(ws_rules);
+                    }
 
                     // Create conversion from our message format to the format expected by sendMessage with mutex protection
                     std::vector<std::pair<std::string, std::string>> conversation_for_llm;
@@ -1712,6 +1721,9 @@ namespace rouen::cards {
                                 fallback_llm.add_instructions(active_persona.system_prompt);
                                 if (!modular_instr.empty()) {
                                     fallback_llm.add_instructions(modular_instr);
+                                }
+                                if (!ws_rules.empty()) {
+                                    fallback_llm.add_instructions(ws_rules);
                                 }
                                 if (std::holds_alternative<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_)) {
                                     auto& cppgpt_ptr = std::get<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_);
@@ -1837,6 +1849,10 @@ namespace rouen::cards {
             std::string const modular_instr = get_modular_mcp_instructions(active_persona.allowed_mcps);
             if (!modular_instr.empty()) {
                 async_llm_instance->add_instructions(modular_instr);
+            }
+            std::string const ws_rules = helpers::load_workspace_rules("", message);
+            if (!ws_rules.empty()) {
+                async_llm_instance->add_instructions(ws_rules);
             }
             
             async_context->llm_instance_copy = std::move(*async_llm_instance);
