@@ -297,6 +297,15 @@ namespace rouen::cards {
             // Model name
             if (settings.is_configured) {
                 ImGui::Text("Model: %s", settings.model_name.c_str());
+                if (fallback_active_.load()) {
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.2f, 1.0f)); // Orange/Yellow
+                    ImGui::Text("[Fallback Active: %s]", serving_model_name_.c_str());
+                    ImGui::PopStyleColor();
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Primary model rate limited or quota exhausted; failover active to %s", last_fallback_info_.c_str());
+                    }
+                }
             }
             
             bool speak_replies = notify_service::spoken_notifications_enabled();
@@ -1785,6 +1794,8 @@ namespace rouen::cards {
                     auto local_llm_opt = helpers::LLMConfig::create_llm_instance();
                     auto target_config = helpers::LLMConfig::get_current_config();
                     std::string const active_model_name = target_config.model_name;
+                    fallback_active_.store(false);
+                    serving_model_name_ = active_model_name;
                     if (!local_llm_opt) {
                         throw std::runtime_error("LLM configuration is incomplete");
                     }
@@ -1856,28 +1867,35 @@ namespace rouen::cards {
                         }, local_llm.instance_);
                     } catch (const std::exception& primary_err) {
                         std::string const err_str = primary_err.what();
-                        if ((err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) &&
-                            helpers::LLMConfig::is_configured("Grok Default")) {
-                            LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, "Primary LLM rate limited (429). Falling back to Grok Default...");
-                            auto fallback_llm_opt = helpers::LLMConfig::create_llm_instance("Grok Default");
-                            if (fallback_llm_opt) {
-                                auto& fallback_llm = *fallback_llm_opt;
-                                fallback_llm.add_instructions(time_instr);
-                                fallback_llm.add_instructions(active_persona.system_prompt);
-                                if (!modular_instr.empty()) {
-                                    fallback_llm.add_instructions(modular_instr);
-                                }
-                                if (!ws_rules.empty()) {
-                                    fallback_llm.add_instructions(ws_rules);
-                                }
-                                if (std::holds_alternative<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_)) {
-                                    auto& cppgpt_ptr = std::get<std::unique_ptr<ignacionr::cppgpt>>(fallback_llm.instance_);
-                                    if (cppgpt_ptr) {
-                                        chat_completion = cppgpt_ptr->sendMessageWithFunctionCalling(
+                        bool fallback_succeeded = false;
+                        if (err_str.find("429") != std::string::npos || err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || err_str.find("quota") != std::string::npos) {
+                            LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, std::format("Primary LLM rate limited or quota exhausted: {}. Checking for configured fallbacks...", err_str));
+                            std::vector<std::string> fallbacks = {"Gemini Flash", "OpenAI GPT-4", "Local MLX"};
+                            if (helpers::LLMConfig::is_configured("Grok Default")) {
+                                fallbacks.push_back("Grok Default");
+                            }
+                            for (const auto& fb_name : fallbacks) {
+                                if (fb_name == target_config.config_name) continue;
+                                if (!helpers::LLMConfig::is_configured(fb_name)) continue;
+                                auto fb_settings = helpers::LLMConfig::get_current_config(fb_name);
+                                if (fb_settings.api_key.empty() && fb_settings.provider != helpers::LLMConfig::Provider::CUSTOM) continue;
+
+                                LOG_COMPONENT("AIChat", LOG_LEVEL_INFO, std::format("Attempting fallback to '{}'...", fb_name));
+                                try {
+                                    auto fallback_llm_opt = helpers::LLMConfig::create_llm_instance(fb_name);
+                                    if (!fallback_llm_opt) continue;
+                                    auto& fallback_llm = *fallback_llm_opt;
+                                    fallback_llm.add_instructions(time_instr);
+                                    fallback_llm.add_instructions(active_persona.system_prompt);
+                                    if (!modular_instr.empty()) fallback_llm.add_instructions(modular_instr);
+                                    if (!ws_rules.empty()) fallback_llm.add_instructions(ws_rules);
+
+                                    chat_completion = std::visit([&](auto& adapter_ptr) -> ignacionr::ChatCompletion {
+                                        return adapter_ptr->sendMessageWithFunctionCalling(
                                             message,
                                             [fetcher, log_requests = log_requests_](const std::string& url, const std::string& body, auto header_setter) {
                                                 if (log_requests) {
-                                                    std::cerr << "[Grok Request] URL: " << url << "\n[Grok Body]: " << body << "\n";
+                                                    std::cerr << "[Fallback Request] URL: " << url << "\n[Fallback Body]: " << body << "\n";
                                                 }
                                                 return fetcher->post(url, body, header_setter);
                                             },
@@ -1886,15 +1904,26 @@ namespace rouen::cards {
                                                 internal_turn_count_.fetch_add(1, std::memory_order_relaxed);
                                                 return res;
                                             },
-                                            "user", "grok-3-latest", "", active_persona.temperature, &conversation_for_llm, &function_schemas,
+                                            "user", fb_settings.model_name, search_mode_str, active_persona.temperature, &conversation_for_llm, &function_schemas,
                                             active_persona.get_effective_thinking_level(),
                                             active_persona.max_tool_iterations,
                                             active_persona.max_output_tokens
                                         );
+                                    }, fallback_llm.instance_);
+
+                                    if (!chat_completion.choices.empty()) {
+                                        fallback_succeeded = true;
+                                        fallback_active_.store(true);
+                                        serving_model_name_ = fb_settings.model_name;
+                                        last_fallback_info_ = std::format("{} ({})", fb_name, fb_settings.model_name);
+                                        break;
                                     }
+                                } catch (const std::exception& fb_err) {
+                                    LOG_COMPONENT("AIChat", LOG_LEVEL_WARN, std::format("Fallback to '{}' failed: {}", fb_name, fb_err.what()));
                                 }
                             }
-                        } else {
+                        }
+                        if (!fallback_succeeded) {
                             throw;
                         }
                     }

@@ -89,6 +89,9 @@ namespace rouen::cards {
 
         std::optional<std::future<void>> pending_response_{};
         std::atomic<bool> waiting_for_response_{false};
+        std::atomic<bool> fallback_active_{false};
+        std::string serving_model_name_{};
+        std::string last_fallback_info_{};
         std::atomic<uint32_t> internal_turn_count_{0};
         std::atomic<bool> clear_input_on_response_{false};
         std::atomic<bool> cancel_execution_{false};

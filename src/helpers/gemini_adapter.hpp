@@ -9,8 +9,10 @@
 #include <thread>
 #include <stdexcept>
 #include <iostream>
+#include <functional>
 #include "debug.hpp"
 #include "cppgpt.hpp"
+#include "fetch.hpp"
 #include "glaze_include.hpp"
 
 namespace rouen::helpers {
@@ -150,6 +152,161 @@ namespace rouen::helpers {
         static constexpr auto min_request_interval_ = std::chrono::milliseconds(1500);
 
     public:
+        struct GeminiKeyVerificationResult {
+            bool is_valid{false};
+            bool is_paid_tier{false};
+            std::string project_container{};
+            std::string status_message{};
+        };
+
+        struct GeminiQuotaTelemetry {
+            bool is_quota_exhausted{false};
+            bool is_free_tier{false};
+            std::string quota_metric{};
+            std::string quota_id{};
+            std::string quota_value{};
+        };
+
+        static GeminiQuotaTelemetry parse_quota_failure(const std::string& error_json) {
+            GeminiQuotaTelemetry telemetry{};
+            if (error_json.find("RESOURCE_EXHAUSTED") != std::string::npos ||
+                error_json.find("429") != std::string::npos ||
+                error_json.find("quota") != std::string::npos ||
+                error_json.find("QuotaFailure") != std::string::npos) {
+                telemetry.is_quota_exhausted = true;
+            }
+            if (error_json.find("free_tier") != std::string::npos ||
+                error_json.find("FreeTier") != std::string::npos) {
+                telemetry.is_free_tier = true;
+            }
+            glz::json_t doc;
+            if (!glz::read_json(doc, error_json)) {
+                if (doc.contains("error") && doc["error"].contains("details")) {
+                    auto details = doc["error"]["details"];
+                    if (details.is_array()) {
+                        for (auto& item : details.get<std::vector<glz::json_t>>()) {
+                            if (item.contains("violations") && item["violations"].is_array()) {
+                                for (auto& v : item["violations"].get<std::vector<glz::json_t>>()) {
+                                    if (v.contains("quotaMetric")) {
+                                        telemetry.quota_metric = v["quotaMetric"].get<std::string>();
+                                    }
+                                    if (v.contains("quotaId")) {
+                                        telemetry.quota_id = v["quotaId"].get<std::string>();
+                                    }
+                                    if (v.contains("quotaValue")) {
+                                        telemetry.quota_value = v["quotaValue"].get<std::string>();
+                                    }
+                                    if (telemetry.quota_metric.find("free_tier") != std::string::npos ||
+                                        telemetry.quota_id.find("FreeTier") != std::string::npos) {
+                                        telemetry.is_free_tier = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return telemetry;
+        }
+
+        static GeminiKeyVerificationResult verify_key_tier(const std::string& api_key, std::function<std::string(const std::string&)> custom_fetcher = nullptr) {
+            GeminiKeyVerificationResult res{};
+            if (api_key.empty()) {
+                res.status_message = "API key is empty";
+                return res;
+            }
+            std::string probe_url = std::format("https://translate.googleapis.com/language/translate/v2?key={}", api_key);
+            std::string response;
+            try {
+                if (custom_fetcher) {
+                    response = custom_fetcher(probe_url);
+                } else {
+                    http::fetch fetcher{10};
+                    response = fetcher(probe_url);
+                }
+            } catch (const std::exception& e) {
+                response = e.what();
+            }
+
+            if (response.find("INVALID_ARGUMENT") != std::string::npos ||
+                response.find("API_KEY_INVALID") != std::string::npos ||
+                response.find("API key not valid") != std::string::npos ||
+                response.find("badRequest") != std::string::npos) {
+                res.is_valid = false;
+                res.status_message = "Invalid or unrecognized Google API key";
+                return res;
+            }
+
+            if (response.find("API_KEY_SERVICE_BLOCKED") != std::string::npos) {
+                res.is_valid = true;
+                res.is_paid_tier = false;
+                res.status_message = "AI Studio Free Tier API key (daily quotas apply)";
+                return res;
+            }
+
+            if (response.find("SERVICE_DISABLED") != std::string::npos) {
+                res.is_valid = true;
+                res.is_paid_tier = true;
+                res.status_message = "Verified Paid Tier 1 (Pay-As-You-Go) key";
+                glz::json_t doc;
+                if (!glz::read_json(doc, response)) {
+                    if (doc.contains("error") && doc["error"].contains("details")) {
+                        auto details = doc["error"]["details"];
+                        if (details.is_array()) {
+                            for (auto& item : details.get<std::vector<glz::json_t>>()) {
+                                if (item.contains("metadata") && item["metadata"].contains("consumer")) {
+                                    res.project_container = item["metadata"]["consumer"].get<std::string>();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!res.project_container.empty()) {
+                    res.status_message += " linked to " + res.project_container;
+                }
+                return res;
+            }
+
+            if (!response.empty() && response.find("\"error\":") == std::string::npos) {
+                res.is_valid = true;
+                res.is_paid_tier = true;
+                res.status_message = "Verified Tier 1 Google Cloud Project API key";
+                return res;
+            }
+
+            res.is_valid = true;
+            res.is_paid_tier = false;
+            res.status_message = "Active Google Gemini API key";
+            return res;
+        }
+
+    private:
+        static inline std::mutex model_exhaustion_mutex_;
+        static inline std::map<std::string, std::chrono::steady_clock::time_point> model_exhaustion_cache_;
+
+    public:
+        static void mark_model_exhausted(const std::string& model, std::chrono::seconds cooldown = std::chrono::seconds(1800)) {
+            std::lock_guard<std::mutex> lock(model_exhaustion_mutex_);
+            model_exhaustion_cache_[model] = std::chrono::steady_clock::now() + cooldown;
+        }
+
+        static bool is_model_exhausted(const std::string& model) {
+            std::lock_guard<std::mutex> lock(model_exhaustion_mutex_);
+            auto it = model_exhaustion_cache_.find(model);
+            if (it == model_exhaustion_cache_.end()) return false;
+            if (std::chrono::steady_clock::now() >= it->second) {
+                model_exhaustion_cache_.erase(it);
+                return false;
+            }
+            return true;
+        }
+
+        static void clear_model_exhaustion_cache() {
+            std::lock_guard<std::mutex> lock(model_exhaustion_mutex_);
+            model_exhaustion_cache_.clear();
+        }
+
         void set_max_output_tokens(int tokens) { max_output_tokens_ = tokens; }
         [[nodiscard]] int get_max_output_tokens() const { return max_output_tokens_; }
 
@@ -595,7 +752,17 @@ namespace rouen::helpers {
             bool request_ok = false;
             std::exception_ptr last_err;
 
-            for (const auto& try_model : candidates) {
+            std::vector<std::string> active_candidates;
+            for (const auto& c : candidates) {
+                if (!is_model_exhausted(c)) {
+                    active_candidates.push_back(c);
+                }
+            }
+            if (active_candidates.empty()) {
+                active_candidates = candidates;
+            }
+
+            for (const auto& try_model : active_candidates) {
                 auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                            try_model, api_key_);
                 for (int attempt = 0; attempt < 3; ++attempt) {
@@ -614,7 +781,8 @@ namespace rouen::helpers {
                         if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
                             err_str.find("quota") != std::string::npos || 
                             err_str.find("429") != std::string::npos) {
-                            CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                            mark_model_exhausted(try_model);
+                            CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), marked in cooldown cache. Trying next candidate...", try_model);
                             break;
                         }
                         bool const is_retryable = (err_str.find("503") != std::string::npos ||
@@ -740,7 +908,17 @@ namespace rouen::helpers {
                 bool request_ok = false;
                 std::exception_ptr last_err;
 
-                for (const auto& try_model : candidates) {
+                std::vector<std::string> active_candidates;
+                for (const auto& c : candidates) {
+                    if (!is_model_exhausted(c)) {
+                        active_candidates.push_back(c);
+                    }
+                }
+                if (active_candidates.empty()) {
+                    active_candidates = candidates;
+                }
+
+                for (const auto& try_model : active_candidates) {
                     auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                                try_model, api_key_);
                     for (int attempt = 0; attempt < 3; ++attempt) {
@@ -759,7 +937,8 @@ namespace rouen::helpers {
                             if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
                                 err_str.find("quota") != std::string::npos || 
                                 err_str.find("429") != std::string::npos) {
-                                CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), trying next candidate...", try_model);
+                                mark_model_exhausted(try_model);
+                                CONFIG_WARN_FMT("Model {} rate limited or quota exhausted (429/RESOURCE_EXHAUSTED), marked in cooldown cache. Trying next candidate...", try_model);
                                 break;
                             }
                             bool const is_retryable = (err_str.find("503") != std::string::npos ||

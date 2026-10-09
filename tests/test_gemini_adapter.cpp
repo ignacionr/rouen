@@ -473,6 +473,7 @@ TEST(CppGptTest, MergesSystemInstructionsInFunctionCallingCorrectly) {
 }
 
 TEST(GeminiAdapterTest, FallsBackOnQuotaExhausted) {
+    GeminiAdapter::clear_model_exhaustion_cache();
     GeminiAdapter adapter("test_key");
     std::vector<std::string> requested_urls;
     auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
@@ -588,6 +589,7 @@ TEST(GeminiAdapterTest, SerializesThoughtSignatureInFunctionCall) {
 }
 
 TEST(GeminiAdapterTest, FallsBackToGemini3FlashPreviewOn429) {
+    GeminiAdapter::clear_model_exhaustion_cache();
     GeminiAdapter adapter("test_key");
     std::vector<std::string> requested_urls;
 
@@ -981,6 +983,7 @@ TEST(PersonaManagerTest, PersonaArchitectRegistrationAndCapabilities) {
 }
 
 TEST(GeminiAdapterTest, ConfiguresGemini38AndExcludes35) {
+    GeminiAdapter::clear_model_exhaustion_cache();
     GeminiAdapter adapter("dummy_key");
     EXPECT_EQ(adapter.model_, "gemini-3.8-flash");
 
@@ -1089,3 +1092,142 @@ TEST(GeminiAdapterTest, SynthesisTurnIncludesOriginalUserQueryAnchor) {
     EXPECT_NE(resp.choices[0].message.content, "I have completed the requested operation.");
     EXPECT_EQ(resp.choices[0].message.content, "Synthesized: Checked status and all systems are running.");
 }
+
+TEST(GeminiAdapterTest, ModelExhaustionCacheSkipsExhaustedModelOnSubsequentTurns) {
+    GeminiAdapter::clear_model_exhaustion_cache();
+    GeminiAdapter adapter("test_key");
+    std::vector<std::string> requested_urls;
+    auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
+        requested_urls.push_back(url);
+        if (url.find("gemini-3.8-flash") != std::string::npos) {
+            throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit RESOURCE_EXHAUSTED");
+        }
+        return R"({"candidates":[{"content":{"parts":[{"text":"Turn response"}]}}]})";
+    };
+
+    // First call: attempts gemini-3.8-flash, encounters 429, falls back
+    auto resp1 = adapter.sendMessage("First turn", mock_post, "user", "gemini-3.8-flash");
+    EXPECT_EQ(resp1.choices[0].message.content, "Turn response");
+    EXPECT_TRUE(GeminiAdapter::is_model_exhausted("gemini-3.8-flash"));
+
+    // Second call: gemini-3.8-flash should be skipped completely from candidates
+    requested_urls.clear();
+    auto resp2 = adapter.sendMessage("Second turn", mock_post, "user", "gemini-3.8-flash");
+    EXPECT_EQ(resp2.choices[0].message.content, "Turn response");
+    for (const auto& url : requested_urls) {
+        EXPECT_EQ(url.find("gemini-3.8-flash"), std::string::npos) << "Exhausted model should not have been requested: " << url;
+    }
+}
+
+TEST(GeminiAdapterTest, ParsesQuotaFailureMetadata) {
+    std::string free_tier_error = R"({
+        "error": {
+            "code": 429,
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                    "violations": [
+                        {
+                            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+                            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+                            "quotaValue": "20"
+                        }
+                    ]
+                }
+            ]
+        }
+    })";
+
+    auto telemetry = GeminiAdapter::parse_quota_failure(free_tier_error);
+    EXPECT_TRUE(telemetry.is_quota_exhausted);
+    EXPECT_TRUE(telemetry.is_free_tier);
+    EXPECT_EQ(telemetry.quota_metric, "generativelanguage.googleapis.com/generate_content_free_tier_requests");
+    EXPECT_EQ(telemetry.quota_id, "GenerateRequestsPerDayPerProjectPerModel-FreeTier");
+    EXPECT_EQ(telemetry.quota_value, "20");
+
+    std::string paid_tier_error = R"({
+        "error": {
+            "code": 429,
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                    "violations": [
+                        {
+                            "quotaMetric": "generativelanguage.googleapis.com/generate_content_paid_tier_requests",
+                            "quotaId": "GenerateRequestsPerMinutePerProjectPerModel-PayAsYouGo",
+                            "quotaValue": "1000"
+                        }
+                    ]
+                }
+            ]
+        }
+    })";
+
+    auto paid_telemetry = GeminiAdapter::parse_quota_failure(paid_tier_error);
+    EXPECT_TRUE(paid_telemetry.is_quota_exhausted);
+    EXPECT_FALSE(paid_telemetry.is_free_tier);
+    EXPECT_EQ(paid_telemetry.quota_id, "GenerateRequestsPerMinutePerProjectPerModel-PayAsYouGo");
+}
+
+TEST(GeminiAdapterTest, VerifyKeyTierProbe) {
+    // 1. Paid tier probe simulation
+    std::string paid_response = R"({
+        "error": {
+            "code": 403,
+            "status": "PERMISSION_DENIED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "SERVICE_DISABLED",
+                    "metadata": {
+                        "consumer": "projects/694481925042"
+                    }
+                }
+            ]
+        }
+    })";
+
+    auto paid_result = GeminiAdapter::verify_key_tier("test_paid_key", [&](const std::string&) {
+        return paid_response;
+    });
+    EXPECT_TRUE(paid_result.is_valid);
+    EXPECT_TRUE(paid_result.is_paid_tier);
+    EXPECT_EQ(paid_result.project_container, "projects/694481925042");
+
+    // 2. Free tier restricted key probe simulation
+    std::string free_response = R"({
+        "error": {
+            "code": 403,
+            "status": "PERMISSION_DENIED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "API_KEY_SERVICE_BLOCKED"
+                }
+            ]
+        }
+    })";
+
+    auto free_result = GeminiAdapter::verify_key_tier("test_free_key", [&](const std::string&) {
+        return free_response;
+    });
+    EXPECT_TRUE(free_result.is_valid);
+    EXPECT_FALSE(free_result.is_paid_tier);
+
+    // 3. Invalid key simulation
+    std::string invalid_response = R"({
+        "error": {
+            "code": 400,
+            "status": "INVALID_ARGUMENT",
+            "message": "API key not valid. Please pass a valid API key."
+        }
+    })";
+
+    auto invalid_result = GeminiAdapter::verify_key_tier("bad_key", [&](const std::string&) {
+        return invalid_response;
+    });
+    EXPECT_FALSE(invalid_result.is_valid);
+}
+

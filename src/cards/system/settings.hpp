@@ -1074,10 +1074,23 @@ private:
                         throw std::runtime_error("Received empty response from API.");
                     }
                     
+                    std::string tier_info;
+                    if (prov_enum == helpers::LLMConfig::Provider::GEMINI) {
+                        auto tier_res = helpers::GeminiAdapter::verify_key_tier(api_key);
+                        if (tier_res.is_paid_tier) {
+                            tier_info = "\nKey Tier: [Tier 1 · Pay-As-You-Go]";
+                            if (!tier_res.project_container.empty()) {
+                                tier_info += " (" + tier_res.project_container + ")";
+                            }
+                        } else {
+                            tier_info = "\nKey Tier: [Free Tier · Capped]\nWarning: Free-tier keys are subject to strict RPM and daily quota limits on Gemini 3.8 Flash.";
+                        }
+                    }
+                    
                     if (auto state = state_weak.lock()) {
                         std::lock_guard<std::mutex> lock(state->mutex);
                         state->test_status = AsyncState::TestStatus::SUCCESS;
-                        state->test_result = "Connection successful!\nResponse from model: \"" + reply + "\"";
+                        state->test_result = "Connection successful!\nResponse from model: \"" + reply + "\"" + tier_info;
                     }
                 } catch (const std::exception& e) {
                     if (auto state = state_weak.lock()) {
