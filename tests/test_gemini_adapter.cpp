@@ -1231,3 +1231,103 @@ TEST(GeminiAdapterTest, VerifyKeyTierProbe) {
     EXPECT_FALSE(invalid_result.is_valid);
 }
 
+TEST(GeminiAdapterTest, ParseGeminiResponseFullDoesNotThrowOnQuotaOr429InContent) {
+    GeminiAdapter adapter("dummy_key");
+    std::string response = R"({
+        "candidates": [{
+            "content": {
+                "parts": [{
+                    "text": "Reviewed the quota telemetry document and fixed issue #429."
+                }]
+            },
+            "finishReason": "STOP",
+            "index": 0
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 429,
+            "candidatesTokenCount": 1429,
+            "totalTokenCount": 2429
+        },
+        "modelVersion": "gemini-3.8-flash"
+    })";
+
+    EXPECT_NO_THROW({
+        auto parsed = adapter.parse_gemini_response_full(response);
+        ASSERT_FALSE(parsed.candidates.empty());
+        ASSERT_FALSE(parsed.candidates[0].content.parts.empty());
+        EXPECT_EQ(parsed.candidates[0].content.parts[0].text, "Reviewed the quota telemetry document and fixed issue #429.");
+    });
+}
+
+TEST(GeminiAdapterTest, ParseGeminiResponseFullThrowsOnTopLevelErrorObject) {
+    GeminiAdapter adapter("dummy_key");
+    std::string err_response = R"({
+        "error": {
+            "code": 429,
+            "status": "RESOURCE_EXHAUSTED",
+            "message": "Resource has been exhausted (e.g. check quota)."
+        }
+    })";
+
+    EXPECT_THROW({
+        adapter.parse_gemini_response_full(err_response);
+    }, std::runtime_error);
+
+    try {
+        adapter.parse_gemini_response_full(err_response);
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("HTTP error 429"), std::string::npos);
+    }
+}
+
+TEST(GeminiAdapterTest, SendMessageWithFunctionCallingFallsBackOnCandidate429) {
+    GeminiAdapter::clear_model_exhaustion_cache();
+    GeminiAdapter adapter("test_key");
+    std::vector<std::string> requested_urls;
+
+    auto mock_post = [&](const std::string& url, const std::string&, auto) -> std::string {
+        requested_urls.push_back(url);
+        if (url.find("gemini-3.8-flash") != std::string::npos) {
+            throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit RESOURCE_EXHAUSTED");
+        }
+        return R"({
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": "Function calling turn response from fallback model"
+                    }]
+                }
+            }]
+        })";
+    };
+
+    auto mock_executor = [](const std::string&, const std::string&) -> std::string {
+        return R"({"status":"ok"})";
+    };
+
+    std::vector<std::string> schemas = {
+        R"({"name":"test_tool","description":"Test tool","parameters":{"type":"object"}})"
+    };
+
+    auto resp = adapter.sendMessageWithFunctionCalling(
+        "Test message",
+        mock_post,
+        mock_executor,
+        "user",
+        "gemini-3.8-flash",
+        "",
+        0.2f,
+        nullptr,
+        &schemas,
+        "off",
+        5,
+        4096
+    );
+
+    EXPECT_FALSE(resp.choices.empty());
+    EXPECT_EQ(resp.choices[0].message.content, "Function calling turn response from fallback model");
+    ASSERT_GE(requested_urls.size(), 2u);
+    EXPECT_NE(requested_urls[0].find("gemini-3.8-flash"), std::string::npos);
+    EXPECT_NE(requested_urls[1].find("gemini-3.1-flash-lite"), std::string::npos);
+}
+

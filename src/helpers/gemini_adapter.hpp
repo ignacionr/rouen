@@ -531,11 +531,31 @@ namespace rouen::helpers {
         // Parse Gemini response and return the full response structure for function call handling
         GeminiResponse parse_gemini_response_full(const std::string& response) const {
             CONFIG_DEBUG_FMT("Parsing Gemini response: {}", response);
-            if (response.find("RESOURCE_EXHAUSTED") != std::string::npos || response.find("429") != std::string::npos || response.find("quota") != std::string::npos) {
+            
+            // Check for top-level API error JSON structure
+            glz::json_t err_doc;
+            if (!glz::read_json(err_doc, response)) {
+                if (err_doc.contains("error")) {
+                    auto err_obj = err_doc["error"];
+                    int code = 0;
+                    std::string status;
+                    std::string message;
+                    if (err_obj.contains("code") && err_obj["code"].holds<double>()) {
+                        code = static_cast<int>(err_obj["code"].get<double>());
+                    }
+                    if (err_obj.contains("status") && err_obj["status"].holds<std::string>()) {
+                        status = err_obj["status"].get<std::string>();
+                    }
+                    if (err_obj.contains("message") && err_obj["message"].holds<std::string>()) {
+                        message = err_obj["message"].get<std::string>();
+                    }
+                    if (code == 429 || status == "RESOURCE_EXHAUSTED" || message.find("quota") != std::string::npos || message.find("RESOURCE_EXHAUSTED") != std::string::npos) {
+                        throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit");
+                    }
+                    throw std::runtime_error(std::format("Gemini API Error ({}): {}", status.empty() ? std::to_string(code) : status, message.empty() ? response : message));
+                }
+            } else if (response.starts_with("HTTP error 429") || response.starts_with("Error: HTTP error 429")) {
                 throw std::runtime_error("HTTP error 429: Resource exhausted / rate limit");
-            }
-            if (response.find("\"error\":") != std::string::npos) {
-                throw std::runtime_error("Gemini API Error: " + response);
             }
             
             try {
@@ -762,6 +782,7 @@ namespace rouen::helpers {
                 active_candidates = candidates;
             }
 
+            std::string result;
             for (const auto& try_model : active_candidates) {
                 auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                            try_model, api_key_);
@@ -771,6 +792,7 @@ namespace rouen::helpers {
                         response = do_post(try_url, request_body, [](auto header_setter) {
                             header_setter("Content-Type: application/json");
                         });
+                        result = parse_gemini_response(response);
                         request_ok = true;
                         model_name = try_model;
                         url = try_url;
@@ -801,9 +823,6 @@ namespace rouen::helpers {
             if (!request_ok && last_err) {
                 std::rethrow_exception(last_err);
             }
-
-            // Parse response and extract content
-            std::string result = parse_gemini_response(response);
             
             // Only add to local conversation if not using external conversation management
             if (!full_conversation) {
@@ -918,6 +937,7 @@ namespace rouen::helpers {
                     active_candidates = candidates;
                 }
 
+                GeminiResponse gemini_response;
                 for (const auto& try_model : active_candidates) {
                     auto try_url = std::format("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}", 
                                                try_model, api_key_);
@@ -927,6 +947,7 @@ namespace rouen::helpers {
                             response = do_post(try_url, request_body, [](auto header_setter) {
                                 header_setter("Content-Type: application/json");
                             });
+                            gemini_response = parse_gemini_response_full(response);
                             request_ok = true;
                             model_name = try_model;
                             url = try_url;
@@ -958,9 +979,6 @@ namespace rouen::helpers {
                     std::rethrow_exception(last_err);
                 }
 
-                // Parse response and check for function calls
-                auto gemini_response = parse_gemini_response_full(response);
-                
                 if (gemini_response.candidates.empty()) {
                     throw std::runtime_error("Gemini response contains no candidates");
                 }
@@ -1079,7 +1097,8 @@ namespace rouen::helpers {
                                 if (err_str.find("RESOURCE_EXHAUSTED") != std::string::npos || 
                                     err_str.find("quota") != std::string::npos || 
                                     err_str.find("429") != std::string::npos) {
-                                    CONFIG_WARN_FMT("Synthesis attempt on model {} rate limited, trying next candidate...", try_model);
+                                    mark_model_exhausted(try_model);
+                                    CONFIG_WARN_FMT("Synthesis attempt on model {} rate limited, marked in cooldown cache. Trying next candidate...", try_model);
                                     break;
                                 }
                                 bool const is_retryable = (err_str.find("503") != std::string::npos ||
